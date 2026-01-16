@@ -61,6 +61,10 @@ class WindowManager {
         }
         playlistWindowController?.showWindow(nil)
     }
+
+    var isPlaylistVisible: Bool {
+        playlistWindowController?.window?.isVisible == true
+    }
     
     func togglePlaylist() {
         if let controller = playlistWindowController, controller.window?.isVisible == true {
@@ -75,6 +79,10 @@ class WindowManager {
             equalizerWindowController = EQWindowController()
         }
         equalizerWindowController?.showWindow(nil)
+    }
+
+    var isEqualizerVisible: Bool {
+        equalizerWindowController?.window?.isVisible == true
     }
     
     func toggleEqualizer() {

@@ -53,8 +53,6 @@ class MainWindowView: NSView {
         return WindowManager.shared.audioEngine.repeatEnabled
     }
     
-    private var eqWindowVisible: Bool = false
-    private var playlistWindowVisible: Bool = false
     
     // MARK: - Initialization
     
@@ -144,8 +142,8 @@ class MainWindowView: NSView {
             in: context,
             shuffleOn: shuffleEnabled,
             repeatOn: repeatEnabled,
-            eqVisible: eqWindowVisible,
-            playlistVisible: playlistWindowVisible,
+            eqVisible: WindowManager.shared.isEqualizerVisible,
+            playlistVisible: WindowManager.shared.isPlaylistVisible,
             pressedButton: pressedButton
         )
         
@@ -166,16 +164,6 @@ class MainWindowView: NSView {
     func updateTrackInfo(_ track: Track?) {
         self.currentTrack = track
         marqueeOffset = 0  // Reset scroll position
-        needsDisplay = true
-    }
-    
-    func setEQWindowVisible(_ visible: Bool) {
-        eqWindowVisible = visible
-        needsDisplay = true
-    }
-    
-    func setPlaylistWindowVisible(_ visible: Bool) {
-        playlistWindowVisible = visible
         needsDisplay = true
     }
     
@@ -444,10 +432,8 @@ class MainWindowView: NSView {
             engine.repeatEnabled.toggle()
         case .eqToggle:
             WindowManager.shared.toggleEqualizer()
-            eqWindowVisible.toggle()
         case .playlistToggle:
             WindowManager.shared.togglePlaylist()
-            playlistWindowVisible.toggle()
         case .close:
             window?.close()
         case .minimize:

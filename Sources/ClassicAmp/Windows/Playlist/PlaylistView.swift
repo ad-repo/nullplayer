@@ -87,12 +87,14 @@ class PlaylistView: NSView {
         let titleRect = NSRect(x: 0, y: 0,
                                width: bounds.width, height: Layout.titleBarHeight)
         
-        // Dark gradient title bar (fallback - skin version handled by renderer)
-        let gradient = NSGradient(colors: [
-            NSColor(calibratedRed: 0.1, green: 0.1, blue: 0.4, alpha: 1.0),
-            NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.2, alpha: 1.0)
-        ])
-        gradient?.draw(in: titleRect, angle: 90)
+        if WindowManager.shared.currentSkin?.pledit == nil {
+            // Dark gradient title bar (fallback when no skin image)
+            let gradient = NSGradient(colors: [
+                NSColor(calibratedRed: 0.1, green: 0.1, blue: 0.4, alpha: 1.0),
+                NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.2, alpha: 1.0)
+            ])
+            gradient?.draw(in: titleRect, angle: 90)
+        }
         
         // Title text
         let title = "Playlist Editor"

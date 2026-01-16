@@ -42,7 +42,7 @@ class SkinRenderer {
         }
         
         let sourceRect = isActive ? SkinElements.TitleBar.active : SkinElements.TitleBar.inactive
-        let destRect = NSRect(x: 0, y: bounds.height - SkinElements.titleBarHeight,
+        let destRect = NSRect(x: 0, y: 0,
                               width: bounds.width, height: SkinElements.titleBarHeight)
         
         drawSprite(from: titlebarImage, sourceRect: sourceRect, to: destRect, in: context)
@@ -100,16 +100,9 @@ class SkinRenderer {
             (.close, SkinElements.TitleBar.Positions.closeButton)
         ]
         
-        // Flip Y coordinates for top-right positioning in macOS coordinate system
         for (button, position) in controls {
             let state: ButtonState = (pressedButton == button) ? .pressed : .normal
-            let flippedPosition = NSRect(
-                x: position.minX,
-                y: bounds.height - position.minY - position.height,
-                width: position.width,
-                height: position.height
-            )
-            drawButton(button, state: state, at: flippedPosition, in: context)
+            drawButton(button, state: state, at: position, in: context)
         }
     }
     
@@ -355,7 +348,7 @@ class SkinRenderer {
             
             // Draw title bar
             let titleSource = isActive ? SkinElements.Equalizer.titleActive : SkinElements.Equalizer.titleInactive
-            let titleDest = NSRect(x: 0, y: bounds.height - 14, width: bounds.width, height: 14)
+            let titleDest = NSRect(x: 0, y: 0, width: bounds.width, height: 14)
             drawSprite(from: eqImage, sourceRect: titleSource, to: titleDest, in: context)
         } else {
             // Fallback EQ background
@@ -397,16 +390,16 @@ class SkinRenderer {
         if let pleditImage = skin.pledit {
             // Draw corners
             drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.topLeftCorner,
-                      to: NSRect(x: 0, y: bounds.height - 20, width: 25, height: 20), in: context)
+                      to: NSRect(x: 0, y: 0, width: 25, height: 20), in: context)
             
             drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.topRightCorner,
-                      to: NSRect(x: bounds.width - 25, y: bounds.height - 20, width: 25, height: 20), in: context)
+                      to: NSRect(x: bounds.width - 25, y: 0, width: 25, height: 20), in: context)
             
             drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.bottomLeftCorner,
-                      to: NSRect(x: 0, y: 0, width: 125, height: 38), in: context)
+                      to: NSRect(x: 0, y: bounds.height - 38, width: 125, height: 38), in: context)
             
             drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.bottomRightCorner,
-                      to: NSRect(x: bounds.width - 150, y: 0, width: 150, height: 38), in: context)
+                      to: NSRect(x: bounds.width - 150, y: bounds.height - 38, width: 150, height: 38), in: context)
             
             // Tile the middle sections
             // Top tile
@@ -414,12 +407,17 @@ class SkinRenderer {
             while x < bounds.width - 25 {
                 let tileWidth = min(100, bounds.width - 25 - x)
                 drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.topTile,
-                          to: NSRect(x: x, y: bounds.height - 20, width: tileWidth, height: 20), in: context)
+                          to: NSRect(x: x, y: 0, width: tileWidth, height: 20), in: context)
                 x += 100
             }
             
             // Fill center with playlist background color
-            let centerRect = NSRect(x: 12, y: 38, width: bounds.width - 31, height: bounds.height - 58)
+            let centerRect = NSRect(
+                x: 12,
+                y: SkinElements.Playlist.titleHeight,
+                width: bounds.width - 31,
+                height: bounds.height - SkinElements.Playlist.titleHeight - 38
+            )
             skin.playlistColors.normalBackground.setFill()
             context.fill(centerRect)
         } else {
