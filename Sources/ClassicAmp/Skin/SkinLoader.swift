@@ -32,9 +32,23 @@ class SkinLoader {
         return try loadSkin(from: tempDir)
     }
     
-    /// Load the default/built-in skin
+    /// Load the default/built-in skin from the app bundle
     func loadDefault() -> Skin {
-        // Return a skin with nil images - will use fallback rendering
+        // Try to load the bundled base-2.91.wsz skin
+        // Swift Package Manager puts resources in a bundle named after the target
+        let bundle = Bundle.module
+        
+        if let bundledSkinURL = bundle.url(forResource: "base-2.91", withExtension: "wsz") {
+            do {
+                return try load(from: bundledSkinURL)
+            } catch {
+                print("Failed to load bundled skin: \(error)")
+            }
+        } else {
+            print("Could not find bundled skin in bundle: \(bundle.bundlePath)")
+        }
+        
+        // Fallback: Return a skin with nil images - will use fallback rendering
         return Skin(
             main: nil,
             cbuttons: nil,

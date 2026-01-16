@@ -637,24 +637,66 @@ class SkinRenderer {
     // MARK: - Core Drawing Methods
     
     /// Draw a sprite from a sprite sheet to a destination rect
+    /// - Parameters:
+    ///   - image: The sprite sheet image
+    ///   - sourceRect: Source rectangle in Winamp coordinates (origin top-left)
+    ///   - destRect: Destination rectangle (already in transformed context coordinates)
+    ///   - context: The graphics context to draw into
     func drawSprite(from image: NSImage, sourceRect: NSRect, to destRect: NSRect, in context: CGContext) {
-        // NSImage draws with origin at bottom-left, matching macOS coordinate system
+        // The context is already flipped (Y-axis inverted) to match Winamp's top-down coordinate system.
+        // Source rect is in Winamp coordinates (origin top-left).
+        // NSImage source coordinates use origin at bottom-left.
+        // With respectFlipped: false, we draw the image in its natural orientation
+        // and handle all coordinate transforms ourselves.
+        
+        let imageHeight = image.size.height
+        let convertedSourceRect = NSRect(
+            x: sourceRect.origin.x,
+            y: imageHeight - sourceRect.origin.y - sourceRect.height,
+            width: sourceRect.width,
+            height: sourceRect.height
+        )
+        
+        // Save context state to apply local transform for this sprite
+        context.saveGState()
+        
+        // To draw correctly in the flipped context without NSImage's respectFlipped
+        // fighting with our transform, we need to flip locally around the dest rect center
+        // and draw with respectFlipped: false
+        
+        // Move to the destination, flip vertically around dest center, then draw
+        let centerY = destRect.midY
+        context.translateBy(x: 0, y: centerY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -centerY)
+        
         image.draw(in: destRect,
-                   from: sourceRect,
+                   from: convertedSourceRect,
                    operation: .sourceOver,
                    fraction: 1.0,
-                   respectFlipped: true,
+                   respectFlipped: false,
                    hints: [.interpolation: NSNumber(value: NSImageInterpolation.none.rawValue)])
+        
+        context.restoreGState()
     }
     
     /// Draw a full image to a rect
     func drawImage(_ image: NSImage, in rect: NSRect, context: CGContext) {
+        context.saveGState()
+        
+        let centerY = rect.midY
+        context.translateBy(x: 0, y: centerY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -centerY)
+        
         image.draw(in: rect,
                    from: NSRect(origin: .zero, size: image.size),
                    operation: .sourceOver,
                    fraction: 1.0,
-                   respectFlipped: true,
+                   respectFlipped: false,
                    hints: [.interpolation: NSNumber(value: NSImageInterpolation.none.rawValue)])
+        
+        context.restoreGState()
     }
     
     // MARK: - Fallback Rendering

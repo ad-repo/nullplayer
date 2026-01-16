@@ -91,13 +91,62 @@ class MainWindowView: NSView {
     
     // MARK: - Drawing
     
+    /// Calculate scale factor based on current bounds vs original size
+    private var scaleFactor: CGFloat {
+        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+        let scaleX = bounds.width / originalSize.width
+        let scaleY = bounds.height / originalSize.height
+        return min(scaleX, scaleY)
+    }
+    
+    /// Convert a point from view coordinates to original (unscaled) coordinates
+    private func convertToOriginalCoordinates(_ point: NSPoint) -> NSPoint {
+        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+        let scale = scaleFactor
+        
+        if scale == 1.0 {
+            return point
+        }
+        
+        // Calculate the offset (centering)
+        let scaledWidth = originalSize.width * scale
+        let scaledHeight = originalSize.height * scale
+        let offsetX = (bounds.width - scaledWidth) / 2
+        let offsetY = (bounds.height - scaledHeight) / 2
+        
+        // Transform point back to original coordinates
+        let x = (point.x - offsetX) / scale
+        let y = (point.y - offsetY) / scale
+        
+        return NSPoint(x: x, y: y)
+    }
+    
+    /// Get the original window size for hit testing
+    private var originalWindowSize: NSSize {
+        return isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+    }
+    
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+        let scale = scaleFactor
         
         // Flip coordinate system to match Winamp's top-down coordinates
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
+        
+        // Apply scaling for resized window
+        if scale != 1.0 {
+            // Center the scaled content
+            let scaledWidth = originalSize.width * scale
+            let scaledHeight = originalSize.height * scale
+            let offsetX = (bounds.width - scaledWidth) / 2
+            let offsetY = (bounds.height - scaledHeight) / 2
+            context.translateBy(x: offsetX, y: offsetY)
+            context.scaleBy(x: scale, y: scale)
+        }
         
         let skin = WindowManager.shared.currentSkin
         let renderer = SkinRenderer(skin: skin ?? SkinLoader.shared.loadDefault())
@@ -105,12 +154,15 @@ class MainWindowView: NSView {
         // Determine if window is active
         let isActive = window?.isKeyWindow ?? true
         
+        // Use original bounds for drawing (scaling is applied via transform)
+        let drawBounds = NSRect(origin: .zero, size: originalSize)
+        
         if isShadeMode {
             // Draw shade mode (compact view)
             let marqueeText = currentTrack?.displayTitle ?? "ClassicAmp"
             renderer.drawMainWindowShade(
                 in: context,
-                bounds: bounds,
+                bounds: drawBounds,
                 isActive: isActive,
                 currentTime: currentTime,
                 duration: duration,
@@ -119,17 +171,17 @@ class MainWindowView: NSView {
                 pressedButton: pressedButton
             )
         } else {
-            // Draw normal mode
-            drawNormalMode(renderer: renderer, context: context, isActive: isActive)
+            // Draw normal mode with original bounds
+            drawNormalModeScaled(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
         }
         
         context.restoreGState()
     }
     
-    /// Draw the normal (non-shade) mode
-    private func drawNormalMode(renderer: SkinRenderer, context: CGContext, isActive: Bool) {
+    /// Draw the normal (non-shade) mode with scaling support
+    private func drawNormalModeScaled(renderer: SkinRenderer, context: CGContext, isActive: Bool, drawBounds: NSRect) {
         // Draw main window background
-        renderer.drawMainWindowBackground(in: context, bounds: bounds, isActive: isActive)
+        renderer.drawMainWindowBackground(in: context, bounds: drawBounds, isActive: isActive)
         
         // Draw time display
         let minutes = Int(currentTime) / 60
@@ -180,7 +232,7 @@ class MainWindowView: NSView {
         )
         
         // Draw window controls (minimize, shade, close)
-        renderer.drawWindowControls(in: context, bounds: bounds, pressedButton: pressedButton)
+        renderer.drawWindowControls(in: context, bounds: drawBounds, pressedButton: pressedButton)
     }
     
     // MARK: - Public Methods
@@ -241,17 +293,20 @@ class MainWindowView: NSView {
     }
     
     override func cursorUpdate(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let cursor = regionManager.cursor(for: point, in: .main, windowSize: bounds.size)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = convertToOriginalCoordinates(viewPoint)
+        let cursor = regionManager.cursor(for: point, in: .main, windowSize: originalWindowSize)
         cursor.set()
     }
     
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = convertToOriginalCoordinates(viewPoint)
+        let hitTestSize = originalWindowSize
         
         // Check for double-click on title bar to toggle shade mode
         if event.clickCount == 2 {
-            if isShadeMode || regionManager.shouldToggleShade(at: point, windowType: .main, windowSize: bounds.size) {
+            if isShadeMode || regionManager.shouldToggleShade(at: point, windowType: .main, windowSize: hitTestSize) {
                 toggleShadeMode()
                 return
             }
@@ -264,7 +319,7 @@ class MainWindowView: NSView {
         }
         
         // Check if in title bar for dragging
-        if regionManager.isInTitleBar(point, windowType: .main, windowSize: bounds.size) {
+        if regionManager.isInTitleBar(point, windowType: .main, windowSize: hitTestSize) {
             isDragging = true
             dragStartPoint = event.locationInWindow
             // Notify WindowManager that dragging is starting
@@ -275,14 +330,16 @@ class MainWindowView: NSView {
         }
         
         // Hit test for actions
-        if let action = regionManager.hitTest(point: point, in: .main, windowSize: bounds.size) {
+        if let action = regionManager.hitTest(point: point, in: .main, windowSize: hitTestSize) {
             handleMouseDown(action: action, at: point)
         }
     }
     
     /// Handle mouse down in shade mode
     private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
-        let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        // Point is already in original coordinates, convert to Winamp Y-axis (top-down)
+        let originalHeight = SkinElements.MainShade.windowSize.height
+        let winampPoint = NSPoint(x: point.x, y: originalHeight - point.y)
         
         // Check window control buttons
         let closeRect = SkinElements.TitleBar.ShadePositions.closeButton
@@ -366,7 +423,8 @@ class MainWindowView: NSView {
     }
     
     override func mouseDragged(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = convertToOriginalCoordinates(viewPoint)
         
         if isDragging {
             // Window dragging
@@ -399,7 +457,8 @@ class MainWindowView: NSView {
             }
             
             // Convert point to Winamp coordinates for calculation
-            let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+            let originalHeight = Skin.mainWindowSize.height
+            let winampPoint = NSPoint(x: point.x, y: originalHeight - point.y)
             let newValue = sliderTracker.updateDrag(to: winampPoint, in: rect)
             
             switch sliderTracker.sliderType {
@@ -419,7 +478,8 @@ class MainWindowView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = convertToOriginalCoordinates(viewPoint)
         
         if isDragging {
             isDragging = false
@@ -434,7 +494,8 @@ class MainWindowView: NSView {
             // Complete slider interaction
             if sliderTracker.sliderType == .position {
                 let rect = SkinElements.PositionBar.Positions.track
-                let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+                let originalHeight = Skin.mainWindowSize.height
+                let winampPoint = NSPoint(x: point.x, y: originalHeight - point.y)
                 let finalValue = sliderTracker.updateDrag(to: winampPoint, in: rect)
                 
                 // Seek to the final position
@@ -450,7 +511,8 @@ class MainWindowView: NSView {
         if let pressed = pressedButton {
             if isShadeMode {
                 // Shade mode button release handling
-                let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+                let originalHeight = SkinElements.MainShade.windowSize.height
+                let winampPoint = NSPoint(x: point.x, y: originalHeight - point.y)
                 var shouldPerform = false
                 
                 switch pressed {
@@ -469,7 +531,7 @@ class MainWindowView: NSView {
                 }
             } else {
                 // Normal mode button release handling
-                let action = regionManager.hitTest(point: point, in: .main, windowSize: bounds.size)
+                let action = regionManager.hitTest(point: point, in: .main, windowSize: originalWindowSize)
                 
                 // If released on the same button, perform the action
                 if actionMatchesButton(action, pressed) {

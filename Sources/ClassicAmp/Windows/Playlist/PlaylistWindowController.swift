@@ -16,9 +16,9 @@ class PlaylistWindowController: NSWindowController {
     // MARK: - Initialization
     
     convenience init() {
-        let window = NSWindow(
+        let window = ResizableWindow(
             contentRect: NSRect(origin: .zero, size: Skin.playlistMinSize),
-            styleMask: [.borderless, .resizable],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
@@ -77,6 +77,11 @@ class PlaylistWindowController: NSWindowController {
         
         isShadeMode = enabled
         
+        // Enable/disable resizing via our custom window
+        if let resizableWindow = window as? ResizableWindow {
+            resizableWindow.resizingEnabled = !enabled
+        }
+        
         if enabled {
             // Store current frame for restoration
             normalModeFrame = window.frame
@@ -89,9 +94,6 @@ class PlaylistWindowController: NSWindowController {
                 width: window.frame.width,
                 height: shadeHeight
             )
-            
-            // Disable resizing in shade mode
-            window.styleMask.remove(.resizable)
             
             // Resize window
             window.setFrame(newFrame, display: true, animate: true)
@@ -111,9 +113,6 @@ class PlaylistWindowController: NSWindowController {
                     height: normalSize.height
                 )
             }
-            
-            // Re-enable resizing
-            window.styleMask.insert(.resizable)
             
             // Resize window
             window.setFrame(newFrame, display: true, animate: true)

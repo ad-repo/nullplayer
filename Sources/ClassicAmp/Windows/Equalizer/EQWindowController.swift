@@ -16,7 +16,7 @@ class EQWindowController: NSWindowController {
     // MARK: - Initialization
     
     convenience init() {
-        let window = NSWindow(
+        let window = ResizableWindow(
             contentRect: NSRect(origin: .zero, size: Skin.eqWindowSize),
             styleMask: [.borderless],
             backing: .buffered,
@@ -39,6 +39,9 @@ class EQWindowController: NSWindowController {
         window.isOpaque = false
         window.hasShadow = true
         window.title = "Equalizer"
+        
+        // Set minimum size for EQ window
+        window.minSize = Skin.eqWindowSize
         
         // Position below main window
         if let mainWindow = WindowManager.shared.mainWindowController?.window {

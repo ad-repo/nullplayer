@@ -16,8 +16,8 @@ class MainWindowController: NSWindowController {
     // MARK: - Initialization
     
     convenience init() {
-        // Create borderless window with exact Winamp dimensions
-        let window = NSWindow(
+        // Create resizable borderless window
+        let window = ResizableWindow(
             contentRect: NSRect(origin: .zero, size: Skin.mainWindowSize),
             styleMask: [.borderless],
             backing: .buffered,
@@ -41,6 +41,9 @@ class MainWindowController: NSWindowController {
         window.hasShadow = true
         window.level = .normal
         window.title = "ClassicAmp"
+        
+        // Set minimum size for main window
+        window.minSize = Skin.mainWindowSize
         
         // Center on screen initially
         window.center()

@@ -13,6 +13,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Set up audio engine delegate
         windowManager.audioEngine.delegate = self
         
+        // Load skin from environment variable if set (for testing)
+        if let skinPath = ProcessInfo.processInfo.environment["CLASSICAMP_SKIN"] {
+            let skinURL = URL(fileURLWithPath: skinPath)
+            windowManager.loadSkin(from: skinURL)
+        }
+        
         // Show the main player window
         windowManager.showMainWindow()
         
