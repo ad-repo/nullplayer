@@ -5,8 +5,8 @@ class ResizableWindow: NSWindow {
     
     // MARK: - Resize Edge Detection
     
-    /// Width of the resize edge detection zone in pixels
-    private let edgeThickness: CGFloat = 6
+    /// Width of the resize edge detection zone in pixels (larger = easier to grab)
+    private let edgeThickness: CGFloat = 12
     
     /// Which edges are being resized
     struct ResizeEdges: OptionSet {
@@ -37,6 +37,9 @@ class ResizableWindow: NSWindow {
     /// Whether we're currently in a resize operation
     private var isResizing: Bool = false
     
+    /// Default size for double-click restore (set from minSize)
+    private var defaultSize: NSSize?
+    
     // MARK: - Initialization
     
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
@@ -44,6 +47,9 @@ class ResizableWindow: NSWindow {
         
         // Enable mouse moved events for cursor updates
         acceptsMouseMovedEvents = true
+        
+        // Store default size
+        defaultSize = contentRect.size
     }
     
     // MARK: - Key/Main Window Support
@@ -55,49 +61,101 @@ class ResizableWindow: NSWindow {
     
     /// Detect which edges the mouse is near for a given point in window coordinates
     private func detectEdges(at windowPoint: NSPoint) -> ResizeEdges {
-        let bounds = NSRect(origin: .zero, size: frame.size)
+        let size = frame.size
         var edges: ResizeEdges = []
         
         // Check horizontal edges
         if windowPoint.x < edgeThickness {
             edges.insert(.left)
-        } else if windowPoint.x > bounds.width - edgeThickness {
+        } else if windowPoint.x > size.width - edgeThickness {
             edges.insert(.right)
         }
         
-        // Check vertical edges
+        // Check vertical edges (window coordinates: 0 is at bottom)
         if windowPoint.y < edgeThickness {
             edges.insert(.bottom)
-        } else if windowPoint.y > bounds.height - edgeThickness {
+        } else if windowPoint.y > size.height - edgeThickness {
             edges.insert(.top)
         }
         
         return edges
     }
     
-    /// Get the appropriate cursor for the given edges
-    private func cursor(for edges: ResizeEdges) -> NSCursor {
-        switch edges {
-        case .left, .right:
-            return .resizeLeftRight
-        case .top, .bottom:
-            return .resizeUpDown
-        case .topLeft, .bottomRight:
-            // Diagonal NW-SE
-            return NSCursor(image: NSImage(named: NSImage.Name("NSResizeDiagonal45Cursor")) ?? NSCursor.arrow.image, 
-                          hotSpot: NSPoint(x: 8, y: 8))
-        case .topRight, .bottomLeft:
-            // Diagonal NE-SW
-            return NSCursor(image: NSImage(named: NSImage.Name("NSResizeDiagonal135Cursor")) ?? NSCursor.arrow.image,
-                          hotSpot: NSPoint(x: 8, y: 8))
+    // MARK: - Event Handling
+    
+    /// Override sendEvent to intercept mouse events for resize handling
+    /// This allows isMovableByWindowBackground to work normally when not resizing
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            if handleResizeMouseDown(event) {
+                return // We consumed the event for resize
+            }
+            
+        case .leftMouseDragged:
+            if isResizing {
+                handleResizeMouseDragged(event)
+                return
+            }
+            
+        case .leftMouseUp:
+            if isResizing {
+                handleResizeMouseUp(event)
+                return
+            }
+            
+        case .mouseMoved:
+            updateResizeCursor(event)
+            
         default:
-            return .arrow
+            break
+        }
+        
+        // Let the normal event handling proceed
+        super.sendEvent(event)
+    }
+    
+    /// Handle mouse down for potential resize operation
+    /// Returns true if we're starting a resize, false to let normal handling proceed
+    private func handleResizeMouseDown(_ event: NSEvent) -> Bool {
+        let windowPoint = event.locationInWindow
+        let edges = detectEdges(at: windowPoint)
+        
+        // Double-click on edge restores to default/minimum size
+        if event.clickCount == 2 && edges != .none {
+            restoreToDefaultSize()
+            return true
+        }
+        
+        if edges != .none {
+            // Start resize operation
+            isResizing = true
+            resizeEdges = edges
+            initialMouseLocation = NSEvent.mouseLocation
+            initialFrame = frame
+            return true
+        }
+        
+        return false
+    }
+    
+    private func handleResizeMouseDragged(_ event: NSEvent) {
+        performResize()
+    }
+    
+    private func handleResizeMouseUp(_ event: NSEvent) {
+        isResizing = false
+        resizeEdges = .none
+        
+        // Update cursor based on current position
+        let windowPoint = event.locationInWindow
+        let edges = detectEdges(at: windowPoint)
+        if edges == .none {
+            NSCursor.arrow.set()
         }
     }
     
-    // MARK: - Mouse Events
-    
-    override func mouseMoved(with event: NSEvent) {
+    private func updateResizeCursor(_ event: NSEvent) {
         let windowPoint = event.locationInWindow
         let edges = detectEdges(at: windowPoint)
         
@@ -108,10 +166,8 @@ class ResizableWindow: NSWindow {
                 NSCursor.resizeLeftRight.set()
             case .top, .bottom:
                 NSCursor.resizeUpDown.set()
-            case .topLeft, .bottomRight:
+            case .topLeft, .bottomRight, .topRight, .bottomLeft:
                 // Use crosshair as fallback for diagonal (macOS doesn't expose diagonal cursors easily)
-                NSCursor.crosshair.set()
-            case .topRight, .bottomLeft:
                 NSCursor.crosshair.set()
             default:
                 NSCursor.arrow.set()
@@ -119,46 +175,6 @@ class ResizableWindow: NSWindow {
         } else {
             NSCursor.arrow.set()
         }
-        
-        super.mouseMoved(with: event)
-    }
-    
-    override func mouseDown(with event: NSEvent) {
-        let windowPoint = event.locationInWindow
-        let edges = detectEdges(at: windowPoint)
-        
-        if edges != .none {
-            // Start resize operation
-            isResizing = true
-            resizeEdges = edges
-            initialMouseLocation = NSEvent.mouseLocation
-            initialFrame = frame
-            
-            // Don't call super - we're handling this
-            return
-        }
-        
-        super.mouseDown(with: event)
-    }
-    
-    override func mouseDragged(with event: NSEvent) {
-        if isResizing {
-            performResize()
-            return
-        }
-        
-        super.mouseDragged(with: event)
-    }
-    
-    override func mouseUp(with event: NSEvent) {
-        if isResizing {
-            isResizing = false
-            resizeEdges = .none
-            NSCursor.arrow.set()
-            return
-        }
-        
-        super.mouseUp(with: event)
     }
     
     // MARK: - Resize Logic
@@ -177,12 +193,18 @@ class ResizableWindow: NSWindow {
             if newWidth >= minSize.width && (maxSize.width == 0 || newWidth <= maxSize.width) {
                 newFrame.origin.x = initialFrame.origin.x + deltaX
                 newFrame.size.width = newWidth
+            } else if newWidth < minSize.width {
+                // Snap to minimum
+                newFrame.origin.x = initialFrame.maxX - minSize.width
+                newFrame.size.width = minSize.width
             }
         } else if resizeEdges.contains(.right) {
             // Resizing from right edge only changes width
             let newWidth = initialFrame.width + deltaX
             if newWidth >= minSize.width && (maxSize.width == 0 || newWidth <= maxSize.width) {
                 newFrame.size.width = newWidth
+            } else if newWidth < minSize.width {
+                newFrame.size.width = minSize.width
             }
         }
         
@@ -193,12 +215,18 @@ class ResizableWindow: NSWindow {
             if newHeight >= minSize.height && (maxSize.height == 0 || newHeight <= maxSize.height) {
                 newFrame.origin.y = initialFrame.origin.y + deltaY
                 newFrame.size.height = newHeight
+            } else if newHeight < minSize.height {
+                // Snap to minimum
+                newFrame.origin.y = initialFrame.maxY - minSize.height
+                newFrame.size.height = minSize.height
             }
         } else if resizeEdges.contains(.top) {
             // Resizing from top edge only changes height
             let newHeight = initialFrame.height + deltaY
             if newHeight >= minSize.height && (maxSize.height == 0 || newHeight <= maxSize.height) {
                 newFrame.size.height = newHeight
+            } else if newHeight < minSize.height {
+                newFrame.size.height = minSize.height
             }
         }
         
@@ -206,16 +234,17 @@ class ResizableWindow: NSWindow {
         setFrame(newFrame, display: true)
     }
     
-    // MARK: - Cursor Rect Support
-    
-    override func cursorUpdate(with event: NSEvent) {
-        let windowPoint = event.locationInWindow
-        let edges = detectEdges(at: windowPoint)
+    /// Restore window to default/minimum size
+    private func restoreToDefaultSize() {
+        let targetSize = defaultSize ?? minSize
+        guard targetSize.width > 0 && targetSize.height > 0 else { return }
         
-        if edges != .none {
-            cursor(for: edges).set()
-        } else {
-            super.cursorUpdate(with: event)
-        }
+        // Keep the top-left corner in place when resizing
+        var newFrame = frame
+        let heightDiff = frame.height - targetSize.height
+        newFrame.origin.y += heightDiff
+        newFrame.size = targetSize
+        
+        setFrame(newFrame, display: true, animate: true)
     }
 }
