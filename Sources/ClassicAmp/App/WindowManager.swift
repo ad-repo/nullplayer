@@ -60,6 +60,7 @@ class WindowManager {
             playlistWindowController = PlaylistWindowController()
         }
         playlistWindowController?.showWindow(nil)
+        notifyMainWindowVisibilityChanged()
     }
 
     var isPlaylistVisible: Bool {
@@ -72,6 +73,7 @@ class WindowManager {
         } else {
             showPlaylist()
         }
+        notifyMainWindowVisibilityChanged()
     }
     
     func showEqualizer() {
@@ -79,6 +81,7 @@ class WindowManager {
             equalizerWindowController = EQWindowController()
         }
         equalizerWindowController?.showWindow(nil)
+        notifyMainWindowVisibilityChanged()
     }
 
     var isEqualizerVisible: Bool {
@@ -91,6 +94,11 @@ class WindowManager {
         } else {
             showEqualizer()
         }
+        notifyMainWindowVisibilityChanged()
+    }
+
+    func notifyMainWindowVisibilityChanged() {
+        mainWindowController?.windowVisibilityDidChange()
     }
     
     // MARK: - Skin Management

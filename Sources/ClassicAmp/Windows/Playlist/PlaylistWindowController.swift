@@ -84,4 +84,8 @@ extension PlaylistWindowController: NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         playlistView.needsDisplay = true
     }
+
+    func windowWillClose(_ notification: Notification) {
+        WindowManager.shared.notifyMainWindowVisibilityChanged()
+    }
 }

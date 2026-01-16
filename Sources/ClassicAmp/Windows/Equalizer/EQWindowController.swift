@@ -74,4 +74,8 @@ extension EQWindowController: NSWindowDelegate {
             window.setFrameOrigin(newOrigin)
         }
     }
+
+    func windowWillClose(_ notification: Notification) {
+        WindowManager.shared.notifyMainWindowVisibilityChanged()
+    }
 }

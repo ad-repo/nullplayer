@@ -66,6 +66,10 @@ class MainWindowController: NSWindowController {
     func updateTrackInfo(_ track: Track?) {
         mainView.updateTrackInfo(track)
     }
+
+    func windowVisibilityDidChange() {
+        mainView.needsDisplay = true
+    }
 }
 
 // MARK: - NSWindowDelegate
