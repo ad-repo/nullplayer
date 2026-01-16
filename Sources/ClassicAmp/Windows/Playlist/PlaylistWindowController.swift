@@ -7,6 +7,12 @@ class PlaylistWindowController: NSWindowController {
     
     private var playlistView: PlaylistView!
     
+    /// Whether the window is in shade mode
+    private(set) var isShadeMode = false
+    
+    /// Stored normal mode frame for restoration
+    private var normalModeFrame: NSRect?
+    
     // MARK: - Initialization
     
     convenience init() {
@@ -61,6 +67,61 @@ class PlaylistWindowController: NSWindowController {
     
     func reloadPlaylist() {
         playlistView.reloadData()
+    }
+    
+    // MARK: - Shade Mode
+    
+    /// Toggle shade mode on/off
+    func setShadeMode(_ enabled: Bool) {
+        guard let window = window else { return }
+        
+        isShadeMode = enabled
+        
+        if enabled {
+            // Store current frame for restoration
+            normalModeFrame = window.frame
+            
+            // Calculate new shade mode frame (keep width, reduce height)
+            let shadeHeight = SkinElements.PlaylistShade.height
+            let newFrame = NSRect(
+                x: window.frame.origin.x,
+                y: window.frame.origin.y + window.frame.height - shadeHeight,
+                width: window.frame.width,
+                height: shadeHeight
+            )
+            
+            // Disable resizing in shade mode
+            window.styleMask.remove(.resizable)
+            
+            // Resize window
+            window.setFrame(newFrame, display: true, animate: true)
+            playlistView.frame = NSRect(origin: .zero, size: newFrame.size)
+        } else {
+            // Restore normal mode frame
+            let newFrame: NSRect
+            
+            if let storedFrame = normalModeFrame {
+                newFrame = storedFrame
+            } else {
+                let normalSize = Skin.playlistMinSize
+                newFrame = NSRect(
+                    x: window.frame.origin.x,
+                    y: window.frame.origin.y + window.frame.height - normalSize.height,
+                    width: window.frame.width,
+                    height: normalSize.height
+                )
+            }
+            
+            // Re-enable resizing
+            window.styleMask.insert(.resizable)
+            
+            // Resize window
+            window.setFrame(newFrame, display: true, animate: true)
+            playlistView.frame = NSRect(origin: .zero, size: newFrame.size)
+            normalModeFrame = nil
+        }
+        
+        playlistView.setShadeMode(enabled)
     }
     
     // MARK: - Private Properties

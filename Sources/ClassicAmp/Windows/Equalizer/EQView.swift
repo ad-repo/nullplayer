@@ -32,6 +32,9 @@ class EQView: NSView {
     /// Region manager for hit testing
     private let regionManager = RegionManager.shared
     
+    /// Shade mode state
+    private(set) var isShadeMode = false
+    
     // MARK: - Layout Constants
     
     private struct Layout {
@@ -104,6 +107,19 @@ class EQView: NSView {
         
         let isActive = window?.isKeyWindow ?? true
         
+        if isShadeMode {
+            // Draw shade mode
+            renderer.drawEqualizerShade(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        } else {
+            // Draw normal mode
+            drawNormalMode(renderer: renderer, context: context, isActive: isActive)
+        }
+        
+        context.restoreGState()
+    }
+    
+    /// Draw normal (non-shade) mode
+    private func drawNormalMode(renderer: SkinRenderer, context: CGContext, isActive: Bool) {
         // Draw EQ background
         renderer.drawEqualizerBackground(in: context, bounds: bounds, isActive: isActive)
         
@@ -132,8 +148,6 @@ class EQView: NSView {
         
         // Draw EQ curve graph
         drawEQGraph(context: context)
-        
-        context.restoreGState()
     }
     
     private func drawEQGraph(context: CGContext) {
@@ -185,11 +199,36 @@ class EQView: NSView {
         needsDisplay = true
     }
     
+    /// Set shade mode externally (e.g., from controller)
+    func setShadeMode(_ enabled: Bool) {
+        isShadeMode = enabled
+        needsDisplay = true
+    }
+    
+    /// Toggle shade mode
+    private func toggleShadeMode() {
+        isShadeMode.toggle()
+        controller?.setShadeMode(isShadeMode)
+    }
+    
     // MARK: - Mouse Events
     
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        
+        // Check for double-click on title bar to toggle shade mode
+        if event.clickCount == 2 {
+            if winampPoint.y < Layout.titleBarHeight && winampPoint.x < bounds.width - 30 {
+                toggleShadeMode()
+                return
+            }
+        }
+        
+        if isShadeMode {
+            handleShadeMouseDown(at: winampPoint, event: event)
+            return
+        }
         
         // Check title bar for dragging
         if winampPoint.y < Layout.titleBarHeight && winampPoint.x < bounds.width - 15 {
@@ -231,6 +270,29 @@ class EQView: NSView {
         }
     }
     
+    /// Handle mouse down in shade mode
+    private func handleShadeMouseDown(at winampPoint: NSPoint, event: NSEvent) {
+        // Check window control buttons
+        let closeRect = SkinElements.EQShade.Positions.closeButton
+        let shadeRect = SkinElements.EQShade.Positions.shadeButton
+        
+        if closeRect.contains(winampPoint) {
+            pressedButton = .close
+            needsDisplay = true
+            return
+        }
+        
+        if shadeRect.contains(winampPoint) {
+            pressedButton = .unshade
+            needsDisplay = true
+            return
+        }
+        
+        // Otherwise, start dragging
+        isDragging = true
+        dragStartPoint = event.locationInWindow
+    }
+    
     override func mouseDragged(with event: NSEvent) {
         if isDragging {
             guard let window = window else { return }
@@ -259,6 +321,34 @@ class EQView: NSView {
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        
+        if isShadeMode {
+            // Handle shade mode button release
+            if let pressed = pressedButton {
+                var shouldPerform = false
+                
+                switch pressed {
+                case .close:
+                    shouldPerform = SkinElements.EQShade.Positions.closeButton.contains(winampPoint)
+                    if shouldPerform {
+                        window?.close()
+                    }
+                case .unshade:
+                    shouldPerform = SkinElements.EQShade.Positions.shadeButton.contains(winampPoint)
+                    if shouldPerform {
+                        toggleShadeMode()
+                    }
+                default:
+                    break
+                }
+                
+                pressedButton = nil
+                needsDisplay = true
+            }
+            
+            isDragging = false
+            return
+        }
         
         // Handle presets button release
         if pressedButton == .eqPresets {

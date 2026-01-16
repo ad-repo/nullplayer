@@ -23,6 +23,12 @@ class PlaylistView: NSView {
     /// Region manager
     private let regionManager = RegionManager.shared
     
+    /// Shade mode state
+    private(set) var isShadeMode = false
+    
+    /// Button being pressed
+    private var pressedButton: ButtonType?
+    
     // MARK: - Layout
     
     private struct Layout {
@@ -64,6 +70,20 @@ class PlaylistView: NSView {
         let skin = WindowManager.shared.currentSkin
         let renderer = SkinRenderer(skin: skin ?? SkinLoader.shared.loadDefault())
         
+        if isShadeMode {
+            // Draw shade mode
+            let isActive = window?.isKeyWindow ?? true
+            renderer.drawPlaylistShade(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        } else {
+            // Draw normal mode
+            drawNormalMode(renderer: renderer, context: context, skin: skin)
+        }
+        
+        context.restoreGState()
+    }
+    
+    /// Draw normal (non-shade) mode
+    private func drawNormalMode(renderer: SkinRenderer, context: CGContext, skin: Skin?) {
         // Draw playlist background (handles tiled rendering for resizable window)
         renderer.drawPlaylistBackground(in: context, bounds: bounds)
         
@@ -79,8 +99,6 @@ class PlaylistView: NSView {
         
         // Draw resize handle
         drawResizeHandle(context: context)
-        
-        context.restoreGState()
     }
     
     private func drawTitleBar(context: CGContext) {
@@ -274,11 +292,36 @@ class PlaylistView: NSView {
         needsDisplay = true
     }
     
+    /// Set shade mode externally (e.g., from controller)
+    func setShadeMode(_ enabled: Bool) {
+        isShadeMode = enabled
+        needsDisplay = true
+    }
+    
+    /// Toggle shade mode
+    private func toggleShadeMode() {
+        isShadeMode.toggle()
+        controller?.setShadeMode(isShadeMode)
+    }
+    
     // MARK: - Mouse Events
     
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        
+        // Check for double-click on title bar to toggle shade mode
+        if event.clickCount == 2 {
+            if winampPoint.y < Layout.titleBarHeight && winampPoint.x < bounds.width - 30 {
+                toggleShadeMode()
+                return
+            }
+        }
+        
+        if isShadeMode {
+            handleShadeMouseDown(at: winampPoint, event: event)
+            return
+        }
         
         // Check title bar for dragging
         if winampPoint.y < Layout.titleBarHeight && winampPoint.x < bounds.width - 15 {
@@ -341,6 +384,33 @@ class PlaylistView: NSView {
         }
     }
     
+    /// Handle mouse down in shade mode
+    private func handleShadeMouseDown(at winampPoint: NSPoint, event: NSEvent) {
+        // Check window control buttons (relative to right edge)
+        let closeRect = NSRect(x: bounds.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
+                               y: SkinElements.PlaylistShade.Positions.closeButton.minY,
+                               width: 9, height: 9)
+        let shadeRect = NSRect(x: bounds.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
+                               y: SkinElements.PlaylistShade.Positions.shadeButton.minY,
+                               width: 9, height: 9)
+        
+        if closeRect.contains(winampPoint) {
+            pressedButton = .close
+            needsDisplay = true
+            return
+        }
+        
+        if shadeRect.contains(winampPoint) {
+            pressedButton = .unshade
+            needsDisplay = true
+            return
+        }
+        
+        // Otherwise, start dragging
+        isDragging = true
+        dragStartPoint = event.locationInWindow
+    }
+    
     override func mouseDragged(with event: NSEvent) {
         if isDragging {
             guard let window = window else { return }
@@ -360,6 +430,38 @@ class PlaylistView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        
+        if isShadeMode {
+            // Handle shade mode button release
+            if let pressed = pressedButton {
+                // Check window control buttons (relative to right edge)
+                let closeRect = NSRect(x: bounds.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
+                                       y: SkinElements.PlaylistShade.Positions.closeButton.minY,
+                                       width: 9, height: 9)
+                let shadeRect = NSRect(x: bounds.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
+                                       y: SkinElements.PlaylistShade.Positions.shadeButton.minY,
+                                       width: 9, height: 9)
+                
+                switch pressed {
+                case .close:
+                    if closeRect.contains(winampPoint) {
+                        window?.close()
+                    }
+                case .unshade:
+                    if shadeRect.contains(winampPoint) {
+                        toggleShadeMode()
+                    }
+                default:
+                    break
+                }
+                
+                pressedButton = nil
+                needsDisplay = true
+            }
+        }
+        
         isDragging = false
     }
     

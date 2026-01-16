@@ -7,6 +7,12 @@ class MainWindowController: NSWindowController {
     
     private var mainView: MainWindowView!
     
+    /// Whether the window is in shade mode
+    private(set) var isShadeMode = false
+    
+    /// Stored normal mode frame for restoration
+    private var normalModeFrame: NSRect?
+    
     // MARK: - Initialization
     
     convenience init() {
@@ -69,6 +75,56 @@ class MainWindowController: NSWindowController {
 
     func windowVisibilityDidChange() {
         mainView.needsDisplay = true
+    }
+    
+    // MARK: - Shade Mode
+    
+    /// Toggle shade mode on/off
+    func setShadeMode(_ enabled: Bool) {
+        guard let window = window else { return }
+        
+        isShadeMode = enabled
+        
+        if enabled {
+            // Store current frame for restoration
+            normalModeFrame = window.frame
+            
+            // Calculate new shade mode frame (same origin, shorter height)
+            let shadeSize = SkinElements.MainShade.windowSize
+            let newFrame = NSRect(
+                x: window.frame.origin.x,
+                y: window.frame.origin.y + window.frame.height - shadeSize.height,
+                width: shadeSize.width,
+                height: shadeSize.height
+            )
+            
+            // Resize window
+            window.setFrame(newFrame, display: true, animate: true)
+            mainView.frame = NSRect(origin: .zero, size: shadeSize)
+        } else {
+            // Restore normal mode frame
+            let normalSize = Skin.mainWindowSize
+            let newFrame: NSRect
+            
+            if let storedFrame = normalModeFrame {
+                newFrame = storedFrame
+            } else {
+                // Calculate frame from current position
+                newFrame = NSRect(
+                    x: window.frame.origin.x,
+                    y: window.frame.origin.y + window.frame.height - normalSize.height,
+                    width: normalSize.width,
+                    height: normalSize.height
+                )
+            }
+            
+            // Resize window
+            window.setFrame(newFrame, display: true, animate: true)
+            mainView.frame = NSRect(origin: .zero, size: normalSize)
+            normalModeFrame = nil
+        }
+        
+        mainView.setShadeMode(enabled)
     }
 }
 

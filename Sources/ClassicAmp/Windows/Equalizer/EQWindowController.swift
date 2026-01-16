@@ -7,6 +7,12 @@ class EQWindowController: NSWindowController {
     
     private var eqView: EQView!
     
+    /// Whether the window is in shade mode
+    private(set) var isShadeMode = false
+    
+    /// Stored normal mode frame for restoration
+    private var normalModeFrame: NSRect?
+    
     // MARK: - Initialization
     
     convenience init() {
@@ -55,6 +61,55 @@ class EQWindowController: NSWindowController {
     
     func skinDidChange() {
         eqView.skinDidChange()
+    }
+    
+    // MARK: - Shade Mode
+    
+    /// Toggle shade mode on/off
+    func setShadeMode(_ enabled: Bool) {
+        guard let window = window else { return }
+        
+        isShadeMode = enabled
+        
+        if enabled {
+            // Store current frame for restoration
+            normalModeFrame = window.frame
+            
+            // Calculate new shade mode frame
+            let shadeSize = SkinElements.EQShade.windowSize
+            let newFrame = NSRect(
+                x: window.frame.origin.x,
+                y: window.frame.origin.y + window.frame.height - shadeSize.height,
+                width: shadeSize.width,
+                height: shadeSize.height
+            )
+            
+            // Resize window
+            window.setFrame(newFrame, display: true, animate: true)
+            eqView.frame = NSRect(origin: .zero, size: shadeSize)
+        } else {
+            // Restore normal mode frame
+            let normalSize = Skin.eqWindowSize
+            let newFrame: NSRect
+            
+            if let storedFrame = normalModeFrame {
+                newFrame = storedFrame
+            } else {
+                newFrame = NSRect(
+                    x: window.frame.origin.x,
+                    y: window.frame.origin.y + window.frame.height - normalSize.height,
+                    width: normalSize.width,
+                    height: normalSize.height
+                )
+            }
+            
+            // Resize window
+            window.setFrame(newFrame, display: true, animate: true)
+            eqView.frame = NSRect(origin: .zero, size: normalSize)
+            normalModeFrame = nil
+        }
+        
+        eqView.setShadeMode(enabled)
     }
     
     // MARK: - Private Properties

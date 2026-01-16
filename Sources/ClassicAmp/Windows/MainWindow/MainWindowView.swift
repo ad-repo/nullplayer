@@ -43,6 +43,9 @@ class MainWindowView: NSView {
         return SkinRenderer.current
     }
     
+    /// Shade mode state
+    private(set) var isShadeMode = false
+    
     // MARK: - Toggle States
     
     private var shuffleEnabled: Bool {
@@ -99,6 +102,29 @@ class MainWindowView: NSView {
         // Determine if window is active
         let isActive = window?.isKeyWindow ?? true
         
+        if isShadeMode {
+            // Draw shade mode (compact view)
+            let marqueeText = currentTrack?.displayTitle ?? "ClassicAmp"
+            renderer.drawMainWindowShade(
+                in: context,
+                bounds: bounds,
+                isActive: isActive,
+                currentTime: currentTime,
+                duration: duration,
+                trackTitle: marqueeText,
+                marqueeOffset: marqueeOffset,
+                pressedButton: pressedButton
+            )
+        } else {
+            // Draw normal mode
+            drawNormalMode(renderer: renderer, context: context, isActive: isActive)
+        }
+        
+        context.restoreGState()
+    }
+    
+    /// Draw the normal (non-shade) mode
+    private func drawNormalMode(renderer: SkinRenderer, context: CGContext, isActive: Bool) {
         // Draw main window background
         renderer.drawMainWindowBackground(in: context, bounds: bounds, isActive: isActive)
         
@@ -149,8 +175,6 @@ class MainWindowView: NSView {
         
         // Draw window controls (minimize, shade, close)
         renderer.drawWindowControls(in: context, bounds: bounds, pressedButton: pressedButton)
-        
-        context.restoreGState()
     }
     
     // MARK: - Public Methods
@@ -215,10 +239,16 @@ class MainWindowView: NSView {
         
         // Check for double-click on title bar to toggle shade mode
         if event.clickCount == 2 {
-            if regionManager.shouldToggleShade(at: point, windowType: .main, windowSize: bounds.size) {
+            if isShadeMode || regionManager.shouldToggleShade(at: point, windowType: .main, windowSize: bounds.size) {
                 toggleShadeMode()
                 return
             }
+        }
+        
+        if isShadeMode {
+            // Shade mode mouse handling
+            handleShadeMouseDown(at: point, event: event)
+            return
         }
         
         // Check if in title bar for dragging
@@ -232,6 +262,38 @@ class MainWindowView: NSView {
         if let action = regionManager.hitTest(point: point, in: .main, windowSize: bounds.size) {
             handleMouseDown(action: action, at: point)
         }
+    }
+    
+    /// Handle mouse down in shade mode
+    private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
+        let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        
+        // Check window control buttons
+        let closeRect = SkinElements.TitleBar.ShadePositions.closeButton
+        let minimizeRect = SkinElements.TitleBar.ShadePositions.minimizeButton
+        let unshadeRect = SkinElements.TitleBar.ShadePositions.unshadeButton
+        
+        if closeRect.contains(winampPoint) {
+            pressedButton = .close
+            needsDisplay = true
+            return
+        }
+        
+        if minimizeRect.contains(winampPoint) {
+            pressedButton = .minimize
+            needsDisplay = true
+            return
+        }
+        
+        if unshadeRect.contains(winampPoint) {
+            pressedButton = .unshade
+            needsDisplay = true
+            return
+        }
+        
+        // Otherwise, start dragging
+        isDragging = true
+        dragStartPoint = event.locationInWindow
     }
     
     private func handleMouseDown(action: PlayerAction, at point: NSPoint) {
@@ -362,11 +424,33 @@ class MainWindowView: NSView {
         
         // Check if mouse is still over the pressed button
         if let pressed = pressedButton {
-            let action = regionManager.hitTest(point: point, in: .main, windowSize: bounds.size)
-            
-            // If released on the same button, perform the action
-            if actionMatchesButton(action, pressed) {
-                performAction(for: pressed)
+            if isShadeMode {
+                // Shade mode button release handling
+                let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+                var shouldPerform = false
+                
+                switch pressed {
+                case .close:
+                    shouldPerform = SkinElements.TitleBar.ShadePositions.closeButton.contains(winampPoint)
+                case .minimize:
+                    shouldPerform = SkinElements.TitleBar.ShadePositions.minimizeButton.contains(winampPoint)
+                case .unshade:
+                    shouldPerform = SkinElements.TitleBar.ShadePositions.unshadeButton.contains(winampPoint)
+                default:
+                    break
+                }
+                
+                if shouldPerform {
+                    performAction(for: pressed)
+                }
+            } else {
+                // Normal mode button release handling
+                let action = regionManager.hitTest(point: point, in: .main, windowSize: bounds.size)
+                
+                // If released on the same button, perform the action
+                if actionMatchesButton(action, pressed) {
+                    performAction(for: pressed)
+                }
             }
             
             pressedButton = nil
@@ -438,7 +522,7 @@ class MainWindowView: NSView {
             window?.close()
         case .minimize:
             window?.miniaturize(nil)
-        case .shade:
+        case .shade, .unshade:
             toggleShadeMode()
         default:
             break
@@ -459,8 +543,14 @@ class MainWindowView: NSView {
     }
     
     private func toggleShadeMode() {
-        // TODO: Implement shade mode toggle
-        // This will resize the window to shade height and show compact view
+        isShadeMode.toggle()
+        controller?.setShadeMode(isShadeMode)
+    }
+    
+    /// Set shade mode externally (e.g., from controller)
+    func setShadeMode(_ enabled: Bool) {
+        isShadeMode = enabled
+        needsDisplay = true
     }
     
     // MARK: - Keyboard Events

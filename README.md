@@ -120,14 +120,14 @@ ClassicAmp supports classic Winamp 2.x skins (.wsz files). Key supported feature
 - [x] Skin-aware EQ and Playlist views
 - [x] Fallback rendering for missing skin assets
 
-### Phase 3: All Windows (In Progress)
+### Phase 3: All Windows ✅
 - [x] Complete main window with skin support
 - [x] Playlist editor with skin support
 - [x] Equalizer with skin support
-- [ ] Shade mode for all windows
-- [ ] Complete all button interactions
+- [x] Shade mode for all windows (main, EQ, playlist)
+- [x] Complete all button interactions
 
-### Phase 4: Features
+### Phase 4: Features (In Progress)
 - [ ] Media library
 - [ ] Window docking improvements
 - [ ] Visualization support
