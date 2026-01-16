@@ -41,10 +41,27 @@ class PlaylistWindowController: NSWindowController {
         window.minSize = Skin.playlistMinSize
         window.title = "Playlist"
         
-        // Position below main window
+        // Match main window's width and position below it (or below EQ if visible)
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
             let mainFrame = mainWindow.frame
-            window.setFrameOrigin(NSPoint(x: mainFrame.minX, y: mainFrame.minY - window.frame.height))
+            let scale = mainFrame.width / Skin.mainWindowSize.width
+            // Use same width as main window to match scaling
+            let playlistHeight = Skin.playlistMinSize.height * scale
+            
+            // Check if EQ window is visible and position below it
+            var positionY = mainFrame.minY - playlistHeight
+            if let eqWindow = WindowManager.shared.equalizerWindowController?.window,
+               eqWindow.isVisible {
+                positionY = eqWindow.frame.minY - playlistHeight
+            }
+            
+            let newFrame = NSRect(
+                x: mainFrame.minX,
+                y: positionY,
+                width: mainFrame.width,
+                height: playlistHeight
+            )
+            window.setFrame(newFrame, display: true)
         } else {
             window.center()
         }

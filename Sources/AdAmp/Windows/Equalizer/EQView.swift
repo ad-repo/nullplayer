@@ -92,36 +92,87 @@ class EQView: NSView {
         }
     }
     
+    // MARK: - Scaling Support
+    
+    /// Calculate scale factor based on current bounds vs original size
+    private var scaleFactor: CGFloat {
+        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.eqWindowSize
+        let scaleX = bounds.width / originalSize.width
+        let scaleY = bounds.height / originalSize.height
+        return min(scaleX, scaleY)
+    }
+    
+    /// Convert a point from view coordinates to original (unscaled) coordinates
+    private func convertToOriginalCoordinates(_ point: NSPoint) -> NSPoint {
+        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.eqWindowSize
+        let scale = scaleFactor
+        
+        if scale == 1.0 {
+            return point
+        }
+        
+        let scaledWidth = originalSize.width * scale
+        let scaledHeight = originalSize.height * scale
+        let offsetX = (bounds.width - scaledWidth) / 2
+        let offsetY = (bounds.height - scaledHeight) / 2
+        
+        let x = (point.x - offsetX) / scale
+        let y = (point.y - offsetY) / scale
+        
+        return NSPoint(x: x, y: y)
+    }
+    
+    /// Get the original window size for hit testing
+    private var originalWindowSize: NSSize {
+        return isShadeMode ? SkinElements.EQShade.windowSize : Skin.eqWindowSize
+    }
+    
     // MARK: - Drawing
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.eqWindowSize
+        let scale = scaleFactor
         
         // Flip coordinate system to match Winamp's top-down coordinates
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
         
+        // Apply scaling for resized window
+        if scale != 1.0 {
+            let scaledWidth = originalSize.width * scale
+            let scaledHeight = originalSize.height * scale
+            let offsetX = (bounds.width - scaledWidth) / 2
+            let offsetY = (bounds.height - scaledHeight) / 2
+            context.translateBy(x: offsetX, y: offsetY)
+            context.scaleBy(x: scale, y: scale)
+        }
+        
         let skin = WindowManager.shared.currentSkin
         let renderer = SkinRenderer(skin: skin ?? SkinLoader.shared.loadDefault())
         
         let isActive = window?.isKeyWindow ?? true
         
+        // Use original bounds for drawing (scaling is applied via transform)
+        let drawBounds = NSRect(origin: .zero, size: originalSize)
+        
         if isShadeMode {
             // Draw shade mode
-            renderer.drawEqualizerShade(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+            renderer.drawEqualizerShade(in: context, bounds: drawBounds, isActive: isActive, pressedButton: pressedButton)
         } else {
             // Draw normal mode
-            drawNormalMode(renderer: renderer, context: context, isActive: isActive)
+            drawNormalMode(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
         }
         
         context.restoreGState()
     }
     
     /// Draw normal (non-shade) mode
-    private func drawNormalMode(renderer: SkinRenderer, context: CGContext, isActive: Bool) {
+    private func drawNormalMode(renderer: SkinRenderer, context: CGContext, isActive: Bool, drawBounds: NSRect) {
         // Draw EQ background
-        renderer.drawEqualizerBackground(in: context, bounds: bounds, isActive: isActive)
+        renderer.drawEqualizerBackground(in: context, bounds: drawBounds, isActive: isActive)
         
         // Draw ON/OFF button
         let onState: ButtonState = isEnabled ? .active : .normal
@@ -214,8 +265,9 @@ class EQView: NSView {
     // MARK: - Mouse Events
     
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = convertToOriginalCoordinates(viewPoint)
+        let winampPoint = NSPoint(x: point.x, y: originalWindowSize.height - point.y)
         
         // Check for double-click on title bar to toggle shade mode
         if event.clickCount == 2 {
@@ -320,15 +372,17 @@ class EQView: NSView {
         }
         
         if draggingSlider != nil {
-            let point = convert(event.locationInWindow, from: nil)
-            let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+            let viewPoint = convert(event.locationInWindow, from: nil)
+            let point = convertToOriginalCoordinates(viewPoint)
+            let winampPoint = NSPoint(x: point.x, y: originalWindowSize.height - point.y)
             updateSlider(at: winampPoint)
         }
     }
     
     override func mouseUp(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = convertToOriginalCoordinates(viewPoint)
+        let winampPoint = NSPoint(x: point.x, y: originalWindowSize.height - point.y)
         
         if isShadeMode {
             // Handle shade mode button release

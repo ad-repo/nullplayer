@@ -20,10 +20,10 @@ class WindowManager {
     private(set) var mainWindowController: MainWindowController?
     
     /// Playlist window controller
-    private var playlistWindowController: PlaylistWindowController?
+    private(set) var playlistWindowController: PlaylistWindowController?
     
     /// Equalizer window controller
-    private var equalizerWindowController: EQWindowController?
+    private(set) var equalizerWindowController: EQWindowController?
     
     /// Media library window controller
     private var mediaLibraryWindowController: MediaLibraryWindowController?

@@ -43,10 +43,18 @@ class EQWindowController: NSWindowController {
         // Set minimum size for EQ window
         window.minSize = Skin.eqWindowSize
         
-        // Position below main window
+        // Match main window's width and position below it
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
             let mainFrame = mainWindow.frame
-            window.setFrameOrigin(NSPoint(x: mainFrame.minX, y: mainFrame.minY - Skin.eqWindowSize.height))
+            // Use same width as main window to match scaling
+            let eqHeight = Skin.eqWindowSize.height * (mainFrame.width / Skin.mainWindowSize.width)
+            let newFrame = NSRect(
+                x: mainFrame.minX,
+                y: mainFrame.minY - eqHeight,
+                width: mainFrame.width,
+                height: eqHeight
+            )
+            window.setFrame(newFrame, display: true)
         } else {
             window.center()
         }
