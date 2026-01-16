@@ -1,6 +1,6 @@
 import AppKit
 
-/// Main application delegate for ClassicAmp
+/// Main application delegate for AdAmp
 /// Manages application lifecycle and window coordination
 class AppDelegate: NSObject, NSApplicationDelegate {
     
@@ -14,7 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager.audioEngine.delegate = self
         
         // Load skin from environment variable if set (for testing)
-        if let skinPath = ProcessInfo.processInfo.environment["CLASSICAMP_SKIN"] {
+        if let skinPath = ProcessInfo.processInfo.environment["ADAMP_SKIN"] {
             let skinURL = URL(fileURLWithPath: skinPath)
             windowManager.loadSkin(from: skinURL)
         }
@@ -52,11 +52,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
         
-        appMenu.addItem(withTitle: "About ClassicAmp", action: #selector(showAbout), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About AdAmp", action: #selector(showAbout), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Preferences...", action: #selector(showPreferences), keyEquivalent: ",")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Quit ClassicAmp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit AdAmp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         
         // File menu
         let fileMenuItem = NSMenuItem()
@@ -103,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc private func showAbout() {
         let alert = NSAlert()
-        alert.messageText = "ClassicAmp"
+        alert.messageText = "AdAmp"
         alert.informativeText = "A classic Winamp clone for macOS\nVersion 1.0"
         alert.alertStyle = .informational
         alert.runModal()

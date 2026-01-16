@@ -4,12 +4,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClassicAmp",
+    name: "AdAmp",
     platforms: [
         .macOS(.v12)
     ],
     products: [
-        .executable(name: "ClassicAmp", targets: ["ClassicAmp"])
+        .executable(name: "AdAmp", targets: ["AdAmp"])
     ],
     dependencies: [
         // ZIP extraction for .wsz skin files
@@ -19,20 +19,20 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "ClassicAmp",
+            name: "AdAmp",
             dependencies: [
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
             ],
-            path: "Sources/ClassicAmp",
+            path: "Sources/AdAmp",
             resources: [
                 .copy("Resources")
             ]
         ),
         .testTarget(
-            name: "ClassicAmpTests",
-            dependencies: ["ClassicAmp"],
-            path: "Tests/ClassicAmpTests"
+            name: "AdAmpTests",
+            dependencies: ["AdAmp"],
+            path: "Tests/AdAmpTests"
         )
     ]
 )

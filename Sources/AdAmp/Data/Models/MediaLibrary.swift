@@ -187,7 +187,7 @@ class MediaLibrary {
     // MARK: - Properties
     
     /// Serial queue to guard library state
-    private let dataQueue = DispatchQueue(label: "ClassicAmp.MediaLibrary.data")
+    private let dataQueue = DispatchQueue(label: "AdAmp.MediaLibrary.data")
     
     /// All tracks in the library (guarded by dataQueue)
     private var tracks: [LibraryTrack] = []
@@ -216,7 +216,7 @@ class MediaLibrary {
     private init() {
         // Create library directory
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let libraryDir = appSupport.appendingPathComponent("ClassicAmp", isDirectory: true)
+        let libraryDir = appSupport.appendingPathComponent("AdAmp", isDirectory: true)
         
         try? FileManager.default.createDirectory(at: libraryDir, withIntermediateDirectories: true)
         

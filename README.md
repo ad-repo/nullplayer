@@ -1,4 +1,4 @@
-# ClassicAmp
+# AdAmp
 
 A faithful recreation of the classic Winamp 2.x music player for macOS.
 
@@ -32,14 +32,14 @@ A faithful recreation of the classic Winamp 2.x music player for macOS.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ClassicAmp.git
-cd ClassicAmp
+git clone https://github.com/yourusername/AdAmp.git
+cd AdAmp
 
 # Build with Swift Package Manager
 swift build
 
 # Or run directly
-swift run ClassicAmp
+swift run AdAmp
 ```
 
 ### Xcode
@@ -73,13 +73,13 @@ open Package.swift
 ### Loading Skins
 
 1. Download a classic Winamp skin (.wsz file) from [Winamp Skin Museum](https://skins.webamp.org/)
-2. In ClassicAmp, go to File → Load Skin...
+2. In AdAmp, go to File → Load Skin...
 3. Select the .wsz file
 
 ## Architecture
 
 ```
-ClassicAmp/
+AdAmp/
 ├── App/                    # Application lifecycle
 ├── Audio/                  # AVAudioEngine-based playback + spectrum analysis
 ├── Skin/                   # WSZ skin loading and rendering
@@ -95,7 +95,7 @@ ClassicAmp/
 
 ## Skin Compatibility
 
-ClassicAmp supports classic Winamp 2.x skins (.wsz files). Key supported features:
+AdAmp supports classic Winamp 2.x skins (.wsz files). Key supported features:
 
 - main.bmp - Main window graphics
 - cbuttons.bmp - Transport button sprites

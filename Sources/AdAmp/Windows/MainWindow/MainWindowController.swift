@@ -40,7 +40,7 @@ class MainWindowController: NSWindowController {
         window.isOpaque = false
         window.hasShadow = true
         window.level = .normal
-        window.title = "ClassicAmp"
+        window.title = "AdAmp"
         
         // Set minimum size for main window
         window.minSize = Skin.mainWindowSize

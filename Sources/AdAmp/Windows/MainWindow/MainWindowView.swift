@@ -159,7 +159,7 @@ class MainWindowView: NSView {
         
         if isShadeMode {
             // Draw shade mode (compact view)
-            let marqueeText = currentTrack?.displayTitle ?? "ClassicAmp"
+            let marqueeText = currentTrack?.displayTitle ?? "AdAmp"
             renderer.drawMainWindowShade(
                 in: context,
                 bounds: drawBounds,
@@ -189,7 +189,7 @@ class MainWindowView: NSView {
         renderer.drawTimeDisplay(minutes: minutes, seconds: seconds, in: context)
         
         // Draw song title marquee
-        let marqueeText = currentTrack?.displayTitle ?? "ClassicAmp"
+        let marqueeText = currentTrack?.displayTitle ?? "AdAmp"
         renderer.drawMarquee(text: marqueeText, offset: marqueeOffset, in: context)
         
         // Draw playback status indicator
@@ -261,7 +261,7 @@ class MainWindowView: NSView {
         marqueeTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
-            let title = self.currentTrack?.displayTitle ?? "ClassicAmp"
+            let title = self.currentTrack?.displayTitle ?? "AdAmp"
             let charWidth = SkinElements.TextFont.charWidth
             let textWidth = CGFloat(title.count) * charWidth
             let marqueeWidth = SkinElements.TextFont.Positions.marqueeArea.width
