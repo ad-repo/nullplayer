@@ -26,6 +26,7 @@ enum ButtonType: CaseIterable {
     case close
     case minimize
     case shade
+    case unshade  // Used in shade mode to return to normal
     
     // Toggle buttons
     case shuffle
@@ -78,7 +79,7 @@ struct SkinElements {
     /// Title bar height
     static let titleBarHeight: CGFloat = 14
     
-    // MARK: - Title Bar (titlebar.bmp - 275x14 x 2 rows)
+    // MARK: - Title Bar (titlebar.bmp - 275x14 x 2 rows + shade mode)
     
     struct TitleBar {
         /// Active state title bar
@@ -96,21 +97,93 @@ struct SkinElements {
             static let minimizeNormal = NSRect(x: 9, y: 0, width: 9, height: 9)
             static let minimizePressed = NSRect(x: 9, y: 9, width: 9, height: 9)
             
-            // Shade button
+            // Shade button (normal mode - toggles to shade)
             static let shadeNormal = NSRect(x: 0, y: 18, width: 9, height: 9)
             static let shadePressed = NSRect(x: 9, y: 18, width: 9, height: 9)
+            
+            // Unshade button (shade mode - toggles back to normal)
+            static let unshadeNormal = NSRect(x: 0, y: 27, width: 9, height: 9)
+            static let unshadePressed = NSRect(x: 9, y: 27, width: 9, height: 9)
             
             // Close button
             static let closeNormal = NSRect(x: 18, y: 0, width: 9, height: 9)
             static let closePressed = NSRect(x: 18, y: 9, width: 9, height: 9)
         }
         
-        // Positions on main window
+        // Positions on main window (normal mode)
         struct Positions {
             static let menuButton = NSRect(x: 6, y: 3, width: 9, height: 9)
             static let minimizeButton = NSRect(x: 244, y: 3, width: 9, height: 9)
             static let shadeButton = NSRect(x: 254, y: 3, width: 9, height: 9)
             static let closeButton = NSRect(x: 264, y: 3, width: 9, height: 9)
+        }
+        
+        // Positions on main window (shade mode)
+        struct ShadePositions {
+            static let menuButton = NSRect(x: 6, y: 3, width: 9, height: 9)
+            static let minimizeButton = NSRect(x: 244, y: 3, width: 9, height: 9)
+            static let unshadeButton = NSRect(x: 254, y: 3, width: 9, height: 9)
+            static let closeButton = NSRect(x: 264, y: 3, width: 9, height: 9)
+        }
+    }
+    
+    // MARK: - Main Window Shade Mode (titlebar.bmp rows 29-42)
+    
+    struct MainShade {
+        /// Shade mode window size: 275x14 pixels
+        static let windowSize = NSSize(width: 275, height: 14)
+        
+        /// Shade mode background (active)
+        static let backgroundActive = NSRect(x: 27, y: 29, width: 275, height: 14)
+        /// Shade mode background (inactive)
+        static let backgroundInactive = NSRect(x: 27, y: 42, width: 275, height: 14)
+        
+        /// Position bar in shade mode (from titlebar.bmp)
+        /// Small position indicator showing playback progress
+        static let positionBarBackground = NSRect(x: 0, y: 36, width: 17, height: 7)
+        static let positionBarFill = NSRect(x: 0, y: 36, width: 17, height: 7)
+        
+        /// Shade mode position bar position on window
+        struct Positions {
+            static let positionBar = NSRect(x: 226, y: 4, width: 17, height: 7)
+        }
+        
+        /// Shade mode text display area
+        static let textArea = NSRect(x: 79, y: 4, width: 145, height: 6)
+    }
+    
+    // MARK: - Equalizer Shade Mode
+    
+    struct EQShade {
+        /// EQ shade mode window size: 275x14 pixels
+        static let windowSize = NSSize(width: 275, height: 14)
+        
+        /// EQ shade mode background (from eqmain.bmp)
+        static let backgroundActive = NSRect(x: 0, y: 164, width: 275, height: 14)
+        static let backgroundInactive = NSRect(x: 0, y: 178, width: 275, height: 14)
+        
+        /// Close button position in shade mode
+        struct Positions {
+            static let closeButton = NSRect(x: 264, y: 3, width: 9, height: 9)
+            static let shadeButton = NSRect(x: 254, y: 3, width: 9, height: 9)
+        }
+    }
+    
+    // MARK: - Playlist Shade Mode
+    
+    struct PlaylistShade {
+        /// Playlist shade mode height: 14 pixels (width is variable)
+        static let height: CGFloat = 14
+        
+        /// Playlist shade mode background tiles (from pledit.bmp)
+        static let leftCorner = NSRect(x: 72, y: 42, width: 25, height: 14)
+        static let rightCorner = NSRect(x: 99, y: 42, width: 75, height: 14)
+        static let tile = NSRect(x: 72, y: 57, width: 25, height: 14)
+        
+        /// Close button position in shade mode
+        struct Positions {
+            static let closeButton = NSRect(x: -11, y: 3, width: 9, height: 9)  // Relative to right edge
+            static let shadeButton = NSRect(x: -21, y: 3, width: 9, height: 9)  // Relative to right edge
         }
     }
     
@@ -559,6 +632,8 @@ extension SkinElements {
             return state == .pressed ? TitleBar.Buttons.minimizePressed : TitleBar.Buttons.minimizeNormal
         case .shade:
             return state == .pressed ? TitleBar.Buttons.shadePressed : TitleBar.Buttons.shadeNormal
+        case .unshade:
+            return state == .pressed ? TitleBar.Buttons.unshadePressed : TitleBar.Buttons.unshadeNormal
         case .shuffle:
             switch state {
             case .normal: return ShuffleRepeat.shuffleOffNormal
@@ -598,7 +673,7 @@ extension SkinElements {
         }
     }
     
-    /// Get hit rect for a button on the main window
+    /// Get hit rect for a button on the main window (normal mode)
     static func hitRect(for button: ButtonType) -> NSRect {
         switch button {
         case .previous: return Transport.Positions.previous
@@ -610,10 +685,21 @@ extension SkinElements {
         case .close: return TitleBar.Positions.closeButton
         case .minimize: return TitleBar.Positions.minimizeButton
         case .shade: return TitleBar.Positions.shadeButton
+        case .unshade: return TitleBar.ShadePositions.unshadeButton
         case .shuffle: return ShuffleRepeat.Positions.shuffle
         case .repeatTrack: return ShuffleRepeat.Positions.repeatBtn
         case .eqToggle: return ShuffleRepeat.Positions.eqToggle
         case .playlistToggle: return ShuffleRepeat.Positions.plToggle
+        default: return .zero
+        }
+    }
+    
+    /// Get hit rect for a button on the main window in shade mode
+    static func shadeHitRect(for button: ButtonType) -> NSRect {
+        switch button {
+        case .close: return TitleBar.ShadePositions.closeButton
+        case .minimize: return TitleBar.ShadePositions.minimizeButton
+        case .unshade: return TitleBar.ShadePositions.unshadeButton
         default: return .zero
         }
     }
