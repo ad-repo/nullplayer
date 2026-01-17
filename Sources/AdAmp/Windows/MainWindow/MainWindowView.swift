@@ -16,6 +16,9 @@ class MainWindowView: NSView {
     /// Current track info
     private var currentTrack: Track?
     
+    /// Current video title (when video is playing)
+    private var currentVideoTitle: String?
+    
     /// Spectrum analyzer levels
     private var spectrumLevels: [Float] = []
     
@@ -210,12 +213,22 @@ class MainWindowView: NSView {
         let seconds = Int(absTime) % 60
         renderer.drawTimeDisplay(minutes: minutes, seconds: seconds, isNegative: isNegative, in: context)
         
-        // Draw song title marquee
-        let marqueeText = currentTrack?.displayTitle ?? "AdAmp"
+        // Draw song title marquee - show video title if video is playing
+        let marqueeText: String
+        if WindowManager.shared.isVideoActivePlayback, let videoTitle = currentVideoTitle {
+            marqueeText = videoTitle
+        } else {
+            marqueeText = currentTrack?.displayTitle ?? "AdAmp"
+        }
         renderer.drawMarquee(text: marqueeText, offset: marqueeOffset, in: context)
         
-        // Draw playback status indicator
-        let playbackState = WindowManager.shared.audioEngine.state
+        // Draw playback status indicator - show video state if video is active
+        let playbackState: PlaybackState
+        if WindowManager.shared.isVideoActivePlayback {
+            playbackState = WindowManager.shared.videoPlaybackState
+        } else {
+            playbackState = WindowManager.shared.audioEngine.state
+        }
         renderer.drawPlaybackStatus(playbackState, in: context)
         
         // Draw mono/stereo indicator
@@ -280,7 +293,21 @@ class MainWindowView: NSView {
     
     func updateTrackInfo(_ track: Track?) {
         self.currentTrack = track
+        self.currentVideoTitle = nil  // Clear video title when audio track changes
         marqueeOffset = 0  // Reset scroll position
+        needsDisplay = true
+    }
+    
+    func updateVideoTrackInfo(title: String) {
+        self.currentVideoTitle = title
+        marqueeOffset = 0  // Reset scroll position
+        needsDisplay = true
+    }
+    
+    func clearVideoTrackInfo() {
+        self.currentVideoTitle = nil
+        self.currentTime = 0
+        self.duration = 0
         needsDisplay = true
     }
     
@@ -525,23 +552,44 @@ class MainWindowView: NSView {
         if let slider = draggingSlider {
             // Complete slider interaction
             if slider == .position, let finalValue = dragPositionValue {
-                // Get duration directly from audio engine (more reliable than cached value)
-                let audioDuration = WindowManager.shared.audioEngine.duration
-                guard audioDuration > 0 else {
-                    dragPositionValue = nil
-                    draggingSlider = nil
-                    needsDisplay = true
-                    return
+                let isVideoActive = WindowManager.shared.isVideoActivePlayback
+                
+                if isVideoActive {
+                    // Video seeking
+                    let videoDuration = WindowManager.shared.videoDuration
+                    guard videoDuration > 0 else {
+                        dragPositionValue = nil
+                        draggingSlider = nil
+                        needsDisplay = true
+                        return
+                    }
+                    
+                    let seekTime = videoDuration * Double(finalValue)
+                    WindowManager.shared.seekVideo(to: seekTime)
+                    
+                    // Update display immediately
+                    currentTime = seekTime
+                    duration = videoDuration
+                    lastSeekTime = Date()
+                } else {
+                    // Audio seeking - get duration directly from audio engine (more reliable than cached value)
+                    let audioDuration = WindowManager.shared.audioEngine.duration
+                    guard audioDuration > 0 else {
+                        dragPositionValue = nil
+                        draggingSlider = nil
+                        needsDisplay = true
+                        return
+                    }
+                    
+                    // Seek to the final position
+                    let seekTime = audioDuration * Double(finalValue)
+                    WindowManager.shared.audioEngine.seek(to: seekTime)
+                    
+                    // Update currentTime immediately to prevent visual snap-back
+                    currentTime = seekTime
+                    duration = audioDuration
+                    lastSeekTime = Date()
                 }
-                
-                // Seek to the final position
-                let seekTime = audioDuration * Double(finalValue)
-                WindowManager.shared.audioEngine.seek(to: seekTime)
-                
-                // Update currentTime immediately to prevent visual snap-back
-                currentTime = seekTime
-                duration = audioDuration
-                lastSeekTime = Date()
                 
                 // Clear drag position
                 dragPositionValue = nil
@@ -633,18 +681,39 @@ class MainWindowView: NSView {
     
     private func performAction(for button: ButtonType) {
         let engine = WindowManager.shared.audioEngine
+        let isVideoActive = WindowManager.shared.isVideoActivePlayback
         
         switch button {
         case .previous:
-            engine.previous()
+            if isVideoActive {
+                WindowManager.shared.skipVideoBackward(10)
+            } else {
+                engine.previous()
+            }
         case .play:
-            engine.play()
+            if isVideoActive {
+                WindowManager.shared.toggleVideoPlayPause()
+            } else {
+                engine.play()
+            }
         case .pause:
-            engine.pause()
+            if isVideoActive {
+                WindowManager.shared.toggleVideoPlayPause()
+            } else {
+                engine.pause()
+            }
         case .stop:
-            engine.stop()
+            if isVideoActive {
+                WindowManager.shared.stopVideo()
+            } else {
+                engine.stop()
+            }
         case .next:
-            engine.next()
+            if isVideoActive {
+                WindowManager.shared.skipVideoForward(10)
+            } else {
+                engine.next()
+            }
         case .eject:
             openFile()
         case .shuffle:
@@ -698,30 +767,61 @@ class MainWindowView: NSView {
     
     override func keyDown(with event: NSEvent) {
         let engine = WindowManager.shared.audioEngine
+        let isVideoActive = WindowManager.shared.isVideoActivePlayback
         
         switch event.keyCode {
         case 49: // Space - Play/Pause
-            if engine.state == .playing {
+            if isVideoActive {
+                WindowManager.shared.toggleVideoPlayPause()
+            } else if engine.state == .playing {
                 engine.pause()
             } else {
                 engine.play()
             }
         case 7: // X - Play
-            engine.play()
+            if isVideoActive {
+                WindowManager.shared.toggleVideoPlayPause()
+            } else {
+                engine.play()
+            }
         case 9: // V - Stop
-            engine.stop()
+            if isVideoActive {
+                WindowManager.shared.stopVideo()
+            } else {
+                engine.stop()
+            }
         case 8: // C - Pause
-            engine.pause()
-        case 6: // Z - Previous
-            engine.previous()
-        case 11: // B - Next
-            engine.next()
+            if isVideoActive {
+                WindowManager.shared.toggleVideoPlayPause()
+            } else {
+                engine.pause()
+            }
+        case 6: // Z - Previous / Skip back
+            if isVideoActive {
+                WindowManager.shared.skipVideoBackward(10)
+            } else {
+                engine.previous()
+            }
+        case 11: // B - Next / Skip forward
+            if isVideoActive {
+                WindowManager.shared.skipVideoForward(10)
+            } else {
+                engine.next()
+            }
         case 123: // Left Arrow - Seek back 5s
-            let newTime = max(0, currentTime - 5)
-            engine.seek(to: newTime)
+            if isVideoActive {
+                WindowManager.shared.skipVideoBackward(5)
+            } else {
+                let newTime = max(0, currentTime - 5)
+                engine.seek(to: newTime)
+            }
         case 124: // Right Arrow - Seek forward 5s
-            let newTime = min(duration, currentTime + 5)
-            engine.seek(to: newTime)
+            if isVideoActive {
+                WindowManager.shared.skipVideoForward(5)
+            } else {
+                let newTime = min(duration, currentTime + 5)
+                engine.seek(to: newTime)
+            }
         case 126: // Up Arrow - Volume up
             engine.volume = min(1.0, engine.volume + 0.05)
         case 125: // Down Arrow - Volume down

@@ -78,6 +78,14 @@ class MainWindowController: NSWindowController {
         mainView.updateTrackInfo(track)
     }
     
+    func updateVideoTrackInfo(title: String) {
+        mainView.updateVideoTrackInfo(title: title)
+    }
+    
+    func clearVideoTrackInfo() {
+        mainView.clearVideoTrackInfo()
+    }
+    
     func updateSpectrum(_ levels: [Float]) {
         mainView.updateSpectrum(levels)
     }

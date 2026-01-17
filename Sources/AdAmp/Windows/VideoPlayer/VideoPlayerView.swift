@@ -26,8 +26,12 @@ class VideoPlayerView: NSView {
     private var controlsVisible: Bool = true
     
     /// Current playback time and duration
-    private var currentTime: TimeInterval = 0
-    private var totalDuration: TimeInterval = 0
+    private(set) var currentTime: TimeInterval = 0
+    private(set) var totalDuration: TimeInterval = 0
+    
+    /// Public accessors for playback time
+    var currentPlaybackTime: TimeInterval { currentTime }
+    var totalPlaybackDuration: TimeInterval { totalDuration }
     
     /// Callback when close button is clicked
     var onClose: (() -> Void)?
@@ -176,6 +180,8 @@ class VideoPlayerView: NSView {
         titleBarView.alphaValue = 1.0
         controlBarView.alphaValue = 1.0
         resetControlsHideTimer()
+        // Ensure we're first responder to capture keyboard events
+        window?.makeFirstResponder(self)
     }
     
     private func hideControls() {
@@ -194,6 +200,12 @@ class VideoPlayerView: NSView {
         controlsHideTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
             self?.hideControls()
         }
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        showControls()
+        // Make this view the first responder to capture keyboard events
+        window?.makeFirstResponder(self)
     }
     
     override func mouseMoved(with event: NSEvent) {
@@ -340,6 +352,39 @@ class VideoPlayerView: NSView {
     
     override var acceptsFirstResponder: Bool { true }
     
+    /// Handle Escape key via standard macOS cancel operation
+    @objc override func cancelOperation(_ sender: Any?) {
+        if let window = window, window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+        } else {
+            stop()
+            window?.close()
+        }
+    }
+    
+    /// Intercept key events before they reach subviews
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 53: // Escape - exit fullscreen or close
+            cancelOperation(nil)
+            return true
+        case 49: // Space - toggle play/pause
+            togglePlayPause()
+            return true
+        case 3: // F key - toggle fullscreen
+            window?.toggleFullScreen(nil)
+            return true
+        case 123: // Left arrow - skip back
+            skipBackward(10)
+            return true
+        case 124: // Right arrow - skip forward
+            skipForward(10)
+            return true
+        default:
+            return super.performKeyEquivalent(with: event)
+        }
+    }
+    
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 49: // Space - toggle play/pause
@@ -349,12 +394,7 @@ class VideoPlayerView: NSView {
         case 124: // Right arrow - skip forward
             skipForward(10)
         case 53: // Escape - exit fullscreen or close
-            if let window = window, (window.styleMask.contains(.fullScreen)) {
-                window.toggleFullScreen(nil)
-            } else {
-                stop()
-                window?.close()
-            }
+            cancelOperation(nil)
         case 3: // F key - toggle fullscreen
             window?.toggleFullScreen(nil)
         default:
@@ -419,6 +459,9 @@ extension VideoPlayerView: KSPlayerLayerDelegate {
             self?.currentTime = currentTime
             self?.totalDuration = totalTime
             self?.controlBarView.updateTime(current: currentTime, total: totalTime)
+            
+            // Report to WindowManager so main window can display video time
+            WindowManager.shared.videoDidUpdateTime(current: currentTime, duration: totalTime)
         }
     }
     

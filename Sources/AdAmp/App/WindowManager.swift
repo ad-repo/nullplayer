@@ -67,6 +67,11 @@ class WindowManager {
     /// Video player window controller
     private var videoPlayerWindowController: VideoPlayerWindowController?
     
+    /// Video playback time tracking
+    private(set) var videoCurrentTime: TimeInterval = 0
+    private(set) var videoDuration: TimeInterval = 0
+    private(set) var videoTitle: String?
+    
     /// Snap threshold in pixels
     private let snapThreshold: CGFloat = 10
     
@@ -307,17 +312,54 @@ class WindowManager {
         videoPlayerWindowController?.skipBackward(seconds)
     }
     
+    /// Seek video to specific time
+    func seekVideo(to time: TimeInterval) {
+        videoPlayerWindowController?.seek(to: time)
+    }
+    
     /// Called when video playback starts - pause audio
     func videoPlaybackDidStart() {
         if audioEngine.state == .playing {
             audioEngine.pause()
+        }
+        // Update main window with video title
+        if let title = videoPlayerWindowController?.currentTitle {
+            videoTitle = title
+            mainWindowController?.updateVideoTrackInfo(title: title)
         }
         mainWindowController?.updatePlaybackState()
     }
     
     /// Called when video playback stops
     func videoPlaybackDidStop() {
+        videoCurrentTime = 0
+        videoDuration = 0
+        videoTitle = nil
+        // If audio was paused (by video starting), stop it so main window shows stopped state
+        if audioEngine.state == .paused {
+            audioEngine.stop()
+        }
+        mainWindowController?.clearVideoTrackInfo()
+        mainWindowController?.updateTime(current: 0, duration: 0)
         mainWindowController?.updatePlaybackState()
+    }
+    
+    /// Called by video player to update time (for main window display)
+    func videoDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
+        videoCurrentTime = current
+        videoDuration = duration
+        mainWindowController?.updateTime(current: current, duration: duration)
+    }
+    
+    /// Whether video is the active playback source (video is playing)
+    var isVideoActivePlayback: Bool {
+        return isVideoPlaying
+    }
+    
+    /// Get current video playback state for main window display
+    var videoPlaybackState: PlaybackState {
+        guard let controller = videoPlayerWindowController else { return .stopped }
+        return controller.isPlaying ? .playing : .paused
     }
 
     func notifyMainWindowVisibilityChanged() {

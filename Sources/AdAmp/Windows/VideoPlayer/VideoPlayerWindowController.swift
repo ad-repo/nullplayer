@@ -8,11 +8,27 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     private var videoPlayerView: VideoPlayerView!
     
+    /// Local event monitor for keyboard shortcuts
+    private var localEventMonitor: Any?
+    
     /// Whether video is currently playing
     private(set) var isPlaying: Bool = false
     
+    /// Flag to prevent recursive stop/close calls
+    private var isClosing: Bool = false
+    
     /// Current video title
     private(set) var currentTitle: String?
+    
+    /// Current playback time
+    var currentTime: TimeInterval {
+        return videoPlayerView.currentPlaybackTime
+    }
+    
+    /// Video duration
+    var duration: TimeInterval {
+        return videoPlayerView.totalPlaybackDuration
+    }
     
     // MARK: - Static Configuration
     
@@ -62,6 +78,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         window.isOpaque = true
         window.hasShadow = true
         
+        // Enable fullscreen support for borderless window
+        window.collectionBehavior = [.fullScreenPrimary, .managed]
+        
         super.init(window: window)
         
         setupVideoView()
@@ -91,6 +110,59 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Track playback state changes
         videoPlayerView.onPlaybackStateChanged = { [weak self] playing in
             self?.updatePlayingState(playing)
+        }
+        
+        // Set up local event monitor for keyboard shortcuts (especially Escape in fullscreen)
+        setupKeyboardMonitor()
+    }
+    
+    private func setupKeyboardMonitor() {
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self,
+                  let window = self.window else {
+                return event
+            }
+            
+            // Check if our window is the main window or is in fullscreen
+            let isOurWindow = window.isKeyWindow || window.isMainWindow || window.styleMask.contains(.fullScreen)
+            guard isOurWindow else {
+                return event
+            }
+            
+            NSLog("VideoPlayer keyDown: keyCode=%d, isFullScreen=%d", event.keyCode, window.styleMask.contains(.fullScreen) ? 1 : 0)
+            
+            switch event.keyCode {
+            case 53: // Escape
+                NSLog("VideoPlayer: Escape pressed, fullscreen=%d", window.styleMask.contains(.fullScreen) ? 1 : 0)
+                if window.styleMask.contains(.fullScreen) {
+                    window.toggleFullScreen(nil)
+                    return nil // Consume the event
+                } else {
+                    self.close()
+                    return nil
+                }
+            case 49: // Space - toggle play/pause
+                self.togglePlayPause()
+                return nil
+            case 3: // F key - toggle fullscreen
+                window.toggleFullScreen(nil)
+                return nil
+            case 123: // Left arrow - skip back
+                self.skipBackward(10)
+                return nil
+            case 124: // Right arrow - skip forward
+                self.skipForward(10)
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+    
+    private func removeKeyboardMonitor() {
+        if let monitor = localEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            localEventMonitor = nil
         }
     }
     
@@ -144,10 +216,14 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Stop playback
     func stop() {
+        guard !isClosing else { return }
+        isClosing = true
+        
         videoPlayerView.stop()
         isPlaying = false
         currentTitle = nil
         WindowManager.shared.videoPlaybackDidStop()
+        close()
     }
     
     /// Toggle play/pause
@@ -165,6 +241,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         videoPlayerView.skipBackward(seconds)
     }
     
+    /// Seek to specific time
+    func seek(to time: TimeInterval) {
+        videoPlayerView.seek(to: time)
+    }
+    
     /// Update playing state (called from VideoPlayerView)
     func updatePlayingState(_ playing: Bool) {
         isPlaying = playing
@@ -173,7 +254,15 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - NSWindowDelegate
     
     func windowWillClose(_ notification: Notification) {
-        stop()
+        // Only do cleanup if not already handled by stop()
+        if !isClosing {
+            videoPlayerView.stop()
+            isPlaying = false
+            currentTitle = nil
+            WindowManager.shared.videoPlaybackDidStop()
+        }
+        removeKeyboardMonitor()
+        isClosing = false  // Reset for potential reuse
     }
     
     func windowDidBecomeKey(_ notification: Notification) {
@@ -188,5 +277,14 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     @objc func toggleFullScreen(_ sender: Any?) {
         window?.toggleFullScreen(sender)
+    }
+    
+    /// Handle Escape key via standard macOS cancel operation
+    @objc func cancel(_ sender: Any?) {
+        if let window = window, window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+        } else {
+            close()
+        }
     }
 }
