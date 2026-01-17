@@ -2,15 +2,21 @@
 
 ## Known Issues for Future Development
 
-### Position/Seek Slider (NEEDS FIX)
-The position slider has partial implementation but doesn't work reliably:
-- **Problem**: After seeking, playback may not resume or position snaps back
-- **Root cause**: AVAudioPlayerNode's `playerTime(forNodeTime:)` doesn't account for seek offset correctly
-- **Files involved**: 
-  - `Sources/AdAmp/Windows/MainWindow/MainWindowView.swift` - slider UI handling
-  - `Sources/AdAmp/Audio/AudioEngine.swift` - seek() function and currentTime property
-- **Attempted fixes**: Added `_currentTime` tracking, `lastSeekTime` to ignore stale updates
-- **Suggestion**: May need to use a different approach like recreating the player node after seek, or using AVAudioPlayer instead of AVAudioEngine for simpler seeking
+### Position/Seek Slider (FIXED)
+The position slider now works correctly:
+- **Previous issues**: 
+  - After seeking, playback would skip to next track
+  - Position would snap back to 0 after seeking
+  - Duration was read from cached view property which could be 0
+- **Root causes fixed**:
+  1. The completion handler from `scheduleFile` fired when `playerNode.stop()` was called during seek
+  2. `playerTime(forNodeTime:)` didn't reliably track position after `scheduleSegment`
+  3. The view's cached `duration` property wasn't always up-to-date
+- **Solution**:
+  - Added `playbackGeneration` counter to invalidate stale completion handlers
+  - Switched to manual time tracking using `playbackStartDate` + `_currentTime` instead of relying on `playerNode.playerTime()`
+  - Now gets duration directly from `audioEngine.duration` instead of cached value
+  - Properly manage time tracking state across play/pause/stop/seek operations
 
 ---
 

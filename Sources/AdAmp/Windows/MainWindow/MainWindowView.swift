@@ -504,12 +504,22 @@ class MainWindowView: NSView {
         if let slider = draggingSlider {
             // Complete slider interaction
             if slider == .position, let finalValue = dragPositionValue {
+                // Get duration directly from audio engine (more reliable than cached value)
+                let audioDuration = WindowManager.shared.audioEngine.duration
+                guard audioDuration > 0 else {
+                    dragPositionValue = nil
+                    draggingSlider = nil
+                    needsDisplay = true
+                    return
+                }
+                
                 // Seek to the final position
-                let seekTime = duration * Double(finalValue)
+                let seekTime = audioDuration * Double(finalValue)
                 WindowManager.shared.audioEngine.seek(to: seekTime)
                 
                 // Update currentTime immediately to prevent visual snap-back
                 currentTime = seekTime
+                duration = audioDuration
                 lastSeekTime = Date()
                 
                 // Clear drag position

@@ -293,10 +293,12 @@ class SkinRenderer {
                       to: trackRect, in: context)
             
             // Calculate thumb position
-            let thumbWidth: CGFloat = 29
+            // The thumb slides along the track, from left edge to right edge minus thumb width
+            let thumbWidth: CGFloat = SkinElements.PositionBar.thumbNormal.width
+            let thumbHeight: CGFloat = SkinElements.PositionBar.thumbNormal.height
             let thumbX = trackRect.minX + (trackRect.width - thumbWidth) * value
             let thumbRect = NSRect(x: thumbX, y: trackRect.minY,
-                                   width: thumbWidth, height: trackRect.height)
+                                   width: thumbWidth, height: thumbHeight)
             
             // Draw thumb
             let thumbSource = isPressed ? SkinElements.PositionBar.thumbPressed : SkinElements.PositionBar.thumbNormal
