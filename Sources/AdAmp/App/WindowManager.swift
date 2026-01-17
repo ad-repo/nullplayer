@@ -32,7 +32,8 @@ class WindowManager {
     private let snapThreshold: CGFloat = 10
     
     /// Docking threshold - windows closer than this are considered docked
-    private let dockThreshold: CGFloat = 2
+    /// Should be >= snapThreshold to ensure snapped windows are detected as docked
+    private let dockThreshold: CGFloat = 12
     
     /// Track which window is currently being dragged
     private var draggingWindow: NSWindow?
@@ -42,6 +43,9 @@ class WindowManager {
     
     /// Windows that should move together with the dragging window
     private var dockedWindowsToMove: [NSWindow] = []
+    
+    /// Flag to prevent feedback loop when moving docked windows programmatically
+    private var isMovingDockedWindows = false
     
     // MARK: - Initialization
     
@@ -173,11 +177,16 @@ class WindowManager {
     
     /// Called when a window is being dragged - handle snapping and move docked windows
     func windowWillMove(_ window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
+        // Ignore if this is a docked window being moved programmatically
+        if isMovingDockedWindows && dockedWindowsToMove.contains(where: { $0 === window }) {
+            return newOrigin
+        }
+        
         // Calculate delta from current position
         let currentOrigin = window.frame.origin
         
         // If this is a new drag, find docked windows
-        if draggingWindow != window {
+        if draggingWindow !== window {
             windowWillStartDragging(window)
         }
         
@@ -188,11 +197,15 @@ class WindowManager {
         let actualDeltaX = snappedOrigin.x - currentOrigin.x
         let actualDeltaY = snappedOrigin.y - currentOrigin.y
         
-        for dockedWindow in dockedWindowsToMove {
-            var dockedOrigin = dockedWindow.frame.origin
-            dockedOrigin.x += actualDeltaX
-            dockedOrigin.y += actualDeltaY
-            dockedWindow.setFrameOrigin(dockedOrigin)
+        if !dockedWindowsToMove.isEmpty && (actualDeltaX != 0 || actualDeltaY != 0) {
+            isMovingDockedWindows = true
+            for dockedWindow in dockedWindowsToMove {
+                var dockedOrigin = dockedWindow.frame.origin
+                dockedOrigin.x += actualDeltaX
+                dockedOrigin.y += actualDeltaY
+                dockedWindow.setFrameOrigin(dockedOrigin)
+            }
+            isMovingDockedWindows = false
         }
         
         return snappedOrigin
@@ -281,17 +294,15 @@ class WindowManager {
         
         // Check if windows are touching horizontally (side by side)
         let horizontallyAligned = (frame1.minY < frame2.maxY && frame1.maxY > frame2.minY)
-        let touchingHorizontally = horizontallyAligned && (
-            abs(frame1.maxX - frame2.minX) <= dockThreshold ||  // window1 left of window2
-            abs(frame1.minX - frame2.maxX) <= dockThreshold     // window1 right of window2
-        )
+        let hGap1 = abs(frame1.maxX - frame2.minX)
+        let hGap2 = abs(frame1.minX - frame2.maxX)
+        let touchingHorizontally = horizontallyAligned && (hGap1 <= dockThreshold || hGap2 <= dockThreshold)
         
         // Check if windows are touching vertically (stacked)
         let verticallyAligned = (frame1.minX < frame2.maxX && frame1.maxX > frame2.minX)
-        let touchingVertically = verticallyAligned && (
-            abs(frame1.maxY - frame2.minY) <= dockThreshold ||  // window1 below window2
-            abs(frame1.minY - frame2.maxY) <= dockThreshold     // window1 above window2
-        )
+        let vGap1 = abs(frame1.maxY - frame2.minY)
+        let vGap2 = abs(frame1.minY - frame2.maxY)
+        let touchingVertically = verticallyAligned && (vGap1 <= dockThreshold || vGap2 <= dockThreshold)
         
         return touchingHorizontally || touchingVertically
     }
