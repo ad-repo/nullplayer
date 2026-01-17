@@ -7,7 +7,7 @@ set -e
 cd "$(dirname "$0")/.."
 
 echo "🔄 Stopping any running AdAmp instances..."
-pkill -f AdAmp 2>/dev/null || true
+pkill -9 -f AdAmp 2>/dev/null || true
 sleep 0.5
 
 echo "🔨 Building AdAmp..."

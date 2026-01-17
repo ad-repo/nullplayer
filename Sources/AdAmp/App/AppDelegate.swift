@@ -7,6 +7,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowManager: WindowManager!
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Set the application dock icon
+        setupDockIcon()
+        
+        // Configure KSPlayer for FFmpeg-only playback
+        VideoPlayerWindowController.configureKSPlayer()
+        
         // Initialize the window manager
         windowManager = WindowManager.shared
         
@@ -47,6 +53,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         windowManager.mainWindowController?.window?.makeKeyAndOrderFront(nil)
         return true
+    }
+    
+    // MARK: - Dock Icon Setup
+    
+    private func setupDockIcon() {
+        // Load the app icon from the Resources bundle
+        if let iconURL = Bundle.module.url(forResource: "AppIcon", withExtension: "png", subdirectory: "Resources"),
+           let iconImage = NSImage(contentsOf: iconURL) {
+            NSApplication.shared.applicationIconImage = iconImage
+        }
     }
     
     // MARK: - Menu Setup

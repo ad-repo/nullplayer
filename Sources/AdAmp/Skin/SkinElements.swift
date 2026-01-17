@@ -55,6 +55,9 @@ enum ButtonType: CaseIterable {
     case playlistSelect
     case playlistMisc
     case playlistList
+    
+    // Logo button (opens Plex browser)
+    case logo
 }
 
 /// Button visual state

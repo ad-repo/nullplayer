@@ -5,15 +5,27 @@ enum PlexBrowseMode: Int, CaseIterable {
     case artists = 0
     case albums = 1
     case tracks = 2
-    case search = 3
+    case movies = 3
+    case shows = 4
+    case search = 5
     
     var title: String {
         switch self {
         case .artists: return "Artists"
         case .albums: return "Albums"
         case .tracks: return "Tracks"
+        case .movies: return "Movies"
+        case .shows: return "Shows"
         case .search: return "Search"
         }
+    }
+    
+    var isVideoMode: Bool {
+        self == .movies || self == .shows
+    }
+    
+    var isMusicMode: Bool {
+        self == .artists || self == .albums || self == .tracks
     }
 }
 
@@ -54,12 +66,25 @@ class PlexBrowserView: NSView {
     /// Error message
     private var errorMessage: String?
     
-    /// Cached data
+    /// Cached data - Music
     private var cachedArtists: [PlexArtist] = []
     private var cachedAlbums: [PlexAlbum] = []
     private var cachedTracks: [PlexTrack] = []
     private var artistAlbums: [String: [PlexAlbum]] = [:]
     private var albumTracks: [String: [PlexTrack]] = [:]
+    
+    /// Cached data - Video
+    private var cachedMovies: [PlexMovie] = []
+    private var cachedShows: [PlexShow] = []
+    private var showSeasons: [String: [PlexSeason]] = [:]
+    private var seasonEpisodes: [String: [PlexEpisode]] = [:]
+    
+    /// Expanded shows (showing seasons)
+    private var expandedShows: Set<String> = []
+    
+    /// Expanded seasons (showing episodes)
+    private var expandedSeasons: Set<String> = []
+    
     private var searchResults: PlexSearchResults?
     
     // MARK: - Layout Constants
@@ -237,8 +262,13 @@ class PlexBrowserView: NSView {
             let serverLabel = "Server: \(serverText) ▼"
             serverLabel.draw(at: NSPoint(x: Layout.padding + 4, y: barY + 6), withAttributes: serverAttrs)
             
-            // Library dropdown (right side)
-            let libraryText = manager.currentLibrary?.title ?? "Select Library"
+            // Library dropdown (right side) - show appropriate library based on mode
+            let libraryText: String
+            if browseMode.isVideoMode {
+                libraryText = manager.currentVideoLibrary?.title ?? "Select Video Library"
+            } else {
+                libraryText = manager.currentLibrary?.title ?? "Select Library"
+            }
             let libraryLabel = "Library: \(libraryText) ▼"
             let librarySize = libraryLabel.size(withAttributes: serverAttrs)
             libraryLabel.draw(at: NSPoint(x: bounds.width - librarySize.width - Layout.padding - 4, y: barY + 6),
@@ -638,12 +668,26 @@ class PlexBrowserView: NSView {
                 case .tracks:
                     if cachedTracks.isEmpty {
                         cachedTracks = try await PlexManager.shared.fetchTracks(offset: 0, limit: 500)
-                        // Debug: Check if tracks have media info
-                        for track in cachedTracks.prefix(3) {
-                            print("Track: \(track.title), media count: \(track.media.count), partKey: \(track.partKey ?? "nil")")
-                        }
                     }
                     buildTrackItems()
+                    
+                case .movies:
+                    NSLog("PlexBrowserView: Loading movies...")
+                    if cachedMovies.isEmpty {
+                        cachedMovies = try await PlexManager.shared.fetchMovies(offset: 0, limit: 500)
+                        NSLog("PlexBrowserView: Loaded %d movies", cachedMovies.count)
+                    }
+                    buildMovieItems()
+                    NSLog("PlexBrowserView: Built %d movie items", displayItems.count)
+                    
+                case .shows:
+                    NSLog("PlexBrowserView: Loading shows...")
+                    if cachedShows.isEmpty {
+                        cachedShows = try await PlexManager.shared.fetchShows(offset: 0, limit: 500)
+                        NSLog("PlexBrowserView: Loaded %d shows", cachedShows.count)
+                    }
+                    buildShowItems()
+                    NSLog("PlexBrowserView: Built %d show items", displayItems.count)
                     
                 case .search:
                     if !searchQuery.isEmpty {
@@ -657,6 +701,7 @@ class PlexBrowserView: NSView {
                 isLoading = false
                 errorMessage = nil
             } catch {
+                NSLog("PlexBrowserView: Error loading data for mode %d: %@", browseMode.rawValue, error.localizedDescription)
                 isLoading = false
                 errorMessage = error.localizedDescription
             }
@@ -734,6 +779,72 @@ class PlexBrowserView: NSView {
         }
     }
     
+    private func buildMovieItems() {
+        displayItems = cachedMovies.map { movie in
+            let info = [movie.year.map { String($0) }, movie.formattedDuration]
+                .compactMap { $0 }
+                .joined(separator: " • ")
+            
+            return PlexDisplayItem(
+                id: movie.id,
+                title: movie.title,
+                info: info.isEmpty ? nil : info,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .movie(movie)
+            )
+        }
+    }
+    
+    private func buildShowItems() {
+        displayItems.removeAll()
+        
+        for show in cachedShows {
+            let isExpanded = expandedShows.contains(show.id)
+            let info = [show.year.map { String($0) }, "\(show.childCount) seasons"]
+                .compactMap { $0 }
+                .joined(separator: " • ")
+            
+            displayItems.append(PlexDisplayItem(
+                id: show.id,
+                title: show.title,
+                info: info,
+                indentLevel: 0,
+                hasChildren: true,
+                type: .show(show)
+            ))
+            
+            if isExpanded, let seasons = showSeasons[show.id] {
+                for season in seasons {
+                    let seasonExpanded = expandedSeasons.contains(season.id)
+                    
+                    displayItems.append(PlexDisplayItem(
+                        id: season.id,
+                        title: season.title,
+                        info: "\(season.leafCount) episodes",
+                        indentLevel: 1,
+                        hasChildren: true,
+                        type: .season(season)
+                    ))
+                    
+                    // Show episodes if season is expanded
+                    if seasonExpanded, let episodes = seasonEpisodes[season.id] {
+                        for episode in episodes {
+                            displayItems.append(PlexDisplayItem(
+                                id: episode.id,
+                                title: "\(episode.episodeIdentifier) - \(episode.title)",
+                                info: episode.formattedDuration,
+                                indentLevel: 2,
+                                hasChildren: false,
+                                type: .episode(episode)
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     private func buildSearchItems() {
         displayItems.removeAll()
         guard let results = searchResults else { return }
@@ -803,6 +914,75 @@ class PlexBrowserView: NSView {
                 ))
             }
         }
+        
+        // Movies
+        if !results.movies.isEmpty {
+            displayItems.append(PlexDisplayItem(
+                id: "header-movies",
+                title: "Movies (\(results.movies.count))",
+                info: nil,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .header
+            ))
+            for movie in results.movies {
+                let info = [movie.year.map { String($0) }, movie.formattedDuration]
+                    .compactMap { $0 }
+                    .joined(separator: " • ")
+                displayItems.append(PlexDisplayItem(
+                    id: movie.id,
+                    title: movie.title,
+                    info: info.isEmpty ? nil : info,
+                    indentLevel: 1,
+                    hasChildren: false,
+                    type: .movie(movie)
+                ))
+            }
+        }
+        
+        // TV Shows
+        if !results.shows.isEmpty {
+            displayItems.append(PlexDisplayItem(
+                id: "header-shows",
+                title: "TV Shows (\(results.shows.count))",
+                info: nil,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .header
+            ))
+            for show in results.shows {
+                displayItems.append(PlexDisplayItem(
+                    id: show.id,
+                    title: show.title,
+                    info: show.year.map { String($0) },
+                    indentLevel: 1,
+                    hasChildren: false,
+                    type: .show(show)
+                ))
+            }
+        }
+        
+        // Episodes
+        if !results.episodes.isEmpty {
+            displayItems.append(PlexDisplayItem(
+                id: "header-episodes",
+                title: "Episodes (\(results.episodes.count))",
+                info: nil,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .header
+            ))
+            for episode in results.episodes {
+                displayItems.append(PlexDisplayItem(
+                    id: episode.id,
+                    title: "\(episode.grandparentTitle ?? "") - \(episode.episodeIdentifier) - \(episode.title)",
+                    info: episode.formattedDuration,
+                    indentLevel: 1,
+                    hasChildren: false,
+                    type: .episode(episode)
+                ))
+            }
+        }
     }
     
     private func isExpanded(_ item: PlexDisplayItem) -> Bool {
@@ -811,6 +991,10 @@ class PlexBrowserView: NSView {
             return expandedArtists.contains(item.id)
         case .album:
             return expandedAlbums.contains(item.id)
+        case .show:
+            return expandedShows.contains(item.id)
+        case .season:
+            return expandedSeasons.contains(item.id)
         default:
             return false
         }
@@ -921,15 +1105,20 @@ class PlexBrowserView: NSView {
                 } else {
                     selectedIndices = [clickedIndex]
                     
-                    // Single-click on track plays it immediately
-                    NSLog("Single click on item: %@, type: %@", item.title, String(describing: item.type))
-                    if case .track = item.type {
-                        NSLog("Item is a track, calling playTrack")
+                    // Single-click on playable items plays them immediately
+                    switch item.type {
+                    case .track:
                         playTrack(item)
+                    case .movie(let movie):
+                        playMovie(movie)
+                    case .episode(let episode):
+                        playEpisode(episode)
+                    default:
+                        break
                     }
                 }
                 
-                // Double-click to play album or expand artist
+                // Double-click to play album/show or expand artist
                 if event.clickCount == 2 {
                     handleDoubleClick(on: item)
                 }
@@ -961,6 +1150,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             }
+            buildArtistItems()
             
         case .album(let album):
             if expandedAlbums.contains(album.id) {
@@ -982,12 +1172,56 @@ class PlexBrowserView: NSView {
                     return
                 }
             }
+            buildArtistItems()
+            
+        case .show(let show):
+            if expandedShows.contains(show.id) {
+                expandedShows.remove(show.id)
+            } else {
+                expandedShows.insert(show.id)
+                // Load seasons if not cached
+                if showSeasons[show.id] == nil {
+                    Task { @MainActor in
+                        do {
+                            let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
+                            showSeasons[show.id] = seasons
+                            buildShowItems()
+                            needsDisplay = true
+                        } catch {
+                            print("Failed to load seasons: \(error)")
+                        }
+                    }
+                    return
+                }
+            }
+            buildShowItems()
+            
+        case .season(let season):
+            if expandedSeasons.contains(season.id) {
+                expandedSeasons.remove(season.id)
+            } else {
+                expandedSeasons.insert(season.id)
+                // Load episodes if not cached
+                if seasonEpisodes[season.id] == nil {
+                    Task { @MainActor in
+                        do {
+                            let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                            seasonEpisodes[season.id] = episodes
+                            buildShowItems()
+                            needsDisplay = true
+                        } catch {
+                            print("Failed to load episodes: \(error)")
+                        }
+                    }
+                    return
+                }
+            }
+            buildShowItems()
             
         default:
             break
         }
         
-        buildArtistItems()
         needsDisplay = true
     }
     
@@ -1050,6 +1284,16 @@ class PlexBrowserView: NSView {
         }
     }
     
+    private func playMovie(_ movie: PlexMovie) {
+        NSLog("Playing movie: %@", movie.title)
+        WindowManager.shared.playMovie(movie)
+    }
+    
+    private func playEpisode(_ episode: PlexEpisode) {
+        NSLog("Playing episode: %@ - %@", episode.episodeIdentifier, episode.title)
+        WindowManager.shared.playEpisode(episode)
+    }
+    
     private func handleDoubleClick(on item: PlexDisplayItem) {
         switch item.type {
         case .track:
@@ -1063,6 +1307,22 @@ class PlexBrowserView: NSView {
         case .artist:
             // Toggle expansion
             toggleExpand(item)
+            
+        case .movie(let movie):
+            // Play movie
+            playMovie(movie)
+            
+        case .show:
+            // Toggle expansion to show seasons
+            toggleExpand(item)
+            
+        case .season:
+            // Toggle expansion to show episodes
+            toggleExpand(item)
+            
+        case .episode(let episode):
+            // Play episode
+            playEpisode(episode)
             
         case .header:
             break
@@ -1139,6 +1399,30 @@ class PlexBrowserView: NSView {
             expandItem.representedObject = item
             menu.addItem(expandItem)
             
+        case .movie(let movie):
+            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlayMovie(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = movie
+            menu.addItem(playItem)
+            
+        case .show(let show):
+            let expandItem = NSMenuItem(title: expandedShows.contains(show.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self
+            expandItem.representedObject = item
+            menu.addItem(expandItem)
+            
+        case .season(let season):
+            let expandItem = NSMenuItem(title: expandedSeasons.contains(season.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self
+            expandItem.representedObject = item
+            menu.addItem(expandItem)
+            
+        case .episode(let episode):
+            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEpisode(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = episode
+            menu.addItem(playItem)
+            
         case .header:
             return
         }
@@ -1185,6 +1469,16 @@ class PlexBrowserView: NSView {
         toggleExpand(item)
     }
     
+    @objc private func contextMenuPlayMovie(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie else { return }
+        playMovie(movie)
+    }
+    
+    @objc private func contextMenuPlayEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode else { return }
+        playEpisode(episode)
+    }
+    
     // MARK: - Server/Library Selection Menus
     
     private func showServerMenu(at event: NSEvent) {
@@ -1217,17 +1511,25 @@ class PlexBrowserView: NSView {
     private func showLibraryMenu(at event: NSEvent) {
         let menu = NSMenu()
         
-        let libraries = PlexManager.shared.availableLibraries
+        // Show libraries based on current browse mode
+        let isVideoMode = browseMode.isVideoMode
+        let libraries = isVideoMode 
+            ? PlexManager.shared.availableVideoLibraries 
+            : PlexManager.shared.availableLibraries
+        let currentLibraryId = isVideoMode 
+            ? PlexManager.shared.currentVideoLibrary?.id 
+            : PlexManager.shared.currentLibrary?.id
+        
         if libraries.isEmpty {
-            let noLibraries = NSMenuItem(title: "No libraries available", action: nil, keyEquivalent: "")
+            let noLibraries = NSMenuItem(title: isVideoMode ? "No video libraries available" : "No music libraries available", action: nil, keyEquivalent: "")
             noLibraries.isEnabled = false
             menu.addItem(noLibraries)
         } else {
             for library in libraries {
                 let item = NSMenuItem(title: library.title, action: #selector(selectLibrary(_:)), keyEquivalent: "")
                 item.target = self
-                item.representedObject = library.id
-                item.state = library.id == PlexManager.shared.currentLibrary?.id ? .on : .off
+                item.representedObject = library
+                item.state = library.id == currentLibraryId ? .on : .off
                 menu.addItem(item)
             }
         }
@@ -1244,12 +1546,8 @@ class PlexBrowserView: NSView {
         Task { @MainActor in
             do {
                 try await PlexManager.shared.connect(to: server)
-                // Clear cached data and reload
-                cachedArtists = []
-                cachedAlbums = []
-                cachedTracks = []
-                artistAlbums = [:]
-                albumTracks = [:]
+                // Clear all cached data and reload
+                clearAllCachedData()
                 reloadData()
             } catch {
                 NSLog("Failed to connect to server: %@", error.localizedDescription)
@@ -1258,19 +1556,52 @@ class PlexBrowserView: NSView {
     }
     
     @objc private func selectLibrary(_ sender: NSMenuItem) {
-        guard let libraryID = sender.representedObject as? String,
-              let library = PlexManager.shared.availableLibraries.first(where: { $0.id == libraryID }) else {
+        guard let library = sender.representedObject as? PlexLibrary else {
             return
         }
         
-        PlexManager.shared.selectLibrary(library)
-        // Clear cached data and reload
+        if library.isVideoLibrary {
+            PlexManager.shared.selectVideoLibrary(library)
+            // Clear video cached data and reload
+            cachedMovies = []
+            cachedShows = []
+            showSeasons = [:]
+            seasonEpisodes = [:]
+            expandedShows = []
+            expandedSeasons = []
+        } else {
+            PlexManager.shared.selectLibrary(library)
+            // Clear music cached data and reload
+            cachedArtists = []
+            cachedAlbums = []
+            cachedTracks = []
+            artistAlbums = [:]
+            albumTracks = [:]
+            expandedArtists = []
+            expandedAlbums = []
+        }
+        reloadData()
+    }
+    
+    private func clearAllCachedData() {
+        // Music data
         cachedArtists = []
         cachedAlbums = []
         cachedTracks = []
         artistAlbums = [:]
         albumTracks = [:]
-        reloadData()
+        expandedArtists = []
+        expandedAlbums = []
+        
+        // Video data
+        cachedMovies = []
+        cachedShows = []
+        showSeasons = [:]
+        seasonEpisodes = [:]
+        expandedShows = []
+        expandedSeasons = []
+        
+        searchResults = nil
     }
     
     @objc private func refreshServers() {
@@ -1416,6 +1747,10 @@ private struct PlexDisplayItem {
         case artist(PlexArtist)
         case album(PlexAlbum)
         case track(PlexTrack)
+        case movie(PlexMovie)
+        case show(PlexShow)
+        case season(PlexSeason)
+        case episode(PlexEpisode)
         case header
     }
 }

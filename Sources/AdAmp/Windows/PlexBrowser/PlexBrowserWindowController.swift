@@ -7,11 +7,11 @@ class PlexBrowserWindowController: NSWindowController {
     
     private var browserView: PlexBrowserView!
     
-    /// Minimum window size
-    private static let minSize = NSSize(width: 400, height: 300)
+    /// Minimum window size (wider to fit 6 tabs)
+    private static let minSize = NSSize(width: 480, height: 300)
     
     /// Default window size
-    private static let defaultSize = NSSize(width: 500, height: 450)
+    private static let defaultSize = NSSize(width: 550, height: 450)
     
     // MARK: - Initialization
     

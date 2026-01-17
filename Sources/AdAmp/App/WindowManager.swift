@@ -64,6 +64,14 @@ class WindowManager {
     /// Plex browser window controller
     private var plexBrowserWindowController: PlexBrowserWindowController?
     
+    /// Video player window controller
+    private var videoPlayerWindowController: VideoPlayerWindowController?
+    
+    /// Video playback time tracking
+    private(set) var videoCurrentTime: TimeInterval = 0
+    private(set) var videoDuration: TimeInterval = 0
+    private(set) var videoTitle: String?
+    
     /// Snap threshold in pixels
     private let snapThreshold: CGFloat = 10
     
@@ -234,6 +242,124 @@ class WindowManager {
     func unlinkPlexAccount() {
         PlexManager.shared.unlinkAccount()
         plexBrowserWindowController?.reloadData()
+    }
+    
+    // MARK: - Video Player Window
+    
+    /// Show the video player with a URL and title
+    func showVideoPlayer(url: URL, title: String) {
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        videoPlayerWindowController?.play(url: url, title: title)
+    }
+    
+    /// Play a Plex movie in the video player
+    func playMovie(_ movie: PlexMovie) {
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        videoPlayerWindowController?.play(movie: movie)
+    }
+    
+    /// Play a Plex episode in the video player
+    func playEpisode(_ episode: PlexEpisode) {
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        videoPlayerWindowController?.play(episode: episode)
+    }
+    
+    var isVideoPlayerVisible: Bool {
+        videoPlayerWindowController?.window?.isVisible == true
+    }
+    
+    /// Whether video is currently playing
+    var isVideoPlaying: Bool {
+        videoPlayerWindowController?.isPlaying ?? false
+    }
+    
+    /// Current video title (if playing)
+    var currentVideoTitle: String? {
+        videoPlayerWindowController?.currentTitle
+    }
+    
+    func toggleVideoPlayer() {
+        if let controller = videoPlayerWindowController, controller.window?.isVisible == true {
+            controller.window?.orderOut(nil)
+        } else if videoPlayerWindowController != nil {
+            videoPlayerWindowController?.showWindow(nil)
+        }
+    }
+    
+    /// Toggle video play/pause
+    func toggleVideoPlayPause() {
+        videoPlayerWindowController?.togglePlayPause()
+    }
+    
+    /// Stop video playback
+    func stopVideo() {
+        videoPlayerWindowController?.stop()
+    }
+    
+    /// Skip video forward
+    func skipVideoForward(_ seconds: TimeInterval = 10) {
+        videoPlayerWindowController?.skipForward(seconds)
+    }
+    
+    /// Skip video backward
+    func skipVideoBackward(_ seconds: TimeInterval = 10) {
+        videoPlayerWindowController?.skipBackward(seconds)
+    }
+    
+    /// Seek video to specific time
+    func seekVideo(to time: TimeInterval) {
+        videoPlayerWindowController?.seek(to: time)
+    }
+    
+    /// Called when video playback starts - pause audio
+    func videoPlaybackDidStart() {
+        if audioEngine.state == .playing {
+            audioEngine.pause()
+        }
+        // Update main window with video title
+        if let title = videoPlayerWindowController?.currentTitle {
+            videoTitle = title
+            mainWindowController?.updateVideoTrackInfo(title: title)
+        }
+        mainWindowController?.updatePlaybackState()
+    }
+    
+    /// Called when video playback stops
+    func videoPlaybackDidStop() {
+        videoCurrentTime = 0
+        videoDuration = 0
+        videoTitle = nil
+        // If audio was paused (by video starting), stop it so main window shows stopped state
+        if audioEngine.state == .paused {
+            audioEngine.stop()
+        }
+        mainWindowController?.clearVideoTrackInfo()
+        mainWindowController?.updateTime(current: 0, duration: 0)
+        mainWindowController?.updatePlaybackState()
+    }
+    
+    /// Called by video player to update time (for main window display)
+    func videoDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
+        videoCurrentTime = current
+        videoDuration = duration
+        mainWindowController?.updateTime(current: current, duration: duration)
+    }
+    
+    /// Whether video is the active playback source (video is playing)
+    var isVideoActivePlayback: Bool {
+        return isVideoPlaying
+    }
+    
+    /// Get current video playback state for main window display
+    var videoPlaybackState: PlaybackState {
+        guard let controller = videoPlayerWindowController else { return .stopped }
+        return controller.isPlaying ? .playing : .paused
     }
 
     func notifyMainWindowVisibilityChanged() {
@@ -499,6 +625,7 @@ class WindowManager {
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = mediaLibraryWindowController?.window, w.isVisible { windows.append(w) }
         if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
     
@@ -527,6 +654,9 @@ class WindowManager {
         if let frame = plexBrowserWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: "PlexBrowserWindowFrame")
         }
+        if let frame = videoPlayerWindowController?.window?.frame {
+            defaults.set(NSStringFromRect(frame), forKey: "VideoPlayerWindowFrame")
+        }
     }
     
     func restoreWindowPositions() {
@@ -554,6 +684,11 @@ class WindowManager {
         }
         if let frameString = defaults.string(forKey: "PlexBrowserWindowFrame"),
            let window = plexBrowserWindowController?.window {
+            let frame = NSRectFromString(frameString)
+            window.setFrame(frame, display: true)
+        }
+        if let frameString = defaults.string(forKey: "VideoPlayerWindowFrame"),
+           let window = videoPlayerWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }

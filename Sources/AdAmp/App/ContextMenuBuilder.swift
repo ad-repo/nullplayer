@@ -350,26 +350,29 @@ class ContextMenuBuilder {
         if hasWireless {
             outputMenu.addItem(NSMenuItem.separator())
             
-            let wirelessHeader = NSMenuItem(title: "AirPlay & Wireless", action: nil, keyEquivalent: "")
-            wirelessHeader.isEnabled = false
-            outputMenu.addItem(wirelessHeader)
+            // Create AirPlay submenu
+            let airplayItem = NSMenuItem(title: "AirPlay", action: nil, keyEquivalent: "")
+            let airplayMenu = NSMenu()
             
             // Core Audio wireless devices (already connected)
             for device in coreAudioWireless {
-                let deviceItem = NSMenuItem(title: "    \(device.name)", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+                let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
                 deviceItem.target = MenuActions.shared
                 deviceItem.representedObject = device.id
                 deviceItem.state = (currentDeviceID == device.id) ? NSControl.StateValue.on : NSControl.StateValue.off
-                outputMenu.addItem(deviceItem)
+                airplayMenu.addItem(deviceItem)
             }
             
             // Discovered AirPlay devices (need to connect via Sound Settings)
             for device in airPlayDevices {
-                let deviceItem = NSMenuItem(title: "    \(device.name)", action: #selector(MenuActions.selectAirPlayDevice(_:)), keyEquivalent: "")
+                let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectAirPlayDevice(_:)), keyEquivalent: "")
                 deviceItem.target = MenuActions.shared
                 deviceItem.representedObject = device.name
-                outputMenu.addItem(deviceItem)
+                airplayMenu.addItem(deviceItem)
             }
+            
+            airplayItem.submenu = airplayMenu
+            outputMenu.addItem(airplayItem)
         }
         
         // Sound Settings option

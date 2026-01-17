@@ -67,6 +67,17 @@ class PlexManager {
     /// Available music libraries on the current server
     private(set) var availableLibraries: [PlexLibrary] = []
     
+    /// Available video libraries (movies + shows) on the current server
+    private(set) var availableVideoLibraries: [PlexLibrary] = []
+    
+    /// Currently selected video library (for movies/shows browsing)
+    private(set) var currentVideoLibrary: PlexLibrary? {
+        didSet {
+            NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: self)
+            UserDefaults.standard.set(currentVideoLibrary?.id, forKey: "PlexCurrentVideoLibraryID")
+        }
+    }
+    
     // MARK: - Connection State
     
     enum ConnectionState {
@@ -185,14 +196,17 @@ class PlexManager {
         servers = []
         currentServer = nil
         currentLibrary = nil
+        currentVideoLibrary = nil
         serverClient = nil
         availableLibraries = []
+        availableVideoLibraries = []
         connectionState = .disconnected
         
         // Clear saved data
         KeychainHelper.shared.clearPlexCredentials()
         UserDefaults.standard.removeObject(forKey: "PlexCurrentServerID")
         UserDefaults.standard.removeObject(forKey: "PlexCurrentLibraryID")
+        UserDefaults.standard.removeObject(forKey: "PlexCurrentVideoLibraryID")
     }
     
     // MARK: - Server Management
@@ -281,24 +295,51 @@ class PlexManager {
             throw PlexServerError.invalidURL
         }
         
-        let libraries = try await client.fetchMusicLibraries()
+        // Fetch all libraries at once
+        let allLibraries = try await client.fetchLibraries()
+        NSLog("PlexManager: Found %d total libraries", allLibraries.count)
+        for lib in allLibraries {
+            NSLog("  Library: %@ (type: %@, id: %@)", lib.title, lib.type, lib.id)
+        }
+        
+        let musicLibraries = allLibraries.filter { $0.isMusicLibrary }
+        let videoLibraries = allLibraries.filter { $0.isVideoLibrary }
+        
+        NSLog("PlexManager: %d music libraries, %d video libraries", musicLibraries.count, videoLibraries.count)
         
         await MainActor.run {
-            self.availableLibraries = libraries
+            self.availableLibraries = musicLibraries
+            self.availableVideoLibraries = videoLibraries
             
-            // Restore previous selection or select first library
+            // Restore previous music library selection or select first library
             if let savedLibraryID = UserDefaults.standard.string(forKey: "PlexCurrentLibraryID"),
-               let savedLibrary = libraries.first(where: { $0.id == savedLibraryID }) {
+               let savedLibrary = musicLibraries.first(where: { $0.id == savedLibraryID }) {
                 self.currentLibrary = savedLibrary
-            } else if let firstLibrary = libraries.first {
+            } else if let firstLibrary = musicLibraries.first {
                 self.currentLibrary = firstLibrary
             }
+            
+            // Restore previous video library selection or select first video library
+            if let savedVideoLibraryID = UserDefaults.standard.string(forKey: "PlexCurrentVideoLibraryID"),
+               let savedVideoLibrary = videoLibraries.first(where: { $0.id == savedVideoLibraryID }) {
+                self.currentVideoLibrary = savedVideoLibrary
+            } else if let firstVideoLibrary = videoLibraries.first {
+                self.currentVideoLibrary = firstVideoLibrary
+            }
+            
+            NSLog("PlexManager: Current music library: %@", self.currentLibrary?.title ?? "none")
+            NSLog("PlexManager: Current video library: %@", self.currentVideoLibrary?.title ?? "none")
         }
     }
     
-    /// Select a library
+    /// Select a music library
     func selectLibrary(_ library: PlexLibrary) {
         currentLibrary = library
+    }
+    
+    /// Select a video library
+    func selectVideoLibrary(_ library: PlexLibrary) {
+        currentVideoLibrary = library
     }
     
     // MARK: - Content Fetching (Convenience)
@@ -351,6 +392,70 @@ class PlexManager {
         return try await client.search(query: query, libraryID: library.id, type: type)
     }
     
+    // MARK: - Video Content Fetching
+    
+    /// Fetch movies from the current video library
+    func fetchMovies(offset: Int = 0, limit: Int = 100) async throws -> [PlexMovie] {
+        guard let client = serverClient else {
+            NSLog("PlexManager.fetchMovies: No server client")
+            throw PlexServerError.invalidURL
+        }
+        
+        NSLog("PlexManager.fetchMovies: availableVideoLibraries count = %d", availableVideoLibraries.count)
+        for lib in availableVideoLibraries {
+            NSLog("  Video library: %@ (type: %@, isMovie: %d, isShow: %d)", 
+                  lib.title, lib.type, lib.isMovieLibrary ? 1 : 0, lib.isShowLibrary ? 1 : 0)
+        }
+        
+        // Use current video library if it's a movie library, otherwise find first movie library
+        let movieLibrary = currentVideoLibrary?.isMovieLibrary == true 
+            ? currentVideoLibrary 
+            : availableVideoLibraries.first(where: { $0.isMovieLibrary })
+        guard let library = movieLibrary else {
+            NSLog("PlexManager.fetchMovies: No movie library found")
+            throw PlexServerError.invalidURL
+        }
+        NSLog("PlexManager.fetchMovies: Using library %@ (id: %@)", library.title, library.id)
+        return try await client.fetchMovies(libraryID: library.id, offset: offset, limit: limit)
+    }
+    
+    /// Fetch TV shows from the current video library
+    func fetchShows(offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
+        guard let client = serverClient else {
+            NSLog("PlexManager.fetchShows: No server client")
+            throw PlexServerError.invalidURL
+        }
+        
+        NSLog("PlexManager.fetchShows: availableVideoLibraries count = %d", availableVideoLibraries.count)
+        
+        // Use current video library if it's a show library, otherwise find first show library
+        let showLibrary = currentVideoLibrary?.isShowLibrary == true 
+            ? currentVideoLibrary 
+            : availableVideoLibraries.first(where: { $0.isShowLibrary })
+        guard let library = showLibrary else {
+            NSLog("PlexManager.fetchShows: No show library found")
+            throw PlexServerError.invalidURL
+        }
+        NSLog("PlexManager.fetchShows: Using library %@ (id: %@)", library.title, library.id)
+        return try await client.fetchShows(libraryID: library.id, offset: offset, limit: limit)
+    }
+    
+    /// Fetch seasons for a TV show
+    func fetchSeasons(forShow show: PlexShow) async throws -> [PlexSeason] {
+        guard let client = serverClient else {
+            throw PlexServerError.invalidURL
+        }
+        return try await client.fetchSeasons(forShow: show.id)
+    }
+    
+    /// Fetch episodes for a season
+    func fetchEpisodes(forSeason season: PlexSeason) async throws -> [PlexEpisode] {
+        guard let client = serverClient else {
+            throw PlexServerError.invalidURL
+        }
+        return try await client.fetchEpisodes(forSeason: season.id)
+    }
+    
     // MARK: - URL Generation
     
     /// Get streaming URL for a track
@@ -361,6 +466,16 @@ class PlexManager {
     /// Get artwork URL
     func artworkURL(thumb: String?, size: Int = 300) -> URL? {
         serverClient?.artworkURL(thumb: thumb, width: size, height: size)
+    }
+    
+    /// Get streaming URL for a movie
+    func streamURL(for movie: PlexMovie) -> URL? {
+        serverClient?.streamURL(for: movie)
+    }
+    
+    /// Get streaming URL for an episode
+    func streamURL(for episode: PlexEpisode) -> URL? {
+        serverClient?.streamURL(for: episode)
     }
     
     // MARK: - Track Conversion

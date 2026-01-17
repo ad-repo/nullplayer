@@ -16,6 +16,8 @@ let package = Package(
         .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.0"),
         // SQLite for media library
         .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.14.0"),
+        // KSPlayer for MKV and extended codec support via FFmpeg
+        .package(url: "https://github.com/kingslay/KSPlayer.git", branch: "main"),
     ],
     targets: [
         .executableTarget(
@@ -23,6 +25,7 @@ let package = Package(
             dependencies: [
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
+                "KSPlayer",
             ],
             path: "Sources/AdAmp",
             resources: [
