@@ -867,12 +867,69 @@ class SkinRenderer {
         }
     }
     
-    /// Draw colored bar indicators on EQ slider - fills the track from knob down to bottom
-    /// Colors: GREEN at top of track, YELLOW middle, ORANGE, RED at bottom
+    /// Draw colored bar in the EQ slider track
+    /// The ENTIRE track is filled with a SINGLE color based on knob position
+    /// Color scale: green (top/+12dB) → yellow (middle/0dB) → red (bottom/-12dB)
+    /// - Parameters:
+    ///   - xPos: X position of the slider (left edge of thumb)
+    ///   - sliderY: Y position of the slider track top
+    ///   - sliderHeight: Height of the slider track (63px)
+    ///   - normalizedValue: Value from 0 (bottom/-12dB) to 1 (top/+12dB)
+    ///   - context: Graphics context
     private func drawEQSliderColorBars(at xPos: CGFloat, sliderY: CGFloat, sliderHeight: CGFloat,
                                         normalizedValue: CGFloat, in context: CGContext) {
-        // Color bars disabled for now - the background already has track graphics
-        // TODO: Implement proper colored bar sprites from eqmain.bmp
+        let thumbSize: CGFloat = 11
+        // Bar fills the entire track width (both sides of knob)
+        let barWidth: CGFloat = 7
+        let barX = xPos + (thumbSize - barWidth) / 2  // Center in track
+        
+        // Color scale: knob position determines the single color for entire track
+        // normalizedValue=1 (top, +12dB): RED (boost)
+        // normalizedValue=0.5 (middle, 0dB): YELLOW
+        // normalizedValue=0 (bottom, -12dB): GREEN (cut)
+        let colorStops: [(position: CGFloat, color: NSColor)] = [
+            (0.0, NSColor(calibratedRed: 0.0, green: 0.85, blue: 0.0, alpha: 1.0)),   // Green at bottom (-12dB)
+            (0.33, NSColor(calibratedRed: 0.5, green: 0.85, blue: 0.0, alpha: 1.0)),  // Yellow-green
+            (0.5, NSColor(calibratedRed: 0.85, green: 0.85, blue: 0.0, alpha: 1.0)),  // Yellow at middle (0dB)
+            (0.66, NSColor(calibratedRed: 0.85, green: 0.5, blue: 0.0, alpha: 1.0)),  // Orange
+            (1.0, NSColor(calibratedRed: 0.85, green: 0.15, blue: 0.0, alpha: 1.0)),  // Red at top (+12dB)
+        ]
+        
+        // Get the single color based on knob position
+        let trackColor = interpolateColor(at: normalizedValue, stops: colorStops)
+        
+        // Fill the entire track with this single color
+        trackColor.setFill()
+        context.fill(NSRect(x: barX, y: sliderY, width: barWidth, height: sliderHeight))
+    }
+    
+    /// Interpolate color between gradient stops
+    private func interpolateColor(at position: CGFloat, stops: [(position: CGFloat, color: NSColor)]) -> NSColor {
+        var lowerStop = stops[0]
+        var upperStop = stops[stops.count - 1]
+        
+        for i in 0..<stops.count - 1 {
+            if position >= stops[i].position && position <= stops[i + 1].position {
+                lowerStop = stops[i]
+                upperStop = stops[i + 1]
+                break
+            }
+        }
+        
+        let range = upperStop.position - lowerStop.position
+        let factor = range > 0 ? (position - lowerStop.position) / range : 0
+        
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        lowerStop.color.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        upperStop.color.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+        
+        return NSColor(
+            calibratedRed: r1 + (r2 - r1) * factor,
+            green: g1 + (g2 - g1) * factor,
+            blue: b1 + (b2 - b1) * factor,
+            alpha: 1.0
+        )
     }
     
     /// Draw fallback EQ slider knob when skin not available

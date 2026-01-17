@@ -110,9 +110,21 @@ The equalizer sprite sheet contains all EQ window elements:
 | EQ_GRAPH_LINE_COLORS | 115 | 294 | 1 | 19 | Color palette for graph line |
 
 ### Colored Slider Bars
-The colored bars (green/yellow/orange/red gradient) that show EQ levels are located in the lower portion of EQMAIN.BMP. These are pre-rendered sprites at different fill levels.
+The colored bars (green/yellow/orange/red gradient) that show EQ levels are pre-rendered sprites at different fill levels.
 
-**NOTE**: The exact coordinates for the 28 different fill-level sprites need further research. They appear to be in rows 200+ of the sprite sheet.
+| Element | X | Y | Width | Height | Notes |
+|---------|---|---|-------|--------|-------|
+| EQ_SLIDER_BACKGROUND | 13 | 164 | 209 | 63 | Contains all 28 fill states |
+
+**Fill State Sprites (28 states, horizontally arranged):**
+- Total width: 209 pixels
+- State width: 209/28 ≈ 7.46 pixels per state
+- State height: 63 pixels (full slider track height)
+- State 0: x=13 (minimal fill, knob at top/+12dB)
+- State 27: x=13+(27*7.46)≈214 (full fill, knob at bottom/-12dB)
+- Colors: Green at top (boost) → Yellow → Orange → Red at bottom (cut)
+
+**Usage:** Get source rect with `x = 13 + (fillState * 7.46), y = 164, width = 7.46, height = 63`
 
 ---
 
@@ -180,11 +192,11 @@ let thumbY = sliderY + (sliderHeight - thumbSize) * (1 - normalizedValue)
 ## Known Issues & Future Work
 
 ### EQ Window
-1. **Colored slider bars** - Currently disabled. Need to implement using pre-rendered sprites from EQMAIN.BMP (rows 200+). The bars should:
-   - Fill the full width of the slider track (11px)
-   - Fill from knob position DOWN to bottom of track
-   - Show gradient: GREEN (top) → YELLOW → ORANGE → RED (bottom)
-   - Use sprite-based rendering, not programmatic drawing
+1. **Colored slider bars** - ✅ IMPLEMENTED. Uses pre-rendered sprites from EQMAIN.BMP at y=164. The bars:
+   - Display behind the slider thumb
+   - Show gradient: GREEN (top/boost) → YELLOW → ORANGE → RED (bottom/cut)
+   - Use 28 fill states (sprite-based rendering)
+   - Source: x=13, y=164, each state ~7.46px wide, 63px tall
 
 2. **Graph curve** - The EQ response curve in the graph area needs verification for correct orientation
 
@@ -254,6 +266,11 @@ curl -s "https://raw.githubusercontent.com/captbaritone/webamp/master/packages/w
 ---
 
 ## Version History
+
+- **2026-01-17**: EQ colored slider bars implementation
+  - Implemented colored slider bar sprites (28 fill states at x=13, y=164)
+  - Added `sliderBarSource(state:)` helper to SkinElements.Equalizer
+  - Bars now display behind slider thumbs with green→yellow→orange→red gradient
 
 - **2026-01-16**: Initial research document created
   - Documented EQMAIN.BMP sprite coordinates from webamp
