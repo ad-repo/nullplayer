@@ -76,6 +76,10 @@ class AudioEngine {
     /// Repeat mode
     var repeatEnabled: Bool = false
     
+    /// Generation counter to track which completion handler is valid
+    /// Incremented on each seek/load to invalidate old completion handlers
+    private var playbackGeneration: Int = 0
+    
     /// Timer for time updates
     private var timeUpdateTimer: Timer?
     
@@ -264,6 +268,7 @@ class AudioEngine {
                 try engine.start()
             }
             playerNode.play()
+            playbackStartDate = Date()  // Start tracking time
             state = .playing
             startTimeUpdates()
         } catch {
@@ -272,19 +277,35 @@ class AudioEngine {
     }
     
     func pause() {
+        // Save current position before pausing
+        if let startDate = playbackStartDate {
+            _currentTime += Date().timeIntervalSince(startDate)
+        }
+        playbackStartDate = nil
+        
         playerNode.pause()
         state = .paused
         stopTimeUpdates()
     }
     
     func stop() {
+        // Increment generation to invalidate completion handlers
+        playbackGeneration += 1
+        let currentGeneration = playbackGeneration
+        
         playerNode.stop()
+        playbackStartDate = nil
+        _currentTime = 0  // Reset to beginning
         state = .stopped
         stopTimeUpdates()
         
         // Reset to beginning
         if let file = audioFile {
-            playerNode.scheduleFile(file, at: nil)
+            playerNode.scheduleFile(file, at: nil) { [weak self] in
+                DispatchQueue.main.async {
+                    self?.handlePlaybackComplete(generation: currentGeneration)
+                }
+            }
         }
     }
     
@@ -318,20 +339,47 @@ class AudioEngine {
         }
     }
     
+    /// Track the current playback position (updated during seek)
+    private var _currentTime: TimeInterval = 0
+    
+    /// Reference date when playback started/resumed (for manual time tracking)
+    private var playbackStartDate: Date?
+    
     func seek(to time: TimeInterval) {
         guard let file = audioFile else { return }
         
-        let sampleRate = file.processingFormat.sampleRate
-        let framePosition = AVAudioFramePosition(time * sampleRate)
+        let wasPlaying = state == .playing
         
+        // Clamp time to valid range
+        let seekTime = max(0, min(time, duration - 0.5))
+        _currentTime = seekTime
+        playbackStartDate = nil  // Will be set when play resumes
+        
+        // Increment generation to invalidate old completion handlers
+        playbackGeneration += 1
+        let currentGeneration = playbackGeneration
+        
+        // Stop current playback
         playerNode.stop()
         
-        let frameCount = AVAudioFrameCount(file.length - framePosition)
-        guard frameCount > 0 else { return }
+        // Calculate frame position
+        let sampleRate = file.processingFormat.sampleRate
+        let framePosition = AVAudioFramePosition(seekTime * sampleRate)
+        let remainingFrames = file.length - framePosition
         
-        playerNode.scheduleSegment(file, startingFrame: framePosition, frameCount: frameCount, at: nil)
+        guard remainingFrames > 0 else { return }
         
-        if state == .playing {
+        // Schedule from the new position with a new completion handler
+        playerNode.scheduleSegment(file, startingFrame: framePosition, 
+                                   frameCount: AVAudioFrameCount(remainingFrames), at: nil) { [weak self] in
+            DispatchQueue.main.async {
+                self?.handlePlaybackComplete(generation: currentGeneration)
+            }
+        }
+        
+        // Resume if was playing
+        if wasPlaying {
+            playbackStartDate = Date()  // Start tracking from seek position
             playerNode.play()
         }
     }
@@ -339,11 +387,13 @@ class AudioEngine {
     // MARK: - Time Updates
     
     var currentTime: TimeInterval {
-        guard let nodeTime = playerNode.lastRenderTime,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else {
-            return 0
+        // Use manual time tracking based on when playback started
+        guard state == .playing, let startDate = playbackStartDate else {
+            return _currentTime
         }
-        return Double(playerTime.sampleTime) / playerTime.sampleRate
+        
+        let elapsed = Date().timeIntervalSince(startDate)
+        return _currentTime + elapsed
     }
     
     var duration: TimeInterval {
@@ -399,16 +449,33 @@ class AudioEngine {
         do {
             audioFile = try AVAudioFile(forReading: track.url)
             currentTrack = track
+            _currentTime = 0  // Reset time for new track
+            
+            // Increment generation to invalidate any old completion handlers
+            playbackGeneration += 1
+            let currentGeneration = playbackGeneration
             
             playerNode.stop()
             playerNode.scheduleFile(audioFile!, at: nil) { [weak self] in
                 DispatchQueue.main.async {
-                    self?.trackDidFinish()
+                    self?.handlePlaybackComplete(generation: currentGeneration)
                 }
             }
         } catch {
             print("Failed to load audio file: \(error)")
         }
+    }
+    
+    /// Handle playback completion with generation check
+    private func handlePlaybackComplete(generation: Int) {
+        // Ignore if this completion handler is from a stale playback session
+        // (e.g., user seeked or loaded a new track since this was scheduled)
+        guard generation == playbackGeneration else { return }
+        
+        // Also ignore if we're not in a playing state (user manually stopped)
+        guard state == .playing else { return }
+        
+        trackDidFinish()
     }
     
     private func trackDidFinish() {

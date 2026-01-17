@@ -1,7 +1,7 @@
 import XCTest
-@testable import ClassicAmp
+@testable import AdAmp
 
-final class ClassicAmpTests: XCTestCase {
+final class AdAmpTests: XCTestCase {
     
     // MARK: - BMP Parser Tests
     

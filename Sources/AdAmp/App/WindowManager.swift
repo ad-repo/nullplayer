@@ -20,10 +20,10 @@ class WindowManager {
     private(set) var mainWindowController: MainWindowController?
     
     /// Playlist window controller
-    private var playlistWindowController: PlaylistWindowController?
+    private(set) var playlistWindowController: PlaylistWindowController?
     
     /// Equalizer window controller
-    private var equalizerWindowController: EQWindowController?
+    private(set) var equalizerWindowController: EQWindowController?
     
     /// Media library window controller
     private var mediaLibraryWindowController: MediaLibraryWindowController?
@@ -32,7 +32,8 @@ class WindowManager {
     private let snapThreshold: CGFloat = 10
     
     /// Docking threshold - windows closer than this are considered docked
-    private let dockThreshold: CGFloat = 2
+    /// Should be >= snapThreshold to ensure snapped windows are detected as docked
+    private let dockThreshold: CGFloat = 12
     
     /// Track which window is currently being dragged
     private var draggingWindow: NSWindow?
@@ -42,6 +43,9 @@ class WindowManager {
     
     /// Windows that should move together with the dragging window
     private var dockedWindowsToMove: [NSWindow] = []
+    
+    /// Flag to prevent feedback loop when moving docked windows programmatically
+    private var isMovingDockedWindows = false
     
     // MARK: - Initialization
     
@@ -171,75 +175,88 @@ class WindowManager {
         dockedWindowsToMove.removeAll()
     }
     
-    /// Called when a window is being dragged - handles snapping and grouped movement
+    /// Called when a window is being dragged - handle snapping and move docked windows
     func windowWillMove(_ window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
+        // Ignore if this is a docked window being moved programmatically
+        if isMovingDockedWindows && dockedWindowsToMove.contains(where: { $0 === window }) {
+            return newOrigin
+        }
+        
+        // Calculate delta from current position
+        let currentOrigin = window.frame.origin
+        
+        // If this is a new drag, find docked windows
+        if draggingWindow !== window {
+            windowWillStartDragging(window)
+        }
+        
+        // Apply snap to screen edges and other windows
+        let snappedOrigin = applySnapping(for: window, to: newOrigin)
+        
+        // Move all docked windows by the same delta
+        let actualDeltaX = snappedOrigin.x - currentOrigin.x
+        let actualDeltaY = snappedOrigin.y - currentOrigin.y
+        
+        if !dockedWindowsToMove.isEmpty && (actualDeltaX != 0 || actualDeltaY != 0) {
+            isMovingDockedWindows = true
+            for dockedWindow in dockedWindowsToMove {
+                var dockedOrigin = dockedWindow.frame.origin
+                dockedOrigin.x += actualDeltaX
+                dockedOrigin.y += actualDeltaY
+                dockedWindow.setFrameOrigin(dockedOrigin)
+            }
+            isMovingDockedWindows = false
+        }
+        
+        return snappedOrigin
+    }
+    
+    /// Apply snapping to other windows and screen edges
+    private func applySnapping(for window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
         var snappedOrigin = newOrigin
+        let frame = NSRect(origin: newOrigin, size: window.frame.size)
         
-        // Get all other windows (excluding docked ones that will move together)
-        let otherWindows = allWindows().filter { $0 !== window && !dockedWindowsToMove.contains($0) }
-        
-        // Check for snapping to other windows
-        for otherWindow in otherWindows {
-            let otherFrame = otherWindow.frame
-            let windowFrame = NSRect(origin: newOrigin, size: window.frame.size)
+        // Snap to other visible windows
+        for otherWindow in allWindows() {
+            guard otherWindow != window else { continue }
+            // Skip docked windows as they're moving with us
+            guard !dockedWindowsToMove.contains(otherWindow) else { continue }
             
-            // Snap right edge to left edge
-            if abs(windowFrame.maxX - otherFrame.minX) < snapThreshold {
-                snappedOrigin.x = otherFrame.minX - window.frame.width
+            let otherFrame = otherWindow.frame
+            
+            // Horizontal snapping - snap right edge to left edge
+            if abs(frame.maxX - otherFrame.minX) < snapThreshold {
+                snappedOrigin.x = otherFrame.minX - frame.width
             }
             // Snap left edge to right edge
-            if abs(windowFrame.minX - otherFrame.maxX) < snapThreshold {
+            if abs(frame.minX - otherFrame.maxX) < snapThreshold {
                 snappedOrigin.x = otherFrame.maxX
             }
-            // Snap bottom edge to top edge
-            if abs(windowFrame.minY - otherFrame.maxY) < snapThreshold {
+            // Snap left edges together
+            if abs(frame.minX - otherFrame.minX) < snapThreshold {
+                snappedOrigin.x = otherFrame.minX
+            }
+            // Snap right edges together
+            if abs(frame.maxX - otherFrame.maxX) < snapThreshold {
+                snappedOrigin.x = otherFrame.maxX - frame.width
+            }
+            
+            // Vertical snapping - snap top to bottom
+            if abs(frame.maxY - otherFrame.minY) < snapThreshold {
+                snappedOrigin.y = otherFrame.minY - frame.height
+            }
+            // Snap bottom to top
+            if abs(frame.minY - otherFrame.maxY) < snapThreshold {
                 snappedOrigin.y = otherFrame.maxY
             }
-            // Snap top edge to bottom edge
-            if abs(windowFrame.maxY - otherFrame.minY) < snapThreshold {
-                snappedOrigin.y = otherFrame.minY - window.frame.height
+            // Snap tops together
+            if abs(frame.maxY - otherFrame.maxY) < snapThreshold {
+                snappedOrigin.y = otherFrame.maxY - frame.height
             }
-            
-            // Align tops
-            if abs(windowFrame.maxY - otherFrame.maxY) < snapThreshold {
-                snappedOrigin.y = otherFrame.maxY - window.frame.height
-            }
-            // Align bottoms
-            if abs(windowFrame.minY - otherFrame.minY) < snapThreshold {
+            // Snap bottoms together
+            if abs(frame.minY - otherFrame.minY) < snapThreshold {
                 snappedOrigin.y = otherFrame.minY
             }
-        }
-        
-        // Snap to screen edges
-        if let screen = window.screen {
-            let visibleFrame = screen.visibleFrame
-            
-            if abs(snappedOrigin.x - visibleFrame.minX) < snapThreshold {
-                snappedOrigin.x = visibleFrame.minX
-            }
-            if abs(snappedOrigin.x + window.frame.width - visibleFrame.maxX) < snapThreshold {
-                snappedOrigin.x = visibleFrame.maxX - window.frame.width
-            }
-            if abs(snappedOrigin.y - visibleFrame.minY) < snapThreshold {
-                snappedOrigin.y = visibleFrame.minY
-            }
-            if abs(snappedOrigin.y + window.frame.height - visibleFrame.maxY) < snapThreshold {
-                snappedOrigin.y = visibleFrame.maxY - window.frame.height
-            }
-        }
-        
-        // Move docked windows together
-        let finalDelta = NSPoint(
-            x: snappedOrigin.x - window.frame.origin.x,
-            y: snappedOrigin.y - window.frame.origin.y
-        )
-        
-        for dockedWindow in dockedWindowsToMove {
-            let newDockedOrigin = NSPoint(
-                x: dockedWindow.frame.origin.x + finalDelta.x,
-                y: dockedWindow.frame.origin.y + finalDelta.y
-            )
-            dockedWindow.setFrameOrigin(newDockedOrigin)
         }
         
         return snappedOrigin
@@ -277,17 +294,15 @@ class WindowManager {
         
         // Check if windows are touching horizontally (side by side)
         let horizontallyAligned = (frame1.minY < frame2.maxY && frame1.maxY > frame2.minY)
-        let touchingHorizontally = horizontallyAligned && (
-            abs(frame1.maxX - frame2.minX) <= dockThreshold ||  // window1 left of window2
-            abs(frame1.minX - frame2.maxX) <= dockThreshold     // window1 right of window2
-        )
+        let hGap1 = abs(frame1.maxX - frame2.minX)
+        let hGap2 = abs(frame1.minX - frame2.maxX)
+        let touchingHorizontally = horizontallyAligned && (hGap1 <= dockThreshold || hGap2 <= dockThreshold)
         
         // Check if windows are touching vertically (stacked)
         let verticallyAligned = (frame1.minX < frame2.maxX && frame1.maxX > frame2.minX)
-        let touchingVertically = verticallyAligned && (
-            abs(frame1.maxY - frame2.minY) <= dockThreshold ||  // window1 below window2
-            abs(frame1.minY - frame2.maxY) <= dockThreshold     // window1 above window2
-        )
+        let vGap1 = abs(frame1.maxY - frame2.minY)
+        let vGap2 = abs(frame1.minY - frame2.maxY)
+        let touchingVertically = verticallyAligned && (vGap1 <= dockThreshold || vGap2 <= dockThreshold)
         
         return touchingHorizontally || touchingVertically
     }

@@ -1,0 +1,256 @@
+# Winamp Skin Format Research
+
+## Known Issues for Future Development
+
+### Position/Seek Slider (FIXED)
+The position slider now works correctly:
+- **Previous issues**: 
+  - After seeking, playback would skip to next track
+  - Position would snap back to 0 after seeking
+  - Duration was read from cached view property which could be 0
+- **Root causes fixed**:
+  1. The completion handler from `scheduleFile` fired when `playerNode.stop()` was called during seek
+  2. `playerTime(forNodeTime:)` didn't reliably track position after `scheduleSegment`
+  3. The view's cached `duration` property wasn't always up-to-date
+- **Solution**:
+  - Added `playbackGeneration` counter to invalidate stale completion handlers
+  - Switched to manual time tracking using `playbackStartDate` + `_currentTime` instead of relying on `playerNode.playerTime()`
+  - Now gets duration directly from `audioEngine.duration` instead of cached value
+  - Properly manage time tracking state across play/pause/stop/seek operations
+
+---
+
+This document captures research findings about the classic Winamp skin format (.wsz) for implementing AdAmp's skinning system. This is intended to help future development efforts.
+
+## External Resources
+
+### Primary References
+- **Webamp Source Code** (JavaScript Winamp clone): https://github.com/captbaritone/webamp
+  - Sprite coordinates: `https://raw.githubusercontent.com/captbaritone/webamp/master/packages/webamp/js/skinSprites.ts`
+  - This is the authoritative source for exact pixel coordinates of all skin elements
+  
+- **Winamp Skin Format Documentation**: https://winampskins.neocities.org/
+  - Contains guides for each skin component (main, equalizer, playlist, etc.)
+
+### Useful Commands to Fetch Sprite Data
+```bash
+# Get all EQMAIN sprite coordinates
+curl -s "https://raw.githubusercontent.com/captbaritone/webamp/master/packages/webamp/js/skinSprites.ts" | grep -A50 "EQMAIN:"
+
+# Get all CBUTTONS (transport buttons) coordinates  
+curl -s "https://raw.githubusercontent.com/captbaritone/webamp/master/packages/webamp/js/skinSprites.ts" | grep -A80 "CBUTTONS:"
+
+# Get PLEDIT (playlist) coordinates
+curl -s "https://raw.githubusercontent.com/captbaritone/webamp/master/packages/webamp/js/skinSprites.ts" | grep -A100 "PLEDIT:"
+```
+
+---
+
+## Skin File Structure
+
+A `.wsz` file is a ZIP archive containing BMP images:
+
+| File | Purpose |
+|------|---------|
+| `MAIN.BMP` | Main window background and elements |
+| `CBUTTONS.BMP` | Transport control buttons (play, pause, stop, etc.) |
+| `TITLEBAR.BMP` | Window title bar sprites |
+| `SHUFREP.BMP` | Shuffle, repeat, EQ, playlist toggle buttons |
+| `POSBAR.BMP` | Position/seek slider |
+| `VOLUME.BMP` | Volume slider |
+| `BALANCE.BMP` | Balance slider |
+| `MONOSTER.BMP` | Mono/stereo indicator |
+| `PLAYPAUS.BMP` | Play/pause status indicator |
+| `NUMBERS.BMP` | Time display digits |
+| `NUMS_EX.BMP` | Extended number set (if present) |
+| `TEXT.BMP` | Marquee/title text font |
+| `EQMAIN.BMP` | Equalizer window (275x315 pixels) |
+| `EQ_EX.BMP` | Extended EQ graphics (optional) |
+| `PLEDIT.BMP` | Playlist editor sprites |
+| `PLEDIT.TXT` | Playlist color configuration |
+
+---
+
+## EQMAIN.BMP Layout (275x315 pixels)
+
+The equalizer sprite sheet contains all EQ window elements:
+
+### Background & Window States
+| Element | X | Y | Width | Height | Notes |
+|---------|---|---|-------|--------|-------|
+| EQ Window Background | 0 | 0 | 275 | 116 | Main EQ window background |
+| Title Bar (Active) | 0 | 134 | 275 | 14 | "WINAMP EQUALIZER" active |
+| Title Bar (Inactive) | 0 | 149 | 275 | 14 | Title bar when window inactive |
+
+### Slider Knob (from webamp)
+| Element | X | Y | Width | Height | Notes |
+|---------|---|---|-------|--------|-------|
+| EQ_SLIDER_THUMB | 0 | 164 | 11 | 11 | Normal state |
+| EQ_SLIDER_THUMB_SELECTED | 0 | 176 | 11 | 11 | Pressed/selected state |
+| EQ_SLIDER_BACKGROUND | 13 | 164 | 209 | 129 | Full slider area background |
+
+### ON/AUTO/PRESETS Buttons (from webamp)
+| Element | X | Y | Width | Height | Notes |
+|---------|---|---|-------|--------|-------|
+| EQ_ON_ACTIVE | 0 | 119 | 26 | 12 | ON button - enabled state |
+| EQ_ON_ACTIVE_PRESSED | 26 | 119 | 26 | 12 | ON button - enabled+pressed |
+| EQ_ON_INACTIVE | 0 | 107 | 26 | 12 | ON button - disabled state |
+| EQ_ON_INACTIVE_PRESSED | 26 | 107 | 26 | 12 | ON button - disabled+pressed |
+| EQ_AUTO_ACTIVE | 52 | 119 | 32 | 12 | AUTO button - enabled |
+| EQ_AUTO_ACTIVE_PRESSED | 84 | 119 | 32 | 12 | AUTO button - enabled+pressed |
+| EQ_AUTO_INACTIVE | 52 | 107 | 32 | 12 | AUTO button - disabled |
+| EQ_AUTO_INACTIVE_PRESSED | 84 | 107 | 32 | 12 | AUTO button - disabled+pressed |
+| EQ_PRESETS_NORMAL | 224 | 164 | 44 | 12 | PRESETS button normal |
+| EQ_PRESETS_PRESSED | 224 | 176 | 44 | 12 | PRESETS button pressed |
+
+### EQ Graph
+| Element | X | Y | Width | Height | Notes |
+|---------|---|---|-------|--------|-------|
+| EQ_GRAPH_BACKGROUND | 0 | 294 | 113 | 19 | Graph area background |
+| EQ_GRAPH_LINE_COLORS | 115 | 294 | 1 | 19 | Color palette for graph line |
+
+### Colored Slider Bars
+The colored bars (green/yellow/orange/red gradient) that show EQ levels are located in the lower portion of EQMAIN.BMP. These are pre-rendered sprites at different fill levels.
+
+**NOTE**: The exact coordinates for the 28 different fill-level sprites need further research. They appear to be in rows 200+ of the sprite sheet.
+
+---
+
+## EQ Window Layout (In-Window Coordinates)
+
+The EQ window is 275x116 pixels (standard size):
+
+### Element Positions (Winamp Y-axis: 0=top, increases downward)
+```
+Slider Positions:
+- Preamp X: 21
+- First Band X: 78  
+- Band Spacing: 18 pixels between each band
+- Slider Y: 38 (top of slider track)
+- Slider Height: 63 pixels (travel distance)
+- Slider Width: 11 pixels (knob width)
+
+Button Positions:
+- ON button: (14, 18) - 26x12
+- AUTO button: (40, 18) - 32x12  
+- PRESETS button: (217, 18) - 44x12
+- Close button: (264, 3) - 9x9
+
+Graph Position:
+- Graph rect: (86, 17, 113, 19)
+
+Title Bar:
+- Height: 14 pixels
+```
+
+### Band Frequencies (left to right)
+60Hz, 170Hz, 310Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz
+
+---
+
+## Coordinate System Notes
+
+### Winamp vs macOS Coordinates
+- **Winamp**: Y=0 at top, Y increases downward
+- **macOS**: Y=0 at bottom, Y increases upward
+
+### Transform Applied in Drawing
+```swift
+// Flip to Winamp coordinates
+context.translateBy(x: 0, y: bounds.height)
+context.scaleBy(x: 1, y: -1)
+```
+
+After this transform, drawing at Y=0 appears at the TOP of the view.
+
+### Slider Value Mapping
+```swift
+// EQ band values: -12dB to +12dB
+// Normalized: 0.0 to 1.0
+let normalizedValue = (value + 12) / 24
+
+// Thumb Y position (in Winamp coords)
+// At +12dB (normalizedValue=1): thumb at TOP
+// At -12dB (normalizedValue=0): thumb at BOTTOM  
+let thumbY = sliderY + (sliderHeight - thumbSize) * (1 - normalizedValue)
+```
+
+---
+
+## Known Issues & Future Work
+
+### EQ Window
+1. **Colored slider bars** - Currently disabled. Need to implement using pre-rendered sprites from EQMAIN.BMP (rows 200+). The bars should:
+   - Fill the full width of the slider track (11px)
+   - Fill from knob position DOWN to bottom of track
+   - Show gradient: GREEN (top) → YELLOW → ORANGE → RED (bottom)
+   - Use sprite-based rendering, not programmatic drawing
+
+2. **Graph curve** - The EQ response curve in the graph area needs verification for correct orientation
+
+3. **Shade mode** - EQ shade mode (compact view) needs implementation
+
+### Main Window
+- Main window appears to render correctly with current skin
+
+### Playlist Window  
+- Playlist sprites are in PLEDIT.BMP
+- Colors defined in PLEDIT.TXT
+- Needs full implementation review
+
+### Window Docking/Snapping
+- Basic snapping implemented in WindowManager
+- Windows snap to each other within 10px threshold
+- Docked windows move together as a group
+- May need refinement for edge cases
+
+---
+
+## Implementation Files
+
+### Key Source Files
+- `Sources/AdAmp/Skin/SkinElements.swift` - All sprite coordinates and layout constants
+- `Sources/AdAmp/Skin/SkinRenderer.swift` - Drawing code for all skin elements
+- `Sources/AdAmp/Skin/SkinLoader.swift` - WSZ file loading and BMP parsing
+- `Sources/AdAmp/Skin/Skin.swift` - Skin data model
+- `Sources/AdAmp/Windows/Equalizer/EQView.swift` - EQ window view
+- `Sources/AdAmp/Windows/Equalizer/EQWindowController.swift` - EQ window controller
+- `Sources/AdAmp/App/WindowManager.swift` - Window management, snapping, docking
+
+### Test Skin Location
+- Default skin: `Sources/AdAmp/Resources/base-2.91.wsz`
+- Extracted for testing: `/tmp/skin_extract/`
+
+---
+
+## Debugging Tips
+
+### Extract and View Skin Files
+```bash
+# Extract skin to temp directory
+unzip -o Sources/AdAmp/Resources/base-2.91.wsz -d /tmp/skin_extract
+
+# Convert BMP to PNG for viewing
+sips -s format png /tmp/skin_extract/EQMAIN.BMP --out /tmp/skin_extract/eqmain.png
+
+# Check image dimensions
+sips -g pixelHeight -g pixelWidth /tmp/skin_extract/EQMAIN.BMP
+```
+
+### Fetching Latest Webamp Coordinates
+```bash
+# Full sprite definitions
+curl -s "https://raw.githubusercontent.com/captbaritone/webamp/master/packages/webamp/js/skinSprites.ts" > /tmp/skinSprites.ts
+```
+
+---
+
+## Version History
+
+- **2026-01-16**: Initial research document created
+  - Documented EQMAIN.BMP sprite coordinates from webamp
+  - Fixed EQ slider knob (was 14x63, corrected to 11x11 at y=164)
+  - Fixed ON/AUTO button coordinates
+  - Implemented window dragging fix for EQ (sliders vs window drag)
+  - Implemented basic window snapping/docking
+  - Disabled colored bars pending proper sprite-based implementation

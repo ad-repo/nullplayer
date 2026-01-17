@@ -32,11 +32,15 @@ class MainWindowView: NSView {
     private var pressedButton: ButtonType?
     
     /// Dragging state
-    private var isDragging = false
-    private var dragStartPoint: NSPoint = .zero
     
-    /// Slider drag tracker
-    private let sliderTracker = SliderDragTracker()
+    /// Which slider is being dragged (nil = none)
+    private var draggingSlider: SliderType?
+    
+    /// Position slider drag value (for visual feedback during drag)
+    private var dragPositionValue: CGFloat?
+    
+    /// Timestamp of last seek to ignore stale updates
+    private var lastSeekTime: Date?
     
     /// Region manager for hit testing
     private let regionManager = RegionManager.shared
@@ -91,13 +95,62 @@ class MainWindowView: NSView {
     
     // MARK: - Drawing
     
+    /// Calculate scale factor based on current bounds vs original size
+    private var scaleFactor: CGFloat {
+        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+        let scaleX = bounds.width / originalSize.width
+        let scaleY = bounds.height / originalSize.height
+        return min(scaleX, scaleY)
+    }
+    
+    /// Convert a point from view coordinates to original (unscaled) coordinates
+    private func convertToOriginalCoordinates(_ point: NSPoint) -> NSPoint {
+        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+        let scale = scaleFactor
+        
+        if scale == 1.0 {
+            return point
+        }
+        
+        // Calculate the offset (centering)
+        let scaledWidth = originalSize.width * scale
+        let scaledHeight = originalSize.height * scale
+        let offsetX = (bounds.width - scaledWidth) / 2
+        let offsetY = (bounds.height - scaledHeight) / 2
+        
+        // Transform point back to original coordinates
+        let x = (point.x - offsetX) / scale
+        let y = (point.y - offsetY) / scale
+        
+        return NSPoint(x: x, y: y)
+    }
+    
+    /// Get the original window size for hit testing
+    private var originalWindowSize: NSSize {
+        return isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+    }
+    
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+        let scale = scaleFactor
         
         // Flip coordinate system to match Winamp's top-down coordinates
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
+        
+        // Apply scaling for resized window
+        if scale != 1.0 {
+            // Center the scaled content
+            let scaledWidth = originalSize.width * scale
+            let scaledHeight = originalSize.height * scale
+            let offsetX = (bounds.width - scaledWidth) / 2
+            let offsetY = (bounds.height - scaledHeight) / 2
+            context.translateBy(x: offsetX, y: offsetY)
+            context.scaleBy(x: scale, y: scale)
+        }
         
         let skin = WindowManager.shared.currentSkin
         let renderer = SkinRenderer(skin: skin ?? SkinLoader.shared.loadDefault())
@@ -105,12 +158,15 @@ class MainWindowView: NSView {
         // Determine if window is active
         let isActive = window?.isKeyWindow ?? true
         
+        // Use original bounds for drawing (scaling is applied via transform)
+        let drawBounds = NSRect(origin: .zero, size: originalSize)
+        
         if isShadeMode {
             // Draw shade mode (compact view)
-            let marqueeText = currentTrack?.displayTitle ?? "ClassicAmp"
+            let marqueeText = currentTrack?.displayTitle ?? "AdAmp"
             renderer.drawMainWindowShade(
                 in: context,
-                bounds: bounds,
+                bounds: drawBounds,
                 isActive: isActive,
                 currentTime: currentTime,
                 duration: duration,
@@ -119,17 +175,17 @@ class MainWindowView: NSView {
                 pressedButton: pressedButton
             )
         } else {
-            // Draw normal mode
-            drawNormalMode(renderer: renderer, context: context, isActive: isActive)
+            // Draw normal mode with original bounds
+            drawNormalModeScaled(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
         }
         
         context.restoreGState()
     }
     
-    /// Draw the normal (non-shade) mode
-    private func drawNormalMode(renderer: SkinRenderer, context: CGContext, isActive: Bool) {
+    /// Draw the normal (non-shade) mode with scaling support
+    private func drawNormalModeScaled(renderer: SkinRenderer, context: CGContext, isActive: Bool, drawBounds: NSRect) {
         // Draw main window background
-        renderer.drawMainWindowBackground(in: context, bounds: bounds, isActive: isActive)
+        renderer.drawMainWindowBackground(in: context, bounds: drawBounds, isActive: isActive)
         
         // Draw time display
         let minutes = Int(currentTime) / 60
@@ -137,7 +193,7 @@ class MainWindowView: NSView {
         renderer.drawTimeDisplay(minutes: minutes, seconds: seconds, in: context)
         
         // Draw song title marquee
-        let marqueeText = currentTrack?.displayTitle ?? "ClassicAmp"
+        let marqueeText = currentTrack?.displayTitle ?? "AdAmp"
         renderer.drawMarquee(text: marqueeText, offset: marqueeOffset, in: context)
         
         // Draw playback status indicator
@@ -152,18 +208,23 @@ class MainWindowView: NSView {
         renderer.drawSpectrumAnalyzer(levels: spectrumLevels, in: context)
         
         // Draw position slider (seek bar)
-        let positionValue = duration > 0 ? CGFloat(currentTime / duration) : 0
-        let positionPressed = sliderTracker.isDragging && sliderTracker.sliderType == .position
+        let positionValue: CGFloat
+        if let dragValue = dragPositionValue {
+            positionValue = dragValue
+        } else {
+            positionValue = duration > 0 ? CGFloat(currentTime / duration) : 0
+        }
+        let positionPressed = draggingSlider == .position
         renderer.drawPositionSlider(value: positionValue, isPressed: positionPressed, in: context)
         
         // Draw volume slider
         let volumeValue = CGFloat(WindowManager.shared.audioEngine.volume)
-        let volumePressed = sliderTracker.isDragging && sliderTracker.sliderType == .volume
+        let volumePressed = draggingSlider == .volume
         renderer.drawVolumeSlider(value: volumeValue, isPressed: volumePressed, in: context)
         
         // Draw balance slider
         let balanceValue = CGFloat(WindowManager.shared.audioEngine.balance)
-        let balancePressed = sliderTracker.isDragging && sliderTracker.sliderType == .balance
+        let balancePressed = draggingSlider == .balance
         renderer.drawBalanceSlider(value: balanceValue, isPressed: balancePressed, in: context)
         
         // Draw transport buttons
@@ -180,14 +241,22 @@ class MainWindowView: NSView {
         )
         
         // Draw window controls (minimize, shade, close)
-        renderer.drawWindowControls(in: context, bounds: bounds, pressedButton: pressedButton)
+        renderer.drawWindowControls(in: context, bounds: drawBounds, pressedButton: pressedButton)
     }
     
     // MARK: - Public Methods
     
     func updateTime(current: TimeInterval, duration: TimeInterval) {
-        self.currentTime = current
         self.duration = duration
+        // Don't update currentTime or redraw if user is dragging the position slider
+        if draggingSlider == .position {
+            return
+        }
+        // Ignore stale updates briefly after seeking to let audio engine catch up
+        if let lastSeek = lastSeekTime, Date().timeIntervalSince(lastSeek) < 0.3 {
+            return
+        }
+        self.currentTime = current
         needsDisplay = true
     }
     
@@ -209,7 +278,7 @@ class MainWindowView: NSView {
         marqueeTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
-            let title = self.currentTrack?.displayTitle ?? "ClassicAmp"
+            let title = self.currentTrack?.displayTitle ?? "AdAmp"
             let charWidth = SkinElements.TextFont.charWidth
             let textWidth = CGFloat(title.count) * charWidth
             let marqueeWidth = SkinElements.TextFont.Positions.marqueeArea.width
@@ -226,6 +295,15 @@ class MainWindowView: NSView {
     
     // MARK: - Mouse Events
     
+    /// Track if we're dragging the window
+    private var isDraggingWindow = false
+    private var windowDragStartPoint: NSPoint = .zero
+    
+    /// Allow clicking even when window is not active
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+    
     override func updateTrackingAreas() {
         if let existing = trackingArea {
             removeTrackingArea(existing)
@@ -241,17 +319,20 @@ class MainWindowView: NSView {
     }
     
     override func cursorUpdate(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let cursor = regionManager.cursor(for: point, in: .main, windowSize: bounds.size)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = convertToOriginalCoordinates(viewPoint)
+        let cursor = regionManager.cursor(for: point, in: .main, windowSize: originalWindowSize)
         cursor.set()
     }
     
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = convertToOriginalCoordinates(viewPoint)
+        let hitTestSize = originalWindowSize
         
         // Check for double-click on title bar to toggle shade mode
         if event.clickCount == 2 {
-            if isShadeMode || regionManager.shouldToggleShade(at: point, windowType: .main, windowSize: bounds.size) {
+            if isShadeMode || regionManager.shouldToggleShade(at: point, windowType: .main, windowSize: hitTestSize) {
                 toggleShadeMode()
                 return
             }
@@ -263,26 +344,22 @@ class MainWindowView: NSView {
             return
         }
         
-        // Check if in title bar for dragging
-        if regionManager.isInTitleBar(point, windowType: .main, windowSize: bounds.size) {
-            isDragging = true
-            dragStartPoint = event.locationInWindow
-            // Notify WindowManager that dragging is starting
-            if let window = window {
-                WindowManager.shared.windowWillStartDragging(window)
-            }
+        // Hit test for actions
+        if let action = regionManager.hitTest(point: point, in: .main, windowSize: hitTestSize) {
+            handleMouseDown(action: action, at: point)
             return
         }
         
-        // Hit test for actions
-        if let action = regionManager.hitTest(point: point, in: .main, windowSize: bounds.size) {
-            handleMouseDown(action: action, at: point)
-        }
+        // No action hit - start window drag
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
     }
     
     /// Handle mouse down in shade mode
     private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
-        let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        // Point is already in original coordinates, convert to Winamp Y-axis (top-down)
+        let originalHeight = SkinElements.MainShade.windowSize.height
+        let winampPoint = NSPoint(x: point.x, y: originalHeight - point.y)
         
         // Check window control buttons
         let closeRect = SkinElements.TitleBar.ShadePositions.closeButton
@@ -307,13 +384,9 @@ class MainWindowView: NSView {
             return
         }
         
-        // Otherwise, start dragging
-        isDragging = true
-        dragStartPoint = event.locationInWindow
-        // Notify WindowManager that dragging is starting
-        if let window = window {
-            WindowManager.shared.windowWillStartDragging(window)
-        }
+        // No button hit - start window drag
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
     }
     
     private func handleMouseDown(action: PlayerAction, at point: NSPoint) {
@@ -348,14 +421,15 @@ class MainWindowView: NSView {
             
         // Slider interactions
         case .seekPosition(let value):
-            sliderTracker.beginDrag(slider: .position, at: point, currentValue: value)
+            draggingSlider = .position
+            dragPositionValue = value
             
         case .setVolume(let value):
-            sliderTracker.beginDrag(slider: .volume, at: point, currentValue: value)
+            draggingSlider = .volume
             WindowManager.shared.audioEngine.volume = Float(value)
             
         case .setBalance(let value):
-            sliderTracker.beginDrag(slider: .balance, at: point, currentValue: value)
+            draggingSlider = .balance
             WindowManager.shared.audioEngine.balance = Float(value)
             
         default:
@@ -366,82 +440,92 @@ class MainWindowView: NSView {
     }
     
     override func mouseDragged(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = convertToOriginalCoordinates(viewPoint)
         
-        if isDragging {
-            // Window dragging
-            guard let window = window else { return }
+        // Handle window dragging (moves docked windows too)
+        if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
-            let delta = NSPoint(
-                x: currentPoint.x - dragStartPoint.x,
-                y: currentPoint.y - dragStartPoint.y
-            )
+            let deltaX = currentPoint.x - windowDragStartPoint.x
+            let deltaY = currentPoint.y - windowDragStartPoint.y
             
             var newOrigin = window.frame.origin
-            newOrigin.x += delta.x
-            newOrigin.y += delta.y
+            newOrigin.x += deltaX
+            newOrigin.y += deltaY
             
-            // Apply snapping
+            // Use WindowManager for snapping and moving docked windows
             newOrigin = WindowManager.shared.windowWillMove(window, to: newOrigin)
             window.setFrameOrigin(newOrigin)
-        } else if sliderTracker.isDragging {
-            // Slider dragging
-            let rect: NSRect
-            switch sliderTracker.sliderType {
-            case .position:
-                rect = SkinElements.PositionBar.Positions.track
-            case .volume:
-                rect = SkinElements.Volume.Positions.slider
-            case .balance:
-                rect = SkinElements.Balance.Positions.slider
-            default:
-                return
-            }
+            return
+        }
+        
+        // Handle slider dragging
+        if let slider = draggingSlider {
+            // Convert point to Winamp coordinates
+            let originalHeight = Skin.mainWindowSize.height
+            let winampPoint = NSPoint(x: point.x, y: originalHeight - point.y)
             
-            // Convert point to Winamp coordinates for calculation
-            let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
-            let newValue = sliderTracker.updateDrag(to: winampPoint, in: rect)
-            
-            switch sliderTracker.sliderType {
+            switch slider {
             case .position:
-                // Don't seek during drag, just update display
-                break
+                // Calculate absolute position on the track
+                let rect = SkinElements.PositionBar.Positions.track
+                let newValue = min(1.0, max(0.0, (winampPoint.x - rect.minX) / rect.width))
+                dragPositionValue = newValue
             case .volume:
+                let rect = SkinElements.Volume.Positions.slider
+                let newValue = min(1.0, max(0.0, (winampPoint.x - rect.minX) / rect.width))
                 WindowManager.shared.audioEngine.volume = Float(newValue)
             case .balance:
+                let rect = SkinElements.Balance.Positions.slider
+                let normalized = min(1.0, max(0.0, (winampPoint.x - rect.minX) / rect.width))
+                let newValue = (normalized * 2.0) - 1.0  // Convert to -1...1
                 WindowManager.shared.audioEngine.balance = Float(newValue)
             default:
                 break
             }
             
-            needsDisplay = true
+            // Force immediate redraw during drag (needsDisplay doesn't work reliably during drag)
+            display()
         }
     }
     
     override func mouseUp(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let point = convertToOriginalCoordinates(viewPoint)
         
-        if isDragging {
-            isDragging = false
-            // Notify WindowManager that dragging has ended
+        // End window dragging
+        if isDraggingWindow {
+            isDraggingWindow = false
             if let window = window {
                 WindowManager.shared.windowDidFinishDragging(window)
             }
-            return
         }
         
-        if sliderTracker.isDragging {
+        if let slider = draggingSlider {
             // Complete slider interaction
-            if sliderTracker.sliderType == .position {
-                let rect = SkinElements.PositionBar.Positions.track
-                let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
-                let finalValue = sliderTracker.updateDrag(to: winampPoint, in: rect)
+            if slider == .position, let finalValue = dragPositionValue {
+                // Get duration directly from audio engine (more reliable than cached value)
+                let audioDuration = WindowManager.shared.audioEngine.duration
+                guard audioDuration > 0 else {
+                    dragPositionValue = nil
+                    draggingSlider = nil
+                    needsDisplay = true
+                    return
+                }
                 
                 // Seek to the final position
-                let seekTime = duration * Double(finalValue)
+                let seekTime = audioDuration * Double(finalValue)
                 WindowManager.shared.audioEngine.seek(to: seekTime)
+                
+                // Update currentTime immediately to prevent visual snap-back
+                currentTime = seekTime
+                duration = audioDuration
+                lastSeekTime = Date()
+                
+                // Clear drag position
+                dragPositionValue = nil
             }
-            sliderTracker.endDrag()
+            draggingSlider = nil
             needsDisplay = true
             return
         }
@@ -450,7 +534,8 @@ class MainWindowView: NSView {
         if let pressed = pressedButton {
             if isShadeMode {
                 // Shade mode button release handling
-                let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+                let originalHeight = SkinElements.MainShade.windowSize.height
+                let winampPoint = NSPoint(x: point.x, y: originalHeight - point.y)
                 var shouldPerform = false
                 
                 switch pressed {
@@ -469,7 +554,7 @@ class MainWindowView: NSView {
                 }
             } else {
                 // Normal mode button release handling
-                let action = regionManager.hitTest(point: point, in: .main, windowSize: bounds.size)
+                let action = regionManager.hitTest(point: point, in: .main, windowSize: originalWindowSize)
                 
                 // If released on the same button, perform the action
                 if actionMatchesButton(action, pressed) {

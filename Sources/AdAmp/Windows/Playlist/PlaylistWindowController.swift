@@ -16,9 +16,10 @@ class PlaylistWindowController: NSWindowController {
     // MARK: - Initialization
     
     convenience init() {
+        // Create borderless window with manual resize handling
         let window = ResizableWindow(
             contentRect: NSRect(origin: .zero, size: Skin.playlistMinSize),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -34,6 +35,8 @@ class PlaylistWindowController: NSWindowController {
     private func setupWindow() {
         guard let window = window else { return }
         
+        // Disable automatic window dragging - we handle it manually in the view
+        // to support moving docked windows together
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
@@ -41,10 +44,27 @@ class PlaylistWindowController: NSWindowController {
         window.minSize = Skin.playlistMinSize
         window.title = "Playlist"
         
-        // Position below main window
+        // Match main window's width and position below it (or below EQ if visible)
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
             let mainFrame = mainWindow.frame
-            window.setFrameOrigin(NSPoint(x: mainFrame.minX, y: mainFrame.minY - window.frame.height))
+            let scale = mainFrame.width / Skin.mainWindowSize.width
+            // Use same width as main window to match scaling
+            let playlistHeight = Skin.playlistMinSize.height * scale
+            
+            // Check if EQ window is visible and position below it
+            var positionY = mainFrame.minY - playlistHeight
+            if let eqWindow = WindowManager.shared.equalizerWindowController?.window,
+               eqWindow.isVisible {
+                positionY = eqWindow.frame.minY - playlistHeight
+            }
+            
+            let newFrame = NSRect(
+                x: mainFrame.minX,
+                y: positionY,
+                width: mainFrame.width,
+                height: playlistHeight
+            )
+            window.setFrame(newFrame, display: true)
         } else {
             window.center()
         }
@@ -76,11 +96,6 @@ class PlaylistWindowController: NSWindowController {
         guard let window = window else { return }
         
         isShadeMode = enabled
-        
-        // Enable/disable resizing via our custom window
-        if let resizableWindow = window as? ResizableWindow {
-            resizableWindow.resizingEnabled = !enabled
-        }
         
         if enabled {
             // Store current frame for restoration

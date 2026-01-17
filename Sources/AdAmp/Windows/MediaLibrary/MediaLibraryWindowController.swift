@@ -16,7 +16,8 @@ class MediaLibraryWindowController: NSWindowController {
     // MARK: - Initialization
     
     convenience init() {
-        let window = NSWindow(
+        // Create borderless window with manual resize handling
+        let window = ResizableWindow(
             contentRect: NSRect(origin: .zero, size: Self.defaultSize),
             styleMask: [.borderless, .resizable],
             backing: .buffered,
@@ -34,7 +35,7 @@ class MediaLibraryWindowController: NSWindowController {
     private func setupWindow() {
         guard let window = window else { return }
         
-        window.isMovableByWindowBackground = false
+        window.isMovableByWindowBackground = true
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true

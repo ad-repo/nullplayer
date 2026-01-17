@@ -1,11 +1,11 @@
 import AppKit
 
-/// Controller for the main player window
-class MainWindowController: NSWindowController {
+/// Controller for the equalizer window
+class EQWindowController: NSWindowController {
     
     // MARK: - Properties
     
-    private var mainView: MainWindowView!
+    private var eqView: EQView!
     
     /// Whether the window is in shade mode
     private(set) var isShadeMode = false
@@ -16,10 +16,10 @@ class MainWindowController: NSWindowController {
     // MARK: - Initialization
     
     convenience init() {
-        // Create borderless window with exact Winamp dimensions
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: Skin.mainWindowSize),
-            styleMask: [.borderless],
+        // Create borderless window with manual resize handling
+        let window = ResizableWindow(
+            contentRect: NSRect(origin: .zero, size: Skin.eqWindowSize),
+            styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -35,50 +35,46 @@ class MainWindowController: NSWindowController {
     private func setupWindow() {
         guard let window = window else { return }
         
+        // Don't use isMovableByWindowBackground - we handle dragging manually in the view
+        // This allows us to prevent window drag when clicking on sliders
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.level = .normal
-        window.title = "ClassicAmp"
+        window.title = "Equalizer"
         
-        // Center on screen initially
-        window.center()
+        // Set minimum size for EQ window
+        window.minSize = Skin.eqWindowSize
         
-        // Set up window delegate for movement handling
+        // Match main window's width and position below it
+        if let mainWindow = WindowManager.shared.mainWindowController?.window {
+            let mainFrame = mainWindow.frame
+            // Use same width as main window to match scaling
+            let eqHeight = Skin.eqWindowSize.height * (mainFrame.width / Skin.mainWindowSize.width)
+            let newFrame = NSRect(
+                x: mainFrame.minX,
+                y: mainFrame.minY - eqHeight,
+                width: mainFrame.width,
+                height: eqHeight
+            )
+            window.setFrame(newFrame, display: true)
+        } else {
+            window.center()
+        }
+        
         window.delegate = self
     }
     
     private func setupView() {
-        mainView = MainWindowView(frame: NSRect(origin: .zero, size: Skin.mainWindowSize))
-        mainView.controller = self
-        window?.contentView = mainView
+        eqView = EQView(frame: NSRect(origin: .zero, size: Skin.eqWindowSize))
+        eqView.controller = self
+        window?.contentView = eqView
     }
     
     // MARK: - Public Methods
     
     func skinDidChange() {
-        mainView.needsDisplay = true
-    }
-    
-    func updatePlaybackState() {
-        mainView.needsDisplay = true
-    }
-    
-    func updateTime(current: TimeInterval, duration: TimeInterval) {
-        mainView.updateTime(current: current, duration: duration)
-    }
-    
-    func updateTrackInfo(_ track: Track?) {
-        mainView.updateTrackInfo(track)
-    }
-    
-    func updateSpectrum(_ levels: [Float]) {
-        mainView.updateSpectrum(levels)
-    }
-
-    func windowVisibilityDidChange() {
-        mainView.needsDisplay = true
+        eqView.skinDidChange()
     }
     
     // MARK: - Shade Mode
@@ -93,8 +89,8 @@ class MainWindowController: NSWindowController {
             // Store current frame for restoration
             normalModeFrame = window.frame
             
-            // Calculate new shade mode frame (same origin, shorter height)
-            let shadeSize = SkinElements.MainShade.windowSize
+            // Calculate new shade mode frame
+            let shadeSize = SkinElements.EQShade.windowSize
             let newFrame = NSRect(
                 x: window.frame.origin.x,
                 y: window.frame.origin.y + window.frame.height - shadeSize.height,
@@ -104,16 +100,15 @@ class MainWindowController: NSWindowController {
             
             // Resize window
             window.setFrame(newFrame, display: true, animate: true)
-            mainView.frame = NSRect(origin: .zero, size: shadeSize)
+            eqView.frame = NSRect(origin: .zero, size: shadeSize)
         } else {
             // Restore normal mode frame
-            let normalSize = Skin.mainWindowSize
+            let normalSize = Skin.eqWindowSize
             let newFrame: NSRect
             
             if let storedFrame = normalModeFrame {
                 newFrame = storedFrame
             } else {
-                // Calculate frame from current position
                 newFrame = NSRect(
                     x: window.frame.origin.x,
                     y: window.frame.origin.y + window.frame.height - normalSize.height,
@@ -124,26 +119,32 @@ class MainWindowController: NSWindowController {
             
             // Resize window
             window.setFrame(newFrame, display: true, animate: true)
-            mainView.frame = NSRect(origin: .zero, size: normalSize)
+            eqView.frame = NSRect(origin: .zero, size: normalSize)
             normalModeFrame = nil
         }
         
-        mainView.setShadeMode(enabled)
+        eqView.setShadeMode(enabled)
+    }
+    
+    // MARK: - Private Properties
+    
+    private var mainWindowController: MainWindowController? {
+        return nil
     }
 }
 
 // MARK: - NSWindowDelegate
 
-extension MainWindowController: NSWindowDelegate {
-    func windowWillMove(_ notification: Notification) {
-        // Handle window snapping via WindowManager
-    }
-    
+extension EQWindowController: NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         guard let window = window else { return }
         let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         if newOrigin != window.frame.origin {
             window.setFrameOrigin(newOrigin)
         }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        WindowManager.shared.notifyMainWindowVisibilityChanged()
     }
 }

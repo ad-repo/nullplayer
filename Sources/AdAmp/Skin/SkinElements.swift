@@ -1,5 +1,15 @@
 import AppKit
 
+// =============================================================================
+// SKIN ELEMENTS - Sprite coordinates and layout constants
+// =============================================================================
+// For comprehensive documentation on Winamp skin format, sprite coordinates,
+// and implementation notes, see: docs/SKIN_FORMAT_RESEARCH.md
+//
+// Primary external reference for coordinates:
+// https://raw.githubusercontent.com/captbaritone/webamp/master/packages/webamp/js/skinSprites.ts
+// =============================================================================
+
 // MARK: - Window Types
 
 /// Types of windows in the Winamp interface
@@ -288,13 +298,13 @@ struct SkinElements {
         static let minus = NSRect(x: 99, y: 0, width: 9, height: 13)
         
         // Time display positions on main window (minutes:seconds)
-        // Total width for 5 characters (MM:SS without colon visual)
+        // Standard Winamp positions - digits are 9px wide with tight spacing
         struct Positions {
             static let minuteTens = NSPoint(x: 48, y: 26)
-            static let minuteOnes = NSPoint(x: 57, y: 26)
-            // Colon is implicit at x: 66
+            static let minuteOnes = NSPoint(x: 60, y: 26)
+            // Colon is baked into background at ~x: 69-77
             static let secondTens = NSPoint(x: 78, y: 26)
-            static let secondOnes = NSPoint(x: 87, y: 26)
+            static let secondOnes = NSPoint(x: 90, y: 26)
         }
     }
     
@@ -541,15 +551,25 @@ struct SkinElements {
         /// EQ Title bar inactive
         static let titleInactive = NSRect(x: 0, y: 149, width: 275, height: 14)
         
-        /// ON button
-        static let onButtonActive = NSRect(x: 0, y: 119, width: 26, height: 12)
-        static let onButtonInactive = NSRect(x: 0, y: 107, width: 26, height: 12)
+        /// ON button (from eqmain.bmp at y=119, width=26, height=12)
+        /// Coordinates from webamp source
+        static let onButtonOffNormal = NSRect(x: 10, y: 119, width: 26, height: 12)
+        static let onButtonOffPressed = NSRect(x: 128, y: 119, width: 26, height: 12)
+        static let onButtonOnNormal = NSRect(x: 69, y: 119, width: 26, height: 12)
+        static let onButtonOnPressed = NSRect(x: 187, y: 119, width: 26, height: 12)
+        static let onButtonActive = NSRect(x: 69, y: 119, width: 26, height: 12)
+        static let onButtonInactive = NSRect(x: 10, y: 119, width: 26, height: 12)
         
-        /// AUTO button
-        static let autoButtonActive = NSRect(x: 36, y: 119, width: 32, height: 12)
-        static let autoButtonInactive = NSRect(x: 36, y: 107, width: 32, height: 12)
+        /// AUTO button (from eqmain.bmp at y=119, width=32, height=12)
+        /// Coordinates from webamp source
+        static let autoButtonOffNormal = NSRect(x: 36, y: 119, width: 32, height: 12)
+        static let autoButtonOffPressed = NSRect(x: 154, y: 119, width: 32, height: 12)
+        static let autoButtonOnNormal = NSRect(x: 95, y: 119, width: 32, height: 12)
+        static let autoButtonOnPressed = NSRect(x: 213, y: 119, width: 32, height: 12)
+        static let autoButtonActive = NSRect(x: 95, y: 119, width: 32, height: 12)
+        static let autoButtonInactive = NSRect(x: 36, y: 119, width: 32, height: 12)
         
-        /// Presets button
+        /// Presets button (from eqmain.bmp)
         static let presetsNormal = NSRect(x: 224, y: 164, width: 44, height: 12)
         static let presetsPressed = NSRect(x: 224, y: 176, width: 44, height: 12)
         
@@ -567,9 +587,19 @@ struct SkinElements {
             static let sliderHeight: CGFloat = 63
         }
         
-        /// Slider thumb states (vertical EQ sliders)
-        static let sliderThumbNormal = NSRect(x: 0, y: 164, width: 14, height: 63)
-        static let sliderThumbPressed = NSRect(x: 0, y: 164, width: 14, height: 63)
+        /// Slider thumb states (vertical EQ sliders) - 11x11 pixels
+        /// Located in eqmain.bmp (NOT eq_ex.bmp) - coordinates from webamp source
+        static let sliderThumbNormal = NSRect(x: 0, y: 164, width: 11, height: 11)
+        static let sliderThumbPressed = NSRect(x: 0, y: 176, width: 11, height: 11)
+        
+        /// Colored slider bar graphics - shows fill levels
+        /// Located at bottom of eqmain.bmp (starting around row 294)
+        /// Each column is 14 pixels wide, full bar is 63 pixels tall
+        /// There are 28 different fill states horizontally
+        static let sliderBarY: CGFloat = 294
+        static let sliderBarWidth: CGFloat = 14
+        static let sliderBarHeight: CGFloat = 63
+        static let sliderBarStates: Int = 28
         
         /// Positions on EQ window
         struct Positions {
@@ -680,9 +710,19 @@ extension SkinElements {
             case .activePressed: return ShuffleRepeat.plOnPressed
             }
         case .eqOnOff:
-            return state == .active ? Equalizer.onButtonActive : Equalizer.onButtonInactive
+            switch state {
+            case .normal: return Equalizer.onButtonOffNormal
+            case .pressed: return Equalizer.onButtonOffPressed
+            case .active: return Equalizer.onButtonOnNormal
+            case .activePressed: return Equalizer.onButtonOnPressed
+            }
         case .eqAuto:
-            return state == .active ? Equalizer.autoButtonActive : Equalizer.autoButtonInactive
+            switch state {
+            case .normal: return Equalizer.autoButtonOffNormal
+            case .pressed: return Equalizer.autoButtonOffPressed
+            case .active: return Equalizer.autoButtonOnNormal
+            case .activePressed: return Equalizer.autoButtonOnPressed
+            }
         case .eqPresets:
             return state == .pressed ? Equalizer.presetsPressed : Equalizer.presetsNormal
         default:
