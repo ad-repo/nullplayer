@@ -60,7 +60,7 @@ class AudioEngine {
     private(set) var currentIndex: Int = -1
     
     /// Volume level (0.0 - 1.0)
-    var volume: Float = 1.0 {
+    var volume: Float = 0.5 {
         didSet {
             playerNode.volume = volume
         }
@@ -133,6 +133,9 @@ class AudioEngine {
         let format = engine.outputNode.inputFormat(forBus: 0)
         engine.connect(playerNode, to: eqNode, format: format)
         engine.connect(eqNode, to: engine.mainMixerNode, format: format)
+        
+        // Set initial volume (didSet doesn't fire for default value)
+        playerNode.volume = volume
         
         // Prepare engine
         engine.prepare()
