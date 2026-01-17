@@ -1,10 +1,12 @@
 import AppKit
+import AVFoundation
 
 /// Main application delegate for AdAmp
 /// Manages application lifecycle and window coordination
 class AppDelegate: NSObject, NSApplicationDelegate {
     
     private var windowManager: WindowManager!
+    private var introPlayer: AVAudioPlayer?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set the application dock icon
@@ -34,6 +36,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up the application menu
         setupMainMenu()
+        
+        // Play intro sound
+        playIntro()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
@@ -62,6 +67,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let iconURL = Bundle.module.url(forResource: "AppIcon", withExtension: "png", subdirectory: "Resources"),
            let iconImage = NSImage(contentsOf: iconURL) {
             NSApplication.shared.applicationIconImage = iconImage
+        }
+    }
+    
+    // MARK: - Intro Sound
+    
+    private func playIntro() {
+        guard let introURL = Bundle.module.url(forResource: "DJ Mike Llama - Llama Whippin Intro", withExtension: "mp3", subdirectory: "Resources") else {
+            return
+        }
+        
+        // Load into playlist and play (updates UI state)
+        windowManager.audioEngine.loadFiles([introURL])
+        windowManager.audioEngine.play()
+        
+        // Also play via AVAudioPlayer for reliable audio output
+        do {
+            introPlayer = try AVAudioPlayer(contentsOf: introURL)
+            introPlayer?.play()
+        } catch {
+            print("Failed to play intro: \(error)")
         }
     }
     
