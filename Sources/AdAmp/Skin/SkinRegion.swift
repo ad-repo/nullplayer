@@ -56,6 +56,9 @@ enum PlayerAction: Equatable {
     // Menu actions
     case openMainMenu
     case openOptionsMenu
+    
+    // Plex
+    case openPlexBrowser
 }
 
 // MARK: - Clickable Region
@@ -200,6 +203,13 @@ class RegionManager {
             rect: NSRect(x: 177, y: 57, width: 38, height: 13),
             action: .setBalance(0),
             cursor: .hResize
+        ))
+        
+        // Winamp logo (bottom-right corner) - opens Plex browser
+        regions.append(ClickableRegion(
+            rect: NSRect(x: 248, y: 91, width: 20, height: 20),
+            action: .openPlexBrowser,
+            cursor: .pointer
         ))
         
         return regions

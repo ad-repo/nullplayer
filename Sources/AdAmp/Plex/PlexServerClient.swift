@@ -122,6 +122,24 @@ class PlexServerClient {
         return libraries.filter { $0.isMusicLibrary }
     }
     
+    /// Fetch movie libraries only
+    func fetchMovieLibraries() async throws -> [PlexLibrary] {
+        let libraries = try await fetchLibraries()
+        return libraries.filter { $0.isMovieLibrary }
+    }
+    
+    /// Fetch TV show libraries only
+    func fetchShowLibraries() async throws -> [PlexLibrary] {
+        let libraries = try await fetchLibraries()
+        return libraries.filter { $0.isShowLibrary }
+    }
+    
+    /// Fetch all video libraries (movies and shows)
+    func fetchVideoLibraries() async throws -> [PlexLibrary] {
+        let libraries = try await fetchLibraries()
+        return libraries.filter { $0.isVideoLibrary }
+    }
+    
     // MARK: - Artist Operations
     
     /// Fetch all artists in a music library
@@ -215,6 +233,62 @@ class PlexServerClient {
         return response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
     }
     
+    // MARK: - Movie Operations
+    
+    /// Fetch all movies in a movie library
+    func fetchMovies(libraryID: String, offset: Int = 0, limit: Int = 100) async throws -> [PlexMovie] {
+        let queryItems = [
+            URLQueryItem(name: "type", value: "1"),  // type 1 = movie
+            URLQueryItem(name: "X-Plex-Container-Start", value: String(offset)),
+            URLQueryItem(name: "X-Plex-Container-Size", value: String(limit))
+        ]
+        
+        guard let request = buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        return response.mediaContainer.metadata?.map { $0.toMovie() } ?? []
+    }
+    
+    // MARK: - TV Show Operations
+    
+    /// Fetch all shows in a TV show library
+    func fetchShows(libraryID: String, offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
+        let queryItems = [
+            URLQueryItem(name: "type", value: "2"),  // type 2 = show
+            URLQueryItem(name: "X-Plex-Container-Start", value: String(offset)),
+            URLQueryItem(name: "X-Plex-Container-Size", value: String(limit))
+        ]
+        
+        guard let request = buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        return response.mediaContainer.metadata?.map { $0.toShow() } ?? []
+    }
+    
+    /// Fetch seasons for a specific TV show
+    func fetchSeasons(forShow showID: String) async throws -> [PlexSeason] {
+        guard let request = buildRequest(path: "/library/metadata/\(showID)/children") else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        return response.mediaContainer.metadata?.map { $0.toSeason() } ?? []
+    }
+    
+    /// Fetch episodes for a specific season
+    func fetchEpisodes(forSeason seasonID: String) async throws -> [PlexEpisode] {
+        guard let request = buildRequest(path: "/library/metadata/\(seasonID)/children") else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        return response.mediaContainer.metadata?.map { $0.toEpisode() } ?? []
+    }
+    
     // MARK: - Search
     
     /// Search for content in a library
@@ -268,6 +342,12 @@ class PlexServerClient {
                 results.albums.append(contentsOf: metadata.map { $0.toAlbum() })
             case "track":
                 results.tracks.append(contentsOf: metadata.map { $0.toTrack() })
+            case "movie":
+                results.movies.append(contentsOf: metadata.map { $0.toMovie() })
+            case "show":
+                results.shows.append(contentsOf: metadata.map { $0.toShow() })
+            case "episode":
+                results.episodes.append(contentsOf: metadata.map { $0.toEpisode() })
             default:
                 break
             }
@@ -280,6 +360,32 @@ class PlexServerClient {
     /// Generate a streaming URL for a track
     func streamURL(for track: PlexTrack) -> URL? {
         guard let partKey = track.partKey else { return nil }
+        
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        components?.path = partKey
+        components?.queryItems = [
+            URLQueryItem(name: "X-Plex-Token", value: authToken)
+        ]
+        
+        return components?.url
+    }
+    
+    /// Generate a streaming URL for a movie
+    func streamURL(for movie: PlexMovie) -> URL? {
+        guard let partKey = movie.partKey else { return nil }
+        
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        components?.path = partKey
+        components?.queryItems = [
+            URLQueryItem(name: "X-Plex-Token", value: authToken)
+        ]
+        
+        return components?.url
+    }
+    
+    /// Generate a streaming URL for an episode
+    func streamURL(for episode: PlexEpisode) -> URL? {
+        guard let partKey = episode.partKey else { return nil }
         
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
         components?.path = partKey
@@ -340,13 +446,26 @@ struct PlexSearchResults {
     var artists: [PlexArtist] = []
     var albums: [PlexAlbum] = []
     var tracks: [PlexTrack] = []
+    var movies: [PlexMovie] = []
+    var shows: [PlexShow] = []
+    var episodes: [PlexEpisode] = []
     
     var isEmpty: Bool {
-        artists.isEmpty && albums.isEmpty && tracks.isEmpty
+        artists.isEmpty && albums.isEmpty && tracks.isEmpty &&
+        movies.isEmpty && shows.isEmpty && episodes.isEmpty
     }
     
     var totalCount: Int {
-        artists.count + albums.count + tracks.count
+        artists.count + albums.count + tracks.count +
+        movies.count + shows.count + episodes.count
+    }
+    
+    var hasMusicResults: Bool {
+        !artists.isEmpty || !albums.isEmpty || !tracks.isEmpty
+    }
+    
+    var hasVideoResults: Bool {
+        !movies.isEmpty || !shows.isEmpty || !episodes.isEmpty
     }
 }
 

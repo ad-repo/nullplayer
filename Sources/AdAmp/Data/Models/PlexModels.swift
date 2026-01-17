@@ -78,12 +78,12 @@ struct PlexConnection: Codable, Equatable {
 
 // MARK: - Plex Library Content
 
-/// A music library on a Plex server
+/// A library on a Plex server
 struct PlexLibrary: Identifiable, Equatable {
     let id: String              // Section key/ID
     let uuid: String?
     let title: String
-    let type: String            // "artist" for music libraries
+    let type: String            // "artist" for music, "movie" for movies, "show" for TV
     let agent: String?
     let scanner: String?
     let language: String?
@@ -92,6 +92,18 @@ struct PlexLibrary: Identifiable, Equatable {
     
     var isMusicLibrary: Bool {
         type == "artist"
+    }
+    
+    var isMovieLibrary: Bool {
+        type == "movie"
+    }
+    
+    var isShowLibrary: Bool {
+        type == "show"
+    }
+    
+    var isVideoLibrary: Bool {
+        isMovieLibrary || isShowLibrary
     }
 }
 
@@ -172,6 +184,121 @@ struct PlexTrack: Identifiable, Equatable {
     }
 }
 
+// MARK: - Video Models
+
+/// A movie in a Plex movie library
+struct PlexMovie: Identifiable, Equatable {
+    let id: String              // ratingKey
+    let key: String             // API path
+    let title: String
+    let year: Int?
+    let summary: String?
+    let duration: Int?          // Duration in milliseconds
+    let thumb: String?          // Poster art path
+    let art: String?            // Background art path
+    let contentRating: String?  // MPAA rating (PG, R, etc.)
+    let studio: String?
+    let media: [PlexMedia]
+    let addedAt: Date?
+    let originallyAvailableAt: Date?
+    
+    /// Get the streaming part key for this movie
+    var partKey: String? {
+        media.first?.parts.first?.key
+    }
+    
+    var formattedDuration: String {
+        guard let duration = duration else { return "" }
+        let seconds = duration / 1000
+        let minutes = seconds / 60
+        let hours = minutes / 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes % 60, seconds % 60)
+        }
+        return String(format: "%d:%02d", minutes, seconds % 60)
+    }
+    
+    var durationInSeconds: TimeInterval {
+        guard let duration = duration else { return 0 }
+        return TimeInterval(duration) / 1000.0
+    }
+}
+
+/// A TV show in a Plex show library
+struct PlexShow: Identifiable, Equatable {
+    let id: String              // ratingKey
+    let key: String             // API path for children (seasons)
+    let title: String
+    let year: Int?
+    let summary: String?
+    let thumb: String?          // Poster art path
+    let art: String?            // Background art path
+    let contentRating: String?  // TV rating (TV-MA, etc.)
+    let studio: String?
+    let childCount: Int         // Number of seasons
+    let leafCount: Int          // Total number of episodes
+    let addedAt: Date?
+}
+
+/// A season of a TV show
+struct PlexSeason: Identifiable, Equatable {
+    let id: String              // ratingKey
+    let key: String             // API path for children (episodes)
+    let title: String           // Usually "Season X"
+    let index: Int              // Season number
+    let parentTitle: String?    // Show name
+    let parentKey: String?      // Show key
+    let thumb: String?
+    let leafCount: Int          // Number of episodes in this season
+    let addedAt: Date?
+}
+
+/// An episode of a TV show
+struct PlexEpisode: Identifiable, Equatable {
+    let id: String              // ratingKey
+    let key: String             // API path
+    let title: String
+    let index: Int              // Episode number
+    let parentIndex: Int        // Season number
+    let parentTitle: String?    // Season name
+    let grandparentTitle: String? // Show name
+    let grandparentKey: String? // Show key
+    let summary: String?
+    let duration: Int?          // Duration in milliseconds
+    let thumb: String?          // Episode thumbnail
+    let media: [PlexMedia]
+    let addedAt: Date?
+    let originallyAvailableAt: Date?
+    
+    /// Get the streaming part key for this episode
+    var partKey: String? {
+        media.first?.parts.first?.key
+    }
+    
+    var formattedDuration: String {
+        guard let duration = duration else { return "" }
+        let seconds = duration / 1000
+        let minutes = seconds / 60
+        let hours = minutes / 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes % 60, seconds % 60)
+        }
+        return String(format: "%d:%02d", minutes, seconds % 60)
+    }
+    
+    var durationInSeconds: TimeInterval {
+        guard let duration = duration else { return 0 }
+        return TimeInterval(duration) / 1000.0
+    }
+    
+    /// Formatted episode identifier (e.g., "S01E05")
+    var episodeIdentifier: String {
+        String(format: "S%02dE%02d", parentIndex, index)
+    }
+}
+
+// MARK: - Media Info
+
 /// Media info for a Plex item
 struct PlexMedia: Codable, Equatable {
     let id: Int
@@ -179,6 +306,10 @@ struct PlexMedia: Codable, Equatable {
     let bitrate: Int?
     let audioChannels: Int?
     let audioCodec: String?
+    let videoCodec: String?
+    let videoResolution: String?
+    let width: Int?
+    let height: Int?
     let container: String?
     let parts: [PlexPart]
 }
@@ -307,11 +438,12 @@ struct PlexMetadataDTO: Decodable {
     let addedAt: Int?
     let updatedAt: Int?
     let originallyAvailableAt: String?
-    let leafCount: Int?         // Track count for albums/artists
-    let childCount: Int?        // Album count for artists
+    let leafCount: Int?         // Track count for albums/artists, episode count for shows/seasons
+    let childCount: Int?        // Album count for artists, season count for shows
     let media: [PlexMediaDTO]?
     let genre: [PlexTagDTO]?
     let studio: String?
+    let contentRating: String?  // MPAA/TV rating
     
     enum CodingKeys: String, CodingKey {
         case ratingKey, key, type, title, parentTitle, grandparentTitle
@@ -320,7 +452,7 @@ struct PlexMetadataDTO: Decodable {
         case originallyAvailableAt, leafCount, childCount
         case media = "Media"
         case genre = "Genre"
-        case studio
+        case studio, contentRating
     }
     
     func toArtist() -> PlexArtist {
@@ -376,6 +508,88 @@ struct PlexMetadataDTO: Decodable {
             updatedAt: updatedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
         )
     }
+    
+    func toMovie() -> PlexMovie {
+        var releaseDate: Date? = nil
+        if let dateStr = originallyAvailableAt {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            releaseDate = formatter.date(from: dateStr)
+        }
+        
+        return PlexMovie(
+            id: ratingKey,
+            key: key,
+            title: title,
+            year: year,
+            summary: summary,
+            duration: duration,
+            thumb: thumb,
+            art: art,
+            contentRating: contentRating,
+            studio: studio,
+            media: media?.map { $0.toMedia() } ?? [],
+            addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+            originallyAvailableAt: releaseDate
+        )
+    }
+    
+    func toShow() -> PlexShow {
+        PlexShow(
+            id: ratingKey,
+            key: key,
+            title: title,
+            year: year,
+            summary: summary,
+            thumb: thumb,
+            art: art,
+            contentRating: contentRating,
+            studio: studio,
+            childCount: childCount ?? 0,
+            leafCount: leafCount ?? 0,
+            addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+        )
+    }
+    
+    func toSeason() -> PlexSeason {
+        PlexSeason(
+            id: ratingKey,
+            key: key,
+            title: title,
+            index: index ?? 0,
+            parentTitle: parentTitle,
+            parentKey: parentKey,
+            thumb: thumb,
+            leafCount: leafCount ?? 0,
+            addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+        )
+    }
+    
+    func toEpisode() -> PlexEpisode {
+        var airDate: Date? = nil
+        if let dateStr = originallyAvailableAt {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            airDate = formatter.date(from: dateStr)
+        }
+        
+        return PlexEpisode(
+            id: ratingKey,
+            key: key,
+            title: title,
+            index: index ?? 0,
+            parentIndex: parentIndex ?? 0,
+            parentTitle: parentTitle,
+            grandparentTitle: grandparentTitle,
+            grandparentKey: grandparentKey,
+            summary: summary,
+            duration: duration,
+            thumb: thumb,
+            media: media?.map { $0.toMedia() } ?? [],
+            addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+            originallyAvailableAt: airDate
+        )
+    }
 }
 
 struct PlexMediaDTO: Decodable {
@@ -384,11 +598,16 @@ struct PlexMediaDTO: Decodable {
     let bitrate: Int?
     let audioChannels: Int?
     let audioCodec: String?
+    let videoCodec: String?
+    let videoResolution: String?
+    let width: Int?
+    let height: Int?
     let container: String?
     let parts: [PlexPartDTO]?
     
     enum CodingKeys: String, CodingKey {
-        case id, duration, bitrate, audioChannels, audioCodec, container
+        case id, duration, bitrate, audioChannels, audioCodec
+        case videoCodec, videoResolution, width, height, container
         case parts = "Part"
     }
     
@@ -399,6 +618,10 @@ struct PlexMediaDTO: Decodable {
             bitrate: bitrate,
             audioChannels: audioChannels,
             audioCodec: audioCodec,
+            videoCodec: videoCodec,
+            videoResolution: videoResolution,
+            width: width,
+            height: height,
             container: container,
             parts: parts?.map { $0.toPart() } ?? []
         )

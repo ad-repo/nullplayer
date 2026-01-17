@@ -69,8 +69,8 @@ struct Skin {
     
     // MARK: - Window Dimensions
     
-    /// Scale factor for the UI (1.5 = 50% larger than original)
-    static let scaleFactor: CGFloat = 1.5
+    /// Scale factor for the UI (1.25 = 25% larger than original)
+    static let scaleFactor: CGFloat = 1.25
     
     /// Base Winamp dimensions (275x116 in classic Winamp) - used for sprite coordinate calculations
     static let baseMainSize = NSSize(width: 275, height: 116)

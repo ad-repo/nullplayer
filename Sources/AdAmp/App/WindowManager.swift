@@ -64,6 +64,9 @@ class WindowManager {
     /// Plex browser window controller
     private var plexBrowserWindowController: PlexBrowserWindowController?
     
+    /// Video player window controller
+    private var videoPlayerWindowController: VideoPlayerWindowController?
+    
     /// Snap threshold in pixels
     private let snapThreshold: CGFloat = 10
     
@@ -234,6 +237,44 @@ class WindowManager {
     func unlinkPlexAccount() {
         PlexManager.shared.unlinkAccount()
         plexBrowserWindowController?.reloadData()
+    }
+    
+    // MARK: - Video Player Window
+    
+    /// Show the video player with a URL and title
+    func showVideoPlayer(url: URL, title: String) {
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        videoPlayerWindowController?.play(url: url, title: title)
+    }
+    
+    /// Play a Plex movie in the video player
+    func playMovie(_ movie: PlexMovie) {
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        videoPlayerWindowController?.play(movie: movie)
+    }
+    
+    /// Play a Plex episode in the video player
+    func playEpisode(_ episode: PlexEpisode) {
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        videoPlayerWindowController?.play(episode: episode)
+    }
+    
+    var isVideoPlayerVisible: Bool {
+        videoPlayerWindowController?.window?.isVisible == true
+    }
+    
+    func toggleVideoPlayer() {
+        if let controller = videoPlayerWindowController, controller.window?.isVisible == true {
+            controller.window?.orderOut(nil)
+        } else if videoPlayerWindowController != nil {
+            videoPlayerWindowController?.showWindow(nil)
+        }
     }
 
     func notifyMainWindowVisibilityChanged() {
@@ -499,6 +540,7 @@ class WindowManager {
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = mediaLibraryWindowController?.window, w.isVisible { windows.append(w) }
         if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
     
@@ -527,6 +569,9 @@ class WindowManager {
         if let frame = plexBrowserWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: "PlexBrowserWindowFrame")
         }
+        if let frame = videoPlayerWindowController?.window?.frame {
+            defaults.set(NSStringFromRect(frame), forKey: "VideoPlayerWindowFrame")
+        }
     }
     
     func restoreWindowPositions() {
@@ -554,6 +599,11 @@ class WindowManager {
         }
         if let frameString = defaults.string(forKey: "PlexBrowserWindowFrame"),
            let window = plexBrowserWindowController?.window {
+            let frame = NSRectFromString(frameString)
+            window.setFrame(frame, display: true)
+        }
+        if let frameString = defaults.string(forKey: "VideoPlayerWindowFrame"),
+           let window = videoPlayerWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
