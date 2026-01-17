@@ -70,11 +70,39 @@ open Package.swift
 | Toggle Media Library | Cmd+L |
 | Load file | Cmd+O |
 
+### Right-Click Context Menu
+
+Right-click on any window (Main, Equalizer, or Playlist) to access the context menu:
+
+- **Play** - Open files or folders
+- **Window toggles** - Show/hide Main Window, Equalizer, Playlist Editor
+- **Skins** - Load skins from file or from `~/Library/Application Support/AdAmp/Skins/`
+- **Options**:
+  - Time elapsed/remaining toggle
+  - Double Size (2x scaling)
+  - Repeat/Shuffle toggles
+- **Playback** - Transport controls, seek ±5 seconds, skip ±10 tracks
+- **Exit** - Quit application
+
 ### Loading Skins
 
 1. Download a classic Winamp skin (.wsz file) from [Winamp Skin Museum](https://skins.webamp.org/)
-2. In AdAmp, go to File → Load Skin...
+2. Right-click on any window → Skins → Load Skin...
 3. Select the .wsz file
+
+Or place skins in `~/Library/Application Support/AdAmp/Skins/` and they will appear in the Skins menu.
+
+### Time Display Modes
+
+The time display can show either:
+- **Time elapsed** - Shows current playback position (default)
+- **Time remaining** - Shows time left with minus sign
+
+Toggle via right-click → Options → Time elapsed/remaining
+
+### Double Size Mode
+
+Enable 2x scaling via right-click → Options → Double Size. All windows will scale to double their normal size while maintaining pixel-perfect rendering.
 
 ## Architecture
 
@@ -154,8 +182,12 @@ AdAmp supports classic Winamp 2.x skins (.wsz files). Key supported features:
 - [x] Spectrum analyzer visualization
 
 ### Phase 5: Polish (In Progress)
+- [x] Right-click context menu (all windows)
+- [x] Time display mode (elapsed/remaining)
+- [x] Double size scaling
+- [x] Skin directory discovery
 - [ ] Extended format support (OGG, Opus)
-- [ ] Preferences
+- [ ] Preferences window
 - [ ] DMG distribution
 
 ### Future: Expanded Test Coverage

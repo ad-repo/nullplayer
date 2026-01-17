@@ -645,4 +645,10 @@ class PlaylistView: NSView {
         
         return false
     }
+    
+    // MARK: - Context Menu
+    
+    override func menu(for event: NSEvent) -> NSMenu? {
+        return ContextMenuBuilder.buildMenu()
+    }
 }

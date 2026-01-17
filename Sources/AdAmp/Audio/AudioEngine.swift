@@ -296,6 +296,7 @@ class AudioEngine {
         playerNode.stop()
         playbackStartDate = nil
         _currentTime = 0  // Reset to beginning
+        lastReportedTime = 0
         state = .stopped
         stopTimeUpdates()
         
@@ -339,6 +340,38 @@ class AudioEngine {
         }
     }
     
+    /// Seek relative to current position
+    /// Uses the last reported time from the delegate (most accurate for UI sync)
+    func seekBy(seconds: TimeInterval) {
+        let newTime = max(0, min(duration, lastReportedTime + seconds))
+        seek(to: newTime)
+    }
+    
+    /// Last time reported to delegate (updated every 0.1s by timer)
+    private(set) var lastReportedTime: TimeInterval = 0
+    
+    /// Skip multiple tracks forward or backward
+    func skipTracks(count: Int) {
+        guard !playlist.isEmpty else { return }
+        
+        if shuffleEnabled {
+            // In shuffle mode, skip one at a time
+            for _ in 0..<abs(count) {
+                if count > 0 { next() } else { previous() }
+            }
+            return
+        }
+        
+        // Calculate new index with wraparound
+        var newIndex = currentIndex + count
+        while newIndex < 0 { newIndex += playlist.count }
+        newIndex = newIndex % playlist.count
+        
+        currentIndex = newIndex
+        loadTrack(at: currentIndex)
+        if state == .playing { play() }
+    }
+    
     /// Track the current playback position (updated during seek)
     private var _currentTime: TimeInterval = 0
     
@@ -353,6 +386,7 @@ class AudioEngine {
         // Clamp time to valid range
         let seekTime = max(0, min(time, duration - 0.5))
         _currentTime = seekTime
+        lastReportedTime = seekTime  // Keep in sync
         playbackStartDate = nil  // Will be set when play resumes
         
         // Increment generation to invalidate old completion handlers
@@ -402,10 +436,15 @@ class AudioEngine {
     }
     
     private func startTimeUpdates() {
-        timeUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            self.delegate?.audioEngineDidUpdateTime(current: self.currentTime, duration: self.duration)
+            let current = self.currentTime
+            self.lastReportedTime = current
+            self.delegate?.audioEngineDidUpdateTime(current: current, duration: self.duration)
         }
+        // Add to common modes so it runs during menu tracking and other modal states
+        RunLoop.main.add(timer, forMode: .common)
+        timeUpdateTimer = timer
     }
     
     private func stopTimeUpdates() {
@@ -450,6 +489,7 @@ class AudioEngine {
             audioFile = try AVAudioFile(forReading: track.url)
             currentTrack = track
             _currentTime = 0  // Reset time for new track
+            lastReportedTime = 0
             
             // Increment generation to invalidate any old completion handlers
             playbackGeneration += 1
@@ -479,13 +519,32 @@ class AudioEngine {
     }
     
     private func trackDidFinish() {
-        if repeatEnabled && !shuffleEnabled {
-            // Repeat current track
-            loadTrack(at: currentIndex)
-            play()
+        if repeatEnabled {
+            if shuffleEnabled {
+                // Repeat mode + shuffle: pick a random track
+                currentIndex = Int.random(in: 0..<playlist.count)
+                loadTrack(at: currentIndex)
+                play()
+            } else {
+                // Repeat mode: loop current track
+                loadTrack(at: currentIndex)
+                play()
+            }
         } else {
-            // Play next track
-            next()
+            // No repeat mode: check if we're at the end of playlist
+            if shuffleEnabled {
+                // Shuffle without repeat: could play random tracks but eventually should stop
+                // For simplicity, just stop after current track
+                stop()
+            } else if currentIndex < playlist.count - 1 {
+                // More tracks to play
+                currentIndex += 1
+                loadTrack(at: currentIndex)
+                play()
+            } else {
+                // End of playlist, stop playback
+                stop()
+            }
         }
     }
     

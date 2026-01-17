@@ -161,10 +161,23 @@ class SkinRenderer {
     // MARK: - Time Display
     
     /// Draw the time display (LED-style digits)
-    func drawTimeDisplay(minutes: Int, seconds: Int, in context: CGContext) {
+    /// - Parameters:
+    ///   - minutes: Minutes value (0-99)
+    ///   - seconds: Seconds value (0-59)
+    ///   - isNegative: Whether to show minus sign (for remaining time mode)
+    ///   - context: Graphics context to draw into
+    func drawTimeDisplay(minutes: Int, seconds: Int, isNegative: Bool = false, in context: CGContext) {
         guard let numbersImage = skin.numbers else {
-            drawFallbackTimeDisplay(minutes: minutes, seconds: seconds, in: context)
+            drawFallbackTimeDisplay(minutes: minutes, seconds: seconds, isNegative: isNegative, in: context)
             return
+        }
+        
+        // Draw minus sign if negative (remaining time mode)
+        if isNegative {
+            let minusRect = SkinElements.Numbers.minus
+            let minusPos = SkinElements.Numbers.Positions.minus
+            drawSprite(from: numbersImage, sourceRect: minusRect,
+                      to: NSRect(origin: minusPos, size: minusRect.size), in: context)
         }
         
         // Draw minutes tens digit
@@ -852,8 +865,9 @@ class SkinRenderer {
         path.fill()
     }
     
-    private func drawFallbackTimeDisplay(minutes: Int, seconds: Int, in context: CGContext) {
-        let timeString = String(format: "%02d:%02d", minutes, seconds)
+    private func drawFallbackTimeDisplay(minutes: Int, seconds: Int, isNegative: Bool = false, in context: CGContext) {
+        let prefix = isNegative ? "-" : ""
+        let timeString = String(format: "%@%02d:%02d", prefix, minutes, seconds)
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor.green,
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold)

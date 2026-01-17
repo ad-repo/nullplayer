@@ -87,10 +87,19 @@ class MainWindowView: NSView {
         
         // Set up tracking area for mouse events
         updateTrackingAreas()
+        
+        // Observe time display mode changes
+        NotificationCenter.default.addObserver(self, selector: #selector(timeDisplayModeDidChange),
+                                               name: .timeDisplayModeDidChange, object: nil)
     }
     
     deinit {
         marqueeTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    @objc private func timeDisplayModeDidChange() {
+        needsDisplay = true
     }
     
     // MARK: - Drawing
@@ -187,10 +196,19 @@ class MainWindowView: NSView {
         // Draw main window background
         renderer.drawMainWindowBackground(in: context, bounds: drawBounds, isActive: isActive)
         
-        // Draw time display
-        let minutes = Int(currentTime) / 60
-        let seconds = Int(currentTime) % 60
-        renderer.drawTimeDisplay(minutes: minutes, seconds: seconds, in: context)
+        // Draw time display - support elapsed/remaining modes
+        let displayTime: TimeInterval
+        if WindowManager.shared.timeDisplayMode == .remaining && duration > 0 {
+            displayTime = currentTime - duration  // Negative value
+        } else {
+            displayTime = currentTime
+        }
+        
+        let isNegative = displayTime < 0
+        let absTime = abs(displayTime)
+        let minutes = Int(absTime) / 60
+        let seconds = Int(absTime) % 60
+        renderer.drawTimeDisplay(minutes: minutes, seconds: seconds, isNegative: isNegative, in: context)
         
         // Draw song title marquee
         let marqueeText = currentTrack?.displayTitle ?? "AdAmp"
@@ -575,6 +593,12 @@ class MainWindowView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let cursor = regionManager.cursor(for: point, in: .main, windowSize: bounds.size)
         cursor.set()
+    }
+    
+    // MARK: - Context Menu
+    
+    override func menu(for event: NSEvent) -> NSMenu? {
+        return ContextMenuBuilder.buildMenu()
     }
     
     

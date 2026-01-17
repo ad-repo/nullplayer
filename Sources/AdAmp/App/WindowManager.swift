@@ -1,5 +1,19 @@
 import AppKit
 
+// MARK: - Notifications
+
+extension Notification.Name {
+    static let timeDisplayModeDidChange = Notification.Name("timeDisplayModeDidChange")
+    static let doubleSizeDidChange = Notification.Name("doubleSizeDidChange")
+}
+
+// MARK: - Time Display Mode
+
+enum TimeDisplayMode: String {
+    case elapsed
+    case remaining
+}
+
 /// Manages all application windows and their interactions
 /// Handles window docking, snapping, and coordinated movement
 class WindowManager {
@@ -15,6 +29,25 @@ class WindowManager {
     
     /// The currently loaded skin
     private(set) var currentSkin: Skin?
+    
+    // MARK: - User Preferences
+    
+    /// Time display mode (elapsed vs remaining)
+    var timeDisplayMode: TimeDisplayMode = .elapsed {
+        didSet {
+            UserDefaults.standard.set(timeDisplayMode.rawValue, forKey: "timeDisplayMode")
+            NotificationCenter.default.post(name: .timeDisplayModeDidChange, object: nil)
+        }
+    }
+    
+    /// Double size mode (2x scaling)
+    var isDoubleSize: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isDoubleSize, forKey: "isDoubleSize")
+            applyDoubleSize()
+            NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
+        }
+    }
     
     /// Main player window controller
     private(set) var mainWindowController: MainWindowController?
@@ -50,8 +83,29 @@ class WindowManager {
     // MARK: - Initialization
     
     private init() {
+        // Register and load preferences
+        registerPreferenceDefaults()
+        loadPreferences()
+        
         // Load default skin
         loadDefaultSkin()
+    }
+    
+    /// Register default preference values
+    private func registerPreferenceDefaults() {
+        UserDefaults.standard.register(defaults: [
+            "timeDisplayMode": TimeDisplayMode.elapsed.rawValue,
+            "isDoubleSize": false
+        ])
+    }
+    
+    /// Load preferences from UserDefaults
+    private func loadPreferences() {
+        if let mode = UserDefaults.standard.string(forKey: "timeDisplayMode"),
+           let displayMode = TimeDisplayMode(rawValue: mode) {
+            timeDisplayMode = displayMode
+        }
+        isDoubleSize = UserDefaults.standard.bool(forKey: "isDoubleSize")
     }
     
     // MARK: - Window Management
@@ -152,12 +206,91 @@ class WindowManager {
         currentSkin = SkinLoader.shared.loadDefault()
     }
     
+    /// Load the base/default skin
+    func loadBaseSkin() {
+        currentSkin = SkinLoader.shared.loadDefault()
+        notifySkinChanged()
+    }
+    
     private func notifySkinChanged() {
         // Notify all windows to redraw with new skin
         mainWindowController?.skinDidChange()
         playlistWindowController?.skinDidChange()
         equalizerWindowController?.skinDidChange()
         mediaLibraryWindowController?.skinDidChange()
+    }
+    
+    // MARK: - Skin Discovery
+    
+    /// Application Support directory for AdAmp
+    var applicationSupportURL: URL {
+        let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+        return paths[0].appendingPathComponent("AdAmp")
+    }
+    
+    /// Skins directory
+    var skinsDirectoryURL: URL {
+        applicationSupportURL.appendingPathComponent("Skins")
+    }
+    
+    /// Get list of available skins (name, URL)
+    func availableSkins() -> [(name: String, url: URL)] {
+        // Ensure directory exists
+        try? FileManager.default.createDirectory(at: skinsDirectoryURL, withIntermediateDirectories: true)
+        
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: skinsDirectoryURL, includingPropertiesForKeys: nil) else {
+            return []
+        }
+        
+        return contents
+            .filter { $0.pathExtension.lowercased() == "wsz" }
+            .map { (name: $0.deletingPathExtension().lastPathComponent, url: $0) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+    
+    // MARK: - Double Size
+    
+    /// Apply double size scaling to all windows
+    private func applyDoubleSize() {
+        let scale: CGFloat = isDoubleSize ? 2.0 : 1.0
+        
+        // Main window
+        if let window = mainWindowController?.window {
+            let targetSize = NSSize(width: Skin.mainWindowSize.width * scale,
+                                    height: Skin.mainWindowSize.height * scale)
+            var frame = window.frame
+            let heightDiff = targetSize.height - frame.height
+            frame.origin.y -= heightDiff  // Anchor top-left
+            frame.size = targetSize
+            window.setFrame(frame, display: true, animate: true)
+        }
+        
+        // EQ window
+        if let window = equalizerWindowController?.window {
+            let targetSize = NSSize(width: Skin.eqWindowSize.width * scale,
+                                    height: Skin.eqWindowSize.height * scale)
+            var frame = window.frame
+            let heightDiff = targetSize.height - frame.height
+            frame.origin.y -= heightDiff
+            frame.size = targetSize
+            window.setFrame(frame, display: true, animate: true)
+        }
+        
+        // Playlist - scale minimum size and current size proportionally
+        if let window = playlistWindowController?.window {
+            let minWidth: CGFloat = 275 * scale
+            let minHeight: CGFloat = 116 * scale
+            window.minSize = NSSize(width: minWidth, height: minHeight)
+            
+            // Scale current size
+            var frame = window.frame
+            let newWidth = max(minWidth, frame.width * (isDoubleSize ? 2.0 : 0.5))
+            let newHeight = max(minHeight, frame.height * (isDoubleSize ? 2.0 : 0.5))
+            let heightDiff = newHeight - frame.height
+            frame.origin.y -= heightDiff
+            frame.size = NSSize(width: newWidth, height: newHeight)
+            window.setFrame(frame, display: true, animate: true)
+        }
     }
     
     // MARK: - Window Snapping & Docking

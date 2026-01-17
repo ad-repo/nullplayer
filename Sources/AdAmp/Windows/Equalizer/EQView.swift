@@ -547,4 +547,10 @@ class EQView: NSView {
         
         needsDisplay = true
     }
+    
+    // MARK: - Context Menu
+    
+    override func menu(for event: NSEvent) -> NSMenu? {
+        return ContextMenuBuilder.buildMenu()
+    }
 }

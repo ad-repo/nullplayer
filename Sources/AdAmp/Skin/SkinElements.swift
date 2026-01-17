@@ -300,6 +300,8 @@ struct SkinElements {
         // Time display positions on main window (minutes:seconds)
         // Standard Winamp positions - digits are 9px wide with tight spacing
         struct Positions {
+            /// Minus sign position (for remaining time mode)
+            static let minus = NSPoint(x: 36, y: 26)
             static let minuteTens = NSPoint(x: 48, y: 26)
             static let minuteOnes = NSPoint(x: 60, y: 26)
             // Colon is baked into background at ~x: 69-77
