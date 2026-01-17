@@ -61,6 +61,9 @@ class WindowManager {
     /// Media library window controller
     private var mediaLibraryWindowController: MediaLibraryWindowController?
     
+    /// Plex browser window controller
+    private var plexBrowserWindowController: PlexBrowserWindowController?
+    
     /// Snap threshold in pixels
     private let snapThreshold: CGFloat = 10
     
@@ -185,6 +188,53 @@ class WindowManager {
             showMediaLibrary()
         }
     }
+    
+    // MARK: - Plex Browser Window
+    
+    func showPlexBrowser() {
+        if plexBrowserWindowController == nil {
+            plexBrowserWindowController = PlexBrowserWindowController()
+        }
+        plexBrowserWindowController?.showWindow(nil)
+    }
+    
+    var isPlexBrowserVisible: Bool {
+        plexBrowserWindowController?.window?.isVisible == true
+    }
+    
+    func togglePlexBrowser() {
+        if let controller = plexBrowserWindowController, controller.window?.isVisible == true {
+            controller.window?.orderOut(nil)
+        } else {
+            showPlexBrowser()
+        }
+    }
+    
+    /// Show the Plex account linking sheet
+    func showPlexLinkSheet() {
+        // Show from main window if available, otherwise standalone
+        if let mainWindow = mainWindowController?.window {
+            let linkSheet = PlexLinkSheet()
+            linkSheet.showAsSheet(from: mainWindow) { [weak self] success in
+                if success {
+                    self?.plexBrowserWindowController?.reloadData()
+                }
+            }
+        } else {
+            let linkSheet = PlexLinkSheet()
+            linkSheet.showAsWindow { [weak self] success in
+                if success {
+                    self?.plexBrowserWindowController?.reloadData()
+                }
+            }
+        }
+    }
+    
+    /// Unlink the Plex account
+    func unlinkPlexAccount() {
+        PlexManager.shared.unlinkAccount()
+        plexBrowserWindowController?.reloadData()
+    }
 
     func notifyMainWindowVisibilityChanged() {
         mainWindowController?.windowVisibilityDidChange()
@@ -218,6 +268,7 @@ class WindowManager {
         playlistWindowController?.skinDidChange()
         equalizerWindowController?.skinDidChange()
         mediaLibraryWindowController?.skinDidChange()
+        plexBrowserWindowController?.skinDidChange()
     }
     
     // MARK: - Skin Discovery
@@ -447,6 +498,7 @@ class WindowManager {
         if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = mediaLibraryWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
     
@@ -472,6 +524,9 @@ class WindowManager {
         if let frame = mediaLibraryWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: "MediaLibraryWindowFrame")
         }
+        if let frame = plexBrowserWindowController?.window?.frame {
+            defaults.set(NSStringFromRect(frame), forKey: "PlexBrowserWindowFrame")
+        }
     }
     
     func restoreWindowPositions() {
@@ -494,6 +549,11 @@ class WindowManager {
         }
         if let frameString = defaults.string(forKey: "MediaLibraryWindowFrame"),
            let window = mediaLibraryWindowController?.window {
+            let frame = NSRectFromString(frameString)
+            window.setFrame(frame, display: true)
+        }
+        if let frameString = defaults.string(forKey: "PlexBrowserWindowFrame"),
+           let window = plexBrowserWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
