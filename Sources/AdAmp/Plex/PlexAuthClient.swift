@@ -68,8 +68,7 @@ class PlexAuthClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        // Request body - "strong" parameter for improved security
-        request.httpBody = "strong=true".data(using: .utf8)
+        // No body needed for standard 4-character PIN
         
         let (data, response) = try await session.data(for: request)
         
