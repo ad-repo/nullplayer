@@ -97,6 +97,12 @@ class MainWindowView: NSView {
         // Observe time display mode changes
         NotificationCenter.default.addObserver(self, selector: #selector(timeDisplayModeDidChange),
                                                name: .timeDisplayModeDidChange, object: nil)
+        
+        // Observe casting state changes to update the cast indicator
+        NotificationCenter.default.addObserver(self, selector: #selector(castingStateDidChange),
+                                               name: CastManager.sessionDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(castingStateDidChange),
+                                               name: CastManager.playbackStateDidChangeNotification, object: nil)
     }
     
     deinit {
@@ -105,6 +111,10 @@ class MainWindowView: NSView {
     }
     
     @objc private func timeDisplayModeDidChange() {
+        needsDisplay = true
+    }
+    
+    @objc private func castingStateDidChange() {
         needsDisplay = true
     }
     
@@ -234,9 +244,10 @@ class MainWindowView: NSView {
         }
         renderer.drawPlaybackStatus(playbackState, in: context)
         
-        // Draw mono/stereo indicator
+        // Draw stereo and cast indicators
         let isStereo = (currentTrack?.channels ?? 2) >= 2
-        renderer.drawMonoStereo(isStereo: isStereo, in: context)
+        let isCasting = CastManager.shared.isCasting
+        renderer.drawStereoAndCast(isStereo: isStereo, isCasting: isCasting, in: context)
         
         // Draw bitrate display (e.g., "128" kbps) - scrolls if > 3 digits
         renderer.drawBitrate(currentTrack?.bitrate, scrollOffset: bitrateScrollOffset, in: context)

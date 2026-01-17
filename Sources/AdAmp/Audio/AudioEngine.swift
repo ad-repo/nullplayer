@@ -65,10 +65,17 @@ class AudioEngine {
     private(set) var currentIndex: Int = -1
     
     /// Volume level (0.0 - 1.0)
-    var volume: Float = 0.5 {
+    var volume: Float = 0.2 {
         didSet {
             playerNode.volume = volume
             streamPlayer?.volume = volume
+            
+            // Also set volume on cast device if casting
+            if isCastingActive {
+                Task {
+                    try? await CastManager.shared.setVolume(volume)
+                }
+            }
         }
     }
     
@@ -110,6 +117,11 @@ class AudioEngine {
     
     /// Current output device ID (nil = system default)
     private(set) var currentOutputDeviceID: AudioDeviceID?
+    
+    /// Whether casting is currently active (playback controlled by CastManager)
+    var isCastingActive: Bool {
+        CastManager.shared.isCasting
+    }
     
     // MARK: - Initialization
     
@@ -272,6 +284,14 @@ class AudioEngine {
     // MARK: - Playback Control
     
     func play() {
+        // If casting is active, forward command to CastManager
+        if isCastingActive {
+            Task {
+                try? await CastManager.shared.resume()
+            }
+            return
+        }
+        
         guard currentTrack != nil || !playlist.isEmpty else { return }
         
         if currentTrack == nil && !playlist.isEmpty {
@@ -304,6 +324,19 @@ class AudioEngine {
     }
     
     func pause() {
+        // If casting is active, forward command to CastManager
+        if isCastingActive {
+            Task {
+                try? await CastManager.shared.pause()
+            }
+            return
+        }
+        
+        pauseLocalOnly()
+    }
+    
+    /// Pause local playback only (used internally when casting takes over)
+    func pauseLocalOnly() {
         // Save current position before pausing
         if let startDate = playbackStartDate {
             _currentTime += Date().timeIntervalSince(startDate)
@@ -320,6 +353,13 @@ class AudioEngine {
     }
     
     func stop() {
+        // If casting is active, stop casting as well
+        if isCastingActive {
+            Task {
+                await CastManager.shared.stopCasting()
+            }
+        }
+        
         // Increment generation to invalidate completion handlers
         playbackGeneration += 1
         let currentGeneration = playbackGeneration
@@ -359,6 +399,17 @@ class AudioEngine {
             currentIndex = (currentIndex - 1 + playlist.count) % playlist.count
         }
         
+        // When casting, cast the new track instead of playing locally
+        if isCastingActive {
+            let track = playlist[currentIndex]
+            currentTrack = track
+            delegate?.audioEngineDidChangeTrack(track)
+            Task {
+                try? await CastManager.shared.castNewTrack(track)
+            }
+            return
+        }
+        
         loadTrack(at: currentIndex)
         if state == .playing {
             play()
@@ -372,6 +423,17 @@ class AudioEngine {
             currentIndex = Int.random(in: 0..<playlist.count)
         } else {
             currentIndex = (currentIndex + 1) % playlist.count
+        }
+        
+        // When casting, cast the new track instead of playing locally
+        if isCastingActive {
+            let track = playlist[currentIndex]
+            currentTrack = track
+            delegate?.audioEngineDidChangeTrack(track)
+            Task {
+                try? await CastManager.shared.castNewTrack(track)
+            }
+            return
         }
         
         loadTrack(at: currentIndex)
@@ -419,6 +481,20 @@ class AudioEngine {
     private var playbackStartDate: Date?
     
     func seek(to time: TimeInterval) {
+        // If casting is active, forward command to CastManager
+        if isCastingActive {
+            // Update local tracking immediately for responsive UI
+            castStartPosition = time
+            castPlaybackStartDate = Date()  // Reset interpolation from seek position
+            _currentTime = time
+            lastReportedTime = time
+            
+            Task {
+                try? await CastManager.shared.seek(to: time)
+            }
+            return
+        }
+        
         // Clamp time to valid range
         let seekTime = max(0, min(time, duration - 0.5))
         
@@ -472,7 +548,26 @@ class AudioEngine {
     
     // MARK: - Time Updates
     
+    /// Timestamp when cast playback started (for time interpolation)
+    private var castPlaybackStartDate: Date?
+    /// Position when cast playback started
+    private var castStartPosition: TimeInterval = 0
+    
     var currentTime: TimeInterval {
+        // When casting, interpolate from start position
+        if isCastingActive {
+            // If cast playback is active (startDate is set), interpolate
+            if let startDate = castPlaybackStartDate {
+                let elapsed = Date().timeIntervalSince(startDate)
+                let interpolated = castStartPosition + elapsed
+                let trackDuration = currentTrack?.duration ?? 0
+                // Don't exceed duration
+                return trackDuration > 0 ? min(interpolated, trackDuration) : interpolated
+            }
+            // Cast is paused - return the last saved position
+            return castStartPosition
+        }
+        
         if isStreamingPlayback {
             // Get time from stream player
             guard let player = streamPlayer else { return 0 }
@@ -489,6 +584,11 @@ class AudioEngine {
     }
     
     var duration: TimeInterval {
+        // When casting, use track metadata
+        if isCastingActive {
+            return currentTrack?.duration ?? 0
+        }
+        
         if isStreamingPlayback {
             // Get duration from stream player
             guard let player = streamPlayer,
@@ -504,16 +604,95 @@ class AudioEngine {
         }
     }
     
+    /// Start cast playback time tracking (called when cast playback begins)
+    func startCastPlayback(from position: TimeInterval = 0) {
+        castStartPosition = position
+        castPlaybackStartDate = Date()
+        _currentTime = position
+        lastReportedTime = position
+    }
+    
+    /// Pause cast playback time tracking
+    func pauseCastPlayback() {
+        // Save current interpolated position
+        if let startDate = castPlaybackStartDate {
+            castStartPosition += Date().timeIntervalSince(startDate)
+        }
+        castPlaybackStartDate = nil
+    }
+    
+    /// Resume cast playback time tracking
+    func resumeCastPlayback() {
+        castPlaybackStartDate = Date()
+    }
+    
+    /// Stop cast playback time tracking (called when casting stops)
+    func stopCastPlayback() {
+        castPlaybackStartDate = nil
+        castStartPosition = 0
+    }
+    
     private func startTimeUpdates() {
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             let current = self.currentTime
+            let trackDuration = self.duration
             self.lastReportedTime = current
-            self.delegate?.audioEngineDidUpdateTime(current: current, duration: self.duration)
+            self.delegate?.audioEngineDidUpdateTime(current: current, duration: trackDuration)
+            
+            // When casting, check if track has finished and auto-advance
+            if self.isCastingActive, 
+               self.castPlaybackStartDate != nil,  // Casting is playing (not paused)
+               trackDuration > 0,
+               current >= trackDuration - 0.5 {  // Within 0.5s of end
+                NSLog("AudioEngine: Cast track finished, advancing to next")
+                self.castTrackDidFinish()
+            }
         }
         // Add to common modes so it runs during menu tracking and other modal states
         RunLoop.main.add(timer, forMode: .common)
         timeUpdateTimer = timer
+    }
+    
+    /// Handle cast track completion - advance to next track
+    private func castTrackDidFinish() {
+        // Prevent multiple calls
+        castPlaybackStartDate = nil
+        
+        if repeatEnabled {
+            if shuffleEnabled {
+                // Repeat mode + shuffle: pick a random track
+                currentIndex = Int.random(in: 0..<playlist.count)
+            }
+            // Cast the same or new random track
+            let track = playlist[currentIndex]
+            currentTrack = track
+            delegate?.audioEngineDidChangeTrack(track)
+            Task {
+                try? await CastManager.shared.castNewTrack(track)
+            }
+        } else if !playlist.isEmpty {
+            if shuffleEnabled {
+                // Shuffle without repeat: stop after current track
+                Task {
+                    await CastManager.shared.stopCasting()
+                }
+            } else if currentIndex < playlist.count - 1 {
+                // More tracks to play - advance
+                currentIndex += 1
+                let track = playlist[currentIndex]
+                currentTrack = track
+                delegate?.audioEngineDidChangeTrack(track)
+                Task {
+                    try? await CastManager.shared.castNewTrack(track)
+                }
+            } else {
+                // End of playlist - stop casting
+                Task {
+                    await CastManager.shared.stopCasting()
+                }
+            }
+        }
     }
     
     private func stopTimeUpdates() {

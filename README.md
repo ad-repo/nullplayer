@@ -12,6 +12,7 @@ A faithful recreation of the classic Winamp 2.x music player for macOS.
 - **Video format support**: MKV, MP4, MOV, AVI, WebM, HEVC via FFmpeg (KSPlayer)
 - **Media library**: Organize and browse your music collection
 - **Plex integration**: Stream music and video from your Plex Media Server
+- **Casting support**: Cast to Chromecast, Sonos, and DLNA TVs
 - **Spectrum analyzer**: Real-time audio visualization
 
 ## Screenshots
@@ -140,12 +141,51 @@ AdAmp can stream music and video directly from your Plex Media Server:
 - A Plex Media Server with music and/or video libraries
 - Network access to your Plex server (local or remote)
 
+### Casting Support
+
+AdAmp can cast Plex content to network devices:
+
+**Supported Devices:**
+- **Chromecast** - Google Cast devices (Audio, Video, Ultra)
+- **Sonos** - Sonos speakers and soundbars
+- **DLNA TVs** - Samsung, LG, Sony, and other DLNA-compatible TVs
+
+**How to Cast:**
+1. Start playing a track from Plex
+2. Right-click → Casting → Select your device
+3. Playback will transfer to the cast device
+4. Use Stop Casting to return to local playback
+
+**Features:**
+- Automatic device discovery (mDNS for Chromecast, SSDP for UPnP/DLNA)
+- Seamless handoff between local and cast playback
+- Transport controls (play/pause/stop/seek) forwarded to cast device
+- Refresh Devices option to rediscover after network changes
+
+**Limitations:**
+- Casting only works with Plex content (HTTP/HTTPS streaming URLs)
+- Local files cannot be cast (no built-in HTTP server)
+- Some older DLNA TVs may not support all audio formats
+- Chromecast requires the device to be on the same local network
+
+**Troubleshooting:**
+- If devices don't appear, try Refresh Devices from the Casting menu
+- Ensure your Mac and cast devices are on the same network subnet
+- Check that local network access is allowed in System Settings → Privacy
+- For Chromecast, ensure the device is set up and online
+- For Sonos, ensure the speaker is not in a group (standalone mode works best)
+
 ## Architecture
 
 ```
 AdAmp/
 ├── App/                    # Application lifecycle
 ├── Audio/                  # AVAudioEngine-based playback + spectrum analysis
+├── Casting/                # Cast device discovery and playback
+│   ├── CastDevice          # Device models and enums
+│   ├── CastManager         # Unified casting interface
+│   ├── ChromecastManager   # Chromecast discovery (mDNS) and protocol
+│   └── UPnPManager         # Sonos/DLNA discovery (SSDP) and SOAP control
 ├── Plex/                   # Plex Media Server integration
 │   ├── PlexAuthClient      # PIN-based authentication
 │   ├── PlexServerClient    # Server API communication
@@ -231,6 +271,12 @@ AdAmp supports classic Winamp 2.x skins (.wsz files). Key supported features:
   - [x] Streaming audio playback
   - [x] Video player with KSPlayer (MKV/extended codecs) and skinned UI
   - [x] Secure credential storage (Keychain)
+- [x] Casting support
+  - [x] Chromecast discovery and playback (mDNS)
+  - [x] Sonos speaker support (UPnP/SSDP)
+  - [x] DLNA TV support (Samsung, LG, Sony, etc.)
+  - [x] Unified casting menu
+  - [x] Plex URL tokenization for cast devices
 
 ### Phase 5: Polish (In Progress)
 - [x] Right-click context menu (all windows)

@@ -320,8 +320,12 @@ class SkinRenderer {
         drawSprite(from: playpausImage, sourceRect: sourceRect, to: destRect, in: context)
     }
     
-    /// Draw mono/stereo indicator
-    func drawMonoStereo(isStereo: Bool, in context: CGContext) {
+    /// Draw stereo and cast indicators
+    /// - Parameters:
+    ///   - isStereo: Whether the audio is stereo (2+ channels)
+    ///   - isCasting: Whether casting is currently active
+    ///   - context: Graphics context to draw into
+    func drawStereoAndCast(isStereo: Bool, isCasting: Bool, in context: CGContext) {
         guard let monosterImage = skin.monoster else { return }
         
         // Draw stereo indicator
@@ -330,11 +334,144 @@ class SkinRenderer {
         drawSprite(from: monosterImage, sourceRect: stereoRect,
                   to: NSRect(origin: stereoPos, size: stereoRect.size), in: context)
         
-        // Draw mono indicator (opposite state)
-        let monoRect = isStereo ? SkinElements.MonoStereo.monoOff : SkinElements.MonoStereo.monoOn
+        // Draw "CAST" indicator in place of mono
+        // Using skin text font for consistent look
+        drawCastIndicator(isActive: isCasting, in: context)
+    }
+    
+    /// Cached cast indicator sprite (generated once)
+    private static var castIndicatorSprite: NSImage?
+    
+    /// Generate or return cached cast indicator sprite
+    /// Creates a 27x24 image with "cast" text:
+    /// - Top 12 rows: lit/active state (green)
+    /// - Bottom 12 rows: dim/inactive state (gray)
+    private func getCastIndicatorSprite() -> NSImage {
+        if let cached = SkinRenderer.castIndicatorSprite {
+            return cached
+        }
+        
+        let width = 27
+        let height = 24  // 12 for on, 12 for off
+        
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+        
+        // Clear background (transparent)
+        NSColor.clear.setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+        
+        // Main letter pixels for "cast" - core bright pixels
+        let castPixels: [(Int, Int)] = [
+            // 'c' - small open curve
+            (5,5), (6,5),
+            (4,6),
+            (5,7), (6,7),
+            
+            // 'a' - small rounded
+            (9,5), (10,5),
+            (8,6), (11,6),
+            (9,7), (10,7), (11,7),
+            
+            // 's' - small snake  
+            (14,5), (15,5),
+            (14,6),
+            (13,7), (14,7),
+            
+            // 't' - small with crossbar
+            (18,4),
+            (17,5), (18,5), (19,5),
+            (18,6),
+            (18,7),
+        ]
+        
+        // Glow pixels surrounding the letters (dimmer green for glow effect)
+        let glowPixels: [(Int, Int)] = [
+            // 'c' glow
+            (4,4), (5,4), (6,4), (7,4),
+            (3,5), (7,5),
+            (3,6), (5,6), (6,6), (7,6),
+            (3,7), (7,7),
+            (4,8), (5,8), (6,8), (7,8),
+            
+            // 'a' glow
+            (8,4), (9,4), (10,4), (11,4), (12,4),
+            (7,5), (12,5),
+            (7,6), (9,6), (10,6), (12,6),
+            (7,7), (12,7),
+            (8,8), (9,8), (10,8), (11,8), (12,8),
+            
+            // 's' glow
+            (12,4), (13,4), (14,4), (15,4), (16,4),
+            (12,5), (16,5),
+            (12,6), (13,6), (15,6), (16,6),
+            (12,7), (15,7), (16,7),
+            (12,8), (13,8), (14,8), (15,8), (16,8),
+            
+            // 't' glow
+            (17,3), (18,3), (19,3),
+            (16,4), (19,4), (20,4),
+            (16,5), (20,5),
+            (16,6), (17,6), (19,6), (20,6),
+            (16,7), (17,7), (19,7), (20,7),
+            (17,8), (18,8), (19,8),
+        ]
+        
+        // Colors for the glowing effect
+        let activeColor = NSColor(red: 0.0, green: 1.0, blue: 0.0, alpha: 1.0)  // Pure bright green
+        let glowColor = NSColor(red: 0.0, green: 0.6, blue: 0.0, alpha: 1.0)  // Dimmer green for glow
+        let inactiveColor = NSColor(calibratedRed: 0.35, green: 0.35, blue: 0.35, alpha: 1.0)  // Neutral gray
+        
+        // Draw active/ON state in bottom half (NSImage y=0-11)
+        // Draw glow first (underneath), then main pixels on top
+        glowColor.setFill()
+        for (px, py) in glowPixels {
+            let nsY = 11 - py
+            NSRect(x: px, y: nsY, width: 1, height: 1).fill()
+        }
+        activeColor.setFill()
+        for (px, py) in castPixels {
+            let nsY = 11 - py
+            NSRect(x: px, y: nsY, width: 1, height: 1).fill()
+        }
+        
+        // Draw inactive/OFF state in top half (NSImage y=12-23)
+        // No glow for inactive - just flat gray letters
+        inactiveColor.setFill()
+        for (px, py) in castPixels {
+            let nsY = 23 - py
+            NSRect(x: px, y: nsY, width: 1, height: 1).fill()
+        }
+        
+        image.unlockFocus()
+        SkinRenderer.castIndicatorSprite = image
+        return image
+    }
+    
+    /// Draw the cast indicator using a generated sprite
+    /// - Parameters:
+    ///   - isActive: Whether casting is currently active (lit up)
+    ///   - context: Graphics context to draw into
+    private func drawCastIndicator(isActive: Bool, in context: CGContext) {
+        let castSprite = getCastIndicatorSprite()
         let monoPos = SkinElements.MonoStereo.Positions.mono
-        drawSprite(from: monosterImage, sourceRect: monoRect,
-                  to: NSRect(origin: monoPos, size: monoRect.size), in: context)
+        
+        // Source rect selection accounts for drawSprite's y-flip conversion
+        // y=0 in source maps to top half of NSImage (gray), y=12 maps to bottom (green)
+        let sourceRect = isActive ?
+            NSRect(x: 0, y: 12, width: 27, height: 12) :
+            NSRect(x: 0, y: 0, width: 27, height: 12)
+        
+        let destRect = NSRect(origin: monoPos, size: NSSize(width: 27, height: 12))
+        
+        drawSprite(from: castSprite, sourceRect: sourceRect, to: destRect, in: context)
+    }
+    
+    /// Legacy method for backward compatibility - now calls drawStereoAndCast
+    func drawMonoStereo(isStereo: Bool, in context: CGContext) {
+        // Call the new method with casting state from CastManager
+        let isCasting = CastManager.shared.isCasting
+        drawStereoAndCast(isStereo: isStereo, isCasting: isCasting, in: context)
     }
     
     /// Draw bitrate display (e.g., "128" kbps)

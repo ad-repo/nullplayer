@@ -193,6 +193,14 @@ let thumbY = sliderY + (sliderHeight - thumbSize) * (1 - normalizedValue)
 ### Main Window
 - Main window appears to render correctly with current skin
 
+### Cast Indicator (Replaces Mono)
+- The traditional "mono" indicator has been repurposed to show "CAST" status
+- Uses the skin's text font (TEXT.BMP) instead of the monoster.bmp mono sprite
+- Position: Same as mono indicator (212, 41), centered in the 27x12 area
+- When casting is active: Text is fully lit (normal alpha)
+- When casting is inactive: Text is dimmed (30% alpha, matching mono off state)
+- Stereo indicator remains unchanged and shows audio channel info
+
 ### Playlist Window  
 - Playlist sprites are in PLEDIT.BMP
 - Colors defined in PLEDIT.TXT

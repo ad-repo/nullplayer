@@ -42,6 +42,9 @@ class ContextMenuBuilder {
         // Output Device submenu
         menu.addItem(buildOutputDeviceMenuItem())
         
+        // Casting submenu
+        menu.addItem(buildCastingMenuItem())
+        
         menu.addItem(NSMenuItem.separator())
         
         // Exit
@@ -307,6 +310,112 @@ class ContextMenuBuilder {
         
         playbackItem.submenu = playbackMenu
         return playbackItem
+    }
+    
+    // MARK: - Casting Submenu
+    
+    private static func buildCastingMenuItem() -> NSMenuItem {
+        let castingItem = NSMenuItem(title: "Casting", action: nil, keyEquivalent: "")
+        let castingMenu = NSMenu()
+        
+        let castManager = CastManager.shared
+        let activeSession = castManager.activeSession
+        
+        // Ensure discovery is running when menu is built
+        if !castManager.isDiscovering {
+            castManager.startDiscovery()
+        }
+        
+        // Debug: Log device counts
+        let chromecastDevices = castManager.chromecastDevices
+        let sonosDevices = castManager.sonosDevices
+        let tvDevices = castManager.dlnaTVDevices
+        NSLog("ContextMenuBuilder: Building Casting menu - Chromecast: %d, Sonos: %d, TVs: %d", 
+              chromecastDevices.count, sonosDevices.count, tvDevices.count)
+        
+        // Chromecast section
+        if !chromecastDevices.isEmpty {
+            let headerItem = NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: "")
+            headerItem.isEnabled = false
+            castingMenu.addItem(headerItem)
+            
+            for device in chromecastDevices {
+                let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device
+                deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
+                castingMenu.addItem(deviceItem)
+            }
+            
+            castingMenu.addItem(NSMenuItem.separator())
+        }
+        
+        // Sonos section
+        if !sonosDevices.isEmpty {
+            let headerItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
+            headerItem.isEnabled = false
+            castingMenu.addItem(headerItem)
+            
+            for device in sonosDevices {
+                let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device
+                deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
+                castingMenu.addItem(deviceItem)
+            }
+            
+            castingMenu.addItem(NSMenuItem.separator())
+        }
+        
+        // TVs section (DLNA)
+        if !tvDevices.isEmpty {
+            let headerItem = NSMenuItem(title: "TVs", action: nil, keyEquivalent: "")
+            headerItem.isEnabled = false
+            castingMenu.addItem(headerItem)
+            
+            for device in tvDevices {
+                let displayName = device.manufacturer != nil ? "\(device.name) [\(device.manufacturer!)]" : device.name
+                let deviceItem = NSMenuItem(title: "  \(displayName)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device
+                deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
+                castingMenu.addItem(deviceItem)
+            }
+            
+            castingMenu.addItem(NSMenuItem.separator())
+        }
+        
+        // No devices found message
+        if chromecastDevices.isEmpty && sonosDevices.isEmpty && tvDevices.isEmpty {
+            let noDevicesItem = NSMenuItem(title: "(No Chromecast/Sonos/DLNA devices found)", action: nil, keyEquivalent: "")
+            noDevicesItem.isEnabled = false
+            castingMenu.addItem(noDevicesItem)
+            
+            // Add hint
+            let hintItem = NSMenuItem(title: "(AirPlay devices are in Output Device menu)", action: nil, keyEquivalent: "")
+            hintItem.isEnabled = false
+            castingMenu.addItem(hintItem)
+            
+            castingMenu.addItem(NSMenuItem.separator())
+        }
+        
+        // Stop Casting (only shown when casting)
+        if castManager.isCasting {
+            let stopCastingItem = NSMenuItem(title: "Stop Casting", action: #selector(MenuActions.stopCasting), keyEquivalent: "")
+            stopCastingItem.target = MenuActions.shared
+            if let session = castManager.activeSession {
+                stopCastingItem.title = "Stop Casting to \(session.device.name)"
+            }
+            castingMenu.addItem(stopCastingItem)
+        }
+        
+        // Refresh Devices
+        let refreshItem = NSMenuItem(title: "Refresh Devices", action: #selector(MenuActions.refreshCastDevices), keyEquivalent: "")
+        refreshItem.target = MenuActions.shared
+        castingMenu.addItem(refreshItem)
+        
+        castingItem.submenu = castingMenu
+        return castingItem
     }
     
     // MARK: - Output Device Submenu
@@ -632,6 +741,41 @@ class MenuActions: NSObject {
         if alert.runModal() == .alertFirstButtonReturn {
             openSoundSettings()
         }
+    }
+    
+    // MARK: - Casting
+    
+    @objc func castToDevice(_ sender: NSMenuItem) {
+        guard let device = sender.representedObject as? CastDevice else { return }
+        
+        Task {
+            do {
+                try await CastManager.shared.castCurrentTrack(to: device)
+                NSLog("MenuActions: Started casting to %@", device.name)
+            } catch {
+                NSLog("MenuActions: Failed to cast: %@", error.localizedDescription)
+                
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Casting Failed"
+                    alert.informativeText = error.localizedDescription
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            }
+        }
+    }
+    
+    @objc func stopCasting() {
+        Task {
+            await CastManager.shared.stopCasting()
+            NSLog("MenuActions: Stopped casting")
+        }
+    }
+    
+    @objc func refreshCastDevices() {
+        CastManager.shared.refreshDevices()
+        NSLog("MenuActions: Refreshing cast devices")
     }
     
     // MARK: - Exit
