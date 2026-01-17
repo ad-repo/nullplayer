@@ -90,6 +90,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(withTitle: "Playlist", action: #selector(togglePlaylist), keyEquivalent: "2")
         viewMenu.addItem(withTitle: "Equalizer", action: #selector(toggleEqualizer), keyEquivalent: "3")
         viewMenu.addItem(withTitle: "Media Library", action: #selector(toggleMediaLibrary), keyEquivalent: "l")
+        viewMenu.addItem(withTitle: "Plex Browser", action: #selector(togglePlexBrowser), keyEquivalent: "p")
+        
+        // Plex menu
+        let plexMenuItem = NSMenuItem()
+        mainMenu.addItem(plexMenuItem)
+        
+        let plexMenu = NSMenu(title: "Plex")
+        plexMenuItem.submenu = plexMenu
+        
+        plexMenu.addItem(withTitle: "Link Plex Account...", action: #selector(linkPlexAccount), keyEquivalent: "")
+        plexMenu.addItem(withTitle: "Unlink Account", action: #selector(unlinkPlexAccount), keyEquivalent: "")
+        plexMenu.addItem(NSMenuItem.separator())
+        plexMenu.addItem(withTitle: "Show Plex Browser", action: #selector(togglePlexBrowser), keyEquivalent: "")
         
         // Playback menu
         let playbackMenuItem = NSMenuItem()
@@ -172,6 +185,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager.toggleMediaLibrary()
     }
     
+    @objc private func togglePlexBrowser() {
+        windowManager.togglePlexBrowser()
+    }
+    
+    @objc private func linkPlexAccount() {
+        windowManager.showPlexLinkSheet()
+    }
+    
+    @objc private func unlinkPlexAccount() {
+        // Confirm before unlinking
+        let alert = NSAlert()
+        alert.messageText = "Unlink Plex Account?"
+        alert.informativeText = "This will remove your Plex account from AdAmp. You can link it again later."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Unlink")
+        alert.addButton(withTitle: "Cancel")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            windowManager.unlinkPlexAccount()
+        }
+    }
+    
     @objc private func play() {
         windowManager.audioEngine.play()
     }
@@ -210,5 +245,9 @@ extension AppDelegate: AudioEngineDelegate {
     
     func audioEngineDidUpdateSpectrum(_ levels: [Float]) {
         windowManager.mainWindowController?.updateSpectrum(levels)
+    }
+    
+    func audioEngineDidChangePlaylist() {
+        windowManager.playlistWindowController?.reloadPlaylist()
     }
 }
