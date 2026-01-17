@@ -273,6 +273,16 @@ class PlexBrowserView: NSView {
             let serverLabel = "Server: \(serverText) ▼"
             serverLabel.draw(at: NSPoint(x: Layout.padding + 4, y: barY + 6), withAttributes: serverAttrs)
             
+            // Refresh button (center)
+            let refreshLabel = "↻ Refresh"
+            let refreshAttrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: Colors.accent,
+                .font: NSFont.systemFont(ofSize: 10)
+            ]
+            let refreshSize = refreshLabel.size(withAttributes: refreshAttrs)
+            let refreshX = (bounds.width - refreshSize.width) / 2
+            refreshLabel.draw(at: NSPoint(x: refreshX, y: barY + 6), withAttributes: refreshAttrs)
+            
             // Library dropdown (right side) - show appropriate library based on mode
             let libraryText: String
             if browseMode.isVideoMode {
@@ -755,6 +765,45 @@ class PlexBrowserView: NSView {
         loadDataForCurrentMode()
     }
     
+    /// Refresh all data - clears cache and reloads from server
+    func refreshData() {
+        guard PlexManager.shared.isLinked else { return }
+        
+        // Clear all cached data
+        cachedArtists = []
+        cachedAlbums = []
+        cachedTracks = []
+        artistAlbums = [:]
+        albumTracks = [:]
+        cachedMovies = []
+        cachedShows = []
+        showSeasons = [:]
+        seasonEpisodes = [:]
+        searchResults = nil
+        
+        // Reset expanded states
+        expandedArtists = []
+        expandedAlbums = []
+        expandedShows = []
+        expandedSeasons = []
+        
+        // Reset selection and scroll
+        selectedIndices = []
+        scrollOffset = 0
+        
+        // Show loading state
+        isLoading = true
+        errorMessage = nil
+        displayItems = []
+        startLoadingAnimation()
+        needsDisplay = true
+        
+        NSLog("PlexBrowserView: Refreshing data...")
+        
+        // Reload data for current mode
+        loadDataForCurrentMode()
+    }
+    
     func skinDidChange() {
         needsDisplay = true
     }
@@ -1165,10 +1214,23 @@ class PlexBrowserView: NSView {
             if !PlexManager.shared.isLinked {
                 controller?.showLinkSheet()
             } else {
-                // Left half = server selection, right half = library selection
-                if winampPoint.x < bounds.width / 2 {
+                // Check for refresh button click (center area)
+                let refreshLabel = "↻ Refresh"
+                let refreshAttrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 10)
+                ]
+                let refreshSize = refreshLabel.size(withAttributes: refreshAttrs)
+                let refreshX = (bounds.width - refreshSize.width) / 2
+                let refreshEndX = refreshX + refreshSize.width
+                
+                if winampPoint.x >= refreshX - 10 && winampPoint.x < refreshEndX + 10 {
+                    // Refresh button clicked
+                    refreshData()
+                } else if winampPoint.x < bounds.width / 3 {
+                    // Left third = server selection
                     showServerMenu(at: event)
-                } else {
+                } else if winampPoint.x > bounds.width * 2 / 3 {
+                    // Right third = library selection
                     showLibraryMenu(at: event)
                 }
             }
