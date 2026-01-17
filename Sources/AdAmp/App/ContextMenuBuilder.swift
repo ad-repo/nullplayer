@@ -1,4 +1,5 @@
 import AppKit
+import CoreAudio
 
 /// Builds the shared right-click context menu for all Winamp windows
 class ContextMenuBuilder {
@@ -17,6 +18,8 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
         menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
+        menu.addItem(buildWindowItem("Media Library", visible: wm.isMediaLibraryVisible, action: #selector(MenuActions.toggleMediaLibrary)))
+        menu.addItem(buildWindowItem("Plex Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         
         let milkdrop = NSMenuItem(title: "Milkdrop", action: nil, keyEquivalent: "")
         milkdrop.isEnabled = false
@@ -32,6 +35,9 @@ class ContextMenuBuilder {
         
         // Playback submenu
         menu.addItem(buildPlaybackMenuItem())
+        
+        // Output Device submenu
+        menu.addItem(buildOutputDeviceMenuItem())
         
         menu.addItem(NSMenuItem.separator())
         
@@ -217,6 +223,79 @@ class ContextMenuBuilder {
         playbackItem.submenu = playbackMenu
         return playbackItem
     }
+    
+    // MARK: - Output Device Submenu
+    
+    private static func buildOutputDeviceMenuItem() -> NSMenuItem {
+        let outputItem = NSMenuItem(title: "Output Device", action: nil, keyEquivalent: "")
+        let outputMenu = NSMenu()
+        
+        let manager = AudioOutputManager.shared
+        let coreAudioDevices = manager.outputDevices
+        let airPlayDevices = manager.discoveredAirPlayDevices
+        let currentDeviceID = WindowManager.shared.audioEngine.currentOutputDeviceID
+        
+        // System Default option
+        let defaultItem = NSMenuItem(title: "System Default", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+        defaultItem.target = MenuActions.shared
+        defaultItem.representedObject = nil as AudioDeviceID?
+        defaultItem.state = currentDeviceID == nil ? .on : .off
+        outputMenu.addItem(defaultItem)
+        
+        // Local/wired devices
+        let localDevices = coreAudioDevices.filter { !$0.isWireless }
+        if !localDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+            
+            for device in localDevices {
+                let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device.id
+                deviceItem.state = (currentDeviceID == device.id) ? NSControl.StateValue.on : NSControl.StateValue.off
+                outputMenu.addItem(deviceItem)
+            }
+        }
+        
+        // Core Audio wireless devices
+        let coreAudioWireless = coreAudioDevices.filter { $0.isWireless }
+        
+        // Combined wireless: Core Audio wireless + discovered AirPlay
+        let hasWireless = !coreAudioWireless.isEmpty || !airPlayDevices.isEmpty
+        
+        if hasWireless {
+            outputMenu.addItem(NSMenuItem.separator())
+            
+            let wirelessHeader = NSMenuItem(title: "AirPlay & Wireless", action: nil, keyEquivalent: "")
+            wirelessHeader.isEnabled = false
+            outputMenu.addItem(wirelessHeader)
+            
+            // Core Audio wireless devices (already connected)
+            for device in coreAudioWireless {
+                let deviceItem = NSMenuItem(title: "    \(device.name)", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device.id
+                deviceItem.state = (currentDeviceID == device.id) ? NSControl.StateValue.on : NSControl.StateValue.off
+                outputMenu.addItem(deviceItem)
+            }
+            
+            // Discovered AirPlay devices (need to connect via Sound Settings)
+            for device in airPlayDevices {
+                let deviceItem = NSMenuItem(title: "    \(device.name)", action: #selector(MenuActions.selectAirPlayDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device.name
+                outputMenu.addItem(deviceItem)
+            }
+        }
+        
+        // Sound Settings option
+        outputMenu.addItem(NSMenuItem.separator())
+        let soundSettings = NSMenuItem(title: "Sound Settings...", action: #selector(MenuActions.openSoundSettings), keyEquivalent: "")
+        soundSettings.target = MenuActions.shared
+        outputMenu.addItem(soundSettings)
+        
+        outputItem.submenu = outputMenu
+        return outputItem
+    }
 }
 
 // MARK: - Menu Actions
@@ -241,6 +320,14 @@ class MenuActions: NSObject {
     
     @objc func togglePlaylist() {
         WindowManager.shared.togglePlaylist()
+    }
+    
+    @objc func toggleMediaLibrary() {
+        WindowManager.shared.toggleMediaLibrary()
+    }
+    
+    @objc func togglePlexBrowser() {
+        WindowManager.shared.togglePlexBrowser()
     }
     
     // MARK: - File Operations
@@ -347,6 +434,37 @@ class MenuActions: NSObject {
     
     @objc func fwd10Tracks() {
         WindowManager.shared.audioEngine.skipTracks(count: 10)
+    }
+    
+    // MARK: - Output Device
+    
+    @objc func selectOutputDevice(_ sender: NSMenuItem) {
+        let deviceID = sender.representedObject as? AudioDeviceID
+        WindowManager.shared.audioEngine.setOutputDevice(deviceID)
+    }
+    
+    @objc func openSoundSettings() {
+        // Open System Settings > Sound
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    @objc func selectAirPlayDevice(_ sender: NSMenuItem) {
+        // AirPlay devices need to be selected in Sound Settings first
+        // Show an alert explaining this
+        guard let deviceName = sender.representedObject as? String else { return }
+        
+        let alert = NSAlert()
+        alert.messageText = "Select \(deviceName)"
+        alert.informativeText = "To use this AirPlay device, select it in Sound Settings, then choose 'System Default' in AdAmp.\n\nOpening Sound Settings..."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Open Sound Settings")
+        alert.addButton(withTitle: "Cancel")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            openSoundSettings()
+        }
     }
     
     // MARK: - Exit
