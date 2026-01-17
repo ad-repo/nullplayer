@@ -50,6 +50,21 @@ class PlexServerClient {
         ]
     }
     
+    /// Headers required for streaming (used by video player)
+    /// Remote/relay connections require full client identification
+    var streamingHeaders: [String: String] {
+        [
+            "X-Plex-Client-Identifier": clientIdentifier,
+            "X-Plex-Product": "AdAmp",
+            "X-Plex-Version": "1.0",
+            "X-Plex-Platform": "macOS",
+            "X-Plex-Platform-Version": ProcessInfo.processInfo.operatingSystemVersionString,
+            "X-Plex-Device": "Mac",
+            "X-Plex-Device-Name": Host.current().localizedName ?? "Mac",
+            "X-Plex-Token": authToken
+        ]
+    }
+    
     // MARK: - Request Building
     
     private func buildRequest(path: String, queryItems: [URLQueryItem]? = nil) -> URLRequest? {

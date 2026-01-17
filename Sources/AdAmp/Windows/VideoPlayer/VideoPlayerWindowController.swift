@@ -172,7 +172,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     func play(url: URL, title: String) {
         currentTitle = title
         window?.title = title
-        videoPlayerView.play(url: url, title: title, isPlexURL: false, plexToken: nil)
+        videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
@@ -186,10 +186,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         
-        let token = PlexManager.shared.account?.authToken
+        // Get full streaming headers (required for remote/relay connections)
+        let headers = PlexManager.shared.streamingHeaders
+        NSLog("Playing Plex movie: %@ with URL: %@", movie.title, url.absoluteString)
+        
         currentTitle = movie.title
         window?.title = movie.title
-        videoPlayerView.play(url: url, title: movie.title, isPlexURL: true, plexToken: token)
+        videoPlayerView.play(url: url, title: movie.title, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
@@ -203,11 +206,14 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         
-        let token = PlexManager.shared.account?.authToken
+        // Get full streaming headers (required for remote/relay connections)
+        let headers = PlexManager.shared.streamingHeaders
         let title = "\(episode.grandparentTitle ?? "Unknown") - \(episode.episodeIdentifier) - \(episode.title)"
+        NSLog("Playing Plex episode: %@ with URL: %@", title, url.absoluteString)
+        
         currentTitle = title
         window?.title = title
-        videoPlayerView.play(url: url, title: title, isPlexURL: true, plexToken: token)
+        videoPlayerView.play(url: url, title: title, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true

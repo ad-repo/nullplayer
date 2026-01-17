@@ -242,7 +242,12 @@ class VideoPlayerView: NSView {
     // MARK: - Playback
     
     /// Play video from URL with title
-    func play(url: URL, title: String, isPlexURL: Bool = false, plexToken: String? = nil) {
+    /// - Parameters:
+    ///   - url: The video URL
+    ///   - title: Display title
+    ///   - isPlexURL: Whether this is a Plex stream
+    ///   - plexHeaders: Full Plex headers for streaming (required for remote/relay connections)
+    func play(url: URL, title: String, isPlexURL: Bool = false, plexHeaders: [String: String]? = nil) {
         currentTitle = title
         currentURL = url
         isPlexStream = isPlexURL
@@ -261,8 +266,10 @@ class VideoPlayerView: NSView {
         
         // Configure options
         let options = KSOptions()
-        if isPlexURL, let token = plexToken {
-            options.appendHeader(["X-Plex-Token": token])
+        if isPlexURL, let headers = plexHeaders {
+            // Remote/relay Plex connections require full client identification headers
+            options.appendHeader(headers)
+            NSLog("VideoPlayerView: Attaching %d Plex headers for streaming", headers.count)
         }
         
         // Stop existing player if any

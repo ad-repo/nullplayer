@@ -548,6 +548,11 @@ class PlexManager {
         serverClient?.streamURL(for: episode)
     }
     
+    /// Get headers required for streaming (needed for remote/relay connections)
+    var streamingHeaders: [String: String]? {
+        serverClient?.streamingHeaders
+    }
+    
     // MARK: - Track Conversion
     
     /// Convert a Plex track to an AudioEngine-compatible Track
