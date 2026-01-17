@@ -35,8 +35,9 @@ class MainWindowController: NSWindowController {
     private func setupWindow() {
         guard let window = window else { return }
         
-        // Enable dragging from anywhere in the window (like normal Mac apps)
-        window.isMovableByWindowBackground = true
+        // Disable automatic window dragging - we handle it manually in the view
+        // to support moving docked windows together
+        window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true

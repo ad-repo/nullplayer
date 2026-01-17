@@ -453,7 +453,12 @@ class EQView: NSView {
         }
         
         draggingSlider = nil
-        isDraggingWindow = false
+        if isDraggingWindow {
+            isDraggingWindow = false
+            if let window = window {
+                WindowManager.shared.windowDidFinishDragging(window)
+            }
+        }
     }
     
     private func hitTestSlider(at point: NSPoint) -> Int? {

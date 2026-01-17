@@ -35,7 +35,9 @@ class PlaylistWindowController: NSWindowController {
     private func setupWindow() {
         guard let window = window else { return }
         
-        window.isMovableByWindowBackground = true
+        // Disable automatic window dragging - we handle it manually in the view
+        // to support moving docked windows together
+        window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true

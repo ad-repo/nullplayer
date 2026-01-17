@@ -393,6 +393,15 @@ class PlaylistView: NSView {
     
     // MARK: - Mouse Events
     
+    /// Track if we're dragging the window
+    private var isDraggingWindow = false
+    private var windowDragStartPoint: NSPoint = .zero
+    
+    /// Allow clicking even when window is not active
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+    
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let hasSkin = WindowManager.shared.currentSkin?.pledit != nil
@@ -473,8 +482,13 @@ class PlaylistView: NSView {
                 }
                 
                 needsDisplay = true
+                return
             }
         }
+        
+        // No control hit - start window drag
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
     }
     
     /// Handle mouse down in shade mode
@@ -499,12 +513,39 @@ class PlaylistView: NSView {
             return
         }
         
-        // Window dragging is handled by macOS via isMovableByWindowBackground
+        // No button hit - start window drag
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
+    }
+    
+    override func mouseDragged(with event: NSEvent) {
+        // Handle window dragging (moves docked windows too)
+        if isDraggingWindow, let window = window {
+            let currentPoint = event.locationInWindow
+            let deltaX = currentPoint.x - windowDragStartPoint.x
+            let deltaY = currentPoint.y - windowDragStartPoint.y
+            
+            var newOrigin = window.frame.origin
+            newOrigin.x += deltaX
+            newOrigin.y += deltaY
+            
+            // Use WindowManager for snapping and moving docked windows
+            newOrigin = WindowManager.shared.windowWillMove(window, to: newOrigin)
+            window.setFrameOrigin(newOrigin)
+        }
     }
     
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        
+        // End window dragging
+        if isDraggingWindow {
+            isDraggingWindow = false
+            if let window = window {
+                WindowManager.shared.windowDidFinishDragging(window)
+            }
+        }
         
         if isShadeMode {
             // Handle shade mode button release
