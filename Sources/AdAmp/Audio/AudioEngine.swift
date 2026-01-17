@@ -15,6 +15,7 @@ protocol AudioEngineDelegate: AnyObject {
     func audioEngineDidUpdateTime(current: TimeInterval, duration: TimeInterval)
     func audioEngineDidChangeTrack(_ track: Track?)
     func audioEngineDidUpdateSpectrum(_ levels: [Float])
+    func audioEngineDidChangePlaylist()
 }
 
 /// Core audio engine using AVAudioEngine for playback and DSP
@@ -423,6 +424,8 @@ class AudioEngine {
             currentIndex = playlist.count - tracks.count
             loadTrack(at: currentIndex)
         }
+        
+        delegate?.audioEngineDidChangePlaylist()
     }
     
     func loadFolder(_ url: URL) {
@@ -438,6 +441,7 @@ class AudioEngine {
             }
         }
         
+        // loadFiles will call the delegate
         loadFiles(urls.sorted { $0.lastPathComponent < $1.lastPathComponent })
     }
     
@@ -526,6 +530,7 @@ class AudioEngine {
         currentIndex = -1
         currentTrack = nil
         audioFile = nil
+        delegate?.audioEngineDidChangePlaylist()
     }
     
     func removeTrack(at index: Int) {
@@ -546,6 +551,8 @@ class AudioEngine {
         } else if index < currentIndex {
             currentIndex -= 1
         }
+        
+        delegate?.audioEngineDidChangePlaylist()
     }
     
     func moveTrack(from sourceIndex: Int, to destinationIndex: Int) {
@@ -563,6 +570,8 @@ class AudioEngine {
         } else if sourceIndex > currentIndex && destinationIndex <= currentIndex {
             currentIndex += 1
         }
+        
+        delegate?.audioEngineDidChangePlaylist()
     }
     
     func playTrack(at index: Int) {
