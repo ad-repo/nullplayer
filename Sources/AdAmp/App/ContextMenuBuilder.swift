@@ -33,6 +33,9 @@ class ContextMenuBuilder {
         // Options submenu
         menu.addItem(buildOptionsMenuItem())
         
+        // Plex submenu
+        menu.addItem(buildPlexMenuItem())
+        
         // Playback submenu
         menu.addItem(buildPlaybackMenuItem())
         
@@ -169,6 +172,88 @@ class ContextMenuBuilder {
         
         optionsItem.submenu = optionsMenu
         return optionsItem
+    }
+    
+    // MARK: - Plex Submenu
+    
+    private static func buildPlexMenuItem() -> NSMenuItem {
+        let plexItem = NSMenuItem(title: "Plex", action: nil, keyEquivalent: "")
+        let plexMenu = NSMenu()
+        
+        let isLinked = PlexManager.shared.isLinked
+        
+        // Link/Unlink account
+        if isLinked {
+            let accountName = PlexManager.shared.account?.username ?? "Account"
+            let accountItem = NSMenuItem(title: "✓ \(accountName)", action: nil, keyEquivalent: "")
+            accountItem.isEnabled = false
+            plexMenu.addItem(accountItem)
+            
+            let unlinkItem = NSMenuItem(title: "Unlink Account", action: #selector(MenuActions.unlinkPlexAccount), keyEquivalent: "")
+            unlinkItem.target = MenuActions.shared
+            plexMenu.addItem(unlinkItem)
+        } else {
+            let linkItem = NSMenuItem(title: "Link Plex Account...", action: #selector(MenuActions.linkPlexAccount), keyEquivalent: "")
+            linkItem.target = MenuActions.shared
+            plexMenu.addItem(linkItem)
+        }
+        
+        plexMenu.addItem(NSMenuItem.separator())
+        
+        // Servers submenu (if linked)
+        if isLinked && !PlexManager.shared.servers.isEmpty {
+            let serversItem = NSMenuItem(title: "Servers", action: nil, keyEquivalent: "")
+            let serversMenu = NSMenu()
+            
+            for server in PlexManager.shared.servers {
+                let serverItem = NSMenuItem(title: server.name, action: #selector(MenuActions.selectPlexServer(_:)), keyEquivalent: "")
+                serverItem.target = MenuActions.shared
+                serverItem.representedObject = server.id
+                serverItem.state = server.id == PlexManager.shared.currentServer?.id ? .on : .off
+                serversMenu.addItem(serverItem)
+            }
+            
+            serversItem.submenu = serversMenu
+            plexMenu.addItem(serversItem)
+            
+            // Libraries submenu
+            if !PlexManager.shared.availableLibraries.isEmpty {
+                let librariesItem = NSMenuItem(title: "Libraries", action: nil, keyEquivalent: "")
+                let librariesMenu = NSMenu()
+                
+                for library in PlexManager.shared.availableLibraries {
+                    let libraryItem = NSMenuItem(title: library.title, action: #selector(MenuActions.selectPlexLibrary(_:)), keyEquivalent: "")
+                    libraryItem.target = MenuActions.shared
+                    libraryItem.representedObject = library.id
+                    libraryItem.state = library.id == PlexManager.shared.currentLibrary?.id ? .on : .off
+                    librariesMenu.addItem(libraryItem)
+                }
+                
+                librariesItem.submenu = librariesMenu
+                plexMenu.addItem(librariesItem)
+            }
+            
+            plexMenu.addItem(NSMenuItem.separator())
+        }
+        
+        // Refresh Servers (if linked but no servers showing)
+        if isLinked {
+            let refreshItem = NSMenuItem(title: "Refresh Servers", action: #selector(MenuActions.refreshPlexServers), keyEquivalent: "")
+            refreshItem.target = MenuActions.shared
+            plexMenu.addItem(refreshItem)
+            
+            plexMenu.addItem(NSMenuItem.separator())
+        }
+        
+        // Show Plex Browser
+        let browserItem = NSMenuItem(title: "Show Plex Browser", action: #selector(MenuActions.togglePlexBrowser), keyEquivalent: "")
+        browserItem.target = MenuActions.shared
+        browserItem.state = WindowManager.shared.isPlexBrowserVisible ? .on : .off
+        browserItem.isEnabled = isLinked
+        plexMenu.addItem(browserItem)
+        
+        plexItem.submenu = plexMenu
+        return plexItem
     }
     
     // MARK: - Playback Submenu
@@ -434,6 +519,65 @@ class MenuActions: NSObject {
     
     @objc func fwd10Tracks() {
         WindowManager.shared.audioEngine.skipTracks(count: 10)
+    }
+    
+    // MARK: - Plex
+    
+    @objc func linkPlexAccount() {
+        WindowManager.shared.showPlexLinkSheet()
+    }
+    
+    @objc func unlinkPlexAccount() {
+        let alert = NSAlert()
+        alert.messageText = "Unlink Plex Account?"
+        alert.informativeText = "This will remove your Plex account from AdAmp. You can link it again later."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Unlink")
+        alert.addButton(withTitle: "Cancel")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            WindowManager.shared.unlinkPlexAccount()
+        }
+    }
+    
+    @objc func selectPlexServer(_ sender: NSMenuItem) {
+        guard let serverID = sender.representedObject as? String,
+              let server = PlexManager.shared.servers.first(where: { $0.id == serverID }) else {
+            return
+        }
+        
+        Task {
+            try? await PlexManager.shared.connect(to: server)
+        }
+    }
+    
+    @objc func selectPlexLibrary(_ sender: NSMenuItem) {
+        guard let libraryID = sender.representedObject as? String,
+              let library = PlexManager.shared.availableLibraries.first(where: { $0.id == libraryID }) else {
+            return
+        }
+        
+        PlexManager.shared.selectLibrary(library)
+    }
+    
+    @objc func refreshPlexServers() {
+        Task {
+            do {
+                try await PlexManager.shared.refreshServers()
+                print("Plex servers refreshed: \(PlexManager.shared.servers.map { $0.name })")
+            } catch {
+                print("Failed to refresh Plex servers: \(error)")
+                
+                // Show error to user
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Failed to Refresh Servers"
+                    alert.informativeText = error.localizedDescription
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            }
+        }
     }
     
     // MARK: - Output Device

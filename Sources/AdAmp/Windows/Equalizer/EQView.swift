@@ -106,7 +106,7 @@ class EQView: NSView {
     
     /// Calculate scale factor based on current bounds vs original size
     private var scaleFactor: CGFloat {
-        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.eqWindowSize
+        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.baseEQSize
         let scaleX = bounds.width / originalSize.width
         let scaleY = bounds.height / originalSize.height
         return min(scaleX, scaleY)
@@ -114,7 +114,7 @@ class EQView: NSView {
     
     /// Convert a point from view coordinates to original (unscaled) coordinates
     private func convertToOriginalCoordinates(_ point: NSPoint) -> NSPoint {
-        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.eqWindowSize
+        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.baseEQSize
         let scale = scaleFactor
         
         if scale == 1.0 {
@@ -134,7 +134,7 @@ class EQView: NSView {
     
     /// Get the original window size for hit testing
     private var originalWindowSize: NSSize {
-        return isShadeMode ? SkinElements.EQShade.windowSize : Skin.eqWindowSize
+        return isShadeMode ? SkinElements.EQShade.windowSize : Skin.baseEQSize
     }
     
     // MARK: - Drawing
@@ -142,7 +142,7 @@ class EQView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
-        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.eqWindowSize
+        let originalSize = isShadeMode ? SkinElements.EQShade.windowSize : Skin.baseEQSize
         let scale = scaleFactor
         
         // Flip coordinate system to match Winamp's top-down coordinates

@@ -10,6 +10,7 @@ A faithful recreation of the classic Winamp 2.x music player for macOS.
 - **Window snapping**: Classic Winamp window docking behavior
 - **Audio format support**: MP3, FLAC, AAC, WAV, AIFF, ALAC, and more
 - **Media library**: Organize and browse your music collection
+- **Plex integration**: Stream music from your Plex Media Server
 - **Spectrum analyzer**: Real-time audio visualization
 
 ## Screenshots
@@ -68,6 +69,7 @@ open Package.swift
 | Toggle Equalizer | Alt+E |
 | Toggle Playlist | Alt+P |
 | Toggle Media Library | Cmd+L |
+| Toggle Plex Browser | Cmd+P |
 | Load file | Cmd+O |
 
 ### Right-Click Context Menu
@@ -81,6 +83,7 @@ Right-click on any window (Main, Equalizer, or Playlist) to access the context m
   - Time elapsed/remaining toggle
   - Double Size (2x scaling)
   - Repeat/Shuffle toggles
+- **Plex** - Link/unlink Plex account, show Plex Browser
 - **Playback** - Transport controls, seek ±5 seconds, skip ±10 tracks
 - **Exit** - Quit application
 
@@ -104,21 +107,48 @@ Toggle via right-click → Options → Time elapsed/remaining
 
 Enable 2x scaling via right-click → Options → Double Size. All windows will scale to double their normal size while maintaining pixel-perfect rendering.
 
+### Plex Integration
+
+AdAmp can stream music directly from your Plex Media Server:
+
+1. **Link your account**: Right-click → Plex → Link Plex Account... (or Plex menu → Link Plex Account...)
+2. **Enter the PIN**: A 4-character code will be displayed
+3. **Authorize**: Go to [plex.tv/link](https://plex.tv/link) and enter the code
+4. **Browse**: Open the Plex Browser (Cmd+P or View → Plex Browser)
+5. **Play**: Double-click any track, album, or artist to start playback
+
+**Features:**
+- PIN-based authentication (no password entry required)
+- Browse by Artists, Albums, or Tracks
+- Search your Plex music library
+- Hierarchical navigation (Artist → Albums → Tracks)
+- Prefers local server connections for best performance
+- Secure token storage in macOS Keychain
+
+**Requirements:**
+- A Plex Media Server with music libraries
+- Network access to your Plex server (local or remote)
+
 ## Architecture
 
 ```
 AdAmp/
 ├── App/                    # Application lifecycle
 ├── Audio/                  # AVAudioEngine-based playback + spectrum analysis
+├── Plex/                   # Plex Media Server integration
+│   ├── PlexAuthClient      # PIN-based authentication
+│   ├── PlexServerClient    # Server API communication
+│   └── PlexManager         # Account & state management
 ├── Skin/                   # WSZ skin loading and rendering
 ├── Windows/                # Window controllers and views
 │   ├── MainWindow/         # Main player window
 │   ├── Playlist/           # Playlist editor
 │   ├── Equalizer/          # 10-band EQ
-│   └── MediaLibrary/       # Media library browser
+│   ├── MediaLibrary/       # Local media library browser
+│   └── PlexBrowser/        # Plex music browser
 ├── Data/                   # Models and persistence
-│   └── Models/             # Track, Playlist, MediaLibrary, EQPreset
-├── Utilities/              # BMP parsing, ZIP extraction
+│   └── Models/             # Track, Playlist, MediaLibrary, EQPreset, PlexModels
+├── Utilities/              # BMP parsing, ZIP extraction, Keychain
 └── docs/                   # Development documentation
 ```
 
@@ -180,6 +210,13 @@ AdAmp supports classic Winamp 2.x skins (.wsz files). Key supported features:
 - [x] Media library window (browse by tracks/artists/albums/genres)
 - [x] Window docking improvements (grouped movement)
 - [x] Spectrum analyzer visualization
+- [x] Plex Media Server integration
+  - [x] PIN-based account linking
+  - [x] Server discovery and selection
+  - [x] Music library browsing (Artists/Albums/Tracks)
+  - [x] Search functionality
+  - [x] Streaming playback
+  - [x] Secure credential storage (Keychain)
 
 ### Phase 5: Polish (In Progress)
 - [x] Right-click context menu (all windows)

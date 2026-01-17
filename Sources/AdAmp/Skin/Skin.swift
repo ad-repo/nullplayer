@@ -69,17 +69,26 @@ struct Skin {
     
     // MARK: - Window Dimensions
     
-    /// Main window size (275x116 in classic Winamp)
-    static let mainWindowSize = NSSize(width: 275, height: 116)
+    /// Scale factor for the UI (1.5 = 50% larger than original)
+    static let scaleFactor: CGFloat = 1.5
     
-    /// Equalizer window size (275x116)
-    static let eqWindowSize = NSSize(width: 275, height: 116)
+    /// Base Winamp dimensions (275x116 in classic Winamp) - used for sprite coordinate calculations
+    static let baseMainSize = NSSize(width: 275, height: 116)
     
-    /// Playlist minimum size (275x116)
-    static let playlistMinSize = NSSize(width: 275, height: 116)
+    /// Main window size scaled - actual window dimensions
+    static let mainWindowSize = NSSize(width: baseMainSize.width * scaleFactor, height: baseMainSize.height * scaleFactor)
     
-    /// Shade mode height (14 pixels)
-    static let shadeHeight: CGFloat = 14
+    /// Base EQ dimensions (same as main in classic Winamp)
+    static let baseEQSize = NSSize(width: 275, height: 116)
+    
+    /// Equalizer window size scaled
+    static let eqWindowSize = NSSize(width: baseEQSize.width * scaleFactor, height: baseEQSize.height * scaleFactor)
+    
+    /// Playlist minimum size scaled
+    static let playlistMinSize = NSSize(width: baseMainSize.width * scaleFactor, height: baseMainSize.height * scaleFactor)
+    
+    /// Shade mode height scaled
+    static let shadeHeight: CGFloat = 14 * scaleFactor
 }
 
 // MARK: - Playlist Colors

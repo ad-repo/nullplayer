@@ -104,9 +104,9 @@ class MainWindowView: NSView {
     
     // MARK: - Drawing
     
-    /// Calculate scale factor based on current bounds vs original size
+    /// Calculate scale factor based on current bounds vs original (base) size
     private var scaleFactor: CGFloat {
-        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
         let scaleX = bounds.width / originalSize.width
         let scaleY = bounds.height / originalSize.height
         return min(scaleX, scaleY)
@@ -114,7 +114,7 @@ class MainWindowView: NSView {
     
     /// Convert a point from view coordinates to original (unscaled) coordinates
     private func convertToOriginalCoordinates(_ point: NSPoint) -> NSPoint {
-        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
         let scale = scaleFactor
         
         if scale == 1.0 {
@@ -134,15 +134,15 @@ class MainWindowView: NSView {
         return NSPoint(x: x, y: y)
     }
     
-    /// Get the original window size for hit testing
+    /// Get the original window size for hit testing (base Winamp dimensions)
     private var originalWindowSize: NSSize {
-        return isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+        return isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
     }
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
-        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.mainWindowSize
+        let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
         let scale = scaleFactor
         
         // Flip coordinate system to match Winamp's top-down coordinates
@@ -480,7 +480,7 @@ class MainWindowView: NSView {
         // Handle slider dragging
         if let slider = draggingSlider {
             // Convert point to Winamp coordinates
-            let originalHeight = Skin.mainWindowSize.height
+            let originalHeight = Skin.baseMainSize.height
             let winampPoint = NSPoint(x: point.x, y: originalHeight - point.y)
             
             switch slider {
