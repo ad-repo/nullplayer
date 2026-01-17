@@ -479,13 +479,32 @@ class AudioEngine {
     }
     
     private func trackDidFinish() {
-        if repeatEnabled && !shuffleEnabled {
-            // Repeat current track
-            loadTrack(at: currentIndex)
-            play()
+        if repeatEnabled {
+            if shuffleEnabled {
+                // Repeat mode + shuffle: pick a random track
+                currentIndex = Int.random(in: 0..<playlist.count)
+                loadTrack(at: currentIndex)
+                play()
+            } else {
+                // Repeat mode: loop current track
+                loadTrack(at: currentIndex)
+                play()
+            }
         } else {
-            // Play next track
-            next()
+            // No repeat mode: check if we're at the end of playlist
+            if shuffleEnabled {
+                // Shuffle without repeat: could play random tracks but eventually should stop
+                // For simplicity, just stop after current track
+                stop()
+            } else if currentIndex < playlist.count - 1 {
+                // More tracks to play
+                currentIndex += 1
+                loadTrack(at: currentIndex)
+                play()
+            } else {
+                // End of playlist, stop playback
+                stop()
+            }
         }
     }
     
