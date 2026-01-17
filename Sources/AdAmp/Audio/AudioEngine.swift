@@ -1,6 +1,8 @@
 import AVFoundation
 import AppKit
 import Accelerate
+import CoreAudio
+import AudioToolbox
 
 /// Audio playback state
 enum PlaybackState {
@@ -100,12 +102,16 @@ class AudioEngine {
         3000, 6000, 12000, 14000, 16000
     ]
     
+    /// Current output device ID (nil = system default)
+    private(set) var currentOutputDeviceID: AudioDeviceID?
+    
     // MARK: - Initialization
     
     init() {
         setupAudioEngine()
         setupEqualizer()
         setupSpectrumAnalyzer()
+        restoreSavedOutputDevice()
     }
     
     deinit {
@@ -484,6 +490,13 @@ class AudioEngine {
         loadFiles(urls.sorted { $0.lastPathComponent < $1.lastPathComponent })
     }
     
+    /// Append files to the playlist without starting playback
+    func appendFiles(_ urls: [URL]) {
+        let tracks = urls.compactMap { Track(url: $0) }
+        playlist.append(contentsOf: tracks)
+        delegate?.audioEngineDidChangePlaylist()
+    }
+    
     private func loadTrack(at index: Int) {
         guard index >= 0 && index < playlist.count else { return }
         
@@ -579,6 +592,96 @@ class AudioEngine {
     /// Enable/disable equalizer
     func setEQEnabled(_ enabled: Bool) {
         eqNode.bypass = !enabled
+    }
+    
+    // MARK: - Output Device
+    
+    /// Set the output device for audio playback
+    /// - Parameter deviceID: The Core Audio device ID, or nil for system default
+    /// - Returns: true if successful, false otherwise
+    @discardableResult
+    func setOutputDevice(_ deviceID: AudioDeviceID?) -> Bool {
+        let wasPlaying = state == .playing
+        
+        // Stop engine before changing output device
+        if engine.isRunning {
+            engine.stop()
+        }
+        
+        // Get the actual device ID to use
+        let targetDeviceID: AudioDeviceID
+        if let deviceID = deviceID {
+            targetDeviceID = deviceID
+        } else {
+            // Use system default
+            guard let defaultID = AudioOutputManager.shared.getDefaultOutputDeviceID() else {
+                print("Failed to get default output device")
+                return false
+            }
+            targetDeviceID = defaultID
+        }
+        
+        // Get the audio unit from the output node
+        guard let outputUnit = engine.outputNode.audioUnit else {
+            print("Failed to get output audio unit")
+            return false
+        }
+        
+        // Set the output device on the audio unit
+        var deviceIDCopy = targetDeviceID
+        let status = AudioUnitSetProperty(
+            outputUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &deviceIDCopy,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        
+        if status != noErr {
+            print("Failed to set output device: \(status)")
+            // Try to restart with previous device
+            if wasPlaying {
+                try? engine.start()
+                playerNode.play()
+            }
+            return false
+        }
+        
+        currentOutputDeviceID = deviceID
+        
+        // Update the AudioOutputManager's selection
+        AudioOutputManager.shared.selectDevice(deviceID)
+        
+        // Restart engine if it was playing
+        if wasPlaying {
+            do {
+                try engine.start()
+                playerNode.play()
+            } catch {
+                print("Failed to restart audio engine after device change: \(error)")
+                return false
+            }
+        }
+        
+        return true
+    }
+    
+    /// Get the current output device
+    func getCurrentOutputDevice() -> AudioOutputDevice? {
+        guard let deviceID = currentOutputDeviceID else { return nil }
+        return AudioOutputManager.shared.outputDevices.first { $0.id == deviceID }
+    }
+    
+    /// Restore the saved output device from UserDefaults
+    private func restoreSavedOutputDevice() {
+        // Check if there's a saved device
+        if let savedDevice = AudioOutputManager.shared.currentDeviceID {
+            // Delay slightly to ensure engine is fully set up
+            DispatchQueue.main.async { [weak self] in
+                self?.setOutputDevice(savedDevice)
+            }
+        }
     }
     
     // MARK: - Playlist Management
