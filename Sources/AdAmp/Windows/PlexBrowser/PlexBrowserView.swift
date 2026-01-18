@@ -63,11 +63,17 @@ class PlexBrowserView: NSView {
     /// Current display items
     private var displayItems: [PlexDisplayItem] = []
     
-    /// Expanded artists for hierarchical view
+    /// Expanded artists for hierarchical view (by ID)
     private var expandedArtists: Set<String> = []
     
-    /// Expanded albums (for showing tracks)
+    /// Expanded albums (for showing tracks, by ID)
     private var expandedAlbums: Set<String> = []
+    
+    /// Expanded artists by name (for search results where IDs can vary)
+    private var expandedArtistNames: Set<String> = []
+    
+    /// Albums fetched by artist name (for search results)
+    private var artistAlbumsByName: [String: [PlexAlbum]] = [:]
     
     /// Loading state
     private var isLoading: Bool = false
@@ -2052,15 +2058,32 @@ class PlexBrowserView: NSView {
         guard let results = searchResults else { return }
         
         if !results.artists.isEmpty {
+            // Deduplicate artists by name, keeping the one with highest album count
+            var artistsByName: [String: PlexArtist] = [:]
+            for artist in results.artists {
+                let normalizedName = artist.title.lowercased().trimmingCharacters(in: .whitespaces)
+                if let existing = artistsByName[normalizedName] {
+                    // Keep the one with more albums
+                    if artist.albumCount > existing.albumCount {
+                        artistsByName[normalizedName] = artist
+                    }
+                } else {
+                    artistsByName[normalizedName] = artist
+                }
+            }
+            let uniqueArtists = Array(artistsByName.values).sorted { $0.title.lowercased() < $1.title.lowercased() }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-artists",
-                title: "Artists (\(results.artists.count))",
+                title: "Artists (\(uniqueArtists.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for artist in results.artists {
+            for artist in uniqueArtists {
+                let normalizedName = artist.title.lowercased().trimmingCharacters(in: .whitespaces)
+                let isExpanded = expandedArtistNames.contains(normalizedName)
                 let info: String? = artist.albumCount > 0 
                     ? "\(artist.albumCount) \(artist.albumCount == 1 ? "album" : "albums")" 
                     : nil
@@ -2069,43 +2092,107 @@ class PlexBrowserView: NSView {
                     title: artist.title,
                     info: info,
                     indentLevel: 1,
-                    hasChildren: false,
+                    hasChildren: true,
                     type: .artist(artist)
                 ))
+                
+                // Show albums if artist is expanded (use name-based lookup)
+                if isExpanded, let albums = artistAlbumsByName[normalizedName] {
+                    for album in albums {
+                        let albumExpanded = expandedAlbums.contains(album.id)
+                        displayItems.append(PlexDisplayItem(
+                            id: album.id,
+                            title: album.title,
+                            info: album.year.map { String($0) },
+                            indentLevel: 2,
+                            hasChildren: true,
+                            type: .album(album)
+                        ))
+                        
+                        // Show tracks if album is expanded
+                        if albumExpanded, let tracks = albumTracks[album.id] {
+                            for track in tracks {
+                                displayItems.append(PlexDisplayItem(
+                                    id: track.id,
+                                    title: track.title,
+                                    info: track.formattedDuration,
+                                    indentLevel: 3,
+                                    hasChildren: false,
+                                    type: .track(track)
+                                ))
+                            }
+                        }
+                    }
+                }
             }
         }
         
         if !results.albums.isEmpty {
+            // Deduplicate albums by ID
+            var seenAlbumIds = Set<String>()
+            var uniqueAlbums: [PlexAlbum] = []
+            for album in results.albums {
+                if !seenAlbumIds.contains(album.id) {
+                    seenAlbumIds.insert(album.id)
+                    uniqueAlbums.append(album)
+                }
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-albums",
-                title: "Albums (\(results.albums.count))",
+                title: "Albums (\(uniqueAlbums.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for album in results.albums {
+            for album in uniqueAlbums {
+                let isExpanded = expandedAlbums.contains(album.id)
                 displayItems.append(PlexDisplayItem(
                     id: album.id,
                     title: "\(album.parentTitle ?? "") - \(album.title)",
                     info: album.year.map { String($0) },
                     indentLevel: 1,
-                    hasChildren: false,
+                    hasChildren: true,
                     type: .album(album)
                 ))
+                
+                // Show tracks if album is expanded
+                if isExpanded, let tracks = albumTracks[album.id] {
+                    for track in tracks {
+                        displayItems.append(PlexDisplayItem(
+                            id: track.id,
+                            title: track.title,
+                            info: track.formattedDuration,
+                            indentLevel: 2,
+                            hasChildren: false,
+                            type: .track(track)
+                        ))
+                    }
+                }
             }
         }
         
         if !results.tracks.isEmpty {
+            // Deduplicate tracks by ID
+            var seenTrackIds = Set<String>()
+            var uniqueTracks: [PlexTrack] = []
+            for track in results.tracks {
+                if !seenTrackIds.contains(track.id) {
+                    seenTrackIds.insert(track.id)
+                    uniqueTracks.append(track)
+                }
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-tracks",
-                title: "Tracks (\(results.tracks.count))",
+                title: "Tracks (\(uniqueTracks.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for track in results.tracks {
+            for track in uniqueTracks {
                 displayItems.append(PlexDisplayItem(
                     id: track.id,
                     title: "\(track.grandparentTitle ?? "") - \(track.title)",
@@ -2118,15 +2205,25 @@ class PlexBrowserView: NSView {
         }
         
         if !results.movies.isEmpty {
+            // Deduplicate movies by ID
+            var seenMovieIds = Set<String>()
+            var uniqueMovies: [PlexMovie] = []
+            for movie in results.movies {
+                if !seenMovieIds.contains(movie.id) {
+                    seenMovieIds.insert(movie.id)
+                    uniqueMovies.append(movie)
+                }
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-movies",
-                title: "Movies (\(results.movies.count))",
+                title: "Movies (\(uniqueMovies.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for movie in results.movies {
+            for movie in uniqueMovies {
                 let info = [movie.year.map { String($0) }, movie.formattedDuration]
                     .compactMap { $0 }
                     .joined(separator: " • ")
@@ -2142,36 +2239,86 @@ class PlexBrowserView: NSView {
         }
         
         if !results.shows.isEmpty {
+            // Deduplicate shows by ID
+            var seenShowIds = Set<String>()
+            var uniqueShows: [PlexShow] = []
+            for show in results.shows {
+                if !seenShowIds.contains(show.id) {
+                    seenShowIds.insert(show.id)
+                    uniqueShows.append(show)
+                }
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-shows",
-                title: "TV Shows (\(results.shows.count))",
+                title: "TV Shows (\(uniqueShows.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for show in results.shows {
+            for show in uniqueShows {
+                let isExpanded = expandedShows.contains(show.id)
                 displayItems.append(PlexDisplayItem(
                     id: show.id,
                     title: show.title,
-                    info: show.year.map { String($0) },
+                    info: "\(show.childCount) seasons",
                     indentLevel: 1,
-                    hasChildren: false,
+                    hasChildren: true,
                     type: .show(show)
                 ))
+                
+                // Show seasons if show is expanded
+                if isExpanded, let seasons = showSeasons[show.id] {
+                    for season in seasons {
+                        let seasonExpanded = expandedSeasons.contains(season.id)
+                        displayItems.append(PlexDisplayItem(
+                            id: season.id,
+                            title: season.title,
+                            info: "\(season.leafCount) episodes",
+                            indentLevel: 2,
+                            hasChildren: true,
+                            type: .season(season)
+                        ))
+                        
+                        // Show episodes if season is expanded
+                        if seasonExpanded, let episodes = seasonEpisodes[season.id] {
+                            for episode in episodes {
+                                displayItems.append(PlexDisplayItem(
+                                    id: episode.id,
+                                    title: "\(episode.episodeIdentifier) - \(episode.title)",
+                                    info: episode.formattedDuration,
+                                    indentLevel: 3,
+                                    hasChildren: false,
+                                    type: .episode(episode)
+                                ))
+                            }
+                        }
+                    }
+                }
             }
         }
         
         if !results.episodes.isEmpty {
+            // Deduplicate episodes by ID
+            var seenEpisodeIds = Set<String>()
+            var uniqueEpisodes: [PlexEpisode] = []
+            for episode in results.episodes {
+                if !seenEpisodeIds.contains(episode.id) {
+                    seenEpisodeIds.insert(episode.id)
+                    uniqueEpisodes.append(episode)
+                }
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-episodes",
-                title: "Episodes (\(results.episodes.count))",
+                title: "Episodes (\(uniqueEpisodes.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for episode in results.episodes {
+            for episode in uniqueEpisodes {
                 displayItems.append(PlexDisplayItem(
                     id: episode.id,
                     title: "\(episode.grandparentTitle ?? "") - \(episode.episodeIdentifier) - \(episode.title)",
@@ -2184,9 +2331,33 @@ class PlexBrowserView: NSView {
         }
     }
     
+    /// Rebuild display items for the current browse mode
+    /// This ensures expand/collapse works correctly regardless of which tab we're on
+    private func rebuildCurrentModeItems() {
+        switch browseMode {
+        case .artists:
+            buildArtistItems()
+        case .albums:
+            buildAlbumItems()
+        case .tracks:
+            buildTrackItems()
+        case .movies:
+            buildMovieItems()
+        case .shows:
+            buildShowItems()
+        case .search:
+            buildSearchItems()
+        }
+    }
+    
     private func isExpanded(_ item: PlexDisplayItem) -> Bool {
         switch item.type {
-        case .artist:
+        case .artist(let artist):
+            // In search mode, use name-based tracking since IDs can vary after deduplication
+            if browseMode == .search {
+                let normalizedName = artist.title.lowercased().trimmingCharacters(in: .whitespaces)
+                return expandedArtistNames.contains(normalizedName)
+            }
             return expandedArtists.contains(item.id)
         case .album:
             return expandedAlbums.contains(item.id)
@@ -2202,25 +2373,50 @@ class PlexBrowserView: NSView {
     private func toggleExpand(_ item: PlexDisplayItem) {
         switch item.type {
         case .artist(let artist):
-            if expandedArtists.contains(artist.id) {
-                expandedArtists.remove(artist.id)
-            } else {
-                expandedArtists.insert(artist.id)
-                if artistAlbums[artist.id] == nil {
-                    Task { @MainActor in
-                        do {
-                            let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
-                            artistAlbums[artist.id] = albums
-                            buildArtistItems()
-                            needsDisplay = true
-                        } catch {
-                            print("Failed to load albums: \(error)")
+            let normalizedName = artist.title.lowercased().trimmingCharacters(in: .whitespaces)
+            
+            // In search mode, track by name since IDs can vary after deduplication
+            if browseMode == .search {
+                if expandedArtistNames.contains(normalizedName) {
+                    expandedArtistNames.remove(normalizedName)
+                } else {
+                    expandedArtistNames.insert(normalizedName)
+                    if artistAlbumsByName[normalizedName] == nil {
+                        Task { @MainActor in
+                            do {
+                                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
+                                artistAlbumsByName[normalizedName] = albums
+                                rebuildCurrentModeItems()
+                                needsDisplay = true
+                            } catch {
+                                print("Failed to load albums: \(error)")
+                            }
                         }
+                        return
                     }
-                    return
+                }
+            } else {
+                // Normal mode - track by ID
+                if expandedArtists.contains(artist.id) {
+                    expandedArtists.remove(artist.id)
+                } else {
+                    expandedArtists.insert(artist.id)
+                    if artistAlbums[artist.id] == nil {
+                        Task { @MainActor in
+                            do {
+                                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
+                                artistAlbums[artist.id] = albums
+                                rebuildCurrentModeItems()
+                                needsDisplay = true
+                            } catch {
+                                print("Failed to load albums: \(error)")
+                            }
+                        }
+                        return
+                    }
                 }
             }
-            buildArtistItems()
+            rebuildCurrentModeItems()
             
         case .album(let album):
             if expandedAlbums.contains(album.id) {
@@ -2232,7 +2428,7 @@ class PlexBrowserView: NSView {
                         do {
                             let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
                             albumTracks[album.id] = tracks
-                            buildArtistItems()
+                            rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch {
                             print("Failed to load tracks: \(error)")
@@ -2241,7 +2437,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             }
-            buildArtistItems()
+            rebuildCurrentModeItems()
             
         case .show(let show):
             if expandedShows.contains(show.id) {
@@ -2253,7 +2449,7 @@ class PlexBrowserView: NSView {
                         do {
                             let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
                             showSeasons[show.id] = seasons
-                            buildShowItems()
+                            rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch {
                             print("Failed to load seasons: \(error)")
@@ -2262,7 +2458,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             }
-            buildShowItems()
+            rebuildCurrentModeItems()
             
         case .season(let season):
             if expandedSeasons.contains(season.id) {
@@ -2274,7 +2470,7 @@ class PlexBrowserView: NSView {
                         do {
                             let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
                             seasonEpisodes[season.id] = episodes
-                            buildShowItems()
+                            rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch {
                             print("Failed to load episodes: \(error)")
@@ -2283,7 +2479,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             }
-            buildShowItems()
+            rebuildCurrentModeItems()
             
         default:
             break
