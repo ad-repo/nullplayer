@@ -171,8 +171,19 @@ class PlexBrowserView: NSView {
             name: PlexManager.serversDidChangeNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(plexContentDidPreload),
+            name: PlexManager.libraryContentDidPreloadNotification,
+            object: nil
+        )
         
         // Initial data load
+        reloadData()
+    }
+    
+    @objc private func plexContentDidPreload() {
+        // When PlexManager finishes preloading content, reload our data
         reloadData()
     }
     
@@ -1029,18 +1040,20 @@ class PlexBrowserView: NSView {
     }
     
     /// Check if point hits close button
+    /// Uses LibraryWindow offsets to match where SkinRenderer draws the buttons
     private func hitTestCloseButton(at winampPoint: NSPoint) -> Bool {
         let originalSize = originalWindowSize
-        let closeRect = NSRect(x: originalSize.width - SkinElements.PlexBrowser.TitleBarButtons.closeOffset - 9,
-                               y: 3, width: 9, height: 9)
+        let closeRect = NSRect(x: originalSize.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9,
+                               y: 4, width: 9, height: 9)
         return closeRect.contains(winampPoint)
     }
     
     /// Check if point hits shade button
+    /// Uses LibraryWindow offsets to match where SkinRenderer draws the buttons
     private func hitTestShadeButton(at winampPoint: NSPoint) -> Bool {
         let originalSize = originalWindowSize
-        let shadeRect = NSRect(x: originalSize.width - SkinElements.PlexBrowser.TitleBarButtons.shadeOffset - 9,
-                               y: 3, width: 9, height: 9)
+        let shadeRect = NSRect(x: originalSize.width - SkinElements.LibraryWindow.TitleBarButtons.shadeOffset - 9,
+                               y: 4, width: 9, height: 9)
         return shadeRect.contains(winampPoint)
     }
     
@@ -1824,13 +1837,22 @@ class PlexBrowserView: NSView {
         
         Task { @MainActor in
             do {
+                let plexManager = PlexManager.shared
+                
                 switch browseMode {
                 case .artists:
                     if cachedArtists.isEmpty {
-                        cachedArtists = try await PlexManager.shared.fetchArtists()
-                        // Also fetch albums to get accurate counts per artist
-                        if cachedAlbums.isEmpty {
-                            cachedAlbums = try await PlexManager.shared.fetchAlbums(offset: 0, limit: 10000)
+                        // Use preloaded data from PlexManager if available
+                        if plexManager.isContentPreloaded && !plexManager.cachedArtists.isEmpty {
+                            cachedArtists = plexManager.cachedArtists
+                            cachedAlbums = plexManager.cachedAlbums
+                            NSLog("PlexBrowserView: Using preloaded artists (%d) and albums (%d)", cachedArtists.count, cachedAlbums.count)
+                        } else {
+                            cachedArtists = try await plexManager.fetchArtists()
+                            // Also fetch albums to get accurate counts per artist
+                            if cachedAlbums.isEmpty {
+                                cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                            }
                         }
                         // Build artist album counts from the albums data
                         buildArtistAlbumCounts()
@@ -1839,21 +1861,33 @@ class PlexBrowserView: NSView {
                     
                 case .albums:
                     if cachedAlbums.isEmpty {
-                        cachedAlbums = try await PlexManager.shared.fetchAlbums(offset: 0, limit: 500)
+                        // Use preloaded data from PlexManager if available
+                        if plexManager.isContentPreloaded && !plexManager.cachedAlbums.isEmpty {
+                            cachedAlbums = plexManager.cachedAlbums
+                            NSLog("PlexBrowserView: Using preloaded albums (%d)", cachedAlbums.count)
+                        } else {
+                            cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 500)
+                        }
                     }
                     buildAlbumItems()
                     
                 case .tracks:
                     if cachedTracks.isEmpty {
-                        cachedTracks = try await PlexManager.shared.fetchTracks(offset: 0, limit: 500)
+                        cachedTracks = try await plexManager.fetchTracks(offset: 0, limit: 500)
                     }
                     buildTrackItems()
                     
                 case .movies:
                     NSLog("PlexBrowserView: Loading movies...")
                     if cachedMovies.isEmpty {
-                        cachedMovies = try await PlexManager.shared.fetchMovies(offset: 0, limit: 500)
-                        NSLog("PlexBrowserView: Loaded %d movies", cachedMovies.count)
+                        // Use preloaded data from PlexManager if available
+                        if plexManager.isContentPreloaded && !plexManager.cachedMovies.isEmpty {
+                            cachedMovies = plexManager.cachedMovies
+                            NSLog("PlexBrowserView: Using preloaded movies (%d)", cachedMovies.count)
+                        } else {
+                            cachedMovies = try await plexManager.fetchMovies(offset: 0, limit: 500)
+                            NSLog("PlexBrowserView: Loaded %d movies", cachedMovies.count)
+                        }
                     }
                     buildMovieItems()
                     NSLog("PlexBrowserView: Built %d movie items", displayItems.count)
@@ -1861,8 +1895,14 @@ class PlexBrowserView: NSView {
                 case .shows:
                     NSLog("PlexBrowserView: Loading shows...")
                     if cachedShows.isEmpty {
-                        cachedShows = try await PlexManager.shared.fetchShows(offset: 0, limit: 500)
-                        NSLog("PlexBrowserView: Loaded %d shows", cachedShows.count)
+                        // Use preloaded data from PlexManager if available
+                        if plexManager.isContentPreloaded && !plexManager.cachedShows.isEmpty {
+                            cachedShows = plexManager.cachedShows
+                            NSLog("PlexBrowserView: Using preloaded shows (%d)", cachedShows.count)
+                        } else {
+                            cachedShows = try await plexManager.fetchShows(offset: 0, limit: 500)
+                            NSLog("PlexBrowserView: Loaded %d shows", cachedShows.count)
+                        }
                     }
                     buildShowItems()
                     NSLog("PlexBrowserView: Built %d show items", displayItems.count)
@@ -1870,7 +1910,7 @@ class PlexBrowserView: NSView {
                 case .search:
                     if !searchQuery.isEmpty {
                         // Search in the current library
-                        searchResults = try await PlexManager.shared.search(query: searchQuery)
+                        searchResults = try await plexManager.search(query: searchQuery)
                         buildSearchItems()
                     } else {
                         displayItems = []

@@ -120,17 +120,23 @@ class PlexBrowserWindowController: NSWindowController {
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         
-        // Refresh servers when window is shown if we're linked but have no servers
-        if PlexManager.shared.isLinked && PlexManager.shared.servers.isEmpty {
-            Task {
-                do {
-                    NSLog("PlexBrowserWindowController: No servers cached, refreshing...")
-                    try await PlexManager.shared.refreshServers()
-                    await MainActor.run {
-                        self.browserView.reloadData()
+        // Only refresh servers if we're linked, have no servers, and not already connecting
+        // This prevents race conditions with the startup preload
+        let plexManager = PlexManager.shared
+        if plexManager.isLinked && plexManager.servers.isEmpty {
+            if case .connecting = plexManager.connectionState {
+                NSLog("PlexBrowserWindowController: Already connecting, skipping refresh")
+            } else {
+                Task {
+                    do {
+                        NSLog("PlexBrowserWindowController: No servers cached, refreshing...")
+                        try await plexManager.refreshServers()
+                        await MainActor.run {
+                            self.browserView.reloadData()
+                        }
+                    } catch {
+                        NSLog("PlexBrowserWindowController: Failed to refresh servers: %@", error.localizedDescription)
                     }
-                } catch {
-                    NSLog("PlexBrowserWindowController: Failed to refresh servers: %@", error.localizedDescription)
                 }
             }
         }

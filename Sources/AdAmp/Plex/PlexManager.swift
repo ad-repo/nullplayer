@@ -56,6 +56,10 @@ class PlexManager {
     /// Currently selected library (can be any type - music, movies, or shows)
     private(set) var currentLibrary: PlexLibrary? {
         didSet {
+            // Clear cached content when library changes
+            if oldValue?.id != currentLibrary?.id {
+                clearCachedContent()
+            }
             NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: self)
             UserDefaults.standard.set(currentLibrary?.id, forKey: "PlexCurrentLibraryID")
         }
@@ -66,6 +70,29 @@ class PlexManager {
     
     /// All available libraries on the current server (music, movies, shows)
     private(set) var availableLibraries: [PlexLibrary] = []
+    
+    // MARK: - Cached Library Content
+    
+    /// Notification posted when library content is preloaded
+    static let libraryContentDidPreloadNotification = Notification.Name("PlexLibraryContentDidPreload")
+    
+    /// Cached artists for music library
+    private(set) var cachedArtists: [PlexArtist] = []
+    
+    /// Cached albums for music library
+    private(set) var cachedAlbums: [PlexAlbum] = []
+    
+    /// Cached movies for movie library
+    private(set) var cachedMovies: [PlexMovie] = []
+    
+    /// Cached TV shows for show library
+    private(set) var cachedShows: [PlexShow] = []
+    
+    /// Whether library content has been preloaded
+    private(set) var isContentPreloaded: Bool = false
+    
+    /// Loading state for preload
+    private(set) var isPreloading: Bool = false
     
     // MARK: - Connection State
     
@@ -87,6 +114,9 @@ class PlexManager {
     private let authClient: PlexAuthClient
     private var linkingTask: Task<Bool, Error>?
     
+    /// Flag to prevent concurrent server refreshes
+    private var isRefreshing: Bool = false
+    
     // MARK: - Initialization
     
     private init() {
@@ -98,9 +128,11 @@ class PlexManager {
     
     private func loadSavedAccount() {
         guard let savedAccount = KeychainHelper.shared.getPlexAccount() else {
+            NSLog("PlexManager: No saved account found in keychain")
             return
         }
         
+        NSLog("PlexManager: Found saved account: %@", savedAccount.username)
         self.account = savedAccount
         
         // Restore servers and selection in background
@@ -189,6 +221,9 @@ class PlexManager {
         availableLibraries = []
         connectionState = .disconnected
         
+        // Clear cached content
+        clearCachedContent()
+        
         // Clear saved data
         KeychainHelper.shared.clearPlexCredentials()
         UserDefaults.standard.removeObject(forKey: "PlexCurrentServerID")
@@ -202,6 +237,15 @@ class PlexManager {
         guard let token = account?.authToken else {
             throw PlexAuthError.unauthorized
         }
+        
+        // Skip if already refreshing to prevent race conditions
+        guard !isRefreshing else {
+            NSLog("PlexManager: Already refreshing servers, skipping duplicate request")
+            return
+        }
+        
+        isRefreshing = true
+        defer { isRefreshing = false }
         
         connectionState = .connecting
         
@@ -249,9 +293,115 @@ class PlexManager {
             NSLog("PlexManager: Background refresh of servers starting...")
             try await refreshServers()
             NSLog("PlexManager: Background refresh completed, found %d servers", servers.count)
+            
+            // Preload library content after successful server connection
+            await preloadLibraryContent()
         } catch {
             NSLog("PlexManager: Background refresh failed: %@", error.localizedDescription)
         }
+    }
+    
+    /// Preload library content in the background for faster Plex browser opening
+    func preloadLibraryContent() async {
+        // Capture the current state at the start to avoid race conditions
+        guard let client = serverClient, let library = currentLibrary else {
+            NSLog("PlexManager: Cannot preload - no server or library connected")
+            return
+        }
+        
+        guard !isPreloading else {
+            NSLog("PlexManager: Already preloading, skipping")
+            return
+        }
+        
+        await MainActor.run {
+            isPreloading = true
+        }
+        
+        NSLog("PlexManager: Starting library content preload for library: %@", library.title)
+        
+        do {
+            // Preload content based on the library type
+            // Use the captured client and library to avoid race conditions
+            if library.isMusicLibrary {
+                // Preload artists and albums for music library
+                NSLog("PlexManager: Fetching artists...")
+                let artists = try await client.fetchAllArtists(libraryID: library.id)
+                NSLog("PlexManager: Fetched %d artists, now fetching albums...", artists.count)
+                let albums = try await client.fetchAlbums(libraryID: library.id, offset: 0, limit: 10000)
+                NSLog("PlexManager: Fetched %d albums", albums.count)
+                
+                await MainActor.run {
+                    // Only store if the library hasn't changed
+                    if self.currentLibrary?.id == library.id {
+                        self.cachedArtists = artists
+                        self.cachedAlbums = albums
+                        self.isContentPreloaded = true
+                        NSLog("PlexManager: Stored preloaded data - %d artists, %d albums", artists.count, albums.count)
+                    } else {
+                        NSLog("PlexManager: Library changed during preload, discarding results")
+                    }
+                    self.isPreloading = false
+                    NotificationCenter.default.post(name: Self.libraryContentDidPreloadNotification, object: self)
+                }
+                
+            } else if library.isMovieLibrary {
+                // Preload movies for movie library
+                NSLog("PlexManager: Fetching movies...")
+                let movies = try await client.fetchMovies(libraryID: library.id, offset: 0, limit: 500)
+                
+                await MainActor.run {
+                    if self.currentLibrary?.id == library.id {
+                        self.cachedMovies = movies
+                        self.isContentPreloaded = true
+                        NSLog("PlexManager: Stored preloaded data - %d movies", movies.count)
+                    } else {
+                        NSLog("PlexManager: Library changed during preload, discarding results")
+                    }
+                    self.isPreloading = false
+                    NotificationCenter.default.post(name: Self.libraryContentDidPreloadNotification, object: self)
+                }
+                
+            } else if library.isShowLibrary {
+                // Preload shows for show library
+                NSLog("PlexManager: Fetching shows...")
+                let shows = try await client.fetchShows(libraryID: library.id, offset: 0, limit: 500)
+                
+                await MainActor.run {
+                    if self.currentLibrary?.id == library.id {
+                        self.cachedShows = shows
+                        self.isContentPreloaded = true
+                        NSLog("PlexManager: Stored preloaded data - %d shows", shows.count)
+                    } else {
+                        NSLog("PlexManager: Library changed during preload, discarding results")
+                    }
+                    self.isPreloading = false
+                    NotificationCenter.default.post(name: Self.libraryContentDidPreloadNotification, object: self)
+                }
+            } else {
+                NSLog("PlexManager: Library type not supported for preload: %@", library.type)
+                await MainActor.run {
+                    self.isPreloading = false
+                }
+            }
+            
+            NSLog("PlexManager: Library content preload complete")
+            
+        } catch {
+            NSLog("PlexManager: Library content preload failed: %@", error.localizedDescription)
+            await MainActor.run {
+                self.isPreloading = false
+            }
+        }
+    }
+    
+    /// Clear cached library content (called when library or server changes)
+    private func clearCachedContent() {
+        cachedArtists = []
+        cachedAlbums = []
+        cachedMovies = []
+        cachedShows = []
+        isContentPreloaded = false
     }
     
     /// Connect to a specific server
@@ -382,7 +532,15 @@ class PlexManager {
     
     /// Select a library (any type)
     func selectLibrary(_ library: PlexLibrary) {
+        let libraryChanged = currentLibrary?.id != library.id
         currentLibrary = library
+        
+        // Preload content for the new library in the background
+        if libraryChanged {
+            Task {
+                await preloadLibraryContent()
+            }
+        }
     }
     
     // MARK: - Content Fetching (Convenience)
