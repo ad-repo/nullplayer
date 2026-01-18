@@ -448,3 +448,110 @@ The key insights for working on the Winamp-style UI:
 6. **Test at different window sizes** - Scaling bugs often only appear when windows are resized
 
 When in doubt, check how MainWindowView or EQView handles the same situation.
+
+---
+
+## Plex Browser Window Pattern
+
+The Plex browser window (`PlexBrowserView.swift`) follows the same pattern as the Playlist window, reusing playlist sprites for frame/chrome with custom content areas.
+
+### Architecture Overview
+
+```
++--------------------------------------------------+
+|  Title Bar (playlist sprites)                    | 20px
++--------------------------------------------------+
+|  Server Bar (custom content area)                | 24px
++--------------------------------------------------+
+|  Tab Bar (custom content area)                   | 24px
++--------------------------------------------------+
+|  Search Bar (only in search mode)                | 26px
++--------------------------------------------------+
+|                                                  |
+|  List Area (custom content with playlist colors) |
+|                                               |S |
+|                                               |C |
+|                                               |R |
+|                                               |O |
+|                                               |L |
+|                                               |L |
++--------------------------------------------------+
+|  Status Bar (custom content area)                | 20px
++--------------------------------------------------+
+```
+
+### Key Implementation Details
+
+1. **Uses Playlist Sprites**: The Plex browser reuses `PLEDIT.BMP` sprites for:
+   - Title bar (corners, tiles, window buttons)
+   - Side borders
+   - Scrollbar track and thumb
+   - Shade mode background
+
+2. **Custom Content Areas**: The following areas use playlist colors but custom drawing:
+   - Server/library selector bar
+   - Tab bar for browse modes
+   - Search bar
+   - List area with items
+   - Status bar
+
+3. **Layout Constants**: Defined in `SkinElements.PlexBrowser.Layout`:
+```swift
+struct Layout {
+    static let titleBarHeight: CGFloat = 20
+    static let tabBarHeight: CGFloat = 24
+    static let serverBarHeight: CGFloat = 24
+    static let searchBarHeight: CGFloat = 26
+    static let statusBarHeight: CGFloat = 20
+    static let scrollbarWidth: CGFloat = 20
+    static let alphabetWidth: CGFloat = 16
+    static let leftBorder: CGFloat = 12
+    static let rightBorder: CGFloat = 20
+}
+```
+
+4. **SkinRenderer Methods**:
+   - `drawPlexBrowserWindow()` - main entry point
+   - `drawPlexBrowserTitleBar()` - uses playlist title sprites
+   - `drawPlexBrowserSideBorders()` - uses playlist side tile sprites
+   - `drawPlexBrowserScrollbar()` - uses playlist scrollbar sprites
+   - `drawPlexBrowserShade()` - shade mode using playlist shade sprites
+
+### Hit Testing Pattern
+
+The Plex browser uses the same coordinate conversion as Playlist:
+
+```swift
+private func convertToWinampCoordinates(_ point: NSPoint) -> NSPoint {
+    let scale = scaleFactor
+    let originalSize = originalWindowSize
+    
+    let scaledWidth = originalSize.width * scale
+    let scaledHeight = originalSize.height * scale
+    let offsetX = (bounds.width - scaledWidth) / 2
+    let offsetY = (bounds.height - scaledHeight) / 2
+    
+    let x = (point.x - offsetX) / scale
+    let y = originalSize.height - ((point.y - offsetY) / scale)
+    
+    return NSPoint(x: x, y: y)
+}
+```
+
+Hit test methods for each interactive area:
+- `hitTestTitleBar()` - for window dragging
+- `hitTestCloseButton()` / `hitTestShadeButton()` - window controls
+- `hitTestServerBar()` - server/library selection
+- `hitTestTabBar()` - returns tab index
+- `hitTestSearchBar()` - for focus
+- `hitTestAlphabetIndex()` - quick navigation
+- `hitTestScrollbar()` - scrollbar dragging
+- `hitTestListArea()` - returns item index
+
+### Shade Mode
+
+Like the Playlist window, the Plex browser supports shade mode:
+- Toggle via double-click on title bar or shade button
+- Uses `PlaylistShade` sprites for background
+- Controller manages window frame animation
+- View state controlled by `setShadeMode()` method

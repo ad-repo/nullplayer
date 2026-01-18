@@ -1502,6 +1502,359 @@ class SkinRenderer {
         context.fill(thumbRect)
     }
     
+    // MARK: - Plex Browser Window
+    
+    /// Plex browser button types
+    enum PlexBrowserButtonType {
+        case close, shade
+    }
+    
+    /// Draw the complete Plex browser window using skin sprites
+    /// Uses playlist sprites for frame/chrome with custom content areas
+    func drawPlexBrowserWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
+                               pressedButton: PlexBrowserButtonType?, scrollPosition: CGFloat) {
+        let layout = SkinElements.PlexBrowser.Layout.self
+        
+        // Fill background with playlist colors first
+        skin.playlistColors.normalBackground.setFill()
+        context.fill(bounds)
+        
+        // Draw title bar (using playlist title sprites)
+        drawPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        
+        // Draw side borders (using playlist side sprites)
+        drawPlexBrowserSideBorders(in: context, bounds: bounds)
+        
+        // Draw status bar at bottom (using playlist bottom sprites adapted)
+        drawPlexBrowserStatusBar(in: context, bounds: bounds)
+        
+        // Draw scrollbar
+        let contentTop = layout.titleBarHeight + layout.serverBarHeight + layout.tabBarHeight
+        let contentHeight = bounds.height - contentTop - layout.statusBarHeight
+        drawPlexBrowserScrollbar(in: context, bounds: bounds, scrollPosition: scrollPosition, contentHeight: contentHeight)
+    }
+    
+    /// Draw Plex browser title bar with skin sprites
+    /// Uses the same approach as playlist: draws title sprite (with solid background) over tiles
+    func drawPlexBrowserTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
+        guard let pleditImage = skin.pledit else {
+            drawFallbackPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive)
+            return
+        }
+        
+        let titleHeight = SkinElements.Playlist.titleHeight
+        let leftCornerWidth: CGFloat = 25
+        let rightCornerWidth: CGFloat = 25
+        let titleSpriteWidth: CGFloat = 100  // Same as playlist title sprite width
+        let tileWidth: CGFloat = 25
+        
+        // Get the correct sprite set for active/inactive state
+        let leftCorner = isActive ? SkinElements.Playlist.TitleBarActive.leftCorner : SkinElements.Playlist.TitleBarInactive.leftCorner
+        let titleSprite = isActive ? SkinElements.Playlist.TitleBarActive.title : SkinElements.Playlist.TitleBarInactive.title
+        let tileSprite = isActive ? SkinElements.Playlist.TitleBarActive.tile : SkinElements.Playlist.TitleBarInactive.tile
+        let rightCorner = isActive ? SkinElements.Playlist.TitleBarActive.rightCorner : SkinElements.Playlist.TitleBarInactive.rightCorner
+        
+        // Draw left corner
+        drawSprite(from: pleditImage, sourceRect: leftCorner,
+                  to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
+        
+        // Draw right corner (contains window buttons)
+        drawSprite(from: pleditImage, sourceRect: rightCorner,
+                  to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
+        
+        // Calculate available space for middle section
+        let middleStart = leftCornerWidth
+        let middleEnd = bounds.width - rightCornerWidth
+        let middleWidth = middleEnd - middleStart
+        
+        // Fill the entire middle section with tiles FIRST
+        var x: CGFloat = middleStart
+        while x < middleEnd {
+            let w = min(tileWidth, middleEnd - x)
+            drawSprite(from: pleditImage, sourceRect: tileSprite,
+                      to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
+            x += tileWidth
+        }
+        
+        // Calculate where the title text will go (centered)
+        let titleX = middleStart + (middleWidth - titleSpriteWidth) / 2
+        
+        // Draw a solid background rectangle over the tiles where the title goes
+        // Use the playlist background color from skin (typically dark blue/purple)
+        let bgColor = skin.playlistColors.normalBackground
+        bgColor.setFill()
+        context.fill(NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: titleHeight))
+        
+        // Draw "PLEX BROWSER" text centered on the solid background
+        drawTitleBarText("PLEX BROWSER", centeredIn: NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: titleHeight), in: context)
+        
+        // Draw window control button pressed states if needed
+        if pressedButton == .close {
+            let closeRect = NSRect(x: bounds.width - SkinElements.PlexBrowser.TitleBarButtons.closeOffset - 9, 
+                                   y: 3, width: 9, height: 9)
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+            context.fill(closeRect)
+        }
+        
+        if pressedButton == .shade {
+            let shadeRect = NSRect(x: bounds.width - SkinElements.PlexBrowser.TitleBarButtons.shadeOffset - 9, 
+                                   y: 3, width: 9, height: 9)
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+            context.fill(shadeRect)
+        }
+    }
+    
+    /// Draw title bar text using the skin's TEXT.BMP font sprites
+    private func drawTitleBarText(_ text: String, centeredIn rect: NSRect, in context: CGContext) {
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
+        let charSpacing: CGFloat = 0
+        
+        // Calculate total text width
+        let totalWidth = CGFloat(text.count) * (charWidth + charSpacing)
+        let startX = rect.midX - totalWidth / 2
+        let startY = rect.midY - charHeight / 2
+        
+        guard let textImage = skin.text else {
+            // Fallback if no TEXT.BMP
+            drawTitleBarTextFallback(text, centeredIn: rect, in: context)
+            return
+        }
+        
+        // Draw each character from TEXT.BMP
+        var xPos = startX
+        for char in text.uppercased() {
+            let sourceRect = SkinElements.TextFont.character(char)
+            let destRect = NSRect(x: xPos, y: startY, width: charWidth, height: charHeight)
+            drawSprite(from: textImage, sourceRect: sourceRect, to: destRect, in: context)
+            xPos += charWidth + charSpacing
+        }
+    }
+    
+    /// Fallback title bar text if TEXT.BMP not available
+    private func drawTitleBarTextFallback(_ text: String, centeredIn rect: NSRect, in context: CGContext) {
+        context.saveGState()
+        let textCenterY = rect.midY
+        context.translateBy(x: 0, y: textCenterY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -textCenterY)
+        
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor(calibratedWhite: 0.75, alpha: 1.0),
+            .font: NSFont.systemFont(ofSize: 8, weight: .bold)
+        ]
+        let textSize = text.size(withAttributes: attrs)
+        let textX = rect.midX - textSize.width / 2
+        let textY = rect.midY - textSize.height / 2
+        text.draw(at: NSPoint(x: textX, y: textY), withAttributes: attrs)
+        context.restoreGState()
+    }
+    
+    /// Draw Plex browser side borders
+    private func drawPlexBrowserSideBorders(in context: CGContext, bounds: NSRect) {
+        guard let pleditImage = skin.pledit else { return }
+        
+        let layout = SkinElements.PlexBrowser.Layout.self
+        let titleHeight = layout.titleBarHeight
+        let statusHeight = layout.statusBarHeight
+        
+        // Left side border
+        var y: CGFloat = titleHeight
+        while y < bounds.height - statusHeight {
+            let h = min(29, bounds.height - statusHeight - y)
+            drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.leftSideTile,
+                      to: NSRect(x: 0, y: y, width: 12, height: h), in: context)
+            y += 29
+        }
+        
+        // Right side border (before scrollbar)
+        y = titleHeight
+        while y < bounds.height - statusHeight {
+            let h = min(29, bounds.height - statusHeight - y)
+            drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.rightSideTile,
+                      to: NSRect(x: bounds.width - 20, y: y, width: 20, height: h), in: context)
+            y += 29
+        }
+    }
+    
+    /// Draw Plex browser status bar at bottom
+    private func drawPlexBrowserStatusBar(in context: CGContext, bounds: NSRect) {
+        let layout = SkinElements.PlexBrowser.Layout.self
+        let statusHeight = layout.statusBarHeight
+        let statusY = bounds.height - statusHeight
+        
+        // Use playlist colors for consistent look
+        let colors = skin.playlistColors
+        
+        // Draw status bar background
+        colors.normalBackground.withAlphaComponent(0.8).setFill()
+        context.fill(NSRect(x: 0, y: statusY, width: bounds.width, height: statusHeight))
+        
+        // Draw top border line
+        NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+        context.fill(NSRect(x: 0, y: statusY, width: bounds.width, height: 1))
+    }
+    
+    /// Draw Plex browser scrollbar
+    func drawPlexBrowserScrollbar(in context: CGContext, bounds: NSRect, scrollPosition: CGFloat, contentHeight: CGFloat) {
+        guard let pleditImage = skin.pledit else {
+            drawFallbackPlexBrowserScrollbar(in: context, bounds: bounds, scrollPosition: scrollPosition)
+            return
+        }
+        
+        let layout = SkinElements.PlexBrowser.Layout.self
+        let titleHeight = layout.titleBarHeight + layout.serverBarHeight + layout.tabBarHeight
+        let statusHeight = layout.statusBarHeight
+        let trackHeight = bounds.height - titleHeight - statusHeight
+        let scrollbarX = bounds.width - 15
+        
+        // Draw scrollbar track background
+        var y: CGFloat = titleHeight
+        while y < bounds.height - statusHeight {
+            let h = min(29, bounds.height - statusHeight - y)
+            drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.scrollbarTrack,
+                      to: NSRect(x: scrollbarX, y: y, width: 8, height: h), in: context)
+            y += 29
+        }
+        
+        // Draw scrollbar thumb
+        let thumbHeight: CGFloat = 18
+        let availableTrack = trackHeight - thumbHeight
+        let thumbY = titleHeight + (availableTrack * scrollPosition)
+        
+        drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.scrollbarThumbNormal,
+                  to: NSRect(x: scrollbarX, y: thumbY, width: 8, height: thumbHeight), in: context)
+    }
+    
+    /// Draw Plex browser in shade mode
+    func drawPlexBrowserShade(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
+        // Use playlist shade sprites
+        if let pleditImage = skin.pledit {
+            // Left corner
+            drawSprite(from: pleditImage, sourceRect: SkinElements.PlaylistShade.leftCorner,
+                      to: NSRect(x: 0, y: 0, width: 25, height: 14), in: context)
+            
+            // Right corner
+            let rightCornerX = bounds.width - 75
+            drawSprite(from: pleditImage, sourceRect: SkinElements.PlaylistShade.rightCorner,
+                      to: NSRect(x: rightCornerX, y: 0, width: 75, height: 14), in: context)
+            
+            // Tile middle
+            var x: CGFloat = 25
+            while x < rightCornerX {
+                let tileWidth = min(25, rightCornerX - x)
+                drawSprite(from: pleditImage, sourceRect: SkinElements.PlaylistShade.tile,
+                          to: NSRect(x: x, y: 0, width: tileWidth, height: 14), in: context)
+                x += 25
+            }
+            
+            // Draw "PLEX" text in shade mode using the same pixel font style
+            drawTitleBarText("PLEX", centeredIn: NSRect(x: 25, y: 0, width: 50, height: 14), in: context)
+        } else {
+            // Fallback shade background
+            let gradient = NSGradient(colors: [
+                isActive ? NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.5, alpha: 1.0) : NSColor(calibratedWhite: 0.3, alpha: 1.0),
+                isActive ? NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.3, alpha: 1.0) : NSColor(calibratedWhite: 0.2, alpha: 1.0)
+            ])
+            gradient?.draw(in: bounds, angle: 90)
+            
+            // Draw PLEX label
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.boldSystemFont(ofSize: 9)
+            ]
+            "PLEX".draw(at: NSPoint(x: 6, y: 3), withAttributes: attrs)
+        }
+        
+        // Draw window control buttons (relative to right edge)
+        let closeRect = NSRect(x: bounds.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
+                               y: SkinElements.PlaylistShade.Positions.closeButton.minY,
+                               width: 9, height: 9)
+        let shadeRect = NSRect(x: bounds.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
+                               y: SkinElements.PlaylistShade.Positions.shadeButton.minY,
+                               width: 9, height: 9)
+        
+        let closeState: ButtonState = (pressedButton == .close) ? .pressed : .normal
+        drawButton(.close, state: closeState, at: closeRect, in: context)
+        
+        let shadeState: ButtonState = (pressedButton == .shade) ? .pressed : .normal
+        drawButton(.unshade, state: shadeState, at: shadeRect, in: context)
+    }
+    
+    // MARK: - Plex Browser Fallback Rendering
+    
+    private func drawFallbackPlexBrowserTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool) {
+        let titleHeight = SkinElements.PlexBrowser.Layout.titleBarHeight
+        let titleRect = NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight)
+        
+        // Draw gradient background
+        if isActive {
+            let gradient = NSGradient(colors: [
+                NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.5, alpha: 1.0),
+                NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.25, alpha: 1.0)
+            ])
+            gradient?.draw(in: titleRect, angle: 90)
+        } else {
+            let gradient = NSGradient(colors: [
+                NSColor(calibratedWhite: 0.35, alpha: 1.0),
+                NSColor(calibratedWhite: 0.25, alpha: 1.0)
+            ])
+            gradient?.draw(in: titleRect, angle: 90)
+        }
+        
+        // Draw decorative left bar
+        NSColor(calibratedRed: 0.5, green: 0.5, blue: 0.3, alpha: 1.0).setFill()
+        context.fill(NSRect(x: 4, y: 6, width: 8, height: 8))
+        
+        // Title text - flip back for text rendering
+        context.saveGState()
+        context.translateBy(x: 0, y: titleHeight)
+        context.scaleBy(x: 1, y: -1)
+        
+        let title = "PLEX BROWSER"
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.white,
+            .font: NSFont.boldSystemFont(ofSize: 8)
+        ]
+        let titleSize = title.size(withAttributes: attrs)
+        let titleX = (bounds.width - titleSize.width) / 2
+        title.draw(at: NSPoint(x: titleX, y: (titleHeight - titleSize.height) / 2), withAttributes: attrs)
+        
+        context.restoreGState()
+        
+        // Window control buttons
+        NSColor(calibratedWhite: 0.4, alpha: 1.0).setFill()
+        context.fill(NSRect(x: bounds.width - 22, y: 6, width: 9, height: 9))
+        context.fill(NSRect(x: bounds.width - 11, y: 6, width: 9, height: 9))
+    }
+    
+    private func drawFallbackPlexBrowserScrollbar(in context: CGContext, bounds: NSRect, scrollPosition: CGFloat) {
+        let layout = SkinElements.PlexBrowser.Layout.self
+        let titleHeight = layout.titleBarHeight + layout.serverBarHeight + layout.tabBarHeight
+        let statusHeight = layout.statusBarHeight
+        let scrollbarWidth: CGFloat = 15
+        
+        let scrollRect = NSRect(
+            x: bounds.width - scrollbarWidth,
+            y: titleHeight,
+            width: scrollbarWidth,
+            height: bounds.height - titleHeight - statusHeight
+        )
+        
+        // Track background
+        NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.2, alpha: 1.0).setFill()
+        context.fill(scrollRect)
+        
+        // Thumb
+        let thumbHeight: CGFloat = max(20, scrollRect.height * 0.2)
+        let availableTrack = scrollRect.height - thumbHeight
+        let thumbY = scrollRect.minY + (availableTrack * scrollPosition)
+        
+        NSColor(calibratedRed: 0.6, green: 0.55, blue: 0.35, alpha: 1.0).setFill()
+        let thumbRect = NSRect(x: scrollRect.minX + 2, y: thumbY, width: scrollRect.width - 4, height: thumbHeight)
+        context.fill(thumbRect)
+    }
+    
     // MARK: - Core Drawing Methods
     
     /// Draw a sprite from a sprite sheet to a destination rect

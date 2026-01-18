@@ -756,6 +756,118 @@ struct SkinElements {
             static let shadeOffset: CGFloat = 20   // Right edge - 20px
         }
     }
+    
+    // MARK: - Plex Browser Elements
+    // Uses playlist sprites for frame/chrome with custom content areas
+    
+    struct PlexBrowser {
+        /// Minimum window size (wider than playlist to fit tabs)
+        static let minSize = NSSize(width: 480, height: 300)
+        
+        /// Default window size
+        static let defaultSize = NSSize(width: 550, height: 450)
+        
+        /// Layout constants for Plex browser areas
+        struct Layout {
+            static let titleBarHeight: CGFloat = 20
+            static let tabBarHeight: CGFloat = 24
+            static let serverBarHeight: CGFloat = 24
+            static let searchBarHeight: CGFloat = 26
+            static let statusBarHeight: CGFloat = 20
+            static let scrollbarWidth: CGFloat = 20
+            static let alphabetWidth: CGFloat = 16
+            static let leftBorder: CGFloat = 12
+            static let rightBorder: CGFloat = 20
+            static let padding: CGFloat = 3
+        }
+        
+        /// Shade mode height (same as playlist shade)
+        static let shadeHeight: CGFloat = 14
+        
+        /// Window control button positions in title bar (same as playlist)
+        struct TitleBarButtons {
+            // Relative to right edge of window
+            static let closeOffset: CGFloat = 11
+            static let shadeOffset: CGFloat = 20
+        }
+    }
+    
+    // MARK: - Title Bar Font
+    
+    /// Character sources for title bar text
+    /// Characters can come from:
+    /// - PLEDIT.BMP title sprite (26,0 - 100x20): "WINAMP PLAYLIST"
+    /// - EQMAIN.BMP title bar (0, 134 - 275x14): "EQUALIZER"
+    struct TitleBarFont {
+        static let charWidth: CGFloat = 5
+        static let charHeight: CGFloat = 6
+        static let charSpacing: CGFloat = 1
+        
+        /// Source image for a character
+        enum CharSource {
+            case pledit(x: CGFloat, y: CGFloat)  // From pledit.bmp title sprite area
+            case eqmain(x: CGFloat, y: CGFloat)  // From eqmain.bmp title bar
+            case fallback  // Not available, use pixel fallback
+        }
+        
+        /// Get the source for a character
+        /// PLEDIT title sprite: "WINAMP PLAYLIST" at (26,0), text starts ~x=29, y=7
+        /// EQMAIN title bar: "EQUALIZER" at (0,134), text starts ~x=111, y=4
+        static func charSource(for char: Character) -> CharSource {
+            // Offsets within the respective sprites
+            let pleditBase: CGFloat = 26 + 3  // Title sprite starts at 26, text at +3
+            let pleditY: CGFloat = 7
+            let eqBase: CGFloat = 111  // "EQUALIZER" is roughly centered in 275px title bar
+            let eqY: CGFloat = 134 + 4  // Title bar at y=134, text at +4
+            
+            switch char.uppercased().first ?? " " {
+            // From "WINAMP PLAYLIST" in pledit.bmp
+            case "W": return .pledit(x: pleditBase + 0, y: pleditY)
+            case "I": return .pledit(x: pleditBase + 6, y: pleditY)
+            case "N": return .pledit(x: pleditBase + 12, y: pleditY)
+            case "A": return .pledit(x: pleditBase + 18, y: pleditY)
+            case "M": return .pledit(x: pleditBase + 24, y: pleditY)
+            case "P": return .pledit(x: pleditBase + 30, y: pleditY)
+            case " ": return .pledit(x: pleditBase + 36, y: pleditY)
+            case "L": return .pledit(x: pleditBase + 48, y: pleditY)
+            case "Y": return .pledit(x: pleditBase + 60, y: pleditY)
+            case "S": return .pledit(x: pleditBase + 78, y: pleditY)
+            case "T": return .pledit(x: pleditBase + 84, y: pleditY)
+            
+            // From "EQUALIZER" in eqmain.bmp
+            case "E": return .eqmain(x: eqBase + 0, y: eqY)
+            case "Q": return .eqmain(x: eqBase + 6, y: eqY)
+            case "U": return .eqmain(x: eqBase + 12, y: eqY)
+            // A already from WINAMP
+            // L already from PLAYLIST
+            // I already from WINAMP
+            case "Z": return .eqmain(x: eqBase + 30, y: eqY)
+            case "R": return .eqmain(x: eqBase + 42, y: eqY)  // Last R in EQUALIZER
+            
+            // Fallback for missing characters (X, B, O, etc.)
+            default: return .fallback
+            }
+        }
+        
+        /// Pixel patterns for fallback characters (5x6 pixels)
+        /// Each row is 5 bits, MSB on left
+        static func fallbackPixels(for char: Character) -> [UInt8] {
+            switch char.uppercased().first ?? "?" {
+            case "B": return [0b11110, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110]
+            case "C": return [0b01110, 0b10001, 0b10000, 0b10000, 0b10001, 0b01110]
+            case "D": return [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110]
+            case "F": return [0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000]
+            case "G": return [0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b01110]
+            case "H": return [0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001]
+            case "J": return [0b00111, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100]
+            case "K": return [0b10001, 0b10010, 0b11100, 0b10010, 0b10001, 0b10001]
+            case "O": return [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110]
+            case "V": return [0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100]
+            case "X": return [0b10001, 0b01010, 0b00100, 0b00100, 0b01010, 0b10001]
+            default:  return [0b11111, 0b10001, 0b10001, 0b10001, 0b10001, 0b11111] // Box
+            }
+        }
+    }
 }
 
 // MARK: - Helper Extensions

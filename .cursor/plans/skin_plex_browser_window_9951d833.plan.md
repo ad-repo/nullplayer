@@ -4,19 +4,19 @@ overview: Rewrite the Plex browser window to use the Winamp skin sprite system, 
 todos:
   - id: skin-elements
     content: Add PlexBrowser layout constants to SkinElements.swift
-    status: pending
+    status: completed
   - id: skin-renderer
     content: Add Plex browser rendering methods to SkinRenderer.swift
-    status: pending
+    status: completed
   - id: view-rewrite
     content: Rewrite PlexBrowserView.swift with skin sprite drawing and coordinate transforms
-    status: pending
+    status: completed
   - id: hit-testing
     content: Implement coordinate-converted hit testing for all interactive areas
-    status: pending
+    status: completed
   - id: skin-colors
     content: Integrate playlist colors for custom content areas
-    status: pending
+    status: completed
   - id: testing
     content: Test window matches reference style and all functionality works
     status: pending

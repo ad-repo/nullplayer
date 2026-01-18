@@ -13,6 +13,15 @@ class PlexBrowserWindowController: NSWindowController {
     /// Default window size
     private static let defaultSize = NSSize(width: 550, height: 450)
     
+    /// Shade mode height
+    private static let shadeHeight: CGFloat = 14
+    
+    /// Shade mode state
+    private var isShadeMode = false
+    
+    /// Normal mode frame (stored when entering shade mode)
+    private var normalModeFrame: NSRect?
+    
     // MARK: - Initialization
     
     convenience init() {
@@ -65,6 +74,45 @@ class PlexBrowserWindowController: NSWindowController {
         browserView.controller = self
         browserView.autoresizingMask = [.width, .height]
         window?.contentView = browserView
+    }
+    
+    // MARK: - Shade Mode
+    
+    /// Set shade mode (called from view)
+    func setShadeMode(_ enabled: Bool) {
+        guard let window = window else { return }
+        
+        isShadeMode = enabled
+        
+        if enabled {
+            // Store current frame before entering shade mode
+            normalModeFrame = window.frame
+            
+            // Collapse to shade height
+            let shadeFrame = NSRect(
+                x: window.frame.minX,
+                y: window.frame.maxY - Self.shadeHeight,
+                width: window.frame.width,
+                height: Self.shadeHeight
+            )
+            window.setFrame(shadeFrame, display: true, animate: true)
+            window.minSize = NSSize(width: Self.minSize.width, height: Self.shadeHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: Self.shadeHeight)
+        } else {
+            // Restore normal frame
+            let normalFrame = normalModeFrame ?? NSRect(
+                x: window.frame.minX,
+                y: window.frame.maxY - Self.defaultSize.height,
+                width: window.frame.width,
+                height: Self.defaultSize.height
+            )
+            window.minSize = Self.minSize
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            window.setFrame(normalFrame, display: true, animate: true)
+            normalModeFrame = nil
+        }
+        
+        browserView.setShadeMode(enabled)
     }
     
     // MARK: - Public Methods
