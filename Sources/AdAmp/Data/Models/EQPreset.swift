@@ -24,22 +24,10 @@ struct EQPreset: Identifiable, Codable {
         bands: [4, 3, 2, 0, -1, -1, 0, 2, 3, 4]
     )
     
-    static let pop = EQPreset(
-        name: "Pop",
-        preamp: 0,
-        bands: [-1, 2, 4, 5, 4, 2, 0, -1, -1, -1]
-    )
-    
     static let jazz = EQPreset(
         name: "Jazz",
         preamp: 0,
         bands: [3, 2, 1, 2, -2, -2, 0, 1, 2, 3]
-    )
-    
-    static let classical = EQPreset(
-        name: "Classical",
-        preamp: 0,
-        bands: [4, 3, 2, 1, 0, 0, 0, 1, 2, 3]
     )
     
     static let electronic = EQPreset(
@@ -54,27 +42,20 @@ struct EQPreset: Identifiable, Codable {
         bands: [5, 4, 2, 0, -1, -1, 1, 0, 2, 3]
     )
     
-    static let vocal = EQPreset(
-        name: "Vocal",
-        preamp: 0,
-        bands: [-2, -1, 0, 2, 4, 4, 3, 1, 0, -1]
-    )
-    
     static let bass = EQPreset(
         name: "Bass Boost",
         preamp: 0,
         bands: [6, 5, 4, 2, 0, 0, 0, 0, 0, 0]
     )
     
-    static let treble = EQPreset(
-        name: "Treble Boost",
+    static let imOld = EQPreset(
+        name: "i'm old",
         preamp: 0,
-        bands: [0, 0, 0, 0, 0, 0, 2, 4, 5, 6]
+        bands: [0, 0, 0, 0, 0, 0, 0, 12, 12, 12]  // Boost 12k, 14k, 16k to max
     )
     
     static let allPresets: [EQPreset] = [
-        .flat, .rock, .pop, .jazz, .classical,
-        .electronic, .hiphop, .vocal, .bass, .treble
+        .flat, .rock, .jazz, .electronic, .hiphop, .bass, .imOld
     ]
 }
 

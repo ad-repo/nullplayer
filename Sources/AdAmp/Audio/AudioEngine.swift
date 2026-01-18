@@ -175,38 +175,68 @@ class AudioEngine {
         engine.attach(playerNode)
         engine.attach(eqNode)
         
-        // Connect nodes: player -> EQ -> output
-        let format = engine.outputNode.inputFormat(forBus: 0)
-        engine.connect(playerNode, to: eqNode, format: format)
-        engine.connect(eqNode, to: engine.mainMixerNode, format: format)
+        // Get the standard format from the mixer
+        let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        
+        // Connect nodes: player -> EQ -> mixer
+        // Using the mixer's format ensures consistent audio processing
+        engine.connect(playerNode, to: eqNode, format: mixerFormat)
+        engine.connect(eqNode, to: engine.mainMixerNode, format: mixerFormat)
         
         // Set initial volume (didSet doesn't fire for default value)
         playerNode.volume = volume
+        
+        // Ensure EQ is enabled by default (not bypassed)
+        eqNode.bypass = false
         
         // Prepare engine
         engine.prepare()
     }
     
     private func setupEqualizer() {
-        // Configure each EQ band
+        // Configure each EQ band for graphic EQ behavior
+        // Use low shelf for bass, high shelf for treble, and parametric for mids
         for (index, frequency) in Self.eqFrequencies.enumerated() {
             let band = eqNode.bands[index]
-            band.filterType = .parametric
+            
+            // First band (60Hz): low shelf for bass control
+            // Last band (16kHz): high shelf for treble control
+            // Middle bands: parametric with wide bandwidth
+            if index == 0 {
+                band.filterType = .lowShelf
+            } else if index == 9 {
+                band.filterType = .highShelf
+            } else {
+                band.filterType = .parametric
+            }
+            
             band.frequency = frequency
-            band.bandwidth = 1.0  // Q factor
+            // Use wider bandwidth (2.0 octaves) for more audible effect
+            // Narrower bandwidth at higher frequencies for precision
+            band.bandwidth = index < 5 ? 2.0 : 1.5
             band.gain = 0.0       // Flat by default
             band.bypass = false
         }
+        
+        // Ensure the EQ node itself is not bypassed
+        eqNode.bypass = false
     }
     
     private func setupSpectrumAnalyzer() {
         // Create FFT setup
         fftSetup = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(fftSize), .FORWARD)
         
-        // Install tap on player node for spectrum analysis
-        let format = engine.mainMixerNode.outputFormat(forBus: 0)
+        // Note: The tap will be installed when loading a track with the correct format
+        // Initial tap installation is deferred until we have an actual audio file
+    }
+    
+    /// Install or reinstall the spectrum analyzer tap with the given format
+    private func installSpectrumTap(format: AVAudioFormat?) {
+        // Remove existing tap if any
+        playerNode.removeTap(onBus: 0)
         
-        playerNode.installTap(onBus: 0, bufferSize: AVAudioFrameCount(fftSize), format: format) { [weak self] buffer, _ in
+        // Install new tap - use nil format to let AVAudioEngine auto-detect the correct format
+        playerNode.installTap(onBus: 0, bufferSize: AVAudioFrameCount(fftSize), format: nil) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }
     }
@@ -1077,8 +1107,13 @@ class AudioEngine {
         isStreamingPlayback = false
         
         do {
-            audioFile = try AVAudioFile(forReading: track.url)
-            NSLog("loadLocalTrack: file loaded successfully")
+            let newAudioFile = try AVAudioFile(forReading: track.url)
+            NSLog("loadLocalTrack: file loaded successfully, format: %@", newAudioFile.processingFormat.description)
+            
+            // Install spectrum analyzer tap
+            installSpectrumTap(format: nil)
+            
+            audioFile = newAudioFile
             currentTrack = track
             _currentTime = 0  // Reset time for new track
             lastReportedTime = 0
@@ -1087,13 +1122,14 @@ class AudioEngine {
             playbackGeneration += 1
             let currentGeneration = playbackGeneration
             
+            NSLog("loadLocalTrack: Stopping playerNode and scheduling file...")
             playerNode.stop()
             playerNode.scheduleFile(audioFile!, at: nil) { [weak self] in
                 DispatchQueue.main.async {
                     self?.handlePlaybackComplete(generation: currentGeneration)
                 }
             }
-            NSLog("loadLocalTrack: file scheduled")
+            NSLog("loadLocalTrack: file scheduled, EQ bypass = %d", eqNode.bypass)
         } catch {
             NSLog("loadLocalTrack: FAILED - %@", error.localizedDescription)
         }
@@ -1284,6 +1320,11 @@ class AudioEngine {
     /// Enable/disable equalizer
     func setEQEnabled(_ enabled: Bool) {
         eqNode.bypass = !enabled
+    }
+    
+    /// Check if equalizer is enabled
+    func isEQEnabled() -> Bool {
+        return !eqNode.bypass
     }
     
     // MARK: - Output Device
