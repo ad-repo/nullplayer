@@ -385,15 +385,7 @@ class PlexBrowserView: NSView {
             let tabRect = NSRect(x: tabBarRect.minX + CGFloat(index) * tabWidth, y: tabBarY,
                                 width: tabWidth, height: Layout.tabBarHeight)
             
-            if mode == browseMode {
-                colors.selectedBackground.setFill()
-                context.fill(tabRect)
-                
-                // Accent line at bottom
-                colors.currentText.setFill()
-                context.fill(NSRect(x: tabRect.minX + 2, y: tabRect.maxY - 2,
-                                   width: tabRect.width - 4, height: 2))
-            }
+            // Selected tab indicated by white text only (no background fill)
             
             // Tab title (counter-flip for text)
             context.saveGState()

@@ -315,6 +315,10 @@ curl -s "https://raw.githubusercontent.com/captbaritone/webamp/master/packages/w
 
 ## Version History
 
+- **2026-01-18**: Plex Browser tab selection styling
+  - Removed blue background fill from selected tabs
+  - Selected tab now indicated by white text only (cleaner look)
+
 - **2026-01-17**: EQ colored slider bars and graph curve
   - Implemented colored slider track backgrounds (programmatic, not sprite-based)
   - Key insight: bars use a SINGLE solid color based on knob position, not gradient fill
