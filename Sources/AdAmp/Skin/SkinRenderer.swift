@@ -1601,7 +1601,7 @@ class SkinRenderer {
         
         // Draw "WINAMP LIBRARY" text centered on the solid background
         drawPlexTitleText(centeredIn: NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: titleHeight),
-                          in: context)
+                          isActive: isActive, in: context)
         
         // Draw window control button pressed states if needed
         if pressedButton == .close {
@@ -1651,6 +1651,12 @@ class SkinRenderer {
         drawSprite(from: image, sourceRect: titleSprite,
                   to: NSRect(x: titleX, y: 0, width: titleSprite.width, height: titleHeight), in: context)
         
+        // Dim the title area when window is inactive to match main window behavior
+        if !isActive {
+            NSColor(calibratedWhite: 0.0, alpha: 0.4).setFill()
+            context.fill(NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight))
+        }
+        
         // Draw window control buttons using skin titlebar sprites (same style as main window)
         let closeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9, 
                                y: 4, width: 9, height: 9)
@@ -1665,9 +1671,9 @@ class SkinRenderer {
     }
     
     /// Draw Plex browser title text using sprite glyphs
-    private func drawPlexTitleText(centeredIn rect: NSRect, in context: CGContext) {
-        let charWidth: CGFloat = 5
-        let charHeight: CGFloat = 6
+    private func drawPlexTitleText(centeredIn rect: NSRect, isActive: Bool, in context: CGContext) {
+        let charWidth: CGFloat = 6
+        let charHeight: CGFloat = 7
         let letterSpacing: CGFloat = 1
         let spaceWidth: CGFloat = charWidth + letterSpacing
 
@@ -1681,7 +1687,7 @@ class SkinRenderer {
         let startX = rect.midX - totalWidth / 2
         let startY = rect.midY - charHeight / 2
 
-        let manualColor = plexTitleManualColor()
+        let manualColor = plexTitleManualColor(isActive: isActive)
         var xPos = startX
 
         for (index, char) in chars.enumerated() {
@@ -1735,7 +1741,7 @@ class SkinRenderer {
 
     private func drawTitleBarFallbackChar(_ char: Character, at origin: NSPoint, color: NSColor?, in context: CGContext) {
         let pixels = SkinElements.TitleBarFont.fallbackPixels(for: char)
-        let fillColor = color ?? NSColor(calibratedWhite: 0.8, alpha: 1.0)
+        let fillColor = color ?? NSColor(calibratedWhite: 0.55, alpha: 1.0)
         fillColor.setFill()
 
         for (rowIndex, rowBits) in pixels.enumerated() {
@@ -1836,8 +1842,14 @@ class SkinRenderer {
         return width
     }
 
-    private func plexTitleManualColor() -> NSColor? {
-        return NSColor(calibratedWhite: 0.8, alpha: 1.0)
+    private func plexTitleManualColor(isActive: Bool) -> NSColor? {
+        // Use muted colors matching the main window's title bar appearance
+        // Active: slightly brighter, Inactive: dimmer
+        if isActive {
+            return NSColor(calibratedWhite: 0.55, alpha: 1.0)
+        } else {
+            return NSColor(calibratedWhite: 0.35, alpha: 1.0)
+        }
     }
 
 
@@ -1863,7 +1875,7 @@ class SkinRenderer {
     }
 
     private func drawTitleBarPixelChar(_ pixels: [UInt8], at origin: NSPoint, color: NSColor?, in context: CGContext) {
-        let fillColor = color ?? NSColor(calibratedWhite: 0.8, alpha: 1.0)
+        let fillColor = color ?? NSColor(calibratedWhite: 0.55, alpha: 1.0)
         fillColor.setFill()
 
         for (rowIndex, rowBits) in pixels.enumerated() {
@@ -2181,7 +2193,7 @@ class SkinRenderer {
         context.translateBy(x: 0, y: -textCenterY)
         
         let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor(calibratedWhite: 0.75, alpha: 1.0),
+            .foregroundColor: NSColor(calibratedWhite: 0.55, alpha: 1.0),
             .font: NSFont.systemFont(ofSize: 8, weight: .bold)
         ]
         let textSize = text.size(withAttributes: attrs)
