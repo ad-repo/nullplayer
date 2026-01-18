@@ -22,7 +22,7 @@ class SkinRenderer {
     /// Scale factor for Retina displays (renders at 1x then scales)
     var scaleFactor: CGFloat = 2.0
 
-    private let plexTitleText = "PLEX BROWSER"
+    private let plexTitleText = "WINAMP LIBRARY"
     
     // MARK: - Initialization
     
@@ -1537,8 +1537,15 @@ class SkinRenderer {
     }
     
     /// Draw Plex browser title bar with skin sprites
-    /// Uses the same approach as playlist: draws title sprite (with solid background) over tiles
+    /// Uses library-window.png for the window chrome
     func drawPlexBrowserTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
+        // Try to use library-window.png first
+        if let libraryImage = Skin.libraryWindowImage {
+            drawLibraryWindowTitleBar(from: libraryImage, in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+            return
+        }
+        
+        // Fall back to pledit sprites if library-window.png not available
         guard let pleditImage = skin.pledit else {
             drawFallbackPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive)
             return
@@ -1592,7 +1599,7 @@ class SkinRenderer {
             context.fill(NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: 1))
         }
         
-        // Draw "PLEX BROWSER" text centered on the solid background
+        // Draw "WINAMP LIBRARY" text centered on the solid background
         drawPlexTitleText(centeredIn: NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: titleHeight),
                           in: context)
         
@@ -1607,6 +1614,56 @@ class SkinRenderer {
         if pressedButton == .shade {
             let shadeRect = NSRect(x: bounds.width - SkinElements.PlexBrowser.TitleBarButtons.shadeOffset - 9, 
                                    y: 3, width: 9, height: 9)
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+            context.fill(shadeRect)
+        }
+    }
+    
+    /// Draw title bar using library-window.png sprites
+    private func drawLibraryWindowTitleBar(from image: NSImage, in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
+        let layout = SkinElements.LibraryWindow.TitleBar.self
+        let titleHeight = layout.height
+        let leftCornerWidth: CGFloat = 25
+        let rightCornerWidth: CGFloat = 25
+        let tileWidth: CGFloat = 25
+        
+        // Draw left corner
+        drawSprite(from: image, sourceRect: layout.leftCorner,
+                  to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
+        
+        // Draw right corner (contains close button)
+        drawSprite(from: image, sourceRect: layout.rightCorner,
+                  to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
+        
+        // Fill middle section with tiles first
+        var x: CGFloat = leftCornerWidth
+        let middleEnd = bounds.width - rightCornerWidth
+        while x < middleEnd {
+            let w = min(tileWidth, middleEnd - x)
+            drawSprite(from: image, sourceRect: layout.tile,
+                      to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
+            x += tileWidth
+        }
+        
+        // Draw the actual title sprite from the image (contains "WINAMP LIBRARY" text)
+        // This uses the pre-rendered title from the PNG, centered in the title bar
+        let titleSprite = layout.titleSprite
+        let middleWidth = bounds.width - leftCornerWidth - rightCornerWidth
+        let titleX = leftCornerWidth + (middleWidth - titleSprite.width) / 2
+        drawSprite(from: image, sourceRect: titleSprite,
+                  to: NSRect(x: titleX, y: 0, width: titleSprite.width, height: titleHeight), in: context)
+        
+        // Draw window control button pressed states if needed
+        if pressedButton == .close {
+            let closeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9, 
+                                   y: 4, width: 9, height: 9)
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+            context.fill(closeRect)
+        }
+        
+        if pressedButton == .shade {
+            let shadeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.shadeOffset - 9, 
+                                   y: 4, width: 9, height: 9)
             NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
             context.fill(shadeRect)
         }
@@ -1791,6 +1848,7 @@ class SkinRenderer {
 
     private func plexTitlePixels() -> [Character: [UInt8]] {
         return [
+            // Original letters from "PLEX BROWSER"
             "P": [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000],
             "L": [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
             "E": [0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
@@ -1800,6 +1858,12 @@ class SkinRenderer {
             "X": [0b10001, 0b01010, 0b00100, 0b00100, 0b01010, 0b10001],
             "B": [0b11110, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
             "O": [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+            // Additional letters for "WINAMP LIBRARY"
+            "I": [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111],
+            "N": [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001],
+            "A": [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001],
+            "M": [0b10001, 0b11011, 0b10101, 0b10001, 0b10001, 0b10001],
+            "Y": [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100],
         ]
     }
 
@@ -2134,6 +2198,13 @@ class SkinRenderer {
     
     /// Draw Plex browser side borders
     private func drawPlexBrowserSideBorders(in context: CGContext, bounds: NSRect) {
+        // Try to use library-window.png first
+        if let libraryImage = Skin.libraryWindowImage {
+            drawLibraryWindowSideBorders(from: libraryImage, in: context, bounds: bounds)
+            return
+        }
+        
+        // Fall back to pledit sprites
         guard let pleditImage = skin.pledit else { return }
         
         let layout = SkinElements.PlexBrowser.Layout.self
@@ -2159,8 +2230,39 @@ class SkinRenderer {
         }
     }
     
+    /// Draw thin side borders to match other windows
+    private func drawLibraryWindowSideBorders(from image: NSImage, in context: CGContext, bounds: NSRect) {
+        let layout = SkinElements.LibraryWindow.Layout.self
+        let titleHeight = layout.titleBarHeight
+        let borderHeight: CGFloat = 3  // Thin bottom border
+        let borderWidth: CGFloat = 3   // Thin side borders
+        
+        // Left side border - thin line
+        NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0).setFill()
+        context.fill(NSRect(x: 0, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight - borderHeight))
+        
+        // Left highlight
+        NSColor(calibratedRed: 0.20, green: 0.20, blue: 0.30, alpha: 1.0).setFill()
+        context.fill(NSRect(x: borderWidth - 1, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderHeight))
+        
+        // Right side border - thin line
+        NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0).setFill()
+        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight - borderHeight))
+        
+        // Right highlight
+        NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0).setFill()
+        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderHeight))
+    }
+    
     /// Draw Plex browser status bar at bottom
     private func drawPlexBrowserStatusBar(in context: CGContext, bounds: NSRect) {
+        // Try to use library-window.png first
+        if let libraryImage = Skin.libraryWindowImage {
+            drawLibraryWindowStatusBar(from: libraryImage, in: context, bounds: bounds)
+            return
+        }
+        
+        // Fall back to playlist colors
         let layout = SkinElements.PlexBrowser.Layout.self
         let statusHeight = layout.statusBarHeight
         let statusY = bounds.height - statusHeight
@@ -2177,8 +2279,30 @@ class SkinRenderer {
         context.fill(NSRect(x: 0, y: statusY, width: bounds.width, height: 1))
     }
     
+    /// Draw bottom border using a thin line like other windows
+    private func drawLibraryWindowStatusBar(from image: NSImage, in context: CGContext, bounds: NSRect) {
+        // Just draw a thin bottom border line (2-3 pixels) to match playlist/EQ windows
+        let borderHeight: CGFloat = 3
+        let statusY = bounds.height - borderHeight
+        
+        // Draw thin bottom border matching the window chrome color
+        NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0).setFill()
+        context.fill(NSRect(x: 0, y: statusY, width: bounds.width, height: borderHeight))
+        
+        // Draw highlight line at top of border
+        NSColor(calibratedRed: 0.20, green: 0.20, blue: 0.30, alpha: 1.0).setFill()
+        context.fill(NSRect(x: 0, y: statusY, width: bounds.width, height: 1))
+    }
+    
     /// Draw Plex browser scrollbar
     func drawPlexBrowserScrollbar(in context: CGContext, bounds: NSRect, scrollPosition: CGFloat, contentHeight: CGFloat) {
+        // Try to use library-window.png first
+        if let libraryImage = Skin.libraryWindowImage {
+            drawLibraryWindowScrollbar(from: libraryImage, in: context, bounds: bounds, scrollPosition: scrollPosition)
+            return
+        }
+        
+        // Fall back to pledit sprites
         guard let pleditImage = skin.pledit else {
             drawFallbackPlexBrowserScrollbar(in: context, bounds: bounds, scrollPosition: scrollPosition)
             return
@@ -2206,6 +2330,36 @@ class SkinRenderer {
         
         drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.scrollbarThumbNormal,
                   to: NSRect(x: scrollbarX, y: thumbY, width: 8, height: thumbHeight), in: context)
+    }
+    
+    /// Draw scrollbar using library-window.png sprites
+    private func drawLibraryWindowScrollbar(from image: NSImage, in context: CGContext, bounds: NSRect, scrollPosition: CGFloat) {
+        let layout = SkinElements.LibraryWindow.Layout.self
+        let scrollbar = SkinElements.LibraryWindow.Scrollbar.self
+        
+        // Calculate scrollbar area - accounts for search bar, column headers, etc.
+        let titleHeight = layout.titleBarHeight
+        let contentTop = titleHeight + layout.searchBarHeight + layout.columnHeaderHeight
+        let statusHeight = layout.statusBarHeight
+        let trackHeight = bounds.height - contentTop - statusHeight
+        let scrollbarX = bounds.width - scrollbar.width - 3  // Offset from right edge
+        
+        // Draw scrollbar track background (tiled)
+        var y: CGFloat = contentTop
+        while y < bounds.height - statusHeight {
+            let h = min(29, bounds.height - statusHeight - y)
+            drawSprite(from: image, sourceRect: scrollbar.trackTile,
+                      to: NSRect(x: scrollbarX, y: y, width: scrollbar.width, height: h), in: context)
+            y += 29
+        }
+        
+        // Draw scrollbar thumb
+        let thumbHeight = scrollbar.thumbHeight
+        let availableTrack = trackHeight - thumbHeight
+        let thumbY = contentTop + (availableTrack * max(0, min(1, scrollPosition)))
+        
+        drawSprite(from: image, sourceRect: scrollbar.thumb,
+                  to: NSRect(x: scrollbarX, y: thumbY, width: scrollbar.width, height: thumbHeight), in: context)
     }
     
     /// Draw Plex browser in shade mode
