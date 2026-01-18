@@ -21,6 +21,8 @@ class SkinRenderer {
     
     /// Scale factor for Retina displays (renders at 1x then scales)
     var scaleFactor: CGFloat = 2.0
+
+    private let plexTitleText = "PLEX BROWSER"
     
     // MARK: - Initialization
     
@@ -1550,7 +1552,6 @@ class SkinRenderer {
         
         // Get the correct sprite set for active/inactive state
         let leftCorner = isActive ? SkinElements.Playlist.TitleBarActive.leftCorner : SkinElements.Playlist.TitleBarInactive.leftCorner
-        let titleSprite = isActive ? SkinElements.Playlist.TitleBarActive.title : SkinElements.Playlist.TitleBarInactive.title
         let tileSprite = isActive ? SkinElements.Playlist.TitleBarActive.tile : SkinElements.Playlist.TitleBarInactive.tile
         let rightCorner = isActive ? SkinElements.Playlist.TitleBarActive.rightCorner : SkinElements.Playlist.TitleBarInactive.rightCorner
         
@@ -1579,14 +1580,21 @@ class SkinRenderer {
         // Calculate where the title text will go (centered)
         let titleX = middleStart + (middleWidth - titleSpriteWidth) / 2
         
-        // Draw a solid background rectangle over the tiles where the title goes
-        // Use the playlist background color from skin (typically dark blue/purple)
-        let bgColor = skin.playlistColors.normalBackground
-        bgColor.setFill()
-        context.fill(NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: titleHeight))
+        // Fill the title area with the same background as left/right tiles
+        if let titleBg = plexTitleTileBackgroundColor(from: pleditImage, sourceRect: tileSprite) {
+            titleBg.setFill()
+            context.fill(NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: titleHeight))
+        }
+
+        // Explicitly paint the top border line to match surrounding tiles
+        if let titleBg = plexTitleTileBackgroundColor(from: pleditImage, sourceRect: tileSprite) {
+            titleBg.setFill()
+            context.fill(NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: 1))
+        }
         
         // Draw "PLEX BROWSER" text centered on the solid background
-        drawTitleBarText("PLEX BROWSER", centeredIn: NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: titleHeight), in: context)
+        drawPlexTitleText(centeredIn: NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: titleHeight),
+                          in: context)
         
         // Draw window control button pressed states if needed
         if pressedButton == .close {
@@ -1604,6 +1612,48 @@ class SkinRenderer {
         }
     }
     
+    /// Draw Plex browser title text using sprite glyphs
+    private func drawPlexTitleText(centeredIn rect: NSRect, in context: CGContext) {
+        let charWidth: CGFloat = 5
+        let charHeight: CGFloat = 6
+        let letterSpacing: CGFloat = 1
+        let spaceWidth: CGFloat = charWidth + letterSpacing
+
+        context.saveGState()
+        context.setAllowsAntialiasing(false)
+        context.setShouldAntialias(false)
+        context.interpolationQuality = .none
+
+        let chars = Array(plexTitleText)
+        let totalWidth = plexTitleTextWidth(chars, letterSpacing: letterSpacing, spaceWidth: spaceWidth)
+        let startX = rect.midX - totalWidth / 2
+        let startY = rect.midY - charHeight / 2
+
+        let manualColor = plexTitleManualColor()
+        var xPos = startX
+
+        for (index, char) in chars.enumerated() {
+            if char == " " {
+                xPos += spaceWidth
+                continue
+            }
+
+            if let pattern = plexTitlePixels()[char.uppercased().first ?? " "] {
+                drawTitleBarPixelChar(pattern, at: NSPoint(x: xPos, y: startY), color: manualColor, in: context)
+                xPos += charWidth
+            } else {
+                drawTitleBarFallbackChar(char, at: NSPoint(x: xPos, y: startY), color: manualColor, in: context)
+                xPos += charWidth
+            }
+
+            if index < chars.count - 1, chars[index + 1] != " " {
+                xPos += letterSpacing
+            }
+        }
+
+        context.restoreGState()
+    }
+
     /// Draw title bar text using the skin's TEXT.BMP font sprites
     private func drawTitleBarText(_ text: String, centeredIn rect: NSRect, in context: CGContext) {
         let charWidth = SkinElements.TextFont.charWidth
@@ -1630,6 +1680,438 @@ class SkinRenderer {
             xPos += charWidth + charSpacing
         }
     }
+
+    private func drawTitleBarFallbackChar(_ char: Character, at origin: NSPoint, color: NSColor?, in context: CGContext) {
+        let pixels = SkinElements.TitleBarFont.fallbackPixels(for: char)
+        let fillColor = color ?? NSColor(calibratedWhite: 0.8, alpha: 1.0)
+        fillColor.setFill()
+
+        for (rowIndex, rowBits) in pixels.enumerated() {
+            for col in 0..<5 {
+                let mask = UInt8(1 << (4 - col))
+                guard (rowBits & mask) != 0 else { continue }
+                let pixelRect = NSRect(x: origin.x + CGFloat(col),
+                                       y: origin.y + CGFloat(rowIndex),
+                                       width: 1, height: 1)
+                context.fill(pixelRect)
+            }
+        }
+    }
+
+    private func titleBarFallbackColor() -> NSColor? {
+        if let pleditImage = skin.pledit,
+           let color = sampleSpriteTextColor(in: pleditImage, for: "A") {
+            return color
+        }
+        if let eqmainImage = skin.eqmain,
+           let color = sampleSpriteTextColor(in: eqmainImage, for: "E") {
+            return color
+        }
+        return nil
+    }
+
+    private func sampleSpriteTextColor(in image: NSImage, for char: Character) -> NSColor? {
+        let source = SkinElements.TitleBarFont.charSource(for: char)
+        let point: NSPoint?
+        switch source {
+        case .pledit(let x, let y), .eqmain(let x, let y):
+            point = NSPoint(x: x + 2, y: y + 2)
+        case .fallback:
+            point = nil
+        }
+
+        guard let samplePoint = point,
+              let color = samplePixelColor(in: image, at: samplePoint),
+              color.alphaComponent > 0.2 else {
+            return nil
+        }
+
+        return color
+    }
+
+    private func samplePixelColor(in image: NSImage, at point: NSPoint) -> NSColor? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+
+        let x = Int(point.x)
+        let flippedY = Int(image.size.height - point.y - 1)
+        guard x >= 0, flippedY >= 0, x < cgImage.width, flippedY < cgImage.height else { return nil }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        var pixelData = [UInt8](repeating: 0, count: 4)
+        guard let context = CGContext(data: &pixelData,
+                                      width: 1,
+                                      height: 1,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: 4,
+                                      space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+
+        context.draw(cgImage, in: CGRect(x: -x, y: -flippedY,
+                                         width: cgImage.width, height: cgImage.height))
+
+        return NSColor(red: CGFloat(pixelData[0]) / 255.0,
+                       green: CGFloat(pixelData[1]) / 255.0,
+                       blue: CGFloat(pixelData[2]) / 255.0,
+                       alpha: CGFloat(pixelData[3]) / 255.0)
+    }
+
+    private func plexTitleTileBackgroundColor(from image: NSImage, sourceRect: NSRect) -> NSColor? {
+        // Sample a background pixel from the title bar tile sprite
+        let samplePoint = NSPoint(x: sourceRect.minX + sourceRect.width / 2,
+                                  y: sourceRect.minY + sourceRect.height / 2)
+        return samplePixelColor(in: image, at: samplePoint)
+    }
+
+    private func plexTitleTextWidth(_ chars: [Character], letterSpacing: CGFloat, spaceWidth: CGFloat) -> CGFloat {
+        var width: CGFloat = 0
+        var lastWasLetter = false
+
+        for char in chars {
+            if char == " " {
+                width += spaceWidth
+                lastWasLetter = false
+                continue
+            }
+
+            if lastWasLetter {
+                width += letterSpacing
+            }
+
+            width += 5
+            lastWasLetter = true
+        }
+
+        return width
+    }
+
+    private func plexTitleManualColor() -> NSColor? {
+        return NSColor(calibratedWhite: 0.8, alpha: 1.0)
+    }
+
+
+    private func plexTitlePixels() -> [Character: [UInt8]] {
+        return [
+            "P": [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000],
+            "L": [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+            "E": [0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
+            "R": [0b11110, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
+            "W": [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b01010],
+            "S": [0b01111, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
+            "X": [0b10001, 0b01010, 0b00100, 0b00100, 0b01010, 0b10001],
+            "B": [0b11110, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
+            "O": [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+        ]
+    }
+
+    private func drawTitleBarPixelChar(_ pixels: [UInt8], at origin: NSPoint, color: NSColor?, in context: CGContext) {
+        let fillColor = color ?? NSColor(calibratedWhite: 0.8, alpha: 1.0)
+        fillColor.setFill()
+
+        for (rowIndex, rowBits) in pixels.enumerated() {
+            for col in 0..<5 {
+                let mask = UInt8(1 << (4 - col))
+                guard (rowBits & mask) != 0 else { continue }
+                let pixelRect = NSRect(x: origin.x + CGFloat(col),
+                                       y: origin.y + CGFloat(rowIndex),
+                                       width: 1, height: 1)
+                context.fill(pixelRect)
+            }
+        }
+    }
+
+    // MARK: - Title Sprite Font Extraction
+
+    private struct TitleSpriteFont {
+        struct Glyph {
+            let image: NSImage
+            let rect: NSRect
+        }
+
+        var glyphs: [Character: Glyph]
+        var letterSpacing: CGFloat
+        var spaceWidth: CGFloat
+        var height: CGFloat
+    }
+
+    private func titleSpriteFont() -> TitleSpriteFont? {
+        nil
+    }
+
+    private func buildTitleSpriteFont() -> TitleSpriteFont? {
+        let playlistText = "WINAMP PLAYLIST"
+        let eqText = "EQUALIZER"
+
+        let playlistFont = skin.pledit.flatMap { image in
+            extractTitleSpriteFont(from: image, titleRect: SkinElements.Playlist.TitleBarActive.title, text: playlistText)
+        }
+
+        let eqFont = skin.eqmain.flatMap { image in
+            extractTitleSpriteFont(from: image, titleRect: SkinElements.Equalizer.titleActive, text: eqText)
+        }
+
+        guard playlistFont != nil || eqFont != nil else {
+            return nil
+        }
+
+        var glyphs: [Character: TitleSpriteFont.Glyph] = [:]
+        if let playlistFont = playlistFont {
+            glyphs.merge(playlistFont.glyphs, uniquingKeysWith: { first, _ in first })
+        }
+        if let eqFont = eqFont {
+            for (char, glyph) in eqFont.glyphs where glyphs[char] == nil {
+                glyphs[char] = glyph
+            }
+        }
+
+        let letterSpacing = playlistFont?.letterSpacing ?? eqFont?.letterSpacing ?? SkinElements.TitleBarFont.charSpacing
+        let spaceWidth = playlistFont?.spaceWidth ?? eqFont?.spaceWidth ?? (SkinElements.TitleBarFont.charWidth + letterSpacing)
+        let height = playlistFont?.height ?? eqFont?.height ?? SkinElements.TitleBarFont.charHeight
+
+        return TitleSpriteFont(glyphs: glyphs,
+                               letterSpacing: letterSpacing,
+                               spaceWidth: spaceWidth,
+                               height: height)
+    }
+
+    private func extractTitleSpriteFont(from image: NSImage, titleRect: NSRect, text: String) -> TitleSpriteFont? {
+        guard let buffer = spriteBuffer(from: image, rect: titleRect) else { return nil }
+
+        let width = buffer.width
+        let height = buffer.height
+        let background = mostCommonColor(in: buffer)
+
+        let textMask = buildTextMask(width: width, height: height, buffer: buffer, background: background)
+        guard let textRows = textRowRange(mask: textMask, width: width, height: height) else { return nil }
+
+        let colMask = columnMask(mask: textMask, width: width, rowRange: textRows)
+        let segments = mergeSegments(findSegments(in: colMask), gapThreshold: 1)
+
+        let letters = text.uppercased().filter { $0 != " " }
+        guard segments.count == letters.count else { return nil }
+
+        var glyphs: [Character: TitleSpriteFont.Glyph] = [:]
+        let textHeight = CGFloat(textRows.max - textRows.min + 1)
+        var segmentIndex = 0
+        var prevSegmentIndex: Int?
+        var hadSpaceSincePrev = false
+        var letterGaps: [Int] = []
+        var spaceGaps: [Int] = []
+
+        for char in text.uppercased() {
+            if char == " " {
+                hadSpaceSincePrev = true
+                continue
+            }
+
+            let segment = segments[segmentIndex]
+            if glyphs[char] == nil {
+                let rect = NSRect(x: titleRect.origin.x + CGFloat(segment.start),
+                                  y: titleRect.origin.y + CGFloat(textRows.min),
+                                  width: CGFloat(segment.end - segment.start + 1),
+                                  height: textHeight)
+                glyphs[char] = TitleSpriteFont.Glyph(image: image, rect: rect)
+            }
+
+            if let prevIndex = prevSegmentIndex {
+                let gap = segment.start - segments[prevIndex].end - 1
+                if hadSpaceSincePrev {
+                    spaceGaps.append(gap)
+                } else {
+                    letterGaps.append(gap)
+                }
+            }
+
+            prevSegmentIndex = segmentIndex
+            segmentIndex += 1
+            hadSpaceSincePrev = false
+        }
+
+        guard !glyphs.isEmpty else { return nil }
+
+        let letterSpacing = letterGaps.isEmpty
+            ? SkinElements.TitleBarFont.charSpacing
+            : CGFloat(letterGaps.reduce(0, +)) / CGFloat(letterGaps.count)
+        let spaceWidth = spaceGaps.isEmpty
+            ? (SkinElements.TitleBarFont.charWidth + letterSpacing)
+            : CGFloat(spaceGaps.reduce(0, +)) / CGFloat(spaceGaps.count)
+
+        return TitleSpriteFont(glyphs: glyphs,
+                               letterSpacing: letterSpacing,
+                               spaceWidth: spaceWidth,
+                               height: textHeight)
+    }
+
+    private func titleSpriteTextWidth(_ chars: [Character],
+                                      font: TitleSpriteFont?,
+                                      letterSpacing: CGFloat,
+                                      spaceWidth: CGFloat) -> CGFloat {
+        var width: CGFloat = 0
+        var lastWasLetter = false
+
+        for char in chars {
+            if char == " " {
+                width += spaceWidth
+                lastWasLetter = false
+                continue
+            }
+
+            if lastWasLetter {
+                width += letterSpacing
+            }
+
+            let glyphWidth = font?.glyphs[char]?.rect.width ?? SkinElements.TitleBarFont.charWidth
+            width += glyphWidth
+            lastWasLetter = true
+        }
+
+        return width
+    }
+
+    private struct SpriteBuffer {
+        let data: [UInt8]
+        let width: Int
+        let height: Int
+    }
+
+    private func spriteBuffer(from image: NSImage, rect: NSRect) -> SpriteBuffer? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+
+        let flippedY = image.size.height - rect.origin.y - rect.height
+        let sourceInCG = CGRect(x: rect.origin.x, y: flippedY, width: rect.width, height: rect.height)
+        guard let cropped = cgImage.cropping(to: sourceInCG) else { return nil }
+
+        let width = cropped.width
+        let height = cropped.height
+        let bytesPerRow = width * 4
+        var data = [UInt8](repeating: 0, count: bytesPerRow * height)
+
+        guard let context = CGContext(data: &data,
+                                      width: width,
+                                      height: height,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: bytesPerRow,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+
+        context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return SpriteBuffer(data: data, width: width, height: height)
+    }
+
+    private func mostCommonColor(in buffer: SpriteBuffer) -> (r: UInt8, g: UInt8, b: UInt8, a: UInt8) {
+        var counts: [UInt32: Int] = [:]
+        let data = buffer.data
+        let pixelCount = buffer.width * buffer.height
+
+        for i in 0..<pixelCount {
+            let idx = i * 4
+            let r = data[idx]
+            let g = data[idx + 1]
+            let b = data[idx + 2]
+            let a = data[idx + 3]
+            guard a > 0 else { continue }
+            let packed = (UInt32(r) << 24) | (UInt32(g) << 16) | (UInt32(b) << 8) | UInt32(a)
+            counts[packed, default: 0] += 1
+        }
+
+        let most = counts.max { $0.value < $1.value }?.key ?? 0
+        return (r: UInt8((most >> 24) & 0xFF),
+                g: UInt8((most >> 16) & 0xFF),
+                b: UInt8((most >> 8) & 0xFF),
+                a: UInt8(most & 0xFF))
+    }
+
+    private func buildTextMask(width: Int,
+                               height: Int,
+                               buffer: SpriteBuffer,
+                               background: (r: UInt8, g: UInt8, b: UInt8, a: UInt8)) -> [Bool] {
+        let data = buffer.data
+        var mask = [Bool](repeating: false, count: width * height)
+
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = (y * width + x) * 4
+                let r = data[index]
+                let g = data[index + 1]
+                let b = data[index + 2]
+                let a = data[index + 3]
+                guard a > 80 else { continue }
+
+                let dr = abs(Int(r) - Int(background.r))
+                let dg = abs(Int(g) - Int(background.g))
+                let db = abs(Int(b) - Int(background.b))
+                let diff = dr + dg + db
+
+                if diff > 20 {
+                    mask[y * width + x] = true
+                }
+            }
+        }
+
+        return mask
+    }
+
+    private func textRowRange(mask: [Bool], width: Int, height: Int) -> (min: Int, max: Int)? {
+        var minRow: Int?
+        var maxRow: Int?
+
+        for y in 0..<height {
+            let rowStart = y * width
+            let hasText = mask[rowStart..<(rowStart + width)].contains(true)
+            if hasText {
+                minRow = minRow ?? y
+                maxRow = y
+            }
+        }
+
+        guard let minRow, let maxRow else { return nil }
+        return (min: minRow, max: maxRow)
+    }
+
+    private func columnMask(mask: [Bool], width: Int, rowRange: (min: Int, max: Int)) -> [Bool] {
+        var columns = [Bool](repeating: false, count: width)
+        for x in 0..<width {
+            for y in rowRange.min...rowRange.max {
+                if mask[y * width + x] {
+                    columns[x] = true
+                    break
+                }
+            }
+        }
+        return columns
+    }
+
+    private func findSegments(in columnMask: [Bool]) -> [(start: Int, end: Int)] {
+        var segments: [(Int, Int)] = []
+        var start: Int?
+
+        for (index, on) in columnMask.enumerated() {
+            if on {
+                if start == nil { start = index }
+            } else if let s = start {
+                segments.append((s, index - 1))
+                start = nil
+            }
+        }
+        if let s = start {
+            segments.append((s, columnMask.count - 1))
+        }
+        return segments
+    }
+
+    private func mergeSegments(_ segments: [(start: Int, end: Int)], gapThreshold: Int) -> [(start: Int, end: Int)] {
+        guard !segments.isEmpty else { return segments }
+        var merged: [(start: Int, end: Int)] = [segments[0]]
+
+        for segment in segments.dropFirst() {
+            if let last = merged.last, segment.start - last.end - 1 <= gapThreshold {
+                merged[merged.count - 1] = (start: last.start, end: segment.end)
+            } else {
+                merged.append(segment)
+            }
+        }
+        return merged
+    }
+
     
     /// Fallback title bar text if TEXT.BMP not available
     private func drawTitleBarTextFallback(_ text: String, centeredIn rect: NSRect, in context: CGContext) {

@@ -71,6 +71,29 @@ A `.wsz` file is a ZIP archive containing BMP images:
 
 ---
 
+## Title Bar Sprite Font (PLEDIT/EQMAIN)
+
+The playlist and equalizer title bars contain a pixel font embedded in the title sprites:
+- **PLEDIT.BMP** title sprite includes letters for "WINAMP PLAYLIST"
+- **EQMAIN.BMP** title bar includes letters for "EQUALIZER"
+
+AdAmp combines these letter sprites to build new titles (ex: "PLEX BROWSER") and
+falls back to a 5x6 pixel pattern for missing letters. See:
+- `SkinElements.TitleBarFont` for character sources and fallback pixels
+- `SkinRenderer.drawTitleBarSpriteText()` for rendering logic
+
+## Plex Browser Title Font Asset
+
+For the Plex browser title, AdAmp now uses a dedicated sprite atlas:
+- Resource: `Sources/AdAmp/Resources/title_font_plex.png`
+- Cell size: 5x6 pixels with 1px spacing
+- Characters included: P, L, E, X, B, R, O, W, S
+
+`SkinRenderer.drawTitleBarSpriteText()` pulls glyphs from this atlas to render
+“PLEX BROWSER” in the same pixel style as the title sprites.
+
+---
+
 ## EQMAIN.BMP Layout (275x315 pixels)
 
 The equalizer sprite sheet contains all EQ window elements:

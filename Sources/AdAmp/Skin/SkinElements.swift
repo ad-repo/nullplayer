@@ -811,14 +811,14 @@ struct SkinElements {
         }
         
         /// Get the source for a character
-        /// PLEDIT title sprite: "WINAMP PLAYLIST" at (26,0), text starts ~x=29, y=7
-        /// EQMAIN title bar: "EQUALIZER" at (0,134), text starts ~x=111, y=4
+        /// PLEDIT title sprite: "WINAMP PLAYLIST" at (26,0), text starts ~x=33, y=5
+        /// EQMAIN title bar: "EQUALIZER" at (0,134), text starts ~x=108, y=5
         static func charSource(for char: Character) -> CharSource {
             // Offsets within the respective sprites
-            let pleditBase: CGFloat = 26 + 3  // Title sprite starts at 26, text at +3
-            let pleditY: CGFloat = 7
-            let eqBase: CGFloat = 111  // "EQUALIZER" is roughly centered in 275px title bar
-            let eqY: CGFloat = 134 + 4  // Title bar at y=134, text at +4
+            let pleditBase: CGFloat = 26 + 7  // Title sprite starts at 26, text at +7
+            let pleditY: CGFloat = 5
+            let eqBase: CGFloat = 108  // "EQUALIZER" centered in 275px title bar
+            let eqY: CGFloat = 134 + 5  // Title bar at y=134, text at +5
             
             switch char.uppercased().first ?? " " {
             // From "WINAMP PLAYLIST" in pledit.bmp
