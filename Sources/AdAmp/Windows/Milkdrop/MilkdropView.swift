@@ -154,11 +154,7 @@ class MilkdropView: NSView {
         let isPlaying = audioEngine.state == .playing
         visualizationGLView?.setAudioActive(isPlaying)
         
-        // Get spectrum data from audio engine
-        let spectrum = audioEngine.spectrumData
-        visualizationGLView?.updateSpectrum(spectrum)
-        
-        // Get PCM data from audio engine (for oscilloscope mode)
+        // Get PCM data from audio engine for projectM
         let pcm = audioEngine.pcmData
         visualizationGLView?.updatePCM(pcm)
     }
@@ -204,11 +200,6 @@ class MilkdropView: NSView {
     private func toggleShadeMode() {
         isShadeMode.toggle()
         controller?.setShadeMode(isShadeMode)
-    }
-    
-    /// Set visualization mode
-    func setVisualizationMode(_ mode: VisualizationGLView.VisualizationMode) {
-        visualizationGLView?.mode = mode
     }
     
     /// Stop rendering (for window close/hide)
@@ -397,7 +388,6 @@ class MilkdropView: NSView {
     
     override func keyDown(with event: NSEvent) {
         // Check for modifier keys
-        let hasCommand = event.modifierFlags.contains(.command)
         let hasShift = event.modifierFlags.contains(.shift)
         
         switch event.keyCode {
@@ -411,24 +401,6 @@ class MilkdropView: NSView {
             
         case 3: // F key - toggle fullscreen
             controller?.toggleFullscreen()
-            
-        case 49: // Space - toggle visualization mode (cycles through modes)
-            if let vis = visualizationGLView {
-                if vis.isProjectMAvailable {
-                    // Cycle: milkdrop -> spectrum -> oscilloscope -> milkdrop
-                    switch vis.mode {
-                    case .milkdrop:
-                        vis.mode = .spectrum
-                    case .spectrum:
-                        vis.mode = .oscilloscope
-                    case .oscilloscope:
-                        vis.mode = .milkdrop
-                    }
-                } else {
-                    // Without projectM, toggle between spectrum and oscilloscope
-                    vis.mode = vis.mode == .spectrum ? .oscilloscope : .spectrum
-                }
-            }
             
         case 124: // Right arrow - next preset
             if hasShift {
@@ -524,34 +496,6 @@ class MilkdropView: NSView {
             }
         }
         
-        // Visualization mode submenu (fallback modes when projectM unavailable, or for switching)
-        let modeMenu = NSMenu()
-        
-        if isProjectMAvailable {
-            let milkdropItem = NSMenuItem(title: "Milkdrop (projectM)", action: #selector(setMilkdropMode(_:)), keyEquivalent: "")
-            milkdropItem.target = self
-            milkdropItem.state = visualizationGLView?.mode == .milkdrop ? .on : .off
-            modeMenu.addItem(milkdropItem)
-            
-            modeMenu.addItem(NSMenuItem.separator())
-        }
-        
-        let spectrumItem = NSMenuItem(title: "Spectrum Analyzer", action: #selector(setSpectrumMode(_:)), keyEquivalent: "")
-        spectrumItem.target = self
-        spectrumItem.state = visualizationGLView?.mode == .spectrum ? .on : .off
-        modeMenu.addItem(spectrumItem)
-        
-        let oscilloscopeItem = NSMenuItem(title: "Oscilloscope", action: #selector(setOscilloscopeMode(_:)), keyEquivalent: "")
-        oscilloscopeItem.target = self
-        oscilloscopeItem.state = visualizationGLView?.mode == .oscilloscope ? .on : .off
-        modeMenu.addItem(oscilloscopeItem)
-        
-        let modeItem = NSMenuItem(title: "Visualization Mode", action: nil, keyEquivalent: "")
-        modeItem.submenu = modeMenu
-        menu.addItem(modeItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
         // Fullscreen option
         let fullscreenItem = NSMenuItem(title: "Fullscreen", action: #selector(toggleFullscreenAction(_:)), keyEquivalent: "f")
         fullscreenItem.target = self
@@ -565,18 +509,6 @@ class MilkdropView: NSView {
         menu.addItem(closeItem)
         
         return menu
-    }
-    
-    @objc private func setMilkdropMode(_ sender: Any?) {
-        visualizationGLView?.mode = .milkdrop
-    }
-    
-    @objc private func setSpectrumMode(_ sender: Any?) {
-        visualizationGLView?.mode = .spectrum
-    }
-    
-    @objc private func setOscilloscopeMode(_ sender: Any?) {
-        visualizationGLView?.mode = .oscilloscope
     }
     
     @objc private func nextPresetAction(_ sender: Any?) {

@@ -41,21 +41,6 @@ class VisualizationGLView: NSOpenGLView {
         return projectM?.isAvailable ?? false
     }
     
-    /// Current visualization mode
-    enum VisualizationMode {
-        case spectrum      // Bar spectrum analyzer (fallback)
-        case oscilloscope  // Waveform display (fallback)
-        case milkdrop      // ProjectM presets
-    }
-    
-    var mode: VisualizationMode = .milkdrop {
-        didSet {
-            // If projectM not available and trying to use milkdrop, fall back to spectrum
-            if mode == .milkdrop && !isProjectMAvailable {
-                NSLog("VisualizationGLView: projectM not available, using spectrum fallback")
-            }
-        }
-    }
     
     /// Whether audio is currently playing (affects visualization behavior)
     private var isAudioActive = false
@@ -66,35 +51,9 @@ class VisualizationGLView: NSOpenGLView {
     /// Idle beat sensitivity (used when audio is not playing for calmer visualization)
     private let idleBeatSensitivity: Float = 0.2
     
-    /// Local copy of spectrum data for thread-safe access
-    private var localSpectrum: [Float] = Array(repeating: 0, count: 75)
+    /// Local copy of PCM data for thread-safe access
     private var localPCM: [Float] = Array(repeating: 0, count: 1024)
     private let dataLock = NSLock()
-    
-    /// OpenGL shader program (for fallback rendering)
-    private var shaderProgram: GLuint = 0
-    private var vao: GLuint = 0
-    private var vbo: GLuint = 0
-    
-    /// Colors for spectrum bars (gradient from green to red)
-    private let barColors: [(r: Float, g: Float, b: Float)] = {
-        var colors: [(Float, Float, Float)] = []
-        for i in 0..<75 {
-            let ratio = Float(i) / 74.0
-            // Green -> Yellow -> Orange -> Red
-            let r: Float
-            let g: Float
-            if ratio < 0.5 {
-                r = ratio * 2.0
-                g = 1.0
-            } else {
-                r = 1.0
-                g = 1.0 - (ratio - 0.5) * 2.0
-            }
-            colors.append((r, g, 0.0))
-        }
-        return colors
-    }()
     
     // MARK: - Initialization
     
@@ -156,125 +115,10 @@ class VisualizationGLView: NSOpenGLView {
         glClearColor(0.0, 0.0, 0.0, 1.0)
         glEnable(GLenum(GL_BLEND))
         glBlendFunc(GLenum(GL_SRC_ALPHA), GLenum(GL_ONE_MINUS_SRC_ALPHA))
-        
-        // Create VAO and VBO for spectrum bars
-        glGenVertexArrays(1, &vao)
-        glGenBuffers(1, &vbo)
-        
-        glBindVertexArray(vao)
-        glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
-        
-        // Allocate buffer for max vertices (75 bars * 6 vertices * 6 floats per vertex)
-        let maxVertices = 75 * 6 * 6
-        glBufferData(GLenum(GL_ARRAY_BUFFER), maxVertices * MemoryLayout<Float>.size, nil, GLenum(GL_DYNAMIC_DRAW))
-        
-        // Position attribute (2 floats)
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(0, 2, GLenum(GL_FLOAT), GLboolean(GL_FALSE), 
-                             GLsizei(6 * MemoryLayout<Float>.size), nil)
-        
-        // Color attribute (4 floats)
-        glEnableVertexAttribArray(1)
-        glVertexAttribPointer(1, 4, GLenum(GL_FLOAT), GLboolean(GL_FALSE),
-                             GLsizei(6 * MemoryLayout<Float>.size),
-                             UnsafeRawPointer(bitPattern: 2 * MemoryLayout<Float>.size))
-        
-        glBindVertexArray(0)
-        
-        // Create simple shader program
-        createShaders()
-    }
-    
-    private func createShaders() {
-        let vertexShaderSource = """
-        #version 330 core
-        layout (location = 0) in vec2 aPos;
-        layout (location = 1) in vec4 aColor;
-        out vec4 vertexColor;
-        void main() {
-            gl_Position = vec4(aPos, 0.0, 1.0);
-            vertexColor = aColor;
-        }
-        """
-        
-        let fragmentShaderSource = """
-        #version 330 core
-        in vec4 vertexColor;
-        out vec4 FragColor;
-        void main() {
-            FragColor = vertexColor;
-        }
-        """
-        
-        // Compile vertex shader
-        let vertexShader = glCreateShader(GLenum(GL_VERTEX_SHADER))
-        vertexShaderSource.withCString { ptr in
-            var source: UnsafePointer<GLchar>? = ptr
-            glShaderSource(vertexShader, 1, &source, nil)
-        }
-        glCompileShader(vertexShader)
-        checkShaderCompilation(vertexShader, "vertex")
-        
-        // Compile fragment shader
-        let fragmentShader = glCreateShader(GLenum(GL_FRAGMENT_SHADER))
-        fragmentShaderSource.withCString { ptr in
-            var source: UnsafePointer<GLchar>? = ptr
-            glShaderSource(fragmentShader, 1, &source, nil)
-        }
-        glCompileShader(fragmentShader)
-        checkShaderCompilation(fragmentShader, "fragment")
-        
-        // Link program
-        shaderProgram = glCreateProgram()
-        glAttachShader(shaderProgram, vertexShader)
-        glAttachShader(shaderProgram, fragmentShader)
-        glLinkProgram(shaderProgram)
-        checkProgramLinking(shaderProgram)
-        
-        // Clean up shaders (they're linked now)
-        glDeleteShader(vertexShader)
-        glDeleteShader(fragmentShader)
-    }
-    
-    private func checkShaderCompilation(_ shader: GLuint, _ type: String) {
-        var success: GLint = 0
-        glGetShaderiv(shader, GLenum(GL_COMPILE_STATUS), &success)
-        if success == GL_FALSE {
-            var logLength: GLint = 0
-            glGetShaderiv(shader, GLenum(GL_INFO_LOG_LENGTH), &logLength)
-            var log = [GLchar](repeating: 0, count: Int(logLength))
-            glGetShaderInfoLog(shader, logLength, nil, &log)
-            NSLog("VisualizationGLView: \(type) shader compilation failed: \(String(cString: log))")
-        }
-    }
-    
-    private func checkProgramLinking(_ program: GLuint) {
-        var success: GLint = 0
-        glGetProgramiv(program, GLenum(GL_LINK_STATUS), &success)
-        if success == GL_FALSE {
-            var logLength: GLint = 0
-            glGetProgramiv(program, GLenum(GL_INFO_LOG_LENGTH), &logLength)
-            var log = [GLchar](repeating: 0, count: Int(logLength))
-            glGetProgramInfoLog(program, logLength, nil, &log)
-            NSLog("VisualizationGLView: Shader program linking failed: \(String(cString: log))")
-        }
     }
     
     private func cleanupOpenGL() {
-        openGLContext?.makeCurrentContext()
-        
-        if vao != 0 {
-            glDeleteVertexArrays(1, &vao)
-            vao = 0
-        }
-        if vbo != 0 {
-            glDeleteBuffers(1, &vbo)
-            vbo = 0
-        }
-        if shaderProgram != 0 {
-            glDeleteProgram(shaderProgram)
-            shaderProgram = 0
-        }
+        // Nothing to clean up - projectM manages its own resources
     }
     
     // MARK: - ProjectM Setup
@@ -286,7 +130,6 @@ class VisualizationGLView: NSOpenGLView {
         // Mark that we want to use projectM - actual setup will happen on first render
         // This ensures the OpenGL context is properly initialized on the render thread
         projectMNeedsSetup = true
-        mode = .milkdrop
         NSLog("VisualizationGLView: projectM setup deferred to render thread")
     }
     
@@ -313,18 +156,12 @@ class VisualizationGLView: NSOpenGLView {
             pm.beatSensitivity = idleBeatSensitivity
             
             if pm.presetCount > 0 {
-                // Set default visualization mode to milkdrop
-                mode = .milkdrop
                 NSLog("VisualizationGLView: projectM initialized with %d presets, idle beat sensitivity = %.2f", pm.presetCount, idleBeatSensitivity)
             } else {
-                // No presets found, fall back to spectrum
-                mode = .spectrum
-                NSLog("VisualizationGLView: projectM available but no presets found, using spectrum fallback")
+                NSLog("VisualizationGLView: projectM available but no presets found")
             }
         } else {
-            // Fall back to spectrum analyzer
-            mode = .spectrum
-            NSLog("VisualizationGLView: projectM not available, using spectrum fallback")
+            NSLog("VisualizationGLView: projectM not available")
         }
     }
     
@@ -375,15 +212,6 @@ class VisualizationGLView: NSOpenGLView {
     
     // MARK: - Data Update
     
-    /// Update spectrum data (called from main thread)
-    func updateSpectrum(_ data: [Float]) {
-        dataLock.lock()
-        for i in 0..<min(data.count, localSpectrum.count) {
-            localSpectrum[i] = data[i]
-        }
-        dataLock.unlock()
-    }
-    
     /// Update PCM data (called from main thread)
     func updatePCM(_ data: [Float]) {
         dataLock.lock()
@@ -427,39 +255,24 @@ class VisualizationGLView: NSOpenGLView {
             initializeProjectMOnRenderThread()
         }
         
-        // Get data snapshot
+        // Get PCM data snapshot
         dataLock.lock()
-        let spectrum = localSpectrum
         let pcm = localPCM
         dataLock.unlock()
         
         // Get viewport dimensions
         let backingBounds = convertToBacking(bounds)
-        let viewportWidth = GLsizei(backingBounds.width)
-        let viewportHeight = GLsizei(backingBounds.height)
+        let viewportWidth = Int(backingBounds.width)
+        let viewportHeight = Int(backingBounds.height)
         
-        // Draw based on mode
-        switch mode {
-        case .milkdrop where isProjectMAvailable && hasProjectMPresets:
-            // Render with projectM (only if we have presets)
-            renderProjectM(pcm: pcm, width: Int(viewportWidth), height: Int(viewportHeight))
-            
-        case .milkdrop where isProjectMAvailable:
-            // projectM available but no presets - render idle screen
-            renderProjectM(pcm: pcm, width: Int(viewportWidth), height: Int(viewportHeight))
-            
-        case .spectrum, .milkdrop:
-            // Fallback spectrum analyzer (also used when projectM not available)
-            glViewport(0, 0, viewportWidth, viewportHeight)
+        // Render with projectM
+        if isProjectMAvailable {
+            renderProjectM(pcm: pcm, width: viewportWidth, height: viewportHeight)
+        } else {
+            // projectM not available - just clear to black
+            glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
             glClearColor(0.0, 0.0, 0.0, 1.0)
             glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
-            drawSpectrumBars(spectrum)
-            
-        case .oscilloscope:
-            glViewport(0, 0, viewportWidth, viewportHeight)
-            glClearColor(0.0, 0.0, 0.0, 1.0)
-            glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
-            drawOscilloscope(pcm)
         }
         
         // Swap buffers
@@ -483,86 +296,6 @@ class VisualizationGLView: NSOpenGLView {
     /// Whether projectM has valid presets loaded
     var hasProjectMPresets: Bool {
         return projectM?.hasValidPreset ?? false
-    }
-    
-    private func drawSpectrumBars(_ spectrum: [Float]) {
-        guard shaderProgram != 0 else { return }
-        
-        glUseProgram(shaderProgram)
-        glBindVertexArray(vao)
-        
-        // Build vertex data for bars
-        var vertices: [Float] = []
-        let barCount = 75
-        let barWidth = 2.0 / Float(barCount) * 0.9 // Leave small gap
-        let gap = 2.0 / Float(barCount) * 0.1
-        
-        for i in 0..<barCount {
-            let height = max(0.02, spectrum[i]) // Minimum height so bars are visible
-            let x = -1.0 + Float(i) * (barWidth + gap)
-            let y: Float = -1.0
-            
-            // Get color for this bar
-            let (r, g, b) = barColors[i]
-            
-            // Create two triangles for the bar (6 vertices)
-            // Bottom left
-            vertices.append(contentsOf: [x, y, r, g, b, 1.0])
-            // Bottom right
-            vertices.append(contentsOf: [x + barWidth, y, r, g, b, 1.0])
-            // Top right
-            vertices.append(contentsOf: [x + barWidth, y + height * 2.0, r, g, b, 1.0])
-            
-            // Bottom left
-            vertices.append(contentsOf: [x, y, r, g, b, 1.0])
-            // Top right
-            vertices.append(contentsOf: [x + barWidth, y + height * 2.0, r, g, b, 1.0])
-            // Top left
-            vertices.append(contentsOf: [x, y + height * 2.0, r, g, b, 1.0])
-        }
-        
-        // Upload vertex data
-        glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
-        vertices.withUnsafeBytes { ptr in
-            glBufferSubData(GLenum(GL_ARRAY_BUFFER), 0, ptr.count, ptr.baseAddress)
-        }
-        
-        // Draw
-        glDrawArrays(GLenum(GL_TRIANGLES), 0, GLsizei(barCount * 6))
-        
-        glBindVertexArray(0)
-        glUseProgram(0)
-    }
-    
-    private func drawOscilloscope(_ pcm: [Float]) {
-        guard shaderProgram != 0 else { return }
-        
-        glUseProgram(shaderProgram)
-        glBindVertexArray(vao)
-        
-        // Build vertex data for waveform
-        var vertices: [Float] = []
-        let sampleCount = min(pcm.count, 512)
-        
-        for i in 0..<sampleCount {
-            let x = -1.0 + Float(i) / Float(sampleCount) * 2.0
-            let y = pcm[i] * 0.8 // Scale to fit
-            
-            // Green color for waveform
-            vertices.append(contentsOf: [x, y, 0.0, 1.0, 0.0, 1.0])
-        }
-        
-        // Upload vertex data
-        glBindBuffer(GLenum(GL_ARRAY_BUFFER), vbo)
-        vertices.withUnsafeBytes { ptr in
-            glBufferSubData(GLenum(GL_ARRAY_BUFFER), 0, ptr.count, ptr.baseAddress)
-        }
-        
-        // Draw as line strip
-        glDrawArrays(GLenum(GL_LINE_STRIP), 0, GLsizei(sampleCount))
-        
-        glBindVertexArray(0)
-        glUseProgram(0)
     }
     
     // MARK: - View Lifecycle

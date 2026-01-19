@@ -153,7 +153,7 @@ class MilkdropWindowController: NSWindowController {
     /// Toggle fullscreen mode
     /// Uses custom fullscreen implementation for borderless windows
     func toggleFullscreen() {
-        guard let window = window else { return }
+        guard window != nil else { return }
         
         if isCustomFullscreen {
             exitCustomFullscreen()
@@ -279,13 +279,6 @@ class MilkdropWindowController: NSWindowController {
     /// Current preset name
     var currentPresetName: String {
         return milkdropView.visualizationGLView?.currentPresetName ?? ""
-    }
-    
-    // MARK: - Visualization Control
-    
-    /// Set visualization mode
-    func setVisualizationMode(_ mode: VisualizationGLView.VisualizationMode) {
-        milkdropView.setVisualizationMode(mode)
     }
 }
 

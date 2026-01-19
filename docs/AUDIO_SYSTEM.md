@@ -197,7 +197,6 @@ Note: The Milkdrop window uses a custom fullscreen implementation (rather than m
 |-----|--------|
 | F | Toggle fullscreen |
 | Escape | Exit fullscreen |
-| Space | Cycle visualization mode (Milkdrop → Spectrum → Oscilloscope) |
 | → | Next preset |
 | ← | Previous preset |
 | Shift+→ | Next preset (hard cut) |
