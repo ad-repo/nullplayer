@@ -117,10 +117,11 @@ class StreamingAudioPlayer {
             band.frequency = frequency
             band.bandwidth = index < 5 ? 2.0 : 1.5
             band.gain = 0.0
-            band.bypass = false
+            band.bypass = false   // Individual bands active when EQ is enabled
         }
         
-        eqNode.bypass = false
+        // EQ is bypassed by default - user must enable it
+        eqNode.bypass = true
     }
     
     private func setupSpectrumAnalyzer() {

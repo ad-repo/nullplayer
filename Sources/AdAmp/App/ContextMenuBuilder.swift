@@ -162,6 +162,19 @@ class ContextMenuBuilder {
         shuffleItem.state = engine.shuffleEnabled ? .on : .off
         optionsMenu.addItem(shuffleItem)
         
+        optionsMenu.addItem(NSMenuItem.separator())
+        
+        // Audio Quality Options
+        let gaplessItem = NSMenuItem(title: "Gapless Playback", action: #selector(MenuActions.toggleGaplessPlayback), keyEquivalent: "")
+        gaplessItem.target = MenuActions.shared
+        gaplessItem.state = engine.gaplessPlaybackEnabled ? .on : .off
+        optionsMenu.addItem(gaplessItem)
+        
+        let normalizeItem = NSMenuItem(title: "Volume Normalization", action: #selector(MenuActions.toggleVolumeNormalization), keyEquivalent: "")
+        normalizeItem.target = MenuActions.shared
+        normalizeItem.state = engine.volumeNormalizationEnabled ? .on : .off
+        optionsMenu.addItem(normalizeItem)
+        
         optionsItem.submenu = optionsMenu
         return optionsItem
     }
@@ -543,6 +556,14 @@ class MenuActions: NSObject {
     
     @objc func toggleShuffle() {
         WindowManager.shared.audioEngine.shuffleEnabled.toggle()
+    }
+    
+    @objc func toggleGaplessPlayback() {
+        WindowManager.shared.audioEngine.gaplessPlaybackEnabled.toggle()
+    }
+    
+    @objc func toggleVolumeNormalization() {
+        WindowManager.shared.audioEngine.volumeNormalizationEnabled.toggle()
     }
     
     @objc func toggleAlwaysOnTop() {

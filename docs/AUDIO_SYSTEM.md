@@ -38,14 +38,18 @@ Both pipelines support full 10-band EQ and real-time spectrum visualization. EQ 
 │  ┌──────────────┐                   │  │ AVAudioUnitEQ         │  │ │
 │  │ eqNode       │                   │  └───────────┬───────────┘  │ │
 │  │ (10-band EQ) │                   │              │              │ │
-│  │ AVAudioUnit  │                   │              ▼              │ │
-│  │ EQ           │                   │  ┌───────────────────────┐  │ │
-│  └──────┬───────┘                   │  │ Spectrum Tap          │  │ │
-│         │                           │  │ (frameFiltering)      │  │ │
-│         ▼                           │  └───────────────────────┘  │ │
-│  ┌──────────────┐                   └─────────────────────────────┘ │
+│  └──────┬───────┘                   │              ▼              │ │
+│         │                           │  ┌───────────────────────┐  │ │
+│         ▼                           │  │ Spectrum Tap          │  │ │
+│  ┌──────────────┐                   │  │ (frameFiltering)      │  │ │
+│  │ limiterNode  │                   │  └───────────────────────┘  │ │
+│  │ (Anti-clip)  │                   └─────────────────────────────┘ │
+│  └──────┬───────┘                                                   │
+│         │                           EQ settings sync ◄──────────►   │
+│         ▼                                                           │
+│  ┌──────────────┐                                                   │
 │  │mainMixerNode │                                                   │
-│  └──────┬───────┘                   EQ settings sync ◄──────────►   │
+│  └──────┬───────┘                                                   │
 │         │                                                           │
 │         ▼                                                           │
 │  ┌──────────────┐                                                   │
@@ -64,6 +68,9 @@ The main audio controller that manages:
 - Playlist management
 - Track loading (routes to appropriate pipeline)
 - EQ settings (synced to both pipelines)
+- Anti-clipping limiter for EQ protection
+- Gapless playback (optional, local files only)
+- Volume normalization (optional, local files only)
 - Output device selection
 - Delegate notifications for UI updates
 
@@ -72,7 +79,10 @@ The main audio controller that manages:
 private let engine = AVAudioEngine()        // For local files
 private let playerNode = AVAudioPlayerNode()
 private let eqNode = AVAudioUnitEQ(numberOfBands: 10)
+private let limiterNode = AVAudioUnitDynamicsProcessor()  // Anti-clipping
 private var streamingPlayer: StreamingAudioPlayer?  // For HTTP streaming
+var gaplessPlaybackEnabled: Bool           // Pre-schedule next track
+var volumeNormalizationEnabled: Bool       // Loudness normalization
 ```
 
 ### StreamingAudioPlayer (`StreamingAudioPlayer.swift`)
@@ -110,6 +120,21 @@ Both EQ nodes use identical Winamp-style 10-band configuration:
 - Per-band gain: **-12 dB to +12 dB**
 - Preamp (global gain): **-12 dB to +12 dB**
 
+### Default State
+
+The EQ is **disabled (bypassed) by default** to preserve original audio quality. Users must explicitly enable it via the EQ window's ON/OFF button. When disabled, audio passes through unprocessed at full resolution.
+
+### Anti-Clipping Limiter
+
+A transparent limiter (Apple's `AUDynamicsProcessor` Audio Unit) is inserted after the EQ to prevent clipping when boosts are applied:
+
+- **Threshold:** -1 dB (catches peaks just before clipping)
+- **Headroom:** 1 dB
+- **Attack:** 1ms (fast response)
+- **Release:** 50ms (transparent recovery)
+
+The limiter is always active but only engages when peaks approach 0 dB.
+
 ### EQ Synchronization
 
 When EQ settings change, both pipelines are updated:
@@ -133,6 +158,60 @@ private func syncEQToStreamingPlayer() {
     streamingPlayer?.syncEQSettings(bands: bands, preamp: eqNode.globalGain, enabled: !eqNode.bypass)
 }
 ```
+
+## Gapless Playback
+
+When enabled via **Playback Options → Gapless Playback**, the engine pre-schedules the next track for seamless transitions between songs.
+
+### How It Works
+
+1. When a track starts playing, the next track in the playlist is loaded and scheduled to play immediately after
+2. `AVAudioPlayerNode.scheduleFile()` queues the next file
+3. When the current track ends, playback continues seamlessly to the pre-scheduled track
+4. The next-next track is then pre-scheduled
+
+### Limitations
+
+- Only works for **local files** (not HTTP streaming)
+- Not compatible with **repeat single track** mode (handled separately)
+- Shuffle mode picks a random next track to pre-schedule
+
+### Settings Persistence
+
+The gapless setting is saved to UserDefaults and restored on app launch.
+
+## Volume Normalization
+
+When enabled via **Playback Options → Volume Normalization**, tracks are analyzed and gain-adjusted to achieve consistent perceived loudness.
+
+### Algorithm
+
+1. **Analysis:** Scan up to 30 seconds of audio for peak and RMS levels
+2. **Target:** -14 dB (similar to streaming services like Spotify)
+3. **Gain calculation:** `target - trackRMS`, clamped to ±12 dB
+4. **Headroom protection:** Gain reduced if peaks would exceed -0.5 dB
+
+### Implementation
+
+```swift
+// Calculate gain needed to reach target loudness
+let gainNeededDB = targetLoudnessDB - rmsDB
+let clampedGainDB = max(-12.0, min(12.0, gainNeededDB))
+
+// Prevent clipping
+if peakDB + clampedGainDB > -0.5 {
+    finalGainDB = clampedGainDB - (peakAfterGain + 0.5)
+}
+
+// Apply as linear multiplier to volume
+normalizationGain = pow(10.0, finalGainDB / 20.0)
+```
+
+### Limitations
+
+- Only applies to **local files** (streaming tracks not analyzed)
+- Uses RMS as a loudness estimate (not true LUFS measurement)
+- Re-analyzes when track loads (no persistent cache)
 
 ## Spectrum Analyzer
 
