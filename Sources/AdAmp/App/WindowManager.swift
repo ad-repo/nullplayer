@@ -657,6 +657,96 @@ class WindowManager {
         }
     }
     
+    /// Reset all windows to their default positions
+    func snapToDefaultPositions() {
+        // Clear saved window frames
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "MainWindowFrame")
+        defaults.removeObject(forKey: "PlaylistWindowFrame")
+        defaults.removeObject(forKey: "EqualizerWindowFrame")
+        defaults.removeObject(forKey: "MediaLibraryWindowFrame")
+        defaults.removeObject(forKey: "PlexBrowserWindowFrame")
+        defaults.removeObject(forKey: "VideoPlayerWindowFrame")
+        defaults.removeObject(forKey: "MilkdropWindowFrame")
+        
+        // Center main window
+        guard let mainWindow = mainWindowController?.window else { return }
+        mainWindow.center()
+        
+        let mainFrame = mainWindow.frame
+        
+        // Track the bottom edge for stacking EQ and Playlist below main
+        var bottomEdge = mainFrame.minY
+        
+        // Position EQ directly below main window if visible
+        if let eqWindow = equalizerWindowController?.window, eqWindow.isVisible {
+            let newFrame = NSRect(
+                x: mainFrame.minX,
+                y: bottomEdge - eqWindow.frame.height,
+                width: mainFrame.width,
+                height: eqWindow.frame.height
+            )
+            eqWindow.setFrame(newFrame, display: true, animate: true)
+            bottomEdge = newFrame.minY
+        }
+        
+        // Position Playlist below EQ (or main if EQ not visible) if visible
+        if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible {
+            let newFrame = NSRect(
+                x: mainFrame.minX,
+                y: bottomEdge - playlistWindow.frame.height,
+                width: mainFrame.width,
+                height: playlistWindow.frame.height
+            )
+            playlistWindow.setFrame(newFrame, display: true, animate: true)
+        }
+        
+        // Position Plex Browser to the right of main window if visible
+        if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
+            let newFrame = NSRect(
+                x: mainFrame.maxX,
+                y: mainFrame.maxY - plexWindow.frame.height,
+                width: plexWindow.frame.width,
+                height: plexWindow.frame.height
+            )
+            plexWindow.setFrame(newFrame, display: true, animate: true)
+        }
+        
+        // Position Media Library to the right of main, below Plex if visible
+        if let libraryWindow = mediaLibraryWindowController?.window, libraryWindow.isVisible {
+            var newY = mainFrame.maxY - libraryWindow.frame.height
+            
+            // Stack below Plex Browser if it's visible
+            if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
+                newY = plexWindow.frame.minY - libraryWindow.frame.height
+            }
+            
+            let newFrame = NSRect(
+                x: mainFrame.maxX,
+                y: newY,
+                width: libraryWindow.frame.width,
+                height: libraryWindow.frame.height
+            )
+            libraryWindow.setFrame(newFrame, display: true, animate: true)
+        }
+        
+        // Position Milkdrop to the left of main window if visible
+        if let milkdropWindow = milkdropWindowController?.window, milkdropWindow.isVisible {
+            let newFrame = NSRect(
+                x: mainFrame.minX - milkdropWindow.frame.width,
+                y: mainFrame.maxY - milkdropWindow.frame.height,
+                width: milkdropWindow.frame.width,
+                height: milkdropWindow.frame.height
+            )
+            milkdropWindow.setFrame(newFrame, display: true, animate: true)
+        }
+        
+        // Position Video Player centered if visible
+        if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
+            videoWindow.center()
+        }
+    }
+    
     // MARK: - Window Snapping & Docking
     
     /// Called when a window drag begins

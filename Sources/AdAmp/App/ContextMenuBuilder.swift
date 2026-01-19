@@ -50,6 +50,11 @@ class ContextMenuBuilder {
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
         
+        // Snap to Default
+        let snapToDefault = NSMenuItem(title: "Snap to Default", action: #selector(MenuActions.snapToDefault), keyEquivalent: "")
+        snapToDefault.target = MenuActions.shared
+        menu.addItem(snapToDefault)
+        
         menu.addItem(NSMenuItem.separator())
         
         // Exit
@@ -568,6 +573,10 @@ class MenuActions: NSObject {
     
     @objc func toggleAlwaysOnTop() {
         WindowManager.shared.isAlwaysOnTop.toggle()
+    }
+    
+    @objc func snapToDefault() {
+        WindowManager.shared.snapToDefaultPositions()
     }
     
     // MARK: - Playback Controls
