@@ -153,7 +153,20 @@ class StreamingAudioPlayer {
     
     /// Seek to a specific time
     func seek(to time: TimeInterval) {
-        player.seek(to: time)
+        // Guard against invalid seek times that can crash the player
+        let currentDuration = duration
+        guard currentDuration > 0 else {
+            NSLog("StreamingAudioPlayer: Cannot seek - duration is 0 or unknown")
+            return
+        }
+        
+        // Clamp seek time to valid range, leaving a buffer before EOF to prevent crashes
+        // Seeking too close to the end triggers immediate EOF which can crash the player
+        let maxSeekTime = max(0, currentDuration - 1.0)
+        let clampedTime = max(0, min(time, maxSeekTime))
+        
+        NSLog("StreamingAudioPlayer: Seeking to %.2f (requested: %.2f, duration: %.2f)", clampedTime, time, currentDuration)
+        player.seek(to: clampedTime)
     }
     
     // MARK: - Equalizer

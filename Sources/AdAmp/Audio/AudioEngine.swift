@@ -561,11 +561,21 @@ class AudioEngine {
             return
         }
         
+        // Get duration for clamping
+        let currentDuration = duration
+        
+        // Guard against seeking when duration is unknown
+        guard currentDuration > 0 else {
+            NSLog("AudioEngine: Cannot seek - duration is 0 or unknown")
+            return
+        }
+        
         // Clamp time to valid range
-        let seekTime = max(0, min(time, duration - 0.5))
+        let seekTime = max(0, min(time, currentDuration - 0.5))
         
         if isStreamingPlayback {
             // Streaming playback - seek via AudioStreaming
+            // The StreamingAudioPlayer will do additional bounds checking
             streamingPlayer?.seek(to: seekTime)
             lastReportedTime = seekTime
         } else {
