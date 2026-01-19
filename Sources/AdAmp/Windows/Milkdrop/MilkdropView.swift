@@ -32,8 +32,11 @@ class MilkdropView: NSView {
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     
-    /// Display update timer for spectrum data
-    private var displayTimer: Timer?
+    /// Observer for PCM data notifications
+    private var pcmObserver: NSObjectProtocol?
+    
+    /// Observer for playback state changes
+    private var playbackStateObserver: NSObjectProtocol?
     
     // MARK: - Layout Constants
     // Reference to SkinElements.Milkdrop.Layout for consistency
@@ -60,10 +63,26 @@ class MilkdropView: NSView {
         // Create and add OpenGL visualization view
         setupVisualizationView()
         
-        // Start display timer for spectrum updates
-        displayTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
-            self?.updateVisualizationData()
+        // Subscribe to PCM data notifications (low-latency direct from audio tap)
+        pcmObserver = NotificationCenter.default.addObserver(
+            forName: .audioPCMDataUpdated,
+            object: nil,
+            queue: nil  // Receive on posting thread for lowest latency
+        ) { [weak self] notification in
+            self?.handlePCMUpdate(notification)
         }
+        
+        // Subscribe to playback state changes (for idle/active visualization mode)
+        playbackStateObserver = NotificationCenter.default.addObserver(
+            forName: .audioPlaybackStateChanged,
+            object: nil,
+            queue: .main  // UI update, use main thread
+        ) { [weak self] notification in
+            self?.handlePlaybackStateChange(notification)
+        }
+        
+        // Set initial audio active state
+        updateAudioActiveState()
     }
     
     private func setupVisualizationView() {
@@ -103,7 +122,12 @@ class MilkdropView: NSView {
     }
     
     deinit {
-        displayTimer?.invalidate()
+        if let observer = pcmObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = playbackStateObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         visualizationGLView?.stopRendering()
     }
     
@@ -145,18 +169,28 @@ class MilkdropView: NSView {
     
     // MARK: - Visualization Data
     
-    private func updateVisualizationData() {
+    /// Handle PCM data notification from audio tap (called on audio thread for low latency)
+    private func handlePCMUpdate(_ notification: Notification) {
         guard !isShadeMode else { return }
         
-        let audioEngine = WindowManager.shared.audioEngine
+        guard let userInfo = notification.userInfo,
+              let pcm = userInfo["pcm"] as? [Float] else { return }
         
-        // Update audio active state for idle mode (calmer visualization when not playing)
+        // Forward PCM data directly to visualization view (thread-safe via dataLock)
+        // No main thread dispatch needed - updatePCM handles thread safety internally
+        visualizationGLView?.updatePCM(pcm)
+    }
+    
+    /// Handle playback state changes to update audio active state
+    private func handlePlaybackStateChange(_ notification: Notification) {
+        updateAudioActiveState()
+    }
+    
+    /// Update the audio active state for idle mode (calmer visualization when not playing)
+    private func updateAudioActiveState() {
+        let audioEngine = WindowManager.shared.audioEngine
         let isPlaying = audioEngine.state == .playing
         visualizationGLView?.setAudioActive(isPlaying)
-        
-        // Get PCM data from audio engine for projectM
-        let pcm = audioEngine.pcmData
-        visualizationGLView?.updatePCM(pcm)
     }
     
     // MARK: - Public Methods

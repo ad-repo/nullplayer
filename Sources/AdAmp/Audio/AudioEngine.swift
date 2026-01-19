@@ -5,6 +5,18 @@ import CoreAudio
 import AudioToolbox
 import AudioStreaming
 
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// Posted when new PCM audio data is available for visualization
+    /// userInfo contains: "pcm" ([Float]), "sampleRate" (Double)
+    static let audioPCMDataUpdated = Notification.Name("audioPCMDataUpdated")
+    
+    /// Posted when playback state changes (playing, paused, stopped)
+    /// userInfo contains: "state" (PlaybackState)
+    static let audioPlaybackStateChanged = Notification.Name("audioPlaybackStateChanged")
+}
+
 /// Audio playback state
 enum PlaybackState {
     case stopped
@@ -49,6 +61,12 @@ class AudioEngine {
     private(set) var state: PlaybackState = .stopped {
         didSet {
             delegate?.audioEngineDidChangeState(state)
+            // Post notification for visualization and other observers
+            NotificationCenter.default.post(
+                name: .audioPlaybackStateChanged,
+                object: self,
+                userInfo: ["state": state]
+            )
         }
     }
     
@@ -104,14 +122,14 @@ class AudioEngine {
     private(set) var spectrumData: [Float] = Array(repeating: 0, count: 75)
     
     /// Raw PCM audio data for waveform visualization (mono, normalized -1 to 1)
-    private(set) var pcmData: [Float] = Array(repeating: 0, count: 1024)
+    private(set) var pcmData: [Float] = Array(repeating: 0, count: 512)
     
     /// PCM sample rate for visualization timing
     private(set) var pcmSampleRate: Double = 44100
     
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
-    private let fftSize: Int = 2048
+    private let fftSize: Int = 512  // ~11.6ms at 44.1kHz (reduced from 2048 for lowest latency)
     
     /// Tap for audio analysis
     private var analysisTap: AVAudioNodeTapBlock?
@@ -241,15 +259,27 @@ class AudioEngine {
         }
         
         // Store raw PCM data for waveform visualization (before windowing)
-        // Downsample to 1024 samples for efficient storage
-        let pcmSize = min(1024, samples.count)
-        let stride = samples.count / pcmSize
+        // Downsample to 512 samples for efficient storage and lowest latency
+        let pcmSize = min(512, samples.count)
+        let pcmStride = samples.count / pcmSize
+        var pcmSamples = [Float](repeating: 0, count: pcmSize)
+        for i in 0..<pcmSize {
+            pcmSamples[i] = samples[i * pcmStride]
+        }
+        let bufferSampleRate = buffer.format.sampleRate
+        
+        // Post notification for low-latency visualization (direct from audio tap)
+        NotificationCenter.default.post(
+            name: .audioPCMDataUpdated,
+            object: self,
+            userInfo: ["pcm": pcmSamples, "sampleRate": bufferSampleRate]
+        )
+        
+        // Also store in property for legacy access
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.pcmSampleRate = buffer.format.sampleRate
-            for i in 0..<pcmSize {
-                self.pcmData[i] = samples[i * stride]
-            }
+            self.pcmSampleRate = bufferSampleRate
+            self.pcmData = pcmSamples
         }
         
         // Apply Hann window
@@ -1465,6 +1495,14 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         for i in copyCount..<pcmData.count {
             pcmData[i] = 0
         }
+        
+        // Post notification for low-latency visualization
+        // Use pcmData (not samples) to ensure consistency with stored property
+        NotificationCenter.default.post(
+            name: .audioPCMDataUpdated,
+            object: self,
+            userInfo: ["pcm": pcmData, "sampleRate": pcmSampleRate]
+        )
     }
     
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int) {

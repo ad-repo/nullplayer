@@ -2,6 +2,7 @@ import AppKit
 import OpenGL.GL3
 import CoreVideo
 import Accelerate
+import os
 
 // Silence OpenGL deprecation warnings (macOS still supports OpenGL 4.1)
 // We use OpenGL for visualization as Metal doesn't have the same ecosystem of presets
@@ -52,8 +53,9 @@ class VisualizationGLView: NSOpenGLView {
     private let idleBeatSensitivity: Float = 0.2
     
     /// Local copy of PCM data for thread-safe access
-    private var localPCM: [Float] = Array(repeating: 0, count: 1024)
-    private let dataLock = NSLock()
+    /// Using nonisolated(unsafe) because we manually manage thread safety via dataLock
+    private nonisolated(unsafe) var localPCM: [Float] = Array(repeating: 0, count: 512)
+    private let dataLock = OSAllocatedUnfairLock()  // Faster than NSLock for short critical sections
     
     // MARK: - Initialization
     
@@ -212,13 +214,13 @@ class VisualizationGLView: NSOpenGLView {
     
     // MARK: - Data Update
     
-    /// Update PCM data (called from main thread)
+    /// Update PCM data (called from audio thread for low latency)
     func updatePCM(_ data: [Float]) {
-        dataLock.lock()
-        for i in 0..<min(data.count, localPCM.count) {
-            localPCM[i] = data[i]
+        dataLock.withLock {
+            for i in 0..<min(data.count, localPCM.count) {
+                localPCM[i] = data[i]
+            }
         }
-        dataLock.unlock()
     }
     
     /// Set whether audio is actively playing
@@ -256,9 +258,7 @@ class VisualizationGLView: NSOpenGLView {
         }
         
         // Get PCM data snapshot
-        dataLock.lock()
-        let pcm = localPCM
-        dataLock.unlock()
+        let pcm = dataLock.withLock { localPCM }
         
         // Get viewport dimensions
         let backingBounds = convertToBacking(bounds)

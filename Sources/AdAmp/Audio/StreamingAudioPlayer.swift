@@ -240,9 +240,9 @@ class StreamingAudioPlayer {
         }
         
         // Forward PCM data for projectM visualization
-        // Downsample to 1024 samples for efficient visualization
-        let pcmSize = min(1024, samples.count)
-        let stride = samples.count / pcmSize
+        // Downsample to 512 samples for efficient visualization and lowest latency
+        let pcmSize = min(512, samples.count)
+        let stride = max(1, samples.count / pcmSize)
         var pcmSamples = [Float](repeating: 0, count: pcmSize)
         for i in 0..<pcmSize {
             pcmSamples[i] = samples[i * stride]
