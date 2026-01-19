@@ -17,7 +17,7 @@ class MilkdropView: NSView {
     weak var controller: MilkdropWindowController?
     
     /// The OpenGL visualization view
-    private var visualizationView: VisualizationGLView?
+    private(set) var visualizationGLView: VisualizationGLView?
     
     /// Shade mode state
     private(set) var isShadeMode = false
@@ -67,8 +67,8 @@ class MilkdropView: NSView {
         // Calculate visualization area - will be updated in layout()
         let visArea = calculateVisualizationArea()
         
-        visualizationView = VisualizationGLView(frame: visArea, pixelFormat: nil)
-        if let visView = visualizationView {
+        visualizationGLView = VisualizationGLView(frame: visArea, pixelFormat: nil)
+        if let visView = visualizationGLView {
             // Don't use autoresizingMask - we manually update frame in layout()
             visView.autoresizingMask = []
             addSubview(visView)
@@ -96,7 +96,7 @@ class MilkdropView: NSView {
     
     deinit {
         displayTimer?.invalidate()
-        visualizationView?.stopRendering()
+        visualizationGLView?.stopRendering()
     }
     
     // MARK: - Coordinate Conversion
@@ -137,11 +137,11 @@ class MilkdropView: NSView {
         
         // Get spectrum data from audio engine
         let spectrum = audioEngine.spectrumData
-        visualizationView?.updateSpectrum(spectrum)
+        visualizationGLView?.updateSpectrum(spectrum)
         
         // Get PCM data from audio engine (for oscilloscope mode)
         let pcm = audioEngine.pcmData
-        visualizationView?.updatePCM(pcm)
+        visualizationGLView?.updatePCM(pcm)
     }
     
     // MARK: - Public Methods
@@ -155,13 +155,13 @@ class MilkdropView: NSView {
         isShadeMode = enabled
         
         // Show/hide visualization view
-        visualizationView?.isHidden = enabled
+        visualizationGLView?.isHidden = enabled
         
         // Stop/start rendering based on mode
         if enabled {
-            visualizationView?.stopRendering()
+            visualizationGLView?.stopRendering()
         } else {
-            visualizationView?.startRendering()
+            visualizationGLView?.startRendering()
             updateVisualizationFrame()
         }
         
@@ -171,7 +171,7 @@ class MilkdropView: NSView {
     /// Update visualization view frame after resize
     func updateVisualizationFrame() {
         let visArea = calculateVisualizationArea()
-        visualizationView?.frame = visArea
+        visualizationGLView?.frame = visArea
     }
     
     /// Toggle shade mode
@@ -182,18 +182,18 @@ class MilkdropView: NSView {
     
     /// Set visualization mode
     func setVisualizationMode(_ mode: VisualizationGLView.VisualizationMode) {
-        visualizationView?.mode = mode
+        visualizationGLView?.mode = mode
     }
     
     /// Stop rendering (for window close/hide)
     func stopRendering() {
-        visualizationView?.stopRendering()
+        visualizationGLView?.stopRendering()
     }
     
     /// Start rendering
     func startRendering() {
         if !isShadeMode {
-            visualizationView?.startRendering()
+            visualizationGLView?.startRendering()
         }
     }
     
@@ -370,23 +370,59 @@ class MilkdropView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
+        // Check for modifier keys
+        let hasCommand = event.modifierFlags.contains(.command)
+        let hasShift = event.modifierFlags.contains(.shift)
+        
         switch event.keyCode {
         case 3: // F key - toggle fullscreen
             controller?.toggleFullscreen()
             
-        case 49: // Space - toggle visualization mode
-            let visView = visualizationView
-            if visView?.mode == .spectrum {
-                visView?.mode = .oscilloscope
-            } else {
-                visView?.mode = .spectrum
+        case 49: // Space - toggle visualization mode (cycles through modes)
+            if let vis = visualizationGLView {
+                if vis.isProjectMAvailable {
+                    // Cycle: milkdrop -> spectrum -> oscilloscope -> milkdrop
+                    switch vis.mode {
+                    case .milkdrop:
+                        vis.mode = .spectrum
+                    case .spectrum:
+                        vis.mode = .oscilloscope
+                    case .oscilloscope:
+                        vis.mode = .milkdrop
+                    }
+                } else {
+                    // Without projectM, toggle between spectrum and oscilloscope
+                    vis.mode = vis.mode == .spectrum ? .oscilloscope : .spectrum
+                }
             }
             
-        case 124: // Right arrow - next preset (future)
-            controller?.nextPreset()
+        case 124: // Right arrow - next preset
+            if hasShift {
+                // Hard cut (instant switch)
+                visualizationGLView?.nextPreset(hardCut: true)
+            } else {
+                visualizationGLView?.nextPreset(hardCut: false)
+            }
             
-        case 123: // Left arrow - previous preset (future)
-            controller?.previousPreset()
+        case 123: // Left arrow - previous preset
+            if hasShift {
+                visualizationGLView?.previousPreset(hardCut: true)
+            } else {
+                visualizationGLView?.previousPreset(hardCut: false)
+            }
+            
+        case 15: // R key - random preset
+            if hasShift {
+                visualizationGLView?.randomPreset(hardCut: true)
+            } else {
+                visualizationGLView?.randomPreset(hardCut: false)
+            }
+            
+        case 37: // L key - toggle preset lock
+            if let vis = visualizationGLView {
+                vis.isPresetLocked = !vis.isPresetLocked
+                NSLog("MilkdropView: Preset lock %@", vis.isPresetLocked ? "enabled" : "disabled")
+            }
             
         default:
             super.keyDown(with: event)
@@ -398,17 +434,82 @@ class MilkdropView: NSView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         
-        // Visualization mode submenu
+        let isProjectMAvailable = visualizationGLView?.isProjectMAvailable ?? false
+        
+        // Preset navigation (only when projectM is available)
+        if isProjectMAvailable {
+            let presetName = visualizationGLView?.currentPresetName ?? "Unknown"
+            let presetIndex = (visualizationGLView?.currentPresetIndex ?? 0) + 1
+            let presetCount = visualizationGLView?.presetCount ?? 0
+            
+            let currentPresetItem = NSMenuItem(title: "Preset: \(presetName) (\(presetIndex)/\(presetCount))", action: nil, keyEquivalent: "")
+            currentPresetItem.isEnabled = false
+            menu.addItem(currentPresetItem)
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            let nextPresetItem = NSMenuItem(title: "Next Preset", action: #selector(nextPresetAction(_:)), keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+            nextPresetItem.target = self
+            menu.addItem(nextPresetItem)
+            
+            let prevPresetItem = NSMenuItem(title: "Previous Preset", action: #selector(previousPresetAction(_:)), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+            prevPresetItem.target = self
+            menu.addItem(prevPresetItem)
+            
+            let randomPresetItem = NSMenuItem(title: "Random Preset", action: #selector(randomPresetAction(_:)), keyEquivalent: "r")
+            randomPresetItem.target = self
+            menu.addItem(randomPresetItem)
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            let lockPresetItem = NSMenuItem(title: "Lock Preset", action: #selector(togglePresetLock(_:)), keyEquivalent: "l")
+            lockPresetItem.target = self
+            lockPresetItem.state = (visualizationGLView?.isPresetLocked ?? false) ? .on : .off
+            menu.addItem(lockPresetItem)
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            // Presets submenu - list all available presets
+            if presetCount > 0 {
+                let presetsMenu = NSMenu()
+                
+                for i in 0..<presetCount {
+                    let name = visualizationGLView?.presetName(at: i) ?? "Preset \(i + 1)"
+                    let presetItem = NSMenuItem(title: name, action: #selector(selectPresetFromMenu(_:)), keyEquivalent: "")
+                    presetItem.target = self
+                    presetItem.tag = i
+                    presetItem.state = (i == (visualizationGLView?.currentPresetIndex ?? -1)) ? .on : .off
+                    presetsMenu.addItem(presetItem)
+                }
+                
+                let presetsMenuItem = NSMenuItem(title: "Presets (\(presetCount))", action: nil, keyEquivalent: "")
+                presetsMenuItem.submenu = presetsMenu
+                menu.addItem(presetsMenuItem)
+                
+                menu.addItem(NSMenuItem.separator())
+            }
+        }
+        
+        // Visualization mode submenu (fallback modes when projectM unavailable, or for switching)
         let modeMenu = NSMenu()
+        
+        if isProjectMAvailable {
+            let milkdropItem = NSMenuItem(title: "Milkdrop (projectM)", action: #selector(setMilkdropMode(_:)), keyEquivalent: "")
+            milkdropItem.target = self
+            milkdropItem.state = visualizationGLView?.mode == .milkdrop ? .on : .off
+            modeMenu.addItem(milkdropItem)
+            
+            modeMenu.addItem(NSMenuItem.separator())
+        }
         
         let spectrumItem = NSMenuItem(title: "Spectrum Analyzer", action: #selector(setSpectrumMode(_:)), keyEquivalent: "")
         spectrumItem.target = self
-        spectrumItem.state = visualizationView?.mode == .spectrum ? .on : .off
+        spectrumItem.state = visualizationGLView?.mode == .spectrum ? .on : .off
         modeMenu.addItem(spectrumItem)
         
         let oscilloscopeItem = NSMenuItem(title: "Oscilloscope", action: #selector(setOscilloscopeMode(_:)), keyEquivalent: "")
         oscilloscopeItem.target = self
-        oscilloscopeItem.state = visualizationView?.mode == .oscilloscope ? .on : .off
+        oscilloscopeItem.state = visualizationGLView?.mode == .oscilloscope ? .on : .off
         modeMenu.addItem(oscilloscopeItem)
         
         let modeItem = NSMenuItem(title: "Visualization Mode", action: nil, keyEquivalent: "")
@@ -432,12 +533,39 @@ class MilkdropView: NSView {
         return menu
     }
     
+    @objc private func setMilkdropMode(_ sender: Any?) {
+        visualizationGLView?.mode = .milkdrop
+    }
+    
     @objc private func setSpectrumMode(_ sender: Any?) {
-        visualizationView?.mode = .spectrum
+        visualizationGLView?.mode = .spectrum
     }
     
     @objc private func setOscilloscopeMode(_ sender: Any?) {
-        visualizationView?.mode = .oscilloscope
+        visualizationGLView?.mode = .oscilloscope
+    }
+    
+    @objc private func nextPresetAction(_ sender: Any?) {
+        visualizationGLView?.nextPreset()
+    }
+    
+    @objc private func previousPresetAction(_ sender: Any?) {
+        visualizationGLView?.previousPreset()
+    }
+    
+    @objc private func randomPresetAction(_ sender: Any?) {
+        visualizationGLView?.randomPreset()
+    }
+    
+    @objc private func togglePresetLock(_ sender: Any?) {
+        if let vis = visualizationGLView {
+            vis.isPresetLocked = !vis.isPresetLocked
+        }
+    }
+    
+    @objc private func selectPresetFromMenu(_ sender: NSMenuItem) {
+        let index = sender.tag
+        visualizationGLView?.selectPreset(at: index, hardCut: false)
     }
     
     @objc private func toggleFullscreenAction(_ sender: Any?) {

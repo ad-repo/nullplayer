@@ -8,6 +8,7 @@ protocol StreamingAudioPlayerDelegate: AnyObject {
     func streamingPlayerDidChangeState(_ state: AudioPlayerState)
     func streamingPlayerDidFinishPlaying()
     func streamingPlayerDidUpdateSpectrum(_ levels: [Float])
+    func streamingPlayerDidUpdatePCM(_ samples: [Float])
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int)
 }
 
@@ -236,6 +237,19 @@ class StreamingAudioPlayer {
             for i in 0..<fftSize {
                 samples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
             }
+        }
+        
+        // Forward PCM data for projectM visualization
+        // Downsample to 1024 samples for efficient visualization
+        let pcmSize = min(1024, samples.count)
+        let stride = samples.count / pcmSize
+        var pcmSamples = [Float](repeating: 0, count: pcmSize)
+        for i in 0..<pcmSize {
+            pcmSamples[i] = samples[i * stride]
+        }
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.streamingPlayerDidUpdatePCM(pcmSamples)
         }
         
         // Apply Hann window

@@ -1454,6 +1454,19 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         delegate?.audioEngineDidUpdateSpectrum(levels)
     }
     
+    func streamingPlayerDidUpdatePCM(_ samples: [Float]) {
+        // Forward PCM data from streaming player for projectM visualization
+        // Copy samples into pcmData, adjusting size as needed
+        let copyCount = min(samples.count, pcmData.count)
+        for i in 0..<copyCount {
+            pcmData[i] = samples[i]
+        }
+        // Zero out remainder if samples is smaller
+        for i in copyCount..<pcmData.count {
+            pcmData[i] = 0
+        }
+    }
+    
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int) {
         // Update current track with format info detected from the stream
         // This fills in sample rate for Plex tracks which don't have it in metadata

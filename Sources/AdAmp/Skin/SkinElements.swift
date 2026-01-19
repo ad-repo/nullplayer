@@ -897,15 +897,15 @@ struct SkinElements {
         /// Default window size
         static let defaultSize = NSSize(width: 400, height: 300)
         
-        /// Title bar height (matching source 24px row)
-        static let titleBarHeight: CGFloat = 20
+        /// Title bar height (matches scaled PNG content)
+        static let titleBarHeight: CGFloat = 14
         
         /// Shade mode height (title bar only)
-        static let shadeHeight: CGFloat = 20
+        static let shadeHeight: CGFloat = 14
         
         /// Layout constants - matching reference proportions
         struct Layout {
-            static let titleBarHeight: CGFloat = 20
+            static let titleBarHeight: CGFloat = 14
             static let leftBorder: CGFloat = 6      // Side borders
             static let rightBorder: CGFloat = 6     
             static let bottomBorder: CGFloat = 6    

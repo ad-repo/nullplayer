@@ -22,6 +22,17 @@ let package = Package(
         .package(url: "https://github.com/dimitris-c/AudioStreaming.git", from: "1.4.0"),
     ],
     targets: [
+        // System library target for libprojectM (Milkdrop visualization)
+        // To enable projectM support:
+        // 1. Build libprojectM v4.1.6+ as a universal binary
+        // 2. Place libprojectM-4.dylib in Frameworks/
+        // 3. Uncomment the CProjectM dependency in the AdAmp target
+        .systemLibrary(
+            name: "CProjectM",
+            path: "Frameworks/libprojectm-4",
+            pkgConfig: nil,
+            providers: []
+        ),
         .executableTarget(
             name: "AdAmp",
             dependencies: [
@@ -29,10 +40,14 @@ let package = Package(
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "KSPlayer",
                 "AudioStreaming",
+                "CProjectM",
             ],
             path: "Sources/AdAmp",
             resources: [
                 .copy("Resources")
+            ],
+            linkerSettings: [
+                .unsafeFlags(["-L", "Frameworks", "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
             ]
         ),
         .testTarget(

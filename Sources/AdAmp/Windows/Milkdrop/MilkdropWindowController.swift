@@ -143,38 +143,60 @@ class MilkdropWindowController: NSWindowController {
         }
     }
     
-    // MARK: - Preset Navigation (for future projectM integration)
+    // MARK: - Preset Navigation
     
     /// Go to next preset
-    func nextPreset() {
-        guard presetCount > 0 else { return }
-        currentPresetIndex = (currentPresetIndex + 1) % presetCount
-        // Future: tell projectM to change preset
-        NSLog("MilkdropWindowController: Next preset (%d/%d)", currentPresetIndex, presetCount)
+    /// - Parameter hardCut: If true, switch immediately without blending
+    func nextPreset(hardCut: Bool = false) {
+        milkdropView.visualizationGLView?.nextPreset(hardCut: hardCut)
+        updatePresetInfo()
     }
     
     /// Go to previous preset
-    func previousPreset() {
-        guard presetCount > 0 else { return }
-        currentPresetIndex = (currentPresetIndex - 1 + presetCount) % presetCount
-        // Future: tell projectM to change preset
-        NSLog("MilkdropWindowController: Previous preset (%d/%d)", currentPresetIndex, presetCount)
+    /// - Parameter hardCut: If true, switch immediately without blending
+    func previousPreset(hardCut: Bool = false) {
+        milkdropView.visualizationGLView?.previousPreset(hardCut: hardCut)
+        updatePresetInfo()
+    }
+    
+    /// Select a random preset
+    /// - Parameter hardCut: If true, switch immediately without blending
+    func randomPreset(hardCut: Bool = false) {
+        milkdropView.visualizationGLView?.randomPreset(hardCut: hardCut)
+        updatePresetInfo()
     }
     
     /// Set specific preset by index
-    func setPreset(_ index: Int) {
-        guard index >= 0 && index < presetCount else { return }
-        currentPresetIndex = index
-        // Future: tell projectM to change preset
-        NSLog("MilkdropWindowController: Set preset %d", index)
+    /// - Parameters:
+    ///   - index: The preset index to select
+    ///   - hardCut: If true, switch immediately without blending
+    func setPreset(_ index: Int, hardCut: Bool = false) {
+        milkdropView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
+        updatePresetInfo()
     }
     
-    /// Load presets from bundle (for future projectM integration)
-    func loadPresets() {
-        // Future: enumerate .milk files from Bundle.module/Resources/Presets/
-        // and load them into projectM
-        presetCount = 0
-        currentPresetIndex = 0
+    /// Update internal preset tracking from visualization view
+    private func updatePresetInfo() {
+        if let vis = milkdropView.visualizationGLView {
+            currentPresetIndex = vis.currentPresetIndex
+            presetCount = vis.presetCount
+        }
+    }
+    
+    /// Lock or unlock the current preset
+    var isPresetLocked: Bool {
+        get { milkdropView.visualizationGLView?.isPresetLocked ?? false }
+        set { milkdropView.visualizationGLView?.isPresetLocked = newValue }
+    }
+    
+    /// Whether projectM is available
+    var isProjectMAvailable: Bool {
+        return milkdropView.visualizationGLView?.isProjectMAvailable ?? false
+    }
+    
+    /// Current preset name
+    var currentPresetName: String {
+        return milkdropView.visualizationGLView?.currentPresetName ?? ""
     }
     
     // MARK: - Visualization Control

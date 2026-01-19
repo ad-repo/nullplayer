@@ -20,7 +20,7 @@ protocol VisualizationDataSource: AnyObject {
 
 /// OpenGL view for real-time audio visualization
 /// Uses CVDisplayLink for 60fps updates
-/// Designed to support projectM integration in the future
+/// Supports projectM for Milkdrop preset rendering with fallback to built-in visualizations
 class VisualizationGLView: NSOpenGLView {
     
     // MARK: - Properties
@@ -33,21 +33,36 @@ class VisualizationGLView: NSOpenGLView {
     /// Whether rendering is currently active
     private(set) var isRendering = false
     
-    /// Current visualization mode
-    enum VisualizationMode {
-        case spectrum      // Bar spectrum analyzer
-        case oscilloscope  // Waveform display
-        case milkdrop      // ProjectM presets (future)
+    /// ProjectM wrapper for Milkdrop visualization
+    private var projectM: ProjectMWrapper?
+    
+    /// Whether projectM is available and initialized
+    var isProjectMAvailable: Bool {
+        return projectM?.isAvailable ?? false
     }
     
-    var mode: VisualizationMode = .spectrum
+    /// Current visualization mode
+    enum VisualizationMode {
+        case spectrum      // Bar spectrum analyzer (fallback)
+        case oscilloscope  // Waveform display (fallback)
+        case milkdrop      // ProjectM presets
+    }
+    
+    var mode: VisualizationMode = .milkdrop {
+        didSet {
+            // If projectM not available and trying to use milkdrop, fall back to spectrum
+            if mode == .milkdrop && !isProjectMAvailable {
+                NSLog("VisualizationGLView: projectM not available, using spectrum fallback")
+            }
+        }
+    }
     
     /// Local copy of spectrum data for thread-safe access
     private var localSpectrum: [Float] = Array(repeating: 0, count: 75)
     private var localPCM: [Float] = Array(repeating: 0, count: 1024)
     private let dataLock = NSLock()
     
-    /// OpenGL shader program
+    /// OpenGL shader program (for fallback rendering)
     private var shaderProgram: GLuint = 0
     private var vao: GLuint = 0
     private var vbo: GLuint = 0
@@ -76,12 +91,14 @@ class VisualizationGLView: NSOpenGLView {
     
     override init?(frame frameRect: NSRect, pixelFormat format: NSOpenGLPixelFormat?) {
         // Create pixel format for OpenGL 4.1 Core Profile
+        // projectM requires OpenGL 3.3+ Core Profile
         let attrs: [NSOpenGLPixelFormatAttribute] = [
             UInt32(NSOpenGLPFAAccelerated),
             UInt32(NSOpenGLPFADoubleBuffer),
             UInt32(NSOpenGLPFAColorSize), 24,
             UInt32(NSOpenGLPFAAlphaSize), 8,
             UInt32(NSOpenGLPFADepthSize), 24,
+            UInt32(NSOpenGLPFAStencilSize), 8,  // Required by projectM
             UInt32(NSOpenGLPFAOpenGLProfile), UInt32(NSOpenGLProfileVersion3_2Core),
             0
         ]
@@ -99,18 +116,21 @@ class VisualizationGLView: NSOpenGLView {
         // Set up OpenGL context
         openGLContext?.makeCurrentContext()
         setupOpenGL()
+        setupProjectM()
         setupDisplayLink()
     }
     
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupOpenGL()
+        setupProjectM()
         setupDisplayLink()
     }
     
     deinit {
         stopRendering()
         cleanupOpenGL()
+        projectM = nil
     }
     
     // MARK: - OpenGL Setup
@@ -248,6 +268,54 @@ class VisualizationGLView: NSOpenGLView {
         }
     }
     
+    // MARK: - ProjectM Setup
+    
+    /// Flag to defer projectM initialization until first render (for correct GL context)
+    private var projectMNeedsSetup = true
+    
+    private func setupProjectM() {
+        // Mark that we want to use projectM - actual setup will happen on first render
+        // This ensures the OpenGL context is properly initialized on the render thread
+        projectMNeedsSetup = true
+        mode = .milkdrop
+        NSLog("VisualizationGLView: projectM setup deferred to render thread")
+    }
+    
+    /// Actually initialize projectM - must be called on render thread with GL context current
+    private func initializeProjectMOnRenderThread() {
+        guard projectMNeedsSetup else { return }
+        projectMNeedsSetup = false
+        
+        // Get initial viewport size
+        let backingBounds = convertToBacking(bounds)
+        let width = Int(backingBounds.width)
+        let height = Int(backingBounds.height)
+        
+        NSLog("VisualizationGLView: Setting up projectM with viewport %dx%d on render thread", width, height)
+        
+        // Create projectM wrapper
+        projectM = ProjectMWrapper(width: width, height: height)
+        
+        if let pm = projectM, pm.isAvailable {
+            // Load bundled presets
+            pm.loadBundledPresets()
+            
+            if pm.presetCount > 0 {
+                // Set default visualization mode to milkdrop
+                mode = .milkdrop
+                NSLog("VisualizationGLView: projectM initialized with %d presets", pm.presetCount)
+            } else {
+                // No presets found, fall back to spectrum
+                mode = .spectrum
+                NSLog("VisualizationGLView: projectM available but no presets found, using spectrum fallback")
+            }
+        } else {
+            // Fall back to spectrum analyzer
+            mode = .spectrum
+            NSLog("VisualizationGLView: projectM not available, using spectrum fallback")
+        }
+    }
+    
     // MARK: - Display Link
     
     private func setupDisplayLink() {
@@ -325,6 +393,11 @@ class VisualizationGLView: NSOpenGLView {
         CGLLockContext(context.cglContextObj!)
         defer { CGLUnlockContext(context.cglContextObj!) }
         
+        // Initialize projectM on first render (ensures correct GL context)
+        if projectMNeedsSetup {
+            initializeProjectMOnRenderThread()
+        }
+        
         // Get data snapshot
         dataLock.lock()
         let spectrum = localSpectrum
@@ -333,24 +406,54 @@ class VisualizationGLView: NSOpenGLView {
         
         // Get viewport dimensions
         let backingBounds = convertToBacking(bounds)
-        glViewport(0, 0, GLsizei(backingBounds.width), GLsizei(backingBounds.height))
-        
-        // Clear
-        glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+        let viewportWidth = GLsizei(backingBounds.width)
+        let viewportHeight = GLsizei(backingBounds.height)
         
         // Draw based on mode
         switch mode {
-        case .spectrum:
+        case .milkdrop where isProjectMAvailable && hasProjectMPresets:
+            // Render with projectM (only if we have presets)
+            renderProjectM(pcm: pcm, width: Int(viewportWidth), height: Int(viewportHeight))
+            
+        case .milkdrop where isProjectMAvailable:
+            // projectM available but no presets - render idle screen
+            renderProjectM(pcm: pcm, width: Int(viewportWidth), height: Int(viewportHeight))
+            
+        case .spectrum, .milkdrop:
+            // Fallback spectrum analyzer (also used when projectM not available)
+            glViewport(0, 0, viewportWidth, viewportHeight)
+            glClearColor(0.0, 0.0, 0.0, 1.0)
+            glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
             drawSpectrumBars(spectrum)
+            
         case .oscilloscope:
+            glViewport(0, 0, viewportWidth, viewportHeight)
+            glClearColor(0.0, 0.0, 0.0, 1.0)
+            glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
             drawOscilloscope(pcm)
-        case .milkdrop:
-            // Future: projectM rendering
-            drawSpectrumBars(spectrum) // Fallback for now
         }
         
         // Swap buffers
         context.flushBuffer()
+    }
+    
+    /// Render a frame using projectM
+    private func renderProjectM(pcm: [Float], width: Int, height: Int) {
+        guard let pm = projectM else { return }
+        
+        // Update viewport size if changed
+        pm.setViewportSize(width: width, height: height)
+        
+        // Feed PCM data to projectM
+        pm.addPCMMono(pcm)
+        
+        // Render the frame
+        pm.renderFrame()
+    }
+    
+    /// Whether projectM has valid presets loaded
+    var hasProjectMPresets: Bool {
+        return projectM?.hasValidPreset ?? false
     }
     
     private func drawSpectrumBars(_ spectrum: [Float]) {
@@ -468,6 +571,9 @@ class VisualizationGLView: NSOpenGLView {
         
         let backingBounds = convertToBacking(bounds)
         glViewport(0, 0, GLsizei(backingBounds.width), GLsizei(backingBounds.height))
+        
+        // Update projectM viewport
+        projectM?.setViewportSize(width: Int(backingBounds.width), height: Int(backingBounds.height))
     }
     
     // MARK: - Hit Testing
@@ -475,5 +581,85 @@ class VisualizationGLView: NSOpenGLView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         // Pass through clicks to parent view for window dragging
         return nil
+    }
+    
+    // MARK: - ProjectM Preset Navigation
+    
+    /// Number of available presets
+    var presetCount: Int {
+        return projectM?.presetCount ?? 0
+    }
+    
+    /// Index of currently selected preset
+    var currentPresetIndex: Int {
+        return projectM?.currentPresetIndex ?? 0
+    }
+    
+    /// Name of currently selected preset
+    var currentPresetName: String {
+        return projectM?.currentPresetName ?? ""
+    }
+    
+    /// Whether the current preset is locked
+    var isPresetLocked: Bool {
+        get { projectM?.isPresetLocked ?? false }
+        set { projectM?.isPresetLocked = newValue }
+    }
+    
+    /// Select next preset
+    /// - Parameter hardCut: If true, switch immediately without blending
+    func nextPreset(hardCut: Bool = false) {
+        projectM?.nextPreset(hardCut: hardCut)
+    }
+    
+    /// Select previous preset
+    /// - Parameter hardCut: If true, switch immediately without blending
+    func previousPreset(hardCut: Bool = false) {
+        projectM?.previousPreset(hardCut: hardCut)
+    }
+    
+    /// Select a random preset
+    /// - Parameter hardCut: If true, switch immediately without blending
+    func randomPreset(hardCut: Bool = false) {
+        projectM?.randomPreset(hardCut: hardCut)
+    }
+    
+    /// Select a preset by index
+    /// - Parameters:
+    ///   - index: The preset index to select
+    ///   - hardCut: If true, switch immediately without blending
+    func selectPreset(at index: Int, hardCut: Bool = false) {
+        projectM?.selectPreset(at: index, hardCut: hardCut)
+    }
+    
+    /// Get preset name at index
+    func presetName(at index: Int) -> String {
+        return projectM?.presetName(at: index) ?? ""
+    }
+    
+    // MARK: - ProjectM Settings
+    
+    /// Preset duration in seconds (0 = no auto-switching)
+    var presetDuration: Double {
+        get { projectM?.presetDuration ?? 30.0 }
+        set { projectM?.presetDuration = newValue }
+    }
+    
+    /// Soft cut (blend) duration in seconds
+    var softCutDuration: Double {
+        get { projectM?.softCutDuration ?? 3.0 }
+        set { projectM?.softCutDuration = newValue }
+    }
+    
+    /// Whether hard cuts on beats are enabled
+    var hardCutEnabled: Bool {
+        get { projectM?.hardCutEnabled ?? true }
+        set { projectM?.hardCutEnabled = newValue }
+    }
+    
+    /// Beat sensitivity (0.0-2.0)
+    var beatSensitivity: Float {
+        get { projectM?.beatSensitivity ?? 1.0 }
+        set { projectM?.beatSensitivity = newValue }
     }
 }
