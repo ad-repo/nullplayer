@@ -742,8 +742,9 @@ class PlexBrowserView: NSView {
             
             // Secondary info
             if let info = item.info {
+                let infoColor = selectedIndices.contains(index) ? colors.currentText : colors.normalText.withAlphaComponent(0.6)
                 let infoAttrs: [NSAttributedString.Key: Any] = [
-                    .foregroundColor: colors.normalText.withAlphaComponent(0.6),
+                    .foregroundColor: infoColor,
                     .font: NSFont.systemFont(ofSize: 9)
                 ]
                 let infoSize = info.size(withAttributes: infoAttrs)
