@@ -265,11 +265,11 @@ class VisualizationGLView: NSOpenGLView {
         let viewportWidth = Int(backingBounds.width)
         let viewportHeight = Int(backingBounds.height)
         
-        // Render with projectM
-        if isProjectMAvailable {
+        // Render with projectM (only if available AND has a valid preset loaded)
+        if isProjectMAvailable && hasProjectMPresets {
             renderProjectM(pcm: pcm, width: viewportWidth, height: viewportHeight)
         } else {
-            // projectM not available - just clear to black
+            // projectM not available or no preset loaded - just clear to black
             glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
             glClearColor(0.0, 0.0, 0.0, 1.0)
             glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
@@ -282,6 +282,10 @@ class VisualizationGLView: NSOpenGLView {
     /// Render a frame using projectM
     private func renderProjectM(pcm: [Float], width: Int, height: Int) {
         guard let pm = projectM else { return }
+        
+        // Double-check that a valid preset is loaded before rendering
+        // projectM can crash if we try to render without a fully loaded preset
+        guard pm.hasValidPreset else { return }
         
         // Update viewport size if changed
         pm.setViewportSize(width: width, height: height)

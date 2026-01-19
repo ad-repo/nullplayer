@@ -68,8 +68,19 @@ class MilkdropWindowController: NSWindowController {
     
     /// Position the window to the LEFT of the main window
     private func positionWindow() {
-        guard let window = window,
-              let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
+        guard let window = window else { return }
+        
+        // First check if there's a saved position
+        if let frameString = UserDefaults.standard.string(forKey: "MilkdropWindowFrame") {
+            let savedFrame = NSRectFromString(frameString)
+            if savedFrame.width > 0 && savedFrame.height > 0 {
+                window.setFrame(savedFrame, display: true)
+                return
+            }
+        }
+        
+        // No saved position - position relative to main window
+        guard let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
         
         let mainFrame = mainWindow.frame
         var newX = mainFrame.minX - window.frame.width  // LEFT of main
@@ -78,8 +89,17 @@ class MilkdropWindowController: NSWindowController {
         // Screen bounds check - don't go off left edge
         if let screen = mainWindow.screen ?? NSScreen.main {
             if newX < screen.visibleFrame.minX {
-                // Fall back to right side if no room on left
-                newX = mainFrame.maxX
+                // Fall back to ABOVE the main window instead of right (Plex browser is on right)
+                newX = mainFrame.minX
+                let aboveY = mainFrame.maxY
+                // Make sure it fits on screen
+                if aboveY + window.frame.height <= screen.visibleFrame.maxY {
+                    window.setFrameOrigin(NSPoint(x: newX, y: aboveY))
+                    return
+                }
+                // If no room above, center on screen
+                window.center()
+                return
             }
         }
         
