@@ -37,6 +37,7 @@ enum ButtonType: CaseIterable {
     case minimize
     case shade
     case unshade  // Used in shade mode to return to normal
+    case menu     // Top-left menu icon - opens Milkdrop
     
     // Toggle buttons
     case shuffle
