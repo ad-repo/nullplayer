@@ -283,6 +283,12 @@ class WindowManager {
         plexBrowserWindowController?.window?.isVisible == true
     }
     
+    /// Get the Plex Browser window frame if visible (for positioning other windows)
+    var plexBrowserWindowFrame: NSRect? {
+        guard let window = plexBrowserWindowController?.window, window.isVisible else { return nil }
+        return window.frame
+    }
+    
     func togglePlexBrowser() {
         if let controller = plexBrowserWindowController, controller.window?.isVisible == true {
             controller.window?.orderOut(nil)

@@ -42,15 +42,43 @@ class MediaLibraryWindowController: NSWindowController {
         window.minSize = Self.minSize
         window.title = "Media Library"
         
-        // Position to the right of main window
-        if let mainWindow = WindowManager.shared.mainWindowController?.window {
-            let mainFrame = mainWindow.frame
-            window.setFrameOrigin(NSPoint(x: mainFrame.maxX, y: mainFrame.minY - window.frame.height + mainFrame.height))
-        } else {
-            window.center()
-        }
+        // Initial center position - will be repositioned in showWindow()
+        window.center()
         
         window.delegate = self
+    }
+    
+    // MARK: - Window Display
+    
+    override func showWindow(_ sender: Any?) {
+        // Position relative to main window's CURRENT location every time
+        positionWindow()
+        super.showWindow(sender)
+    }
+    
+    /// Position the window to the RIGHT of the main window, below Plex Browser if visible
+    private func positionWindow() {
+        guard let window = window,
+              let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
+        
+        let mainFrame = mainWindow.frame
+        var newX = mainFrame.maxX  // RIGHT of main
+        var newY = mainFrame.maxY - window.frame.height  // Top-aligned by default
+        
+        // If Plex Browser is visible, position below it
+        if let plexFrame = WindowManager.shared.plexBrowserWindowFrame {
+            newY = plexFrame.minY - window.frame.height
+        }
+        
+        // Screen bounds check - don't go off right edge
+        if let screen = mainWindow.screen ?? NSScreen.main {
+            if newX + window.frame.width > screen.visibleFrame.maxX {
+                // Fall back to left side if no room on right
+                newX = mainFrame.minX - window.frame.width
+            }
+        }
+        
+        window.setFrameOrigin(NSPoint(x: newX, y: newY))
     }
     
     private func setupView() {

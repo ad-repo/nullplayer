@@ -47,21 +47,38 @@ class MilkdropWindowController: NSWindowController {
         window.minSize = SkinElements.Milkdrop.minSize
         window.title = "Milkdrop"
         
-        // Position to the right of the main window
-        if let mainWindow = WindowManager.shared.mainWindowController?.window {
-            let mainFrame = mainWindow.frame
-            let newFrame = NSRect(
-                x: mainFrame.maxX + 10,
-                y: mainFrame.minY,
-                width: SkinElements.Milkdrop.defaultSize.width,
-                height: SkinElements.Milkdrop.defaultSize.height
-            )
-            window.setFrame(newFrame, display: true)
-        } else {
-            window.center()
-        }
+        // Initial center position - will be repositioned in showWindow()
+        window.center()
         
         window.delegate = self
+    }
+    
+    // MARK: - Window Display
+    
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        // Position after window is shown to ensure correct frame dimensions
+        positionWindow()
+    }
+    
+    /// Position the window to the LEFT of the main window
+    private func positionWindow() {
+        guard let window = window,
+              let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
+        
+        let mainFrame = mainWindow.frame
+        var newX = mainFrame.minX - window.frame.width  // LEFT of main
+        let newY = mainFrame.maxY - window.frame.height // Top-aligned
+        
+        // Screen bounds check - don't go off left edge
+        if let screen = mainWindow.screen ?? NSScreen.main {
+            if newX < screen.visibleFrame.minX {
+                // Fall back to right side if no room on left
+                newX = mainFrame.maxX
+            }
+        }
+        
+        window.setFrameOrigin(NSPoint(x: newX, y: newY))
     }
     
     private func setupView() {

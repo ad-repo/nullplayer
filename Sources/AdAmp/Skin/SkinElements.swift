@@ -894,8 +894,11 @@ struct SkinElements {
         /// Minimum window size
         static let minSize = NSSize(width: 275, height: 150)
         
-        /// Default window size
-        static let defaultSize = NSSize(width: 400, height: 300)
+        /// Default window size - matches Plex Browser (height = 3 stacked main windows)
+        static var defaultSize: NSSize {
+            let height = Skin.mainWindowSize.height * 3
+            return NSSize(width: 550, height: height)
+        }
         
         /// Title bar height (matches scaled PNG content)
         static let titleBarHeight: CGFloat = 14

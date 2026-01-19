@@ -54,22 +54,30 @@ class PlexBrowserWindowController: NSWindowController {
         window.minSize = Self.minSize
         window.title = "Plex Browser"
         
-        // Position to the right of main window or media library
-        positionWindow()
+        // Initial center position - will be repositioned in showWindow()
+        window.center()
         
         window.delegate = self
     }
     
+    /// Position the window to the RIGHT of the main window
     private func positionWindow() {
-        guard let window = window else { return }
+        guard let window = window,
+              let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
         
-        // Try to position relative to main window
-        if let mainWindow = WindowManager.shared.mainWindowController?.window {
-            let mainFrame = mainWindow.frame
-            window.setFrameOrigin(NSPoint(x: mainFrame.maxX, y: mainFrame.minY - window.frame.height + mainFrame.height))
-        } else {
-            window.center()
+        let mainFrame = mainWindow.frame
+        var newX = mainFrame.maxX  // RIGHT of main
+        let newY = mainFrame.maxY - window.frame.height  // Top-aligned
+        
+        // Screen bounds check - don't go off right edge
+        if let screen = mainWindow.screen ?? NSScreen.main {
+            if newX + window.frame.width > screen.visibleFrame.maxX {
+                // Fall back to left side if no room on right
+                newX = mainFrame.minX - window.frame.width
+            }
         }
+        
+        window.setFrameOrigin(NSPoint(x: newX, y: newY))
     }
     
     private func setupView() {
@@ -121,6 +129,8 @@ class PlexBrowserWindowController: NSWindowController {
     // MARK: - Public Methods
     
     override func showWindow(_ sender: Any?) {
+        // Position relative to main window's CURRENT location every time
+        positionWindow()
         super.showWindow(sender)
         
         // Only refresh servers if we're linked, have no servers, and not already connecting
