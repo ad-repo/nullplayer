@@ -1432,4 +1432,39 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         spectrumData = levels
         delegate?.audioEngineDidUpdateSpectrum(levels)
     }
+    
+    func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int) {
+        // Update current track with format info detected from the stream
+        // This fills in sample rate for Plex tracks which don't have it in metadata
+        guard let track = currentTrack else { return }
+        
+        // Only update if not already set
+        if track.sampleRate == nil || track.channels == nil {
+            NSLog("AudioEngine: Detected stream format - sampleRate: %d, channels: %d", sampleRate, channels)
+            
+            // Create updated track with format info
+            let updatedTrack = Track(
+                id: track.id,
+                url: track.url,
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                duration: track.duration,
+                bitrate: track.bitrate,
+                sampleRate: track.sampleRate ?? sampleRate,
+                channels: track.channels ?? channels,
+                plexRatingKey: track.plexRatingKey
+            )
+            
+            currentTrack = updatedTrack
+            
+            // Update playlist entry as well
+            if currentIndex >= 0 && currentIndex < playlist.count {
+                playlist[currentIndex] = updatedTrack
+            }
+            
+            // Notify delegate of track update (for UI refresh)
+            delegate?.audioEngineDidChangeTrack(updatedTrack)
+        }
+    }
 }

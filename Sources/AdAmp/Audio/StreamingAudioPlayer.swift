@@ -8,6 +8,7 @@ protocol StreamingAudioPlayerDelegate: AnyObject {
     func streamingPlayerDidChangeState(_ state: AudioPlayerState)
     func streamingPlayerDidFinishPlaying()
     func streamingPlayerDidUpdateSpectrum(_ levels: [Float])
+    func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int)
 }
 
 /// Wrapper around AudioStreaming's AudioPlayer that provides EQ and spectrum analysis
@@ -30,6 +31,9 @@ class StreamingAudioPlayer {
     
     /// Spectrum data (75 bands for Winamp-style visualization)
     private(set) var spectrumData: [Float] = Array(repeating: 0, count: 75)
+    
+    /// Whether we've reported format info for the current track
+    private var hasReportedFormat: Bool = false
     
     /// Standard Winamp EQ frequencies
     static let eqFrequencies: [Float] = [
@@ -132,6 +136,7 @@ class StreamingAudioPlayer {
     /// Play audio from a URL (local or remote)
     func play(url: URL) {
         NSLog("StreamingAudioPlayer: Playing URL: %@", url.absoluteString)
+        hasReportedFormat = false  // Reset for new track
         player.play(url: url)
     }
     
@@ -217,6 +222,16 @@ class StreamingAudioPlayer {
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData,
               let fftSetup = fftSetup else { return }
+        
+        // Report format info once per track
+        if !hasReportedFormat {
+            hasReportedFormat = true
+            let sampleRate = Int(buffer.format.sampleRate)
+            let channels = Int(buffer.format.channelCount)
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.streamingPlayerDidDetectFormat(sampleRate: sampleRate, channels: channels)
+            }
+        }
         
         let frameCount = Int(buffer.frameLength)
         guard frameCount >= fftSize else { return }
