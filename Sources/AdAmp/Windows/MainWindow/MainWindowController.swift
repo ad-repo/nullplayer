@@ -157,4 +157,9 @@ extension MainWindowController: NSWindowDelegate {
         let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: newOrigin)
     }
+    
+    func windowDidBecomeKey(_ notification: Notification) {
+        // Bring all app windows to front when main window gets focus
+        WindowManager.shared.bringAllWindowsToFront()
+    }
 }

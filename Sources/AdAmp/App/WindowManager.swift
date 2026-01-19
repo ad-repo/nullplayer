@@ -141,6 +141,7 @@ class WindowManager {
             mainWindowController = MainWindowController()
         }
         mainWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(mainWindowController?.window)
     }
     
     func toggleMainWindow() {
@@ -164,6 +165,7 @@ class WindowManager {
         
         playlistWindowController?.showWindow(nil)
         playlistWindowController?.window?.makeKeyAndOrderFront(nil)
+        applyAlwaysOnTopToWindow(playlistWindowController?.window)
         notifyMainWindowVisibilityChanged()
     }
 
@@ -191,6 +193,7 @@ class WindowManager {
         }
         
         equalizerWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(equalizerWindowController?.window)
         notifyMainWindowVisibilityChanged()
     }
 
@@ -256,6 +259,7 @@ class WindowManager {
             mediaLibraryWindowController = MediaLibraryWindowController()
         }
         mediaLibraryWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(mediaLibraryWindowController?.window)
     }
     
     var isMediaLibraryVisible: Bool {
@@ -277,6 +281,7 @@ class WindowManager {
             plexBrowserWindowController = PlexBrowserWindowController()
         }
         plexBrowserWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
     }
     
     var isPlexBrowserVisible: Bool {
@@ -331,6 +336,7 @@ class WindowManager {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
         videoPlayerWindowController?.play(url: url, title: title)
+        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
     }
     
     /// Play a Plex movie in the video player
@@ -339,6 +345,7 @@ class WindowManager {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
         videoPlayerWindowController?.play(movie: movie)
+        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
     }
     
     /// Play a Plex episode in the video player
@@ -347,6 +354,7 @@ class WindowManager {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
         videoPlayerWindowController?.play(episode: episode)
+        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
     }
     
     var isVideoPlayerVisible: Bool {
@@ -448,6 +456,7 @@ class WindowManager {
             milkdropWindowController = MilkdropWindowController()
         }
         milkdropWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(milkdropWindowController?.window)
     }
     
     var isMilkdropVisible: Bool {
@@ -620,6 +629,32 @@ class WindowManager {
         mediaLibraryWindowController?.window?.level = level
         plexBrowserWindowController?.window?.level = level
         videoPlayerWindowController?.window?.level = level
+        milkdropWindowController?.window?.level = level
+    }
+    
+    /// Apply always on top level to a single window (used when showing windows)
+    private func applyAlwaysOnTopToWindow(_ window: NSWindow?) {
+        guard let window = window else { return }
+        window.level = isAlwaysOnTop ? .floating : .normal
+    }
+    
+    /// Bring all visible app windows to front (called when main window gets focus)
+    func bringAllWindowsToFront() {
+        // Order all visible windows to front without making them key
+        let windows: [NSWindow?] = [
+            equalizerWindowController?.window,
+            playlistWindowController?.window,
+            mediaLibraryWindowController?.window,
+            plexBrowserWindowController?.window,
+            videoPlayerWindowController?.window,
+            milkdropWindowController?.window
+        ]
+        
+        for window in windows {
+            if let window = window, window.isVisible {
+                window.orderFront(nil)
+            }
+        }
     }
     
     // MARK: - Window Snapping & Docking
