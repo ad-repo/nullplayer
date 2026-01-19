@@ -707,8 +707,10 @@ class WindowManager {
             }
         }
         
-        // Snap to other visible windows
-        for otherWindow in allWindows() {
+        // All windows can snap to dockable windows (main, playlist, EQ)
+        // But non-dockable windows don't participate in docking (moving together)
+        let windowsToSnapTo = dockableWindows()
+        for otherWindow in windowsToSnapTo {
             guard otherWindow != window else { continue }
             // Skip docked windows as they're moving with us
             guard !dockedWindowsToMove.contains(otherWindow) else { continue }
@@ -809,12 +811,18 @@ class WindowManager {
     }
     
     /// Find all windows that are docked (touching) the given window
+    /// When dragging a dockable window (main, playlist, EQ), all touching windows move together
+    /// When dragging a non-dockable window (Plex browser), it moves alone
     private func findDockedWindows(to window: NSWindow) -> [NSWindow] {
+        // Non-dockable windows don't drag other windows with them
+        guard isDockableWindow(window) else { return [] }
+        
         var dockedWindows: [NSWindow] = []
         var windowsToCheck: [NSWindow] = [window]
         var checkedWindows: Set<ObjectIdentifier> = [ObjectIdentifier(window)]
         
         // Use BFS to find all transitively docked windows
+        // Include all visible windows so Plex browser moves with the group
         while !windowsToCheck.isEmpty {
             let currentWindow = windowsToCheck.removeFirst()
             
@@ -824,7 +832,10 @@ class WindowManager {
                 
                 if areWindowsDocked(currentWindow, otherWindow) {
                     dockedWindows.append(otherWindow)
-                    windowsToCheck.append(otherWindow)
+                    // Only continue BFS through dockable windows (don't chain through Plex browser)
+                    if isDockableWindow(otherWindow) {
+                        windowsToCheck.append(otherWindow)
+                    }
                     checkedWindows.insert(otherId)
                 }
             }
@@ -863,6 +874,22 @@ class WindowManager {
         if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
         if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
         return windows
+    }
+    
+    /// Get windows that participate in docking/snapping together (classic Winamp windows)
+    private func dockableWindows() -> [NSWindow] {
+        var windows: [NSWindow] = []
+        if let w = mainWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
+        return windows
+    }
+    
+    /// Check if a window participates in docking
+    private func isDockableWindow(_ window: NSWindow) -> Bool {
+        return window === mainWindowController?.window ||
+               window === playlistWindowController?.window ||
+               window === equalizerWindowController?.window
     }
     
     /// Get all visible windows

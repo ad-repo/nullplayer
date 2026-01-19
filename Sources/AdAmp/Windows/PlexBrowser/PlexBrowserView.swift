@@ -1396,7 +1396,7 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Handle window dragging
+        // Handle window dragging - snaps to other windows but doesn't dock
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
             let deltaX = currentPoint.x - windowDragStartPoint.x
@@ -1406,6 +1406,7 @@ class PlexBrowserView: NSView {
             newOrigin.x += deltaX
             newOrigin.y += deltaY
             
+            // Apply snapping to other windows
             newOrigin = WindowManager.shared.windowWillMove(window, to: newOrigin)
             window.setFrameOrigin(newOrigin)
         }
@@ -1418,9 +1419,6 @@ class PlexBrowserView: NSView {
         // End window dragging
         if isDraggingWindow {
             isDraggingWindow = false
-            if let window = window {
-                WindowManager.shared.windowDidFinishDragging(window)
-            }
         }
         
         // End scrollbar dragging

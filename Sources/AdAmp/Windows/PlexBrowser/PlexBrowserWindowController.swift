@@ -47,7 +47,7 @@ class PlexBrowserWindowController: NSWindowController {
     private func setupWindow() {
         guard let window = window else { return }
         
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false  // Custom drag handling in PlexBrowserView
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
@@ -176,12 +176,6 @@ class PlexBrowserWindowController: NSWindowController {
 // MARK: - NSWindowDelegate
 
 extension PlexBrowserWindowController: NSWindowDelegate {
-    func windowDidMove(_ notification: Notification) {
-        guard let window = window else { return }
-        let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
-        WindowManager.shared.applySnappedPosition(window, to: newOrigin)
-    }
-    
     func windowDidResize(_ notification: Notification) {
         browserView.needsDisplay = true
     }
