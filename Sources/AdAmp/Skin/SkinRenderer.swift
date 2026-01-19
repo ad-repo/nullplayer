@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 
 // =============================================================================
 // SKIN RENDERER - Drawing code for all skin elements
@@ -23,6 +24,17 @@ class SkinRenderer {
     var scaleFactor: CGFloat = 2.0
 
     private let plexTitleText = "WINAMP LIBRARY"
+    
+    /// Cached white-tinted version of the text font image
+    private var _whiteTextImage: NSImage?
+    
+    /// Lazily creates and caches a white-tinted version of the skin's text image
+    private var whiteTextImage: NSImage? {
+        if _whiteTextImage == nil {
+            _whiteTextImage = createWhiteTextImage()
+        }
+        return _whiteTextImage
+    }
     
     // MARK: - Initialization
     
@@ -233,6 +245,130 @@ class SkinRenderer {
         }
         
         return CGFloat(text.count) * charWidth
+    }
+    
+    /// Draw text in white using the skin's text.bmp font as a reference
+    /// Samples the original green text and draws white pixels where text exists
+    @discardableResult
+    func drawSkinTextWhite(_ text: String, at position: NSPoint, in context: CGContext) -> CGFloat {
+        // Just draw green text for now and overlay white using blend mode
+        guard let textImage = skin.text else {
+            // Fallback to system font in white
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.monospacedSystemFont(ofSize: 6, weight: .regular)
+            ]
+            text.draw(at: position, withAttributes: attrs)
+            return CGFloat(text.count) * 5
+        }
+        
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
+        var xPos = position.x
+        
+        for char in text.uppercased() {
+            let charRect = SkinElements.TextFont.character(char)
+            let destRect = NSRect(x: xPos, y: position.y, width: charWidth, height: charHeight)
+            
+            // Draw the original sprite
+            drawSprite(from: textImage, sourceRect: charRect, to: destRect, in: context)
+            
+            // Then overlay white using luminosity blend to replace the green with white
+            context.saveGState()
+            
+            // Apply same flip as drawSprite
+            let centerY = destRect.midY
+            context.translateBy(x: 0, y: centerY)
+            context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: 0, y: -centerY)
+            
+            // Remove the green color, making it gray
+            context.setBlendMode(.color)
+            context.setFillColor(CGColor.white)
+            context.fill(destRect)
+            
+            context.restoreGState()
+            
+            xPos += charWidth
+        }
+        
+        return CGFloat(text.count) * charWidth
+    }
+    
+    /// Creates a white-tinted version of the skin's text image
+    /// Detects text pixels by checking if they're NOT magenta background, then makes them white
+    private func createWhiteTextImage() -> NSImage? {
+        guard let textImage = skin.text,
+              let cgImage = textImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerRow = width * 4
+        
+        // Create context to read pixel data
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        
+        // Draw original image
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        guard let data = context.data else { return nil }
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        
+        // Debug: check first few pixels
+        var textPixels = 0
+        var bgPixels = 0
+        
+        // Convert pixels: if it's text (not background), make it white
+        // Background is either transparent (alpha=0) or magenta-ish
+        for i in 0..<(width * height) {
+            let offset = i * 4
+            let r = pixels[offset]
+            let g = pixels[offset + 1]
+            let b = pixels[offset + 2]
+            let a = pixels[offset + 3]
+            
+            // Check if this is a text pixel (not transparent and not magenta)
+            // Magenta is high R, low G, high B
+            let isMagenta = r > 200 && g < 50 && b > 200
+            let isTransparent = a == 0
+            
+            if !isTransparent && !isMagenta {
+                // This is text - make it white
+                pixels[offset] = 255     // R
+                pixels[offset + 1] = 255 // G
+                pixels[offset + 2] = 255 // B
+                pixels[offset + 3] = 255 // A (fully opaque)
+                textPixels += 1
+            } else {
+                // This is background - make it fully transparent
+                pixels[offset] = 0
+                pixels[offset + 1] = 0
+                pixels[offset + 2] = 0
+                pixels[offset + 3] = 0
+                bgPixels += 1
+            }
+        }
+        
+        FileHandle.standardError.write("createWhiteTextImage: \(width)x\(height), text pixels: \(textPixels), bg pixels: \(bgPixels)\n".data(using: .utf8)!)
+        
+        guard let newCGImage = context.makeImage() else { return nil }
+        
+        // Create NSImage with explicit size matching
+        let newImage = NSImage(size: NSSize(width: width, height: height))
+        newImage.addRepresentation(NSBitmapImageRep(cgImage: newCGImage))
+        return newImage
     }
     
     /// Draw digits using the skin's numbers.bmp at any position

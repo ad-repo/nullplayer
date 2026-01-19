@@ -348,7 +348,7 @@ class PlexBrowserView: NSView {
     
     // MARK: - Content Drawing (in Winamp coordinates, using skin text font)
     
-    /// Helper to draw scaled skin text
+    /// Helper to draw scaled skin text (green)
     private func drawScaledSkinText(_ text: String, at position: NSPoint, scale: CGFloat, renderer: SkinRenderer, in context: CGContext) {
         context.saveGState()
         context.translateBy(x: position.x, y: position.y)
@@ -357,40 +357,24 @@ class PlexBrowserView: NSView {
         context.restoreGState()
     }
     
-    /// Helper to draw white text using system font (for selected/highlighted items)
-    private func drawWhiteText(_ text: String, centeredIn rect: NSRect, fontSize: CGFloat, in context: CGContext) {
+    /// Helper to draw scaled white skin text
+    private func drawScaledWhiteSkinText(_ text: String, at position: NSPoint, scale: CGFloat, renderer: SkinRenderer, in context: CGContext) {
         context.saveGState()
-        let centerY = rect.midY
-        context.translateBy(x: 0, y: centerY)
-        context.scaleBy(x: 1, y: -1)
-        context.translateBy(x: 0, y: -centerY)
-        
-        let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.white,
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .medium)
-        ]
-        let size = text.size(withAttributes: attrs)
-        let point = NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2)
-        text.draw(at: point, withAttributes: attrs)
-        
+        context.translateBy(x: position.x, y: position.y)
+        context.scaleBy(x: scale, y: scale)
+        renderer.drawSkinTextWhite(text, at: NSPoint(x: 0, y: 0), in: context)
         context.restoreGState()
     }
     
-    /// Helper to draw white text at a specific position using system font
-    private func drawWhiteTextAt(_ text: String, at position: NSPoint, fontSize: CGFloat, height: CGFloat, in context: CGContext) {
-        context.saveGState()
-        let centerY = position.y + height / 2
-        context.translateBy(x: 0, y: centerY)
-        context.scaleBy(x: 1, y: -1)
-        context.translateBy(x: 0, y: -centerY)
-        
-        let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.white,
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .medium)
-        ]
-        text.draw(at: NSPoint(x: position.x, y: position.y), withAttributes: attrs)
-        
-        context.restoreGState()
+    /// Helper to draw scaled white skin text centered in a rect
+    private func drawScaledWhiteSkinTextCentered(_ text: String, in rect: NSRect, scale: CGFloat, renderer: SkinRenderer, in context: CGContext) {
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
+        let textWidth = CGFloat(text.count) * charWidth * scale
+        let textHeight = charHeight * scale
+        let x = rect.midX - textWidth / 2
+        let y = rect.midY - textHeight / 2
+        drawScaledWhiteSkinText(text, at: NSPoint(x: x, y: y), scale: scale, renderer: renderer, in: context)
     }
     
     private func drawServerBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
@@ -416,29 +400,29 @@ class PlexBrowserView: NSView {
             let prefix = "Plex Server: "
             drawScaledSkinText(prefix, at: NSPoint(x: barRect.minX + 4, y: textY), scale: textScale, renderer: renderer, in: context)
             
-            // Server name in WHITE (system font)
+            // Server name in WHITE skin text
             let serverText = manager.currentServer?.name ?? "Select Server"
-            let serverLabel = "\(serverText) ▼"
             let prefixWidth = CGFloat(prefix.count) * scaledCharWidth
-            drawWhiteTextAt(serverLabel, at: NSPoint(x: barRect.minX + 4 + prefixWidth, y: textY - 2), fontSize: 10, height: scaledCharHeight, in: context)
+            drawScaledWhiteSkinText(serverText, at: NSPoint(x: barRect.minX + 4 + prefixWidth, y: textY), scale: textScale, renderer: renderer, in: context)
             
             // Right side: Refresh icon in green skin text
             let refreshX = barRect.maxX - scaledCharWidth - 4
             drawScaledSkinText("O", at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             
-            // Library name in WHITE (system font)
+            // Library name in WHITE skin text
             let libraryText = manager.currentLibrary?.title ?? "Select Library"
-            let libraryLabel = "\(libraryText) ▼"
-            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10, weight: .medium)]
-            let librarySize = libraryLabel.size(withAttributes: attrs)
-            let libraryX = refreshX - librarySize.width - 8
-            drawWhiteTextAt(libraryLabel, at: NSPoint(x: libraryX, y: textY - 2), fontSize: 10, height: scaledCharHeight, in: context)
+            let libraryWidth = CGFloat(libraryText.count) * scaledCharWidth
+            let libraryX = refreshX - libraryWidth - 8
+            drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
             
-            // Item count (center) in green skin text
-            let itemCount = "\(displayItems.count) items"
-            let countWidth = CGFloat(itemCount.count) * scaledCharWidth
-            let countX = barRect.midX - countWidth / 2
-            drawScaledSkinText(itemCount, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+            // Item count (center) - number in gray, "items" in green
+            let countNumber = "\(displayItems.count)"
+            let countLabel = " items"
+            let totalWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+            let countX = barRect.midX - totalWidth / 2
+            drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+            drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
         } else {
             // Not linked message in green skin text
             let linkText = "Click to link your Plex account"
@@ -473,8 +457,8 @@ class PlexBrowserView: NSView {
             let isSelected = mode == browseMode
             
             if isSelected {
-                // Selected tab in WHITE (system font)
-                drawWhiteText(mode.title, centeredIn: tabRect, fontSize: 10, in: context)
+                // Selected tab in WHITE skin text
+                drawScaledWhiteSkinTextCentered(mode.title, in: tabRect, scale: textScale, renderer: renderer, in: context)
             } else {
                 // Unselected tabs in green skin text
                 let titleWidth = CGFloat(mode.title.count) * scaledCharWidth
@@ -631,13 +615,6 @@ class PlexBrowserView: NSView {
     }
     
     private func drawEmptyState(in context: CGContext, listRect: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
-        // Counter-flip for text
-        context.saveGState()
-        let centerY = listRect.midY
-        context.translateBy(x: 0, y: centerY)
-        context.scaleBy(x: 1, y: -1)
-        context.translateBy(x: 0, y: -centerY)
-        
         // Determine empty message based on mode and library type
         let library = PlexManager.shared.currentLibrary
         let message: String
@@ -665,15 +642,17 @@ class PlexBrowserView: NSView {
             message = searchQuery.isEmpty ? "Type to search" : "No results found"
         }
         
-        let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: colors.normalText.withAlphaComponent(0.5),
-            .font: NSFont.systemFont(ofSize: 11)
-        ]
-        let size = message.size(withAttributes: attrs)
-        message.draw(at: NSPoint(x: listRect.midX - size.width / 2, y: listRect.midY - size.height / 2),
-                    withAttributes: attrs)
+        // Draw using green skin text, centered
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
+        let textScale: CGFloat = 1.5
+        let scaledCharWidth = charWidth * textScale
+        let scaledCharHeight = charHeight * textScale
+        let textWidth = CGFloat(message.count) * scaledCharWidth
+        let textX = listRect.midX - textWidth / 2
+        let textY = listRect.midY - scaledCharHeight / 2
         
-        context.restoreGState()
+        drawScaledSkinText(message, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
     }
     
     private func drawListArea(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
