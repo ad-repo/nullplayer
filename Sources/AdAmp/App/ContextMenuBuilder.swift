@@ -36,14 +36,22 @@ class ContextMenuBuilder {
         // Plex submenu
         menu.addItem(buildPlexMenuItem())
         
-        // Playback submenu
-        menu.addItem(buildPlaybackMenuItem())
+        // Output Devices submenu (includes local, AirPlay, and casting)
+        menu.addItem(buildOutputDevicesMenuItem())
         
-        // Output Device submenu
-        menu.addItem(buildOutputDeviceMenuItem())
+        menu.addItem(NSMenuItem.separator())
         
-        // Casting submenu
-        menu.addItem(buildCastingMenuItem())
+        // Double Size
+        let doubleSize = NSMenuItem(title: "Double Size", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
+        doubleSize.target = MenuActions.shared
+        doubleSize.state = wm.isDoubleSize ? .on : .off
+        menu.addItem(doubleSize)
+        
+        // Always on Top
+        let alwaysOnTop = NSMenuItem(title: "Always on Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
+        alwaysOnTop.target = MenuActions.shared
+        alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
+        menu.addItem(alwaysOnTop)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -127,19 +135,13 @@ class ContextMenuBuilder {
     // MARK: - Options Submenu
     
     private static func buildOptionsMenuItem() -> NSMenuItem {
-        let optionsItem = NSMenuItem(title: "Options", action: nil, keyEquivalent: "")
+        let optionsItem = NSMenuItem(title: "Playback Options", action: nil, keyEquivalent: "")
         let optionsMenu = NSMenu()
         
-        // Skins submenu (nested)
-        let skinsItem = NSMenuItem(title: "Skins", action: nil, keyEquivalent: "")
-        skinsItem.submenu = buildSkinsSubmenu()
-        optionsMenu.addItem(skinsItem)
-        
-        optionsMenu.addItem(NSMenuItem.separator())
+        let wm = WindowManager.shared
+        let engine = wm.audioEngine
         
         // Time display mode
-        let wm = WindowManager.shared
-        
         let timeElapsed = NSMenuItem(title: "Time elapsed", action: #selector(MenuActions.setTimeElapsed), keyEquivalent: "")
         timeElapsed.target = MenuActions.shared
         timeElapsed.state = wm.timeDisplayMode == .elapsed ? .on : .off
@@ -152,17 +154,7 @@ class ContextMenuBuilder {
         
         optionsMenu.addItem(NSMenuItem.separator())
         
-        // Double Size
-        let doubleSize = NSMenuItem(title: "Double Size", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
-        doubleSize.target = MenuActions.shared
-        doubleSize.state = wm.isDoubleSize ? .on : .off
-        optionsMenu.addItem(doubleSize)
-        
-        optionsMenu.addItem(NSMenuItem.separator())
-        
         // Repeat/Shuffle
-        let engine = wm.audioEngine
-        
         let repeatItem = NSMenuItem(title: "Repeat", action: #selector(MenuActions.toggleRepeat), keyEquivalent: "")
         repeatItem.target = MenuActions.shared
         repeatItem.state = engine.repeatEnabled ? .on : .off
@@ -260,177 +252,30 @@ class ContextMenuBuilder {
     }
     
     // MARK: - Playback Submenu
+    // MARK: - Output Devices Submenu (Unified)
     
-    private static func buildPlaybackMenuItem() -> NSMenuItem {
-        let playbackItem = NSMenuItem(title: "Playback", action: nil, keyEquivalent: "")
-        let playbackMenu = NSMenu()
+    private static func buildOutputDevicesMenuItem() -> NSMenuItem {
+        let outputItem = NSMenuItem(title: "Output Devices", action: nil, keyEquivalent: "")
+        let outputMenu = NSMenu()
         
-        // Transport controls
-        let previous = NSMenuItem(title: "Previous", action: #selector(MenuActions.previous), keyEquivalent: "")
-        previous.target = MenuActions.shared
-        playbackMenu.addItem(previous)
-        
-        let play = NSMenuItem(title: "Play", action: #selector(MenuActions.play), keyEquivalent: "")
-        play.target = MenuActions.shared
-        playbackMenu.addItem(play)
-        
-        let pause = NSMenuItem(title: "Pause", action: #selector(MenuActions.pause), keyEquivalent: "")
-        pause.target = MenuActions.shared
-        playbackMenu.addItem(pause)
-        
-        let stop = NSMenuItem(title: "Stop", action: #selector(MenuActions.stop), keyEquivalent: "")
-        stop.target = MenuActions.shared
-        playbackMenu.addItem(stop)
-        
-        let next = NSMenuItem(title: "Next", action: #selector(MenuActions.next), keyEquivalent: "")
-        next.target = MenuActions.shared
-        playbackMenu.addItem(next)
-        
-        playbackMenu.addItem(NSMenuItem.separator())
-        
-        // Seek controls
-        let back5 = NSMenuItem(title: "Back 5 seconds", action: #selector(MenuActions.back5Seconds), keyEquivalent: "")
-        back5.target = MenuActions.shared
-        playbackMenu.addItem(back5)
-        
-        let fwd5 = NSMenuItem(title: "Fwd 5 seconds", action: #selector(MenuActions.fwd5Seconds), keyEquivalent: "")
-        fwd5.target = MenuActions.shared
-        playbackMenu.addItem(fwd5)
-        
-        playbackMenu.addItem(NSMenuItem.separator())
-        
-        // Track skip controls
-        let back10 = NSMenuItem(title: "10 tracks back", action: #selector(MenuActions.back10Tracks), keyEquivalent: "")
-        back10.target = MenuActions.shared
-        playbackMenu.addItem(back10)
-        
-        let fwd10 = NSMenuItem(title: "10 tracks fwd", action: #selector(MenuActions.fwd10Tracks), keyEquivalent: "")
-        fwd10.target = MenuActions.shared
-        playbackMenu.addItem(fwd10)
-        
-        playbackItem.submenu = playbackMenu
-        return playbackItem
-    }
-    
-    // MARK: - Casting Submenu
-    
-    private static func buildCastingMenuItem() -> NSMenuItem {
-        let castingItem = NSMenuItem(title: "Casting", action: nil, keyEquivalent: "")
-        let castingMenu = NSMenu()
-        
+        let audioManager = AudioOutputManager.shared
         let castManager = CastManager.shared
-        let activeSession = castManager.activeSession
+        let coreAudioDevices = audioManager.outputDevices
+        let airPlayDevices = audioManager.discoveredAirPlayDevices
+        let currentDeviceID = WindowManager.shared.audioEngine.currentOutputDeviceID
         
-        // Ensure discovery is running when menu is built
+        // Ensure cast discovery is running
         if !castManager.isDiscovering {
             castManager.startDiscovery()
         }
         
-        // Debug: Log device counts
-        let chromecastDevices = castManager.chromecastDevices
-        let sonosDevices = castManager.sonosDevices
-        let tvDevices = castManager.dlnaTVDevices
-        NSLog("ContextMenuBuilder: Building Casting menu - Chromecast: %d, Sonos: %d, TVs: %d", 
-              chromecastDevices.count, sonosDevices.count, tvDevices.count)
-        
-        // Chromecast section
-        if !chromecastDevices.isEmpty {
-            let headerItem = NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: "")
-            headerItem.isEnabled = false
-            castingMenu.addItem(headerItem)
-            
-            for device in chromecastDevices {
-                let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
-                deviceItem.target = MenuActions.shared
-                deviceItem.representedObject = device
-                deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
-                castingMenu.addItem(deviceItem)
-            }
-            
-            castingMenu.addItem(NSMenuItem.separator())
-        }
-        
-        // Sonos section
-        if !sonosDevices.isEmpty {
-            let headerItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
-            headerItem.isEnabled = false
-            castingMenu.addItem(headerItem)
-            
-            for device in sonosDevices {
-                let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
-                deviceItem.target = MenuActions.shared
-                deviceItem.representedObject = device
-                deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
-                castingMenu.addItem(deviceItem)
-            }
-            
-            castingMenu.addItem(NSMenuItem.separator())
-        }
-        
-        // TVs section (DLNA)
-        if !tvDevices.isEmpty {
-            let headerItem = NSMenuItem(title: "TVs", action: nil, keyEquivalent: "")
-            headerItem.isEnabled = false
-            castingMenu.addItem(headerItem)
-            
-            for device in tvDevices {
-                let displayName = device.manufacturer != nil ? "\(device.name) [\(device.manufacturer!)]" : device.name
-                let deviceItem = NSMenuItem(title: "  \(displayName)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
-                deviceItem.target = MenuActions.shared
-                deviceItem.representedObject = device
-                deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
-                castingMenu.addItem(deviceItem)
-            }
-            
-            castingMenu.addItem(NSMenuItem.separator())
-        }
-        
-        // No devices found message
-        if chromecastDevices.isEmpty && sonosDevices.isEmpty && tvDevices.isEmpty {
-            let noDevicesItem = NSMenuItem(title: "(No Chromecast/Sonos/DLNA devices found)", action: nil, keyEquivalent: "")
-            noDevicesItem.isEnabled = false
-            castingMenu.addItem(noDevicesItem)
-            
-            // Add hint
-            let hintItem = NSMenuItem(title: "(AirPlay devices are in Output Device menu)", action: nil, keyEquivalent: "")
-            hintItem.isEnabled = false
-            castingMenu.addItem(hintItem)
-            
-            castingMenu.addItem(NSMenuItem.separator())
-        }
-        
-        // Stop Casting (only shown when casting)
-        if castManager.isCasting {
-            let stopCastingItem = NSMenuItem(title: "Stop Casting", action: #selector(MenuActions.stopCasting), keyEquivalent: "")
-            stopCastingItem.target = MenuActions.shared
-            if let session = castManager.activeSession {
-                stopCastingItem.title = "Stop Casting to \(session.device.name)"
-            }
-            castingMenu.addItem(stopCastingItem)
-        }
-        
-        // Refresh Devices
-        let refreshItem = NSMenuItem(title: "Refresh Devices", action: #selector(MenuActions.refreshCastDevices), keyEquivalent: "")
-        refreshItem.target = MenuActions.shared
-        castingMenu.addItem(refreshItem)
-        
-        castingItem.submenu = castingMenu
-        return castingItem
-    }
-    
-    // MARK: - Output Device Submenu
-    
-    private static func buildOutputDeviceMenuItem() -> NSMenuItem {
-        let outputItem = NSMenuItem(title: "Output Device", action: nil, keyEquivalent: "")
-        let outputMenu = NSMenu()
-        
-        let manager = AudioOutputManager.shared
-        let coreAudioDevices = manager.outputDevices
-        let airPlayDevices = manager.discoveredAirPlayDevices
-        let currentDeviceID = WindowManager.shared.audioEngine.currentOutputDeviceID
+        // ========== Local Audio Section ==========
+        let localHeader = NSMenuItem(title: "Local Audio", action: nil, keyEquivalent: "")
+        localHeader.isEnabled = false
+        outputMenu.addItem(localHeader)
         
         // System Default option
-        let defaultItem = NSMenuItem(title: "System Default", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+        let defaultItem = NSMenuItem(title: "  System Default", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
         defaultItem.target = MenuActions.shared
         defaultItem.representedObject = nil as AudioDeviceID?
         defaultItem.state = currentDeviceID == nil ? .on : .off
@@ -438,57 +283,161 @@ class ContextMenuBuilder {
         
         // Local/wired devices
         let localDevices = coreAudioDevices.filter { !$0.isWireless }
-        if !localDevices.isEmpty {
-            outputMenu.addItem(NSMenuItem.separator())
-            
-            for device in localDevices {
-                let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
-                deviceItem.target = MenuActions.shared
-                deviceItem.representedObject = device.id
-                deviceItem.state = (currentDeviceID == device.id) ? NSControl.StateValue.on : NSControl.StateValue.off
-                outputMenu.addItem(deviceItem)
-            }
+        for device in localDevices {
+            let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+            deviceItem.target = MenuActions.shared
+            deviceItem.representedObject = device.id
+            deviceItem.state = (currentDeviceID == device.id) ? .on : .off
+            outputMenu.addItem(deviceItem)
         }
         
-        // Core Audio wireless devices
+        // ========== AirPlay Section ==========
         let coreAudioWireless = coreAudioDevices.filter { $0.isWireless }
+        let hasAirPlay = !coreAudioWireless.isEmpty || !airPlayDevices.isEmpty
         
-        // Combined wireless: Core Audio wireless + discovered AirPlay
-        let hasWireless = !coreAudioWireless.isEmpty || !airPlayDevices.isEmpty
-        
-        if hasWireless {
+        if hasAirPlay {
             outputMenu.addItem(NSMenuItem.separator())
             
-            // Create AirPlay submenu
+            // AirPlay submenu
             let airplayItem = NSMenuItem(title: "AirPlay", action: nil, keyEquivalent: "")
             let airplayMenu = NSMenu()
             
-            // Core Audio wireless devices (already connected)
-            for device in coreAudioWireless {
-                let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
-                deviceItem.target = MenuActions.shared
-                deviceItem.representedObject = device.id
-                deviceItem.state = (currentDeviceID == device.id) ? NSControl.StateValue.on : NSControl.StateValue.off
-                airplayMenu.addItem(deviceItem)
+            // Connected AirPlay devices (via Core Audio)
+            if !coreAudioWireless.isEmpty {
+                let connectedHeader = NSMenuItem(title: "Connected", action: nil, keyEquivalent: "")
+                connectedHeader.isEnabled = false
+                airplayMenu.addItem(connectedHeader)
+                
+                for device in coreAudioWireless {
+                    let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+                    deviceItem.target = MenuActions.shared
+                    deviceItem.representedObject = device.id
+                    deviceItem.state = (currentDeviceID == device.id) ? .on : .off
+                    airplayMenu.addItem(deviceItem)
+                }
             }
             
             // Discovered AirPlay devices (need to connect via Sound Settings)
-            for device in airPlayDevices {
-                let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectAirPlayDevice(_:)), keyEquivalent: "")
-                deviceItem.target = MenuActions.shared
-                deviceItem.representedObject = device.name
-                airplayMenu.addItem(deviceItem)
+            if !airPlayDevices.isEmpty {
+                if !coreAudioWireless.isEmpty {
+                    airplayMenu.addItem(NSMenuItem.separator())
+                }
+                
+                let availableHeader = NSMenuItem(title: "Available (Connect in Sound Settings)", action: nil, keyEquivalent: "")
+                availableHeader.isEnabled = false
+                airplayMenu.addItem(availableHeader)
+                
+                for device in airPlayDevices {
+                    let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.selectAirPlayDevice(_:)), keyEquivalent: "")
+                    deviceItem.target = MenuActions.shared
+                    deviceItem.representedObject = device.name
+                    airplayMenu.addItem(deviceItem)
+                }
             }
+            
+            // Sound Settings shortcut within AirPlay menu
+            airplayMenu.addItem(NSMenuItem.separator())
+            let airplaySettings = NSMenuItem(title: "Sound Settings...", action: #selector(MenuActions.openSoundSettings), keyEquivalent: "")
+            airplaySettings.target = MenuActions.shared
+            airplayMenu.addItem(airplaySettings)
             
             airplayItem.submenu = airplayMenu
             outputMenu.addItem(airplayItem)
         }
         
-        // Sound Settings option
+        // ========== Cast Devices Section ==========
+        let chromecastDevices = castManager.chromecastDevices
+        let sonosDevices = castManager.sonosDevices
+        let tvDevices = castManager.dlnaTVDevices
+        let hasCastDevices = !chromecastDevices.isEmpty || !sonosDevices.isEmpty || !tvDevices.isEmpty
+        let activeSession = castManager.activeSession
+        
         outputMenu.addItem(NSMenuItem.separator())
-        let soundSettings = NSMenuItem(title: "Sound Settings...", action: #selector(MenuActions.openSoundSettings), keyEquivalent: "")
-        soundSettings.target = MenuActions.shared
-        outputMenu.addItem(soundSettings)
+        
+        // Cast Devices submenu
+        let castItem = NSMenuItem(title: "Cast Devices", action: nil, keyEquivalent: "")
+        let castMenu = NSMenu()
+        
+        if hasCastDevices {
+            // Chromecast section
+            if !chromecastDevices.isEmpty {
+                let chromecastHeader = NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: "")
+                chromecastHeader.isEnabled = false
+                castMenu.addItem(chromecastHeader)
+                
+                for device in chromecastDevices {
+                    let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                    deviceItem.target = MenuActions.shared
+                    deviceItem.representedObject = device
+                    deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
+                    castMenu.addItem(deviceItem)
+                }
+            }
+            
+            // Sonos section
+            if !sonosDevices.isEmpty {
+                if !chromecastDevices.isEmpty {
+                    castMenu.addItem(NSMenuItem.separator())
+                }
+                
+                let sonosHeader = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
+                sonosHeader.isEnabled = false
+                castMenu.addItem(sonosHeader)
+                
+                for device in sonosDevices {
+                    let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                    deviceItem.target = MenuActions.shared
+                    deviceItem.representedObject = device
+                    deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
+                    castMenu.addItem(deviceItem)
+                }
+            }
+            
+            // DLNA TVs section
+            if !tvDevices.isEmpty {
+                if !chromecastDevices.isEmpty || !sonosDevices.isEmpty {
+                    castMenu.addItem(NSMenuItem.separator())
+                }
+                
+                let tvHeader = NSMenuItem(title: "TVs (DLNA)", action: nil, keyEquivalent: "")
+                tvHeader.isEnabled = false
+                castMenu.addItem(tvHeader)
+                
+                for device in tvDevices {
+                    let displayName = device.manufacturer != nil ? "\(device.name) [\(device.manufacturer!)]" : device.name
+                    let deviceItem = NSMenuItem(title: "  \(displayName)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                    deviceItem.target = MenuActions.shared
+                    deviceItem.representedObject = device
+                    deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
+                    castMenu.addItem(deviceItem)
+                }
+            }
+        } else {
+            let noDevicesItem = NSMenuItem(title: "(Searching for devices...)", action: nil, keyEquivalent: "")
+            noDevicesItem.isEnabled = false
+            castMenu.addItem(noDevicesItem)
+        }
+        
+        // Cast controls
+        castMenu.addItem(NSMenuItem.separator())
+        
+        // Stop Casting (only shown when casting)
+        if castManager.isCasting {
+            let stopCastingItem = NSMenuItem(title: "Stop Casting", action: #selector(MenuActions.stopCasting), keyEquivalent: "")
+            stopCastingItem.target = MenuActions.shared
+            if let session = activeSession {
+                stopCastingItem.title = "Stop Casting to \(session.device.name)"
+            }
+            castMenu.addItem(stopCastingItem)
+        }
+        
+        // Refresh Devices
+        let refreshItem = NSMenuItem(title: "Refresh Devices", action: #selector(MenuActions.refreshCastDevices), keyEquivalent: "")
+        refreshItem.target = MenuActions.shared
+        castMenu.addItem(refreshItem)
+        
+        castItem.submenu = castMenu
+        outputMenu.addItem(castItem)
         
         outputItem.submenu = outputMenu
         return outputItem
@@ -593,6 +542,10 @@ class MenuActions: NSObject {
     
     @objc func toggleShuffle() {
         WindowManager.shared.audioEngine.shuffleEnabled.toggle()
+    }
+    
+    @objc func toggleAlwaysOnTop() {
+        WindowManager.shared.isAlwaysOnTop.toggle()
     }
     
     // MARK: - Playback Controls

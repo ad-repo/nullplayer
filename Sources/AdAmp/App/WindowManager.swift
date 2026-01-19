@@ -40,12 +40,19 @@ class WindowManager {
         }
     }
     
-    /// Double size mode (2x scaling)
+    /// Double size mode (2x scaling) - not persisted, always starts at 1x
     var isDoubleSize: Bool = false {
         didSet {
-            UserDefaults.standard.set(isDoubleSize, forKey: "isDoubleSize")
             applyDoubleSize()
             NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
+        }
+    }
+    
+    /// Always on top mode (floating window level)
+    var isAlwaysOnTop: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isAlwaysOnTop, forKey: "isAlwaysOnTop")
+            applyAlwaysOnTop()
         }
     }
     
@@ -91,6 +98,9 @@ class WindowManager {
     /// Flag to prevent feedback loop when moving docked windows programmatically
     private var isMovingDockedWindows = false
     
+    /// Flag to prevent feedback loop when snapping windows
+    private var isSnappingWindow = false
+    
     // MARK: - Initialization
     
     private init() {
@@ -106,7 +116,7 @@ class WindowManager {
     private func registerPreferenceDefaults() {
         UserDefaults.standard.register(defaults: [
             "timeDisplayMode": TimeDisplayMode.elapsed.rawValue,
-            "isDoubleSize": false
+            "isAlwaysOnTop": false
         ])
     }
     
@@ -116,7 +126,9 @@ class WindowManager {
            let displayMode = TimeDisplayMode(rawValue: mode) {
             timeDisplayMode = displayMode
         }
-        isDoubleSize = UserDefaults.standard.bool(forKey: "isDoubleSize")
+        // Note: isDoubleSize always starts false - windows are created at 1x size
+        // and we apply double size after they're created if needed
+        isAlwaysOnTop = UserDefaults.standard.bool(forKey: "isAlwaysOnTop")
     }
     
     // MARK: - Window Management
@@ -489,43 +501,94 @@ class WindowManager {
     private func applyDoubleSize() {
         let scale: CGFloat = isDoubleSize ? 2.0 : 1.0
         
-        // Main window
-        if let window = mainWindowController?.window {
-            let targetSize = NSSize(width: Skin.mainWindowSize.width * scale,
+        // Get main window position as anchor point
+        guard let mainWindow = mainWindowController?.window else { return }
+        
+        // Store old main window frame for calculating relative positions
+        let oldMainFrame = mainWindow.frame
+        
+        // Resize main window first (anchor top-left)
+        let mainTargetSize = NSSize(width: Skin.mainWindowSize.width * scale,
                                     height: Skin.mainWindowSize.height * scale)
-            var frame = window.frame
-            let heightDiff = targetSize.height - frame.height
-            frame.origin.y -= heightDiff  // Anchor top-left
-            frame.size = targetSize
-            window.setFrame(frame, display: true, animate: true)
+        var mainFrame = mainWindow.frame
+        let mainTopY = mainFrame.maxY  // Keep top edge fixed
+        mainFrame.size = mainTargetSize
+        mainFrame.origin.y = mainTopY - mainTargetSize.height
+        mainWindow.setFrame(mainFrame, display: true, animate: true)
+        
+        // Track the bottom edge for stacking windows below main
+        var nextY = mainFrame.minY
+        
+        // EQ window - position below main window
+        if let eqWindow = equalizerWindowController?.window, eqWindow.isVisible {
+            let eqTargetSize = NSSize(width: Skin.eqWindowSize.width * scale,
+                                      height: Skin.eqWindowSize.height * scale)
+            let eqFrame = NSRect(
+                x: mainFrame.minX,
+                y: nextY - eqTargetSize.height,
+                width: eqTargetSize.width,
+                height: eqTargetSize.height
+            )
+            eqWindow.setFrame(eqFrame, display: true, animate: true)
+            nextY = eqFrame.minY
         }
         
-        // EQ window
-        if let window = equalizerWindowController?.window {
-            let targetSize = NSSize(width: Skin.eqWindowSize.width * scale,
-                                    height: Skin.eqWindowSize.height * scale)
-            var frame = window.frame
-            let heightDiff = targetSize.height - frame.height
-            frame.origin.y -= heightDiff
-            frame.size = targetSize
-            window.setFrame(frame, display: true, animate: true)
-        }
-        
-        // Playlist - scale minimum size and current size proportionally
-        if let window = playlistWindowController?.window {
-            let minWidth: CGFloat = 275 * scale
-            let minHeight: CGFloat = 116 * scale
-            window.minSize = NSSize(width: minWidth, height: minHeight)
+        // Playlist - position below EQ (or main if no EQ)
+        if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible {
+            let baseMinSize = Skin.playlistMinSize
+            let minWidth = baseMinSize.width * scale
+            let minHeight = baseMinSize.height * scale
+            playlistWindow.minSize = NSSize(width: minWidth, height: minHeight)
             
             // Scale current size
-            var frame = window.frame
-            let newWidth = max(minWidth, frame.width * (isDoubleSize ? 2.0 : 0.5))
-            let newHeight = max(minHeight, frame.height * (isDoubleSize ? 2.0 : 0.5))
-            let heightDiff = newHeight - frame.height
-            frame.origin.y -= heightDiff
-            frame.size = NSSize(width: newWidth, height: newHeight)
-            window.setFrame(frame, display: true, animate: true)
+            let currentFrame = playlistWindow.frame
+            let newWidth = max(minWidth, currentFrame.width * (isDoubleSize ? 2.0 : 0.5))
+            let newHeight = max(minHeight, currentFrame.height * (isDoubleSize ? 2.0 : 0.5))
+            
+            let playlistFrame = NSRect(
+                x: mainFrame.minX,
+                y: nextY - newHeight,
+                width: newWidth,
+                height: newHeight
+            )
+            playlistWindow.setFrame(playlistFrame, display: true, animate: true)
         }
+        
+        // Plex browser - maintain relative position to main window (don't scale size)
+        if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
+            var plexFrame = plexWindow.frame
+            // Calculate offset from old main window
+            let offsetX = plexFrame.minX - oldMainFrame.maxX
+            let offsetY = plexFrame.maxY - oldMainFrame.maxY
+            // Apply same offset to new main window position
+            plexFrame.origin.x = mainFrame.maxX + offsetX
+            plexFrame.origin.y = mainFrame.maxY + offsetY - plexFrame.height
+            plexWindow.setFrame(plexFrame, display: true, animate: true)
+        }
+        
+        // Media library - maintain relative position to main window (don't scale size)
+        if let libraryWindow = mediaLibraryWindowController?.window, libraryWindow.isVisible {
+            var libraryFrame = libraryWindow.frame
+            // Calculate offset from old main window
+            let offsetX = libraryFrame.minX - oldMainFrame.maxX
+            let offsetY = libraryFrame.maxY - oldMainFrame.maxY
+            // Apply same offset to new main window position
+            libraryFrame.origin.x = mainFrame.maxX + offsetX
+            libraryFrame.origin.y = mainFrame.maxY + offsetY - libraryFrame.height
+            libraryWindow.setFrame(libraryFrame, display: true, animate: true)
+        }
+    }
+    
+    private func applyAlwaysOnTop() {
+        let level: NSWindow.Level = isAlwaysOnTop ? .floating : .normal
+        
+        // Apply to all app windows
+        mainWindowController?.window?.level = level
+        equalizerWindowController?.window?.level = level
+        playlistWindowController?.window?.level = level
+        mediaLibraryWindowController?.window?.level = level
+        plexBrowserWindowController?.window?.level = level
+        videoPlayerWindowController?.window?.level = level
     }
     
     // MARK: - Window Snapping & Docking
@@ -543,8 +606,21 @@ class WindowManager {
         dockedWindowsToMove.removeAll()
     }
     
+    /// Safely apply snapped position to a window without triggering feedback loop
+    func applySnappedPosition(_ window: NSWindow, to position: NSPoint) {
+        guard position != window.frame.origin else { return }
+        isSnappingWindow = true
+        window.setFrameOrigin(position)
+        isSnappingWindow = false
+    }
+    
     /// Called when a window is being dragged - handle snapping and move docked windows
     func windowWillMove(_ window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
+        // Ignore if we're already in the middle of snapping (prevents feedback loop)
+        if isSnappingWindow {
+            return newOrigin
+        }
+        
         // Ignore if this is a docked window being moved programmatically
         if isMovingDockedWindows && dockedWindowsToMove.contains(where: { $0 === window }) {
             return newOrigin
@@ -631,8 +707,10 @@ class WindowManager {
             }
         }
         
-        // Snap to other visible windows
-        for otherWindow in allWindows() {
+        // All windows can snap to dockable windows (main, playlist, EQ)
+        // But non-dockable windows don't participate in docking (moving together)
+        let windowsToSnapTo = dockableWindows()
+        for otherWindow in windowsToSnapTo {
             guard otherWindow != window else { continue }
             // Skip docked windows as they're moving with us
             guard !dockedWindowsToMove.contains(otherWindow) else { continue }
@@ -733,12 +811,18 @@ class WindowManager {
     }
     
     /// Find all windows that are docked (touching) the given window
+    /// When dragging a dockable window (main, playlist, EQ), all touching windows move together
+    /// When dragging a non-dockable window (Plex browser), it moves alone
     private func findDockedWindows(to window: NSWindow) -> [NSWindow] {
+        // Non-dockable windows don't drag other windows with them
+        guard isDockableWindow(window) else { return [] }
+        
         var dockedWindows: [NSWindow] = []
         var windowsToCheck: [NSWindow] = [window]
         var checkedWindows: Set<ObjectIdentifier> = [ObjectIdentifier(window)]
         
         // Use BFS to find all transitively docked windows
+        // Include all visible windows so Plex browser moves with the group
         while !windowsToCheck.isEmpty {
             let currentWindow = windowsToCheck.removeFirst()
             
@@ -748,7 +832,10 @@ class WindowManager {
                 
                 if areWindowsDocked(currentWindow, otherWindow) {
                     dockedWindows.append(otherWindow)
-                    windowsToCheck.append(otherWindow)
+                    // Only continue BFS through dockable windows (don't chain through Plex browser)
+                    if isDockableWindow(otherWindow) {
+                        windowsToCheck.append(otherWindow)
+                    }
                     checkedWindows.insert(otherId)
                 }
             }
@@ -787,6 +874,22 @@ class WindowManager {
         if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
         if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
         return windows
+    }
+    
+    /// Get windows that participate in docking/snapping together (classic Winamp windows)
+    private func dockableWindows() -> [NSWindow] {
+        var windows: [NSWindow] = []
+        if let w = mainWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
+        return windows
+    }
+    
+    /// Check if a window participates in docking
+    private func isDockableWindow(_ window: NSWindow) -> Bool {
+        return window === mainWindowController?.window ||
+               window === playlistWindowController?.window ||
+               window === equalizerWindowController?.window
     }
     
     /// Get all visible windows

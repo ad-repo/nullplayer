@@ -440,6 +440,7 @@ struct PlexMetadataDTO: Decodable {
     let originallyAvailableAt: String?
     let leafCount: Int?         // Track count for albums/artists, episode count for shows/seasons
     let childCount: Int?        // Album count for artists, season count for shows
+    let albumCount: Int?        // Some Plex servers return albumCount directly for artists
     let media: [PlexMediaDTO]?
     let genre: [PlexTagDTO]?
     let studio: String?
@@ -449,21 +450,24 @@ struct PlexMetadataDTO: Decodable {
         case ratingKey, key, type, title, parentTitle, grandparentTitle
         case parentKey, grandparentKey, summary, index, parentIndex
         case year, thumb, art, duration, addedAt, updatedAt
-        case originallyAvailableAt, leafCount, childCount
+        case originallyAvailableAt, leafCount, childCount, albumCount
         case media = "Media"
         case genre = "Genre"
         case studio, contentRating
     }
     
     func toArtist() -> PlexArtist {
-        PlexArtist(
+        // Use childCount, albumCount, or leafCount (some servers use different fields)
+        let albumCountValue = childCount ?? albumCount ?? 0
+        
+        return PlexArtist(
             id: ratingKey,
             key: key,
             title: title,
             summary: summary,
             thumb: thumb,
             art: art,
-            albumCount: childCount ?? 0,
+            albumCount: albumCountValue,
             genre: genre?.first?.tag,
             addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
             updatedAt: updatedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }

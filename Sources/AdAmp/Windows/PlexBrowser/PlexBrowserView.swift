@@ -63,11 +63,17 @@ class PlexBrowserView: NSView {
     /// Current display items
     private var displayItems: [PlexDisplayItem] = []
     
-    /// Expanded artists for hierarchical view
+    /// Expanded artists for hierarchical view (by ID)
     private var expandedArtists: Set<String> = []
     
-    /// Expanded albums (for showing tracks)
+    /// Expanded albums (for showing tracks, by ID)
     private var expandedAlbums: Set<String> = []
+    
+    /// Expanded artists by name (for search results where IDs can vary)
+    private var expandedArtistNames: Set<String> = []
+    
+    /// Albums fetched by artist name (for search results)
+    private var artistAlbumsByName: [String: [PlexAlbum]] = [:]
     
     /// Loading state
     private var isLoading: Bool = false
@@ -81,6 +87,7 @@ class PlexBrowserView: NSView {
     private var cachedTracks: [PlexTrack] = []
     private var artistAlbums: [String: [PlexAlbum]] = [:]
     private var albumTracks: [String: [PlexTrack]] = [:]
+    private var artistAlbumCounts: [String: Int] = [:]  // Album count per artist (from parentKey)
     
     /// Cached data - Video
     private var cachedMovies: [PlexMovie] = []
@@ -99,6 +106,11 @@ class PlexBrowserView: NSView {
     /// Loading animation
     private var loadingAnimationTimer: Timer?
     private var loadingAnimationFrame: Int = 0
+    
+    /// Server name scrolling animation
+    private var serverNameScrollOffset: CGFloat = 0
+    private var serverScrollTimer: Timer?
+    private var lastServerName: String = ""
     
     /// Shade mode state
     private(set) var isShadeMode = false
@@ -164,34 +176,56 @@ class PlexBrowserView: NSView {
             name: PlexManager.serversDidChangeNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(plexContentDidPreload),
+            name: PlexManager.libraryContentDidPreloadNotification,
+            object: nil
+        )
         
         // Initial data load
+        reloadData()
+        
+        // Start server name scroll animation
+        startServerNameScroll()
+    }
+    
+    @objc private func plexContentDidPreload() {
+        // When PlexManager finishes preloading content, reload our data
         reloadData()
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
         stopLoadingAnimation()
+        stopServerNameScroll()
     }
     
     // MARK: - Scaling Support
     
     /// Get the original window size for drawing and hit testing
+    /// For vertical resizing, we use the actual bounds height to allow the content area to expand
     private var originalWindowSize: NSSize {
         if isShadeMode {
             // Shade mode: width scales with window, height is fixed
             return NSSize(width: SkinElements.PlexBrowser.minSize.width, height: SkinElements.PlexBrowser.shadeHeight)
         } else {
-            return SkinElements.PlexBrowser.minSize
+            // Use minimum width but actual height to allow vertical expansion
+            return NSSize(width: SkinElements.PlexBrowser.minSize.width, height: bounds.height)
         }
     }
     
     /// Calculate scale factor based on current bounds vs original (base) size
+    /// Only scale horizontally - vertical content area expands with window
     private var scaleFactor: CGFloat {
-        let originalSize = originalWindowSize
-        let scaleX = bounds.width / originalSize.width
-        let scaleY = bounds.height / originalSize.height
-        return min(scaleX, scaleY)
+        if isShadeMode {
+            let originalSize = originalWindowSize
+            let scaleX = bounds.width / originalSize.width
+            return scaleX
+        } else {
+            // Scale based on width only - height expands naturally
+            return bounds.width / SkinElements.PlexBrowser.minSize.width
+        }
     }
     
     /// Convert a point from view coordinates to original (unscaled) Winamp coordinates
@@ -199,18 +233,27 @@ class PlexBrowserView: NSView {
         let scale = scaleFactor
         let originalSize = originalWindowSize
         
-        // Calculate offset (centering) if scaled
-        let scaledWidth = originalSize.width * scale
-        let scaledHeight = originalSize.height * scale
-        let offsetX = (bounds.width - scaledWidth) / 2
-        let offsetY = (bounds.height - scaledHeight) / 2
-        
-        // Transform point back to original coordinates
-        let x = (point.x - offsetX) / scale
-        // Convert from macOS coords (origin bottom-left) to Winamp coords (origin top-left)
-        let y = originalSize.height - ((point.y - offsetY) / scale)
-        
-        return NSPoint(x: x, y: y)
+        if isShadeMode {
+            // Shade mode uses uniform scaling
+            let scaledWidth = originalSize.width * scale
+            let scaledHeight = originalSize.height * scale
+            let offsetX = (bounds.width - scaledWidth) / 2
+            let offsetY = (bounds.height - scaledHeight) / 2
+            
+            let x = (point.x - offsetX) / scale
+            let y = originalSize.height - ((point.y - offsetY) / scale)
+            return NSPoint(x: x, y: y)
+        } else {
+            // Normal mode: horizontal scaling only, height is 1:1
+            let scaledWidth = SkinElements.PlexBrowser.minSize.width * scale
+            let offsetX = (bounds.width - scaledWidth) / 2
+            
+            let x = (point.x - offsetX) / scale
+            // Vertical is not scaled - just flip coordinates
+            let y = bounds.height - point.y
+            
+            return NSPoint(x: x, y: y)
+        }
     }
     
     // MARK: - Drawing
@@ -231,13 +274,24 @@ class PlexBrowserView: NSView {
         context.scaleBy(x: 1, y: -1)
         
         // Apply scaling for resized window
-        if scale != 1.0 {
-            let scaledWidth = originalSize.width * scale
-            let scaledHeight = originalSize.height * scale
-            let offsetX = (bounds.width - scaledWidth) / 2
-            let offsetY = (bounds.height - scaledHeight) / 2
-            context.translateBy(x: offsetX, y: offsetY)
-            context.scaleBy(x: scale, y: scale)
+        if isShadeMode {
+            // Shade mode uses uniform scaling
+            if scale != 1.0 {
+                let scaledWidth = originalSize.width * scale
+                let scaledHeight = originalSize.height * scale
+                let offsetX = (bounds.width - scaledWidth) / 2
+                let offsetY = (bounds.height - scaledHeight) / 2
+                context.translateBy(x: offsetX, y: offsetY)
+                context.scaleBy(x: scale, y: scale)
+            }
+        } else {
+            // Normal mode: horizontal scaling only, vertical is 1:1
+            if scale != 1.0 {
+                let scaledWidth = SkinElements.PlexBrowser.minSize.width * scale
+                let offsetX = (bounds.width - scaledWidth) / 2
+                context.translateBy(x: offsetX, y: 0)
+                context.scaleBy(x: scale, y: 1)  // Only scale horizontally
+            }
         }
         
         // Use original bounds for drawing (scaling is applied via transform)
@@ -258,29 +312,29 @@ class PlexBrowserView: NSView {
             let colors = skin?.playlistColors ?? .default
             
             // Draw server/library selector bar
-            drawServerBar(in: context, drawBounds: drawBounds, colors: colors)
+            drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             
             // Draw tab bar
-            drawTabBar(in: context, drawBounds: drawBounds, colors: colors)
+            drawTabBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             
             // Draw search bar (only in search mode)
             if browseMode == .search {
-                drawSearchBar(in: context, drawBounds: drawBounds, colors: colors)
+                drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             }
             
             // Draw list area or connection status
             if !PlexManager.shared.isLinked {
-                drawNotLinkedState(in: context, drawBounds: drawBounds, colors: colors)
+                drawNotLinkedState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             } else if isLoading {
-                drawLoadingState(in: context, drawBounds: drawBounds, colors: colors)
+                drawLoadingState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             } else if let error = errorMessage {
-                drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors)
+                drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors, renderer: renderer)
             } else {
-                drawListArea(in: context, drawBounds: drawBounds, colors: colors)
+                drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             }
             
             // Draw status bar text
-            drawStatusBarText(in: context, drawBounds: drawBounds, colors: colors)
+            drawStatusBarText(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
         }
         
         context.restoreGState()
@@ -301,9 +355,38 @@ class PlexBrowserView: NSView {
         return min(1, max(0, scrollOffset / scrollRange))
     }
     
-    // MARK: - Content Drawing (in Winamp coordinates, with counter-flip for text)
+    // MARK: - Content Drawing (in Winamp coordinates, using skin text font)
     
-    private func drawServerBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors) {
+    /// Helper to draw scaled skin text (green)
+    private func drawScaledSkinText(_ text: String, at position: NSPoint, scale: CGFloat, renderer: SkinRenderer, in context: CGContext) {
+        context.saveGState()
+        context.translateBy(x: position.x, y: position.y)
+        context.scaleBy(x: scale, y: scale)
+        renderer.drawSkinText(text, at: NSPoint(x: 0, y: 0), in: context)
+        context.restoreGState()
+    }
+    
+    /// Helper to draw scaled white skin text
+    private func drawScaledWhiteSkinText(_ text: String, at position: NSPoint, scale: CGFloat, renderer: SkinRenderer, in context: CGContext) {
+        context.saveGState()
+        context.translateBy(x: position.x, y: position.y)
+        context.scaleBy(x: scale, y: scale)
+        renderer.drawSkinTextWhite(text, at: NSPoint(x: 0, y: 0), in: context)
+        context.restoreGState()
+    }
+    
+    /// Helper to draw scaled white skin text centered in a rect
+    private func drawScaledWhiteSkinTextCentered(_ text: String, in rect: NSRect, scale: CGFloat, renderer: SkinRenderer, in context: CGContext) {
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
+        let textWidth = CGFloat(text.count) * charWidth * scale
+        let textHeight = charHeight * scale
+        let x = rect.midX - textWidth / 2
+        let y = rect.midY - textHeight / 2
+        drawScaledWhiteSkinText(text, at: NSPoint(x: x, y: y), scale: scale, renderer: renderer, in: context)
+    }
+    
+    private func drawServerBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
         let barY = Layout.titleBarHeight
         let barRect = NSRect(x: Layout.leftBorder, y: barY,
                             width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
@@ -314,61 +397,108 @@ class PlexBrowserView: NSView {
         context.fill(barRect)
         
         let manager = PlexManager.shared
-        
-        // Counter-flip for text rendering
-        context.saveGState()
-        let centerY = barRect.midY
-        context.translateBy(x: 0, y: centerY)
-        context.scaleBy(x: 1, y: -1)
-        context.translateBy(x: 0, y: -centerY)
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
+        let textScale: CGFloat = 1.5
+        let scaledCharWidth = charWidth * textScale
+        let scaledCharHeight = charHeight * textScale
+        let textY = barRect.minY + (barRect.height - scaledCharHeight) / 2
         
         if manager.isLinked {
-            // Server dropdown
+            // Left side: "Plex Server:" label in green skin text
+            let prefix = "Plex Server: "
+            drawScaledSkinText(prefix, at: NSPoint(x: barRect.minX + 4, y: textY), scale: textScale, renderer: renderer, in: context)
+            
+            // Calculate layout positions for the bar
+            let prefixWidth = CGFloat(prefix.count) * scaledCharWidth
+            let serverNameStartX = barRect.minX + 4 + prefixWidth
+            
+            // Right side: Refresh icon in green skin text
+            let refreshX = barRect.maxX - scaledCharWidth - 4
+            drawScaledSkinText("O", at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+            
+            // Library name in WHITE skin text
+            let libraryText = manager.currentLibrary?.title ?? "Select Library"
+            let libraryWidth = CGFloat(libraryText.count) * scaledCharWidth
+            let libraryX = refreshX - libraryWidth - 8
+            drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
+            
+            // Item count (center) - number in gray, "items" in green
+            let countNumber = "\(displayItems.count)"
+            let countLabel = " items"
+            let countTotalWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+            let countX = barRect.midX - countTotalWidth / 2
+            drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+            drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+            
+            // Server name in WHITE skin text - with circular scrolling if too long
             let serverText = manager.currentServer?.name ?? "Select Server"
-            let serverAttrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: colors.normalText,
-                .font: NSFont.systemFont(ofSize: 10)
-            ]
-            let serverLabel = "Server: \(serverText) ▼"
-            serverLabel.draw(at: NSPoint(x: barRect.minX + 4, y: barRect.minY + 6), withAttributes: serverAttrs)
+            let serverTextWidth = CGFloat(serverText.count) * scaledCharWidth
             
-            // Refresh button (center)
-            let refreshLabel = "↻ Refresh"
-            let refreshAttrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: colors.currentText,
-                .font: NSFont.systemFont(ofSize: 10)
-            ]
-            let refreshSize = refreshLabel.size(withAttributes: refreshAttrs)
-            let refreshX = barRect.midX - refreshSize.width / 2
-            refreshLabel.draw(at: NSPoint(x: refreshX, y: barRect.minY + 6), withAttributes: refreshAttrs)
+            // Available width for server name (from after prefix to before item count, with padding)
+            let availableWidth = countX - serverNameStartX - 16
             
-            // Library dropdown (right side)
-            let libraryText: String
-            if browseMode.isVideoMode {
-                libraryText = manager.currentVideoLibrary?.title ?? "Select Video Library"
+            if serverTextWidth <= availableWidth || availableWidth <= 0 {
+                // Text fits - draw normally
+                drawScaledWhiteSkinText(serverText, at: NSPoint(x: serverNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
-                libraryText = manager.currentLibrary?.title ?? "Select Library"
+                // Text too long - draw with circular scrolling and clipping
+                drawScrollingServerName(serverText, startX: serverNameStartX, textY: textY,
+                                       availableWidth: availableWidth, scale: textScale,
+                                       renderer: renderer, in: context)
             }
-            let libraryLabel = "Library: \(libraryText) ▼"
-            let librarySize = libraryLabel.size(withAttributes: serverAttrs)
-            libraryLabel.draw(at: NSPoint(x: barRect.maxX - librarySize.width - 4, y: barRect.minY + 6),
-                            withAttributes: serverAttrs)
         } else {
-            // Not linked message
+            // Not linked message in green skin text
             let linkText = "Click to link your Plex account"
-            let linkAttrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor(calibratedRed: 0.9, green: 0.6, blue: 0.1, alpha: 1.0),
-                .font: NSFont.systemFont(ofSize: 10)
-            ]
-            let linkSize = linkText.size(withAttributes: linkAttrs)
-            linkText.draw(at: NSPoint(x: barRect.midX - linkSize.width / 2, y: barRect.minY + 6),
-                         withAttributes: linkAttrs)
+            let linkWidth = CGFloat(linkText.count) * scaledCharWidth
+            let linkX = barRect.midX - linkWidth / 2
+            drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
+        }
+    }
+    
+    /// Draw server name with circular scrolling when it's too long
+    private func drawScrollingServerName(_ text: String, startX: CGFloat, textY: CGFloat,
+                                         availableWidth: CGFloat, scale: CGFloat,
+                                         renderer: SkinRenderer, in context: CGContext) {
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
+        let scaledCharWidth = charWidth * scale
+        let scaledCharHeight = charHeight * scale
+        
+        let textWidth = CGFloat(text.count) * scaledCharWidth
+        let separator = "   "  // Separator for seamless wrap
+        let separatorWidth = CGFloat(separator.count) * scaledCharWidth
+        let totalCycleWidth = textWidth + separatorWidth
+        
+        // Clip to the available area
+        context.saveGState()
+        let clipRect = NSRect(x: startX, y: textY, width: availableWidth, height: scaledCharHeight)
+        context.clip(to: clipRect)
+        
+        // Draw two copies of "text + separator" for seamless circular scrolling
+        let fullText = text + separator
+        
+        for pass in 0..<2 {
+            let baseX = startX - serverNameScrollOffset + (CGFloat(pass) * totalCycleWidth)
+            
+            // Check if this pass could be visible
+            if baseX + totalCycleWidth < startX || baseX > startX + availableWidth {
+                continue
+            }
+            
+            // Draw text at calculated position using scaled white skin text
+            context.saveGState()
+            context.translateBy(x: baseX, y: textY)
+            context.scaleBy(x: scale, y: scale)
+            renderer.drawSkinTextWhite(fullText, at: NSPoint(x: 0, y: 0), in: context)
+            context.restoreGState()
         }
         
         context.restoreGState()
     }
     
-    private func drawTabBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors) {
+    private func drawTabBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
         let tabBarY = Layout.titleBarHeight + Layout.serverBarHeight
         let tabBarRect = NSRect(x: Layout.leftBorder, y: tabBarY,
                                width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
@@ -380,34 +510,32 @@ class PlexBrowserView: NSView {
         
         // Draw tabs
         let tabWidth = tabBarRect.width / CGFloat(PlexBrowseMode.allCases.count)
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
+        let textScale: CGFloat = 1.5
+        let scaledCharWidth = charWidth * textScale
+        let scaledCharHeight = charHeight * textScale
         
         for (index, mode) in PlexBrowseMode.allCases.enumerated() {
             let tabRect = NSRect(x: tabBarRect.minX + CGFloat(index) * tabWidth, y: tabBarY,
                                 width: tabWidth, height: Layout.tabBarHeight)
             
-            // Selected tab indicated by white text only (no background fill)
+            let isSelected = mode == browseMode
             
-            // Tab title (counter-flip for text)
-            context.saveGState()
-            let centerY = tabRect.midY
-            context.translateBy(x: 0, y: centerY)
-            context.scaleBy(x: 1, y: -1)
-            context.translateBy(x: 0, y: -centerY)
-            
-            let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: mode == browseMode ? colors.currentText : colors.normalText.withAlphaComponent(0.6),
-                .font: NSFont.systemFont(ofSize: 10, weight: mode == browseMode ? .semibold : .regular)
-            ]
-            let titleSize = mode.title.size(withAttributes: attrs)
-            let titlePoint = NSPoint(x: tabRect.midX - titleSize.width / 2,
-                                    y: tabRect.midY - titleSize.height / 2)
-            mode.title.draw(at: titlePoint, withAttributes: attrs)
-            
-            context.restoreGState()
+            if isSelected {
+                // Selected tab in WHITE skin text
+                drawScaledWhiteSkinTextCentered(mode.title, in: tabRect, scale: textScale, renderer: renderer, in: context)
+            } else {
+                // Unselected tabs in green skin text
+                let titleWidth = CGFloat(mode.title.count) * scaledCharWidth
+                let textX = tabRect.midX - titleWidth / 2
+                let textY = tabRect.minY + (tabRect.height - scaledCharHeight) / 2
+                drawScaledSkinText(mode.title, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
+            }
         }
     }
     
-    private func drawSearchBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors) {
+    private func drawSearchBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
         let searchY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
         let searchRect = NSRect(x: Layout.leftBorder + Layout.padding, y: searchY + 3,
                                width: drawBounds.width - Layout.leftBorder - Layout.rightBorder - Layout.padding * 2,
@@ -429,40 +557,23 @@ class PlexBrowserView: NSView {
             path.stroke()
         }
         
-        // Counter-flip for text
-        context.saveGState()
-        let centerY = searchRect.midY
-        context.translateBy(x: 0, y: centerY)
-        context.scaleBy(x: 1, y: -1)
-        context.translateBy(x: 0, y: -centerY)
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
+        let textY = searchRect.minY + (searchRect.height - charHeight) / 2
         
-        // Search icon
-        let iconAttrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: colors.normalText.withAlphaComponent(0.6),
-            .font: NSFont.systemFont(ofSize: 10)
-        ]
-        "🔍".draw(at: NSPoint(x: searchRect.minX + 6, y: searchRect.midY - 6), withAttributes: iconAttrs)
-        
-        // Search text or placeholder
-        let textAttrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: searchQuery.isEmpty ? colors.normalText.withAlphaComponent(0.5) : colors.normalText,
-            .font: NSFont.systemFont(ofSize: 10)
-        ]
+        // Search text or placeholder using skin font
         let displayText = searchQuery.isEmpty ? "Type to search..." : searchQuery
-        displayText.draw(at: NSPoint(x: searchRect.minX + 24, y: searchRect.midY - 6), withAttributes: textAttrs)
+        renderer.drawSkinText(displayText, at: NSPoint(x: searchRect.minX + 6, y: textY), in: context)
         
         // Draw cursor if focused
-        if isFocused {
-            let textSize = (searchQuery.isEmpty ? "" : searchQuery).size(withAttributes: textAttrs)
-            let cursorX = searchRect.minX + 24 + textSize.width + 1
+        if isFocused && !searchQuery.isEmpty {
+            let cursorX = searchRect.minX + 6 + CGFloat(searchQuery.count) * charWidth + 1
             colors.normalText.setFill()
-            context.fill(CGRect(x: cursorX, y: searchRect.midY - 5, width: 1, height: 10))
+            context.fill(CGRect(x: cursorX, y: textY, width: 1, height: charHeight))
         }
-        
-        context.restoreGState()
     }
     
-    private func drawNotLinkedState(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors) {
+    private func drawNotLinkedState(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
         if browseMode == .search {
             listY += Layout.searchBarHeight
@@ -501,7 +612,7 @@ class PlexBrowserView: NSView {
         context.restoreGState()
     }
     
-    private func drawLoadingState(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors) {
+    private func drawLoadingState(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
         if browseMode == .search {
             listY += Layout.searchBarHeight
@@ -541,7 +652,7 @@ class PlexBrowserView: NSView {
         startLoadingAnimation()
     }
     
-    private func drawErrorState(in context: CGContext, drawBounds: NSRect, message: String, colors: PlaylistColors) {
+    private func drawErrorState(in context: CGContext, drawBounds: NSRect, message: String, colors: PlaylistColors, renderer: SkinRenderer) {
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
         if browseMode == .search {
             listY += Layout.searchBarHeight
@@ -559,7 +670,7 @@ class PlexBrowserView: NSView {
         context.translateBy(x: 0, y: -centerY)
         
         let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.systemRed,
+            .foregroundColor: colors.normalText.withAlphaComponent(0.6),
             .font: NSFont.systemFont(ofSize: 11)
         ]
         let size = message.size(withAttributes: attrs)
@@ -569,7 +680,48 @@ class PlexBrowserView: NSView {
         context.restoreGState()
     }
     
-    private func drawListArea(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors) {
+    private func drawEmptyState(in context: CGContext, listRect: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
+        // Determine empty message based on mode and library type
+        let library = PlexManager.shared.currentLibrary
+        let message: String
+        
+        switch browseMode {
+        case .artists, .albums, .tracks:
+            if library?.isMusicLibrary == true {
+                message = "No \(browseMode.title.lowercased()) found"
+            } else {
+                message = "This library doesn't contain music"
+            }
+        case .movies:
+            if library?.isMovieLibrary == true {
+                message = "No movies found"
+            } else {
+                message = "This library doesn't contain movies"
+            }
+        case .shows:
+            if library?.isShowLibrary == true {
+                message = "No TV shows found"
+            } else {
+                message = "This library doesn't contain TV shows"
+            }
+        case .search:
+            message = searchQuery.isEmpty ? "Type to search" : "No results found"
+        }
+        
+        // Draw using green skin text, centered
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
+        let textScale: CGFloat = 1.5
+        let scaledCharWidth = charWidth * textScale
+        let scaledCharHeight = charHeight * textScale
+        let textWidth = CGFloat(message.count) * scaledCharWidth
+        let textX = listRect.midX - textWidth / 2
+        let textY = listRect.midY - scaledCharHeight / 2
+        
+        drawScaledSkinText(message, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
+    }
+    
+    private func drawListArea(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
         if browseMode == .search {
             listY += Layout.searchBarHeight
@@ -581,6 +733,12 @@ class PlexBrowserView: NSView {
         let listRect = NSRect(x: Layout.leftBorder, y: listY,
                              width: drawBounds.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - alphabetWidth,
                              height: listHeight)
+        
+        // Show empty state message if no items
+        if displayItems.isEmpty {
+            drawEmptyState(in: context, listRect: listRect, colors: colors, renderer: renderer)
+            return
+        }
         
         // Clip to list area
         context.saveGState()
@@ -650,8 +808,9 @@ class PlexBrowserView: NSView {
             
             // Secondary info
             if let info = item.info {
+                let infoColor = selectedIndices.contains(index) ? colors.currentText : colors.normalText.withAlphaComponent(0.6)
                 let infoAttrs: [NSAttributedString.Key: Any] = [
-                    .foregroundColor: colors.normalText.withAlphaComponent(0.6),
+                    .foregroundColor: infoColor,
                     .font: NSFont.systemFont(ofSize: 9)
                 ]
                 let infoSize = info.size(withAttributes: infoAttrs)
@@ -667,10 +826,10 @@ class PlexBrowserView: NSView {
         // Draw alphabet index
         let alphabetRect = NSRect(x: drawBounds.width - Layout.rightBorder - Layout.scrollbarWidth - alphabetWidth,
                                  y: listY, width: alphabetWidth, height: listHeight)
-        drawAlphabetIndex(in: context, rect: alphabetRect, colors: colors)
+        drawAlphabetIndex(in: context, rect: alphabetRect, colors: colors, renderer: renderer)
     }
     
-    private func drawAlphabetIndex(in context: CGContext, rect: NSRect, colors: PlaylistColors) {
+    private func drawAlphabetIndex(in context: CGContext, rect: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
         // Background
         colors.normalBackground.withAlphaComponent(0.3).setFill()
         context.fill(rect)
@@ -723,38 +882,9 @@ class PlexBrowserView: NSView {
         }
     }
     
-    private func drawStatusBarText(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors) {
-        let statusY = drawBounds.height - Layout.statusBarHeight
-        let statusRect = NSRect(x: Layout.leftBorder, y: statusY,
-                               width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
-                               height: Layout.statusBarHeight)
-        
-        // Counter-flip for text
-        context.saveGState()
-        let centerY = statusRect.midY
-        context.translateBy(x: 0, y: centerY)
-        context.scaleBy(x: 1, y: -1)
-        context.translateBy(x: 0, y: -centerY)
-        
-        let manager = PlexManager.shared
-        let statusText: String
-        
-        if !manager.isLinked {
-            statusText = "Not linked"
-        } else if isLoading {
-            statusText = "Loading..."
-        } else {
-            let serverName = manager.currentServer?.name ?? "Unknown"
-            statusText = "Connected to: \(serverName) • \(displayItems.count) items"
-        }
-        
-        let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: colors.normalText.withAlphaComponent(0.6),
-            .font: NSFont.systemFont(ofSize: 9)
-        ]
-        statusText.draw(at: NSPoint(x: statusRect.minX + 4, y: statusRect.midY - 5), withAttributes: attrs)
-        
-        context.restoreGState()
+    private func drawStatusBarText(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
+        // Status info is now shown in the top server bar
+        // This function is kept for potential future use but draws nothing
     }
     
     // MARK: - Loading Animation
@@ -776,6 +906,93 @@ class PlexBrowserView: NSView {
         loadingAnimationTimer?.invalidate()
         loadingAnimationTimer = nil
         loadingAnimationFrame = 0
+    }
+    
+    // MARK: - Server Name Scroll Animation
+    
+    private func startServerNameScroll() {
+        guard serverScrollTimer == nil else { return }
+        serverScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.updateServerNameScroll()
+        }
+    }
+    
+    private func stopServerNameScroll() {
+        serverScrollTimer?.invalidate()
+        serverScrollTimer = nil
+        serverNameScrollOffset = 0
+    }
+    
+    private func updateServerNameScroll() {
+        let manager = PlexManager.shared
+        guard manager.isLinked else {
+            if serverNameScrollOffset != 0 {
+                serverNameScrollOffset = 0
+                needsDisplay = true
+            }
+            return
+        }
+        
+        let serverName = manager.currentServer?.name ?? "Select Server"
+        
+        // Reset scroll if server name changed
+        if serverName != lastServerName {
+            lastServerName = serverName
+            serverNameScrollOffset = 0
+        }
+        
+        let charWidth = SkinElements.TextFont.charWidth
+        let textScale: CGFloat = 1.5
+        let scaledCharWidth = charWidth * textScale
+        
+        // Calculate available width for server name
+        let drawBounds = bounds
+        let barRect = NSRect(x: Layout.leftBorder, y: Layout.titleBarHeight,
+                            width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
+                            height: Layout.serverBarHeight)
+        
+        let prefix = "Plex Server: "
+        let prefixWidth = CGFloat(prefix.count) * scaledCharWidth
+        let serverNameStartX = barRect.minX + 4 + prefixWidth
+        
+        // Center elements: item count
+        let countNumber = "\(displayItems.count)"
+        let countLabel = " items"
+        let countTotalWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+        let countCenterX = barRect.midX
+        let countStartX = countCenterX - countTotalWidth / 2
+        
+        // Available width for server name (from after prefix to before count, with padding)
+        let availableWidth = countStartX - serverNameStartX - 16  // 16px padding
+        
+        let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
+        
+        if serverTextWidth > availableWidth && availableWidth > 0 {
+            // Text is too long, scroll it
+            let separator = "   "  // Separator for circular scroll
+            let separatorWidth = CGFloat(separator.count) * scaledCharWidth
+            let totalCycleWidth = serverTextWidth + separatorWidth
+            
+            serverNameScrollOffset += 1
+            // Reset when one full cycle completes
+            if serverNameScrollOffset >= totalCycleWidth {
+                serverNameScrollOffset = 0
+            }
+            
+            // Only redraw the server bar area
+            let serverBarArea = NSRect(x: 0, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
+                                       width: bounds.width, height: Layout.serverBarHeight)
+            setNeedsDisplay(serverBarArea)
+        } else {
+            // Text fits - no scrolling needed
+            if serverNameScrollOffset != 0 {
+                serverNameScrollOffset = 0
+                let serverBarArea = NSRect(x: 0, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
+                                           width: bounds.width, height: Layout.serverBarHeight)
+                setNeedsDisplay(serverBarArea)
+            }
+        }
     }
     
     // MARK: - Public Methods
@@ -865,6 +1082,7 @@ class PlexBrowserView: NSView {
         cachedTracks = []
         artistAlbums = [:]
         albumTracks = [:]
+        artistAlbumCounts = [:]
         cachedMovies = []
         cachedShows = []
         showSeasons = [:]
@@ -941,6 +1159,7 @@ class PlexBrowserView: NSView {
         cachedTracks = []
         artistAlbums = [:]
         albumTracks = [:]
+        artistAlbumCounts = [:]
         expandedArtists = []
         expandedAlbums = []
         
@@ -964,18 +1183,20 @@ class PlexBrowserView: NSView {
     }
     
     /// Check if point hits close button
+    /// Uses LibraryWindow offsets to match where SkinRenderer draws the buttons
     private func hitTestCloseButton(at winampPoint: NSPoint) -> Bool {
         let originalSize = originalWindowSize
-        let closeRect = NSRect(x: originalSize.width - SkinElements.PlexBrowser.TitleBarButtons.closeOffset - 9,
-                               y: 3, width: 9, height: 9)
+        let closeRect = NSRect(x: originalSize.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9,
+                               y: 4, width: 9, height: 9)
         return closeRect.contains(winampPoint)
     }
     
     /// Check if point hits shade button
+    /// Uses LibraryWindow offsets to match where SkinRenderer draws the buttons
     private func hitTestShadeButton(at winampPoint: NSPoint) -> Bool {
         let originalSize = originalWindowSize
-        let shadeRect = NSRect(x: originalSize.width - SkinElements.PlexBrowser.TitleBarButtons.shadeOffset - 9,
-                               y: 3, width: 9, height: 9)
+        let shadeRect = NSRect(x: originalSize.width - SkinElements.LibraryWindow.TitleBarButtons.shadeOffset - 9,
+                               y: 4, width: 9, height: 9)
         return shadeRect.contains(winampPoint)
     }
     
@@ -1182,25 +1403,29 @@ class PlexBrowserView: NSView {
     
     private func handleServerBarClick(at winampPoint: NSPoint, event: NSEvent) {
         let originalSize = originalWindowSize
+        let barWidth = originalSize.width - Layout.leftBorder - Layout.rightBorder
         
-        // Check for refresh button click (center area)
-        let refreshLabel = "↻ Refresh"
-        let refreshAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10)
-        ]
-        let refreshSize = refreshLabel.size(withAttributes: refreshAttrs)
-        let refreshX = originalSize.width / 2 - refreshSize.width / 2
-        let refreshEndX = refreshX + refreshSize.width
+        // Layout: [Plex Server: xxx ▼] ... [item count] ... [Library ▼] [↻]
+        // Refresh icon is far right (last ~20px)
+        // Library dropdown is next ~100px from right
+        // Server dropdown is left side
         
-        if winampPoint.x >= refreshX - 10 && winampPoint.x < refreshEndX + 10 {
+        let refreshZone: CGFloat = 25  // Far right area for refresh
+        let libraryZone: CGFloat = 120 // Area for library dropdown
+        
+        let relativeX = winampPoint.x - Layout.leftBorder
+        
+        if relativeX > barWidth - refreshZone {
+            // Refresh icon click
             refreshData()
-        } else if winampPoint.x < originalSize.width / 3 {
-            // Left third = server selection
-            showServerMenu(at: event)
-        } else if winampPoint.x > originalSize.width * 2 / 3 {
-            // Right third = library selection
+        } else if relativeX > barWidth - libraryZone {
+            // Library dropdown click
             showLibraryMenu(at: event)
+        } else if relativeX < barWidth / 2 {
+            // Left half = server selection
+            showServerMenu(at: event)
         }
+        // Center area (item count) - no action
     }
     
     private func handleAlphabetClick(at winampPoint: NSPoint) {
@@ -1325,7 +1550,7 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Handle window dragging
+        // Handle window dragging - snaps to other windows but doesn't dock
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
             let deltaX = currentPoint.x - windowDragStartPoint.x
@@ -1335,6 +1560,7 @@ class PlexBrowserView: NSView {
             newOrigin.x += deltaX
             newOrigin.y += deltaY
             
+            // Apply snapping to other windows
             newOrigin = WindowManager.shared.windowWillMove(window, to: newOrigin)
             window.setFrameOrigin(newOrigin)
         }
@@ -1347,9 +1573,6 @@ class PlexBrowserView: NSView {
         // End window dragging
         if isDraggingWindow {
             isDraggingWindow = false
-            if let window = window {
-                WindowManager.shared.windowDidFinishDragging(window)
-            }
         }
         
         // End scrollbar dragging
@@ -1590,21 +1813,28 @@ class PlexBrowserView: NSView {
     private func showLibraryMenu(at event: NSEvent) {
         let menu = NSMenu()
         
-        let isVideoMode = browseMode.isVideoMode
-        let libraries = isVideoMode
-            ? PlexManager.shared.availableVideoLibraries
-            : PlexManager.shared.availableLibraries
-        let currentLibraryId = isVideoMode
-            ? PlexManager.shared.currentVideoLibrary?.id
-            : PlexManager.shared.currentLibrary?.id
+        let libraries = PlexManager.shared.availableLibraries
+        let currentLibraryId = PlexManager.shared.currentLibrary?.id
         
         if libraries.isEmpty {
-            let noLibraries = NSMenuItem(title: isVideoMode ? "No video libraries available" : "No music libraries available", action: nil, keyEquivalent: "")
+            let noLibraries = NSMenuItem(title: "No libraries available", action: nil, keyEquivalent: "")
             noLibraries.isEnabled = false
             menu.addItem(noLibraries)
         } else {
             for library in libraries {
-                let item = NSMenuItem(title: library.title, action: #selector(selectLibrary(_:)), keyEquivalent: "")
+                // Show library type in parentheses
+                let typeLabel: String
+                if library.isMusicLibrary {
+                    typeLabel = "Music"
+                } else if library.isMovieLibrary {
+                    typeLabel = "Movies"
+                } else if library.isShowLibrary {
+                    typeLabel = "TV Shows"
+                } else {
+                    typeLabel = library.type
+                }
+                
+                let item = NSMenuItem(title: "\(library.title) (\(typeLabel))", action: #selector(selectLibrary(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = library
                 item.state = library.id == currentLibraryId ? .on : .off
@@ -1646,24 +1876,25 @@ class PlexBrowserView: NSView {
             return
         }
         
-        if library.isVideoLibrary {
-            PlexManager.shared.selectVideoLibrary(library)
-            cachedMovies = []
-            cachedShows = []
-            showSeasons = [:]
-            seasonEpisodes = [:]
-            expandedShows = []
-            expandedSeasons = []
-        } else {
-            PlexManager.shared.selectLibrary(library)
-            cachedArtists = []
-            cachedAlbums = []
-            cachedTracks = []
-            artistAlbums = [:]
-            albumTracks = [:]
-            expandedArtists = []
-            expandedAlbums = []
-        }
+        PlexManager.shared.selectLibrary(library)
+        
+        // Clear all cached data when switching libraries
+        cachedArtists = []
+        cachedAlbums = []
+        cachedTracks = []
+        artistAlbums = [:]
+        albumTracks = [:]
+        artistAlbumCounts = [:]
+        expandedArtists = []
+        expandedAlbums = []
+        cachedMovies = []
+        cachedShows = []
+        showSeasons = [:]
+        seasonEpisodes = [:]
+        expandedShows = []
+        expandedSeasons = []
+        searchResults = nil
+        
         reloadData()
     }
     
@@ -1747,30 +1978,57 @@ class PlexBrowserView: NSView {
         
         Task { @MainActor in
             do {
+                let plexManager = PlexManager.shared
+                
                 switch browseMode {
                 case .artists:
                     if cachedArtists.isEmpty {
-                        cachedArtists = try await PlexManager.shared.fetchArtists()
+                        // Use preloaded data from PlexManager if available
+                        if plexManager.isContentPreloaded && !plexManager.cachedArtists.isEmpty {
+                            cachedArtists = plexManager.cachedArtists
+                            cachedAlbums = plexManager.cachedAlbums
+                            NSLog("PlexBrowserView: Using preloaded artists (%d) and albums (%d)", cachedArtists.count, cachedAlbums.count)
+                        } else {
+                            cachedArtists = try await plexManager.fetchArtists()
+                            // Also fetch albums to get accurate counts per artist
+                            if cachedAlbums.isEmpty {
+                                cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                            }
+                        }
+                        // Build artist album counts from the albums data
+                        buildArtistAlbumCounts()
                     }
                     buildArtistItems()
                     
                 case .albums:
                     if cachedAlbums.isEmpty {
-                        cachedAlbums = try await PlexManager.shared.fetchAlbums(offset: 0, limit: 500)
+                        // Use preloaded data from PlexManager if available
+                        if plexManager.isContentPreloaded && !plexManager.cachedAlbums.isEmpty {
+                            cachedAlbums = plexManager.cachedAlbums
+                            NSLog("PlexBrowserView: Using preloaded albums (%d)", cachedAlbums.count)
+                        } else {
+                            cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 500)
+                        }
                     }
                     buildAlbumItems()
                     
                 case .tracks:
                     if cachedTracks.isEmpty {
-                        cachedTracks = try await PlexManager.shared.fetchTracks(offset: 0, limit: 500)
+                        cachedTracks = try await plexManager.fetchTracks(offset: 0, limit: 500)
                     }
                     buildTrackItems()
                     
                 case .movies:
                     NSLog("PlexBrowserView: Loading movies...")
                     if cachedMovies.isEmpty {
-                        cachedMovies = try await PlexManager.shared.fetchMovies(offset: 0, limit: 500)
-                        NSLog("PlexBrowserView: Loaded %d movies", cachedMovies.count)
+                        // Use preloaded data from PlexManager if available
+                        if plexManager.isContentPreloaded && !plexManager.cachedMovies.isEmpty {
+                            cachedMovies = plexManager.cachedMovies
+                            NSLog("PlexBrowserView: Using preloaded movies (%d)", cachedMovies.count)
+                        } else {
+                            cachedMovies = try await plexManager.fetchMovies(offset: 0, limit: 500)
+                            NSLog("PlexBrowserView: Loaded %d movies", cachedMovies.count)
+                        }
                     }
                     buildMovieItems()
                     NSLog("PlexBrowserView: Built %d movie items", displayItems.count)
@@ -1778,15 +2036,22 @@ class PlexBrowserView: NSView {
                 case .shows:
                     NSLog("PlexBrowserView: Loading shows...")
                     if cachedShows.isEmpty {
-                        cachedShows = try await PlexManager.shared.fetchShows(offset: 0, limit: 500)
-                        NSLog("PlexBrowserView: Loaded %d shows", cachedShows.count)
+                        // Use preloaded data from PlexManager if available
+                        if plexManager.isContentPreloaded && !plexManager.cachedShows.isEmpty {
+                            cachedShows = plexManager.cachedShows
+                            NSLog("PlexBrowserView: Using preloaded shows (%d)", cachedShows.count)
+                        } else {
+                            cachedShows = try await plexManager.fetchShows(offset: 0, limit: 500)
+                            NSLog("PlexBrowserView: Loaded %d shows", cachedShows.count)
+                        }
                     }
                     buildShowItems()
                     NSLog("PlexBrowserView: Built %d show items", displayItems.count)
                     
                 case .search:
                     if !searchQuery.isEmpty {
-                        searchResults = try await PlexManager.shared.search(query: searchQuery)
+                        // Search in the current library
+                        searchResults = try await plexManager.search(query: searchQuery)
                         buildSearchItems()
                     } else {
                         displayItems = []
@@ -1806,16 +2071,45 @@ class PlexBrowserView: NSView {
         }
     }
     
+    /// Build album counts per artist from the cached albums
+    private func buildArtistAlbumCounts() {
+        artistAlbumCounts.removeAll()
+        for album in cachedAlbums {
+            // Albums have parentKey which is the artist's key (e.g., "/library/metadata/12345")
+            // Extract the artist ID from parentKey
+            if let parentKey = album.parentKey {
+                let artistId = parentKey.replacingOccurrences(of: "/library/metadata/", with: "")
+                artistAlbumCounts[artistId, default: 0] += 1
+            }
+        }
+    }
+    
     private func buildArtistItems() {
         displayItems.removeAll()
         
         for artist in cachedArtists {
             let isExpanded = expandedArtists.contains(artist.id)
             
+            // Show album count - prefer counted from albums, then API count, then fetched albums
+            let info: String?
+            if let count = artistAlbumCounts[artist.id], count > 0 {
+                // We have a count from the albums fetch
+                info = "\(count) \(count == 1 ? "album" : "albums")"
+            } else if let albums = artistAlbums[artist.id] {
+                // We've expanded this artist - show actual count
+                info = "\(albums.count) \(albums.count == 1 ? "album" : "albums")"
+            } else if artist.albumCount > 0 {
+                // API returned a count
+                info = "\(artist.albumCount) \(artist.albumCount == 1 ? "album" : "albums")"
+            } else {
+                // No count available - show nothing
+                info = nil
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: artist.id,
                 title: artist.title,
-                info: "\(artist.albumCount) albums",
+                info: info,
                 indentLevel: 0,
                 hasChildren: true,
                 type: .artist(artist)
@@ -1945,57 +2239,141 @@ class PlexBrowserView: NSView {
         guard let results = searchResults else { return }
         
         if !results.artists.isEmpty {
+            // Deduplicate artists by name, keeping the one with highest album count
+            var artistsByName: [String: PlexArtist] = [:]
+            for artist in results.artists {
+                let normalizedName = artist.title.lowercased().trimmingCharacters(in: .whitespaces)
+                if let existing = artistsByName[normalizedName] {
+                    // Keep the one with more albums
+                    if artist.albumCount > existing.albumCount {
+                        artistsByName[normalizedName] = artist
+                    }
+                } else {
+                    artistsByName[normalizedName] = artist
+                }
+            }
+            let uniqueArtists = Array(artistsByName.values).sorted { $0.title.lowercased() < $1.title.lowercased() }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-artists",
-                title: "Artists (\(results.artists.count))",
+                title: "Artists (\(uniqueArtists.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for artist in results.artists {
+            for artist in uniqueArtists {
+                let normalizedName = artist.title.lowercased().trimmingCharacters(in: .whitespaces)
+                let isExpanded = expandedArtistNames.contains(normalizedName)
+                let info: String? = artist.albumCount > 0 
+                    ? "\(artist.albumCount) \(artist.albumCount == 1 ? "album" : "albums")" 
+                    : nil
                 displayItems.append(PlexDisplayItem(
                     id: artist.id,
                     title: artist.title,
-                    info: "\(artist.albumCount) albums",
+                    info: info,
                     indentLevel: 1,
-                    hasChildren: false,
+                    hasChildren: true,
                     type: .artist(artist)
                 ))
+                
+                // Show albums if artist is expanded (use name-based lookup)
+                if isExpanded, let albums = artistAlbumsByName[normalizedName] {
+                    for album in albums {
+                        let albumExpanded = expandedAlbums.contains(album.id)
+                        displayItems.append(PlexDisplayItem(
+                            id: album.id,
+                            title: album.title,
+                            info: album.year.map { String($0) },
+                            indentLevel: 2,
+                            hasChildren: true,
+                            type: .album(album)
+                        ))
+                        
+                        // Show tracks if album is expanded
+                        if albumExpanded, let tracks = albumTracks[album.id] {
+                            for track in tracks {
+                                displayItems.append(PlexDisplayItem(
+                                    id: track.id,
+                                    title: track.title,
+                                    info: track.formattedDuration,
+                                    indentLevel: 3,
+                                    hasChildren: false,
+                                    type: .track(track)
+                                ))
+                            }
+                        }
+                    }
+                }
             }
         }
         
         if !results.albums.isEmpty {
+            // Deduplicate albums by ID
+            var seenAlbumIds = Set<String>()
+            var uniqueAlbums: [PlexAlbum] = []
+            for album in results.albums {
+                if !seenAlbumIds.contains(album.id) {
+                    seenAlbumIds.insert(album.id)
+                    uniqueAlbums.append(album)
+                }
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-albums",
-                title: "Albums (\(results.albums.count))",
+                title: "Albums (\(uniqueAlbums.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for album in results.albums {
+            for album in uniqueAlbums {
+                let isExpanded = expandedAlbums.contains(album.id)
                 displayItems.append(PlexDisplayItem(
                     id: album.id,
                     title: "\(album.parentTitle ?? "") - \(album.title)",
                     info: album.year.map { String($0) },
                     indentLevel: 1,
-                    hasChildren: false,
+                    hasChildren: true,
                     type: .album(album)
                 ))
+                
+                // Show tracks if album is expanded
+                if isExpanded, let tracks = albumTracks[album.id] {
+                    for track in tracks {
+                        displayItems.append(PlexDisplayItem(
+                            id: track.id,
+                            title: track.title,
+                            info: track.formattedDuration,
+                            indentLevel: 2,
+                            hasChildren: false,
+                            type: .track(track)
+                        ))
+                    }
+                }
             }
         }
         
         if !results.tracks.isEmpty {
+            // Deduplicate tracks by ID
+            var seenTrackIds = Set<String>()
+            var uniqueTracks: [PlexTrack] = []
+            for track in results.tracks {
+                if !seenTrackIds.contains(track.id) {
+                    seenTrackIds.insert(track.id)
+                    uniqueTracks.append(track)
+                }
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-tracks",
-                title: "Tracks (\(results.tracks.count))",
+                title: "Tracks (\(uniqueTracks.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for track in results.tracks {
+            for track in uniqueTracks {
                 displayItems.append(PlexDisplayItem(
                     id: track.id,
                     title: "\(track.grandparentTitle ?? "") - \(track.title)",
@@ -2008,15 +2386,25 @@ class PlexBrowserView: NSView {
         }
         
         if !results.movies.isEmpty {
+            // Deduplicate movies by ID
+            var seenMovieIds = Set<String>()
+            var uniqueMovies: [PlexMovie] = []
+            for movie in results.movies {
+                if !seenMovieIds.contains(movie.id) {
+                    seenMovieIds.insert(movie.id)
+                    uniqueMovies.append(movie)
+                }
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-movies",
-                title: "Movies (\(results.movies.count))",
+                title: "Movies (\(uniqueMovies.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for movie in results.movies {
+            for movie in uniqueMovies {
                 let info = [movie.year.map { String($0) }, movie.formattedDuration]
                     .compactMap { $0 }
                     .joined(separator: " • ")
@@ -2032,36 +2420,86 @@ class PlexBrowserView: NSView {
         }
         
         if !results.shows.isEmpty {
+            // Deduplicate shows by ID
+            var seenShowIds = Set<String>()
+            var uniqueShows: [PlexShow] = []
+            for show in results.shows {
+                if !seenShowIds.contains(show.id) {
+                    seenShowIds.insert(show.id)
+                    uniqueShows.append(show)
+                }
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-shows",
-                title: "TV Shows (\(results.shows.count))",
+                title: "TV Shows (\(uniqueShows.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for show in results.shows {
+            for show in uniqueShows {
+                let isExpanded = expandedShows.contains(show.id)
                 displayItems.append(PlexDisplayItem(
                     id: show.id,
                     title: show.title,
-                    info: show.year.map { String($0) },
+                    info: "\(show.childCount) seasons",
                     indentLevel: 1,
-                    hasChildren: false,
+                    hasChildren: true,
                     type: .show(show)
                 ))
+                
+                // Show seasons if show is expanded
+                if isExpanded, let seasons = showSeasons[show.id] {
+                    for season in seasons {
+                        let seasonExpanded = expandedSeasons.contains(season.id)
+                        displayItems.append(PlexDisplayItem(
+                            id: season.id,
+                            title: season.title,
+                            info: "\(season.leafCount) episodes",
+                            indentLevel: 2,
+                            hasChildren: true,
+                            type: .season(season)
+                        ))
+                        
+                        // Show episodes if season is expanded
+                        if seasonExpanded, let episodes = seasonEpisodes[season.id] {
+                            for episode in episodes {
+                                displayItems.append(PlexDisplayItem(
+                                    id: episode.id,
+                                    title: "\(episode.episodeIdentifier) - \(episode.title)",
+                                    info: episode.formattedDuration,
+                                    indentLevel: 3,
+                                    hasChildren: false,
+                                    type: .episode(episode)
+                                ))
+                            }
+                        }
+                    }
+                }
             }
         }
         
         if !results.episodes.isEmpty {
+            // Deduplicate episodes by ID
+            var seenEpisodeIds = Set<String>()
+            var uniqueEpisodes: [PlexEpisode] = []
+            for episode in results.episodes {
+                if !seenEpisodeIds.contains(episode.id) {
+                    seenEpisodeIds.insert(episode.id)
+                    uniqueEpisodes.append(episode)
+                }
+            }
+            
             displayItems.append(PlexDisplayItem(
                 id: "header-episodes",
-                title: "Episodes (\(results.episodes.count))",
+                title: "Episodes (\(uniqueEpisodes.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for episode in results.episodes {
+            for episode in uniqueEpisodes {
                 displayItems.append(PlexDisplayItem(
                     id: episode.id,
                     title: "\(episode.grandparentTitle ?? "") - \(episode.episodeIdentifier) - \(episode.title)",
@@ -2074,9 +2512,33 @@ class PlexBrowserView: NSView {
         }
     }
     
+    /// Rebuild display items for the current browse mode
+    /// This ensures expand/collapse works correctly regardless of which tab we're on
+    private func rebuildCurrentModeItems() {
+        switch browseMode {
+        case .artists:
+            buildArtistItems()
+        case .albums:
+            buildAlbumItems()
+        case .tracks:
+            buildTrackItems()
+        case .movies:
+            buildMovieItems()
+        case .shows:
+            buildShowItems()
+        case .search:
+            buildSearchItems()
+        }
+    }
+    
     private func isExpanded(_ item: PlexDisplayItem) -> Bool {
         switch item.type {
-        case .artist:
+        case .artist(let artist):
+            // In search mode, use name-based tracking since IDs can vary after deduplication
+            if browseMode == .search {
+                let normalizedName = artist.title.lowercased().trimmingCharacters(in: .whitespaces)
+                return expandedArtistNames.contains(normalizedName)
+            }
             return expandedArtists.contains(item.id)
         case .album:
             return expandedAlbums.contains(item.id)
@@ -2092,25 +2554,50 @@ class PlexBrowserView: NSView {
     private func toggleExpand(_ item: PlexDisplayItem) {
         switch item.type {
         case .artist(let artist):
-            if expandedArtists.contains(artist.id) {
-                expandedArtists.remove(artist.id)
-            } else {
-                expandedArtists.insert(artist.id)
-                if artistAlbums[artist.id] == nil {
-                    Task { @MainActor in
-                        do {
-                            let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
-                            artistAlbums[artist.id] = albums
-                            buildArtistItems()
-                            needsDisplay = true
-                        } catch {
-                            print("Failed to load albums: \(error)")
+            let normalizedName = artist.title.lowercased().trimmingCharacters(in: .whitespaces)
+            
+            // In search mode, track by name since IDs can vary after deduplication
+            if browseMode == .search {
+                if expandedArtistNames.contains(normalizedName) {
+                    expandedArtistNames.remove(normalizedName)
+                } else {
+                    expandedArtistNames.insert(normalizedName)
+                    if artistAlbumsByName[normalizedName] == nil {
+                        Task { @MainActor in
+                            do {
+                                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
+                                artistAlbumsByName[normalizedName] = albums
+                                rebuildCurrentModeItems()
+                                needsDisplay = true
+                            } catch {
+                                print("Failed to load albums: \(error)")
+                            }
                         }
+                        return
                     }
-                    return
+                }
+            } else {
+                // Normal mode - track by ID
+                if expandedArtists.contains(artist.id) {
+                    expandedArtists.remove(artist.id)
+                } else {
+                    expandedArtists.insert(artist.id)
+                    if artistAlbums[artist.id] == nil {
+                        Task { @MainActor in
+                            do {
+                                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
+                                artistAlbums[artist.id] = albums
+                                rebuildCurrentModeItems()
+                                needsDisplay = true
+                            } catch {
+                                print("Failed to load albums: \(error)")
+                            }
+                        }
+                        return
+                    }
                 }
             }
-            buildArtistItems()
+            rebuildCurrentModeItems()
             
         case .album(let album):
             if expandedAlbums.contains(album.id) {
@@ -2122,7 +2609,7 @@ class PlexBrowserView: NSView {
                         do {
                             let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
                             albumTracks[album.id] = tracks
-                            buildArtistItems()
+                            rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch {
                             print("Failed to load tracks: \(error)")
@@ -2131,7 +2618,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             }
-            buildArtistItems()
+            rebuildCurrentModeItems()
             
         case .show(let show):
             if expandedShows.contains(show.id) {
@@ -2143,7 +2630,7 @@ class PlexBrowserView: NSView {
                         do {
                             let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
                             showSeasons[show.id] = seasons
-                            buildShowItems()
+                            rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch {
                             print("Failed to load seasons: \(error)")
@@ -2152,7 +2639,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             }
-            buildShowItems()
+            rebuildCurrentModeItems()
             
         case .season(let season):
             if expandedSeasons.contains(season.id) {
@@ -2164,7 +2651,7 @@ class PlexBrowserView: NSView {
                         do {
                             let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
                             seasonEpisodes[season.id] = episodes
-                            buildShowItems()
+                            rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch {
                             print("Failed to load episodes: \(error)")
@@ -2173,7 +2660,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             }
-            buildShowItems()
+            rebuildCurrentModeItems()
             
         default:
             break

@@ -151,9 +151,7 @@ extension PlaylistWindowController: NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         guard let window = window else { return }
         let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
-        if newOrigin != window.frame.origin {
-            window.setFrameOrigin(newOrigin)
-        }
+        WindowManager.shared.applySnappedPosition(window, to: newOrigin)
     }
     
     func windowDidResize(_ notification: Notification) {

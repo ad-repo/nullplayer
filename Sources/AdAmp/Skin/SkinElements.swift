@@ -773,11 +773,11 @@ struct SkinElements {
             static let tabBarHeight: CGFloat = 24
             static let serverBarHeight: CGFloat = 24
             static let searchBarHeight: CGFloat = 26
-            static let statusBarHeight: CGFloat = 20
-            static let scrollbarWidth: CGFloat = 20
+            static let statusBarHeight: CGFloat = 6  // Bottom padding
+            static let scrollbarWidth: CGFloat = 10
             static let alphabetWidth: CGFloat = 16
-            static let leftBorder: CGFloat = 12
-            static let rightBorder: CGFloat = 20
+            static let leftBorder: CGFloat = 6
+            static let rightBorder: CGFloat = 6
             static let padding: CGFloat = 3
         }
         
@@ -789,6 +789,101 @@ struct SkinElements {
             // Relative to right edge of window
             static let closeOffset: CGFloat = 11
             static let shadeOffset: CGFloat = 20
+        }
+    }
+    
+    // MARK: - Library Window Elements
+    // Custom library window skin from library-window.png (500x348 pixels)
+    // Used for the Media Library window as a replacement for playlist-based Plex browser chrome
+    
+    struct LibraryWindow {
+        /// The PNG dimensions
+        static let imageSize = NSSize(width: 500, height: 348)
+        
+        /// Minimum window size (same as image dimensions)
+        static let minSize = NSSize(width: 480, height: 300)
+        
+        /// Default window size
+        static let defaultSize = NSSize(width: 500, height: 400)
+        
+        // MARK: - Title Bar (18px height)
+        struct TitleBar {
+            static let height: CGFloat = 18
+            
+            /// Left corner - contains decorative element
+            static let leftCorner = NSRect(x: 0, y: 0, width: 25, height: 18)
+            
+            /// Tileable middle section
+            static let tile = NSRect(x: 25, y: 0, width: 25, height: 18)
+            
+            /// Right corner - contains close button area
+            static let rightCorner = NSRect(x: 475, y: 0, width: 25, height: 18)
+            
+            /// Title sprite containing "WINAMP LIBRARY" text - extracted from center of title bar
+            /// This is the actual rendered title text from the PNG, not a tile
+            static let titleSprite = NSRect(x: 175, y: 0, width: 150, height: 18)
+        }
+        
+        // MARK: - Side Borders
+        struct Borders {
+            /// Left side border width
+            static let leftWidth: CGFloat = 6
+            
+            /// Right side border width (includes scrollbar track)
+            static let rightWidth: CGFloat = 20
+            
+            /// Left side tile (repeatable vertically)
+            static let leftTile = NSRect(x: 0, y: 18, width: 6, height: 29)
+            
+            /// Right side tile (repeatable vertically, includes scrollbar track)
+            static let rightTile = NSRect(x: 480, y: 18, width: 20, height: 29)
+        }
+        
+        // MARK: - Status Bar / Bottom (28px height)
+        struct StatusBar {
+            static let height: CGFloat = 28
+            
+            /// Left corner - contains Play/Remove buttons
+            static let leftCorner = NSRect(x: 0, y: 320, width: 125, height: 28)
+            
+            /// Tileable middle section
+            static let tile = NSRect(x: 125, y: 320, width: 25, height: 28)
+            
+            /// Right corner
+            static let rightCorner = NSRect(x: 450, y: 320, width: 50, height: 28)
+        }
+        
+        // MARK: - Scrollbar
+        struct Scrollbar {
+            /// Scrollbar track width
+            static let width: CGFloat = 14
+            
+            /// Scrollbar track tile (repeatable vertically)
+            static let trackTile = NSRect(x: 486, y: 50, width: 14, height: 29)
+            
+            /// Scrollbar thumb
+            static let thumbHeight: CGFloat = 18
+            static let thumb = NSRect(x: 486, y: 100, width: 14, height: 18)
+        }
+        
+        // MARK: - Layout Constants
+        struct Layout {
+            static let titleBarHeight: CGFloat = 18
+            static let searchBarHeight: CGFloat = 24
+            static let columnHeaderHeight: CGFloat = 22
+            static let statusBarHeight: CGFloat = 3   // Thin bottom border
+            static let scrollbarWidth: CGFloat = 8    // Match playlist scrollbar
+            static let leftBorder: CGFloat = 3        // Thin side borders
+            static let rightBorder: CGFloat = 11      // Scrollbar (8) + edge (3)
+            static let padding: CGFloat = 3
+        }
+        
+        // MARK: - Window Button Positions
+        struct TitleBarButtons {
+            /// Close button offset from right edge
+            static let closeOffset: CGFloat = 5
+            /// Shade button offset from right edge
+            static let shadeOffset: CGFloat = 15
         }
     }
     

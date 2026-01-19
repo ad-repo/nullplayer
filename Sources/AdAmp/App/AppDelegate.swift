@@ -15,6 +15,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         // Configure KSPlayer for FFmpeg-only playback
         VideoPlayerWindowController.configureKSPlayer()
         
+        // Initialize Plex manager early to start preloading library data
+        // Accessing .shared triggers the singleton init which loads saved account and starts preload
+        _ = PlexManager.shared
+        
         // Initialize the window manager
         windowManager = WindowManager.shared
         

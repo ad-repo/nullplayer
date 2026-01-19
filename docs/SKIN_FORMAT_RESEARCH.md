@@ -315,6 +315,28 @@ curl -s "https://raw.githubusercontent.com/captbaritone/webamp/master/packages/w
 
 ## Version History
 
+- **2026-01-19**: Plex Browser server name circular scrolling
+  - Added marquee-style circular scrolling for long server names in the Plex Browser server bar
+  - Server name scrolls when it exceeds the available width between "PLEX SERVER:" label and item count
+  - Uses the same pattern as MainWindowView's marquee (timer-based offset animation)
+  - Key implementation: `serverNameScrollOffset` property, `serverScrollTimer`, `drawScrollingServerName()`
+  - Scroll speed: 1px per 0.05s (20fps), with separator "   " for seamless wrap
+  - Clipping applied to the server name area to create the scroll viewport effect
+
+- **2026-01-19**: Plex Browser skin text font
+  - Updated all text in Plex Browser to use TEXT.BMP pixel font via `renderer.drawSkinText()`
+  - Replaced NSFont.systemFont() with skin sprite-based text for: server bar, tab bar, search bar, list items, alphabet index, empty/error/loading states
+  - Key insight: Sprite-based text doesn't need counter-flip transformation (sprites handle coordinate system)
+  - Text width calculation: `CGFloat(text.count) * SkinElements.TextFont.charWidth`
+  - All Plex Browser content now matches the low-res pixel aesthetic of other windows
+
+- **2026-01-18**: Plex Browser title bar color matching
+  - Muted title text colors from 0.8 to 0.55 white (active) / 0.35 white (inactive)
+  - Added window focus state support - title bar dims when window loses focus
+  - Increased custom title text size from 5x6 to 6x7 pixels for better visibility
+  - Key insight: Title bar text should be muted (~55% white) not bright (~80% white)
+  - Apply 40% black overlay on title bar when window is inactive
+
 - **2026-01-18**: Plex Browser tab selection styling
   - Removed blue background fill from selected tabs
   - Selected tab now indicated by white text only (cleaner look)

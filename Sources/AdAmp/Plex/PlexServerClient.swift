@@ -162,7 +162,11 @@ class PlexServerClient {
         let queryItems = [
             URLQueryItem(name: "type", value: "8"),  // type 8 = artist
             URLQueryItem(name: "X-Plex-Container-Start", value: String(offset)),
-            URLQueryItem(name: "X-Plex-Container-Size", value: String(limit))
+            URLQueryItem(name: "X-Plex-Container-Size", value: String(limit)),
+            // Include additional metadata to get album counts
+            URLQueryItem(name: "includeCollections", value: "1"),
+            URLQueryItem(name: "includeAdvanced", value: "1"),
+            URLQueryItem(name: "includeMeta", value: "1")
         ]
         
         guard let request = buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: queryItems) else {
@@ -432,6 +436,146 @@ class PlexServerClient {
         return components?.url
     }
     
+    // MARK: - Playback Reporting
+    
+    /// Report playback state to Plex (for "Now Playing" and progress tracking)
+    /// - Parameters:
+    ///   - ratingKey: The item's rating key
+    ///   - state: Playback state ("playing", "paused", "stopped")
+    ///   - time: Current playback position in milliseconds
+    ///   - duration: Total duration in milliseconds
+    ///   - type: Media type ("music", "movie", "episode")
+    func reportPlaybackState(
+        ratingKey: String,
+        state: PlaybackReportState,
+        time: Int,
+        duration: Int,
+        type: String = "music"
+    ) async throws {
+        var queryItems = [
+            URLQueryItem(name: "ratingKey", value: ratingKey),
+            URLQueryItem(name: "key", value: "/library/metadata/\(ratingKey)"),
+            URLQueryItem(name: "state", value: state.rawValue),
+            URLQueryItem(name: "time", value: String(time)),
+            URLQueryItem(name: "duration", value: String(duration)),
+            URLQueryItem(name: "playbackTime", value: String(time)),
+            URLQueryItem(name: "type", value: type)
+        ]
+        
+        // Add context for Now Playing display
+        queryItems.append(URLQueryItem(name: "context", value: "streaming"))
+        
+        guard var request = buildRequest(path: "/:/timeline", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        // Timeline uses POST or GET depending on server version, but GET is most compatible
+        request.httpMethod = "GET"
+        
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw PlexServerError.invalidResponse
+        }
+        
+        // Timeline endpoint returns 200 on success
+        guard httpResponse.statusCode == 200 else {
+            if httpResponse.statusCode == 401 {
+                throw PlexServerError.unauthorized
+            }
+            throw PlexServerError.httpError(statusCode: httpResponse.statusCode)
+        }
+    }
+    
+    /// Mark an item as played (scrobble) - increments play count and sets last played date
+    /// - Parameter ratingKey: The item's rating key
+    func scrobble(ratingKey: String) async throws {
+        let queryItems = [
+            URLQueryItem(name: "key", value: ratingKey),
+            URLQueryItem(name: "identifier", value: "com.plexapp.plugins.library")
+        ]
+        
+        guard var request = buildRequest(path: "/:/scrobble", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        request.httpMethod = "GET"
+        
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw PlexServerError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            if httpResponse.statusCode == 401 {
+                throw PlexServerError.unauthorized
+            }
+            throw PlexServerError.httpError(statusCode: httpResponse.statusCode)
+        }
+        
+        NSLog("PlexServerClient: Scrobbled item %@", ratingKey)
+    }
+    
+    /// Mark an item as unplayed
+    /// - Parameter ratingKey: The item's rating key
+    func unscrobble(ratingKey: String) async throws {
+        let queryItems = [
+            URLQueryItem(name: "key", value: ratingKey),
+            URLQueryItem(name: "identifier", value: "com.plexapp.plugins.library")
+        ]
+        
+        guard var request = buildRequest(path: "/:/unscrobble", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        request.httpMethod = "GET"
+        
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw PlexServerError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            if httpResponse.statusCode == 401 {
+                throw PlexServerError.unauthorized
+            }
+            throw PlexServerError.httpError(statusCode: httpResponse.statusCode)
+        }
+    }
+    
+    /// Update playback progress (for resume functionality)
+    /// - Parameters:
+    ///   - ratingKey: The item's rating key
+    ///   - time: Current playback position in milliseconds
+    func updateProgress(ratingKey: String, time: Int) async throws {
+        let queryItems = [
+            URLQueryItem(name: "key", value: ratingKey),
+            URLQueryItem(name: "time", value: String(time)),
+            URLQueryItem(name: "identifier", value: "com.plexapp.plugins.library")
+        ]
+        
+        guard var request = buildRequest(path: "/:/progress", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        request.httpMethod = "GET"
+        
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw PlexServerError.invalidResponse
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            if httpResponse.statusCode == 401 {
+                throw PlexServerError.unauthorized
+            }
+            throw PlexServerError.httpError(statusCode: httpResponse.statusCode)
+        }
+    }
+    
     // MARK: - Server Status
     
     /// Check if the server is reachable (with short timeout)
@@ -462,6 +606,13 @@ enum SearchType: Int {
     case artist = 8
     case album = 9
     case track = 10
+}
+
+/// Playback state for timeline reporting
+enum PlaybackReportState: String {
+    case playing = "playing"
+    case paused = "paused"
+    case stopped = "stopped"
 }
 
 struct PlexSearchResults {

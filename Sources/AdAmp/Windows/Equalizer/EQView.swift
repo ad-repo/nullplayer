@@ -96,6 +96,11 @@ class EQView: NSView {
     
     private func loadCurrentEQState() {
         let engine = WindowManager.shared.audioEngine
+        
+        // Load EQ enabled state from engine
+        isEnabled = engine.isEQEnabled()
+        
+        // Load preamp and band values
         preamp = engine.getPreamp()
         for i in 0..<10 {
             bands[i] = engine.getEQBand(i)

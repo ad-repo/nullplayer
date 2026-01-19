@@ -13,6 +13,9 @@ struct Track: Identifiable, Equatable {
     let sampleRate: Int?
     let channels: Int?
     
+    /// Plex rating key for play tracking (nil for local files)
+    let plexRatingKey: String?
+    
     init(url: URL) {
         self.id = UUID()
         self.url = url
@@ -120,6 +123,7 @@ struct Track: Identifiable, Equatable {
         self.bitrate = extractedBitrate
         self.sampleRate = extractedSampleRate
         self.channels = extractedChannels
+        self.plexRatingKey = nil  // Local files don't have Plex rating keys
     }
     
     init(id: UUID = UUID(),
@@ -130,7 +134,8 @@ struct Track: Identifiable, Equatable {
          duration: TimeInterval? = nil,
          bitrate: Int? = nil,
          sampleRate: Int? = nil,
-         channels: Int? = nil) {
+         channels: Int? = nil,
+         plexRatingKey: String? = nil) {
         self.id = id
         self.url = url
         self.title = title
@@ -140,6 +145,7 @@ struct Track: Identifiable, Equatable {
         self.bitrate = bitrate
         self.sampleRate = sampleRate
         self.channels = channels
+        self.plexRatingKey = plexRatingKey
     }
     
     /// Display title (artist - title or just title)

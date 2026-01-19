@@ -136,6 +136,7 @@ AdAmp can stream music and video directly from your Plex Media Server:
 - Search across all your Plex libraries
 - Prefers local server connections for best performance
 - Secure token storage in macOS Keychain
+- **Play statistics tracking** - Play counts and last played dates sync to Plex
 
 **Requirements:**
 - A Plex Media Server with music and/or video libraries
@@ -189,7 +190,8 @@ AdAmp/
 ├── Plex/                   # Plex Media Server integration
 │   ├── PlexAuthClient      # PIN-based authentication
 │   ├── PlexServerClient    # Server API communication
-│   └── PlexManager         # Account & state management
+│   ├── PlexManager         # Account & state management
+│   └── PlexPlaybackReporter # Play statistics & scrobbling
 ├── Skin/                   # WSZ skin loading and rendering
 ├── Windows/                # Window controllers and views
 │   ├── MainWindow/         # Main player window

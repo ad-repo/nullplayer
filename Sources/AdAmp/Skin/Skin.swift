@@ -89,6 +89,14 @@ struct Skin {
     
     /// Shade mode height scaled
     static let shadeHeight: CGFloat = 14 * scaleFactor
+    
+    // MARK: - Custom Window Images
+    
+    /// Library window image loaded from bundle (not from .wsz skins)
+    static var libraryWindowImage: NSImage? {
+        guard let url = Bundle.module.url(forResource: "library-window", withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
+    }
 }
 
 // MARK: - Playlist Colors

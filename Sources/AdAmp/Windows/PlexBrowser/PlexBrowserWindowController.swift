@@ -10,8 +10,11 @@ class PlexBrowserWindowController: NSWindowController {
     /// Minimum window size (wider to fit 6 tabs)
     private static let minSize = NSSize(width: 480, height: 300)
     
-    /// Default window size
-    private static let defaultSize = NSSize(width: 550, height: 450)
+    /// Default window size - height matches 3 stacked main windows (main + EQ + playlist)
+    private static var defaultSize: NSSize {
+        let height = Skin.mainWindowSize.height * 3  // Match combined height of 3 windows
+        return NSSize(width: 550, height: height)
+    }
     
     /// Shade mode height
     private static let shadeHeight: CGFloat = 14
@@ -44,7 +47,7 @@ class PlexBrowserWindowController: NSWindowController {
     private func setupWindow() {
         guard let window = window else { return }
         
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false  // Custom drag handling in PlexBrowserView
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
@@ -120,17 +123,23 @@ class PlexBrowserWindowController: NSWindowController {
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         
-        // Refresh servers when window is shown if we're linked but have no servers
-        if PlexManager.shared.isLinked && PlexManager.shared.servers.isEmpty {
-            Task {
-                do {
-                    NSLog("PlexBrowserWindowController: No servers cached, refreshing...")
-                    try await PlexManager.shared.refreshServers()
-                    await MainActor.run {
-                        self.browserView.reloadData()
+        // Only refresh servers if we're linked, have no servers, and not already connecting
+        // This prevents race conditions with the startup preload
+        let plexManager = PlexManager.shared
+        if plexManager.isLinked && plexManager.servers.isEmpty {
+            if case .connecting = plexManager.connectionState {
+                NSLog("PlexBrowserWindowController: Already connecting, skipping refresh")
+            } else {
+                Task {
+                    do {
+                        NSLog("PlexBrowserWindowController: No servers cached, refreshing...")
+                        try await plexManager.refreshServers()
+                        await MainActor.run {
+                            self.browserView.reloadData()
+                        }
+                    } catch {
+                        NSLog("PlexBrowserWindowController: Failed to refresh servers: %@", error.localizedDescription)
                     }
-                } catch {
-                    NSLog("PlexBrowserWindowController: Failed to refresh servers: %@", error.localizedDescription)
                 }
             }
         }
@@ -167,14 +176,6 @@ class PlexBrowserWindowController: NSWindowController {
 // MARK: - NSWindowDelegate
 
 extension PlexBrowserWindowController: NSWindowDelegate {
-    func windowDidMove(_ notification: Notification) {
-        guard let window = window else { return }
-        let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
-        if newOrigin != window.frame.origin {
-            window.setFrameOrigin(newOrigin)
-        }
-    }
-    
     func windowDidResize(_ notification: Notification) {
         browserView.needsDisplay = true
     }
