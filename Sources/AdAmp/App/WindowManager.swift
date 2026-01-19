@@ -74,6 +74,9 @@ class WindowManager {
     /// Video player window controller
     private var videoPlayerWindowController: VideoPlayerWindowController?
     
+    /// Milkdrop visualization window controller
+    private var milkdropWindowController: MilkdropWindowController?
+    
     /// Video playback time tracking
     private(set) var videoCurrentTime: TimeInterval = 0
     private(set) var videoDuration: TimeInterval = 0
@@ -431,6 +434,27 @@ class WindowManager {
         guard let controller = videoPlayerWindowController else { return .stopped }
         return controller.isPlaying ? .playing : .paused
     }
+    
+    // MARK: - Milkdrop Visualization Window
+    
+    func showMilkdrop() {
+        if milkdropWindowController == nil {
+            milkdropWindowController = MilkdropWindowController()
+        }
+        milkdropWindowController?.showWindow(nil)
+    }
+    
+    var isMilkdropVisible: Bool {
+        milkdropWindowController?.window?.isVisible == true
+    }
+    
+    func toggleMilkdrop() {
+        if let controller = milkdropWindowController, controller.window?.isVisible == true {
+            controller.window?.orderOut(nil)
+        } else {
+            showMilkdrop()
+        }
+    }
 
     func notifyMainWindowVisibilityChanged() {
         mainWindowController?.windowVisibilityDidChange()
@@ -465,6 +489,7 @@ class WindowManager {
         equalizerWindowController?.skinDidChange()
         mediaLibraryWindowController?.skinDidChange()
         plexBrowserWindowController?.skinDidChange()
+        milkdropWindowController?.skinDidChange()
     }
     
     // MARK: - Skin Discovery
@@ -873,6 +898,7 @@ class WindowManager {
         if let w = mediaLibraryWindowController?.window, w.isVisible { windows.append(w) }
         if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
         if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = milkdropWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
     
@@ -920,6 +946,9 @@ class WindowManager {
         if let frame = videoPlayerWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: "VideoPlayerWindowFrame")
         }
+        if let frame = milkdropWindowController?.window?.frame {
+            defaults.set(NSStringFromRect(frame), forKey: "MilkdropWindowFrame")
+        }
     }
     
     func restoreWindowPositions() {
@@ -952,6 +981,11 @@ class WindowManager {
         }
         if let frameString = defaults.string(forKey: "VideoPlayerWindowFrame"),
            let window = videoPlayerWindowController?.window {
+            let frame = NSRectFromString(frameString)
+            window.setFrame(frame, display: true)
+        }
+        if let frameString = defaults.string(forKey: "MilkdropWindowFrame"),
+           let window = milkdropWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }

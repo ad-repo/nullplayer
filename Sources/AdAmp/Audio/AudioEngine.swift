@@ -103,6 +103,12 @@ class AudioEngine {
     /// Spectrum analyzer data (75 bands for Winamp-style visualization)
     private(set) var spectrumData: [Float] = Array(repeating: 0, count: 75)
     
+    /// Raw PCM audio data for waveform visualization (mono, normalized -1 to 1)
+    private(set) var pcmData: [Float] = Array(repeating: 0, count: 1024)
+    
+    /// PCM sample rate for visualization timing
+    private(set) var pcmSampleRate: Double = 44100
+    
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
     private let fftSize: Int = 2048
@@ -231,6 +237,18 @@ class AudioEngine {
             // Mix stereo to mono
             for i in 0..<fftSize {
                 samples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
+            }
+        }
+        
+        // Store raw PCM data for waveform visualization (before windowing)
+        // Downsample to 1024 samples for efficient storage
+        let pcmSize = min(1024, samples.count)
+        let stride = samples.count / pcmSize
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.pcmSampleRate = buffer.format.sampleRate
+            for i in 0..<pcmSize {
+                self.pcmData[i] = samples[i * stride]
             }
         }
         
@@ -571,11 +589,14 @@ class AudioEngine {
         }
         
         // Clamp time to valid range
-        let seekTime = max(0, min(time, currentDuration - 0.5))
+        // Use 1.0s buffer for streaming (seeking too close to EOF can crash the player)
+        // Use 0.5s buffer for local files
+        let eofBuffer: TimeInterval = isStreamingPlayback ? 1.0 : 0.5
+        let seekTime = max(0, min(time, currentDuration - eofBuffer))
         
         if isStreamingPlayback {
             // Streaming playback - seek via AudioStreaming
-            // The StreamingAudioPlayer will do additional bounds checking
+            // Time is already clamped appropriately above
             streamingPlayer?.seek(to: seekTime)
             lastReportedTime = seekTime
         } else {

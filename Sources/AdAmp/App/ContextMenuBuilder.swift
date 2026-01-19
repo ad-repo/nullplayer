@@ -20,10 +20,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
         menu.addItem(buildWindowItem("Media Library", visible: wm.isMediaLibraryVisible, action: #selector(MenuActions.toggleMediaLibrary)))
         menu.addItem(buildWindowItem("Plex Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
-        
-        let milkdrop = NSMenuItem(title: "Milkdrop", action: nil, keyEquivalent: "")
-        milkdrop.isEnabled = false
-        menu.addItem(milkdrop)
+        menu.addItem(buildWindowItem("Milkdrop", visible: wm.isMilkdropVisible, action: #selector(MenuActions.toggleMilkdrop)))
         
         menu.addItem(NSMenuItem.separator())
         
@@ -474,6 +471,10 @@ class MenuActions: NSObject {
     
     @objc func togglePlexBrowser() {
         WindowManager.shared.togglePlexBrowser()
+    }
+    
+    @objc func toggleMilkdrop() {
+        WindowManager.shared.toggleMilkdrop()
     }
     
     // MARK: - File Operations

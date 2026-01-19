@@ -1286,6 +1286,204 @@ class SkinRenderer {
         context.stroke(knobRect)
     }
     
+    // MARK: - Milkdrop Visualization Window
+    
+    /// Milkdrop button types
+    enum MilkdropButtonType {
+        case close, shade
+    }
+    
+    /// Draw the complete Milkdrop window chrome (title bar, borders)
+    /// The visualization area itself is handled by the OpenGL view
+    func drawMilkdropWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
+                            pressedButton: MilkdropButtonType?, isShadeMode: Bool) {
+        if isShadeMode {
+            drawMilkdropShade(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        } else {
+            drawMilkdropNormal(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        }
+    }
+    
+    /// Draw normal mode Milkdrop window chrome
+    /// Uses custom milkdrop_titlebar.png with matching borders
+    private func drawMilkdropNormal(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                    pressedButton: MilkdropButtonType?) {
+        // Fill background with black for visualization area
+        NSColor.black.setFill()
+        context.fill(bounds)
+        
+        // Draw full window border frame (like reference)
+        drawMilkdropFrame(in: context, bounds: bounds)
+        
+        // Draw title bar using milkdrop_titlebar.png (on top of frame)
+        drawMilkdropTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+    }
+    
+    /// Draw the complete border frame around the Milkdrop window
+    private func drawMilkdropFrame(in context: CGContext, bounds: NSRect) {
+        let titleHeight = SkinElements.Milkdrop.titleBarHeight
+        let borderWidth: CGFloat = 6
+        
+        // Dark blue-gray border color (matching reference)
+        let outerColor = NSColor(calibratedRed: 0.27, green: 0.29, blue: 0.42, alpha: 1.0)
+        let innerColor = NSColor(calibratedRed: 0.38, green: 0.40, blue: 0.55, alpha: 1.0)
+        let darkInner = NSColor(calibratedRed: 0.15, green: 0.17, blue: 0.25, alpha: 1.0)
+        
+        // Draw outer border
+        outerColor.setFill()
+        // Left
+        context.fill(NSRect(x: 0, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
+        // Right
+        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
+        // Bottom
+        context.fill(NSRect(x: 0, y: bounds.height - borderWidth, width: bounds.width, height: borderWidth))
+        
+        // Inner highlight line
+        innerColor.setFill()
+        context.fill(NSRect(x: borderWidth - 1, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderWidth))
+        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderWidth))
+        context.fill(NSRect(x: borderWidth, y: bounds.height - borderWidth, width: bounds.width - borderWidth * 2, height: 1))
+        
+        // Dark inner edge
+        darkInner.setFill()
+        context.fill(NSRect(x: borderWidth, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderWidth))
+        context.fill(NSRect(x: bounds.width - borderWidth - 1, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderWidth))
+        context.fill(NSRect(x: borderWidth, y: bounds.height - borderWidth - 1, width: bounds.width - borderWidth * 2, height: 1))
+        
+        // Resize grip
+        let gripColor = NSColor(calibratedWhite: 0.45, alpha: 0.8)
+        gripColor.setStroke()
+        context.setLineWidth(1)
+        for i in 0..<3 {
+            let offset = CGFloat(i) * 3
+            context.move(to: CGPoint(x: bounds.width - 4 - offset, y: bounds.height - 2))
+            context.addLine(to: CGPoint(x: bounds.width - 2, y: bounds.height - 4 - offset))
+        }
+        context.strokePath()
+    }
+    
+    /// Draw Milkdrop title bar using milkdrop_titlebar.png sprite sheet
+    private func drawMilkdropTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                      pressedButton: MilkdropButtonType?) {
+        let titleHeight = SkinElements.Milkdrop.titleBarHeight
+        
+        // Try to load the PNG image
+        if let titlebarImage = Skin.milkdropTitlebarImage,
+           let cgImage = titlebarImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            
+            // Draw the full image scaled to fit - maintain aspect ratio for height
+            // PNG is 1518x48, we want to show it at the correct aspect
+            let imageWidth = CGFloat(cgImage.width)
+            let imageHeight = CGFloat(cgImage.height)
+            
+            // Scale to fit window width, calculate proportional height
+            let scale = bounds.width / imageWidth
+            let scaledHeight = imageHeight * scale
+            
+            // Draw in flipped context
+            context.saveGState()
+            context.translateBy(x: 0, y: titleHeight)
+            context.scaleBy(x: 1, y: -1)
+            context.interpolationQuality = .high
+            
+            // Draw centered vertically if scaledHeight differs from titleHeight
+            let yOffset = (titleHeight - scaledHeight) / 2
+            context.draw(cgImage, in: CGRect(x: 0, y: yOffset, width: bounds.width, height: scaledHeight))
+            context.restoreGState()
+        } else {
+            drawFallbackMilkdropTitleBar(in: context, bounds: bounds, isActive: isActive)
+        }
+        
+        // Draw close button highlight when pressed
+        if pressedButton == .close {
+            let closeX = bounds.width - 14
+            let closeY: CGFloat = 5
+            let closeRect = NSRect(x: closeX, y: closeY, width: 10, height: 10)
+            NSColor(calibratedWhite: 1.0, alpha: 0.3).setFill()
+            context.fill(closeRect)
+        }
+    }
+    
+    /// Draw Milkdrop window in shade mode (title bar only)
+    private func drawMilkdropShade(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                   pressedButton: MilkdropButtonType?) {
+        // In shade mode, just draw the title bar (fills entire window)
+        drawMilkdropTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+    }
+    
+    /// Fallback title bar for Milkdrop window when image not available
+    private func drawFallbackMilkdropTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool) {
+        let titleHeight = SkinElements.Milkdrop.titleBarHeight
+        let titleRect = NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight)
+        
+        // Gradient background
+        let gradient = NSGradient(colors: [
+            isActive ? NSColor(calibratedRed: 0.27, green: 0.29, blue: 0.42, alpha: 1.0) : NSColor(calibratedWhite: 0.25, alpha: 1.0),
+            isActive ? NSColor(calibratedRed: 0.22, green: 0.24, blue: 0.35, alpha: 1.0) : NSColor(calibratedWhite: 0.20, alpha: 1.0)
+        ])
+        gradient?.draw(in: titleRect, angle: 90)
+        
+        // Draw "MILKDROP" text
+        drawMilkdropTitleText(centeredIn: titleRect, isActive: isActive, in: context)
+        
+        // Draw close button (X)
+        let closeX = bounds.width - 12
+        let closeY: CGFloat = 3
+        let closeColor = isActive ? NSColor(calibratedRed: 0.7, green: 0.6, blue: 0.3, alpha: 1.0) : NSColor(calibratedWhite: 0.4, alpha: 1.0)
+        closeColor.setStroke()
+        context.setLineWidth(1)
+        context.move(to: CGPoint(x: closeX + 1, y: closeY + 1))
+        context.addLine(to: CGPoint(x: closeX + 7, y: closeY + 7))
+        context.move(to: CGPoint(x: closeX + 7, y: closeY + 1))
+        context.addLine(to: CGPoint(x: closeX + 1, y: closeY + 7))
+        context.strokePath()
+    }
+    
+    /// Draw Milkdrop title text using pixel patterns (fallback only)
+    private func drawMilkdropTitleText(centeredIn rect: NSRect, isActive: Bool, in context: CGContext) {
+        let charWidth: CGFloat = 5
+        let charHeight: CGFloat = 6
+        let letterSpacing: CGFloat = 1
+        
+        context.saveGState()
+        context.setAllowsAntialiasing(false)
+        context.setShouldAntialias(false)
+        context.interpolationQuality = .none
+        
+        let titleText = "MILKDROP"
+        let chars = Array(titleText)
+        let totalWidth = CGFloat(chars.count) * charWidth + CGFloat(chars.count - 1) * letterSpacing
+        let startX = rect.midX - totalWidth / 2
+        let startY = rect.midY - charHeight / 2
+        
+        let textColor = isActive ? NSColor(calibratedRed: 0.85, green: 0.75, blue: 0.35, alpha: 1.0) : NSColor(calibratedWhite: 0.4, alpha: 1.0)
+        
+        var xPos = startX
+        for char in chars {
+            if let pattern = plexTitlePixels()[char.uppercased().first ?? " "] {
+                drawTitleBarPixelChar(pattern, at: NSPoint(x: xPos, y: startY), color: textColor, in: context)
+            }
+            xPos += charWidth + letterSpacing
+        }
+        
+        context.restoreGState()
+    }
+    
+    /// Get the visualization area rect (the area where OpenGL renders)
+    func getMilkdropVisualizationArea(bounds: NSRect) -> NSRect {
+        let titleHeight = SkinElements.Milkdrop.titleBarHeight
+        let leftBorder = SkinElements.Milkdrop.Layout.leftBorder
+        let rightBorder = SkinElements.Milkdrop.Layout.rightBorder
+        let bottomBorder = SkinElements.Milkdrop.Layout.bottomBorder
+        
+        return NSRect(
+            x: leftBorder,
+            y: titleHeight,
+            width: bounds.width - leftBorder - rightBorder,
+            height: bounds.height - titleHeight - bottomBorder
+        )
+    }
+    
     // MARK: - Playlist Window
     
     /// Playlist button types
@@ -2007,6 +2205,9 @@ class SkinRenderer {
             "A": [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001],
             "M": [0b10001, 0b11011, 0b10101, 0b10001, 0b10001, 0b10001],
             "Y": [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100],
+            // Additional letters for "MILKDROP"
+            "K": [0b10001, 0b10010, 0b11100, 0b10010, 0b10001, 0b10001],
+            "D": [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
         ]
     }
 
