@@ -15,47 +15,24 @@ struct EQPreset: Identifiable, Codable {
     }
     
     // MARK: - Built-in Presets
+    // Bands: 60Hz, 170Hz, 310Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz
     
     static let flat = EQPreset(name: "Flat")
-    
-    static let rock = EQPreset(
-        name: "Rock",
-        preamp: 0,
-        bands: [4, 3, 2, 0, -1, -1, 0, 2, 3, 4]
-    )
-    
-    static let jazz = EQPreset(
-        name: "Jazz",
-        preamp: 0,
-        bands: [3, 2, 1, 2, -2, -2, 0, 1, 2, 3]
-    )
-    
-    static let electronic = EQPreset(
-        name: "Electronic",
-        preamp: 0,
-        bands: [5, 4, 2, 0, -2, -1, 0, 2, 4, 5]
-    )
-    
-    static let hiphop = EQPreset(
-        name: "Hip-Hop",
-        preamp: 0,
-        bands: [5, 4, 2, 0, -1, -1, 1, 0, 2, 3]
-    )
-    
-    static let bass = EQPreset(
-        name: "Bass Boost",
-        preamp: 0,
-        bands: [6, 5, 4, 2, 0, 0, 0, 0, 0, 0]
-    )
     
     static let imOld = EQPreset(
         name: "i'm old",
         preamp: 0,
-        bands: [0, 0, 0, 0, 0, 0, 0, 12, 12, 12]  // Boost 12k, 14k, 16k to max
+        bands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 6]  // +6dB at 16kHz
+    )
+    
+    static let imYoung = EQPreset(
+        name: "i'm young",
+        preamp: 0,
+        bands: [6, 0, 0, 0, 0, 0, 0, 0, 0, 0]  // +6dB at 60Hz
     )
     
     static let allPresets: [EQPreset] = [
-        .flat, .rock, .jazz, .electronic, .hiphop, .bass, .imOld
+        .imOld, .imYoung, .flat
     ]
 }
 
