@@ -82,9 +82,9 @@ falls back to a 5x6 pixel pattern for missing letters. See:
 - `SkinElements.TitleBarFont` for character sources and fallback pixels
 - `SkinRenderer.drawTitleBarSpriteText()` for rendering logic
 
-## Music Browser Title Font Asset
+## Browser Title Font Asset
 
-For the Music browser title, AdAmp now uses a dedicated sprite atlas:
+For the Browser title, AdAmp now uses a dedicated sprite atlas:
 - Resource: `Sources/AdAmp/Resources/title_font_plex.png`
 - Cell size: 5x6 pixels with 1px spacing
 - Characters included: P, L, E, X, B, R, O, W, S

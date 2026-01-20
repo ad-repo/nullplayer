@@ -229,6 +229,9 @@ class PlexBrowserView: NSView {
     /// Button being pressed (for visual feedback)
     private var pressedButton: SkinRenderer.PlexBrowserButtonType?
     
+    /// Active tags panel (strong reference to prevent premature deallocation)
+    private var activeTagsPanel: TagsPanel?
+    
     /// Window dragging state
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
@@ -2187,6 +2190,13 @@ class PlexBrowserView: NSView {
             addItem.representedObject = track
             menu.addItem(addItem)
             
+            menu.addItem(NSMenuItem.separator())
+            
+            let tagsItem = NSMenuItem(title: "See Tags", action: #selector(contextMenuShowTags(_:)), keyEquivalent: "")
+            tagsItem.target = self
+            tagsItem.representedObject = track
+            menu.addItem(tagsItem)
+            
         case .localAlbum(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayLocalAlbum(_:)), keyEquivalent: "")
             playItem.target = self
@@ -2235,6 +2245,17 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuAddLocalTrackToPlaylist(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         WindowManager.shared.audioEngine.loadTracks([track.toTrack()])
+    }
+    
+    @objc private func contextMenuShowTags(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        // Close any existing tags panel first
+        activeTagsPanel?.close()
+        
+        let tagsPanel = TagsPanel(track: track)
+        tagsPanel.delegate = self
+        activeTagsPanel = tagsPanel
+        tagsPanel.show()
     }
     
     @objc private func contextMenuPlayLocalAlbum(_ sender: NSMenuItem) {
@@ -3193,9 +3214,10 @@ class PlexBrowserView: NSView {
             return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         case .nameDesc:
             return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending }
-        case .dateAddedDesc, .dateAddedAsc:
-            // Tracks don't have date added stored, fall back to name
-            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .dateAddedDesc:
+            return tracks.sorted { $0.dateAdded > $1.dateAdded }
+        case .dateAddedAsc:
+            return tracks.sorted { $0.dateAdded < $1.dateAdded }
         case .yearDesc:
             return tracks.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
         case .yearAsc:
@@ -3648,6 +3670,18 @@ class PlexBrowserView: NSView {
             tracks.append(contentsOf: album.tracks.map { $0.toTrack() })
         }
         WindowManager.shared.audioEngine.loadTracks(tracks)
+    }
+}
+
+// MARK: - NSWindowDelegate
+
+extension PlexBrowserView: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        // Clear the tags panel reference when it closes
+        if let closingWindow = notification.object as? TagsPanel,
+           closingWindow === activeTagsPanel {
+            activeTagsPanel = nil
+        }
     }
 }
 

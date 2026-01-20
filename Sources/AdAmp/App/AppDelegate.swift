@@ -147,7 +147,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         viewMenu.addItem(withTitle: "Main Window", action: #selector(toggleMainWindow), keyEquivalent: "1")
         viewMenu.addItem(withTitle: "Playlist", action: #selector(togglePlaylist), keyEquivalent: "2")
         viewMenu.addItem(withTitle: "Equalizer", action: #selector(toggleEqualizer), keyEquivalent: "3")
-        viewMenu.addItem(withTitle: "Music Browser", action: #selector(togglePlexBrowser), keyEquivalent: "l")
+        viewMenu.addItem(withTitle: "Browser", action: #selector(togglePlexBrowser), keyEquivalent: "l")
         
         // Plex menu
         let plexMenuItem = NSMenuItem()

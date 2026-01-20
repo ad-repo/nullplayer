@@ -18,7 +18,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
         menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
-        menu.addItem(buildWindowItem("Music Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
+        menu.addItem(buildWindowItem("Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         menu.addItem(buildWindowItem("Milkdrop", visible: wm.isMilkdropVisible, action: #selector(MenuActions.toggleMilkdrop)))
         
         menu.addItem(NSMenuItem.separator())

@@ -586,7 +586,7 @@ class WindowManager {
             playlistWindow.setFrame(playlistFrame, display: true, animate: true)
         }
         
-        // Plex browser (unified music browser) - maintain relative position to main window (don't scale size)
+        // Browser - maintain relative position to main window (don't scale size)
         if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
             var plexFrame = plexWindow.frame
             // Calculate offset from old main window
@@ -678,7 +678,7 @@ class WindowManager {
             playlistWindow.setFrame(newFrame, display: true, animate: true)
         }
         
-        // Position Plex Browser (unified music browser) to the right of main window if visible
+        // Position Browser to the right of main window if visible
         if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
             let newFrame = NSRect(
                 x: mainFrame.maxX,
