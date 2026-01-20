@@ -910,9 +910,9 @@ struct SkinElements {
         /// Layout constants - matching reference proportions
         struct Layout {
             static let titleBarHeight: CGFloat = 14
-            static let leftBorder: CGFloat = 6      // Side borders
-            static let rightBorder: CGFloat = 6     
-            static let bottomBorder: CGFloat = 6    
+            static let leftBorder: CGFloat = 3      // Side borders - thin like Library window
+            static let rightBorder: CGFloat = 3     
+            static let bottomBorder: CGFloat = 3    
         }
         
         // MARK: - Title Bar Sprites (from milkdrop_titlebar.png)

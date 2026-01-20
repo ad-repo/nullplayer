@@ -315,6 +315,12 @@ curl -s "https://raw.githubusercontent.com/captbaritone/webamp/master/packages/w
 
 ## Version History
 
+- **2026-01-20**: Milkdrop window border fix
+  - Fixed border color being too light (was 0.27/0.29/0.42, now 0.12/0.12/0.18)
+  - Fixed border being too thick (was 6px, now 3px matching Library window)
+  - Border colors and thickness now match Library/Plex Browser window for consistency
+  - Simplified border drawing code (removed complex multi-layer approach)
+
 - **2026-01-19**: Plex Browser server name circular scrolling
   - Added marquee-style circular scrolling for long server names in the Plex Browser server bar
   - Server name scrolls when it exceeds the available width between "PLEX SERVER:" label and item count
@@ -395,9 +401,9 @@ shadeHeight = 14
 
 Layout:
   titleBarHeight = 14
-  leftBorder = 6        // Left side border
-  rightBorder = 6       // Right side border
-  bottomBorder = 6      // Bottom border
+  leftBorder = 3        // Left side border (thin, matching Library window)
+  rightBorder = 3       // Right side border (thin, matching Library window)
+  bottomBorder = 3      // Bottom border (thin, matching Library window)
 
 TitleBarButtons:
   closeOffset = 11    // From right edge

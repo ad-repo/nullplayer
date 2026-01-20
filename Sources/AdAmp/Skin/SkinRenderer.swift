@@ -1320,46 +1320,34 @@ class SkinRenderer {
     }
     
     /// Draw the complete border frame around the Milkdrop window
+    /// Uses same colors and thickness as Library/Plex Browser window for consistency
     private func drawMilkdropFrame(in context: CGContext, bounds: NSRect) {
         let titleHeight = SkinElements.Milkdrop.titleBarHeight
-        let borderWidth: CGFloat = 6
+        let borderWidth: CGFloat = 3  // Thin borders matching Library window
         
-        // Dark blue-gray border color (matching reference)
-        let outerColor = NSColor(calibratedRed: 0.27, green: 0.29, blue: 0.42, alpha: 1.0)
-        let innerColor = NSColor(calibratedRed: 0.38, green: 0.40, blue: 0.55, alpha: 1.0)
-        let darkInner = NSColor(calibratedRed: 0.15, green: 0.17, blue: 0.25, alpha: 1.0)
+        // Dark border colors matching Library/Plex Browser window
+        let borderColor = NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0)
+        let highlightColor = NSColor(calibratedRed: 0.20, green: 0.20, blue: 0.30, alpha: 1.0)
         
-        // Draw outer border
-        outerColor.setFill()
-        // Left
-        context.fill(NSRect(x: 0, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
-        // Right
-        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
-        // Bottom
+        // Draw left side border
+        borderColor.setFill()
+        context.fill(NSRect(x: 0, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight - borderWidth))
+        
+        // Left highlight
+        highlightColor.setFill()
+        context.fill(NSRect(x: borderWidth - 1, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderWidth))
+        
+        // Draw right side border
+        borderColor.setFill()
+        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight - borderWidth))
+        
+        // Draw bottom border
+        borderColor.setFill()
         context.fill(NSRect(x: 0, y: bounds.height - borderWidth, width: bounds.width, height: borderWidth))
         
-        // Inner highlight line
-        innerColor.setFill()
-        context.fill(NSRect(x: borderWidth - 1, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderWidth))
-        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderWidth))
-        context.fill(NSRect(x: borderWidth, y: bounds.height - borderWidth, width: bounds.width - borderWidth * 2, height: 1))
-        
-        // Dark inner edge
-        darkInner.setFill()
-        context.fill(NSRect(x: borderWidth, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderWidth))
-        context.fill(NSRect(x: bounds.width - borderWidth - 1, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderWidth))
-        context.fill(NSRect(x: borderWidth, y: bounds.height - borderWidth - 1, width: bounds.width - borderWidth * 2, height: 1))
-        
-        // Resize grip
-        let gripColor = NSColor(calibratedWhite: 0.45, alpha: 0.8)
-        gripColor.setStroke()
-        context.setLineWidth(1)
-        for i in 0..<3 {
-            let offset = CGFloat(i) * 3
-            context.move(to: CGPoint(x: bounds.width - 4 - offset, y: bounds.height - 2))
-            context.addLine(to: CGPoint(x: bounds.width - 2, y: bounds.height - 4 - offset))
-        }
-        context.strokePath()
+        // Bottom highlight line at top of border
+        highlightColor.setFill()
+        context.fill(NSRect(x: 0, y: bounds.height - borderWidth, width: bounds.width, height: 1))
     }
     
     /// Draw Milkdrop title bar using milkdrop_titlebar.png sprite sheet
