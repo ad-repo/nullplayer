@@ -76,6 +76,9 @@ class SkinLoader {
     // MARK: - Private Methods
     
     private func loadSkin(from directory: URL) throws -> Skin {
+        // Some skins extract to a subdirectory - detect and use it if present
+        let skinDirectory = findSkinDirectory(in: directory)
+        
         // Helper to load BMP with case-insensitive filename matching
         func loadImage(_ name: String) -> NSImage? {
             let possibleNames = [name, name.lowercased(), name.uppercased()]
@@ -83,7 +86,7 @@ class SkinLoader {
             
             for n in possibleNames {
                 for ext in extensions {
-                    let url = directory.appendingPathComponent("\(n).\(ext)")
+                    let url = skinDirectory.appendingPathComponent("\(n).\(ext)")
                     if let image = loadBMP(from: url) {
                         return image
                     }
@@ -93,16 +96,16 @@ class SkinLoader {
         }
         
         // Load playlist colors
-        let playlistColors = loadPlaylistColors(from: directory)
+        let playlistColors = loadPlaylistColors(from: skinDirectory)
         
         // Load visualization colors
-        let visColors = loadVisColors(from: directory)
+        let visColors = loadVisColors(from: skinDirectory)
         
         // Load regions
-        let regions = loadRegions(from: directory)
+        let regions = loadRegions(from: skinDirectory)
         
         // Load cursors
-        let cursors = loadCursors(from: directory)
+        let cursors = loadCursors(from: skinDirectory)
         
         return Skin(
             main: loadImage("main"),
@@ -126,6 +129,41 @@ class SkinLoader {
             regions: regions,
             cursors: cursors
         )
+    }
+    
+    /// Find the actual directory containing skin files
+    /// Some skins extract directly, others extract to a subdirectory
+    private func findSkinDirectory(in directory: URL) -> URL {
+        // First check if there are BMP files directly in the directory
+        if let contents = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+            let hasBMPFiles = contents.contains { url in
+                url.pathExtension.lowercased() == "bmp"
+            }
+            
+            if hasBMPFiles {
+                return directory
+            }
+            
+            // No BMP files at root - look for a subdirectory containing them
+            for item in contents {
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDirectory),
+                   isDirectory.boolValue {
+                    // Check if this subdirectory contains BMP files
+                    if let subContents = try? FileManager.default.contentsOfDirectory(at: item, includingPropertiesForKeys: nil) {
+                        let subHasBMP = subContents.contains { url in
+                            url.pathExtension.lowercased() == "bmp"
+                        }
+                        if subHasBMP {
+                            return item
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Fallback to original directory
+        return directory
     }
     
     private func loadBMP(from url: URL) -> NSImage? {
