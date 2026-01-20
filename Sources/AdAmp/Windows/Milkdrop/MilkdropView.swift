@@ -151,8 +151,14 @@ class MilkdropView: NSView {
             return
         }
         
-        let skin = WindowManager.shared.currentSkin
-        let renderer = SkinRenderer(skin: skin ?? SkinLoader.shared.loadDefault())
+        // Use default skin if locked, otherwise use current skin
+        let skin: Skin
+        if WindowManager.shared.lockBrowserMilkdropSkin {
+            skin = SkinLoader.shared.loadDefault()
+        } else {
+            skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+        }
+        let renderer = SkinRenderer(skin: skin)
         let isActive = window?.isKeyWindow ?? true
         
         // Flip coordinate system to match Winamp's top-down coordinates

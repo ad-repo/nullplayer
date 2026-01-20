@@ -457,8 +457,14 @@ class PlexBrowserView: NSView {
         let originalSize = originalWindowSize
         let scale = scaleFactor
         
-        let skin = WindowManager.shared.currentSkin
-        let renderer = SkinRenderer(skin: skin ?? SkinLoader.shared.loadDefault())
+        // Use default skin if locked, otherwise use current skin
+        let skin: Skin
+        if WindowManager.shared.lockBrowserMilkdropSkin {
+            skin = SkinLoader.shared.loadDefault()
+        } else {
+            skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+        }
+        let renderer = SkinRenderer(skin: skin)
         let isActive = window?.isKeyWindow ?? true
         
         // Flip coordinate system to match Winamp's top-down coordinates
@@ -502,7 +508,7 @@ class PlexBrowserView: NSView {
                                            pressedButton: pressedButton, scrollPosition: scrollPosition)
             
             // Get skin colors for content areas
-            let colors = skin?.playlistColors ?? .default
+            let colors = skin.playlistColors
             
             // Draw server/library selector bar
             drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)

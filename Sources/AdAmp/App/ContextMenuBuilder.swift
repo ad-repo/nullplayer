@@ -115,6 +115,14 @@ class ContextMenuBuilder {
         
         menu.addItem(NSMenuItem.separator())
         
+        // Lock Browser/Milkdrop toggle
+        let lockToggle = NSMenuItem(title: "Lock Browser/Milkdrop to Default", action: #selector(MenuActions.toggleLockBrowserMilkdrop(_:)), keyEquivalent: "")
+        lockToggle.target = MenuActions.shared
+        lockToggle.state = WindowManager.shared.lockBrowserMilkdropSkin ? .on : .off
+        menu.addItem(lockToggle)
+        
+        menu.addItem(NSMenuItem.separator())
+        
         // Available skins from Skins directory
         let availableSkins = WindowManager.shared.availableSkins()
         if availableSkins.isEmpty {
@@ -538,6 +546,10 @@ class MenuActions: NSObject {
     @objc func loadSkin(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         WindowManager.shared.loadSkin(from: url)
+    }
+    
+    @objc func toggleLockBrowserMilkdrop(_ sender: NSMenuItem) {
+        WindowManager.shared.lockBrowserMilkdropSkin.toggle()
     }
     
     // MARK: - Options

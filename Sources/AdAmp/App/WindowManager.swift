@@ -470,6 +470,23 @@ class WindowManager {
     
     // MARK: - Skin Management
     
+    /// When true, Browser and Milkdrop windows always use default skin (default: true)
+    var lockBrowserMilkdropSkin: Bool {
+        get {
+            // Default to true (locked) if not set
+            if UserDefaults.standard.object(forKey: "lockBrowserMilkdropSkin") == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: "lockBrowserMilkdropSkin")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "lockBrowserMilkdropSkin")
+            // Refresh these windows when setting changes
+            plexBrowserWindowController?.skinDidChange()
+            milkdropWindowController?.skinDidChange()
+        }
+    }
+    
     func loadSkin(from url: URL) {
         do {
             let skin = try SkinLoader.shared.load(from: url)
