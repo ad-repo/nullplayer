@@ -525,6 +525,9 @@ class MainWindowView: NSView {
         case .openPlexBrowser:
             pressedButton = .logo
             
+        case .openMainMenu:
+            pressedButton = .menu
+            
         // Slider interactions
         case .seekPosition(let value):
             draggingSlider = .position
@@ -730,7 +733,8 @@ class MainWindowView: NSView {
              (.repeat, .repeatTrack),
              (.toggleEQ, .eqToggle),
              (.togglePlaylist, .playlistToggle),
-             (.openPlexBrowser, .logo):
+             (.openPlexBrowser, .logo),
+             (.openMainMenu, .menu):
             return true
         default:
             return false
@@ -790,6 +794,8 @@ class MainWindowView: NSView {
             toggleShadeMode()
         case .logo:
             WindowManager.shared.togglePlexBrowser()
+        case .menu:
+            WindowManager.shared.toggleMilkdrop()
         default:
             break
         }

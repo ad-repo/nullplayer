@@ -147,8 +147,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         viewMenu.addItem(withTitle: "Main Window", action: #selector(toggleMainWindow), keyEquivalent: "1")
         viewMenu.addItem(withTitle: "Playlist", action: #selector(togglePlaylist), keyEquivalent: "2")
         viewMenu.addItem(withTitle: "Equalizer", action: #selector(toggleEqualizer), keyEquivalent: "3")
-        viewMenu.addItem(withTitle: "Media Library", action: #selector(toggleMediaLibrary), keyEquivalent: "l")
-        viewMenu.addItem(withTitle: "Plex Browser", action: #selector(togglePlexBrowser), keyEquivalent: "p")
+        viewMenu.addItem(withTitle: "Browser", action: #selector(togglePlexBrowser), keyEquivalent: "l")
         
         // Plex menu
         let plexMenuItem = NSMenuItem()
@@ -244,10 +243,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     
     @objc private func toggleEqualizer() {
         windowManager.toggleEqualizer()
-    }
-    
-    @objc private func toggleMediaLibrary() {
-        windowManager.toggleMediaLibrary()
     }
     
     @objc private func togglePlexBrowser() {

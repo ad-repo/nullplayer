@@ -341,6 +341,7 @@ class PlaylistView: NSView {
     }
     
     /// Draw track count and total time info in bottom bar using skin font
+    /// Shows REMAINING tracks and countdown time
     private func drawBottomBarInfo(in context: CGContext, drawBounds: NSRect, renderer: SkinRenderer) {
         let engine = WindowManager.shared.audioEngine
         let tracks = engine.playlist
@@ -348,26 +349,47 @@ class PlaylistView: NSView {
         // Don't draw if no tracks
         guard !tracks.isEmpty else { return }
         
-        // Calculate total playlist duration
-        var totalSeconds = 0
-        for track in tracks {
-            totalSeconds += Int(track.duration ?? 0)
+        // Get current track index (0-based), -1 means no track loaded
+        let currentIndex = max(0, engine.currentIndex)
+        
+        // Calculate remaining tracks (including current track)
+        let remainingTracks = max(0, tracks.count - currentIndex)
+        
+        // Calculate remaining time:
+        // - Time left in current track
+        // - Plus duration of all tracks after current
+        var remainingSeconds = 0
+        
+        // Add remaining time in current track
+        if engine.state == .playing || engine.currentTime > 0 {
+            let currentDuration = engine.duration
+            let currentTime = engine.currentTime
+            remainingSeconds += max(0, Int(currentDuration - currentTime))
+        } else if currentIndex < tracks.count {
+            // Not playing yet, add full duration of current track
+            remainingSeconds += Int(tracks[currentIndex].duration ?? 0)
         }
-        let totalMinutes = totalSeconds / 60
-        let totalHours = totalMinutes / 60
+        
+        // Add duration of all tracks after current
+        for i in (currentIndex + 1)..<tracks.count {
+            remainingSeconds += Int(tracks[i].duration ?? 0)
+        }
+        
+        let remainingMinutes = remainingSeconds / 60
+        let remainingHours = remainingMinutes / 60
         
         // Build the info string for skin font
-        let trackCountStr = "\(tracks.count) TRACKS / "
-        let totalTimeStr: String
-        if totalHours > 0 {
-            totalTimeStr = String(format: "%d:%02d:%02d", totalHours, totalMinutes % 60, totalSeconds % 60)
+        let trackCountStr = "\(remainingTracks) TRACKS/"
+        let remainingTimeStr: String
+        if remainingHours > 0 {
+            remainingTimeStr = String(format: "%d:%02d:%02d", remainingHours, remainingMinutes % 60, remainingSeconds % 60)
         } else {
-            totalTimeStr = String(format: "%d:%02d", totalMinutes, totalSeconds % 60)
+            remainingTimeStr = String(format: "%d:%02d", remainingMinutes, remainingSeconds % 60)
         }
         
         // Calculate width using skin font dimensions (5px per char for text)
         let charWidth = SkinElements.TextFont.charWidth  // 5px
-        let textWidth = CGFloat(trackCountStr.count) * charWidth + CGFloat(totalTimeStr.count) * charWidth
+        let textWidth = CGFloat(trackCountStr.count) * charWidth + CGFloat(remainingTimeStr.count) * charWidth
         
         // Position INSIDE the bottom bar area, centered horizontally
         let bottomBarTop = drawBounds.height - Layout.bottomBarHeight
@@ -380,7 +402,7 @@ class PlaylistView: NSView {
         // Draw using skin font (no coordinate flip needed for sprites)
         var xPos = textX
         xPos += renderer.drawSkinText(trackCountStr, at: NSPoint(x: xPos, y: textY), in: context)
-        renderer.drawSkinText(totalTimeStr, at: NSPoint(x: xPos, y: textY), in: context)
+        renderer.drawSkinText(remainingTimeStr, at: NSPoint(x: xPos, y: textY), in: context)
     }
     
     /// Draw current playback time in the colon area of the bottom bar using skin font

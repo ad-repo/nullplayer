@@ -5,6 +5,18 @@ import CoreAudio
 import AudioToolbox
 import AudioStreaming
 
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// Posted when new PCM audio data is available for visualization
+    /// userInfo contains: "pcm" ([Float]), "sampleRate" (Double)
+    static let audioPCMDataUpdated = Notification.Name("audioPCMDataUpdated")
+    
+    /// Posted when playback state changes (playing, paused, stopped)
+    /// userInfo contains: "state" (PlaybackState)
+    static let audioPlaybackStateChanged = Notification.Name("audioPlaybackStateChanged")
+}
+
 /// Audio playback state
 enum PlaybackState {
     case stopped
@@ -37,6 +49,19 @@ class AudioEngine {
     /// 10-band equalizer
     private let eqNode = AVAudioUnitEQ(numberOfBands: 10)
     
+    /// Limiter for anti-clipping protection when EQ boosts are applied
+    /// Uses Apple's built-in AUDynamicsProcessor Audio Unit
+    private let limiterNode: AVAudioUnitEffect = {
+        let componentDescription = AudioComponentDescription(
+            componentType: kAudioUnitType_Effect,
+            componentSubType: kAudioUnitSubType_DynamicsProcessor,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0,
+            componentFlagsMask: 0
+        )
+        return AVAudioUnitEffect(audioComponentDescription: componentDescription)
+    }()
+    
     /// Current audio file (for local files)
     private var audioFile: AVAudioFile?
     
@@ -49,6 +74,12 @@ class AudioEngine {
     private(set) var state: PlaybackState = .stopped {
         didSet {
             delegate?.audioEngineDidChangeState(state)
+            // Post notification for visualization and other observers
+            NotificationCenter.default.post(
+                name: .audioPlaybackStateChanged,
+                object: self,
+                userInfo: ["state": state]
+            )
         }
     }
     
@@ -68,7 +99,8 @@ class AudioEngine {
     /// Volume level (0.0 - 1.0)
     var volume: Float = 0.2 {
         didSet {
-            playerNode.volume = volume
+            // Apply volume with normalization gain for local playback
+            applyNormalizationGain()
             streamingPlayer?.volume = volume
             
             // Also set volume on cast device if casting
@@ -93,6 +125,41 @@ class AudioEngine {
     /// Repeat mode
     var repeatEnabled: Bool = false
     
+    /// Gapless playback mode - pre-schedules next track for seamless transitions
+    var gaplessPlaybackEnabled: Bool = false {
+        didSet {
+            UserDefaults.standard.set(gaplessPlaybackEnabled, forKey: "gaplessPlaybackEnabled")
+            // If enabling and currently playing, schedule next track
+            if gaplessPlaybackEnabled && state == .playing {
+                scheduleNextTrackForGapless()
+            }
+        }
+    }
+    
+    /// Volume normalization - analyzes and normalizes track loudness
+    var volumeNormalizationEnabled: Bool = false {
+        didSet {
+            UserDefaults.standard.set(volumeNormalizationEnabled, forKey: "volumeNormalizationEnabled")
+            // Recalculate normalization for current track
+            if volumeNormalizationEnabled {
+                applyNormalizationGain()
+            } else {
+                normalizationGain = 1.0
+                applyNormalizationGain()
+            }
+        }
+    }
+    
+    /// Current normalization gain factor (1.0 = no change)
+    private var normalizationGain: Float = 1.0
+    
+    /// Target loudness level for normalization (in dB, typical is -14 LUFS for streaming)
+    private let targetLoudnessDB: Float = -14.0
+    
+    /// Pre-scheduled next file for gapless playback
+    private var nextScheduledFile: AVAudioFile?
+    private var nextScheduledTrackIndex: Int = -1
+    
     /// Generation counter to track which completion handler is valid
     /// Incremented on each seek/load to invalidate old completion handlers
     private var playbackGeneration: Int = 0
@@ -103,9 +170,15 @@ class AudioEngine {
     /// Spectrum analyzer data (75 bands for Winamp-style visualization)
     private(set) var spectrumData: [Float] = Array(repeating: 0, count: 75)
     
+    /// Raw PCM audio data for waveform visualization (mono, normalized -1 to 1)
+    private(set) var pcmData: [Float] = Array(repeating: 0, count: 512)
+    
+    /// PCM sample rate for visualization timing
+    private(set) var pcmSampleRate: Double = 44100
+    
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
-    private let fftSize: Int = 2048
+    private let fftSize: Int = 512  // ~11.6ms at 44.1kHz (reduced from 2048 for lowest latency)
     
     /// Tap for audio analysis
     private var analysisTap: AVAudioNodeTapBlock?
@@ -147,23 +220,71 @@ class AudioEngine {
         // Attach nodes
         engine.attach(playerNode)
         engine.attach(eqNode)
+        engine.attach(limiterNode)
         
         // Get the standard format from the mixer
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
         
-        // Connect nodes: player -> EQ -> mixer
-        // Using the mixer's format ensures consistent audio processing
+        // Connect nodes: player -> EQ -> limiter -> mixer
+        // Limiter protects against clipping when EQ boosts are applied
         engine.connect(playerNode, to: eqNode, format: mixerFormat)
-        engine.connect(eqNode, to: engine.mainMixerNode, format: mixerFormat)
+        engine.connect(eqNode, to: limiterNode, format: mixerFormat)
+        engine.connect(limiterNode, to: engine.mainMixerNode, format: mixerFormat)
+        
+        // Configure limiter for transparent anti-clipping
+        configureLimiter()
         
         // Set initial volume (didSet doesn't fire for default value)
         playerNode.volume = volume
         
-        // Ensure EQ is enabled by default (not bypassed)
-        eqNode.bypass = false
+        // EQ is disabled (bypassed) by default - user must enable it
+        eqNode.bypass = true
+        
+        // Load audio preferences
+        loadAudioPreferences()
         
         // Prepare engine
         engine.prepare()
+    }
+    
+    /// Configure the limiter Audio Unit for transparent anti-clipping protection
+    private func configureLimiter() {
+        let audioUnit = limiterNode.audioUnit
+        
+        // AUDynamicsProcessor parameters (from AudioUnitParameters.h):
+        // kDynamicsProcessorParam_Threshold = 0 (dB, -40 to 20)
+        // kDynamicsProcessorParam_HeadRoom = 1 (dB, 0.1 to 40)
+        // kDynamicsProcessorParam_ExpansionRatio = 2 (1 to 50)
+        // kDynamicsProcessorParam_AttackTime = 4 (seconds, 0.0001 to 0.2)
+        // kDynamicsProcessorParam_ReleaseTime = 5 (seconds, 0.01 to 3)
+        // kDynamicsProcessorParam_MasterGain = 6 (dB, -40 to 40)
+        // kDynamicsProcessorParam_CompressionAmount = 1000 (read-only, dB)
+        
+        // Set threshold close to 0 dB to catch peaks before clipping
+        AudioUnitSetParameter(audioUnit, 0, kAudioUnitScope_Global, 0, -1.0, 0)
+        
+        // Set headroom (how much above threshold before limiting kicks in hard)
+        AudioUnitSetParameter(audioUnit, 1, kAudioUnitScope_Global, 0, 1.0, 0)
+        
+        // Expansion ratio = 1 (no expansion, only compression/limiting)
+        AudioUnitSetParameter(audioUnit, 2, kAudioUnitScope_Global, 0, 1.0, 0)
+        
+        // Fast attack time (1ms) for transparent limiting
+        AudioUnitSetParameter(audioUnit, 4, kAudioUnitScope_Global, 0, 0.001, 0)
+        
+        // Medium release time (50ms)
+        AudioUnitSetParameter(audioUnit, 5, kAudioUnitScope_Global, 0, 0.05, 0)
+        
+        // No makeup gain
+        AudioUnitSetParameter(audioUnit, 6, kAudioUnitScope_Global, 0, 0.0, 0)
+        
+        NSLog("AudioEngine: Limiter configured for anti-clipping protection")
+    }
+    
+    /// Load audio quality preferences from UserDefaults
+    private func loadAudioPreferences() {
+        gaplessPlaybackEnabled = UserDefaults.standard.bool(forKey: "gaplessPlaybackEnabled")
+        volumeNormalizationEnabled = UserDefaults.standard.bool(forKey: "volumeNormalizationEnabled")
     }
     
     private func setupEqualizer() {
@@ -188,11 +309,11 @@ class AudioEngine {
             // Narrower bandwidth at higher frequencies for precision
             band.bandwidth = index < 5 ? 2.0 : 1.5
             band.gain = 0.0       // Flat by default
-            band.bypass = false
+            band.bypass = false   // Individual bands active when EQ is enabled
         }
         
-        // Ensure the EQ node itself is not bypassed
-        eqNode.bypass = false
+        // EQ node is bypassed by default - user must enable via EQ window
+        eqNode.bypass = true
     }
     
     private func setupSpectrumAnalyzer() {
@@ -232,6 +353,30 @@ class AudioEngine {
             for i in 0..<fftSize {
                 samples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
             }
+        }
+        
+        // Store raw PCM data for waveform visualization (before windowing)
+        // Downsample to 512 samples for efficient storage and lowest latency
+        let pcmSize = min(512, samples.count)
+        let pcmStride = samples.count / pcmSize
+        var pcmSamples = [Float](repeating: 0, count: pcmSize)
+        for i in 0..<pcmSize {
+            pcmSamples[i] = samples[i * pcmStride]
+        }
+        let bufferSampleRate = buffer.format.sampleRate
+        
+        // Post notification for low-latency visualization (direct from audio tap)
+        NotificationCenter.default.post(
+            name: .audioPCMDataUpdated,
+            object: self,
+            userInfo: ["pcm": pcmSamples, "sampleRate": bufferSampleRate]
+        )
+        
+        // Also store in property for legacy access
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.pcmSampleRate = bufferSampleRate
+            self.pcmData = pcmSamples
         }
         
         // Apply Hann window
@@ -571,11 +716,14 @@ class AudioEngine {
         }
         
         // Clamp time to valid range
-        let seekTime = max(0, min(time, currentDuration - 0.5))
+        // Use 1.0s buffer for streaming (seeking too close to EOF can crash the player)
+        // Use 0.5s buffer for local files
+        let eofBuffer: TimeInterval = isStreamingPlayback ? 1.0 : 0.5
+        let seekTime = max(0, min(time, currentDuration - eofBuffer))
         
         if isStreamingPlayback {
             // Streaming playback - seek via AudioStreaming
-            // The StreamingAudioPlayer will do additional bounds checking
+            // Time is already clamped appropriately above
             streamingPlayer?.seek(to: seekTime)
             lastReportedTime = seekTime
         } else {
@@ -950,6 +1098,10 @@ class AudioEngine {
         stopStreamingPlayer()
         isStreamingPlayback = false
         
+        // Clear any pre-scheduled gapless track (we're loading a new track explicitly)
+        nextScheduledFile = nil
+        nextScheduledTrackIndex = -1
+        
         do {
             let newAudioFile = try AVAudioFile(forReading: track.url)
             NSLog("loadLocalTrack: file loaded successfully, format: %@", newAudioFile.processingFormat.description)
@@ -961,6 +1113,14 @@ class AudioEngine {
             currentTrack = track
             _currentTime = 0  // Reset time for new track
             lastReportedTime = 0
+            
+            // Analyze and apply volume normalization if enabled
+            if volumeNormalizationEnabled {
+                analyzeAndApplyNormalization(file: newAudioFile)
+            } else {
+                normalizationGain = 1.0
+                applyNormalizationGain()
+            }
             
             // Increment generation to invalidate any old completion handlers
             playbackGeneration += 1
@@ -974,10 +1134,15 @@ class AudioEngine {
                 }
             }
             
+            // Pre-schedule next track for gapless playback
+            if gaplessPlaybackEnabled {
+                scheduleNextTrackForGapless()
+            }
+            
             // Report track start to Plex (no-op for local files without plexRatingKey)
             PlexPlaybackReporter.shared.trackDidStart(track, at: 0)
             
-            NSLog("loadLocalTrack: file scheduled, EQ bypass = %d", eqNode.bypass)
+            NSLog("loadLocalTrack: file scheduled, EQ bypass = %d, normGain = %.2f", eqNode.bypass, normalizationGain)
         } catch {
             NSLog("loadLocalTrack: FAILED - %@", error.localizedDescription)
         }
@@ -1057,6 +1222,37 @@ class AudioEngine {
         let finishPosition = duration
         PlexPlaybackReporter.shared.trackDidStop(at: finishPosition, finished: true)
         
+        // Check if we have a gaplessly pre-scheduled next track
+        if gaplessPlaybackEnabled && nextScheduledFile != nil && nextScheduledTrackIndex >= 0 {
+            // Gapless transition - the next file is already scheduled
+            currentIndex = nextScheduledTrackIndex
+            audioFile = nextScheduledFile
+            currentTrack = playlist[currentIndex]
+            _currentTime = 0
+            lastReportedTime = 0
+            
+            // Clear the pre-scheduled track
+            nextScheduledFile = nil
+            nextScheduledTrackIndex = -1
+            
+            // Notify delegate of track change
+            delegate?.audioEngineDidChangeTrack(currentTrack)
+            
+            // Report new track to Plex
+            PlexPlaybackReporter.shared.trackDidStart(currentTrack!, at: 0)
+            
+            // Apply normalization for the new track
+            if volumeNormalizationEnabled {
+                analyzeAndApplyNormalization(file: audioFile!)
+            }
+            
+            // Schedule the next track for gapless
+            scheduleNextTrackForGapless()
+            
+            NSLog("Gapless transition to: %@", currentTrack?.title ?? "Unknown")
+            return
+        }
+        
         if repeatEnabled {
             if shuffleEnabled {
                 // Repeat mode + shuffle: pick a random track
@@ -1084,6 +1280,160 @@ class AudioEngine {
                 stop()
             }
         }
+    }
+    
+    // MARK: - Gapless Playback
+    
+    /// Pre-schedule the next track for gapless playback
+    private func scheduleNextTrackForGapless() {
+        guard gaplessPlaybackEnabled else { return }
+        guard !isStreamingPlayback else { return }  // Gapless only for local files
+        guard !repeatEnabled || shuffleEnabled else {
+            // For repeat single track, we'll handle it in trackDidFinish
+            return
+        }
+        
+        let nextIndex: Int
+        if shuffleEnabled {
+            // For shuffle, pick a random next track
+            nextIndex = Int.random(in: 0..<playlist.count)
+        } else {
+            nextIndex = currentIndex + 1
+        }
+        
+        guard nextIndex < playlist.count else {
+            // No next track to schedule
+            nextScheduledFile = nil
+            nextScheduledTrackIndex = -1
+            return
+        }
+        
+        let nextTrack = playlist[nextIndex]
+        
+        // Only schedule local files
+        guard nextTrack.url.isFileURL else { return }
+        
+        do {
+            let nextFile = try AVAudioFile(forReading: nextTrack.url)
+            
+            // Schedule the next file to play after the current one
+            playerNode.scheduleFile(nextFile, at: nil, completionHandler: nil)
+            
+            nextScheduledFile = nextFile
+            nextScheduledTrackIndex = nextIndex
+            
+            NSLog("Gapless: Pre-scheduled next track: %@", nextTrack.title)
+        } catch {
+            NSLog("Gapless: Failed to pre-schedule next track: %@", error.localizedDescription)
+            nextScheduledFile = nil
+            nextScheduledTrackIndex = -1
+        }
+    }
+    
+    // MARK: - Volume Normalization
+    
+    /// Analyze audio file and apply normalization gain
+    private func analyzeAndApplyNormalization(file: AVAudioFile) {
+        guard volumeNormalizationEnabled else {
+            normalizationGain = 1.0
+            applyNormalizationGain()
+            return
+        }
+        
+        // Analyze the file's peak and RMS levels
+        let (peakDB, rmsDB) = analyzeAudioLevels(file: file)
+        
+        // Calculate gain needed to reach target loudness
+        // Use RMS as a rough estimate of perceived loudness
+        let gainNeededDB = targetLoudnessDB - rmsDB
+        
+        // Limit the gain to prevent excessive boost or cut
+        // Max boost: +12 dB, Max cut: -12 dB
+        let clampedGainDB = max(-12.0, min(12.0, gainNeededDB))
+        
+        // Also ensure we don't clip - reduce gain if peaks would exceed 0 dB
+        let peakAfterGain = peakDB + clampedGainDB
+        let finalGainDB: Float
+        if peakAfterGain > -0.5 {
+            // Would clip, reduce gain to leave 0.5 dB headroom
+            finalGainDB = clampedGainDB - (peakAfterGain + 0.5)
+        } else {
+            finalGainDB = clampedGainDB
+        }
+        
+        // Convert dB to linear gain
+        normalizationGain = pow(10.0, finalGainDB / 20.0)
+        
+        NSLog("Normalization: peak=%.1fdB, rms=%.1fdB, gain=%.1fdB (%.2fx)", 
+              peakDB, rmsDB, finalGainDB, normalizationGain)
+        
+        applyNormalizationGain()
+    }
+    
+    /// Analyze audio file and return (peak dB, RMS dB)
+    private func analyzeAudioLevels(file: AVAudioFile) -> (Float, Float) {
+        let format = file.processingFormat
+        let frameCount = AVAudioFrameCount(min(file.length, Int64(format.sampleRate * 30)))  // Analyze up to 30 seconds
+        
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+            return (0, -20)  // Default values if analysis fails
+        }
+        
+        // Save current position
+        let savedPosition = file.framePosition
+        file.framePosition = 0
+        
+        do {
+            try file.read(into: buffer)
+        } catch {
+            file.framePosition = savedPosition
+            return (0, -20)
+        }
+        
+        // Restore position
+        file.framePosition = savedPosition
+        
+        guard let channelData = buffer.floatChannelData else {
+            return (0, -20)
+        }
+        
+        let frameLength = Int(buffer.frameLength)
+        let channelCount = Int(format.channelCount)
+        
+        var peak: Float = 0
+        var sumSquares: Float = 0
+        var sampleCount: Int = 0
+        
+        for channel in 0..<channelCount {
+            for frame in 0..<frameLength {
+                let sample = abs(channelData[channel][frame])
+                peak = max(peak, sample)
+                sumSquares += sample * sample
+                sampleCount += 1
+            }
+        }
+        
+        let rms = sqrt(sumSquares / Float(max(1, sampleCount)))
+        
+        // Convert to dB (avoid log of 0)
+        let peakDB = peak > 0 ? 20 * log10(peak) : -96
+        let rmsDB = rms > 0 ? 20 * log10(rms) : -96
+        
+        return (peakDB, rmsDB)
+    }
+    
+    /// Apply the current normalization gain to the player
+    private func applyNormalizationGain() {
+        // Apply normalization by adjusting the EQ's global gain
+        // This preserves the user's volume setting while normalizing
+        let baseVolume = volume
+        let normalizedVolume = baseVolume * normalizationGain
+        
+        // Clamp to valid range
+        let finalVolume = max(0, min(1, normalizedVolume))
+        playerNode.volume = finalVolume
+        
+        // Note: For streaming, normalization is not applied (would require re-analysis)
     }
     
     // MARK: - Equalizer
@@ -1431,6 +1781,27 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // Forward spectrum data from streaming player to delegate
         spectrumData = levels
         delegate?.audioEngineDidUpdateSpectrum(levels)
+    }
+    
+    func streamingPlayerDidUpdatePCM(_ samples: [Float]) {
+        // Forward PCM data from streaming player for projectM visualization
+        // Copy samples into pcmData, adjusting size as needed
+        let copyCount = min(samples.count, pcmData.count)
+        for i in 0..<copyCount {
+            pcmData[i] = samples[i]
+        }
+        // Zero out remainder if samples is smaller
+        for i in copyCount..<pcmData.count {
+            pcmData[i] = 0
+        }
+        
+        // Post notification for low-latency visualization
+        // Use pcmData (not samples) to ensure consistency with stored property
+        NotificationCenter.default.post(
+            name: .audioPCMDataUpdated,
+            object: self,
+            userInfo: ["pcm": pcmData, "sampleRate": pcmSampleRate]
+        )
     }
     
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int) {

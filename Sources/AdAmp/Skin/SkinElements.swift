@@ -37,6 +37,7 @@ enum ButtonType: CaseIterable {
     case minimize
     case shade
     case unshade  // Used in shade mode to return to normal
+    case menu     // Top-left menu icon - opens Milkdrop
     
     // Toggle buttons
     case shuffle
@@ -884,6 +885,190 @@ struct SkinElements {
             static let closeOffset: CGFloat = 5
             /// Shade button offset from right edge
             static let shadeOffset: CGFloat = 15
+        }
+    }
+    
+    // MARK: - Milkdrop Visualization Window
+    // Uses custom milkdrop_titlebar.png sprite sheet with AVS-style borders
+    
+    struct Milkdrop {
+        /// Minimum window size
+        static let minSize = NSSize(width: 275, height: 150)
+        
+        /// Default window size - matches Plex Browser (height = 3 stacked main windows)
+        static var defaultSize: NSSize {
+            let height = Skin.mainWindowSize.height * 3
+            return NSSize(width: 550, height: height)
+        }
+        
+        /// Title bar height (matches scaled PNG content)
+        static let titleBarHeight: CGFloat = 14
+        
+        /// Shade mode height (title bar only)
+        static let shadeHeight: CGFloat = 14
+        
+        /// Layout constants - matching reference proportions
+        struct Layout {
+            static let titleBarHeight: CGFloat = 14
+            static let leftBorder: CGFloat = 3      // Side borders - thin like Library window
+            static let rightBorder: CGFloat = 3     
+            static let bottomBorder: CGFloat = 3    
+        }
+        
+        // MARK: - Title Bar Sprites (from milkdrop_titlebar.png)
+        // Image size: 1518x48 - 2 rows of 24px each (active/inactive)
+        
+        struct TitleBar {
+            /// Full image dimensions
+            static let imageWidth: CGFloat = 1518
+            static let imageHeight: CGFloat = 48
+            static let rowHeight: CGFloat = 24
+            
+            /// Left corner - rounded edge with grip marks (stretchable horizontally)
+            static let leftCornerWidth: CGFloat = 15
+            
+            /// Right corner - contains close button area
+            static let rightCornerWidth: CGFloat = 25
+            
+            /// Active title bar (top row y=0)
+            struct Active {
+                static let leftCorner = NSRect(x: 0, y: 0, width: 15, height: 24)
+                static let tile = NSRect(x: 15, y: 0, width: 100, height: 24)  // Tileable middle section
+                static let rightCorner = NSRect(x: 1493, y: 0, width: 25, height: 24)
+                static let full = NSRect(x: 0, y: 0, width: 1518, height: 24)
+            }
+            
+            /// Inactive title bar (bottom row y=24)
+            struct Inactive {
+                static let leftCorner = NSRect(x: 0, y: 24, width: 15, height: 24)
+                static let tile = NSRect(x: 15, y: 24, width: 100, height: 24)
+                static let rightCorner = NSRect(x: 1493, y: 24, width: 25, height: 24)
+                static let full = NSRect(x: 0, y: 24, width: 1518, height: 24)
+            }
+            
+            /// Close button position (relative to right edge of title bar)
+            /// Button is 9x9, positioned in the right corner
+            static let closeButtonOffset: CGFloat = 7  // From right edge
+            static let closeButtonY: CGFloat = 7       // From top of title bar
+            static let closeButtonSize: CGFloat = 9
+        }
+        
+        // MARK: - Border Sprites
+        // Uses dark blue/gray color matching the title bar
+        
+        struct Borders {
+            /// Border color (dark blue-gray matching title bar)
+            static let color = NSColor(calibratedRed: 0.22, green: 0.24, blue: 0.35, alpha: 1.0)
+            
+            /// Inner border color (slightly lighter)
+            static let innerColor = NSColor(calibratedRed: 0.35, green: 0.38, blue: 0.50, alpha: 1.0)
+            
+            /// Bottom bar color (gradient-like)
+            static let bottomColor = NSColor(calibratedRed: 0.25, green: 0.27, blue: 0.38, alpha: 1.0)
+        }
+        
+        /// Window control button positions in title bar
+        struct TitleBarButtons {
+            // Relative to right edge of window
+            static let closeOffset: CGFloat = 7
+            static let shadeOffset: CGFloat = 17  // Not used in current design
+        }
+        
+        /// Shade mode positions (same as normal - window just shrinks)
+        struct ShadePositions {
+            static let closeButton = NSRect(x: -16, y: 7, width: 9, height: 9)  // Relative to right edge
+        }
+    }
+    
+    // MARK: - GEN.BMP (Generic/AVS/Milkdrop window)
+    
+    /// Sprites from GEN.BMP - used for AVS/Milkdrop window chrome
+    /// GEN.BMP layout (194x109):
+    /// - Rows 0-20: Active title bar sprites (left corner, tile, right corner with buttons)
+    /// - Rows 21-41: Inactive title bar sprites  
+    /// - Rows 42-71: Window chrome pieces (borders, corners)
+    /// - Rows 72-78: Alphabet A-Z (5x6 pixels each, 1px spacing)
+    /// - Rows 79-85: Numbers and symbols
+    struct GenWindow {
+        /// GEN.BMP dimensions
+        static let imageWidth: CGFloat = 194
+        static let imageHeight: CGFloat = 109
+        
+        /// Title bar height
+        static let titleBarHeight: CGFloat = 20
+        
+        // MARK: - Title Bar Active (y=0-19)
+        struct TitleBarActive {
+            /// Left corner (grip area)
+            static let leftCorner = NSRect(x: 0, y: 0, width: 25, height: 20)
+            /// Tileable middle section
+            static let tile = NSRect(x: 26, y: 0, width: 29, height: 20)
+            /// Right corner (contains window buttons)
+            static let rightCorner = NSRect(x: 153, y: 0, width: 41, height: 20)
+        }
+        
+        // MARK: - Title Bar Inactive (y=21-40)
+        struct TitleBarInactive {
+            /// Left corner (grip area)
+            static let leftCorner = NSRect(x: 0, y: 21, width: 25, height: 20)
+            /// Tileable middle section
+            static let tile = NSRect(x: 26, y: 21, width: 29, height: 20)
+            /// Right corner (contains window buttons)
+            static let rightCorner = NSRect(x: 153, y: 21, width: 41, height: 20)
+        }
+        
+        // MARK: - Window Chrome (y=42-71)
+        struct Chrome {
+            /// Left border tile (for vertical tiling)
+            static let leftBorder = NSRect(x: 0, y: 42, width: 11, height: 29)
+            /// Right border tile
+            static let rightBorder = NSRect(x: 12, y: 42, width: 11, height: 29)
+            /// Bottom left corner
+            static let bottomLeftCorner = NSRect(x: 0, y: 72, width: 11, height: 14)
+            /// Bottom tile (for horizontal tiling)
+            static let bottomTile = NSRect(x: 12, y: 72, width: 29, height: 14)
+            /// Bottom right corner
+            static let bottomRightCorner = NSRect(x: 42, y: 72, width: 11, height: 14)
+        }
+        
+        // MARK: - Window Button Positions (relative to right edge)
+        struct Buttons {
+            static let closeOffset: CGFloat = 9
+            static let shadeOffset: CGFloat = 18
+        }
+    }
+    
+    /// Font sprites from GEN.BMP - used for AVS/Milkdrop window titles
+    struct GenFont {
+        static let charWidth: CGFloat = 5
+        static let charHeight: CGFloat = 6
+        static let charSpacing: CGFloat = 1
+        
+        /// Y position of the alphabet row in GEN.BMP
+        static let alphabetY: CGFloat = 88
+        
+        /// Y position of the numbers row in GEN.BMP
+        static let numbersY: CGFloat = 96
+        
+        /// Get the source rect for a character from GEN.BMP
+        static func character(_ char: Character) -> NSRect? {
+            let upperChar = char.uppercased().first ?? char
+            
+            switch upperChar {
+            case "A"..."Z":
+                let index = Int(upperChar.asciiValue! - Character("A").asciiValue!)
+                let x = CGFloat(index) * (charWidth + charSpacing)
+                return NSRect(x: x, y: alphabetY, width: charWidth, height: charHeight)
+            case "0"..."9":
+                let index = Int(upperChar.asciiValue! - Character("0").asciiValue!)
+                let x = CGFloat(index) * (charWidth + charSpacing)
+                return NSRect(x: x, y: numbersY, width: charWidth, height: charHeight)
+            case " ":
+                // Space - return nil to skip drawing
+                return nil
+            default:
+                return nil
+            }
         }
     }
     

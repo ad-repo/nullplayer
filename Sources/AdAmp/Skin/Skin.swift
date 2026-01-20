@@ -53,6 +53,11 @@ struct Skin {
     /// Playlist editor background (pledit.bmp)
     let pledit: NSImage?
     
+    // MARK: - Generic/AVS/Milkdrop Window Assets
+    
+    /// Generic window sprites including font (gen.bmp)
+    let gen: NSImage?
+    
     /// Playlist colors
     let playlistColors: PlaylistColors
     
@@ -95,6 +100,13 @@ struct Skin {
     /// Library window image loaded from bundle (not from .wsz skins)
     static var libraryWindowImage: NSImage? {
         guard let url = Bundle.module.url(forResource: "library-window", withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
+    }
+    
+    /// Milkdrop title bar image loaded from bundle (custom sprite sheet)
+    /// Layout: 1518x48 - 2 rows (24px each): active (y=0-23), inactive (y=24-47)
+    static var milkdropTitlebarImage: NSImage? {
+        guard let url = Bundle.module.url(forResource: "milkdrop_titlebar", withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
     }
 }

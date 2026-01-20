@@ -451,9 +451,9 @@ When in doubt, check how MainWindowView or EQView handles the same situation.
 
 ---
 
-## Plex Browser Window Pattern
+## Browser Window Pattern
 
-The Plex browser window (`PlexBrowserView.swift`) follows the same pattern as the Playlist window, reusing playlist sprites for frame/chrome with custom content areas.
+The Browser window (`PlexBrowserView.swift`) follows the same pattern as the Playlist window, reusing playlist sprites for frame/chrome with custom content areas. This unified browser supports both local files (from MediaLibrary) and Plex server content.
 
 ### Architecture Overview
 
@@ -555,3 +555,28 @@ Like the Playlist window, the Plex browser supports shade mode:
 - Uses `PlaylistShade` sprites for background
 - Controller manages window frame animation
 - View state controlled by `setShadeMode()` method
+
+### Context Menus
+
+Right-click context menus are supported for browser items via `showContextMenu(for:at:)`:
+
+**Local Files:**
+- **Tracks**: Play, Add to Playlist, See Tags
+- **Albums**: Play Album, Add Album to Playlist
+- **Artists**: Play All by Artist, Expand/Collapse
+
+**Plex Content:**
+- **Tracks**: Play, Add to Playlist
+- **Albums**: Play Album, Add Album to Playlist  
+- **Artists**: Play All by Artist, Expand/Collapse
+- **Movies/Episodes**: Play
+
+### Tags Panel
+
+The "See Tags" option (local tracks only) opens `TagsPanel.swift`, displaying full metadata:
+- File info (name, path, size)
+- Audio tags (title, artist, album, album artist, genre, year, track/disc number)
+- Audio properties (duration, bitrate, sample rate, channels)
+- Library info (date added, last played, play count, library ID)
+
+The panel follows Winamp-inspired styling with green text on dark background.

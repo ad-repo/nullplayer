@@ -18,12 +18,8 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
         menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
-        menu.addItem(buildWindowItem("Media Library", visible: wm.isMediaLibraryVisible, action: #selector(MenuActions.toggleMediaLibrary)))
-        menu.addItem(buildWindowItem("Plex Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
-        
-        let milkdrop = NSMenuItem(title: "Milkdrop", action: nil, keyEquivalent: "")
-        milkdrop.isEnabled = false
-        menu.addItem(milkdrop)
+        menu.addItem(buildWindowItem("Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
+        menu.addItem(buildWindowItem("Milkdrop", visible: wm.isMilkdropVisible, action: #selector(MenuActions.toggleMilkdrop)))
         
         menu.addItem(NSMenuItem.separator())
         
@@ -52,6 +48,11 @@ class ContextMenuBuilder {
         alwaysOnTop.target = MenuActions.shared
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
+        
+        // Snap to Default
+        let snapToDefault = NSMenuItem(title: "Snap to Default", action: #selector(MenuActions.snapToDefault), keyEquivalent: "")
+        snapToDefault.target = MenuActions.shared
+        menu.addItem(snapToDefault)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -164,6 +165,19 @@ class ContextMenuBuilder {
         shuffleItem.target = MenuActions.shared
         shuffleItem.state = engine.shuffleEnabled ? .on : .off
         optionsMenu.addItem(shuffleItem)
+        
+        optionsMenu.addItem(NSMenuItem.separator())
+        
+        // Audio Quality Options
+        let gaplessItem = NSMenuItem(title: "Gapless Playback", action: #selector(MenuActions.toggleGaplessPlayback), keyEquivalent: "")
+        gaplessItem.target = MenuActions.shared
+        gaplessItem.state = engine.gaplessPlaybackEnabled ? .on : .off
+        optionsMenu.addItem(gaplessItem)
+        
+        let normalizeItem = NSMenuItem(title: "Volume Normalization", action: #selector(MenuActions.toggleVolumeNormalization), keyEquivalent: "")
+        normalizeItem.target = MenuActions.shared
+        normalizeItem.state = engine.volumeNormalizationEnabled ? .on : .off
+        optionsMenu.addItem(normalizeItem)
         
         optionsItem.submenu = optionsMenu
         return optionsItem
@@ -476,6 +490,10 @@ class MenuActions: NSObject {
         WindowManager.shared.togglePlexBrowser()
     }
     
+    @objc func toggleMilkdrop() {
+        WindowManager.shared.toggleMilkdrop()
+    }
+    
     // MARK: - File Operations
     
     @objc func openFile() {
@@ -544,8 +562,20 @@ class MenuActions: NSObject {
         WindowManager.shared.audioEngine.shuffleEnabled.toggle()
     }
     
+    @objc func toggleGaplessPlayback() {
+        WindowManager.shared.audioEngine.gaplessPlaybackEnabled.toggle()
+    }
+    
+    @objc func toggleVolumeNormalization() {
+        WindowManager.shared.audioEngine.volumeNormalizationEnabled.toggle()
+    }
+    
     @objc func toggleAlwaysOnTop() {
         WindowManager.shared.isAlwaysOnTop.toggle()
+    }
+    
+    @objc func snapToDefault() {
+        WindowManager.shared.snapToDefaultPositions()
     }
     
     // MARK: - Playback Controls

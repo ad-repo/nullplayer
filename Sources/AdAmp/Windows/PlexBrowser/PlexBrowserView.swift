@@ -1,5 +1,56 @@
 import AppKit
 
+/// Source for browsing content
+enum BrowserSource: Equatable, Codable {
+    case local
+    case plex(serverId: String)
+    
+    /// Display name for the source
+    var displayName: String {
+        switch self {
+        case .local:
+            return "LOCAL FILES"
+        case .plex(let serverId):
+            if let server = PlexManager.shared.servers.first(where: { $0.id == serverId }) {
+                return "PLEX: \(server.name)"
+            }
+            return "PLEX"
+        }
+    }
+    
+    /// Short name for compact display
+    var shortName: String {
+        switch self {
+        case .local:
+            return "Local Files"
+        case .plex(let serverId):
+            if let server = PlexManager.shared.servers.first(where: { $0.id == serverId }) {
+                return server.name
+            }
+            return "Plex"
+        }
+    }
+    
+    /// Persistence key
+    private static let userDefaultsKey = "BrowserSource"
+    
+    /// Save to UserDefaults
+    func save() {
+        if let data = try? JSONEncoder().encode(self) {
+            UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
+        }
+    }
+    
+    /// Load from UserDefaults
+    static func load() -> BrowserSource? {
+        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+              let source = try? JSONDecoder().decode(BrowserSource.self, from: data) else {
+            return nil
+        }
+        return source
+    }
+}
+
 /// Browse mode for the Plex browser
 enum PlexBrowseMode: Int, CaseIterable {
     case artists = 0
@@ -29,6 +80,42 @@ enum PlexBrowseMode: Int, CaseIterable {
     }
 }
 
+/// Sort options for browser content
+enum BrowserSortOption: String, CaseIterable, Codable {
+    case nameAsc = "Name A-Z"
+    case nameDesc = "Name Z-A"
+    case dateAddedDesc = "Recently Added"
+    case dateAddedAsc = "Oldest First"
+    case yearDesc = "Year (Newest)"
+    case yearAsc = "Year (Oldest)"
+    
+    var shortName: String {
+        switch self {
+        case .nameAsc: return "A-Z"
+        case .nameDesc: return "Z-A"
+        case .dateAddedDesc: return "New"
+        case .dateAddedAsc: return "Old"
+        case .yearDesc: return "Year"
+        case .yearAsc: return "Year"
+        }
+    }
+    
+    /// Persistence key
+    private static let userDefaultsKey = "BrowserSortOption"
+    
+    func save() {
+        UserDefaults.standard.set(rawValue, forKey: Self.userDefaultsKey)
+    }
+    
+    static func load() -> BrowserSortOption {
+        guard let raw = UserDefaults.standard.string(forKey: userDefaultsKey),
+              let option = BrowserSortOption(rawValue: raw) else {
+            return .nameAsc
+        }
+        return option
+    }
+}
+
 // =============================================================================
 // PLEX BROWSER VIEW - Skinned Plex browser with playlist sprite support
 // =============================================================================
@@ -45,8 +132,25 @@ class PlexBrowserView: NSView {
     
     weak var controller: PlexBrowserWindowController?
     
+    /// Current browse source (local files or Plex server)
+    private var currentSource: BrowserSource = .local {
+        didSet {
+            currentSource.save()
+            onSourceChanged()
+        }
+    }
+    
     /// Current browse mode
     private var browseMode: PlexBrowseMode = .artists
+    
+    /// Current sort option
+    private var currentSort: BrowserSortOption = .nameAsc {
+        didSet {
+            currentSort.save()
+            rebuildCurrentModeItems()
+            needsDisplay = true
+        }
+    }
     
     /// Search query
     private var searchQuery: String = ""
@@ -81,13 +185,20 @@ class PlexBrowserView: NSView {
     /// Error message
     private var errorMessage: String?
     
-    /// Cached data - Music
+    /// Cached data - Music (Plex)
     private var cachedArtists: [PlexArtist] = []
     private var cachedAlbums: [PlexAlbum] = []
     private var cachedTracks: [PlexTrack] = []
     private var artistAlbums: [String: [PlexAlbum]] = [:]
     private var albumTracks: [String: [PlexTrack]] = [:]
     private var artistAlbumCounts: [String: Int] = [:]  // Album count per artist (from parentKey)
+    
+    /// Cached data - Music (Local)
+    private var cachedLocalArtists: [Artist] = []
+    private var cachedLocalAlbums: [Album] = []
+    private var cachedLocalTracks: [LibraryTrack] = []
+    private var expandedLocalArtists: Set<String> = []
+    private var expandedLocalAlbums: Set<String> = []
     
     /// Cached data - Video
     private var cachedMovies: [PlexMovie] = []
@@ -117,6 +228,9 @@ class PlexBrowserView: NSView {
     
     /// Button being pressed (for visual feedback)
     private var pressedButton: SkinRenderer.PlexBrowserButtonType?
+    
+    /// Active tags panel (strong reference to prevent premature deallocation)
+    private var activeTagsPanel: TagsPanel?
     
     /// Window dragging state
     private var isDraggingWindow = false
@@ -151,6 +265,35 @@ class PlexBrowserView: NSView {
     private func setupView() {
         wantsLayer = true
         
+        // Load saved source
+        if let savedSource = BrowserSource.load() {
+            // Validate saved source
+            switch savedSource {
+            case .local:
+                currentSource = .local
+            case .plex(let serverId):
+                // Only restore Plex source if server still exists and user is linked
+                if PlexManager.shared.isLinked,
+                   PlexManager.shared.servers.contains(where: { $0.id == serverId }) {
+                    currentSource = savedSource
+                } else if PlexManager.shared.isLinked, let firstServer = PlexManager.shared.servers.first {
+                    currentSource = .plex(serverId: firstServer.id)
+                } else {
+                    currentSource = .local
+                }
+            }
+        } else {
+            // Default: local if not linked to Plex, otherwise first Plex server
+            if PlexManager.shared.isLinked, let firstServer = PlexManager.shared.servers.first {
+                currentSource = .plex(serverId: firstServer.id)
+            } else {
+                currentSource = .local
+            }
+        }
+        
+        // Load saved sort option
+        currentSort = BrowserSortOption.load()
+        
         // Observe Plex manager changes
         NotificationCenter.default.addObserver(
             self,
@@ -183,11 +326,61 @@ class PlexBrowserView: NSView {
             object: nil
         )
         
+        // Observe MediaLibrary changes for local source
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(mediaLibraryDidChange),
+            name: MediaLibrary.libraryDidChangeNotification,
+            object: nil
+        )
+        
+        // Register for drag and drop (local files)
+        registerForDraggedTypes([.fileURL])
+        
         // Initial data load
         reloadData()
         
         // Start server name scroll animation
         startServerNameScroll()
+    }
+    
+    /// Called when source changes
+    private func onSourceChanged() {
+        // Clear all cached data for both sources
+        clearAllCachedData()
+        clearLocalCachedData()
+        
+        // Clear display items to avoid showing stale data
+        displayItems.removeAll()
+        
+        // Reset UI state
+        selectedIndices.removeAll()
+        scrollOffset = 0
+        errorMessage = nil
+        isLoading = false
+        stopLoadingAnimation()
+        
+        // Reload data for new source
+        reloadData()
+    }
+    
+    /// Clear local cached data
+    private func clearLocalCachedData() {
+        cachedLocalArtists = []
+        cachedLocalAlbums = []
+        cachedLocalTracks = []
+        expandedLocalArtists = []
+        expandedLocalAlbums = []
+    }
+    
+    @objc private func mediaLibraryDidChange() {
+        // Only reload if we're showing local content
+        guard case .local = currentSource else { return }
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.loadLocalData()
+            self?.needsDisplay = true
+        }
     }
     
     @objc private func plexContentDidPreload() {
@@ -396,7 +589,6 @@ class PlexBrowserView: NSView {
         colors.normalBackground.withAlphaComponent(0.6).setFill()
         context.fill(barRect)
         
-        let manager = PlexManager.shared
         let charWidth = SkinElements.TextFont.charWidth
         let charHeight = SkinElements.TextFont.charHeight
         let textScale: CGFloat = 1.5
@@ -404,26 +596,23 @@ class PlexBrowserView: NSView {
         let scaledCharHeight = charHeight * textScale
         let textY = barRect.minY + (barRect.height - scaledCharHeight) / 2
         
-        if manager.isLinked {
-            // Left side: "Plex Server:" label in green skin text
-            let prefix = "Plex Server: "
-            drawScaledSkinText(prefix, at: NSPoint(x: barRect.minX + 4, y: textY), scale: textScale, renderer: renderer, in: context)
+        // Common prefix for all sources
+        let prefix = "Source: "
+        drawScaledSkinText(prefix, at: NSPoint(x: barRect.minX + 4, y: textY), scale: textScale, renderer: renderer, in: context)
+        let prefixWidth = CGFloat(prefix.count) * scaledCharWidth
+        let sourceNameStartX = barRect.minX + 4 + prefixWidth
+        
+        switch currentSource {
+        case .local:
+            // LOCAL FILES mode
+            let sourceText = "Local Files"
+            drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
             
-            // Calculate layout positions for the bar
-            let prefixWidth = CGFloat(prefix.count) * scaledCharWidth
-            let serverNameStartX = barRect.minX + 4 + prefixWidth
-            
-            // Right side: Refresh icon in green skin text
+            // Right side: Refresh icon
             let refreshX = barRect.maxX - scaledCharWidth - 4
             drawScaledSkinText("O", at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             
-            // Library name in WHITE skin text
-            let libraryText = manager.currentLibrary?.title ?? "Select Library"
-            let libraryWidth = CGFloat(libraryText.count) * scaledCharWidth
-            let libraryX = refreshX - libraryWidth - 8
-            drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
-            
-            // Item count (center) - number in gray, "items" in green
+            // Item count (center)
             let countNumber = "\(displayItems.count)"
             let countLabel = " items"
             let countTotalWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
@@ -432,28 +621,53 @@ class PlexBrowserView: NSView {
             let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
             drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             
-            // Server name in WHITE skin text - with circular scrolling if too long
-            let serverText = manager.currentServer?.name ?? "Select Server"
-            let serverTextWidth = CGFloat(serverText.count) * scaledCharWidth
+        case .plex(let serverId):
+            let manager = PlexManager.shared
             
-            // Available width for server name (from after prefix to before item count, with padding)
-            let availableWidth = countX - serverNameStartX - 16
-            
-            if serverTextWidth <= availableWidth || availableWidth <= 0 {
-                // Text fits - draw normally
-                drawScaledWhiteSkinText(serverText, at: NSPoint(x: serverNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
+            if manager.isLinked {
+                let serverNameStartX = sourceNameStartX
+                
+                // Right side: Refresh icon in green skin text
+                let refreshX = barRect.maxX - scaledCharWidth - 4
+                drawScaledSkinText("O", at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+                
+                // Library name in WHITE skin text (only for Plex)
+                let libraryText = manager.currentLibrary?.title ?? "Select Library"
+                let libraryWidth = CGFloat(libraryText.count) * scaledCharWidth
+                let libraryX = refreshX - libraryWidth - 8
+                drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
+                
+                // Item count (center)
+                let countNumber = "\(displayItems.count)"
+                let countLabel = " items"
+                let countTotalWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+                let countX = barRect.midX - countTotalWidth / 2
+                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+                drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+                
+                // Server name
+                let serverName = manager.servers.first(where: { $0.id == serverId })?.name ?? "Select Server"
+                let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
+                
+                // Available width for server name
+                let availableWidth = countX - serverNameStartX - 16
+                
+                if serverTextWidth <= availableWidth || availableWidth <= 0 {
+                    drawScaledWhiteSkinText(serverName, at: NSPoint(x: serverNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
+                } else {
+                    // Text too long - draw with circular scrolling
+                    drawScrollingServerName(serverName, startX: serverNameStartX, textY: textY,
+                                           availableWidth: availableWidth, scale: textScale,
+                                           renderer: renderer, in: context)
+                }
             } else {
-                // Text too long - draw with circular scrolling and clipping
-                drawScrollingServerName(serverText, startX: serverNameStartX, textY: textY,
-                                       availableWidth: availableWidth, scale: textScale,
-                                       renderer: renderer, in: context)
+                // Plex not linked - show link message
+                let linkText = "Click to link your Plex account"
+                let linkWidth = CGFloat(linkText.count) * scaledCharWidth
+                let linkX = barRect.midX - linkWidth / 2
+                drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
             }
-        } else {
-            // Not linked message in green skin text
-            let linkText = "Click to link your Plex account"
-            let linkWidth = CGFloat(linkText.count) * scaledCharWidth
-            let linkX = barRect.midX - linkWidth / 2
-            drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
         }
     }
     
@@ -508,13 +722,19 @@ class PlexBrowserView: NSView {
         colors.normalBackground.withAlphaComponent(0.4).setFill()
         context.fill(tabBarRect)
         
-        // Draw tabs
-        let tabWidth = tabBarRect.width / CGFloat(PlexBrowseMode.allCases.count)
         let charWidth = SkinElements.TextFont.charWidth
         let charHeight = SkinElements.TextFont.charHeight
         let textScale: CGFloat = 1.5
         let scaledCharWidth = charWidth * textScale
         let scaledCharHeight = charHeight * textScale
+        
+        // Calculate sort indicator width (on the right)
+        let sortText = "Sort:\(currentSort.shortName)"
+        let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
+        
+        // Draw tabs (leave room for sort indicator)
+        let tabsWidth = tabBarRect.width - sortWidth
+        let tabWidth = tabsWidth / CGFloat(PlexBrowseMode.allCases.count)
         
         for (index, mode) in PlexBrowseMode.allCases.enumerated() {
             let tabRect = NSRect(x: tabBarRect.minX + CGFloat(index) * tabWidth, y: tabBarY,
@@ -533,6 +753,11 @@ class PlexBrowserView: NSView {
                 drawScaledSkinText(mode.title, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
             }
         }
+        
+        // Draw sort indicator on the right
+        let sortX = tabBarRect.maxX - sortWidth + 4
+        let sortY = tabBarY + (Layout.tabBarHeight - scaledCharHeight) / 2
+        drawScaledSkinText(sortText, at: NSPoint(x: sortX, y: sortY), scale: textScale, renderer: renderer, in: context)
     }
     
     private func drawSearchBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
@@ -839,16 +1064,11 @@ class PlexBrowserView: NSView {
         let letterHeight = rect.height / letterCount
         let fontSize = min(9, letterHeight * 0.8)
         
-        // Build set of first letters that exist in current items
+        // Build set of sort letters that exist in current items
+        // Uses sortLetter() to match how items are actually sorted (strips "The ", "A ", etc.)
         var availableLetters = Set<String>()
         for item in displayItems {
-            if let firstChar = item.title.uppercased().first {
-                if firstChar.isLetter {
-                    availableLetters.insert(String(firstChar))
-                } else {
-                    availableLetters.insert("#")
-                }
-            }
+            availableLetters.insert(sortLetter(for: item.title))
         }
         
         for (index, letter) in alphabetLetters.enumerated() {
@@ -998,6 +1218,14 @@ class PlexBrowserView: NSView {
     // MARK: - Public Methods
     
     func reloadData() {
+        // For local source, we don't need Plex to be linked
+        if case .local = currentSource {
+            loadLocalData()
+            needsDisplay = true
+            return
+        }
+        
+        // For Plex source, check if linked
         guard PlexManager.shared.isLinked else {
             displayItems = []
             stopLoadingAnimation()
@@ -1211,12 +1439,38 @@ class PlexBrowserView: NSView {
         let tabY = Layout.titleBarHeight + Layout.serverBarHeight
         guard winampPoint.y >= tabY && winampPoint.y < tabY + Layout.tabBarHeight else { return nil }
         
-        let tabWidth = (originalWindowSize.width - Layout.leftBorder - Layout.rightBorder) / CGFloat(PlexBrowseMode.allCases.count)
+        // Calculate sort indicator width (same as in drawTabBar)
+        let charWidth = SkinElements.TextFont.charWidth
+        let textScale: CGFloat = 1.5
+        let scaledCharWidth = charWidth * textScale
+        let sortText = "Sort:\(currentSort.shortName)"
+        let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
+        
+        // Tabs area excludes sort indicator
+        let tabsWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - sortWidth
+        let tabWidth = tabsWidth / CGFloat(PlexBrowseMode.allCases.count)
         let relativeX = winampPoint.x - Layout.leftBorder
-        if relativeX >= 0 && relativeX < tabWidth * CGFloat(PlexBrowseMode.allCases.count) {
+        
+        if relativeX >= 0 && relativeX < tabsWidth {
             return Int(relativeX / tabWidth)
         }
         return nil
+    }
+    
+    /// Check if point is in sort indicator area
+    private func hitTestSortIndicator(at winampPoint: NSPoint) -> Bool {
+        let tabY = Layout.titleBarHeight + Layout.serverBarHeight
+        guard winampPoint.y >= tabY && winampPoint.y < tabY + Layout.tabBarHeight else { return false }
+        
+        // Calculate sort indicator width
+        let charWidth = SkinElements.TextFont.charWidth
+        let textScale: CGFloat = 1.5
+        let scaledCharWidth = charWidth * textScale
+        let sortText = "Sort:\(currentSort.shortName)"
+        let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
+        
+        let sortX = originalWindowSize.width - Layout.rightBorder - sortWidth
+        return winampPoint.x >= sortX && winampPoint.x < originalWindowSize.width - Layout.rightBorder
     }
     
     /// Check if point is in search bar
@@ -1328,6 +1582,12 @@ class PlexBrowserView: NSView {
             return
         }
         
+        // Check sort indicator (in tab bar area, on the right)
+        if hitTestSortIndicator(at: winampPoint) {
+            showSortMenu(at: event.locationInWindow)
+            return
+        }
+        
         // Check tab bar
         if let tabIndex = hitTestTabBar(at: winampPoint) {
             if let newMode = PlexBrowseMode(rawValue: tabIndex) {
@@ -1405,27 +1665,159 @@ class PlexBrowserView: NSView {
         let originalSize = originalWindowSize
         let barWidth = originalSize.width - Layout.leftBorder - Layout.rightBorder
         
-        // Layout: [Plex Server: xxx ▼] ... [item count] ... [Library ▼] [↻]
-        // Refresh icon is far right (last ~20px)
-        // Library dropdown is next ~100px from right
-        // Server dropdown is left side
+        // Layout depends on source:
+        // Local: [Local Files ▼] ... [item count] ... [↻]
+        // Plex:  [Plex: Server ▼] ... [item count] ... [Library ▼] [↻]
         
         let refreshZone: CGFloat = 25  // Far right area for refresh
-        let libraryZone: CGFloat = 120 // Area for library dropdown
-        
         let relativeX = winampPoint.x - Layout.leftBorder
         
         if relativeX > barWidth - refreshZone {
             // Refresh icon click
-            refreshData()
-        } else if relativeX > barWidth - libraryZone {
-            // Library dropdown click
-            showLibraryMenu(at: event)
-        } else if relativeX < barWidth / 2 {
-            // Left half = server selection
-            showServerMenu(at: event)
+            handleRefreshClick()
+        } else if case .plex = currentSource {
+            // Plex mode has library dropdown on right side
+            let libraryZone: CGFloat = 120
+            if relativeX > barWidth - libraryZone {
+                showLibraryMenu(at: event)
+            } else if relativeX < barWidth / 2 {
+                // Left half = source dropdown
+                showSourceMenu(at: event)
+            }
+        } else {
+            // Local mode - left half shows source dropdown
+            if relativeX < barWidth / 2 {
+                showSourceMenu(at: event)
+            }
         }
-        // Center area (item count) - no action
+    }
+    
+    /// Handle refresh button click based on current source
+    private func handleRefreshClick() {
+        switch currentSource {
+        case .local:
+            // Rescan watch folders
+            MediaLibrary.shared.rescanWatchFolders()
+            // Also reload local data
+            loadLocalData()
+        case .plex:
+            // Refresh Plex data
+            refreshData()
+        }
+    }
+    
+    /// Show the source selection dropdown menu
+    private func showSourceMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        
+        // Local Files option
+        let localItem = NSMenuItem(title: "Local Files", action: #selector(selectLocalSource), keyEquivalent: "")
+        localItem.target = self
+        if case .local = currentSource {
+            localItem.state = .on
+        }
+        menu.addItem(localItem)
+        
+        // Separator
+        menu.addItem(NSMenuItem.separator())
+        
+        // Plex servers
+        let servers = PlexManager.shared.servers
+        if servers.isEmpty && !PlexManager.shared.isLinked {
+            let linkItem = NSMenuItem(title: "Link Plex Account...", action: #selector(linkPlexAccount), keyEquivalent: "")
+            linkItem.target = self
+            menu.addItem(linkItem)
+        } else {
+            for server in servers {
+                let serverItem = NSMenuItem(title: server.name, action: #selector(selectPlexServer(_:)), keyEquivalent: "")
+                serverItem.target = self
+                serverItem.representedObject = server.id
+                if case .plex(let currentServerId) = currentSource, currentServerId == server.id {
+                    serverItem.state = .on
+                }
+                menu.addItem(serverItem)
+            }
+        }
+        
+        // Separator
+        menu.addItem(NSMenuItem.separator())
+        
+        // Add Folder option
+        let addFolderItem = NSMenuItem(title: "+ Add Folder...", action: #selector(addWatchFolder), keyEquivalent: "")
+        addFolderItem.target = self
+        menu.addItem(addFolderItem)
+        
+        // Show menu
+        let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
+        menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
+    }
+    
+    @objc private func selectLocalSource() {
+        currentSource = .local
+    }
+    
+    @objc private func selectPlexServer(_ sender: NSMenuItem) {
+        guard let serverId = sender.representedObject as? String else { return }
+        currentSource = .plex(serverId: serverId)
+        
+        // Connect to the selected server
+        if let server = PlexManager.shared.servers.first(where: { $0.id == serverId }) {
+            Task { @MainActor in
+                do {
+                    try await PlexManager.shared.connect(to: server)
+                    reloadData()
+                } catch {
+                    errorMessage = error.localizedDescription
+                    needsDisplay = true
+                }
+            }
+        }
+    }
+    
+    @objc private func linkPlexAccount() {
+        controller?.showLinkSheet()
+    }
+    
+    @objc private func addWatchFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a folder to add to your library"
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            MediaLibrary.shared.addWatchFolder(url)
+            MediaLibrary.shared.scanFolder(url)
+            
+            // Switch to local source if not already
+            if case .plex = currentSource {
+                currentSource = .local
+            }
+        }
+    }
+    
+    // MARK: - Sort Menu
+    
+    private func showSortMenu(at windowPoint: NSPoint) {
+        let menu = NSMenu()
+        
+        for option in BrowserSortOption.allCases {
+            let item = NSMenuItem(title: option.rawValue, action: #selector(selectSortOption(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = option
+            if option == currentSort {
+                item.state = .on
+            }
+            menu.addItem(item)
+        }
+        
+        let menuLocation = NSPoint(x: windowPoint.x, y: windowPoint.y - 5)
+        menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
+    }
+    
+    @objc private func selectSortOption(_ sender: NSMenuItem) {
+        guard let option = sender.representedObject as? BrowserSortOption else { return }
+        currentSort = option
     }
     
     private func handleAlphabetClick(at winampPoint: NSPoint) {
@@ -1446,16 +1838,34 @@ class PlexBrowserView: NSView {
         scrollToLetter(targetLetter)
     }
     
+    /// Get the sort letter for a title, stripping common prefixes like "The ", "A ", "An "
+    /// This matches how Plex sorts items (e.g., "The Beatles" sorts under "B")
+    private func sortLetter(for title: String) -> String {
+        let uppercased = title.uppercased()
+        var sortTitle = uppercased
+        
+        // Strip common prefixes (in order of length to handle "The" before "A")
+        let prefixes = ["THE ", "AN ", "A "]
+        for prefix in prefixes {
+            if sortTitle.hasPrefix(prefix) {
+                sortTitle = String(sortTitle.dropFirst(prefix.count))
+                break
+            }
+        }
+        
+        // Get first character
+        guard let firstChar = sortTitle.first else { return "#" }
+        
+        if firstChar.isLetter {
+            return String(firstChar)
+        } else {
+            return "#"
+        }
+    }
+    
     private func scrollToLetter(_ letter: String) {
         for (index, item) in displayItems.enumerated() {
-            let firstChar = item.title.uppercased().first.map(String.init) ?? ""
-            
-            let itemLetter: String
-            if let char = firstChar.first, char.isLetter {
-                itemLetter = firstChar
-            } else {
-                itemLetter = "#"
-            }
+            let itemLetter = sortLetter(for: item.title)
             
             if itemLetter == letter {
                 var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
@@ -1513,6 +1923,8 @@ class PlexBrowserView: NSView {
                 playMovie(movie)
             case .episode(let episode):
                 playEpisode(episode)
+            case .localTrack(let track):
+                playLocalTrack(track)
             default:
                 break
             }
@@ -1641,6 +2053,48 @@ class PlexBrowserView: NSView {
         }
     }
     
+    // MARK: - Drag and Drop (Local Files)
+    
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        return .copy
+    }
+    
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
+            return false
+        }
+        
+        var fileURLs: [URL] = []
+        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
+        
+        for url in items {
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+                if isDirectory.boolValue {
+                    // Add folder as watch folder and scan
+                    MediaLibrary.shared.addWatchFolder(url)
+                    MediaLibrary.shared.scanFolder(url)
+                } else {
+                    // Add individual audio file
+                    if audioExtensions.contains(url.pathExtension.lowercased()) {
+                        fileURLs.append(url)
+                    }
+                }
+            }
+        }
+        
+        if !fileURLs.isEmpty {
+            MediaLibrary.shared.addTracks(urls: fileURLs)
+        }
+        
+        // Switch to local source to show added content
+        if case .plex = currentSource {
+            currentSource = .local
+        }
+        
+        return true
+    }
+    
     // MARK: - Right-Click Context Menu
     
     override func rightMouseDown(with event: NSEvent) {
@@ -1725,6 +2179,46 @@ class PlexBrowserView: NSView {
             playItem.representedObject = episode
             menu.addItem(playItem)
             
+        case .localTrack(let track):
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalTrack(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = track
+            menu.addItem(playItem)
+            
+            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddLocalTrackToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = track
+            menu.addItem(addItem)
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            let tagsItem = NSMenuItem(title: "See Tags", action: #selector(contextMenuShowTags(_:)), keyEquivalent: "")
+            tagsItem.target = self
+            tagsItem.representedObject = track
+            menu.addItem(tagsItem)
+            
+        case .localAlbum(let album):
+            let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayLocalAlbum(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = album
+            menu.addItem(playItem)
+            
+            let addItem = NSMenuItem(title: "Add Album to Playlist", action: #selector(contextMenuAddLocalAlbumToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = album
+            menu.addItem(addItem)
+            
+        case .localArtist(let artist):
+            let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayLocalArtist(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = artist
+            menu.addItem(playItem)
+            
+            let expandItem = NSMenuItem(title: expandedLocalArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self
+            expandItem.representedObject = item
+            menu.addItem(expandItem)
+            
         case .header:
             return
         }
@@ -1741,6 +2235,43 @@ class PlexBrowserView: NSView {
         guard let track = sender.representedObject as? PlexTrack,
               let convertedTrack = PlexManager.shared.convertToTrack(track) else { return }
         WindowManager.shared.audioEngine.loadTracks([convertedTrack])
+    }
+    
+    @objc private func contextMenuPlayLocalTrack(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        playLocalTrack(track)
+    }
+    
+    @objc private func contextMenuAddLocalTrackToPlaylist(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        WindowManager.shared.audioEngine.loadTracks([track.toTrack()])
+    }
+    
+    @objc private func contextMenuShowTags(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        // Close any existing tags panel first
+        activeTagsPanel?.close()
+        
+        let tagsPanel = TagsPanel(track: track)
+        tagsPanel.delegate = self
+        activeTagsPanel = tagsPanel
+        tagsPanel.show()
+    }
+    
+    @objc private func contextMenuPlayLocalAlbum(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? Album else { return }
+        playLocalAlbum(album)
+    }
+    
+    @objc private func contextMenuAddLocalAlbumToPlaylist(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? Album else { return }
+        let tracks = album.tracks.map { $0.toTrack() }
+        WindowManager.shared.audioEngine.loadTracks(tracks)
+    }
+    
+    @objc private func contextMenuPlayLocalArtist(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? Artist else { return }
+        playLocalArtist(artist)
     }
     
     @objc private func contextMenuPlayAlbum(_ sender: NSMenuItem) {
@@ -1971,6 +2502,13 @@ class PlexBrowserView: NSView {
     // MARK: - Data Management
     
     private func loadDataForCurrentMode() {
+        // Check source first - local files don't need async loading
+        if case .local = currentSource {
+            loadLocalData()
+            return
+        }
+        
+        // Plex source - async loading
         isLoading = true
         errorMessage = nil
         startLoadingAnimation()
@@ -2087,7 +2625,10 @@ class PlexBrowserView: NSView {
     private func buildArtistItems() {
         displayItems.removeAll()
         
-        for artist in cachedArtists {
+        // Sort artists
+        let sortedArtists = sortPlexArtists(cachedArtists)
+        
+        for artist in sortedArtists {
             let isExpanded = expandedArtists.contains(artist.id)
             
             // Show album count - prefer counted from albums, then API count, then fetched albums
@@ -2116,7 +2657,9 @@ class PlexBrowserView: NSView {
             ))
             
             if isExpanded, let albums = artistAlbums[artist.id] {
-                for album in albums {
+                // Sort albums within artist
+                let sortedAlbums = sortPlexAlbums(albums)
+                for album in sortedAlbums {
                     displayItems.append(PlexDisplayItem(
                         id: album.id,
                         title: album.title,
@@ -2127,7 +2670,9 @@ class PlexBrowserView: NSView {
                     ))
                     
                     if expandedAlbums.contains(album.id), let tracks = albumTracks[album.id] {
-                        for track in tracks {
+                        // Tracks sorted by track number (Plex uses 'index' for track number)
+                        let sortedTracks = tracks.sorted { ($0.index ?? 0) < ($1.index ?? 0) }
+                        for track in sortedTracks {
                             displayItems.append(PlexDisplayItem(
                                 id: track.id,
                                 title: track.title,
@@ -2144,7 +2689,8 @@ class PlexBrowserView: NSView {
     }
     
     private func buildAlbumItems() {
-        displayItems = cachedAlbums.map { album in
+        let sortedAlbums = sortPlexAlbums(cachedAlbums)
+        displayItems = sortedAlbums.map { album in
             PlexDisplayItem(
                 id: album.id,
                 title: "\(album.parentTitle ?? "Unknown") - \(album.title)",
@@ -2157,7 +2703,8 @@ class PlexBrowserView: NSView {
     }
     
     private func buildTrackItems() {
-        displayItems = cachedTracks.map { track in
+        let sortedTracks = sortPlexTracks(cachedTracks)
+        displayItems = sortedTracks.map { track in
             PlexDisplayItem(
                 id: track.id,
                 title: "\(track.grandparentTitle ?? "Unknown") - \(track.title)",
@@ -2512,23 +3059,339 @@ class PlexBrowserView: NSView {
         }
     }
     
+    // MARK: - Local Library Data Loading
+    
+    /// Load data from local MediaLibrary
+    private func loadLocalData() {
+        isLoading = false
+        errorMessage = nil
+        stopLoadingAnimation()
+        
+        let library = MediaLibrary.shared
+        
+        // Load cached data from MediaLibrary
+        cachedLocalTracks = library.tracksSnapshot
+        cachedLocalArtists = library.allArtists()
+        cachedLocalAlbums = library.allAlbums()
+        
+        // Build display items for current mode
+        switch browseMode {
+        case .artists:
+            buildLocalArtistItems()
+        case .albums:
+            buildLocalAlbumItems()
+        case .tracks:
+            buildLocalTrackItems()
+        case .search:
+            buildLocalSearchItems()
+        case .movies, .shows:
+            // Video modes not supported for local content - show empty
+            displayItems = []
+        }
+        
+        needsDisplay = true
+    }
+    
+    private func buildLocalArtistItems() {
+        displayItems.removeAll()
+        
+        // Sort artists
+        let sortedArtists = sortArtists(cachedLocalArtists)
+        
+        for artist in sortedArtists {
+            let isExpanded = expandedLocalArtists.contains(artist.id)
+            let albumCount = artist.albums.count
+            let info = "\(albumCount) \(albumCount == 1 ? "album" : "albums")"
+            
+            displayItems.append(PlexDisplayItem(
+                id: "local-artist-\(artist.id)",
+                title: artist.name,
+                info: info,
+                indentLevel: 0,
+                hasChildren: true,
+                type: .localArtist(artist)
+            ))
+            
+            if isExpanded {
+                // Sort albums within artist
+                let sortedAlbums = sortAlbums(artist.albums)
+                for album in sortedAlbums {
+                    let albumId = album.id
+                    let albumExpanded = expandedLocalAlbums.contains(albumId)
+                    
+                    displayItems.append(PlexDisplayItem(
+                        id: "local-album-\(albumId)",
+                        title: album.name,
+                        info: album.year.map { String($0) },
+                        indentLevel: 1,
+                        hasChildren: true,
+                        type: .localAlbum(album)
+                    ))
+                    
+                    if albumExpanded {
+                        // Tracks within album sorted by track number
+                        let sortedTracks = album.tracks.sorted { ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
+                        for track in sortedTracks {
+                            displayItems.append(PlexDisplayItem(
+                                id: track.id.uuidString,
+                                title: track.title,
+                                info: track.formattedDuration,
+                                indentLevel: 2,
+                                hasChildren: false,
+                                type: .localTrack(track)
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func buildLocalAlbumItems() {
+        let sortedAlbums = sortAlbums(cachedLocalAlbums)
+        displayItems = sortedAlbums.map { album in
+            PlexDisplayItem(
+                id: "local-album-\(album.id)",
+                title: album.displayName,
+                info: "\(album.tracks.count) tracks",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .localAlbum(album)
+            )
+        }
+    }
+    
+    private func buildLocalTrackItems() {
+        let sortedTracks = sortTracks(cachedLocalTracks)
+        displayItems = sortedTracks.map { track in
+            PlexDisplayItem(
+                id: track.id.uuidString,
+                title: track.displayTitle,
+                info: track.formattedDuration,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .localTrack(track)
+            )
+        }
+    }
+    
+    // MARK: - Sorting Helpers
+    
+    private func sortArtists(_ artists: [Artist]) -> [Artist] {
+        switch currentSort {
+        case .nameAsc:
+            return artists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .nameDesc:
+            return artists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending }
+        case .dateAddedDesc, .dateAddedAsc:
+            // Artists don't have date added, fall back to name
+            return artists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .yearDesc, .yearAsc:
+            // Artists don't have year, fall back to name
+            return artists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        }
+    }
+    
+    private func sortAlbums(_ albums: [Album]) -> [Album] {
+        switch currentSort {
+        case .nameAsc:
+            return albums.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .nameDesc:
+            return albums.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending }
+        case .dateAddedDesc, .dateAddedAsc:
+            // Albums don't have date added, fall back to name
+            return albums.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .yearDesc:
+            return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc:
+            return albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+    
+    private func sortTracks(_ tracks: [LibraryTrack]) -> [LibraryTrack] {
+        switch currentSort {
+        case .nameAsc:
+            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .nameDesc:
+            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending }
+        case .dateAddedDesc:
+            return tracks.sorted { $0.dateAdded > $1.dateAdded }
+        case .dateAddedAsc:
+            return tracks.sorted { $0.dateAdded < $1.dateAdded }
+        case .yearDesc:
+            return tracks.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc:
+            return tracks.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+    
+    // Plex sorting helpers
+    
+    private func sortPlexArtists(_ artists: [PlexArtist]) -> [PlexArtist] {
+        switch currentSort {
+        case .nameAsc:
+            return artists.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .nameDesc:
+            return artists.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending }
+        case .dateAddedDesc:
+            return artists.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
+        case .dateAddedAsc:
+            return artists.sorted { ($0.addedAt ?? .distantPast) < ($1.addedAt ?? .distantPast) }
+        case .yearDesc, .yearAsc:
+            // Artists don't have year, fall back to name
+            return artists.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        }
+    }
+    
+    private func sortPlexAlbums(_ albums: [PlexAlbum]) -> [PlexAlbum] {
+        switch currentSort {
+        case .nameAsc:
+            return albums.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .nameDesc:
+            return albums.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending }
+        case .dateAddedDesc:
+            return albums.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
+        case .dateAddedAsc:
+            return albums.sorted { ($0.addedAt ?? .distantPast) < ($1.addedAt ?? .distantPast) }
+        case .yearDesc:
+            return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc:
+            return albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+    
+    private func sortPlexTracks(_ tracks: [PlexTrack]) -> [PlexTrack] {
+        switch currentSort {
+        case .nameAsc:
+            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .nameDesc:
+            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending }
+        case .dateAddedDesc:
+            return tracks.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
+        case .dateAddedAsc:
+            return tracks.sorted { ($0.addedAt ?? .distantPast) < ($1.addedAt ?? .distantPast) }
+        case .yearDesc, .yearAsc:
+            // Tracks don't have year directly, fall back to name
+            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        }
+    }
+    
+    private func buildLocalSearchItems() {
+        displayItems.removeAll()
+        guard !searchQuery.isEmpty else { return }
+        
+        let query = searchQuery.lowercased()
+        let library = MediaLibrary.shared
+        
+        // Search artists
+        let matchingArtists = cachedLocalArtists.filter { $0.name.lowercased().contains(query) }
+        if !matchingArtists.isEmpty {
+            displayItems.append(PlexDisplayItem(
+                id: "header-local-artists",
+                title: "Artists (\(matchingArtists.count))",
+                info: nil,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .header
+            ))
+            for artist in matchingArtists {
+                displayItems.append(PlexDisplayItem(
+                    id: "local-artist-\(artist.id)",
+                    title: artist.name,
+                    info: "\(artist.albums.count) albums",
+                    indentLevel: 1,
+                    hasChildren: true,
+                    type: .localArtist(artist)
+                ))
+            }
+        }
+        
+        // Search albums
+        let matchingAlbums = cachedLocalAlbums.filter {
+            $0.name.lowercased().contains(query) ||
+            ($0.artist?.lowercased().contains(query) ?? false)
+        }
+        if !matchingAlbums.isEmpty {
+            displayItems.append(PlexDisplayItem(
+                id: "header-local-albums",
+                title: "Albums (\(matchingAlbums.count))",
+                info: nil,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .header
+            ))
+            for album in matchingAlbums {
+                displayItems.append(PlexDisplayItem(
+                    id: "local-album-\(album.id)",
+                    title: album.displayName,
+                    info: "\(album.tracks.count) tracks",
+                    indentLevel: 1,
+                    hasChildren: false,
+                    type: .localAlbum(album)
+                ))
+            }
+        }
+        
+        // Search tracks
+        let matchingTracks = library.search(query: searchQuery)
+        if !matchingTracks.isEmpty {
+            displayItems.append(PlexDisplayItem(
+                id: "header-local-tracks",
+                title: "Tracks (\(matchingTracks.count))",
+                info: nil,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .header
+            ))
+            for track in matchingTracks {
+                displayItems.append(PlexDisplayItem(
+                    id: track.id.uuidString,
+                    title: track.displayTitle,
+                    info: track.formattedDuration,
+                    indentLevel: 1,
+                    hasChildren: false,
+                    type: .localTrack(track)
+                ))
+            }
+        }
+    }
+    
     /// Rebuild display items for the current browse mode
     /// This ensures expand/collapse works correctly regardless of which tab we're on
     private func rebuildCurrentModeItems() {
-        switch browseMode {
-        case .artists:
-            buildArtistItems()
-        case .albums:
-            buildAlbumItems()
-        case .tracks:
-            buildTrackItems()
-        case .movies:
-            buildMovieItems()
-        case .shows:
-            buildShowItems()
-        case .search:
-            buildSearchItems()
+        // Check source type
+        if case .local = currentSource {
+            switch browseMode {
+            case .artists:
+                buildLocalArtistItems()
+            case .albums:
+                buildLocalAlbumItems()
+            case .tracks:
+                buildLocalTrackItems()
+            case .search:
+                buildLocalSearchItems()
+            case .movies, .shows:
+                displayItems = []
+            }
+        } else {
+            switch browseMode {
+            case .artists:
+                buildArtistItems()
+            case .albums:
+                buildAlbumItems()
+            case .tracks:
+                buildTrackItems()
+            case .movies:
+                buildMovieItems()
+            case .shows:
+                buildShowItems()
+            case .search:
+                buildSearchItems()
+            }
         }
+        
+        // Ensure view updates
+        needsDisplay = true
     }
     
     private func isExpanded(_ item: PlexDisplayItem) -> Bool {
@@ -2546,6 +3409,10 @@ class PlexBrowserView: NSView {
             return expandedShows.contains(item.id)
         case .season:
             return expandedSeasons.contains(item.id)
+        case .localArtist(let artist):
+            return expandedLocalArtists.contains(artist.id)
+        case .localAlbum(let album):
+            return expandedLocalAlbums.contains(album.id)
         default:
             return false
         }
@@ -2662,6 +3529,22 @@ class PlexBrowserView: NSView {
             }
             rebuildCurrentModeItems()
             
+        case .localArtist(let artist):
+            if expandedLocalArtists.contains(artist.id) {
+                expandedLocalArtists.remove(artist.id)
+            } else {
+                expandedLocalArtists.insert(artist.id)
+            }
+            rebuildCurrentModeItems()
+            
+        case .localAlbum(let album):
+            if expandedLocalAlbums.contains(album.id) {
+                expandedLocalAlbums.remove(album.id)
+            } else {
+                expandedLocalAlbums.insert(album.id)
+            }
+            rebuildCurrentModeItems()
+            
         default:
             break
         }
@@ -2754,6 +3637,50 @@ class PlexBrowserView: NSView {
             
         case .header:
             break
+            
+        case .localTrack(let track):
+            playLocalTrack(track)
+            
+        case .localAlbum(let album):
+            playLocalAlbum(album)
+            
+        case .localArtist:
+            toggleExpand(item)
+        }
+    }
+    
+    // MARK: - Local Playback
+    
+    private func playLocalTrack(_ track: LibraryTrack) {
+        NSLog("playLocalTrack: %@", track.title)
+        let playbackTrack = track.toTrack()
+        WindowManager.shared.audioEngine.loadTracks([playbackTrack])
+    }
+    
+    private func playLocalAlbum(_ album: Album) {
+        NSLog("playLocalAlbum: %@ (%d tracks)", album.name, album.tracks.count)
+        let tracks = album.tracks.map { $0.toTrack() }
+        WindowManager.shared.audioEngine.loadTracks(tracks)
+    }
+    
+    private func playLocalArtist(_ artist: Artist) {
+        NSLog("playLocalArtist: %@", artist.name)
+        var tracks: [Track] = []
+        for album in artist.albums {
+            tracks.append(contentsOf: album.tracks.map { $0.toTrack() })
+        }
+        WindowManager.shared.audioEngine.loadTracks(tracks)
+    }
+}
+
+// MARK: - NSWindowDelegate
+
+extension PlexBrowserView: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        // Clear the tags panel reference when it closes
+        if let closingWindow = notification.object as? TagsPanel,
+           closingWindow === activeTagsPanel {
+            activeTagsPanel = nil
         }
     }
 }
@@ -2778,5 +3705,9 @@ private struct PlexDisplayItem {
         case season(PlexSeason)
         case episode(PlexEpisode)
         case header
+        // Local content types
+        case localArtist(Artist)
+        case localAlbum(Album)
+        case localTrack(LibraryTrack)
     }
 }

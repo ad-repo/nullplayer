@@ -8,6 +8,7 @@ protocol StreamingAudioPlayerDelegate: AnyObject {
     func streamingPlayerDidChangeState(_ state: AudioPlayerState)
     func streamingPlayerDidFinishPlaying()
     func streamingPlayerDidUpdateSpectrum(_ levels: [Float])
+    func streamingPlayerDidUpdatePCM(_ samples: [Float])
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int)
 }
 
@@ -116,10 +117,11 @@ class StreamingAudioPlayer {
             band.frequency = frequency
             band.bandwidth = index < 5 ? 2.0 : 1.5
             band.gain = 0.0
-            band.bypass = false
+            band.bypass = false   // Individual bands active when EQ is enabled
         }
         
-        eqNode.bypass = false
+        // EQ is bypassed by default - user must enable it
+        eqNode.bypass = true
     }
     
     private func setupSpectrumAnalyzer() {
@@ -157,21 +159,10 @@ class StreamingAudioPlayer {
     }
     
     /// Seek to a specific time
+    /// Note: AudioEngine is responsible for clamping to a safe range before calling this method
     func seek(to time: TimeInterval) {
-        // Guard against invalid seek times that can crash the player
-        let currentDuration = duration
-        guard currentDuration > 0 else {
-            NSLog("StreamingAudioPlayer: Cannot seek - duration is 0 or unknown")
-            return
-        }
-        
-        // Clamp seek time to valid range, leaving a buffer before EOF to prevent crashes
-        // Seeking too close to the end triggers immediate EOF which can crash the player
-        let maxSeekTime = max(0, currentDuration - 1.0)
-        let clampedTime = max(0, min(time, maxSeekTime))
-        
-        NSLog("StreamingAudioPlayer: Seeking to %.2f (requested: %.2f, duration: %.2f)", clampedTime, time, currentDuration)
-        player.seek(to: clampedTime)
+        NSLog("StreamingAudioPlayer: Seeking to %.2f (duration: %.2f)", time, duration)
+        player.seek(to: time)
     }
     
     // MARK: - Equalizer
@@ -247,6 +238,19 @@ class StreamingAudioPlayer {
             for i in 0..<fftSize {
                 samples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
             }
+        }
+        
+        // Forward PCM data for projectM visualization
+        // Downsample to 512 samples for efficient visualization and lowest latency
+        let pcmSize = min(512, samples.count)
+        let stride = max(1, samples.count / pcmSize)
+        var pcmSamples = [Float](repeating: 0, count: pcmSize)
+        for i in 0..<pcmSize {
+            pcmSamples[i] = samples[i * stride]
+        }
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.streamingPlayerDidUpdatePCM(pcmSamples)
         }
         
         // Apply Hann window

@@ -1,0 +1,15 @@
+module CProjectM [system] {
+    header "projectM_export.h"
+    header "types.h"
+    header "core.h"
+    header "audio.h"
+    header "parameters.h"
+    header "render_opengl.h"
+    header "callbacks.h"
+    header "debug.h"
+    header "memory.h"
+    header "touch.h"
+    header "version.h"
+    link "projectM-4"
+    export *
+}
