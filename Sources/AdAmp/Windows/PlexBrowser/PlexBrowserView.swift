@@ -839,16 +839,11 @@ class PlexBrowserView: NSView {
         let letterHeight = rect.height / letterCount
         let fontSize = min(9, letterHeight * 0.8)
         
-        // Build set of first letters that exist in current items
+        // Build set of sort letters that exist in current items
+        // Uses sortLetter() to match how items are actually sorted (strips "The ", "A ", etc.)
         var availableLetters = Set<String>()
         for item in displayItems {
-            if let firstChar = item.title.uppercased().first {
-                if firstChar.isLetter {
-                    availableLetters.insert(String(firstChar))
-                } else {
-                    availableLetters.insert("#")
-                }
-            }
+            availableLetters.insert(sortLetter(for: item.title))
         }
         
         for (index, letter) in alphabetLetters.enumerated() {
@@ -1446,16 +1441,34 @@ class PlexBrowserView: NSView {
         scrollToLetter(targetLetter)
     }
     
+    /// Get the sort letter for a title, stripping common prefixes like "The ", "A ", "An "
+    /// This matches how Plex sorts items (e.g., "The Beatles" sorts under "B")
+    private func sortLetter(for title: String) -> String {
+        let uppercased = title.uppercased()
+        var sortTitle = uppercased
+        
+        // Strip common prefixes (in order of length to handle "The" before "A")
+        let prefixes = ["THE ", "AN ", "A "]
+        for prefix in prefixes {
+            if sortTitle.hasPrefix(prefix) {
+                sortTitle = String(sortTitle.dropFirst(prefix.count))
+                break
+            }
+        }
+        
+        // Get first character
+        guard let firstChar = sortTitle.first else { return "#" }
+        
+        if firstChar.isLetter {
+            return String(firstChar)
+        } else {
+            return "#"
+        }
+    }
+    
     private func scrollToLetter(_ letter: String) {
         for (index, item) in displayItems.enumerated() {
-            let firstChar = item.title.uppercased().first.map(String.init) ?? ""
-            
-            let itemLetter: String
-            if let char = firstChar.first, char.isLetter {
-                itemLetter = firstChar
-            } else {
-                itemLetter = "#"
-            }
+            let itemLetter = sortLetter(for: item.title)
             
             if itemLetter == letter {
                 var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
