@@ -84,7 +84,7 @@ class WindowManager {
     
     /// Docking threshold - windows closer than this are considered docked
     /// Should be >= snapThreshold to ensure snapped windows are detected as docked
-    private let dockThreshold: CGFloat = 16
+    private let dockThreshold: CGFloat = 20
     
     /// Track which window is currently being dragged
     private var draggingWindow: NSWindow?
@@ -94,6 +94,10 @@ class WindowManager {
     
     /// Windows that should move together with the dragging window
     private var dockedWindowsToMove: [NSWindow] = []
+    
+    /// Store relative offsets of docked windows from the dragging window's origin
+    /// This prevents drift during fast movement by maintaining exact relative positions
+    private var dockedWindowOffsets: [ObjectIdentifier: NSPoint] = [:]
     
     /// Flag to prevent feedback loop when moving docked windows programmatically
     private var isMovingDockedWindows = false
@@ -780,12 +784,25 @@ class WindowManager {
         draggingWindow = window
         // Find all windows that are docked to this window
         dockedWindowsToMove = findDockedWindows(to: window)
+        
+        // Store relative offsets from dragging window's origin
+        // This ensures we maintain exact relative positions during fast movement
+        dockedWindowOffsets.removeAll()
+        let dragOrigin = window.frame.origin
+        for dockedWindow in dockedWindowsToMove {
+            let offset = NSPoint(
+                x: dockedWindow.frame.origin.x - dragOrigin.x,
+                y: dockedWindow.frame.origin.y - dragOrigin.y
+            )
+            dockedWindowOffsets[ObjectIdentifier(dockedWindow)] = offset
+        }
     }
     
     /// Called when a window drag ends
     func windowDidFinishDragging(_ window: NSWindow) {
         draggingWindow = nil
         dockedWindowsToMove.removeAll()
+        dockedWindowOffsets.removeAll()
     }
     
     /// Safely apply snapped position to a window without triggering feedback loop
@@ -808,9 +825,6 @@ class WindowManager {
             return newOrigin
         }
         
-        // Calculate delta from current position
-        let currentOrigin = window.frame.origin
-        
         // If this is a new drag, find docked windows
         if draggingWindow !== window {
             windowWillStartDragging(window)
@@ -819,17 +833,18 @@ class WindowManager {
         // Apply snap to screen edges and other windows
         let snappedOrigin = applySnapping(for: window, to: newOrigin)
         
-        // Move all docked windows by the same delta
-        let actualDeltaX = snappedOrigin.x - currentOrigin.x
-        let actualDeltaY = snappedOrigin.y - currentOrigin.y
-        
-        if !dockedWindowsToMove.isEmpty && (actualDeltaX != 0 || actualDeltaY != 0) {
+        // Move all docked windows using stored offsets (prevents drift during fast movement)
+        if !dockedWindowsToMove.isEmpty {
             isMovingDockedWindows = true
             for dockedWindow in dockedWindowsToMove {
-                var dockedOrigin = dockedWindow.frame.origin
-                dockedOrigin.x += actualDeltaX
-                dockedOrigin.y += actualDeltaY
-                dockedWindow.setFrameOrigin(dockedOrigin)
+                if let offset = dockedWindowOffsets[ObjectIdentifier(dockedWindow)] {
+                    // Use stored offset from drag start to maintain exact relative position
+                    let newDockedOrigin = NSPoint(
+                        x: snappedOrigin.x + offset.x,
+                        y: snappedOrigin.y + offset.y
+                    )
+                    dockedWindow.setFrameOrigin(newDockedOrigin)
+                }
             }
             isMovingDockedWindows = false
         }
