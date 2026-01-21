@@ -853,8 +853,8 @@ class PlaylistView: NSView {
                 engine.previous()
             }
         case .miniPlay:
-            NSLog("PlaylistView: Executing PLAY/TOGGLE, state=%d, playlist count=%d, currentTrack=%@", 
-                  engine.state.rawValue, engine.playlist.count, engine.currentTrack?.title ?? "nil")
+            NSLog("PlaylistView: Executing PLAY/TOGGLE, state=%@, playlist count=%d, currentTrack=%@", 
+                  "\(engine.state)", engine.playlist.count, engine.currentTrack?.title ?? "nil")
             if isVideoActive {
                 WindowManager.shared.toggleVideoPlayPause()
             } else {

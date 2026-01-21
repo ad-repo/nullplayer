@@ -109,6 +109,14 @@ struct Skin {
         guard let url = Bundle.module.url(forResource: "milkdrop_titlebar", withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
     }
+    
+    /// GEN.BMP sprite sheet loaded from bundle (for Milkdrop/AVS window chrome)
+    /// Layout: 194x109 - title bars, borders, corners, and pixel alphabet
+    /// Provides authentic Winamp-style window chrome for visualization windows
+    static var genWindowImage: NSImage? {
+        guard let url = Bundle.module.url(forResource: "gen", withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
+    }
 }
 
 // MARK: - Playlist Colors

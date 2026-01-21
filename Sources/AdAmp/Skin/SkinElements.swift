@@ -905,7 +905,7 @@ struct SkinElements {
     }
     
     // MARK: - Milkdrop Visualization Window
-    // Uses custom milkdrop_titlebar.png sprite sheet with AVS-style borders
+    // Uses PLEDIT.BMP title bar style with GenFont text
     
     struct Milkdrop {
         /// Minimum window size
@@ -917,82 +917,42 @@ struct SkinElements {
             return NSSize(width: 550, height: height)
         }
         
-        /// Title bar height (matches scaled PNG content)
-        static let titleBarHeight: CGFloat = 14
+        /// Title bar height (same as playlist: 20px)
+        static let titleBarHeight: CGFloat = 20
         
         /// Shade mode height (title bar only)
         static let shadeHeight: CGFloat = 14
         
-        /// Layout constants - matching reference proportions
+        /// Layout constants - playlist style title bar with thin borders
         struct Layout {
-            static let titleBarHeight: CGFloat = 14
-            static let leftBorder: CGFloat = 3      // Side borders - thin like Library window
-            static let rightBorder: CGFloat = 3     
-            static let bottomBorder: CGFloat = 3    
+            static let titleBarHeight: CGFloat = 20   // Same as playlist
+            static let leftBorder: CGFloat = 3        // Thin borders
+            static let rightBorder: CGFloat = 3       
+            static let bottomBorder: CGFloat = 3      
         }
         
-        // MARK: - Title Bar Sprites (from milkdrop_titlebar.png)
-        // Image size: 1518x48 - 2 rows of 24px each (active/inactive)
+        // MARK: - Title Bar (same style as playlist)
         
         struct TitleBar {
-            /// Full image dimensions
-            static let imageWidth: CGFloat = 1518
-            static let imageHeight: CGFloat = 48
-            static let rowHeight: CGFloat = 24
-            
-            /// Left corner - rounded edge with grip marks (stretchable horizontally)
-            static let leftCornerWidth: CGFloat = 15
-            
-            /// Right corner - contains close button area
-            static let rightCornerWidth: CGFloat = 25
-            
-            /// Active title bar (top row y=0)
-            struct Active {
-                static let leftCorner = NSRect(x: 0, y: 0, width: 15, height: 24)
-                static let tile = NSRect(x: 15, y: 0, width: 100, height: 24)  // Tileable middle section
-                static let rightCorner = NSRect(x: 1493, y: 0, width: 25, height: 24)
-                static let full = NSRect(x: 0, y: 0, width: 1518, height: 24)
-            }
-            
-            /// Inactive title bar (bottom row y=24)
-            struct Inactive {
-                static let leftCorner = NSRect(x: 0, y: 24, width: 15, height: 24)
-                static let tile = NSRect(x: 15, y: 24, width: 100, height: 24)
-                static let rightCorner = NSRect(x: 1493, y: 24, width: 25, height: 24)
-                static let full = NSRect(x: 0, y: 24, width: 1518, height: 24)
-            }
+            /// Title bar height (same as playlist)
+            static let height: CGFloat = 20
             
             /// Close button position (relative to right edge of title bar)
-            /// Button is 9x9, positioned in the right corner
-            static let closeButtonOffset: CGFloat = 7  // From right edge
-            static let closeButtonY: CGFloat = 7       // From top of title bar
+            static let closeButtonOffset: CGFloat = 11
+            static let closeButtonY: CGFloat = 3
             static let closeButtonSize: CGFloat = 9
-        }
-        
-        // MARK: - Border Sprites
-        // Uses dark blue/gray color matching the title bar
-        
-        struct Borders {
-            /// Border color (dark blue-gray matching title bar)
-            static let color = NSColor(calibratedRed: 0.22, green: 0.24, blue: 0.35, alpha: 1.0)
-            
-            /// Inner border color (slightly lighter)
-            static let innerColor = NSColor(calibratedRed: 0.35, green: 0.38, blue: 0.50, alpha: 1.0)
-            
-            /// Bottom bar color (gradient-like)
-            static let bottomColor = NSColor(calibratedRed: 0.25, green: 0.27, blue: 0.38, alpha: 1.0)
         }
         
         /// Window control button positions in title bar
         struct TitleBarButtons {
-            // Relative to right edge of window
-            static let closeOffset: CGFloat = 7
-            static let shadeOffset: CGFloat = 17  // Not used in current design
+            // Relative to right edge of window (same as playlist)
+            static let closeOffset: CGFloat = 11
+            static let shadeOffset: CGFloat = 20
         }
         
-        /// Shade mode positions (same as normal - window just shrinks)
+        /// Shade mode positions
         struct ShadePositions {
-            static let closeButton = NSRect(x: -16, y: 7, width: 9, height: 9)  // Relative to right edge
+            static let closeButton = NSRect(x: -11, y: 3, width: 9, height: 9)  // Relative to right edge
         }
     }
     
@@ -1000,11 +960,12 @@ struct SkinElements {
     
     /// Sprites from GEN.BMP - used for AVS/Milkdrop window chrome
     /// GEN.BMP layout (194x109):
-    /// - Rows 0-20: Active title bar sprites (left corner, tile, right corner with buttons)
-    /// - Rows 21-41: Inactive title bar sprites  
-    /// - Rows 42-71: Window chrome pieces (borders, corners)
-    /// - Rows 72-78: Alphabet A-Z (5x6 pixels each, 1px spacing)
-    /// - Rows 79-85: Numbers and symbols
+    /// - Y=0-19: Active title bar (20px) - left corner (25px), tile (29px at x=26), right corner (41px at x=153)
+    /// - Y=21-40: Inactive title bar (20px) - same structure as active
+    /// - Y=42-70: Side borders (29px) - left border (11px at x=0), right border (11px at x=12)
+    /// - Y=72-85: Bottom bar (14px) - left corner (11px), tile (29px at x=12), right corner (11px at x=42)
+    /// - Y=88-93: Alphabet A-Z (5x6 pixels each, 1px spacing between)
+    /// - Y=96-101: Numbers 0-9 and symbols (5x6 pixels each)
     struct GenWindow {
         /// GEN.BMP dimensions
         static let imageWidth: CGFloat = 194
@@ -1055,36 +1016,87 @@ struct SkinElements {
     }
     
     /// Font sprites from GEN.BMP - used for AVS/Milkdrop window titles
+    /// Gen.gif layout: 194x109 pixels - VARIABLE WIDTH FONT
+    /// Y=89-94: Active alphabet A-Z (white/bright, 6px tall, variable width)
+    /// Y=97-102: Inactive alphabet A-Z (muted/darker, 6px tall, variable width)
     struct GenFont {
-        static let charWidth: CGFloat = 5
         static let charHeight: CGFloat = 6
-        static let charSpacing: CGFloat = 1
+        static let charSpacing: CGFloat = 1  // Space between characters when rendering
         
-        /// Y position of the alphabet row in GEN.BMP
-        static let alphabetY: CGFloat = 88
+        /// Y position of the ACTIVE alphabet row in GEN.BMP (white/bright)
+        static let activeAlphabetY: CGFloat = 89
         
-        /// Y position of the numbers row in GEN.BMP
-        static let numbersY: CGFloat = 96
+        /// Y position of the INACTIVE alphabet row in GEN.BMP (muted/darker)
+        static let inactiveAlphabetY: CGFloat = 97
+        
+        /// Character positions - (startX, width) for each letter A-Z
+        /// Extracted from gen.png cyan separator columns
+        static let charPositions: [(x: CGFloat, width: CGFloat)] = [
+            (1, 6),    // A
+            (8, 7),    // B
+            (16, 7),   // C
+            (24, 6),   // D
+            (31, 6),   // E
+            (38, 6),   // F
+            (45, 7),   // G
+            (53, 6),   // H
+            (60, 4),   // I
+            (65, 6),   // J
+            (72, 7),   // K
+            (80, 5),   // L
+            (86, 8),   // M
+            (95, 6),   // N
+            (102, 6),  // O
+            (109, 6),  // P
+            (116, 7),  // Q
+            (124, 7),  // R
+            (132, 6),  // S
+            (139, 5),  // T
+            (145, 6),  // U
+            (152, 6),  // V
+            (159, 8),  // W
+            (168, 7),  // X
+            (176, 6),  // Y
+            (183, 5),  // Z
+        ]
         
         /// Get the source rect for a character from GEN.BMP
-        static func character(_ char: Character) -> NSRect? {
+        /// - Parameters:
+        ///   - char: The character to get
+        ///   - active: Whether to use the active (bright) or inactive (muted) row
+        /// - Returns: Source rect and character width, or nil for unsupported chars
+        static func character(_ char: Character, active: Bool = true) -> (rect: NSRect, width: CGFloat)? {
             let upperChar = char.uppercased().first ?? char
+            let alphabetY = active ? activeAlphabetY : inactiveAlphabetY
             
             switch upperChar {
             case "A"..."Z":
                 let index = Int(upperChar.asciiValue! - Character("A").asciiValue!)
-                let x = CGFloat(index) * (charWidth + charSpacing)
-                return NSRect(x: x, y: alphabetY, width: charWidth, height: charHeight)
-            case "0"..."9":
-                let index = Int(upperChar.asciiValue! - Character("0").asciiValue!)
-                let x = CGFloat(index) * (charWidth + charSpacing)
-                return NSRect(x: x, y: numbersY, width: charWidth, height: charHeight)
+                let pos = charPositions[index]
+                return (NSRect(x: pos.x, y: alphabetY, width: pos.width, height: charHeight), pos.width)
             case " ":
-                // Space - return nil to skip drawing
+                // Space - return width but no rect
                 return nil
             default:
                 return nil
             }
+        }
+        
+        /// Calculate total width needed for a string
+        static func textWidth(_ text: String) -> CGFloat {
+            var width: CGFloat = 0
+            let chars = Array(text.uppercased())
+            for (i, char) in chars.enumerated() {
+                if let charInfo = character(char) {
+                    width += charInfo.width
+                    if i < chars.count - 1 {
+                        width += charSpacing
+                    }
+                } else if char == " " {
+                    width += 4 + charSpacing  // Space width
+                }
+            }
+            return width
         }
     }
     
