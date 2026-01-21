@@ -618,6 +618,12 @@ class PlexBrowserView: NSView {
             let refreshX = barRect.maxX - scaledCharWidth - 4
             drawScaledSkinText("O", at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             
+            // +ADD button (to the left of refresh)
+            let addText = "+ADD"
+            let addWidth = CGFloat(addText.count) * scaledCharWidth
+            let addX = refreshX - addWidth - 12
+            drawScaledWhiteSkinText(addText, at: NSPoint(x: addX, y: textY), scale: textScale, renderer: renderer, in: context)
+            
             // Item count (center)
             let countNumber = "\(displayItems.count)"
             let countLabel = " items"
@@ -1672,15 +1678,25 @@ class PlexBrowserView: NSView {
         let barWidth = originalSize.width - Layout.leftBorder - Layout.rightBorder
         
         // Layout depends on source:
-        // Local: [Local Files ▼] ... [item count] ... [↻]
+        // Local: [Local Files ▼] ... [item count] ... [+ADD] [↻]
         // Plex:  [Plex: Server ▼] ... [item count] ... [Library ▼] [↻]
         
         let refreshZone: CGFloat = 25  // Far right area for refresh
+        let addZone: CGFloat = 70  // +ADD button area (to the left of refresh)
         let relativeX = winampPoint.x - Layout.leftBorder
         
         if relativeX > barWidth - refreshZone {
             // Refresh icon click
             handleRefreshClick()
+        } else if case .local = currentSource {
+            // Local mode - check for +ADD button
+            if relativeX > barWidth - addZone {
+                // +ADD button click
+                showAddFilesMenu(at: event)
+            } else if relativeX < barWidth / 2 {
+                // Left half = source dropdown
+                showSourceMenu(at: event)
+            }
         } else if case .plex = currentSource {
             // Plex mode has library dropdown on right side
             let libraryZone: CGFloat = 120
@@ -1688,11 +1704,6 @@ class PlexBrowserView: NSView {
                 showLibraryMenu(at: event)
             } else if relativeX < barWidth / 2 {
                 // Left half = source dropdown
-                showSourceMenu(at: event)
-            }
-        } else {
-            // Local mode - left half shows source dropdown
-            if relativeX < barWidth / 2 {
                 showSourceMenu(at: event)
             }
         }
@@ -1745,17 +1756,43 @@ class PlexBrowserView: NSView {
             }
         }
         
-        // Separator
-        menu.addItem(NSMenuItem.separator())
-        
-        // Add Folder option
-        let addFolderItem = NSMenuItem(title: "+ Add Folder...", action: #selector(addWatchFolder), keyEquivalent: "")
-        addFolderItem.target = self
-        menu.addItem(addFolderItem)
-        
         // Show menu
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
+    }
+    
+    /// Show the add files/folder menu
+    private func showAddFilesMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        
+        let addFilesItem = NSMenuItem(title: "Add Files...", action: #selector(addFiles), keyEquivalent: "")
+        addFilesItem.target = self
+        menu.addItem(addFilesItem)
+        
+        let addFolderItem = NSMenuItem(title: "Add Folder...", action: #selector(addWatchFolder), keyEquivalent: "")
+        addFolderItem.target = self
+        menu.addItem(addFolderItem)
+        
+        let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
+        menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
+    }
+    
+    @objc private func addFiles() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.audio, .mp3, .wav, .aiff]
+        panel.message = "Select audio files to add to your library"
+        
+        if panel.runModal() == .OK {
+            MediaLibrary.shared.addTracks(urls: panel.urls)
+            
+            // Switch to local source if not already
+            if case .plex = currentSource {
+                currentSource = .local
+            }
+        }
     }
     
     @objc private func selectLocalSource() {
