@@ -461,6 +461,99 @@ class ProjectMWrapper {
     }
 }
 
+// MARK: - Custom Presets Folder
+
+extension ProjectMWrapper {
+    
+    /// UserDefaults key for custom presets folder
+    private static let customPresetsFolderKey = "customPresetsFolder"
+    
+    /// Gets or sets the custom presets folder path
+    static var customPresetsFolder: String? {
+        get {
+            return UserDefaults.standard.string(forKey: customPresetsFolderKey)
+        }
+        set {
+            if let path = newValue {
+                UserDefaults.standard.set(path, forKey: customPresetsFolderKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: customPresetsFolderKey)
+            }
+        }
+    }
+    
+    /// Whether a custom presets folder is configured
+    static var hasCustomPresetsFolder: Bool {
+        if let folder = customPresetsFolder {
+            return FileManager.default.fileExists(atPath: folder)
+        }
+        return false
+    }
+    
+    /// Adds presets from a custom folder
+    /// - Parameter path: Path to the folder containing .milk files
+    /// - Returns: Number of presets found
+    @discardableResult
+    func addCustomPresetPath(_ path: String) -> Int {
+        let countBefore = presetFiles.count
+        addPresetPath(path, recursive: true)
+        let countAfter = presetFiles.count
+        let added = countAfter - countBefore
+        NSLog("ProjectMWrapper: Added %d custom presets from %@", added, path)
+        return added
+    }
+    
+    /// Clears all presets and reloads from configured paths
+    func reloadAllPresets() {
+        // Clear existing presets
+        presetFiles.removeAll()
+        _currentPresetIndex = 0
+        _presetLoaded = false
+        
+        // Reload bundled presets
+        if let bundledPath = Self.bundledPresetsPath {
+            addPresetPath(bundledPath, recursive: true)
+        }
+        
+        // Add custom presets folder if configured
+        if let customPath = Self.customPresetsFolder,
+           FileManager.default.fileExists(atPath: customPath) {
+            addPresetPath(customPath, recursive: true)
+        }
+        
+        // Load presets (sorts and loads first preset)
+        loadPresets()
+        
+        NSLog("ProjectMWrapper: Reloaded %d total presets", presetCount)
+    }
+    
+    /// Gets information about the current presets configuration
+    var presetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
+        var bundledCount = 0
+        var customCount = 0
+        
+        // Count bundled presets
+        if let bundledPath = Self.bundledPresetsPath {
+            for file in presetFiles {
+                if file.hasPrefix(bundledPath) {
+                    bundledCount += 1
+                }
+            }
+        }
+        
+        // Count custom presets
+        if let customPath = Self.customPresetsFolder {
+            for file in presetFiles {
+                if file.hasPrefix(customPath) {
+                    customCount += 1
+                }
+            }
+        }
+        
+        return (bundledCount, customCount, Self.customPresetsFolder)
+    }
+}
+
 // MARK: - Bundle Paths
 
 extension ProjectMWrapper {
@@ -546,23 +639,44 @@ extension ProjectMWrapper {
     /// Configures the wrapper with bundled presets and textures
     func loadBundledPresets() {
         // Add texture path first (presets may reference textures)
+        var texturePaths: [String] = []
         if let texturesPath = Self.bundledTexturesPath {
-            setTexturePaths([texturesPath])
-            NSLog("ProjectMWrapper: Added texture path: %@", texturesPath)
+            texturePaths.append(texturesPath)
+            NSLog("ProjectMWrapper: Added bundled texture path: %@", texturesPath)
         }
         
-        // Add preset path
+        // Add custom textures path if custom presets folder is configured
+        if let customPath = Self.customPresetsFolder {
+            let customTexturesPath = (customPath as NSString).appendingPathComponent("Textures")
+            if FileManager.default.fileExists(atPath: customTexturesPath) {
+                texturePaths.append(customTexturesPath)
+                NSLog("ProjectMWrapper: Added custom texture path: %@", customTexturesPath)
+            }
+        }
+        
+        if !texturePaths.isEmpty {
+            setTexturePaths(texturePaths)
+        }
+        
+        // Add bundled preset path
         if let presetsPath = Self.bundledPresetsPath {
             addPresetPath(presetsPath, recursive: true)
-            NSLog("ProjectMWrapper: Added preset path: %@", presetsPath)
+            NSLog("ProjectMWrapper: Added bundled preset path: %@", presetsPath)
         } else {
-            NSLog("ProjectMWrapper: WARNING - No presets directory found!")
+            NSLog("ProjectMWrapper: WARNING - No bundled presets directory found!")
+        }
+        
+        // Add custom presets folder if configured
+        if let customPath = Self.customPresetsFolder,
+           FileManager.default.fileExists(atPath: customPath) {
+            addPresetPath(customPath, recursive: true)
+            NSLog("ProjectMWrapper: Added custom preset path: %@", customPath)
         }
         
         // Load the presets (this will load the first preset)
         loadPresets()
         
-        NSLog("ProjectMWrapper: Loaded %d presets", presetCount)
+        NSLog("ProjectMWrapper: Loaded %d presets total", presetCount)
         
         if presetCount == 0 {
             NSLog("ProjectMWrapper: No presets available - visualization will show idle screen")

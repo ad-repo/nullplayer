@@ -429,4 +429,16 @@ class VisualizationGLView: NSOpenGLView {
         get { projectM?.beatSensitivity ?? 1.0 }
         set { projectM?.beatSensitivity = newValue }
     }
+    
+    // MARK: - Preset Management
+    
+    /// Reload all presets from bundled and custom folders
+    func reloadPresets() {
+        projectM?.reloadAllPresets()
+    }
+    
+    /// Get information about loaded presets
+    var presetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
+        return projectM?.presetsInfo ?? (0, 0, nil)
+    }
 }

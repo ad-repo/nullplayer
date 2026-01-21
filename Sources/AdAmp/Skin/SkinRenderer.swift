@@ -2259,19 +2259,35 @@ class SkinRenderer {
     func drawPlexBrowserWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
                                pressedButton: PlexBrowserButtonType?, scrollPosition: CGFloat) {
         let layout = SkinElements.PlexBrowser.Layout.self
+        let titleHeight = layout.titleBarHeight  // 20px
+        let borderWidth: CGFloat = 3
+        let statusHeight = layout.statusBarHeight
         
-        // Fill background with playlist colors first
-        skin.playlistColors.normalBackground.setFill()
+        // Fill background with black first (like Milkdrop does)
+        // This ensures any gaps between sprites show black, not skin colors
+        NSColor.black.setFill()
         context.fill(bounds)
         
-        // Draw title bar (using playlist title sprites)
-        drawPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        // Fill only the CONTENT area with playlist background (not title bar or borders)
+        // This prevents skin color from showing through sprite gaps
+        let contentArea = NSRect(
+            x: borderWidth,
+            y: titleHeight,
+            width: bounds.width - borderWidth * 2,
+            height: bounds.height - titleHeight - statusHeight
+        )
+        skin.playlistColors.normalBackground.setFill()
+        context.fill(contentArea)
         
-        // Draw side borders (using playlist side sprites)
+        // Draw side borders BEFORE title bar (like Milkdrop does)
+        // This creates a clean background for the title bar to draw on top of
         drawPlexBrowserSideBorders(in: context, bounds: bounds)
         
-        // Draw status bar at bottom (using playlist bottom sprites adapted)
+        // Draw status bar at bottom
         drawPlexBrowserStatusBar(in: context, bounds: bounds)
+        
+        // Draw title bar LAST so it draws on top of borders (like Milkdrop)
+        drawPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
         
         // Draw scrollbar
         let contentTop = layout.titleBarHeight + layout.serverBarHeight + layout.tabBarHeight
@@ -2280,89 +2296,86 @@ class SkinRenderer {
     }
     
     /// Draw Plex browser title bar with skin sprites
-    /// Uses PLEDIT.BMP from loaded skin to follow skin changes, falls back to library-window.png
+    /// Uses PLEDIT.BMP for skin following (same approach as Milkdrop window)
     func drawPlexBrowserTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
-        // Use pledit sprites from the loaded skin (allows library browser to follow skin changes)
-        if let pleditImage = skin.pledit {
-            drawPlexBrowserTitleBarFromPledit(pleditImage, in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        // Use PLEDIT sprites for skin-following (matches Milkdrop window approach)
+        guard let pleditImage = skin.pledit else {
+            // Fall back to library-window.png if no skin loaded
+            if let libraryImage = Skin.libraryWindowImage {
+                drawLibraryWindowTitleBar(from: libraryImage, in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+                return
+            }
+            drawFallbackPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive)
             return
         }
         
-        // Fall back to library-window.png if no pledit in skin
-        if let libraryImage = Skin.libraryWindowImage {
-            drawLibraryWindowTitleBar(from: libraryImage, in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
-            return
-        }
-        
-        // Final fallback
-        drawFallbackPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive)
+        // Draw PLEDIT-based title bar
+        drawPlexBrowserTitleBarFromPledit(pleditImage, in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
     }
     
     /// Draw Plex browser title bar using PLEDIT.BMP sprites
+    /// Uses CGImage directly for pixel-perfect rendering without interpolation artifacts
     private func drawPlexBrowserTitleBarFromPledit(_ pleditImage: NSImage, in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
+        // Convert NSImage to CGImage for pixel-perfect rendering
+        guard let cgImage = pleditImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return
+        }
         
         let titleHeight = SkinElements.Playlist.titleHeight
         let leftCornerWidth: CGFloat = 25
         let rightCornerWidth: CGFloat = 25
-        let titleSpriteWidth: CGFloat = 100  // Same as playlist title sprite width
         let tileWidth: CGFloat = 25
         
-        // Get the correct sprite set for active/inactive state
         let leftCorner = isActive ? SkinElements.Playlist.TitleBarActive.leftCorner : SkinElements.Playlist.TitleBarInactive.leftCorner
         let tileSprite = isActive ? SkinElements.Playlist.TitleBarActive.tile : SkinElements.Playlist.TitleBarInactive.tile
         let rightCorner = isActive ? SkinElements.Playlist.TitleBarActive.rightCorner : SkinElements.Playlist.TitleBarInactive.rightCorner
         
-        // Draw left corner
-        drawSprite(from: pleditImage, sourceRect: leftCorner,
-                  to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
+        // Use CGImage-based drawing for pixel-perfect results
+        drawSprite(from: cgImage, sourceRect: leftCorner,
+                  destRect: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
         
-        // Draw right corner (contains window buttons)
-        drawSprite(from: pleditImage, sourceRect: rightCorner,
-                  to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
+        drawSprite(from: cgImage, sourceRect: rightCorner,
+                  destRect: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
         
-        // Calculate available space for middle section
+        // Fill middle with tiles - use clipping for partial tiles
         let middleStart = leftCornerWidth
         let middleEnd = bounds.width - rightCornerWidth
-        let middleWidth = middleEnd - middleStart
-        
-        // Fill the entire middle section with tiles FIRST
         var x: CGFloat = middleStart
         while x < middleEnd {
-            let w = min(tileWidth, middleEnd - x)
-            drawSprite(from: pleditImage, sourceRect: tileSprite,
-                      to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
+            let remainingWidth = middleEnd - x
+            if remainingWidth >= tileWidth {
+                // Full tile
+                drawSprite(from: cgImage, sourceRect: tileSprite,
+                          destRect: NSRect(x: x, y: 0, width: tileWidth, height: titleHeight), in: context)
+            } else {
+                // Partial tile - clip source rect
+                let partialSourceRect = NSRect(
+                    x: tileSprite.origin.x,
+                    y: tileSprite.origin.y,
+                    width: remainingWidth,
+                    height: tileSprite.height
+                )
+                drawSprite(from: cgImage, sourceRect: partialSourceRect,
+                          destRect: NSRect(x: x, y: 0, width: remainingWidth, height: titleHeight), in: context)
+            }
             x += tileWidth
         }
         
-        // Calculate where the title text will go (centered)
-        let titleX = middleStart + (middleWidth - titleSpriteWidth) / 2
-        
-        // Fill the title area with the same background as left/right tiles
-        if let titleBg = plexTitleTileBackgroundColor(from: pleditImage, sourceRect: tileSprite) {
-            titleBg.setFill()
-            context.fill(NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: titleHeight))
-        }
-
-        // Explicitly paint the top border line to match surrounding tiles
-        if let titleBg = plexTitleTileBackgroundColor(from: pleditImage, sourceRect: tileSprite) {
-            titleBg.setFill()
-            context.fill(NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: 1))
-        }
-        
-        // Draw "WINAMP LIBRARY" text using the same GenFont as library-window.png version
         drawLibraryTitleText(in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive)
         
-        // Draw window control buttons using skin titlebar sprites (same style as main window)
-        let closeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9, 
-                               y: 4, width: 9, height: 9)
-        let shadeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.shadeOffset - 9, 
-                               y: 4, width: 9, height: 9)
+        if pressedButton == .close {
+            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset,
+                                   y: 3, width: 9, height: 9)
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+            context.fill(closeRect)
+        }
         
-        let closeState: ButtonState = (pressedButton == .close) ? .pressed : .normal
-        let shadeState: ButtonState = (pressedButton == .shade) ? .pressed : .normal
-        
-        drawButton(.close, state: closeState, at: closeRect, in: context)
-        drawButton(.shade, state: shadeState, at: shadeRect, in: context)
+        if pressedButton == .shade {
+            let shadeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.shadeOffset,
+                                   y: 3, width: 9, height: 9)
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+            context.fill(shadeRect)
+        }
     }
     
     /// Draw title bar using library-window.png sprites
@@ -2978,8 +2991,11 @@ class SkinRenderer {
     }
     
     /// Draw thin side borders to match other windows
+    /// Uses PlexBrowser title height (20px) to match PLEDIT sprites used for title bar
     private func drawLibraryWindowSideBorders(from image: NSImage, in context: CGContext, bounds: NSRect) {
-        let titleHeight = SkinElements.LibraryWindow.Layout.titleBarHeight
+        // Use PlexBrowser titleBarHeight (20px) to match PLEDIT title bar sprites
+        // NOT LibraryWindow.Layout.titleBarHeight (18px) which would leave a gap
+        let titleHeight = SkinElements.PlexBrowser.Layout.titleBarHeight
         let borderHeight: CGFloat = 3  // Thin bottom border
         let borderWidth: CGFloat = 3   // Thin side borders
         

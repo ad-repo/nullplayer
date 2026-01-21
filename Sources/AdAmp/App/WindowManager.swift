@@ -463,6 +463,28 @@ class WindowManager {
             showMilkdrop()
         }
     }
+    
+    // MARK: - Visualization Settings
+    
+    /// Whether projectM visualization is available
+    var isProjectMAvailable: Bool {
+        milkdropWindowController?.isProjectMAvailable ?? false
+    }
+    
+    /// Total number of visualization presets
+    var visualizationPresetCount: Int {
+        milkdropWindowController?.presetCount ?? 0
+    }
+    
+    /// Get information about loaded presets (bundled count, custom count, custom path)
+    var visualizationPresetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
+        milkdropWindowController?.presetsInfo ?? (0, 0, nil)
+    }
+    
+    /// Reload all visualization presets from bundled and custom folders
+    func reloadVisualizationPresets() {
+        milkdropWindowController?.reloadPresets()
+    }
 
     func notifyMainWindowVisibilityChanged() {
         mainWindowController?.windowVisibilityDidChange()

@@ -13,10 +13,6 @@ class MilkdropWindowController: NSWindowController {
     /// Stored normal mode frame for restoration
     private var normalModeFrame: NSRect?
     
-    /// Current preset index (for future projectM integration)
-    private var currentPresetIndex: Int = 0
-    private var presetCount: Int = 0
-    
     /// Custom fullscreen state (for borderless window)
     private var isCustomFullscreen = false
     private var preFullscreenFrame: NSRect?
@@ -251,21 +247,18 @@ class MilkdropWindowController: NSWindowController {
     /// - Parameter hardCut: If true, switch immediately without blending
     func nextPreset(hardCut: Bool = false) {
         milkdropView.visualizationGLView?.nextPreset(hardCut: hardCut)
-        updatePresetInfo()
     }
     
     /// Go to previous preset
     /// - Parameter hardCut: If true, switch immediately without blending
     func previousPreset(hardCut: Bool = false) {
         milkdropView.visualizationGLView?.previousPreset(hardCut: hardCut)
-        updatePresetInfo()
     }
     
     /// Select a random preset
     /// - Parameter hardCut: If true, switch immediately without blending
     func randomPreset(hardCut: Bool = false) {
         milkdropView.visualizationGLView?.randomPreset(hardCut: hardCut)
-        updatePresetInfo()
     }
     
     /// Set specific preset by index
@@ -274,15 +267,6 @@ class MilkdropWindowController: NSWindowController {
     ///   - hardCut: If true, switch immediately without blending
     func setPreset(_ index: Int, hardCut: Bool = false) {
         milkdropView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
-        updatePresetInfo()
-    }
-    
-    /// Update internal preset tracking from visualization view
-    private func updatePresetInfo() {
-        if let vis = milkdropView.visualizationGLView {
-            currentPresetIndex = vis.currentPresetIndex
-            presetCount = vis.presetCount
-        }
     }
     
     /// Lock or unlock the current preset
@@ -299,6 +283,21 @@ class MilkdropWindowController: NSWindowController {
     /// Current preset name
     var currentPresetName: String {
         return milkdropView.visualizationGLView?.currentPresetName ?? ""
+    }
+    
+    /// Total number of presets
+    var presetCount: Int {
+        return milkdropView.visualizationGLView?.presetCount ?? 0
+    }
+    
+    /// Reload all presets from bundled and custom folders
+    func reloadPresets() {
+        milkdropView.visualizationGLView?.reloadPresets()
+    }
+    
+    /// Get information about loaded presets
+    var presetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
+        return milkdropView.visualizationGLView?.presetsInfo ?? (0, 0, nil)
     }
 }
 

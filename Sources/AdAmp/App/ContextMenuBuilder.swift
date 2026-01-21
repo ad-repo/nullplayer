@@ -26,6 +26,9 @@ class ContextMenuBuilder {
         // Skins submenu
         menu.addItem(buildSkinsMenuItem())
         
+        // Visualizations submenu
+        menu.addItem(buildVisualizationsMenuItem())
+        
         // Options submenu
         menu.addItem(buildOptionsMenuItem())
         
@@ -111,6 +114,11 @@ class ContextMenuBuilder {
         loadSkin.target = MenuActions.shared
         menu.addItem(loadSkin)
         
+        // Get More Skins...
+        let getMoreSkins = NSMenuItem(title: "Get More Skins...", action: #selector(MenuActions.getMoreSkins), keyEquivalent: "")
+        getMoreSkins.target = MenuActions.shared
+        menu.addItem(getMoreSkins)
+        
         // Base Skin 1
         let baseSkin1 = NSMenuItem(title: "<Base Skin 1>", action: #selector(MenuActions.loadBaseSkin), keyEquivalent: "")
         baseSkin1.target = MenuActions.shared
@@ -152,6 +160,73 @@ class ContextMenuBuilder {
         }
         
         return menu
+    }
+    
+    // MARK: - Visualizations Submenu
+    
+    private static func buildVisualizationsMenuItem() -> NSMenuItem {
+        let visItem = NSMenuItem(title: "Visualizations", action: nil, keyEquivalent: "")
+        let visMenu = NSMenu()
+        
+        let wm = WindowManager.shared
+        let isProjectMAvailable = wm.isProjectMAvailable
+        
+        // Preset info header
+        if isProjectMAvailable {
+            let info = wm.visualizationPresetsInfo
+            let totalPresets = wm.visualizationPresetCount
+            
+            let infoText: String
+            if info.customPath != nil {
+                infoText = "\(totalPresets) presets (\(info.bundledCount) bundled, \(info.customCount) custom)"
+            } else {
+                infoText = "\(totalPresets) presets (bundled)"
+            }
+            
+            let infoItem = NSMenuItem(title: infoText, action: nil, keyEquivalent: "")
+            infoItem.isEnabled = false
+            visMenu.addItem(infoItem)
+            
+            visMenu.addItem(NSMenuItem.separator())
+        } else {
+            let unavailableItem = NSMenuItem(title: "projectM not available", action: nil, keyEquivalent: "")
+            unavailableItem.isEnabled = false
+            visMenu.addItem(unavailableItem)
+            
+            visMenu.addItem(NSMenuItem.separator())
+        }
+        
+        // Add Presets Folder...
+        let addFolderItem = NSMenuItem(title: "Add Presets Folder...", action: #selector(MenuActions.addVisualizationsFolder), keyEquivalent: "")
+        addFolderItem.target = MenuActions.shared
+        visMenu.addItem(addFolderItem)
+        
+        // Show Presets Folder (only if custom folder is set)
+        if ProjectMWrapper.hasCustomPresetsFolder {
+            let showFolderItem = NSMenuItem(title: "Show Custom Presets Folder", action: #selector(MenuActions.showVisualizationsFolder), keyEquivalent: "")
+            showFolderItem.target = MenuActions.shared
+            visMenu.addItem(showFolderItem)
+            
+            // Remove Custom Folder
+            let removeFolderItem = NSMenuItem(title: "Remove Custom Folder", action: #selector(MenuActions.removeVisualizationsFolder), keyEquivalent: "")
+            removeFolderItem.target = MenuActions.shared
+            visMenu.addItem(removeFolderItem)
+        }
+        
+        // Rescan Presets
+        let rescanItem = NSMenuItem(title: "Rescan Presets", action: #selector(MenuActions.rescanVisualizations), keyEquivalent: "")
+        rescanItem.target = MenuActions.shared
+        visMenu.addItem(rescanItem)
+        
+        visMenu.addItem(NSMenuItem.separator())
+        
+        // Show Bundled Presets in Finder
+        let showBundledItem = NSMenuItem(title: "Show Bundled Presets", action: #selector(MenuActions.showBundledPresets), keyEquivalent: "")
+        showBundledItem.target = MenuActions.shared
+        visMenu.addItem(showBundledItem)
+        
+        visItem.submenu = visMenu
+        return visItem
     }
     
     // MARK: - Options Submenu
@@ -663,6 +738,12 @@ class MenuActions: NSObject {
         WindowManager.shared.lockBrowserMilkdropSkin.toggle()
     }
     
+    @objc func getMoreSkins() {
+        if let url = URL(string: "https://skins.webamp.org/") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
     // MARK: - Options
     
     @objc func setTimeElapsed() {
@@ -1002,6 +1083,112 @@ class MenuActions: NSObject {
             successAlert.alertStyle = .informational
             successAlert.runModal()
         }
+    }
+    
+    // MARK: - Visualizations
+    
+    @objc func addVisualizationsFolder() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.title = "Select Visualizations Folder"
+        panel.message = "Choose a folder containing .milk preset files"
+        panel.prompt = "Add Folder"
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            // Count .milk files in the selected folder
+            let fileManager = FileManager.default
+            var milkCount = 0
+            if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: nil) {
+                while let fileURL = enumerator.nextObject() as? URL {
+                    if fileURL.pathExtension.lowercased() == "milk" {
+                        milkCount += 1
+                    }
+                }
+            }
+            
+            if milkCount == 0 {
+                let alert = NSAlert()
+                alert.messageText = "No Presets Found"
+                alert.informativeText = "The selected folder doesn't contain any .milk preset files. Please choose a folder with MilkDrop/projectM presets."
+                alert.alertStyle = .warning
+                alert.runModal()
+                return
+            }
+            
+            // Save the custom folder path
+            ProjectMWrapper.customPresetsFolder = url.path
+            
+            // Reload presets
+            WindowManager.shared.reloadVisualizationPresets()
+            
+            let alert = NSAlert()
+            alert.messageText = "Presets Added"
+            alert.informativeText = "Found \(milkCount) preset files in the selected folder. Presets have been reloaded."
+            alert.alertStyle = .informational
+            alert.runModal()
+            
+            NSLog("MenuActions: Added custom visualizations folder: %@", url.path)
+        }
+    }
+    
+    @objc func showVisualizationsFolder() {
+        guard let customPath = ProjectMWrapper.customPresetsFolder else { return }
+        
+        let url = URL(fileURLWithPath: customPath)
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
+    }
+    
+    @objc func removeVisualizationsFolder() {
+        guard ProjectMWrapper.customPresetsFolder != nil else { return }
+        
+        let alert = NSAlert()
+        alert.messageText = "Remove Custom Presets Folder?"
+        alert.informativeText = "This will remove the custom presets folder from AdAmp. The folder and its files will not be deleted from disk.\n\nOnly bundled presets will be available after this."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            ProjectMWrapper.customPresetsFolder = nil
+            WindowManager.shared.reloadVisualizationPresets()
+            
+            NSLog("MenuActions: Removed custom visualizations folder")
+        }
+    }
+    
+    @objc func rescanVisualizations() {
+        WindowManager.shared.reloadVisualizationPresets()
+        
+        let info = WindowManager.shared.visualizationPresetsInfo
+        let total = WindowManager.shared.visualizationPresetCount
+        
+        let alert = NSAlert()
+        alert.messageText = "Presets Rescanned"
+        if info.customPath != nil {
+            alert.informativeText = "Found \(total) presets (\(info.bundledCount) bundled, \(info.customCount) custom)"
+        } else {
+            alert.informativeText = "Found \(total) bundled presets"
+        }
+        alert.alertStyle = .informational
+        alert.runModal()
+        
+        NSLog("MenuActions: Rescanned visualizations - %d total presets", total)
+    }
+    
+    @objc func showBundledPresets() {
+        guard let bundledPath = ProjectMWrapper.bundledPresetsPath else {
+            let alert = NSAlert()
+            alert.messageText = "Bundled Presets Not Found"
+            alert.informativeText = "The bundled presets directory could not be located."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        
+        let url = URL(fileURLWithPath: bundledPath)
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
     }
     
     // MARK: - Exit

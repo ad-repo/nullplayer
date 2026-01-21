@@ -779,7 +779,9 @@ struct SkinElements {
     
     struct PlexBrowser {
         /// Minimum window size (wider than playlist to fit tabs)
-        static let minSize = NSSize(width: 480, height: 300)
+        /// Width must be: (N * 25) + 50 for pixel-perfect tile alignment
+        /// 500 = 18 tiles * 25 + 50 (corners)
+        static let minSize = NSSize(width: 500, height: 300)
         
         /// Default window size
         static let defaultSize = NSSize(width: 550, height: 450)
