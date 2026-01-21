@@ -141,6 +141,14 @@ extension EQWindowController: NSWindowDelegate {
         let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: newOrigin)
     }
+    
+    func windowDidBecomeKey(_ notification: Notification) {
+        eqView.needsDisplay = true
+    }
+    
+    func windowDidResignKey(_ notification: Notification) {
+        eqView.needsDisplay = true
+    }
 
     func windowWillClose(_ notification: Notification) {
         WindowManager.shared.notifyMainWindowVisibilityChanged()
