@@ -53,3 +53,11 @@ docs/_build/
 # Temporary files
 tmp/
 *.tmp
+
+# Binary frameworks (downloaded by scripts/bootstrap.sh)
+Frameworks/VLCKit.framework/
+Frameworks/libprojectM-4.dylib
+
+# Framework tarballs (used for releases)
+VLCKit-macos.tar.gz
+libprojectM-*.tar.gz

@@ -6,6 +6,13 @@ set -e
 
 cd "$(dirname "$0")/.."
 
+# Check if frameworks are installed, run bootstrap if not
+if [[ ! -d "Frameworks/VLCKit.framework" ]] || [[ ! -f "Frameworks/libprojectM-4.dylib" ]]; then
+    echo "⚠️  Frameworks not found. Running bootstrap..."
+    ./scripts/bootstrap.sh
+    echo ""
+fi
+
 echo "🔄 Stopping any running AdAmp instances..."
 # Kill only the AdAmp binary, not processes with adamp in path
 pkill -9 -x AdAmp 2>/dev/null || true

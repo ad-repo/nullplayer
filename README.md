@@ -28,22 +28,28 @@ A faithful recreation of the classic Winamp 2.x music player for macOS.
 
 ### Prerequisites
 
-- Xcode 14.0 or later
-- Swift 5.9 or later
+- macOS 12.0+ (Monterey or later)
+- Xcode 14.0+ with Command Line Tools
+- Swift 5.9+
 
 ### Build Steps
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/AdAmp.git
-cd AdAmp
+git clone https://github.com/ad-repo/adamp.git
+cd adamp
+
+# Download required frameworks (~33MB)
+./scripts/bootstrap.sh
 
 # Build with Swift Package Manager
 swift build
 
-# Or run directly
-swift run AdAmp
+# Or use the run script (auto-bootstraps if needed)
+./scripts/run.sh
 ```
+
+The bootstrap script downloads VLCKit and libprojectM from GitHub Releases with checksum verification.
 
 ### Xcode
 
