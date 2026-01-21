@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import AppKit
 
 /// Represents an entry in the media library with full metadata
 struct LibraryTrack: Identifiable, Codable, Hashable {
@@ -665,6 +666,140 @@ class MediaLibrary {
         }
     }
     
+    // MARK: - Backup & Restore
+    
+    /// Get the library directory URL
+    var libraryDirectory: URL {
+        libraryURL.deletingLastPathComponent()
+    }
+    
+    /// Get the backups directory URL
+    var backupsDirectory: URL {
+        libraryDirectory.appendingPathComponent("Backups", isDirectory: true)
+    }
+    
+    /// Create a backup of the library file
+    /// - Parameter customName: Optional custom name for the backup (without extension)
+    /// - Returns: URL of the created backup file
+    @discardableResult
+    func backupLibrary(customName: String? = nil) throws -> URL {
+        let fileManager = FileManager.default
+        
+        // Ensure backups directory exists
+        try fileManager.createDirectory(at: backupsDirectory, withIntermediateDirectories: true)
+        
+        // Generate backup filename with timestamp
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = dateFormatter.string(from: Date())
+        
+        let backupName: String
+        if let custom = customName, !custom.isEmpty {
+            backupName = "\(custom)_\(timestamp).json"
+        } else {
+            backupName = "library_backup_\(timestamp).json"
+        }
+        
+        let backupURL = backupsDirectory.appendingPathComponent(backupName)
+        
+        // Copy the current library file - ensure it exists first
+        if !fileManager.fileExists(atPath: libraryURL.path) {
+            // If no library file exists, save current state first
+            saveLibrary()
+        }
+        
+        guard fileManager.fileExists(atPath: libraryURL.path) else {
+            throw LibraryError.noLibraryFile
+        }
+        
+        try fileManager.copyItem(at: libraryURL, to: backupURL)
+        print("Library backed up to: \(backupURL.path)")
+        
+        return backupURL
+    }
+    
+    /// Restore library from a backup file
+    /// - Parameter backupURL: URL of the backup file to restore
+    func restoreLibrary(from backupURL: URL) throws {
+        let fileManager = FileManager.default
+        
+        guard fileManager.fileExists(atPath: backupURL.path) else {
+            throw LibraryError.backupNotFound
+        }
+        
+        // Validate the backup file is valid JSON
+        let data = try Data(contentsOf: backupURL)
+        let decoder = JSONDecoder()
+        let libraryData = try decoder.decode(LibraryData.self, from: data)
+        
+        // Create auto-backup of current library before restoring
+        if fileManager.fileExists(atPath: libraryURL.path) {
+            _ = try? backupLibrary(customName: "pre_restore_auto_backup")
+        }
+        
+        // Replace current library
+        if fileManager.fileExists(atPath: libraryURL.path) {
+            try fileManager.removeItem(at: libraryURL)
+        }
+        try fileManager.copyItem(at: backupURL, to: libraryURL)
+        
+        // Reload the library
+        dataQueue.sync {
+            tracks = libraryData.tracks
+            watchFolders = libraryData.watchFolders
+            
+            // Rebuild index
+            tracksByPath.removeAll()
+            for track in tracks {
+                tracksByPath[track.url.path] = track
+            }
+        }
+        
+        notifyChange()
+        print("Library restored from: \(backupURL.path)")
+    }
+    
+    /// List available backup files
+    /// - Returns: Array of backup file URLs sorted by date (newest first)
+    func listBackups() -> [URL] {
+        let fileManager = FileManager.default
+        
+        guard fileManager.fileExists(atPath: backupsDirectory.path) else {
+            return []
+        }
+        
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: backupsDirectory, includingPropertiesForKeys: [.creationDateKey])
+            return contents
+                .filter { $0.pathExtension == "json" }
+                .sorted { url1, url2 in
+                    let date1 = (try? url1.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
+                    let date2 = (try? url2.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
+                    return date1 > date2
+                }
+        } catch {
+            print("Failed to list backups: \(error)")
+            return []
+        }
+    }
+    
+    /// Delete a backup file
+    func deleteBackup(at url: URL) throws {
+        try FileManager.default.removeItem(at: url)
+    }
+    
+    /// Show the library directory in Finder
+    func showLibraryInFinder() {
+        NSWorkspace.shared.selectFile(libraryURL.path, inFileViewerRootedAtPath: libraryDirectory.path)
+    }
+    
+    /// Show the backups directory in Finder
+    func showBackupsInFinder() {
+        let fileManager = FileManager.default
+        try? fileManager.createDirectory(at: backupsDirectory, withIntermediateDirectories: true)
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: backupsDirectory.path)
+    }
+    
     private func notifyChange() {
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: nil)
@@ -699,4 +834,23 @@ class MediaLibrary {
 private struct LibraryData: Codable {
     let tracks: [LibraryTrack]
     let watchFolders: [URL]
+}
+
+// MARK: - Library Errors
+
+enum LibraryError: LocalizedError {
+    case noLibraryFile
+    case backupNotFound
+    case invalidBackupFile
+    
+    var errorDescription: String? {
+        switch self {
+        case .noLibraryFile:
+            return "No library file exists to backup."
+        case .backupNotFound:
+            return "The backup file was not found."
+        case .invalidBackupFile:
+            return "The backup file is invalid or corrupted."
+        }
+    }
 }

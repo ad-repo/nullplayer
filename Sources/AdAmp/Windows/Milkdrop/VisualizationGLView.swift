@@ -283,17 +283,18 @@ class VisualizationGLView: NSOpenGLView {
     private func renderProjectM(pcm: [Float], width: Int, height: Int) {
         guard let pm = projectM else { return }
         
-        // Double-check that a valid preset is loaded before rendering
-        // projectM can crash if we try to render without a fully loaded preset
+        // Note: hasValidPreset and renderFrame both acquire the render lock internally.
+        // We check hasValidPreset first to avoid unnecessary lock contention when no preset is loaded.
+        // The actual preset validity is re-checked inside renderFrame() under the lock.
         guard pm.hasValidPreset else { return }
         
-        // Update viewport size if changed
+        // Update viewport size if changed (this is atomic with respect to rendering)
         pm.setViewportSize(width: width, height: height)
         
         // Feed PCM data to projectM
         pm.addPCMMono(pcm)
         
-        // Render the frame
+        // Render the frame (checks preset validity again under the lock)
         pm.renderFrame()
     }
     

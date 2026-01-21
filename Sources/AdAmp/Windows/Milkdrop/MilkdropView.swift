@@ -151,8 +151,14 @@ class MilkdropView: NSView {
             return
         }
         
-        let skin = WindowManager.shared.currentSkin
-        let renderer = SkinRenderer(skin: skin ?? SkinLoader.shared.loadDefault())
+        // Use default skin if locked, otherwise use current skin
+        let skin: Skin
+        if WindowManager.shared.lockBrowserMilkdropSkin {
+            skin = SkinLoader.shared.loadDefault()
+        } else {
+            skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+        }
+        let renderer = SkinRenderer(skin: skin)
         let isActive = window?.isKeyWindow ?? true
         
         // Flip coordinate system to match Winamp's top-down coordinates
@@ -252,17 +258,18 @@ class MilkdropView: NSView {
     
     /// Check if point hits title bar (for dragging)
     private func hitTestTitleBar(at winampPoint: NSPoint) -> Bool {
-        // Title bar is at the top (24px), leave room for close button on the right
+        // Title bar is at the top, leave room for close button on the right
         return winampPoint.y < Layout.titleBarHeight && 
-               winampPoint.x < bounds.width - 30  // Leave room for right corner with close button
+               winampPoint.x < bounds.width - 25  // Leave room for close button area
     }
     
     /// Check if point hits close button
     private func hitTestCloseButton(at winampPoint: NSPoint) -> Bool {
-        // Close button is in the right corner of 20px title bar
-        let closeX = bounds.width - 14
-        let buttonY: CGFloat = 5
-        let closeRect = NSRect(x: closeX, y: buttonY, width: 10, height: 10)
+        // Close button is in the right corner of the title bar
+        // The titlebar image is scaled to fit window width, so use a generous hit area
+        // in the top-right corner (entire title bar height, last 25px of width)
+        let titleHeight = Layout.titleBarHeight
+        let closeRect = NSRect(x: bounds.width - 25, y: 0, width: 25, height: titleHeight)
         return closeRect.contains(winampPoint)
     }
     

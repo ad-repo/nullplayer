@@ -494,16 +494,57 @@ class PlaylistView: NSView {
         // Check if in bottom bar area
         guard winampPoint.y >= bottomY && winampPoint.y < originalSize.height else { return nil }
         
-        let buttonY = bottomY + 10
-        let relativeY = winampPoint.y - buttonY
+        let relativeY = winampPoint.y - bottomY
+        let x = winampPoint.x
         
-        // Button positions (approximately 25px wide each)
-        if relativeY >= 0 && relativeY <= 18 {
-            if winampPoint.x >= 11 && winampPoint.x < 36 { return .add }
-            if winampPoint.x >= 40 && winampPoint.x < 65 { return .rem }
-            if winampPoint.x >= 70 && winampPoint.x < 95 { return .sel }
-            if winampPoint.x >= originalSize.width - 140 && winampPoint.x < originalSize.width - 115 { return .misc }
-            if winampPoint.x >= originalSize.width - 46 && winampPoint.x < originalSize.width - 21 { return .list }
+        // DEBUG: Log click position in bottom bar
+        NSLog("PlaylistView: Bottom bar click x=%.0f, relativeY=%.0f", x, relativeY)
+        
+        // Mini transport buttons - 6 buttons: prev, play, pause, stop, next, open
+        // Based on edge clicks: Previous=134, Open=181, range=47px, spacing=9.4px
+        // Buttons are in the lower portion of the bottom bar (y >= 12)
+        if relativeY >= 12 && relativeY <= 38 && x >= 125 && x < 195 {
+            NSLog("PlaylistView: Transport area click at x=%.0f", x)
+            // 6 buttons equally spaced from x=134 to x=181
+            // Each button ~9.4px apart, using ~8px wide hit areas centered on each
+            if x >= 130 && x < 139 {  // center=134
+                NSLog("PlaylistView: HIT miniPrevious")
+                return .miniPrevious 
+            }
+            if x >= 139 && x < 148 {  // center=143.4
+                NSLog("PlaylistView: HIT miniPlay")
+                return .miniPlay 
+            }
+            if x >= 148 && x < 158 {  // center=152.8
+                NSLog("PlaylistView: HIT miniPause")
+                return .miniPause 
+            }
+            if x >= 158 && x < 167 {  // center=162.2
+                NSLog("PlaylistView: HIT miniStop")
+                return .miniStop 
+            }
+            if x >= 167 && x < 177 {  // center=171.6
+                NSLog("PlaylistView: HIT miniNext")
+                return .miniNext 
+            }
+            if x >= 177 && x < 195 {  // center=181
+                NSLog("PlaylistView: HIT miniOpen")
+                return .miniOpen 
+            }
+        }
+        
+        // ADD/REM/SEL buttons in the upper-left area of the bottom bar (y=0-15)
+        // These should NOT overlap with the transport buttons
+        if relativeY >= 0 && relativeY < 15 {
+            if x >= 11 && x < 40 { return .add }
+            if x >= 40 && x < 69 { return .rem }
+            if x >= 69 && x < 98 { return .sel }
+        }
+        
+        // MISC/LIST buttons on the right side
+        if x >= originalSize.width - 50 {
+            if x >= originalSize.width - 44 && x < originalSize.width - 22 { return .misc }
+            if x >= originalSize.width - 22 && x < originalSize.width { return .list }
         }
         
         return nil
@@ -764,10 +805,104 @@ class PlaylistView: NSView {
                 if hitTestBottomButton(at: winampPoint) == .list {
                     showListMenu(at: point)
                 }
+            // Mini transport controls
+            case .miniPrevious:
+                if hitTestBottomButton(at: winampPoint) == .miniPrevious {
+                    performMiniTransportAction(.miniPrevious)
+                }
+            case .miniPlay:
+                if hitTestBottomButton(at: winampPoint) == .miniPlay {
+                    performMiniTransportAction(.miniPlay)
+                }
+            case .miniPause:
+                if hitTestBottomButton(at: winampPoint) == .miniPause {
+                    performMiniTransportAction(.miniPause)
+                }
+            case .miniStop:
+                if hitTestBottomButton(at: winampPoint) == .miniStop {
+                    performMiniTransportAction(.miniStop)
+                }
+            case .miniNext:
+                if hitTestBottomButton(at: winampPoint) == .miniNext {
+                    performMiniTransportAction(.miniNext)
+                }
+            case .miniOpen:
+                if hitTestBottomButton(at: winampPoint) == .miniOpen {
+                    performMiniTransportAction(.miniOpen)
+                }
             }
             
             pressedButton = nil
             needsDisplay = true
+        }
+    }
+    
+    /// Perform mini transport button action
+    private func performMiniTransportAction(_ button: SkinRenderer.PlaylistButtonType) {
+        let engine = WindowManager.shared.audioEngine
+        let isVideoActive = WindowManager.shared.isVideoActivePlayback
+        
+        NSLog("PlaylistView: performMiniTransportAction called for \(button), isVideoActive=\(isVideoActive)")
+        
+        switch button {
+        case .miniPrevious:
+            NSLog("PlaylistView: Executing PREVIOUS")
+            if isVideoActive {
+                WindowManager.shared.skipVideoBackward(10)
+            } else {
+                engine.previous()
+            }
+        case .miniPlay:
+            NSLog("PlaylistView: Executing PLAY/TOGGLE, state=%@, playlist count=%d, currentTrack=%@", 
+                  "\(engine.state)", engine.playlist.count, engine.currentTrack?.title ?? "nil")
+            if isVideoActive {
+                WindowManager.shared.toggleVideoPlayPause()
+            } else {
+                // Toggle play/pause for better UX
+                if engine.state == .playing {
+                    engine.pause()
+                } else {
+                    engine.play()
+                }
+            }
+        case .miniPause:
+            NSLog("PlaylistView: Executing PAUSE")
+            if isVideoActive {
+                WindowManager.shared.toggleVideoPlayPause()
+            } else {
+                engine.pause()
+            }
+        case .miniStop:
+            print(">>> STOP BUTTON PRESSED <<<")
+            NSLog("PlaylistView: Executing STOP")
+            if isVideoActive {
+                WindowManager.shared.stopVideo()
+            } else {
+                print(">>> Calling engine.stop() <<<")
+                engine.stop()
+            }
+        case .miniNext:
+            NSLog("PlaylistView: Executing NEXT")
+            if isVideoActive {
+                WindowManager.shared.skipVideoForward(10)
+            } else {
+                engine.next()
+            }
+        case .miniOpen:
+            NSLog("PlaylistView: Executing OPEN")
+            // Open file dialog to add files - same as addFiles action
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.allowsMultipleSelection = true
+            panel.allowedContentTypes = [.audio, .movie]
+            
+            if panel.runModal() == .OK {
+                WindowManager.shared.audioEngine.loadFiles(panel.urls)
+                needsDisplay = true
+            }
+        default:
+            break
         }
     }
     

@@ -200,18 +200,26 @@ class ProjectMWrapper {
     ///   - width: New width in pixels
     ///   - height: New height in pixels
     func setViewportSize(width: Int, height: Int) {
+        #if canImport(CProjectM)
+        guard let h = handle else { return }
+        
+        // Lock to ensure thread safety and atomic update of dimensions
+        renderLock.lock()
+        defer { renderLock.unlock() }
+        
+        // Check inside the lock to avoid race conditions
         guard width != viewportWidth || height != viewportHeight else { return }
         
         viewportWidth = width
         viewportHeight = height
         
-        #if canImport(CProjectM)
-        guard let h = handle else { return }
+        // Don't resize during preset loading - projectM may crash
+        guard !_presetLoadInProgress else { return }
         
-        // Lock to ensure thread safety
-        renderLock.lock()
         projectm_set_window_size(h, size_t(width), size_t(height))
-        renderLock.unlock()
+        #else
+        viewportWidth = width
+        viewportHeight = height
         #endif
     }
     
@@ -246,13 +254,18 @@ class ProjectMWrapper {
     
     // MARK: - Rendering
     
-    /// Whether a valid preset is currently loaded
+    /// Whether a valid preset is currently loaded (thread-safe check)
     var hasValidPreset: Bool {
-        return presetCount > 0 && _currentPresetIndex >= 0 && _presetLoaded
+        renderLock.lock()
+        defer { renderLock.unlock() }
+        return presetCount > 0 && _currentPresetIndex >= 0 && _presetLoaded && !_presetLoadInProgress
     }
     
     /// Flag indicating a preset has been successfully loaded
     private var _presetLoaded: Bool = false
+    
+    /// Flag indicating a preset load is currently in progress
+    private var _presetLoadInProgress: Bool = false
     
     /// Renders a single frame of visualization
     /// Must be called with a valid OpenGL context active
@@ -260,12 +273,13 @@ class ProjectMWrapper {
         #if canImport(CProjectM)
         guard let h = handle else { return }
         
-        // Don't render until a preset is loaded - projectM crashes without one
-        guard _presetLoaded else { return }
-        
         // Lock to prevent concurrent preset switching during render
         renderLock.lock()
         defer { renderLock.unlock() }
+        
+        // Don't render until a preset is fully loaded - projectM crashes without one
+        // Also skip if a preset load is in progress
+        guard _presetLoaded && !_presetLoadInProgress else { return }
         
         // Update viewport
         glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
@@ -372,9 +386,19 @@ class ProjectMWrapper {
         
         // Lock to prevent concurrent rendering during preset switch
         renderLock.lock()
+        
+        // Mark that we're loading - this prevents rendering during the load
+        _presetLoadInProgress = true
+        _presetLoaded = false
+        
+        // Load the preset file
         projectm_load_preset_file(h, path, smoothTransition)
+        
+        // Update state after load completes
         _currentPresetIndex = index
         _presetLoaded = true
+        _presetLoadInProgress = false
+        
         renderLock.unlock()
         
         NSLog("ProjectMWrapper: Preset loaded successfully")
@@ -535,16 +559,19 @@ extension ProjectMWrapper {
             NSLog("ProjectMWrapper: WARNING - No presets directory found!")
         }
         
-        // Load the presets
+        // Load the presets (this will load the first preset)
         loadPresets()
         
         NSLog("ProjectMWrapper: Loaded %d presets", presetCount)
         
-        // Select a random preset to start (only if we have presets)
-        if presetCount > 0 {
-            randomPreset(hardCut: true)
-        } else {
+        if presetCount == 0 {
             NSLog("ProjectMWrapper: No presets available - visualization will show idle screen")
         }
+        // Note: We no longer immediately call randomPreset() here.
+        // The first preset loaded by loadPresets() will be used initially.
+        // This avoids a race condition where rapid preset switching during
+        // initialization could leave projectM in an inconsistent state.
+        // Users can switch presets manually or auto-switching will happen
+        // based on the preset duration setting.
     }
 }

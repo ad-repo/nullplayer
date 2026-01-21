@@ -190,6 +190,14 @@ extension PlexBrowserWindowController: NSWindowDelegate {
         browserView.needsDisplay = true
     }
     
+    func windowDidBecomeKey(_ notification: Notification) {
+        browserView.needsDisplay = true
+    }
+    
+    func windowDidResignKey(_ notification: Notification) {
+        browserView.needsDisplay = true
+    }
+    
     func windowWillClose(_ notification: Notification) {
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }

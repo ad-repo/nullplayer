@@ -15,6 +15,10 @@ extension Notification.Name {
     /// Posted when playback state changes (playing, paused, stopped)
     /// userInfo contains: "state" (PlaybackState)
     static let audioPlaybackStateChanged = Notification.Name("audioPlaybackStateChanged")
+    
+    /// Posted when the current track changes
+    /// userInfo contains: "track" (Track?) - may be nil when playback stops
+    static let audioTrackDidChange = Notification.Name("audioTrackDidChange")
 }
 
 /// Audio playback state
@@ -87,6 +91,12 @@ class AudioEngine {
     private(set) var currentTrack: Track? {
         didSet {
             delegate?.audioEngineDidChangeTrack(currentTrack)
+            // Post notification for views that need to observe track changes
+            NotificationCenter.default.post(
+                name: .audioTrackDidChange,
+                object: self,
+                userInfo: currentTrack != nil ? ["track": currentTrack!] : nil
+            )
         }
     }
     

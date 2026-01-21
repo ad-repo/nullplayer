@@ -63,7 +63,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         )
         
         window.title = "Video Player"
-        window.minSize = NSSize(width: 480, height: 270 + SkinElements.titleBarHeight)
+        window.minSize = NSSize(width: 480, height: 270)
         window.isReleasedWhenClosed = false
         window.center()
         

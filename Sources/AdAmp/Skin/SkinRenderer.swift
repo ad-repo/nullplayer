@@ -181,7 +181,8 @@ class SkinRenderer {
     ///   - isNegative: Whether to show minus sign (for remaining time mode)
     ///   - context: Graphics context to draw into
     func drawTimeDisplay(minutes: Int, seconds: Int, isNegative: Bool = false, in context: CGContext) {
-        guard let numbersImage = skin.numbers else {
+        // Try numbers.bmp first, then fall back to nums_ex.bmp (same layout)
+        guard let numbersImage = skin.numbers ?? skin.numsEx else {
             drawFallbackTimeDisplay(minutes: minutes, seconds: seconds, isNegative: isNegative, in: context)
             return
         }
@@ -375,7 +376,7 @@ class SkinRenderer {
     /// Returns the width of the drawn digits
     @discardableResult
     func drawSkinDigits(_ number: Int, at position: NSPoint, in context: CGContext, minDigits: Int = 1) -> CGFloat {
-        guard let numbersImage = skin.numbers else {
+        guard let numbersImage = skin.numbers ?? skin.numsEx else {
             // Fallback to system font
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: NSColor.green,
@@ -408,7 +409,7 @@ class SkinRenderer {
     /// Returns the total width drawn
     @discardableResult
     func drawSkinTime(minutes: Int, seconds: Int, at position: NSPoint, in context: CGContext) -> CGFloat {
-        guard let numbersImage = skin.numbers, let textImage = skin.text else {
+        guard let numbersImage = skin.numbers ?? skin.numsEx, let textImage = skin.text else {
             // Fallback
             let str = String(format: "%d:%02d", minutes, seconds)
             let attrs: [NSAttributedString.Key: Any] = [
@@ -1305,103 +1306,521 @@ class SkinRenderer {
     }
     
     /// Draw normal mode Milkdrop window chrome
-    /// Uses custom milkdrop_titlebar.png with matching borders
+    /// Uses PLEDIT.BMP title bar sprites (same style as playlist) with "MILKDROP" text
     private func drawMilkdropNormal(in context: CGContext, bounds: NSRect, isActive: Bool,
                                     pressedButton: MilkdropButtonType?) {
         // Fill background with black for visualization area
         NSColor.black.setFill()
         context.fill(bounds)
         
-        // Draw full window border frame (like reference)
-        drawMilkdropFrame(in: context, bounds: bounds)
+        let titleHeight = SkinElements.Playlist.titleHeight  // 20px like playlist
+        let borderWidth = SkinElements.Milkdrop.Layout.leftBorder
+        let bottomHeight = SkinElements.Milkdrop.Layout.bottomBorder
         
-        // Draw title bar using milkdrop_titlebar.png (on top of frame)
-        drawMilkdropTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        // Draw dark borders
+        let borderColor = NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0)
+        borderColor.setFill()
+        
+        // Left border
+        context.fill(NSRect(x: 0, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
+        
+        // Right border  
+        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
+        
+        // Bottom bar
+        context.fill(NSRect(x: 0, y: bounds.height - bottomHeight, width: bounds.width, height: bottomHeight))
+        
+        // Draw title bar using PLEDIT.BMP sprites (same style as playlist window)
+        drawMilkdropTitleBarFromPledit(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
     }
     
-    /// Draw the complete border frame around the Milkdrop window
-    /// Uses same colors and thickness as Library/Plex Browser window for consistency
-    private func drawMilkdropFrame(in context: CGContext, bounds: NSRect) {
-        let titleHeight = SkinElements.Milkdrop.titleBarHeight
-        let borderWidth: CGFloat = 3  // Thin borders matching Library window
-        
-        // Dark border colors matching Library/Plex Browser window
-        let borderColor = NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0)
-        let highlightColor = NSColor(calibratedRed: 0.20, green: 0.20, blue: 0.30, alpha: 1.0)
-        
-        // Draw left side border
-        borderColor.setFill()
-        context.fill(NSRect(x: 0, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight - borderWidth))
-        
-        // Left highlight
-        highlightColor.setFill()
-        context.fill(NSRect(x: borderWidth - 1, y: titleHeight, width: 1, height: bounds.height - titleHeight - borderWidth))
-        
-        // Draw right side border
-        borderColor.setFill()
-        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight - borderWidth))
-        
-        // Draw bottom border
-        borderColor.setFill()
-        context.fill(NSRect(x: 0, y: bounds.height - borderWidth, width: bounds.width, height: borderWidth))
-        
-        // Bottom highlight line at top of border
-        highlightColor.setFill()
-        context.fill(NSRect(x: 0, y: bounds.height - borderWidth, width: bounds.width, height: 1))
-    }
-    
-    /// Draw Milkdrop title bar using milkdrop_titlebar.png sprite sheet
-    private func drawMilkdropTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool,
-                                      pressedButton: MilkdropButtonType?) {
-        let titleHeight = SkinElements.Milkdrop.titleBarHeight
-        
-        // Try to load the PNG image
-        if let titlebarImage = Skin.milkdropTitlebarImage,
-           let cgImage = titlebarImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            
-            // Draw the full image scaled to fit - maintain aspect ratio for height
-            // PNG is 1518x48, we want to show it at the correct aspect
-            let imageWidth = CGFloat(cgImage.width)
-            let imageHeight = CGFloat(cgImage.height)
-            
-            // Scale to fit window width, calculate proportional height
-            let scale = bounds.width / imageWidth
-            let scaledHeight = imageHeight * scale
-            
-            // Draw in flipped context
-            context.saveGState()
-            context.translateBy(x: 0, y: titleHeight)
-            context.scaleBy(x: 1, y: -1)
-            context.interpolationQuality = .high
-            
-            // Draw centered vertically if scaledHeight differs from titleHeight
-            let yOffset = (titleHeight - scaledHeight) / 2
-            context.draw(cgImage, in: CGRect(x: 0, y: yOffset, width: bounds.width, height: scaledHeight))
-            context.restoreGState()
-        } else {
+    /// Draw Milkdrop title bar using PLEDIT.BMP sprites with "MILKDROP" text overlay
+    private func drawMilkdropTitleBarFromPledit(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: MilkdropButtonType?) {
+        guard let pleditImage = skin.pledit else {
             drawFallbackMilkdropTitleBar(in: context, bounds: bounds, isActive: isActive)
+            return
         }
         
-        // Draw close button highlight when pressed
+        let titleHeight = SkinElements.Playlist.titleHeight
+        let leftCornerWidth: CGFloat = 25
+        let rightCornerWidth: CGFloat = 25
+        let tileWidth: CGFloat = 25
+        
+        // Get the correct sprite set for active/inactive state (same as playlist)
+        let leftCorner = isActive ? SkinElements.Playlist.TitleBarActive.leftCorner : SkinElements.Playlist.TitleBarInactive.leftCorner
+        let tileSprite = isActive ? SkinElements.Playlist.TitleBarActive.tile : SkinElements.Playlist.TitleBarInactive.tile
+        let rightCorner = isActive ? SkinElements.Playlist.TitleBarActive.rightCorner : SkinElements.Playlist.TitleBarInactive.rightCorner
+        
+        // Draw left corner
+        drawSprite(from: pleditImage, sourceRect: leftCorner,
+                  to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
+        
+        // Draw right corner (contains window buttons)
+        drawSprite(from: pleditImage, sourceRect: rightCorner,
+                  to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
+        
+        // Fill the middle section with tiles
+        let middleStart = leftCornerWidth
+        let middleEnd = bounds.width - rightCornerWidth
+        var x: CGFloat = middleStart
+        while x < middleEnd {
+            let w = min(tileWidth, middleEnd - x)
+            drawSprite(from: pleditImage, sourceRect: tileSprite,
+                      to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
+            x += tileWidth
+        }
+        
+        // Draw "MILKDROP" text using GenFont (active/inactive based on window state)
+        drawMilkdropTitleText(in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive)
+        
+        // Draw close button pressed state if needed
         if pressedButton == .close {
-            let closeX = bounds.width - 14
-            let closeY: CGFloat = 5
-            let closeRect = NSRect(x: closeX, y: closeY, width: 10, height: 10)
-            NSColor(calibratedWhite: 1.0, alpha: 0.3).setFill()
+            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset, 
+                                   y: 3, width: 9, height: 9)
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
             context.fill(closeRect)
         }
+    }
+    
+    /// Draw "MILKDROP" text using GenFont from gen.png
+    /// Creates a solid background gap in the title bar decorations for the text
+    private func drawMilkdropTitleText(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true) {
+        // Load gen.png from skin or bundle
+        let genImage = skin.gen ?? Skin.genWindowImage
+        guard let genImage = genImage,
+              let cgImage = genImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return  // GenFont required - no fallback
+        }
+        
+        let text = "MILKDROP"
+        let scale = Skin.scaleFactor  // 1.25 - match other windows
+        let charHeight = SkinElements.GenFont.charHeight * scale  // 6px * 1.25 = 7.5px
+        let charSpacing: CGFloat = 0  // No extra spacing between letters
+        
+        // Calculate total text width (scaled width, tight spacing)
+        var totalWidth: CGFloat = 0
+        for (i, char) in text.enumerated() {
+            if let charInfo = SkinElements.GenFont.character(char, active: true) {
+                totalWidth += charInfo.width * scale
+                if i < text.count - 1 {
+                    totalWidth += charSpacing
+                }
+            }
+        }
+        
+        // Add padding around text for the background gap
+        let padding: CGFloat = 10
+        let capWidth: CGFloat = 4  // Width of rounded end caps
+        let gapWidth = totalWidth + padding * 2 + capWidth * 2
+        let gapHeight: CGFloat = 14
+        
+        // Center the gap in the title bar
+        let gapX = (bounds.width - gapWidth) / 2
+        let gapY = (titleHeight - gapHeight) / 2
+        
+        // Draw solid dark background (the "gap" in decorative lines)
+        let gapColor = isActive 
+            ? NSColor(calibratedRed: 0.10, green: 0.10, blue: 0.18, alpha: 1.0)
+            : NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0)
+        gapColor.setFill()
+        context.fill(NSRect(x: gapX + capWidth, y: gapY, width: gapWidth - capWidth * 2, height: gapHeight))
+        
+        // Draw rounded end caps (tapered edges like library window)
+        let capColor = isActive
+            ? NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.24, alpha: 1.0)
+            : NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0)
+        
+        // Left cap - tapered inward
+        for i in 0..<Int(capWidth) {
+            let inset = CGFloat(Int(capWidth) - 1 - i)
+            let capX = gapX + CGFloat(i)
+            capColor.withAlphaComponent(CGFloat(i + 1) / capWidth).setFill()
+            context.fill(NSRect(x: capX, y: gapY + inset, width: 1, height: gapHeight - inset * 2))
+        }
+        
+        // Right cap - tapered inward
+        for i in 0..<Int(capWidth) {
+            let inset = CGFloat(i)
+            let capX = gapX + gapWidth - capWidth + CGFloat(i)
+            capColor.withAlphaComponent(CGFloat(Int(capWidth) - i) / capWidth).setFill()
+            context.fill(NSRect(x: capX, y: gapY + inset, width: 1, height: gapHeight - inset * 2))
+        }
+        
+        // Draw text centered in the gap (account for caps)
+        var xPos = gapX + capWidth + padding
+        let textY = gapY + (gapHeight - charHeight) / 2
+        
+        let chars = Array(text)
+        for (i, char) in chars.enumerated() {
+            if let charInfo = SkinElements.GenFont.character(char, active: isActive) {
+                let sourceRect = charInfo.rect
+                let scaledWidth = charInfo.width * scale
+                
+                // CGImage uses top-left origin - use source coordinates directly (no flip needed)
+                let cropRect = CGRect(x: sourceRect.origin.x, y: sourceRect.origin.y,
+                                     width: sourceRect.width, height: sourceRect.height)
+                
+                if let croppedChar = cgImage.cropping(to: cropRect) {
+                    // Draw scaled with vertical flip for NSView (bottom-left origin)
+                    context.saveGState()
+                    context.translateBy(x: xPos, y: textY + charHeight)
+                    context.scaleBy(x: 1, y: -1)
+                    context.interpolationQuality = .none  // Keep pixel-perfect look
+                    context.draw(croppedChar, in: CGRect(x: 0, y: 0, width: scaledWidth, height: charHeight))
+                    context.restoreGState()
+                }
+                
+                xPos += scaledWidth
+                if i < chars.count - 1 {
+                    xPos += charSpacing
+                }
+            }
+        }
+    }
+    
+    /// Draw "WINAMP LIBRARY" text using GenFont from gen.png
+    /// Creates a solid background gap in the title bar decorations for the text
+    private func drawLibraryTitleText(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true) {
+        // Load gen.png from skin or bundle
+        let genImage = skin.gen ?? Skin.genWindowImage
+        guard let genImage = genImage,
+              let cgImage = genImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return  // GenFont required - no fallback
+        }
+        
+        let text = "WINAMP LIBRARY"
+        let scale: CGFloat = 1.15  // Slightly smaller than other windows
+        let charHeight = SkinElements.GenFont.charHeight * scale
+        let charSpacing: CGFloat = 0  // No extra spacing between letters
+        let spaceWidth: CGFloat = 4  // Space between words
+        
+        // Calculate total text width (scaled width, tight spacing)
+        var totalWidth: CGFloat = 0
+        for (i, char) in text.enumerated() {
+            if char == " " {
+                totalWidth += spaceWidth
+            } else if let charInfo = SkinElements.GenFont.character(char, active: true) {
+                totalWidth += charInfo.width * scale
+                if i < text.count - 1 {
+                    let nextChar = text[text.index(text.startIndex, offsetBy: i + 1)]
+                    if nextChar != " " {
+                        totalWidth += charSpacing
+                    }
+                }
+            }
+        }
+        
+        // Add padding around text for the background gap
+        let padding: CGFloat = 10
+        let capWidth: CGFloat = 4  // Width of rounded end caps
+        let gapWidth = totalWidth + padding * 2 + capWidth * 2
+        let gapHeight: CGFloat = 14
+        
+        // Center the gap in the title bar
+        let gapX = (bounds.width - gapWidth) / 2
+        let gapY = (titleHeight - gapHeight) / 2
+        
+        // Draw solid dark background (the "gap" in decorative lines)
+        let gapColor = isActive 
+            ? NSColor(calibratedRed: 0.10, green: 0.10, blue: 0.18, alpha: 1.0)
+            : NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0)
+        gapColor.setFill()
+        context.fill(NSRect(x: gapX + capWidth, y: gapY, width: gapWidth - capWidth * 2, height: gapHeight))
+        
+        // Draw rounded end caps (tapered edges)
+        let capColor = isActive
+            ? NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.24, alpha: 1.0)
+            : NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0)
+        
+        // Left cap - tapered inward
+        for i in 0..<Int(capWidth) {
+            let inset = CGFloat(Int(capWidth) - 1 - i)
+            let capX = gapX + CGFloat(i)
+            capColor.withAlphaComponent(CGFloat(i + 1) / capWidth).setFill()
+            context.fill(NSRect(x: capX, y: gapY + inset, width: 1, height: gapHeight - inset * 2))
+        }
+        
+        // Right cap - tapered inward
+        for i in 0..<Int(capWidth) {
+            let inset = CGFloat(i)
+            let capX = gapX + gapWidth - capWidth + CGFloat(i)
+            capColor.withAlphaComponent(CGFloat(Int(capWidth) - i) / capWidth).setFill()
+            context.fill(NSRect(x: capX, y: gapY + inset, width: 1, height: gapHeight - inset * 2))
+        }
+        
+        // Draw text centered in the gap (account for caps)
+        var xPos = gapX + capWidth + padding
+        let textY = gapY + (gapHeight - charHeight) / 2
+        
+        let chars = Array(text)
+        for (i, char) in chars.enumerated() {
+            if char == " " {
+                xPos += spaceWidth
+                continue
+            }
+            
+            if let charInfo = SkinElements.GenFont.character(char, active: isActive) {
+                let sourceRect = charInfo.rect
+                let scaledWidth = charInfo.width * scale
+                
+                // CGImage uses top-left origin - use source coordinates directly (no flip needed)
+                let cropRect = CGRect(x: sourceRect.origin.x, y: sourceRect.origin.y,
+                                     width: sourceRect.width, height: sourceRect.height)
+                
+                if let croppedChar = cgImage.cropping(to: cropRect) {
+                    // Draw scaled with vertical flip for NSView (bottom-left origin)
+                    context.saveGState()
+                    context.translateBy(x: xPos, y: textY + charHeight)
+                    context.scaleBy(x: 1, y: -1)
+                    context.interpolationQuality = .none  // Keep pixel-perfect look
+                    context.draw(croppedChar, in: CGRect(x: 0, y: 0, width: scaledWidth, height: charHeight))
+                    context.restoreGState()
+                }
+                
+                xPos += scaledWidth
+                if i < chars.count - 1 && chars[i + 1] != " " {
+                    xPos += charSpacing
+                }
+            }
+        }
+    }
+    
+    /// Draw GEN.BMP title bar (three-part: left corner, tiled middle, right corner)
+    private func drawGenTitleBar(cgImage: CGImage, in context: CGContext, bounds: NSRect, isActive: Bool) {
+        let titleHeight = SkinElements.GenWindow.titleBarHeight
+        
+        // Select active or inactive sprites
+        let leftCorner: NSRect
+        let tile: NSRect
+        let rightCorner: NSRect
+        
+        if isActive {
+            leftCorner = SkinElements.GenWindow.TitleBarActive.leftCorner
+            tile = SkinElements.GenWindow.TitleBarActive.tile
+            rightCorner = SkinElements.GenWindow.TitleBarActive.rightCorner
+        } else {
+            leftCorner = SkinElements.GenWindow.TitleBarInactive.leftCorner
+            tile = SkinElements.GenWindow.TitleBarInactive.tile
+            rightCorner = SkinElements.GenWindow.TitleBarInactive.rightCorner
+        }
+        
+        // Draw left corner
+        drawSprite(from: cgImage, sourceRect: leftCorner,
+                  destRect: NSRect(x: 0, y: 0, width: leftCorner.width, height: titleHeight),
+                  in: context)
+        
+        // Draw right corner
+        let rightCornerX = bounds.width - rightCorner.width
+        drawSprite(from: cgImage, sourceRect: rightCorner,
+                  destRect: NSRect(x: rightCornerX, y: 0, width: rightCorner.width, height: titleHeight),
+                  in: context)
+        
+        // Draw tiled middle section between left and right corners
+        let middleX = leftCorner.width
+        let middleWidth = bounds.width - leftCorner.width - rightCorner.width
+        if middleWidth > 0 {
+            drawTiledSprite(from: cgImage, sourceRect: tile,
+                           destRect: NSRect(x: middleX, y: 0, width: middleWidth, height: titleHeight),
+                           in: context, tileVertically: false)
+        }
+    }
+    
+    /// Draw GEN.BMP bottom bar (three-part: left corner, tiled middle, right corner)
+    private func drawGenBottomBar(cgImage: CGImage, in context: CGContext, bounds: NSRect) {
+        let bottomLeftCorner = SkinElements.GenWindow.Chrome.bottomLeftCorner
+        let bottomTile = SkinElements.GenWindow.Chrome.bottomTile
+        let bottomRightCorner = SkinElements.GenWindow.Chrome.bottomRightCorner
+        
+        let bottomY = bounds.height - bottomLeftCorner.height
+        
+        // Draw left corner
+        drawSprite(from: cgImage, sourceRect: bottomLeftCorner,
+                  destRect: NSRect(x: 0, y: bottomY, width: bottomLeftCorner.width, height: bottomLeftCorner.height),
+                  in: context)
+        
+        // Draw right corner
+        let rightCornerX = bounds.width - bottomRightCorner.width
+        drawSprite(from: cgImage, sourceRect: bottomRightCorner,
+                  destRect: NSRect(x: rightCornerX, y: bottomY, width: bottomRightCorner.width, height: bottomRightCorner.height),
+                  in: context)
+        
+        // Draw tiled middle section
+        let middleX = bottomLeftCorner.width
+        let middleWidth = bounds.width - bottomLeftCorner.width - bottomRightCorner.width
+        if middleWidth > 0 {
+            drawTiledSprite(from: cgImage, sourceRect: bottomTile,
+                           destRect: NSRect(x: middleX, y: bottomY, width: middleWidth, height: bottomTile.height),
+                           in: context, tileVertically: false)
+        }
+    }
+    
+    /// Draw title text using GenFont alphabet sprites from GEN.BMP (variable width)
+    private func drawGenTitleText(cgImage: CGImage, text: String, in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true) {
+        let charHeight = SkinElements.GenFont.charHeight
+        let charSpacing = SkinElements.GenFont.charSpacing
+        
+        let totalWidth = SkinElements.GenFont.textWidth(text)
+        let startX = (bounds.width - totalWidth) / 2
+        let startY = (titleHeight - charHeight) / 2
+        
+        let chars = Array(text)
+        var xPos = startX
+        for (i, char) in chars.enumerated() {
+            if let charInfo = SkinElements.GenFont.character(char, active: isActive) {
+                let destRect = NSRect(x: xPos, y: startY, width: charInfo.width, height: charHeight)
+                drawSprite(from: cgImage, sourceRect: charInfo.rect, destRect: destRect, in: context)
+                xPos += charInfo.width
+                if i < chars.count - 1 {
+                    xPos += charSpacing
+                }
+            }
+        }
+    }
+    
+    /// Draw a sprite from source image to destination
+    /// CGImage cropping uses top-left origin (same as sprite sheet coordinates)
+    private func drawSprite(from cgImage: CGImage, sourceRect: NSRect, destRect: NSRect, in context: CGContext) {
+        // Crop the source image to get the sprite - CGImage uses top-left origin for cropping
+        let cropRect = CGRect(x: sourceRect.origin.x, y: sourceRect.origin.y,
+                             width: sourceRect.width, height: sourceRect.height)
+        
+        guard let croppedImage = cgImage.cropping(to: cropRect) else { return }
+        
+        // Draw the cropped sprite - flip for top-down Winamp coordinates
+        // Context is already flipped (Winamp Y=0 at top), so we need to flip the sprite
+        context.saveGState()
+        context.translateBy(x: destRect.origin.x, y: destRect.origin.y + destRect.height)
+        context.scaleBy(x: 1, y: -1)
+        context.interpolationQuality = .none  // Pixel-perfect rendering
+        context.draw(croppedImage, in: CGRect(x: 0, y: 0, width: destRect.width, height: destRect.height))
+        context.restoreGState()
+    }
+    
+    /// Draw a tiled sprite from source image to fill destination area
+    private func drawTiledSprite(from cgImage: CGImage, sourceRect: NSRect, destRect: NSRect, 
+                                  in context: CGContext, tileVertically: Bool) {
+        // Crop the source image to get the tile sprite - CGImage uses top-left origin for cropping
+        let cropRect = CGRect(x: sourceRect.origin.x, y: sourceRect.origin.y,
+                             width: sourceRect.width, height: sourceRect.height)
+        
+        guard let tileImage = cgImage.cropping(to: cropRect) else { return }
+        
+        context.saveGState()
+        context.clip(to: destRect)
+        context.interpolationQuality = .none
+        
+        if tileVertically {
+            // Tile vertically
+            var y = destRect.origin.y
+            while y < destRect.origin.y + destRect.height {
+                let tileHeight = min(sourceRect.height, destRect.origin.y + destRect.height - y)
+                
+                // Flip for drawing
+                context.saveGState()
+                context.translateBy(x: destRect.origin.x, y: y + tileHeight)
+                context.scaleBy(x: 1, y: -1)
+                context.draw(tileImage, in: CGRect(x: 0, y: 0, width: destRect.width, height: tileHeight))
+                context.restoreGState()
+                
+                y += sourceRect.height
+            }
+        } else {
+            // Tile horizontally
+            var x = destRect.origin.x
+            while x < destRect.origin.x + destRect.width {
+                let tileWidth = min(sourceRect.width, destRect.origin.x + destRect.width - x)
+                
+                // Flip for drawing
+                context.saveGState()
+                context.translateBy(x: x, y: destRect.origin.y + destRect.height)
+                context.scaleBy(x: 1, y: -1)
+                context.draw(tileImage, in: CGRect(x: 0, y: 0, width: tileWidth, height: destRect.height))
+                context.restoreGState()
+                
+                x += sourceRect.width
+            }
+        }
+        
+        context.restoreGState()
     }
     
     /// Draw Milkdrop window in shade mode (title bar only)
     private func drawMilkdropShade(in context: CGContext, bounds: NSRect, isActive: Bool,
                                    pressedButton: MilkdropButtonType?) {
-        // In shade mode, just draw the title bar (fills entire window)
-        drawMilkdropTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        // In shade mode, use playlist shade sprites
+        guard let pleditImage = skin.pledit else {
+            drawFallbackMilkdropTitleBar(in: context, bounds: bounds, isActive: isActive)
+            return
+        }
+        
+        let shadeHeight: CGFloat = 14
+        
+        // Draw shade mode background using playlist shade sprites
+        let leftCorner = SkinElements.PlaylistShade.leftCorner
+        let rightCorner = SkinElements.PlaylistShade.rightCorner
+        let tile = SkinElements.PlaylistShade.tile
+        
+        // Draw left corner
+        drawSprite(from: pleditImage, sourceRect: leftCorner,
+                  to: NSRect(x: 0, y: 0, width: leftCorner.width, height: shadeHeight), in: context)
+        
+        // Draw right corner
+        drawSprite(from: pleditImage, sourceRect: rightCorner,
+                  to: NSRect(x: bounds.width - rightCorner.width, y: 0, width: rightCorner.width, height: shadeHeight), in: context)
+        
+        // Tile middle
+        var x = leftCorner.width
+        let endX = bounds.width - rightCorner.width
+        while x < endX {
+            let w = min(tile.width, endX - x)
+            drawSprite(from: pleditImage, sourceRect: tile,
+                      to: NSRect(x: x, y: 0, width: w, height: shadeHeight), in: context)
+            x += tile.width
+        }
+        
+        // Draw "MILKDROP" text using GenFont (active/inactive based on window state)
+        drawMilkdropTitleText(in: context, bounds: bounds, titleHeight: shadeHeight, isActive: isActive)
+        
+        // Close button pressed state
+        if pressedButton == .close {
+            let closeRect = NSRect(x: bounds.width - 11, y: 3, width: 9, height: 9)
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+            context.fill(closeRect)
+        }
+    }
+    
+    /// Fallback chrome drawing when GEN.BMP is not available
+    private func drawFallbackMilkdropChrome(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                            pressedButton: MilkdropButtonType?) {
+        let titleHeight = SkinElements.GenWindow.titleBarHeight
+        let borderWidth: CGFloat = 11
+        let bottomHeight: CGFloat = 14
+        
+        // Dark border colors
+        let borderColor = NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0)
+        
+        // Draw title bar background
+        drawFallbackMilkdropTitleBar(in: context, bounds: bounds, isActive: isActive)
+        
+        // Draw side borders
+        borderColor.setFill()
+        context.fill(NSRect(x: 0, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight - bottomHeight))
+        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight - bottomHeight))
+        
+        // Draw bottom bar
+        context.fill(NSRect(x: 0, y: bounds.height - bottomHeight, width: bounds.width, height: bottomHeight))
+        
+        // Draw close button highlight when pressed
+        if pressedButton == .close {
+            let closeRect = NSRect(x: bounds.width - 25, y: 0, width: 25, height: titleHeight)
+            NSColor(calibratedWhite: 1.0, alpha: 0.3).setFill()
+            context.fill(closeRect)
+        }
     }
     
     /// Fallback title bar for Milkdrop window when image not available
     private func drawFallbackMilkdropTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool) {
-        let titleHeight = SkinElements.Milkdrop.titleBarHeight
+        let titleHeight = SkinElements.GenWindow.titleBarHeight
         let titleRect = NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight)
         
         // Gradient background
@@ -1411,12 +1830,12 @@ class SkinRenderer {
         ])
         gradient?.draw(in: titleRect, angle: 90)
         
-        // Draw "MILKDROP" text
-        drawMilkdropTitleText(centeredIn: titleRect, isActive: isActive, in: context)
+        // Draw "MILKDROP" text using fallback pixel patterns
+        drawFallbackMilkdropTitleText(centeredIn: titleRect, isActive: isActive, in: context)
         
-        // Draw close button (X)
-        let closeX = bounds.width - 12
-        let closeY: CGFloat = 3
+        // Draw close button (X) in the top-right corner
+        let closeX = bounds.width - 15
+        let closeY: CGFloat = 5
         let closeColor = isActive ? NSColor(calibratedRed: 0.7, green: 0.6, blue: 0.3, alpha: 1.0) : NSColor(calibratedWhite: 0.4, alpha: 1.0)
         closeColor.setStroke()
         context.setLineWidth(1)
@@ -1428,7 +1847,7 @@ class SkinRenderer {
     }
     
     /// Draw Milkdrop title text using pixel patterns (fallback only)
-    private func drawMilkdropTitleText(centeredIn rect: NSRect, isActive: Bool, in context: CGContext) {
+    private func drawFallbackMilkdropTitleText(centeredIn rect: NSRect, isActive: Bool, in context: CGContext) {
         let charWidth: CGFloat = 5
         let charHeight: CGFloat = 6
         let letterSpacing: CGFloat = 1
@@ -1478,6 +1897,8 @@ class SkinRenderer {
     enum PlaylistButtonType {
         case add, rem, sel, misc, list
         case close, shade
+        // Mini transport controls (existing in skin sprites)
+        case miniPrevious, miniPlay, miniPause, miniStop, miniNext, miniOpen
     }
     
     /// Draw the complete playlist window using skin sprites
@@ -1859,19 +2280,26 @@ class SkinRenderer {
     }
     
     /// Draw Plex browser title bar with skin sprites
-    /// Uses library-window.png for the window chrome
+    /// Uses PLEDIT.BMP from loaded skin to follow skin changes, falls back to library-window.png
     func drawPlexBrowserTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
-        // Try to use library-window.png first
+        // Use pledit sprites from the loaded skin (allows library browser to follow skin changes)
+        if let pleditImage = skin.pledit {
+            drawPlexBrowserTitleBarFromPledit(pleditImage, in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+            return
+        }
+        
+        // Fall back to library-window.png if no pledit in skin
         if let libraryImage = Skin.libraryWindowImage {
             drawLibraryWindowTitleBar(from: libraryImage, in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
             return
         }
         
-        // Fall back to pledit sprites if library-window.png not available
-        guard let pleditImage = skin.pledit else {
-            drawFallbackPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive)
-            return
-        }
+        // Final fallback
+        drawFallbackPlexBrowserTitleBar(in: context, bounds: bounds, isActive: isActive)
+    }
+    
+    /// Draw Plex browser title bar using PLEDIT.BMP sprites
+    private func drawPlexBrowserTitleBarFromPledit(_ pleditImage: NSImage, in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: PlexBrowserButtonType?) {
         
         let titleHeight = SkinElements.Playlist.titleHeight
         let leftCornerWidth: CGFloat = 25
@@ -1921,24 +2349,20 @@ class SkinRenderer {
             context.fill(NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: 1))
         }
         
-        // Draw "WINAMP LIBRARY" text centered on the solid background
-        drawPlexTitleText(centeredIn: NSRect(x: titleX, y: 0, width: titleSpriteWidth, height: titleHeight),
-                          isActive: isActive, in: context)
+        // Draw "WINAMP LIBRARY" text using the same GenFont as library-window.png version
+        drawLibraryTitleText(in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive)
         
-        // Draw window control button pressed states if needed
-        if pressedButton == .close {
-            let closeRect = NSRect(x: bounds.width - SkinElements.PlexBrowser.TitleBarButtons.closeOffset - 9, 
-                                   y: 3, width: 9, height: 9)
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(closeRect)
-        }
+        // Draw window control buttons using skin titlebar sprites (same style as main window)
+        let closeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9, 
+                               y: 4, width: 9, height: 9)
+        let shadeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.shadeOffset - 9, 
+                               y: 4, width: 9, height: 9)
         
-        if pressedButton == .shade {
-            let shadeRect = NSRect(x: bounds.width - SkinElements.PlexBrowser.TitleBarButtons.shadeOffset - 9, 
-                                   y: 3, width: 9, height: 9)
-            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(shadeRect)
-        }
+        let closeState: ButtonState = (pressedButton == .close) ? .pressed : .normal
+        let shadeState: ButtonState = (pressedButton == .shade) ? .pressed : .normal
+        
+        drawButton(.close, state: closeState, at: closeRect, in: context)
+        drawButton(.shade, state: shadeState, at: shadeRect, in: context)
     }
     
     /// Draw title bar using library-window.png sprites
@@ -1967,17 +2391,8 @@ class SkinRenderer {
         NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0).setFill()
         context.fill(NSRect(x: tileEnd, y: 0, width: buttonAreaWidth, height: titleHeight))
         
-        // Draw the actual title sprite from the image (contains "WINAMP LIBRARY" text)
-        let titleSprite = layout.titleSprite
-        let titleX = (bounds.width - titleSprite.width) / 2
-        drawSprite(from: image, sourceRect: titleSprite,
-                  to: NSRect(x: titleX, y: 0, width: titleSprite.width, height: titleHeight), in: context)
-        
-        // Dim the title area when window is inactive to match main window behavior
-        if !isActive {
-            NSColor(calibratedWhite: 0.0, alpha: 0.4).setFill()
-            context.fill(NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight))
-        }
+        // Draw "WINAMP LIBRARY" text using GenFont with proper active/inactive colors
+        drawLibraryTitleText(in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive)
         
         // Draw window control buttons using skin titlebar sprites (same style as main window)
         let closeRect = NSRect(x: bounds.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9, 

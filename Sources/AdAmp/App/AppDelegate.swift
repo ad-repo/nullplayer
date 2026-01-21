@@ -112,7 +112,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     private func setupMainMenu() {
         let mainMenu = NSMenu()
         
-        // Application menu
+        // Application menu (AdAmp menu)
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         
@@ -121,59 +121,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         
         appMenu.addItem(withTitle: "About AdAmp", action: #selector(showAbout), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Preferences...", action: #selector(showPreferences), keyEquivalent: ",")
-        appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Quit AdAmp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        
-        // File menu
-        let fileMenuItem = NSMenuItem()
-        mainMenu.addItem(fileMenuItem)
-        
-        let fileMenu = NSMenu(title: "File")
-        fileMenuItem.submenu = fileMenu
-        
-        fileMenu.addItem(withTitle: "Open File...", action: #selector(openFile), keyEquivalent: "o")
-        fileMenu.addItem(withTitle: "Open Folder...", action: #selector(openFolder), keyEquivalent: "O")
-        fileMenu.addItem(NSMenuItem.separator())
-        fileMenu.addItem(withTitle: "Load Skin...", action: #selector(loadSkin), keyEquivalent: "")
-        
-        // View menu
-        let viewMenuItem = NSMenuItem()
-        mainMenu.addItem(viewMenuItem)
-        
-        let viewMenu = NSMenu(title: "View")
-        viewMenuItem.submenu = viewMenu
-        
-        viewMenu.addItem(withTitle: "Main Window", action: #selector(toggleMainWindow), keyEquivalent: "1")
-        viewMenu.addItem(withTitle: "Playlist", action: #selector(togglePlaylist), keyEquivalent: "2")
-        viewMenu.addItem(withTitle: "Equalizer", action: #selector(toggleEqualizer), keyEquivalent: "3")
-        viewMenu.addItem(withTitle: "Browser", action: #selector(togglePlexBrowser), keyEquivalent: "l")
-        
-        // Plex menu
-        let plexMenuItem = NSMenuItem()
-        mainMenu.addItem(plexMenuItem)
-        
-        let plexMenu = NSMenu(title: "Plex")
-        plexMenuItem.submenu = plexMenu
-        
-        plexMenu.addItem(withTitle: "Link Plex Account...", action: #selector(linkPlexAccount), keyEquivalent: "")
-        plexMenu.addItem(withTitle: "Unlink Account", action: #selector(unlinkPlexAccount), keyEquivalent: "")
-        plexMenu.addItem(NSMenuItem.separator())
-        plexMenu.addItem(withTitle: "Show Plex Browser", action: #selector(togglePlexBrowser), keyEquivalent: "")
-        
-        // Playback menu
-        let playbackMenuItem = NSMenuItem()
-        mainMenu.addItem(playbackMenuItem)
-        
-        let playbackMenu = NSMenu(title: "Playback")
-        playbackMenuItem.submenu = playbackMenu
-        
-        playbackMenu.addItem(withTitle: "Play", action: #selector(play), keyEquivalent: "x")
-        playbackMenu.addItem(withTitle: "Pause", action: #selector(pause), keyEquivalent: "c")
-        playbackMenu.addItem(withTitle: "Stop", action: #selector(stop), keyEquivalent: "v")
-        playbackMenu.addItem(NSMenuItem.separator())
-        playbackMenu.addItem(withTitle: "Previous", action: #selector(previous), keyEquivalent: "z")
-        playbackMenu.addItem(withTitle: "Next", action: #selector(next), keyEquivalent: "b")
         
         NSApplication.shared.mainMenu = mainMenu
     }
@@ -183,109 +131,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     @objc private func showAbout() {
         let alert = NSAlert()
         alert.messageText = "AdAmp"
-        alert.informativeText = "A classic Winamp clone for macOS\nVersion 1.0"
+        alert.informativeText = "A classic Winamp clone+ for macOS\n\nVersion 1.0\n\nRe-imagined by ad\n\nThanks to Nullsoft and Winamp"
         alert.alertStyle = .informational
-        alert.runModal()
-    }
-    
-    @objc private func showPreferences() {
-        // TODO: Implement preferences window
-    }
-    
-    @objc private func openFile() {
-        NSLog("openFile: called")
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.audio, .mp3, .wav, .aiff]
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "GitHub")
+        alert.addButton(withTitle: "LinkedIn")
         
-        if panel.runModal() == .OK {
-            let urls = panel.urls
-            NSLog("openFile: selected %d files", urls.count)
-            // Clear existing playlist and load new files (like classic Winamp)
-            windowManager.audioEngine.clearPlaylist()
-            windowManager.audioEngine.loadFiles(urls)
-            NSLog("openFile: done loading")
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
+            if let url = URL(string: "https://github.com/ad-repo") {
+                NSWorkspace.shared.open(url)
+            }
+        } else if response == .alertThirdButtonReturn {
+            if let url = URL(string: "https://www.linkedin.com/in/andrew-d-9b83aa148/") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
     
-    @objc private func openFolder() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        
-        if panel.runModal() == .OK, let url = panel.url {
-            // Clear existing playlist and load folder contents
-            windowManager.audioEngine.clearPlaylist()
-            windowManager.audioEngine.loadFolder(url)
-        }
-    }
-    
-    @objc private func loadSkin() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.init(filenameExtension: "wsz")!]
-        
-        if panel.runModal() == .OK, let url = panel.url {
-            windowManager.loadSkin(from: url)
-        }
-    }
-    
-    @objc private func toggleMainWindow() {
-        windowManager.toggleMainWindow()
-    }
-    
-    @objc private func togglePlaylist() {
-        windowManager.togglePlaylist()
-    }
-    
-    @objc private func toggleEqualizer() {
-        windowManager.toggleEqualizer()
-    }
-    
-    @objc private func togglePlexBrowser() {
-        windowManager.togglePlexBrowser()
-    }
-    
-    @objc private func linkPlexAccount() {
-        windowManager.showPlexLinkSheet()
-    }
-    
-    @objc private func unlinkPlexAccount() {
-        // Confirm before unlinking
-        let alert = NSAlert()
-        alert.messageText = "Unlink Plex Account?"
-        alert.informativeText = "This will remove your Plex account from AdAmp. You can link it again later."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Unlink")
-        alert.addButton(withTitle: "Cancel")
-        
-        if alert.runModal() == .alertFirstButtonReturn {
-            windowManager.unlinkPlexAccount()
-        }
-    }
-    
-    @objc private func play() {
-        windowManager.audioEngine.play()
-    }
-    
-    @objc private func pause() {
-        windowManager.audioEngine.pause()
-    }
-    
-    @objc private func stop() {
-        windowManager.audioEngine.stop()
-    }
-    
-    @objc private func previous() {
-        windowManager.audioEngine.previous()
-    }
-    
-    @objc private func next() {
-        windowManager.audioEngine.next()
-    }
 }
 
 // MARK: - AudioEngineDelegate

@@ -18,7 +18,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
         menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
-        menu.addItem(buildWindowItem("Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
+        menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         menu.addItem(buildWindowItem("Milkdrop", visible: wm.isMilkdropVisible, action: #selector(MenuActions.toggleMilkdrop)))
         
         menu.addItem(NSMenuItem.separator())
@@ -28,6 +28,9 @@ class ContextMenuBuilder {
         
         // Options submenu
         menu.addItem(buildOptionsMenuItem())
+        
+        // Local Library submenu
+        menu.addItem(buildLocalLibraryMenuItem())
         
         // Plex submenu
         menu.addItem(buildPlexMenuItem())
@@ -108,10 +111,28 @@ class ContextMenuBuilder {
         loadSkin.target = MenuActions.shared
         menu.addItem(loadSkin)
         
-        // Base Skin
-        let baseSkin = NSMenuItem(title: "<Base Skin>", action: #selector(MenuActions.loadBaseSkin), keyEquivalent: "")
-        baseSkin.target = MenuActions.shared
-        menu.addItem(baseSkin)
+        // Base Skin 1
+        let baseSkin1 = NSMenuItem(title: "<Base Skin 1>", action: #selector(MenuActions.loadBaseSkin), keyEquivalent: "")
+        baseSkin1.target = MenuActions.shared
+        menu.addItem(baseSkin1)
+        
+        // Base Skin 2
+        let baseSkin2 = NSMenuItem(title: "<Base Skin 2>", action: #selector(MenuActions.loadBaseSkin2), keyEquivalent: "")
+        baseSkin2.target = MenuActions.shared
+        menu.addItem(baseSkin2)
+        
+        // Base Skin 3
+        let baseSkin3 = NSMenuItem(title: "<Base Skin 3>", action: #selector(MenuActions.loadBaseSkin3), keyEquivalent: "")
+        baseSkin3.target = MenuActions.shared
+        menu.addItem(baseSkin3)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Lock Browser/Milkdrop toggle
+        let lockToggle = NSMenuItem(title: "Lock Browser/Milkdrop to Default", action: #selector(MenuActions.toggleLockBrowserMilkdrop(_:)), keyEquivalent: "")
+        lockToggle.target = MenuActions.shared
+        lockToggle.state = WindowManager.shared.lockBrowserMilkdropSkin ? .on : .off
+        menu.addItem(lockToggle)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -179,8 +200,98 @@ class ContextMenuBuilder {
         normalizeItem.state = engine.volumeNormalizationEnabled ? .on : .off
         optionsMenu.addItem(normalizeItem)
         
+        optionsMenu.addItem(NSMenuItem.separator())
+        
+        // Visual Options
+        let artworkBgItem = NSMenuItem(title: "Browser Album Art Background", action: #selector(MenuActions.toggleBrowserArtworkBackground), keyEquivalent: "")
+        artworkBgItem.target = MenuActions.shared
+        artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
+        optionsMenu.addItem(artworkBgItem)
+        
         optionsItem.submenu = optionsMenu
         return optionsItem
+    }
+    
+    // MARK: - Local Library Submenu
+    
+    private static func buildLocalLibraryMenuItem() -> NSMenuItem {
+        let libraryItem = NSMenuItem(title: "Local Library", action: nil, keyEquivalent: "")
+        let libraryMenu = NSMenu()
+        
+        let trackCount = MediaLibrary.shared.tracksSnapshot.count
+        
+        // Library info header
+        let infoItem = NSMenuItem(title: "\(trackCount) tracks in library", action: nil, keyEquivalent: "")
+        infoItem.isEnabled = false
+        libraryMenu.addItem(infoItem)
+        
+        libraryMenu.addItem(NSMenuItem.separator())
+        
+        // Backup Library
+        let backupItem = NSMenuItem(title: "Backup Library...", action: #selector(MenuActions.backupLibrary), keyEquivalent: "")
+        backupItem.target = MenuActions.shared
+        libraryMenu.addItem(backupItem)
+        
+        // Restore Library submenu
+        let restoreItem = NSMenuItem(title: "Restore Library", action: nil, keyEquivalent: "")
+        let restoreMenu = NSMenu()
+        
+        // Restore from File option
+        let restoreFromFile = NSMenuItem(title: "From File...", action: #selector(MenuActions.restoreLibraryFromFile), keyEquivalent: "")
+        restoreFromFile.target = MenuActions.shared
+        restoreMenu.addItem(restoreFromFile)
+        
+        // List available backups
+        let backups = MediaLibrary.shared.listBackups()
+        if !backups.isEmpty {
+            restoreMenu.addItem(NSMenuItem.separator())
+            
+            let backupsHeader = NSMenuItem(title: "Recent Backups", action: nil, keyEquivalent: "")
+            backupsHeader.isEnabled = false
+            restoreMenu.addItem(backupsHeader)
+            
+            // Show up to 10 most recent backups
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .medium
+            dateFormatter.timeStyle = .short
+            
+            for backup in backups.prefix(10) {
+                let creationDate = (try? backup.resourceValues(forKeys: [.creationDateKey]))?.creationDate
+                let dateString = creationDate.map { dateFormatter.string(from: $0) } ?? "Unknown date"
+                let backupName = backup.deletingPathExtension().lastPathComponent
+                
+                let backupMenuItem = NSMenuItem(title: "\(backupName) (\(dateString))", action: #selector(MenuActions.restoreLibraryFromBackup(_:)), keyEquivalent: "")
+                backupMenuItem.target = MenuActions.shared
+                backupMenuItem.representedObject = backup
+                restoreMenu.addItem(backupMenuItem)
+            }
+        }
+        
+        restoreItem.submenu = restoreMenu
+        libraryMenu.addItem(restoreItem)
+        
+        libraryMenu.addItem(NSMenuItem.separator())
+        
+        // Show Library Location
+        let showLibraryItem = NSMenuItem(title: "Show Library in Finder", action: #selector(MenuActions.showLibraryInFinder), keyEquivalent: "")
+        showLibraryItem.target = MenuActions.shared
+        libraryMenu.addItem(showLibraryItem)
+        
+        // Show Backups Folder
+        let showBackupsItem = NSMenuItem(title: "Show Backups Folder", action: #selector(MenuActions.showBackupsInFinder), keyEquivalent: "")
+        showBackupsItem.target = MenuActions.shared
+        libraryMenu.addItem(showBackupsItem)
+        
+        libraryMenu.addItem(NSMenuItem.separator())
+        
+        // Clear Library (with confirmation)
+        let clearItem = NSMenuItem(title: "Clear Library...", action: #selector(MenuActions.clearLibrary), keyEquivalent: "")
+        clearItem.target = MenuActions.shared
+        clearItem.isEnabled = trackCount > 0
+        libraryMenu.addItem(clearItem)
+        
+        libraryItem.submenu = libraryMenu
+        return libraryItem
     }
     
     // MARK: - Plex Submenu
@@ -535,9 +646,21 @@ class MenuActions: NSObject {
         WindowManager.shared.loadBaseSkin()
     }
     
+    @objc func loadBaseSkin2() {
+        WindowManager.shared.loadBaseSkin2()
+    }
+    
+    @objc func loadBaseSkin3() {
+        WindowManager.shared.loadBaseSkin3()
+    }
+    
     @objc func loadSkin(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         WindowManager.shared.loadSkin(from: url)
+    }
+    
+    @objc func toggleLockBrowserMilkdrop(_ sender: NSMenuItem) {
+        WindowManager.shared.lockBrowserMilkdropSkin.toggle()
     }
     
     // MARK: - Options
@@ -568,6 +691,10 @@ class MenuActions: NSObject {
     
     @objc func toggleVolumeNormalization() {
         WindowManager.shared.audioEngine.volumeNormalizationEnabled.toggle()
+    }
+    
+    @objc func toggleBrowserArtworkBackground() {
+        WindowManager.shared.showBrowserArtworkBackground.toggle()
     }
     
     @objc func toggleAlwaysOnTop() {
@@ -759,6 +886,122 @@ class MenuActions: NSObject {
     @objc func refreshCastDevices() {
         CastManager.shared.refreshDevices()
         NSLog("MenuActions: Refreshing cast devices")
+    }
+    
+    // MARK: - Local Library
+    
+    @objc func backupLibrary() {
+        do {
+            let backupURL = try MediaLibrary.shared.backupLibrary()
+            
+            let alert = NSAlert()
+            alert.messageText = "Library Backed Up"
+            alert.informativeText = "Your library has been backed up to:\n\(backupURL.lastPathComponent)"
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "Show in Finder")
+            
+            if alert.runModal() == .alertSecondButtonReturn {
+                NSWorkspace.shared.selectFile(backupURL.path, inFileViewerRootedAtPath: backupURL.deletingLastPathComponent().path)
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Backup Failed"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+    
+    @objc func restoreLibraryFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.json]
+        panel.title = "Select Library Backup"
+        panel.message = "Choose a library backup file to restore"
+        
+        // Start in backups directory if it exists
+        let backupsDir = MediaLibrary.shared.backupsDirectory
+        if FileManager.default.fileExists(atPath: backupsDir.path) {
+            panel.directoryURL = backupsDir
+        }
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            confirmAndRestoreLibrary(from: url)
+        }
+    }
+    
+    @objc func restoreLibraryFromBackup(_ sender: NSMenuItem) {
+        guard let backupURL = sender.representedObject as? URL else { return }
+        confirmAndRestoreLibrary(from: backupURL)
+    }
+    
+    private func confirmAndRestoreLibrary(from url: URL) {
+        let currentTrackCount = MediaLibrary.shared.tracksSnapshot.count
+        
+        let alert = NSAlert()
+        alert.messageText = "Restore Library?"
+        alert.informativeText = "This will replace your current library (\(currentTrackCount) tracks) with the backup.\n\nA backup of your current library will be created automatically before restoring."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Restore")
+        alert.addButton(withTitle: "Cancel")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            do {
+                try MediaLibrary.shared.restoreLibrary(from: url)
+                
+                let newTrackCount = MediaLibrary.shared.tracksSnapshot.count
+                
+                let successAlert = NSAlert()
+                successAlert.messageText = "Library Restored"
+                successAlert.informativeText = "Your library has been restored with \(newTrackCount) tracks."
+                successAlert.alertStyle = .informational
+                successAlert.runModal()
+            } catch {
+                let errorAlert = NSAlert()
+                errorAlert.messageText = "Restore Failed"
+                errorAlert.informativeText = error.localizedDescription
+                errorAlert.alertStyle = .critical
+                errorAlert.runModal()
+            }
+        }
+    }
+    
+    @objc func showLibraryInFinder() {
+        MediaLibrary.shared.showLibraryInFinder()
+    }
+    
+    @objc func showBackupsInFinder() {
+        MediaLibrary.shared.showBackupsInFinder()
+    }
+    
+    @objc func clearLibrary() {
+        let trackCount = MediaLibrary.shared.tracksSnapshot.count
+        
+        let alert = NSAlert()
+        alert.messageText = "Clear Library?"
+        alert.informativeText = "This will remove all \(trackCount) tracks from your library. The audio files will NOT be deleted from disk.\n\nA backup will be created automatically before clearing."
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "Clear Library")
+        alert.addButton(withTitle: "Cancel")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            // Create backup before clearing
+            do {
+                try MediaLibrary.shared.backupLibrary(customName: "pre_clear_auto_backup")
+            } catch {
+                NSLog("Failed to create pre-clear backup: %@", error.localizedDescription)
+            }
+            
+            MediaLibrary.shared.clearLibrary()
+            
+            let successAlert = NSAlert()
+            successAlert.messageText = "Library Cleared"
+            successAlert.informativeText = "Your library has been cleared. A backup was saved automatically."
+            successAlert.alertStyle = .informational
+            successAlert.runModal()
+        }
     }
     
     // MARK: - Exit

@@ -74,6 +74,21 @@ open Package.swift
 | Toggle Plex Browser | Cmd+P |
 | Load file | Cmd+O |
 
+### Media Library Controls
+
+| Action | Keyboard Shortcut |
+|--------|-------------------|
+| Delete selected from library | Delete |
+| Play selected | Enter |
+| Navigate | ↑ / ↓ |
+| Multi-select | Cmd+Click or Shift+Click |
+
+Right-click in the Media Library for additional options:
+- **Play** / **Add to Playlist** - Play or queue selected items
+- **Show in Finder** - Reveal the file in Finder
+- **Remove from Library** - Remove from library (keeps files on disk)
+- **Delete File from Disk** - Permanently delete files (with Trash option)
+
 ### Right-Click Context Menu
 
 Right-click on any window (Main, Equalizer, or Playlist) to access the context menu:

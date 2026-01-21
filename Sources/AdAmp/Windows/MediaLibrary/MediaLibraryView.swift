@@ -644,6 +644,15 @@ class MediaLibraryView: NSView {
                 handleDoubleClick(on: displayItems[index])
             }
             
+        case 51: // Delete key - remove selected from library
+            if !selectedIndices.isEmpty {
+                deleteSelectedFromLibrary()
+            } else if !searchQuery.isEmpty {
+                // Clear search if no selection
+                searchQuery.removeLast()
+                reloadData()
+            }
+            
         case 125: // Down arrow
             if let maxIndex = selectedIndices.max(), maxIndex < displayItems.count - 1 {
                 selectedIndices = [maxIndex + 1]
@@ -661,13 +670,8 @@ class MediaLibraryView: NSView {
         default:
             // Handle typing for search
             if let chars = event.characters, !chars.isEmpty {
-                if event.keyCode == 51 { // Delete
-                    if !searchQuery.isEmpty {
-                        searchQuery.removeLast()
-                        reloadData()
-                    }
-                } else if chars.rangeOfCharacter(from: .alphanumerics) != nil ||
-                          chars.rangeOfCharacter(from: .whitespaces) != nil {
+                if chars.rangeOfCharacter(from: .alphanumerics) != nil ||
+                   chars.rangeOfCharacter(from: .whitespaces) != nil {
                     searchQuery += chars
                     reloadData()
                 }
@@ -721,6 +725,213 @@ class MediaLibraryView: NSView {
         }
         
         return true
+    }
+    
+    // MARK: - Context Menu
+    
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        let winampPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        
+        // Check if clicking in list area
+        let listY = Layout.titleBarHeight + Layout.tabBarHeight + Layout.searchBarHeight
+        let listHeight = bounds.height - listY - Layout.statusBarHeight
+        
+        if winampPoint.y >= listY && winampPoint.y < listY + listHeight {
+            // Calculate clicked index
+            let relativeY = winampPoint.y - listY + scrollOffset
+            let clickedIndex = Int(relativeY / itemHeight)
+            
+            // Select the item if not already selected
+            if clickedIndex >= 0 && clickedIndex < displayItems.count {
+                if !selectedIndices.contains(clickedIndex) {
+                    selectedIndices = [clickedIndex]
+                    needsDisplay = true
+                }
+            }
+        }
+        
+        return buildContextMenu()
+    }
+    
+    private func buildContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        
+        let hasSelection = !selectedIndices.isEmpty
+        let selectedTracks = getSelectedTracks()
+        
+        // Play selected
+        let playItem = NSMenuItem(title: "Play", action: #selector(playSelected(_:)), keyEquivalent: "")
+        playItem.target = self
+        playItem.isEnabled = hasSelection
+        menu.addItem(playItem)
+        
+        // Add to playlist
+        let addToPlaylistItem = NSMenuItem(title: "Add to Playlist", action: #selector(addSelectedToPlaylist(_:)), keyEquivalent: "")
+        addToPlaylistItem.target = self
+        addToPlaylistItem.isEnabled = hasSelection
+        menu.addItem(addToPlaylistItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Show in Finder
+        let showInFinderItem = NSMenuItem(title: "Show in Finder", action: #selector(showSelectedInFinder(_:)), keyEquivalent: "")
+        showInFinderItem.target = self
+        showInFinderItem.isEnabled = hasSelection && !selectedTracks.isEmpty
+        menu.addItem(showInFinderItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Remove from library
+        let removeCount = selectedTracks.count
+        let removeTitle = removeCount == 1 ? "Remove from Library" : "Remove \(removeCount) Items from Library"
+        let removeItem = NSMenuItem(title: removeTitle, action: #selector(removeSelectedFromLibrary(_:)), keyEquivalent: "")
+        removeItem.target = self
+        removeItem.isEnabled = hasSelection && !selectedTracks.isEmpty
+        menu.addItem(removeItem)
+        
+        // Delete from disk (dangerous - shows confirmation)
+        let deleteTitle = removeCount == 1 ? "Delete File from Disk..." : "Delete \(removeCount) Files from Disk..."
+        let deleteItem = NSMenuItem(title: deleteTitle, action: #selector(deleteSelectedFromDisk(_:)), keyEquivalent: "")
+        deleteItem.target = self
+        deleteItem.isEnabled = hasSelection && !selectedTracks.isEmpty
+        menu.addItem(deleteItem)
+        
+        return menu
+    }
+    
+    // MARK: - Delete Actions
+    
+    /// Get selected tracks (only track items, not artists/albums/genres)
+    private func getSelectedTracks() -> [LibraryTrack] {
+        var tracks: [LibraryTrack] = []
+        
+        for index in selectedIndices {
+            guard index < displayItems.count else { continue }
+            let item = displayItems[index]
+            
+            switch item.type {
+            case .track(let track):
+                tracks.append(track)
+            case .album(let album):
+                tracks.append(contentsOf: album.tracks)
+            case .artist(let artist):
+                for album in artist.albums {
+                    tracks.append(contentsOf: album.tracks)
+                }
+            case .genre(let genre):
+                let genreTracks = MediaLibrary.shared.tracksSnapshot.filter { $0.genre == genre }
+                tracks.append(contentsOf: genreTracks)
+            }
+        }
+        
+        return tracks
+    }
+    
+    @objc private func playSelected(_ sender: Any?) {
+        guard let index = selectedIndices.first, index < displayItems.count else { return }
+        handleDoubleClick(on: displayItems[index])
+    }
+    
+    @objc private func addSelectedToPlaylist(_ sender: Any?) {
+        let tracks = getSelectedTracks()
+        let urls = tracks.map { $0.url }
+        if !urls.isEmpty {
+            WindowManager.shared.audioEngine.loadFiles(urls)
+        }
+    }
+    
+    @objc private func showSelectedInFinder(_ sender: Any?) {
+        let tracks = getSelectedTracks()
+        guard let firstTrack = tracks.first else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([firstTrack.url])
+    }
+    
+    @objc private func removeSelectedFromLibrary(_ sender: Any?) {
+        deleteSelectedFromLibrary()
+    }
+    
+    /// Remove selected items from library (called by Delete key and context menu)
+    private func deleteSelectedFromLibrary() {
+        let tracks = getSelectedTracks()
+        guard !tracks.isEmpty else { return }
+        
+        // Show confirmation for multiple items
+        if tracks.count > 1 {
+            let alert = NSAlert()
+            alert.messageText = "Remove \(tracks.count) items from library?"
+            alert.informativeText = "This will remove the selected items from your library. The files will not be deleted from disk."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Remove")
+            alert.addButton(withTitle: "Cancel")
+            
+            if alert.runModal() != .alertFirstButtonReturn {
+                return
+            }
+        }
+        
+        // Remove tracks from library
+        for track in tracks {
+            MediaLibrary.shared.removeTrack(track)
+        }
+        
+        selectedIndices.removeAll()
+        // Library will notify of change and trigger reload
+    }
+    
+    @objc private func deleteSelectedFromDisk(_ sender: Any?) {
+        let tracks = getSelectedTracks()
+        guard !tracks.isEmpty else { return }
+        
+        // Show serious warning
+        let alert = NSAlert()
+        alert.messageText = tracks.count == 1 
+            ? "Delete file from disk?" 
+            : "Delete \(tracks.count) files from disk?"
+        alert.informativeText = "This will permanently delete the file(s) from your computer. This action cannot be undone."
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        
+        // Add a checkbox to move to trash instead
+        let moveToTrashCheckbox = NSButton(checkboxWithTitle: "Move to Trash instead of deleting permanently", target: nil, action: nil)
+        moveToTrashCheckbox.state = .on
+        alert.accessoryView = moveToTrashCheckbox
+        
+        if alert.runModal() != .alertFirstButtonReturn {
+            return
+        }
+        
+        let useTrash = moveToTrashCheckbox.state == .on
+        var failedFiles: [String] = []
+        
+        for track in tracks {
+            do {
+                if useTrash {
+                    try FileManager.default.trashItem(at: track.url, resultingItemURL: nil)
+                } else {
+                    try FileManager.default.removeItem(at: track.url)
+                }
+                // Remove from library
+                MediaLibrary.shared.removeTrack(track)
+            } catch {
+                failedFiles.append(track.url.lastPathComponent)
+            }
+        }
+        
+        selectedIndices.removeAll()
+        
+        // Show error if some files failed
+        if !failedFiles.isEmpty {
+            let errorAlert = NSAlert()
+            errorAlert.messageText = "Some files could not be deleted"
+            errorAlert.informativeText = "Failed to delete:\n" + failedFiles.prefix(5).joined(separator: "\n")
+            if failedFiles.count > 5 {
+                errorAlert.informativeText += "\n...and \(failedFiles.count - 5) more"
+            }
+            errorAlert.alertStyle = .warning
+            errorAlert.runModal()
+        }
     }
 }
 

@@ -470,6 +470,39 @@ class WindowManager {
     
     // MARK: - Skin Management
     
+    /// When true, Browser and Milkdrop windows always use default skin (default: false - follow skin changes)
+    var lockBrowserMilkdropSkin: Bool {
+        get {
+            // Default to false (unlocked) - windows follow skin changes by default
+            if UserDefaults.standard.object(forKey: "lockBrowserMilkdropSkin") == nil {
+                return false
+            }
+            return UserDefaults.standard.bool(forKey: "lockBrowserMilkdropSkin")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "lockBrowserMilkdropSkin")
+            // Refresh these windows when setting changes
+            plexBrowserWindowController?.skinDidChange()
+            milkdropWindowController?.skinDidChange()
+        }
+    }
+    
+    /// When true, shows album art as transparent background in browser window (default: true)
+    var showBrowserArtworkBackground: Bool {
+        get {
+            // Default to true (enabled) if not set
+            if UserDefaults.standard.object(forKey: "showBrowserArtworkBackground") == nil {
+                return true
+            }
+            return UserDefaults.standard.bool(forKey: "showBrowserArtworkBackground")
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "showBrowserArtworkBackground")
+            // Trigger browser redraw
+            plexBrowserWindowController?.window?.contentView?.needsDisplay = true
+        }
+    }
+    
     func loadSkin(from url: URL) {
         do {
             let skin = try SkinLoader.shared.load(from: url)
@@ -484,9 +517,21 @@ class WindowManager {
         currentSkin = SkinLoader.shared.loadDefault()
     }
     
-    /// Load the base/default skin
+    /// Load the base/default skin (Base Skin 1)
     func loadBaseSkin() {
         currentSkin = SkinLoader.shared.loadDefault()
+        notifySkinChanged()
+    }
+    
+    /// Load the second built-in skin (Base Skin 2)
+    func loadBaseSkin2() {
+        currentSkin = SkinLoader.shared.loadBaseSkin2()
+        notifySkinChanged()
+    }
+    
+    /// Load the third built-in skin (Base Skin 3)
+    func loadBaseSkin3() {
+        currentSkin = SkinLoader.shared.loadBaseSkin3()
         notifySkinChanged()
     }
     
