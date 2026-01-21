@@ -181,7 +181,8 @@ class SkinRenderer {
     ///   - isNegative: Whether to show minus sign (for remaining time mode)
     ///   - context: Graphics context to draw into
     func drawTimeDisplay(minutes: Int, seconds: Int, isNegative: Bool = false, in context: CGContext) {
-        guard let numbersImage = skin.numbers else {
+        // Try numbers.bmp first, then fall back to nums_ex.bmp (same layout)
+        guard let numbersImage = skin.numbers ?? skin.numsEx else {
             drawFallbackTimeDisplay(minutes: minutes, seconds: seconds, isNegative: isNegative, in: context)
             return
         }
@@ -375,7 +376,7 @@ class SkinRenderer {
     /// Returns the width of the drawn digits
     @discardableResult
     func drawSkinDigits(_ number: Int, at position: NSPoint, in context: CGContext, minDigits: Int = 1) -> CGFloat {
-        guard let numbersImage = skin.numbers else {
+        guard let numbersImage = skin.numbers ?? skin.numsEx else {
             // Fallback to system font
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: NSColor.green,
@@ -408,7 +409,7 @@ class SkinRenderer {
     /// Returns the total width drawn
     @discardableResult
     func drawSkinTime(minutes: Int, seconds: Int, at position: NSPoint, in context: CGContext) -> CGFloat {
-        guard let numbersImage = skin.numbers, let textImage = skin.text else {
+        guard let numbersImage = skin.numbers ?? skin.numsEx, let textImage = skin.text else {
             // Fallback
             let str = String(format: "%d:%02d", minutes, seconds)
             let attrs: [NSAttributedString.Key: Any] = [
