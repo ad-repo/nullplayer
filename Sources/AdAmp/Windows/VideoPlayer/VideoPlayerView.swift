@@ -15,8 +15,7 @@ class VideoPlayerView: NSView {
     /// Whether this is a Plex stream (for header attachment)
     private var isPlexStream: Bool = false
     
-    /// Skinned title bar view
-    private var titleBarView: VideoTitleBarView!
+    /// Title bar removed - video player is borderless
     
     /// Control bar at bottom
     private var controlBarView: VideoControlBarView!
@@ -66,7 +65,6 @@ class VideoPlayerView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         
-        let titleBarHeight: CGFloat = SkinElements.titleBarHeight
         let controlBarHeight: CGFloat = 40
         
         // Create a host view for the player layer - fills entire view
@@ -76,16 +74,7 @@ class VideoPlayerView: NSView {
         playerHostView.autoresizingMask = [.width, .height]
         addSubview(playerHostView)
         
-        // Create skinned title bar (overlays on top)
-        titleBarView = VideoTitleBarView(frame: NSRect(x: 0, y: 0, width: bounds.width, height: titleBarHeight))
-        titleBarView.autoresizingMask = [.width]
-        titleBarView.onClose = { [weak self] in
-            self?.onClose?()
-        }
-        titleBarView.onMinimize = { [weak self] in
-            self?.onMinimize?()
-        }
-        addSubview(titleBarView)
+        // Title bar removed - video player is now borderless
         
         // Create control bar at bottom (overlays on bottom)
         controlBarView = VideoControlBarView(frame: NSRect(x: 0, y: bounds.height - controlBarHeight, 
@@ -177,7 +166,6 @@ class VideoPlayerView: NSView {
     
     private func showControls() {
         controlsVisible = true
-        titleBarView.alphaValue = 1.0
         controlBarView.alphaValue = 1.0
         resetControlsHideTimer()
         // Ensure we're first responder to capture keyboard events
@@ -190,7 +178,6 @@ class VideoPlayerView: NSView {
         controlsVisible = false
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
-            titleBarView.animator().alphaValue = 0.0
             controlBarView.animator().alphaValue = 0.0
         }
     }
@@ -225,14 +212,12 @@ class VideoPlayerView: NSView {
     override func layout() {
         super.layout()
         
-        let titleBarHeight: CGFloat = SkinElements.titleBarHeight
         let controlBarHeight: CGFloat = 40
         
         // Video fills entire view
         playerHostView.frame = bounds
         
-        // Controls overlay on top/bottom
-        titleBarView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: titleBarHeight)
+        // Control bar at bottom
         controlBarView.frame = NSRect(x: 0, y: bounds.height - controlBarHeight, 
                                        width: bounds.width, height: controlBarHeight)
     }
@@ -252,8 +237,8 @@ class VideoPlayerView: NSView {
         currentURL = url
         isPlexStream = isPlexURL
         
-        // Update title bar
-        titleBarView.title = title
+        // Title removed - update window title instead
+        window?.title = title
         
         // Show loading indicator
         showLoading(true)
@@ -412,7 +397,7 @@ class VideoPlayerView: NSView {
     // MARK: - Window Active State
     
     func updateActiveState(_ isActive: Bool) {
-        titleBarView.isWindowActive = isActive
+        // No title bar to update
     }
 }
 
