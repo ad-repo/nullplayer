@@ -1068,8 +1068,11 @@ class PlexBrowserView: NSView {
         }
         
         // Draw items
-        let visibleStart = Int(scrollOffset / itemHeight)
+        let visibleStart = max(0, Int(scrollOffset / itemHeight))
         let visibleEnd = min(displayItems.count, visibleStart + Int(listHeight / itemHeight) + 2)
+        
+        // Guard against invalid range during window resize/shade animation
+        guard visibleStart < visibleEnd else { return }
         
         for index in visibleStart..<visibleEnd {
             let y = listY + CGFloat(index) * itemHeight - scrollOffset

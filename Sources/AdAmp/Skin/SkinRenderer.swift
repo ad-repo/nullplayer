@@ -1380,14 +1380,31 @@ class SkinRenderer {
             context.draw(cgImage, in: CGRect(x: 0, y: yOffset, width: bounds.width, height: scaledHeight))
             context.restoreGState()
             
-            // Brighten the title bar when active, dim when inactive
+            // Active: first boost brights with colorDodge, then darken background with multiply
+            // Inactive: just darken everything
             if isActive {
-                // Subtle brightening overlay when focused
-                NSColor(calibratedWhite: 1.0, alpha: 0.15).setFill()
+                // Boost the gold bar and text first
+                context.saveGState()
+                context.setBlendMode(.colorDodge)
+                NSColor(calibratedWhite: 0.45, alpha: 1.0).setFill()
                 context.fill(NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight))
+                context.restoreGState()
+                
+                // Then darken the background (multiply affects darker areas more)
+                context.saveGState()
+                context.setBlendMode(.multiply)
+                NSColor(calibratedWhite: 0.5, alpha: 1.0).setFill()
+                context.fill(NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight))
+                context.restoreGState()
             } else {
-                // Dim overlay when not focused
-                NSColor(calibratedWhite: 0.0, alpha: 0.3).setFill()
+                // Inactive: darken everything
+                context.saveGState()
+                context.setBlendMode(.multiply)
+                NSColor(calibratedWhite: 0.5, alpha: 1.0).setFill()
+                context.fill(NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight))
+                context.restoreGState()
+                
+                NSColor(calibratedWhite: 0.0, alpha: 0.25).setFill()
                 context.fill(NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight))
             }
         } else {
