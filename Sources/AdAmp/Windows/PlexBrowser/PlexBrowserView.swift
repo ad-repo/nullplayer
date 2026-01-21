@@ -221,8 +221,10 @@ class PlexBrowserView: NSView {
     
     /// Server name scrolling animation
     private var serverNameScrollOffset: CGFloat = 0
+    private var libraryNameScrollOffset: CGFloat = 0
     private var serverScrollTimer: Timer?
     private var lastServerName: String = ""
+    private var lastLibraryName: String = ""
     
     /// Shade mode state
     private(set) var isShadeMode = false
@@ -658,84 +660,113 @@ class PlexBrowserView: NSView {
             // LOCAL FILES mode
             let sourceText = "Local Files"
             drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
             
-            // Right side: Refresh icon
-            let refreshX = barRect.maxX - scaledCharWidth - 4
-            drawScaledSkinText("O", at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-            
-            // +ADD button (to the left of refresh)
+            // +ADD button after source name with balanced spacing (green text)
             let addText = "+ADD"
-            let addWidth = CGFloat(addText.count) * scaledCharWidth
-            let addX = refreshX - addWidth - 12
-            drawScaledWhiteSkinText(addText, at: NSPoint(x: addX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let addX = sourceNameStartX + sourceTextWidth + 28
+            drawScaledSkinText(addText, at: NSPoint(x: addX, y: textY), scale: textScale, renderer: renderer, in: context)
             
-            // Item count (center)
-            let countNumber = "\(displayItems.count)"
-            let countLabel = " items"
-            let countTotalWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-            let countX = barRect.midX - countTotalWidth / 2
-            drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-            let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-            drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+            // Right side: F5 refresh label
+            let refreshText = "F5"
+            let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+            drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             
-            // ART toggle button (with separator spacing)
-            let artText = "[ART]"
-            let artX = labelX + CGFloat(countLabel.count) * scaledCharWidth + 12
-            if isArtOnlyMode {
-                drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-            } else {
-                drawScaledSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-            }
+            // ART toggle button (before F5) - only show if artwork available
+            let artText = "ART"
+            let artWidth = CGFloat(artText.count) * scaledCharWidth
+            var artX = refreshX - artWidth - 24
             
-        case .plex(let serverId):
-            let manager = PlexManager.shared
-            
-            if manager.isLinked {
-                let serverNameStartX = sourceNameStartX
-                
-                // Right side: Refresh icon in green skin text
-                let refreshX = barRect.maxX - scaledCharWidth - 4
-                drawScaledSkinText("O", at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-                
-                // Library name in WHITE skin text (only for Plex)
-                let libraryText = manager.currentLibrary?.title ?? "Select Library"
-                let libraryWidth = CGFloat(libraryText.count) * scaledCharWidth
-                let libraryX = refreshX - libraryWidth - 8
-                drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
-                
-                // Item count (center)
-                let countNumber = "\(displayItems.count)"
-                let countLabel = " items"
-                let countTotalWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                let countX = barRect.midX - countTotalWidth / 2
-                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
-                
-                // ART toggle button (with separator spacing)
-                let artText = "[ART]"
-                let artX = labelX + CGFloat(countLabel.count) * scaledCharWidth + 12
+            if currentArtwork != nil {
                 if isArtOnlyMode {
                     drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                 } else {
                     drawScaledSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                 }
+            } else {
+                // No artwork - shift items over to where ART would be
+                artX = refreshX
+            }
+            
+            // Item count (before ART or before F5 if no artwork)
+            let countNumber = "\(displayItems.count)"
+            let countLabel = " items"
+            let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+            let countX = artX - countWidth - 24
+            drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+            drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+            
+        case .plex(let serverId):
+            let manager = PlexManager.shared
+            
+            if manager.isLinked {
+                // Max widths for server and library names (in characters)
+                let maxServerChars = 12
+                let maxLibraryChars = 10
+                let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
+                let maxLibraryWidth = CGFloat(maxLibraryChars) * scaledCharWidth
                 
-                // Server name
+                // Server name right after "Source:"
                 let serverName = manager.servers.first(where: { $0.id == serverId })?.name ?? "Select Server"
                 let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
                 
-                // Available width for server name
-                let availableWidth = countX - serverNameStartX - 16
-                
-                if serverTextWidth <= availableWidth || availableWidth <= 0 {
-                    drawScaledWhiteSkinText(serverName, at: NSPoint(x: serverNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
+                if serverTextWidth <= maxServerWidth {
+                    drawScaledWhiteSkinText(serverName, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
                 } else {
-                    // Text too long - draw with circular scrolling
-                    drawScrollingServerName(serverName, startX: serverNameStartX, textY: textY,
-                                           availableWidth: availableWidth, scale: textScale,
-                                           renderer: renderer, in: context)
+                    drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
+                                     availableWidth: maxServerWidth, scale: textScale,
+                                     scrollOffset: serverNameScrollOffset,
+                                     renderer: renderer, in: context)
                 }
+                
+                // Library label and name after server name
+                let libLabel = "Lib:"
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16
+                drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
+                
+                let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4
+                let libraryText = manager.currentLibrary?.title ?? "Select"
+                let libraryTextWidth = CGFloat(libraryText.count) * scaledCharWidth
+                
+                if libraryTextWidth <= maxLibraryWidth {
+                    drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
+                } else {
+                    drawScrollingText(libraryText, startX: libraryX, textY: textY,
+                                     availableWidth: maxLibraryWidth, scale: textScale,
+                                     scrollOffset: libraryNameScrollOffset,
+                                     renderer: renderer, in: context)
+                }
+                
+                // Right side: F5 refresh label
+                let refreshText = "F5"
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+                
+                // ART toggle button (before F5) - only show if artwork available
+                let artText = "ART"
+                let artWidth = CGFloat(artText.count) * scaledCharWidth
+                var artX = refreshX - artWidth - 24
+                
+                if currentArtwork != nil {
+                    if isArtOnlyMode {
+                        drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
+                    } else {
+                        drawScaledSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
+                    }
+                } else {
+                    // No artwork - shift items over to where ART would be
+                    artX = refreshX
+                }
+                
+                // Item count (before ART or before F5 if no artwork)
+                let countNumber = "\(displayItems.count)"
+                let countLabel = " items"
+                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+                let countX = artX - countWidth - 24
+                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+                drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 // Plex not linked - show link message
                 let linkText = "Click to link your Plex account"
@@ -746,10 +777,11 @@ class PlexBrowserView: NSView {
         }
     }
     
-    /// Draw server name with circular scrolling when it's too long
-    private func drawScrollingServerName(_ text: String, startX: CGFloat, textY: CGFloat,
-                                         availableWidth: CGFloat, scale: CGFloat,
-                                         renderer: SkinRenderer, in context: CGContext) {
+    /// Draw text with circular scrolling when it's too long
+    private func drawScrollingText(_ text: String, startX: CGFloat, textY: CGFloat,
+                                   availableWidth: CGFloat, scale: CGFloat,
+                                   scrollOffset: CGFloat,
+                                   renderer: SkinRenderer, in context: CGContext) {
         let charWidth = SkinElements.TextFont.charWidth
         let charHeight = SkinElements.TextFont.charHeight
         let scaledCharWidth = charWidth * scale
@@ -769,7 +801,7 @@ class PlexBrowserView: NSView {
         let fullText = text + separator
         
         for pass in 0..<2 {
-            let baseX = startX - serverNameScrollOffset + (CGFloat(pass) * totalCycleWidth)
+            let baseX = startX - scrollOffset + (CGFloat(pass) * totalCycleWidth)
             
             // Check if this pass could be visible
             if baseX + totalCycleWidth < startX || baseX > startX + availableWidth {
@@ -1290,76 +1322,84 @@ class PlexBrowserView: NSView {
         serverScrollTimer?.invalidate()
         serverScrollTimer = nil
         serverNameScrollOffset = 0
+        libraryNameScrollOffset = 0
     }
     
     private func updateServerNameScroll() {
         let manager = PlexManager.shared
         guard manager.isLinked else {
-            if serverNameScrollOffset != 0 {
+            if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
                 serverNameScrollOffset = 0
+                libraryNameScrollOffset = 0
                 needsDisplay = true
             }
             return
-        }
-        
-        let serverName = manager.currentServer?.name ?? "Select Server"
-        
-        // Reset scroll if server name changed
-        if serverName != lastServerName {
-            lastServerName = serverName
-            serverNameScrollOffset = 0
         }
         
         let charWidth = SkinElements.TextFont.charWidth
         let textScale: CGFloat = 1.5
         let scaledCharWidth = charWidth * textScale
         
-        // Calculate available width for server name
-        let drawBounds = bounds
-        let barRect = NSRect(x: Layout.leftBorder, y: Layout.titleBarHeight,
-                            width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
-                            height: Layout.serverBarHeight)
+        // Max widths for server and library names (matching drawServerBar)
+        let maxServerChars = 12
+        let maxLibraryChars = 10
+        let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
+        let maxLibraryWidth = CGFloat(maxLibraryChars) * scaledCharWidth
         
-        let prefix = "Plex Server: "
-        let prefixWidth = CGFloat(prefix.count) * scaledCharWidth
-        let serverNameStartX = barRect.minX + 4 + prefixWidth
+        let serverName = manager.currentServer?.name ?? "Select Server"
+        let libraryName = manager.currentLibrary?.title ?? "Select Library"
         
-        // Center elements: item count
-        let countNumber = "\(displayItems.count)"
-        let countLabel = " items"
-        let countTotalWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-        let countCenterX = barRect.midX
-        let countStartX = countCenterX - countTotalWidth / 2
-        
-        // Available width for server name (from after prefix to before count, with padding)
-        let availableWidth = countStartX - serverNameStartX - 16  // 16px padding
+        // Reset scroll if names changed
+        if serverName != lastServerName {
+            lastServerName = serverName
+            serverNameScrollOffset = 0
+        }
+        if libraryName != lastLibraryName {
+            lastLibraryName = libraryName
+            libraryNameScrollOffset = 0
+        }
         
         let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
+        let libraryTextWidth = CGFloat(libraryName.count) * scaledCharWidth
         
-        if serverTextWidth > availableWidth && availableWidth > 0 {
-            // Text is too long, scroll it
-            let separator = "   "  // Separator for circular scroll
+        var needsRedraw = false
+        
+        // Handle server name scrolling
+        if serverTextWidth > maxServerWidth {
+            let separator = "   "
             let separatorWidth = CGFloat(separator.count) * scaledCharWidth
             let totalCycleWidth = serverTextWidth + separatorWidth
             
             serverNameScrollOffset += 1
-            // Reset when one full cycle completes
             if serverNameScrollOffset >= totalCycleWidth {
                 serverNameScrollOffset = 0
             }
+            needsRedraw = true
+        } else if serverNameScrollOffset != 0 {
+            serverNameScrollOffset = 0
+            needsRedraw = true
+        }
+        
+        // Handle library name scrolling
+        if libraryTextWidth > maxLibraryWidth {
+            let separator = "   "
+            let separatorWidth = CGFloat(separator.count) * scaledCharWidth
+            let totalCycleWidth = libraryTextWidth + separatorWidth
             
-            // Only redraw the server bar area
+            libraryNameScrollOffset += 1
+            if libraryNameScrollOffset >= totalCycleWidth {
+                libraryNameScrollOffset = 0
+            }
+            needsRedraw = true
+        } else if libraryNameScrollOffset != 0 {
+            libraryNameScrollOffset = 0
+            needsRedraw = true
+        }
+        
+        if needsRedraw {
             let serverBarArea = NSRect(x: 0, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
                                        width: bounds.width, height: Layout.serverBarHeight)
             setNeedsDisplay(serverBarArea)
-        } else {
-            // Text fits - no scrolling needed
-            if serverNameScrollOffset != 0 {
-                serverNameScrollOffset = 0
-                let serverBarArea = NSRect(x: 0, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
-                                           width: bounds.width, height: Layout.serverBarHeight)
-                setNeedsDisplay(serverBarArea)
-            }
         }
     }
     
@@ -1594,6 +1634,11 @@ class PlexBrowserView: NSView {
             } else if track.url.isFileURL {
                 // Local file - extract embedded artwork
                 image = await self.loadLocalArtwork(url: track.url)
+                
+                // If no embedded artwork, try fetching from web
+                if image == nil {
+                    image = await self.loadWebArtwork(artist: track.artist, album: track.album, title: track.title)
+                }
             }
             
             // Check if task was cancelled
@@ -1605,6 +1650,64 @@ class PlexBrowserView: NSView {
                 self.needsDisplay = true
             }
         }
+    }
+    
+    /// Load artwork from web using iTunes Search API
+    private func loadWebArtwork(artist: String?, album: String?, title: String?) async -> NSImage? {
+        // Build search query - prefer album search, fall back to track
+        var searchTerm: String
+        if let artist = artist, !artist.isEmpty, let album = album, !album.isEmpty {
+            searchTerm = "\(artist) \(album)"
+        } else if let artist = artist, !artist.isEmpty, let title = title, !title.isEmpty {
+            searchTerm = "\(artist) \(title)"
+        } else if let album = album, !album.isEmpty {
+            searchTerm = album
+        } else {
+            return nil
+        }
+        
+        // Check cache first
+        let cacheKey = NSString(string: "web:\(searchTerm)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) {
+            return cached
+        }
+        
+        // URL encode the search term
+        guard let encoded = searchTerm.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return nil
+        }
+        
+        // Use iTunes Search API
+        let urlString = "https://itunes.apple.com/search?term=\(encoded)&media=music&entity=album&limit=1"
+        guard let url = URL(string: urlString) else { return nil }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            
+            // Parse JSON response
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let results = json["results"] as? [[String: Any]],
+               let firstResult = results.first,
+               let artworkUrlString = firstResult["artworkUrl100"] as? String {
+                
+                // Get higher resolution artwork (600x600 instead of 100x100)
+                let highResUrl = artworkUrlString.replacingOccurrences(of: "100x100", with: "600x600")
+                
+                if let artworkUrl = URL(string: highResUrl) {
+                    let (imageData, _) = try await URLSession.shared.data(from: artworkUrl)
+                    if let image = NSImage(data: imageData) {
+                        // Cache the result
+                        Self.artworkCache.setObject(image, forKey: cacheKey)
+                        NSLog("PlexBrowserView: Loaded web artwork for: %@", searchTerm)
+                        return image
+                    }
+                }
+            }
+        } catch {
+            NSLog("PlexBrowserView: Failed to load web artwork: %@", error.localizedDescription)
+        }
+        
+        return nil
     }
     
     /// Load artwork for a Plex track using its rating key
@@ -2048,41 +2151,57 @@ class PlexBrowserView: NSView {
         let originalSize = originalWindowSize
         let barWidth = originalSize.width - Layout.leftBorder - Layout.rightBorder
         
-        // Layout:
-        // Local: [Source ▼] ... [N items ART] ... [+ADD] [↻]
-        // Plex:  [Source ▼] ... [N items ART] ... [Library ▼] [↻]
+        // Layout (right-aligned):
+        // Local: [Source: Local Files] [+ADD] ... [N items] [ART] [F5]
+        // Plex:  [Source: ServerName] [LibraryName] ... [N items] [ART] [F5]
         
-        let refreshZone: CGFloat = 25  // Far right area for refresh
-        let addZone: CGFloat = 70  // +ADD button area (to the left of refresh)
+        let charWidth = SkinElements.TextFont.charWidth * 1.5  // scaled
         let relativeX = winampPoint.x - Layout.leftBorder
         
-        // Calculate ART button zone (around center, after "N items" with spacing)
-        let centerX = barWidth / 2
-        let artZoneStart = centerX + 30  // Start of [ART] after "items" + spacing
-        let artZoneEnd = centerX + 90    // End of [ART] button zone
+        // Right side zones (from right edge)
+        let refreshZoneStart = barWidth - 30  // F5 + padding
+        let artZoneEnd = refreshZoneStart - 16
+        let artZoneStart = artZoneEnd - (3 * charWidth) - 8  // "ART" (3 chars)
         
-        if relativeX > barWidth - refreshZone {
+        // Calculate source zone width: "Source: " (8 chars)
+        let sourcePrefix: CGFloat = 8 * charWidth + 4
+        
+        // Max widths for server and library names
+        let maxServerWidth: CGFloat = 12 * charWidth
+        let maxLibraryWidth: CGFloat = 10 * charWidth
+        
+        if relativeX >= refreshZoneStart {
             // Refresh icon click
             handleRefreshClick()
-        } else if relativeX >= artZoneStart && relativeX <= artZoneEnd {
-            // ART toggle click (same position for both modes)
+        } else if currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
+            // ART toggle click (only if artwork available)
             isArtOnlyMode.toggle()
         } else if case .local = currentSource {
-            // Local mode - check buttons from right to left
-            if relativeX > barWidth - addZone {
+            // Local mode - Source and +ADD on left
+            let localNameWidth: CGFloat = 11 * charWidth  // "Local Files"
+            let sourceZoneEnd = sourcePrefix + localNameWidth
+            let addZoneStart = sourceZoneEnd + 24
+            let addZoneEnd = addZoneStart + 4 * charWidth + 8  // "+ADD" (4 chars)
+            
+            if relativeX >= addZoneStart && relativeX <= addZoneEnd {
                 // +ADD button click
                 showAddFilesMenu(at: event)
-            } else if relativeX < barWidth / 2 {
-                // Left half = source dropdown
+            } else if relativeX < sourceZoneEnd {
+                // Source area = source dropdown
                 showSourceMenu(at: event)
             }
         } else if case .plex = currentSource {
-            // Plex mode has library dropdown on right side
-            let libraryZone: CGFloat = 120
-            if relativeX > barWidth - libraryZone {
+            // Plex mode - Server and Library on left with max widths
+            let serverZoneEnd = sourcePrefix + maxServerWidth
+            let libLabelWidth: CGFloat = 4 * charWidth + 4  // "Lib:" + spacing
+            let libraryZoneStart = serverZoneEnd + 12  // includes "Lib:" label
+            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
+            
+            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd {
+                // Library dropdown click (includes label)
                 showLibraryMenu(at: event)
-            } else if relativeX < barWidth / 2 {
-                // Left half = source dropdown
+            } else if relativeX < serverZoneEnd {
+                // Source/server area = source dropdown
                 showSourceMenu(at: event)
             }
         }
@@ -3670,7 +3789,70 @@ class PlexBrowserView: NSView {
             displayItems = []
         }
         
+        // Load artwork from browsed content
+        loadLocalBrowseArtwork()
+        
         needsDisplay = true
+    }
+    
+    /// Load artwork from browsed local content
+    private func loadLocalBrowseArtwork() {
+        guard case .local = currentSource else { return }
+        guard WindowManager.shared.showBrowserArtworkBackground else { return }
+        
+        // If a track is playing, use its artwork
+        if let currentTrack = WindowManager.shared.audioEngine.currentTrack {
+            loadArtwork(for: currentTrack)
+            return
+        }
+        
+        // Capture current state for async task
+        let items = displayItems
+        let localTracks = cachedLocalTracks
+        
+        // Otherwise, try to find artwork from the current browse context
+        artworkLoadTask?.cancel()
+        artworkLoadTask = Task { [weak self] in
+            guard let self = self else { return }
+            
+            var image: NSImage?
+            
+            // Try to get artwork from the first track we can find
+            for item in items {
+                switch item.type {
+                case .localTrack(let track):
+                    // Found a local track - use its URL
+                    image = await self.loadLocalArtwork(url: track.url)
+                    break
+                case .localAlbum(let album):
+                    // Found a local album - find first track from this album
+                    let albumTracks = localTracks.filter { $0.album == album.name }
+                    if let track = albumTracks.first {
+                        image = await self.loadLocalArtwork(url: track.url)
+                    }
+                    break
+                case .localArtist(let artist):
+                    // Found a local artist - find first track from this artist
+                    let artistTracks = localTracks.filter { $0.artist == artist.name }
+                    if let track = artistTracks.first {
+                        image = await self.loadLocalArtwork(url: track.url)
+                    }
+                    break
+                default:
+                    continue
+                }
+                if image != nil { break }
+            }
+            
+            guard !Task.isCancelled else { return }
+            
+            await MainActor.run {
+                if image != nil {
+                    self.currentArtwork = image
+                    self.needsDisplay = true
+                }
+            }
+        }
     }
     
     private func buildLocalArtistItems() {
