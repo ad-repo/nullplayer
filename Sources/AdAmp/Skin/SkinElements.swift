@@ -750,6 +750,22 @@ struct SkinElements {
             static let listButtonOffset: CGFloat = 46  // From right edge
         }
         
+        /// Mini transport button positions in the bottom bar (top-left area)
+        /// These are the small prev/play/pause/stop/next buttons visible in the skin
+        struct MiniTransportPositions {
+            // Button dimensions - small transport buttons
+            static let buttonWidth: CGFloat = 8
+            static let buttonHeight: CGFloat = 7
+            // Y position from top of bottom bar
+            static let buttonY: CGFloat = 4
+            // X positions for each button
+            static let previousX: CGFloat = 7
+            static let playX: CGFloat = 16
+            static let pauseX: CGFloat = 25
+            static let stopX: CGFloat = 34
+            static let nextX: CGFloat = 43
+        }
+        
         /// Window control button positions in title bar
         struct TitleBarButtons {
             // Relative to right edge of window

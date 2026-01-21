@@ -1507,6 +1507,8 @@ class SkinRenderer {
     enum PlaylistButtonType {
         case add, rem, sel, misc, list
         case close, shade
+        // Mini transport controls (existing in skin sprites)
+        case miniPrevious, miniPlay, miniPause, miniStop, miniNext, miniOpen
     }
     
     /// Draw the complete playlist window using skin sprites
