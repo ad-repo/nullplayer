@@ -131,7 +131,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     @objc private func showAbout() {
         let alert = NSAlert()
         alert.messageText = "AdAmp"
-        alert.informativeText = "A classic Winamp clone+ for macOS\n\nVersion 1.0\n\nRe-imagined by ad\n\nThanks to Nullsoft and Winamp"
+        alert.informativeText = "A loaded Winamp 2 clone for macOS!\n\nVersion 1.0\n\nRe-imagined by ad\n\nThanks to Nullsoft and Winamp"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "GitHub")

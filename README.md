@@ -1,27 +1,29 @@
 # AdAmp
 
-A faithful recreation of the classic Winamp 2.x music player for macOS.
+A faithful recreation of Winamp 2.x for macOS loaded up with PLEX and Sonos support!
 
 ## Features
 
-- Pixel-perfect recreation of the classic Winamp 2.x interface
-- Full Winamp skin support (.wsz files)
+- Somewhat kind of maybe Pixel-perfect recreation of the classic Winamp 2.x interface
+- A Brand new library browser window for plex and local library files
+- ProjectM visualizations with 100 included. Users can download more
+- Full Winamp 2 skin support (.wsz files)
 - Main player, Playlist editor, and 10-band Equalizer windows
-- Shade mode for all windows
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
 - Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (KSPlayer/FFmpeg)
 - Local media library with metadata parsing
+- Media library backup and restore
 - Plex Media Server integration with PIN-based authentication
 - Plex music and video streaming
+- Album art visualizations
 - Casting to Chromecast, Sonos, and DLNA devices
-- Real-time spectrum analyzer visualization
-- MilkDrop-style visualizations (projectM)
+- Airplay support
 
 ## Requirements
 
-- macOS 12.0 (Monterey) or later
-- Xcode 14.0+ with Command Line Tools
+- macOS 13.0 (Ventura) or later
+- Xcode 15.0+ with Command Line Tools
 - Swift 5.9+
 
 ## Building
@@ -46,6 +48,16 @@ To open in Xcode:
 open Package.swift
 ```
 
+## Dependencies
+
+| Library | Purpose |
+|---------|---------|
+| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | .wsz skin file extraction |
+| [SQLite.swift](https://github.com/stephencelis/SQLite.swift) | Media library storage |
+| [KSPlayer](https://github.com/kingslay/KSPlayer) | Video playback with FFmpeg backend |
+| [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) | HTTP audio streaming for Plex |
+| [libprojectM](https://github.com/projectM-visualizer/projectm) | Milkdrop visualizations |
+
 ## Media Library
 
 Library data is stored as JSON at `~/Library/Application Support/AdAmp/library.json`.
@@ -65,6 +77,8 @@ Backups are stored in `~/Library/Application Support/AdAmp/Backups/`.
 
 See [AGENTS.md](AGENTS.md) for documentation links and key source files.
 
+**Note:** This project will never support Spotify, Youtube, Apple or Amazon. Please do not submit PRs for this type of integration.
+
 ## Skins
 
 AdAmp supports classic Winamp 2.x skins (.wsz files). Download skins from [Winamp Skin Museum](https://skins.webamp.org/).
@@ -74,6 +88,7 @@ AdAmp supports classic Winamp 2.x skins (.wsz files). Download skins from [Winam
 This project is open source and uses the following licensed components:
 
 - **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
+- **libprojectM** (LGPL-2.1) - Milkdrop visualizations
 
 This project is not affiliated with Winamp LLC or Radionomy Group.
 
@@ -81,4 +96,9 @@ This project is not affiliated with Winamp LLC or Radionomy Group.
 
 - [Webamp](https://github.com/captbaritone/webamp) - Reference for skin parsing
 - [Winamp Skin Museum](https://skins.webamp.org/) - Skin archive
+- [Plex](https://www.plex.tv/) - Media server integration
 - Original Winamp by Nullsoft
+
+##
+
+The Team behind AdAmp really hopes that The Team behind Plexamp can resolve their issues with The Team behind Sonos 🙏🙏 so that my Plexamp mixes work properly on my speakers again. 
