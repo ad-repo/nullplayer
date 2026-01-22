@@ -78,6 +78,18 @@ class PlaylistView: NSView {
         displayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.needsDisplay = true
         }
+        
+        // Set up accessibility identifiers for UI testing
+        setupAccessibility()
+    }
+    
+    // MARK: - Accessibility
+    
+    /// Set up accessibility identifiers for UI testing
+    private func setupAccessibility() {
+        setAccessibilityIdentifier("playlistView")
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Playlist")
     }
     
     deinit {

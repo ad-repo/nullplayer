@@ -489,6 +489,18 @@ class PlexBrowserView: NSView {
         if WindowManager.shared.showBrowserArtworkBackground {
             loadArtwork(for: WindowManager.shared.audioEngine.currentTrack)
         }
+        
+        // Set up accessibility identifiers for UI testing
+        setupAccessibility()
+    }
+    
+    // MARK: - Accessibility
+    
+    /// Set up accessibility identifiers for UI testing
+    private func setupAccessibility() {
+        setAccessibilityIdentifier("plexBrowserView")
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Plex Browser")
     }
     
     // MARK: - Visualizer Animation

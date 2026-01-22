@@ -52,6 +52,10 @@ class MainWindowController: NSWindowController {
         
         // Set up window delegate
         window.delegate = self
+        
+        // Set accessibility identifier for UI testing
+        window.setAccessibilityIdentifier("MainWindow")
+        window.setAccessibilityLabel("Main Window")
     }
     
     private func setupView() {

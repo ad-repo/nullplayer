@@ -15,6 +15,7 @@
 | [docs/UI_GUIDE.md](docs/UI_GUIDE.md) | Coordinate systems, scaling, skin sprites |
 | [docs/AUDIO_SYSTEM.md](docs/AUDIO_SYSTEM.md) | Audio engine, EQ, spectrum, Plex streaming |
 | [docs/VISUALIZATIONS.md](docs/VISUALIZATIONS.md) | Album art and ProjectM visualizers |
+| [docs/TESTING.md](docs/TESTING.md) | UI testing mode, accessibility identifiers |
 
 ## Architecture
 

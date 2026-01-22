@@ -8,7 +8,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     private var windowManager: WindowManager!
     private var introPlayer: AVAudioPlayer?
     
+    /// Whether the app is running in UI testing mode
+    private(set) var isUITesting = false
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Check for UI testing mode
+        if CommandLine.arguments.contains("--ui-testing") {
+            setupUITestingMode()
+            return
+        }
+        
         // Set the application dock icon
         setupDockIcon()
         
@@ -43,6 +52,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         
         // Play intro sound
         playIntro()
+    }
+    
+    // MARK: - UI Testing Mode
+    
+    /// Set up the app for UI testing
+    /// - Skips Plex server auto-connection
+    /// - Disables network requests
+    /// - Loads test fixtures automatically
+    private func setupUITestingMode() {
+        isUITesting = true
+        NSLog("AdAmp: Running in UI testing mode")
+        
+        // Set the application dock icon
+        setupDockIcon()
+        
+        // Configure KSPlayer for FFmpeg-only playback
+        VideoPlayerWindowController.configureKSPlayer()
+        
+        // Skip Plex initialization in test mode
+        // PlexManager.shared will still be initialized but won't auto-connect
+        
+        // Initialize the window manager
+        windowManager = WindowManager.shared
+        
+        // Set up audio engine delegate
+        windowManager.audioEngine.delegate = self
+        
+        // Use default skin for consistent test results
+        // Don't load custom skins from environment in test mode
+        
+        // Show the main player window
+        windowManager.showMainWindow()
+        
+        // Bring app to foreground after windows are created
+        NSApp.activate(ignoringOtherApps: true)
+        windowManager.mainWindowController?.window?.makeKeyAndOrderFront(nil)
+        
+        // Set up the application menu
+        setupMainMenu()
+        
+        // Skip intro sound in test mode for faster test execution
+        NSLog("AdAmp: UI testing mode setup complete")
     }
     
     func applicationWillTerminate(_ notification: Notification) {

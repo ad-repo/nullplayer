@@ -94,6 +94,9 @@ class MainWindowView: NSView {
         // Set up tracking area for mouse events
         updateTrackingAreas()
         
+        // Set up accessibility identifiers for UI testing
+        setupAccessibility()
+        
         // Observe time display mode changes
         NotificationCenter.default.addObserver(self, selector: #selector(timeDisplayModeDidChange),
                                                name: .timeDisplayModeDidChange, object: nil)
@@ -103,6 +106,181 @@ class MainWindowView: NSView {
                                                name: CastManager.sessionDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(castingStateDidChange),
                                                name: CastManager.playbackStateDidChangeNotification, object: nil)
+    }
+    
+    // MARK: - Accessibility
+    
+    /// Set up accessibility identifiers for UI testing
+    private func setupAccessibility() {
+        // Set the view's accessibility identifier
+        setAccessibilityIdentifier("mainWindow")
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Main Window")
+        
+        // Note: Since this view uses custom drawing for Winamp skins,
+        // we expose accessibility elements via accessibilityChildren override
+        // rather than creating separate subviews. This allows XCUITest to
+        // find and interact with the custom-drawn controls.
+    }
+    
+    // MARK: - Accessibility Children (for custom drawn controls)
+    
+    override func accessibilityChildren() -> [Any]? {
+        var children: [NSAccessibilityElement] = []
+        
+        // Get current playback state for button states
+        let playbackState = WindowManager.shared.audioEngine.state
+        let isPlaying = playbackState == .playing
+        
+        // Transport buttons - use SkinElements.Transport.Positions
+        let transportPositions = SkinElements.Transport.Positions.self
+        
+        // Play button (hidden when playing, shows pause instead)
+        if !isPlaying {
+            let playElement = createAccessibilityButton(
+                identifier: "mainWindow.playButton",
+                label: "Play",
+                rect: transportPositions.play
+            )
+            children.append(playElement)
+        }
+        
+        // Pause button (visible when playing)
+        if isPlaying {
+            let pauseElement = createAccessibilityButton(
+                identifier: "mainWindow.pauseButton",
+                label: "Pause",
+                rect: transportPositions.pause
+            )
+            children.append(pauseElement)
+        }
+        
+        // Stop button
+        let stopElement = createAccessibilityButton(
+            identifier: "mainWindow.stopButton",
+            label: "Stop",
+            rect: transportPositions.stop
+        )
+        children.append(stopElement)
+        
+        // Previous button
+        let prevElement = createAccessibilityButton(
+            identifier: "mainWindow.previousButton",
+            label: "Previous",
+            rect: transportPositions.previous
+        )
+        children.append(prevElement)
+        
+        // Next button
+        let nextElement = createAccessibilityButton(
+            identifier: "mainWindow.nextButton",
+            label: "Next",
+            rect: transportPositions.next
+        )
+        children.append(nextElement)
+        
+        // Eject button
+        let ejectElement = createAccessibilityButton(
+            identifier: "mainWindow.ejectButton",
+            label: "Open File",
+            rect: transportPositions.eject
+        )
+        children.append(ejectElement)
+        
+        // Toggle buttons - use SkinElements.ShuffleRepeat.Positions
+        let shuffleElement = createAccessibilityButton(
+            identifier: "mainWindow.shuffleButton",
+            label: shuffleEnabled ? "Shuffle On" : "Shuffle Off",
+            rect: SkinElements.ShuffleRepeat.Positions.shuffle
+        )
+        children.append(shuffleElement)
+        
+        let repeatElement = createAccessibilityButton(
+            identifier: "mainWindow.repeatButton",
+            label: repeatEnabled ? "Repeat On" : "Repeat Off",
+            rect: SkinElements.ShuffleRepeat.Positions.repeatBtn
+        )
+        children.append(repeatElement)
+        
+        // Sliders
+        let seekElement = createAccessibilitySlider(
+            identifier: "mainWindow.seekSlider",
+            label: "Seek",
+            rect: SkinElements.PositionBar.Positions.track,
+            value: duration > 0 ? currentTime / duration : 0
+        )
+        children.append(seekElement)
+        
+        let volumeElement = createAccessibilitySlider(
+            identifier: "mainWindow.volumeSlider",
+            label: "Volume",
+            rect: SkinElements.Volume.Positions.slider,
+            value: Double(WindowManager.shared.audioEngine.volume)
+        )
+        children.append(volumeElement)
+        
+        let balanceElement = createAccessibilitySlider(
+            identifier: "mainWindow.balanceSlider",
+            label: "Balance",
+            rect: SkinElements.Balance.Positions.slider,
+            value: (Double(WindowManager.shared.audioEngine.balance) + 1) / 2
+        )
+        children.append(balanceElement)
+        
+        return children
+    }
+    
+    /// Create an accessibility button element for a given rect
+    private func createAccessibilityButton(identifier: String, label: String, rect: NSRect) -> NSAccessibilityElement {
+        let element = NSAccessibilityElement()
+        element.setAccessibilityIdentifier(identifier)
+        element.setAccessibilityLabel(label)
+        element.setAccessibilityRole(.button)
+        element.setAccessibilityParent(self)
+        
+        // Convert from Winamp coordinates (top-left origin) to screen coordinates
+        let convertedRect = convertWinampRectToScreen(rect)
+        element.setAccessibilityFrame(convertedRect)
+        
+        return element
+    }
+    
+    /// Create an accessibility slider element for a given rect
+    private func createAccessibilitySlider(identifier: String, label: String, rect: NSRect, value: Double) -> NSAccessibilityElement {
+        let element = NSAccessibilityElement()
+        element.setAccessibilityIdentifier(identifier)
+        element.setAccessibilityLabel(label)
+        element.setAccessibilityRole(.slider)
+        element.setAccessibilityValue(NSNumber(value: value))
+        element.setAccessibilityParent(self)
+        
+        // Convert from Winamp coordinates to screen coordinates
+        let convertedRect = convertWinampRectToScreen(rect)
+        element.setAccessibilityFrame(convertedRect)
+        
+        return element
+    }
+    
+    /// Convert a rect from Winamp coordinates (top-left origin) to screen coordinates
+    private func convertWinampRectToScreen(_ rect: NSRect) -> NSRect {
+        let originalHeight = isShadeMode ? SkinElements.MainShade.windowSize.height : Skin.baseMainSize.height
+        let scale = scaleFactor
+        
+        // Convert Y from Winamp (top-down) to macOS (bottom-up)
+        let macY = originalHeight - rect.maxY
+        
+        // Scale the rect
+        let scaledRect = NSRect(
+            x: rect.origin.x * scale,
+            y: macY * scale,
+            width: rect.width * scale,
+            height: rect.height * scale
+        )
+        
+        // Convert to screen coordinates
+        guard let window = window else { return scaledRect }
+        let windowRect = convert(scaledRect, to: nil)
+        return window.convertToScreen(windowRect)
     }
     
     deinit {

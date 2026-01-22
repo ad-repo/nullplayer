@@ -63,6 +63,10 @@ class EQWindowController: NSWindowController {
         }
         
         window.delegate = self
+        
+        // Set accessibility identifier for UI testing
+        window.setAccessibilityIdentifier("EqualizerWindow")
+        window.setAccessibilityLabel("Equalizer Window")
     }
     
     private func setupView() {
