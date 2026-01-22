@@ -76,6 +76,9 @@ class MilkdropView: NSView {
     private func setupView() {
         wantsLayer = true
         
+        // Set up accessibility identifiers for UI testing
+        setupAccessibility()
+        
         // Create and add OpenGL visualization view
         setupVisualizationView()
         
@@ -146,6 +149,15 @@ class MilkdropView: NSView {
         }
         stopPresetCycleTimer()
         visualizationGLView?.stopRendering()
+    }
+    
+    // MARK: - Accessibility
+    
+    /// Set up accessibility identifiers for UI testing
+    private func setupAccessibility() {
+        setAccessibilityIdentifier("visualizationView")
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Visualization")
     }
     
     // MARK: - Coordinate Conversion

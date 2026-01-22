@@ -70,6 +70,10 @@ class PlaylistWindowController: NSWindowController {
         }
         
         window.delegate = self
+        
+        // Set accessibility identifier for UI testing
+        window.setAccessibilityIdentifier("PlaylistWindow")
+        window.setAccessibilityLabel("Playlist Window")
     }
     
     private func setupView() {

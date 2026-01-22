@@ -52,6 +52,10 @@ class MilkdropWindowController: NSWindowController {
         window.center()
         
         window.delegate = self
+        
+        // Set accessibility identifier for UI testing
+        window.setAccessibilityIdentifier("MilkdropWindow")
+        window.setAccessibilityLabel("Visualization Window")
     }
     
     // MARK: - Window Display

@@ -92,6 +92,16 @@ class EQView: NSView {
     private func setupView() {
         wantsLayer = true
         loadCurrentEQState()
+        setupAccessibility()
+    }
+    
+    // MARK: - Accessibility
+    
+    /// Set up accessibility identifiers for UI testing
+    private func setupAccessibility() {
+        setAccessibilityIdentifier("equalizerView")
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Equalizer")
     }
     
     private func loadCurrentEQState() {

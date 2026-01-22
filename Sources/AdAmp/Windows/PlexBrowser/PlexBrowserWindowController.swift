@@ -59,6 +59,10 @@ class PlexBrowserWindowController: NSWindowController {
         window.center()
         
         window.delegate = self
+        
+        // Set accessibility identifier for UI testing
+        window.setAccessibilityIdentifier("PlexBrowserWindow")
+        window.setAccessibilityLabel("Plex Browser Window")
     }
     
     /// Position the window to the RIGHT of the main window

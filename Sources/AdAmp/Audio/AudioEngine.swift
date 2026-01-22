@@ -177,6 +177,9 @@ class AudioEngine {
     /// Debounce work item for streaming seeks to prevent rapid seek overload
     private var streamingSeekWorkItem: DispatchWorkItem?
     
+    /// Work item for resetting the seeking flag after a delay
+    private var streamingSeekResetWorkItem: DispatchWorkItem?
+    
     /// Flag to track if we're in the middle of a seek operation
     private var isSeekingStreaming: Bool = false
     
@@ -752,8 +755,9 @@ class AudioEngine {
         
         if isStreamingPlayback {
             // Streaming playback - seek via AudioStreaming with debouncing
-            // Cancel any pending seek to prevent overloading the player
+            // Cancel any pending seek and reset work items to prevent stale closures
             streamingSeekWorkItem?.cancel()
+            streamingSeekResetWorkItem?.cancel()
             
             // Update UI immediately for responsiveness
             lastReportedTime = seekTime
@@ -768,10 +772,8 @@ class AudioEngine {
                     self.isSeekingStreaming = true
                     NSLog("AudioEngine: Executing debounced seek to %.2f", seekTime)
                     self.streamingPlayer?.seek(to: seekTime)
-                    // Give the player time to process
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                        self?.isSeekingStreaming = false
-                    }
+                    // Schedule reset with a cancellable work item
+                    self.scheduleSeekingReset()
                 }
                 streamingSeekWorkItem = workItem
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
@@ -784,9 +786,7 @@ class AudioEngine {
             streamingPlayer?.seek(to: seekTime)
             
             // Reset seeking flag after a delay to allow player to stabilize
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.isSeekingStreaming = false
-            }
+            scheduleSeekingReset()
         } else {
             // Local file playback - seek via AVAudioEngine
             guard let file = audioFile else { return }
@@ -825,6 +825,20 @@ class AudioEngine {
                 playerNode.play()
             }
         }
+    }
+    
+    /// Schedule a cancellable reset of the isSeekingStreaming flag
+    /// This ensures old reset closures don't fire when new seeks come in
+    private func scheduleSeekingReset() {
+        // Cancel any existing reset work item
+        streamingSeekResetWorkItem?.cancel()
+        
+        // Create a new cancellable reset work item
+        let resetItem = DispatchWorkItem { [weak self] in
+            self?.isSeekingStreaming = false
+        }
+        streamingSeekResetWorkItem = resetItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: resetItem)
     }
     
     // MARK: - Time Updates
@@ -1824,13 +1838,18 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         case .stopped:
             self.state = .stopped
             isSeekingStreaming = false
+            // Cancel any pending reset work item
+            streamingSeekResetWorkItem?.cancel()
+            streamingSeekResetWorkItem = nil
         case .error:
             NSLog("AudioEngine: Streaming player entered error state")
             self.state = .stopped
             isSeekingStreaming = false
-            // Cancel any pending seeks
+            // Cancel any pending seeks and reset work items
             streamingSeekWorkItem?.cancel()
             streamingSeekWorkItem = nil
+            streamingSeekResetWorkItem?.cancel()
+            streamingSeekResetWorkItem = nil
         default:
             // bufferingStart, bufferingEnd, ready, etc. - don't change our state
             break
