@@ -161,8 +161,27 @@ class StreamingAudioPlayer {
     /// Seek to a specific time
     /// Note: AudioEngine is responsible for clamping to a safe range before calling this method
     func seek(to time: TimeInterval) {
-        NSLog("StreamingAudioPlayer: Seeking to %.2f (duration: %.2f)", time, duration)
+        NSLog("StreamingAudioPlayer: Seeking to %.2f (duration: %.2f, state: %@)", time, duration, String(describing: state))
+        
+        // Guard against seeking when player is in a bad state
+        guard state != .error else {
+            NSLog("StreamingAudioPlayer: Cannot seek - player is in error state")
+            return
+        }
+        
         player.seek(to: time)
+    }
+    
+    /// Check if player is in a recoverable state
+    var isPlayable: Bool {
+        state != .error && state != .disposed
+    }
+    
+    /// Attempt to recover from error state by reloading the current URL
+    func attemptRecovery(with url: URL) {
+        NSLog("StreamingAudioPlayer: Attempting recovery with URL: %@", url.absoluteString)
+        stop()
+        play(url: url)
     }
     
     // MARK: - Equalizer

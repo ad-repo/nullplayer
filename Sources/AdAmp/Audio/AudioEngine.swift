@@ -174,6 +174,12 @@ class AudioEngine {
     /// Incremented on each seek/load to invalidate old completion handlers
     private var playbackGeneration: Int = 0
     
+    /// Debounce work item for streaming seeks to prevent rapid seek overload
+    private var streamingSeekWorkItem: DispatchWorkItem?
+    
+    /// Flag to track if we're in the middle of a seek operation
+    private var isSeekingStreaming: Bool = false
+    
     /// Timer for time updates
     private var timeUpdateTimer: Timer?
     
@@ -495,7 +501,20 @@ class AudioEngine {
         
         if isStreamingPlayback {
             // Streaming playback via AudioStreaming (with EQ support)
-            NSLog("play(): Starting streaming playback via AudioStreaming")
+            NSLog("play(): Starting streaming playback via AudioStreaming (state: %@)", String(describing: streamingPlayer?.state ?? .stopped))
+            
+            // If streaming player is stopped (not paused), we need to reload the URL
+            // resume() only works on a paused player, not a stopped one
+            if let playerState = streamingPlayer?.state, playerState == .stopped || playerState == .error {
+                NSLog("play(): Streaming player is stopped/error - reloading track")
+                // Reload the current track to restart playback
+                if currentIndex >= 0 && currentIndex < playlist.count {
+                    loadTrack(at: currentIndex)
+                    // play() will be called again after loadTrack completes and starts playing
+                    return
+                }
+            }
+            
             streamingPlayer?.resume()
             playbackStartDate = Date()
             state = .playing
@@ -732,10 +751,42 @@ class AudioEngine {
         let seekTime = max(0, min(time, currentDuration - eofBuffer))
         
         if isStreamingPlayback {
-            // Streaming playback - seek via AudioStreaming
-            // Time is already clamped appropriately above
-            streamingPlayer?.seek(to: seekTime)
+            // Streaming playback - seek via AudioStreaming with debouncing
+            // Cancel any pending seek to prevent overloading the player
+            streamingSeekWorkItem?.cancel()
+            
+            // Update UI immediately for responsiveness
             lastReportedTime = seekTime
+            
+            // If already seeking, just update the target and return
+            // The debounced work item will use the latest value
+            if isSeekingStreaming {
+                NSLog("AudioEngine: Seek debounced - already seeking, will seek to %.2f", seekTime)
+                // Schedule the actual seek after a short delay
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self = self else { return }
+                    self.isSeekingStreaming = true
+                    NSLog("AudioEngine: Executing debounced seek to %.2f", seekTime)
+                    self.streamingPlayer?.seek(to: seekTime)
+                    // Give the player time to process
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                        self?.isSeekingStreaming = false
+                    }
+                }
+                streamingSeekWorkItem = workItem
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+                return
+            }
+            
+            // First seek - execute immediately
+            isSeekingStreaming = true
+            NSLog("AudioEngine: Seeking streaming to %.2f", seekTime)
+            streamingPlayer?.seek(to: seekTime)
+            
+            // Reset seeking flag after a delay to allow player to stabilize
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.isSeekingStreaming = false
+            }
         } else {
             // Local file playback - seek via AVAudioEngine
             guard let file = audioFile else { return }
@@ -1767,10 +1818,19 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         case .playing:
             self.state = .playing
             playbackStartDate = Date()
+            isSeekingStreaming = false  // Clear seeking flag on successful playback
         case .paused:
             self.state = .paused
         case .stopped:
             self.state = .stopped
+            isSeekingStreaming = false
+        case .error:
+            NSLog("AudioEngine: Streaming player entered error state")
+            self.state = .stopped
+            isSeekingStreaming = false
+            // Cancel any pending seeks
+            streamingSeekWorkItem?.cancel()
+            streamingSeekWorkItem = nil
         default:
             // bufferingStart, bufferingEnd, ready, etc. - don't change our state
             break

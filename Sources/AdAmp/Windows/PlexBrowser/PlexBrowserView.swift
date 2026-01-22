@@ -3988,6 +3988,19 @@ class PlexBrowserView: NSView {
         cycleItem.state = visMode == .cycle ? .on : .off
         menu.addItem(cycleItem)
         
+        // Cycle interval submenu
+        let intervalMenu = NSMenu()
+        for (name, seconds) in [("5 seconds", 5.0), ("10 seconds", 10.0), ("20 seconds", 20.0), ("30 seconds", 30.0)] {
+            let item = NSMenuItem(title: name, action: #selector(selectCycleSpeed(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = Int(seconds)
+            item.state = abs(cycleInterval - seconds) < 0.5 ? .on : .off
+            intervalMenu.addItem(item)
+        }
+        let intervalMenuItem = NSMenuItem(title: "Cycle Interval", action: nil, keyEquivalent: "")
+        intervalMenuItem.submenu = intervalMenu
+        menu.addItem(intervalMenuItem)
+        
         menu.addItem(NSMenuItem.separator())
         
         // Effects submenu (organized by category)

@@ -38,6 +38,22 @@ class MilkdropView: NSView {
     /// Observer for playback state changes
     private var playbackStateObserver: NSObjectProtocol?
     
+    /// Preset cycling mode
+    enum PresetCycleMode {
+        case off       // Manual only
+        case cycle     // Sequential cycling
+        case random    // Random on timer
+    }
+    
+    /// Current preset cycle mode
+    private var presetCycleMode: PresetCycleMode = .off
+    
+    /// Timer for preset cycling
+    private var presetCycleTimer: Timer?
+    
+    /// Cycle interval in seconds
+    private var presetCycleInterval: TimeInterval = 30.0
+    
     // MARK: - Layout Constants
     // Reference to SkinElements.Milkdrop.Layout for consistency
     
@@ -128,6 +144,7 @@ class MilkdropView: NSView {
         if let observer = playbackStateObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        stopPresetCycleTimer()
         visualizationGLView?.stopRendering()
     }
     
@@ -471,6 +488,22 @@ class MilkdropView: NSView {
                 NSLog("MilkdropView: Preset lock %@", vis.isPresetLocked ? "enabled" : "disabled")
             }
             
+        case 8: // C key - toggle cycle mode
+            switch presetCycleMode {
+            case .off:
+                presetCycleMode = .cycle
+                startPresetCycleTimer()
+                NSLog("MilkdropView: Auto-cycle enabled")
+            case .cycle:
+                presetCycleMode = .random
+                startPresetCycleTimer()
+                NSLog("MilkdropView: Auto-random enabled")
+            case .random:
+                presetCycleMode = .off
+                stopPresetCycleTimer()
+                NSLog("MilkdropView: Auto-cycle disabled")
+            }
+            
         default:
             super.keyDown(with: event)
         }
@@ -513,6 +546,37 @@ class MilkdropView: NSView {
             lockPresetItem.target = self
             lockPresetItem.state = (visualizationGLView?.isPresetLocked ?? false) ? .on : .off
             menu.addItem(lockPresetItem)
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            // Cycle mode options
+            let cycleOffItem = NSMenuItem(title: "Manual Only", action: #selector(setCycleModeOff(_:)), keyEquivalent: "")
+            cycleOffItem.target = self
+            cycleOffItem.state = presetCycleMode == .off ? .on : .off
+            menu.addItem(cycleOffItem)
+            
+            let cycleSeqItem = NSMenuItem(title: "Auto-Cycle", action: #selector(setCycleModeCycle(_:)), keyEquivalent: "c")
+            cycleSeqItem.target = self
+            cycleSeqItem.state = presetCycleMode == .cycle ? .on : .off
+            menu.addItem(cycleSeqItem)
+            
+            let cycleRandItem = NSMenuItem(title: "Auto-Random", action: #selector(setCycleModeRandom(_:)), keyEquivalent: "")
+            cycleRandItem.target = self
+            cycleRandItem.state = presetCycleMode == .random ? .on : .off
+            menu.addItem(cycleRandItem)
+            
+            // Cycle interval submenu
+            let intervalMenu = NSMenu()
+            for (name, seconds) in [("5 seconds", 5.0), ("10 seconds", 10.0), ("20 seconds", 20.0), ("30 seconds", 30.0), ("60 seconds", 60.0), ("2 minutes", 120.0)] {
+                let item = NSMenuItem(title: name, action: #selector(setCycleInterval(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = Int(seconds)
+                item.state = abs(presetCycleInterval - seconds) < 0.5 ? .on : .off
+                intervalMenu.addItem(item)
+            }
+            let intervalMenuItem = NSMenuItem(title: "Cycle Interval", action: nil, keyEquivalent: "")
+            intervalMenuItem.submenu = intervalMenu
+            menu.addItem(intervalMenuItem)
             
             menu.addItem(NSMenuItem.separator())
             
@@ -581,6 +645,50 @@ class MilkdropView: NSView {
     
     @objc private func closeWindow(_ sender: Any?) {
         window?.close()
+    }
+    
+    // MARK: - Preset Cycle Mode
+    
+    @objc private func setCycleModeOff(_ sender: Any?) {
+        presetCycleMode = .off
+        stopPresetCycleTimer()
+    }
+    
+    @objc private func setCycleModeCycle(_ sender: Any?) {
+        presetCycleMode = .cycle
+        startPresetCycleTimer()
+    }
+    
+    @objc private func setCycleModeRandom(_ sender: Any?) {
+        presetCycleMode = .random
+        startPresetCycleTimer()
+    }
+    
+    @objc private func setCycleInterval(_ sender: NSMenuItem) {
+        presetCycleInterval = TimeInterval(sender.tag)
+        if presetCycleMode != .off {
+            startPresetCycleTimer()  // Restart with new interval
+        }
+    }
+    
+    private func startPresetCycleTimer() {
+        stopPresetCycleTimer()
+        presetCycleTimer = Timer.scheduledTimer(withTimeInterval: presetCycleInterval, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            switch self.presetCycleMode {
+            case .cycle:
+                self.visualizationGLView?.nextPreset(hardCut: false)
+            case .random:
+                self.visualizationGLView?.randomPreset(hardCut: false)
+            case .off:
+                break
+            }
+        }
+    }
+    
+    private func stopPresetCycleTimer() {
+        presetCycleTimer?.invalidate()
+        presetCycleTimer = nil
     }
     
     // MARK: - Layout
