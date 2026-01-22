@@ -99,6 +99,3 @@ This project is not affiliated with Winamp LLC or Radionomy Group.
 - [Plex](https://www.plex.tv/) - Media server integration
 - Original Winamp by Nullsoft
 
-##
-
-The Team behind AdAmp really hopes that The Team behind Plexamp can resolve their issues with The Team behind Sonos 🙏🙏 so that my Plexamp mixes work properly on my speakers again. 

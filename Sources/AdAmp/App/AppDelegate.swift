@@ -129,23 +129,138 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     // MARK: - Menu Actions
     
     @objc private func showAbout() {
-        let alert = NSAlert()
-        alert.messageText = "AdAmp"
-        alert.informativeText = "A loaded Winamp 2 clone for macOS!\n\nVersion 1.0\n\nRe-imagined by ad\n\nThanks to Nullsoft and Winamp"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "GitHub")
-        alert.addButton(withTitle: "LinkedIn")
+        // Create custom About window
+        let windowWidth: CGFloat = 340
+        let windowHeight: CGFloat = 440
         
-        let response = alert.runModal()
-        if response == .alertSecondButtonReturn {
-            if let url = URL(string: "https://github.com/ad-repo") {
-                NSWorkspace.shared.open(url)
-            }
-        } else if response == .alertThirdButtonReturn {
-            if let url = URL(string: "https://www.linkedin.com/in/andrew-d-9b83aa148/") {
-                NSWorkspace.shared.open(url)
-            }
+        let window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "About AdAmp"
+        window.isMovableByWindowBackground = true
+        window.center()
+        
+        // Dark background
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = NSColor(white: 0.12, alpha: 1.0).cgColor
+        window.contentView = contentView
+        
+        var y: CGFloat = windowHeight - 30
+        
+        // App icon
+        let iconSize: CGFloat = 96
+        let iconView = NSImageView(frame: NSRect(x: (windowWidth - iconSize) / 2, y: y - iconSize, width: iconSize, height: iconSize))
+        iconView.image = NSApp.applicationIconImage
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        contentView.addSubview(iconView)
+        y -= iconSize + 16
+        
+        // App name
+        let nameLabel = NSTextField(labelWithString: "AdAmp")
+        nameLabel.font = NSFont.systemFont(ofSize: 28, weight: .bold)
+        nameLabel.textColor = .white
+        nameLabel.alignment = .center
+        nameLabel.frame = NSRect(x: 20, y: y - 34, width: windowWidth - 40, height: 34)
+        contentView.addSubview(nameLabel)
+        y -= 40
+        
+        // Version
+        let versionLabel = NSTextField(labelWithString: "Version 1.0")
+        versionLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        versionLabel.textColor = NSColor(white: 0.6, alpha: 1.0)
+        versionLabel.alignment = .center
+        versionLabel.frame = NSRect(x: 20, y: y - 18, width: windowWidth - 40, height: 18)
+        contentView.addSubview(versionLabel)
+        y -= 28
+        
+        // Tagline
+        let taglineLabel = NSTextField(labelWithString: "A loaded Winamp 2 clone for macOS")
+        taglineLabel.font = NSFont.systemFont(ofSize: 14)
+        taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
+        taglineLabel.alignment = .center
+        taglineLabel.frame = NSRect(x: 20, y: y - 20, width: windowWidth - 40, height: 20)
+        contentView.addSubview(taglineLabel)
+        y -= 36
+        
+        // Separator
+        let separator = NSBox(frame: NSRect(x: 40, y: y, width: windowWidth - 80, height: 1))
+        separator.boxType = .separator
+        contentView.addSubview(separator)
+        y -= 20
+        
+        // Credits
+        let creditLabel = NSTextField(labelWithString: "Re-imagined by ad")
+        creditLabel.font = NSFont.systemFont(ofSize: 13)
+        creditLabel.textColor = NSColor(white: 0.7, alpha: 1.0)
+        creditLabel.alignment = .center
+        creditLabel.frame = NSRect(x: 20, y: y - 18, width: windowWidth - 40, height: 18)
+        contentView.addSubview(creditLabel)
+        y -= 24
+        
+        let thanksLabel = NSTextField(labelWithString: "Thanks to Nullsoft and Winamp")
+        thanksLabel.font = NSFont.systemFont(ofSize: 12)
+        thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
+        thanksLabel.alignment = .center
+        thanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
+        contentView.addSubview(thanksLabel)
+        y -= 36
+        
+        // Buttons
+        let buttonWidth: CGFloat = 120
+        let buttonHeight: CGFloat = 28
+        let buttonSpacing: CGFloat = 12
+        let totalButtonWidth = buttonWidth * 2 + buttonSpacing
+        let buttonStartX = (windowWidth - totalButtonWidth) / 2
+        
+        let githubButton = NSButton(frame: NSRect(x: buttonStartX, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
+        githubButton.title = "GitHub"
+        githubButton.bezelStyle = .rounded
+        githubButton.target = self
+        githubButton.action = #selector(openGitHub)
+        contentView.addSubview(githubButton)
+        
+        let linkedinButton = NSButton(frame: NSRect(x: buttonStartX + buttonWidth + buttonSpacing, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
+        linkedinButton.title = "LinkedIn"
+        linkedinButton.bezelStyle = .rounded
+        linkedinButton.target = self
+        linkedinButton.action = #selector(openLinkedIn)
+        contentView.addSubview(linkedinButton)
+        y -= buttonHeight + 16
+        
+        // OK button (centered, prominent)
+        let okButton = NSButton(frame: NSRect(x: (windowWidth - buttonWidth) / 2, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
+        okButton.title = "OK"
+        okButton.bezelStyle = .rounded
+        okButton.keyEquivalent = "\r"  // Enter key closes
+        okButton.target = self
+        okButton.action = #selector(closeAboutWindow)
+        contentView.addSubview(okButton)
+        
+        // Store window reference and show
+        aboutWindow = window
+        window.makeKeyAndOrderFront(nil)
+    }
+    
+    private var aboutWindow: NSPanel?
+    
+    @objc private func closeAboutWindow() {
+        aboutWindow?.close()
+        aboutWindow = nil
+    }
+    
+    @objc private func openGitHub() {
+        if let url = URL(string: "https://github.com/ad-repo") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    @objc private func openLinkedIn() {
+        if let url = URL(string: "https://www.linkedin.com/in/andrew-d-9b83aa148/") {
+            NSWorkspace.shared.open(url)
         }
     }
     
