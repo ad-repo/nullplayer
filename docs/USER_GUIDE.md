@@ -680,11 +680,9 @@ The main window displays real-time frequency analysis:
 | Apple Lossless | .alac |
 | Ogg Vorbis | .ogg |
 
-### Audio (Streaming)
+### Audio (Plex)
 
-- HTTP/HTTPS streams
-- MP3, AAC, Ogg Vorbis
-- Shoutcast/Icecast with metadata
+- Everything Plex supports
 
 ### Video
 
