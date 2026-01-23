@@ -170,8 +170,8 @@ class AppStateManager {
             let encoder = JSONEncoder()
             let data = try encoder.encode(state)
             UserDefaults.standard.set(data, forKey: Keys.savedAppState)
-            NSLog("AppStateManager: Saved state - playlist: %d tracks, position: %.1fs, volume: %.2f",
-                  state.playlistURLs.count, state.playbackPosition, state.volume)
+            NSLog("AppStateManager: Saved state - playlist: %d tracks, position: %.1fs, volume: %.2f, alwaysOnTop: %d",
+                  state.playlistURLs.count, state.playbackPosition, state.volume, state.isAlwaysOnTop ? 1 : 0)
         } catch {
             NSLog("AppStateManager: Failed to save state: %@", error.localizedDescription)
         }
@@ -233,6 +233,7 @@ class AppStateManager {
         if let mode = TimeDisplayMode(rawValue: state.timeDisplayMode) {
             wm.timeDisplayMode = mode
         }
+        NSLog("AppStateManager: Restoring isAlwaysOnTop = %d", state.isAlwaysOnTop ? 1 : 0)
         wm.isAlwaysOnTop = state.isAlwaysOnTop
         
         // Restore custom skin if set

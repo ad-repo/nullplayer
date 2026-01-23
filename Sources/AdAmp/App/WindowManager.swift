@@ -55,6 +55,7 @@ class WindowManager {
     var isAlwaysOnTop: Bool = false {
         didSet {
             UserDefaults.standard.set(isAlwaysOnTop, forKey: "isAlwaysOnTop")
+            NSLog("WindowManager: isAlwaysOnTop changed to %d, applying to windows", isAlwaysOnTop ? 1 : 0)
             applyAlwaysOnTop()
         }
     }
@@ -145,7 +146,9 @@ class WindowManager {
         }
         // Note: isDoubleSize always starts false - windows are created at 1x size
         // and we apply double size after they're created if needed
-        isAlwaysOnTop = UserDefaults.standard.bool(forKey: "isAlwaysOnTop")
+        let savedAlwaysOnTop = UserDefaults.standard.bool(forKey: "isAlwaysOnTop")
+        isAlwaysOnTop = savedAlwaysOnTop
+        NSLog("WindowManager: Loaded isAlwaysOnTop = %d from UserDefaults", savedAlwaysOnTop ? 1 : 0)
     }
     
     // MARK: - Window Management
