@@ -88,6 +88,9 @@ class PlexManager {
     /// Cached TV shows for show library
     private(set) var cachedShows: [PlexShow] = []
     
+    /// Cached playlists (not library-specific)
+    private(set) var cachedPlaylists: [PlexPlaylist] = []
+    
     /// Whether library content has been preloaded
     private(set) var isContentPreloaded: Bool = false
     
@@ -401,6 +404,7 @@ class PlexManager {
         cachedAlbums = []
         cachedMovies = []
         cachedShows = []
+        cachedPlaylists = []
         isContentPreloaded = false
     }
     
@@ -642,6 +646,34 @@ class PlexManager {
         return try await client.fetchEpisodes(forSeason: season.id)
     }
     
+    // MARK: - Playlist Operations
+    
+    /// Fetch all playlists (not library-specific)
+    func fetchPlaylists() async throws -> [PlexPlaylist] {
+        guard let client = serverClient else {
+            return []
+        }
+        let playlists = try await client.fetchPlaylists()
+        cachedPlaylists = playlists
+        return playlists
+    }
+    
+    /// Fetch audio playlists only
+    func fetchAudioPlaylists() async throws -> [PlexPlaylist] {
+        guard let client = serverClient else {
+            return []
+        }
+        return try await client.fetchAudioPlaylists()
+    }
+    
+    /// Fetch tracks in a playlist
+    func fetchPlaylistTracks(playlistID: String) async throws -> [PlexTrack] {
+        guard let client = serverClient else {
+            return []
+        }
+        return try await client.fetchPlaylistTracks(playlistID: playlistID)
+    }
+    
     // MARK: - URL Generation
     
     /// Get streaming URL for a track
@@ -673,17 +705,29 @@ class PlexManager {
     
     /// Convert a Plex track to an AudioEngine-compatible Track
     func convertToTrack(_ plexTrack: PlexTrack) -> Track? {
-        guard let streamURL = streamURL(for: plexTrack) else { return nil }
+        guard let streamURL = streamURL(for: plexTrack) else {
+            NSLog("PlexManager: Cannot convert track '%@' - no stream URL (missing partKey)", plexTrack.title)
+            return nil
+        }
         
         // Extract audio info from media
         let media = plexTrack.media.first
         let bitrate = media?.bitrate
         let channels = media?.audioChannels
         
+        // Use grandparentTitle as artist, but avoid duplication if title already contains artist
+        var artist = plexTrack.grandparentTitle
+        let title = plexTrack.title
+        
+        // Check if title already starts with artist name (avoid "Artist - Artist - Song")
+        if let artistName = artist, title.lowercased().hasPrefix(artistName.lowercased() + " - ") {
+            artist = nil  // Don't set artist if title already includes it
+        }
+        
         return Track(
             url: streamURL,
-            title: plexTrack.title,
-            artist: plexTrack.grandparentTitle,
+            title: title,
+            artist: artist,
             album: plexTrack.parentTitle,
             duration: plexTrack.durationInSeconds,
             bitrate: bitrate,

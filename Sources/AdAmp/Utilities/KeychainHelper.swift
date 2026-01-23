@@ -23,6 +23,7 @@ class KeychainHelper {
         static let plexAuthToken = "plex_auth_token"
         static let plexClientIdentifier = "plex_client_identifier"
         static let plexAccountData = "plex_account_data"
+        static let subsonicServers = "subsonic_servers"
     }
     
     // MARK: - Plex Auth Token
@@ -79,6 +80,60 @@ class KeychainHelper {
         delete(forKey: Keys.plexAuthToken)
         delete(forKey: Keys.plexAccountData)
         // Note: We keep the client identifier as it should persist
+    }
+    
+    // MARK: - Subsonic Server Credentials
+    
+    /// Store Subsonic server credentials
+    func setSubsonicServers(_ servers: [SubsonicServerCredentials]) -> Bool {
+        guard let data = try? JSONEncoder().encode(servers) else {
+            return false
+        }
+        return setData(data, forKey: Keys.subsonicServers)
+    }
+    
+    /// Retrieve all stored Subsonic server credentials
+    func getSubsonicServers() -> [SubsonicServerCredentials] {
+        guard let data = getData(forKey: Keys.subsonicServers) else {
+            return []
+        }
+        return (try? JSONDecoder().decode([SubsonicServerCredentials].self, from: data)) ?? []
+    }
+    
+    /// Add a new Subsonic server
+    func addSubsonicServer(_ server: SubsonicServerCredentials) -> Bool {
+        var servers = getSubsonicServers()
+        // Remove existing server with same ID if any
+        servers.removeAll { $0.id == server.id }
+        servers.append(server)
+        return setSubsonicServers(servers)
+    }
+    
+    /// Update an existing Subsonic server
+    func updateSubsonicServer(_ server: SubsonicServerCredentials) -> Bool {
+        var servers = getSubsonicServers()
+        if let index = servers.firstIndex(where: { $0.id == server.id }) {
+            servers[index] = server
+            return setSubsonicServers(servers)
+        }
+        return false
+    }
+    
+    /// Remove a Subsonic server by ID
+    func removeSubsonicServer(id: String) -> Bool {
+        var servers = getSubsonicServers()
+        servers.removeAll { $0.id == id }
+        return setSubsonicServers(servers)
+    }
+    
+    /// Get a specific Subsonic server by ID
+    func getSubsonicServer(id: String) -> SubsonicServerCredentials? {
+        return getSubsonicServers().first { $0.id == id }
+    }
+    
+    /// Delete all Subsonic server credentials
+    func clearSubsonicCredentials() {
+        delete(forKey: Keys.subsonicServers)
     }
     
     // MARK: - Generic Keychain Operations

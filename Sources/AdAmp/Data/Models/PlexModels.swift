@@ -184,6 +184,43 @@ struct PlexTrack: Identifiable, Equatable {
     }
 }
 
+// MARK: - Playlist Models
+
+/// A playlist on a Plex server
+struct PlexPlaylist: Identifiable, Equatable {
+    let id: String              // ratingKey
+    let key: String             // API path for items
+    let title: String
+    let summary: String?
+    let playlistType: String    // "audio", "video", or "photo"
+    let smart: Bool             // Whether it's a smart playlist
+    let thumb: String?          // Playlist artwork
+    let composite: String?      // Composite image path
+    let duration: Int?          // Total duration in milliseconds
+    let leafCount: Int          // Number of items
+    let addedAt: Date?
+    let updatedAt: Date?
+    
+    var isAudioPlaylist: Bool {
+        playlistType == "audio"
+    }
+    
+    var isVideoPlaylist: Bool {
+        playlistType == "video"
+    }
+    
+    var formattedDuration: String? {
+        guard let duration = duration else { return nil }
+        let seconds = duration / 1000
+        let minutes = seconds / 60
+        let hours = minutes / 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes % 60, seconds % 60)
+        }
+        return String(format: "%d:%02d", minutes, seconds % 60)
+    }
+}
+
 // MARK: - Video Models
 
 /// A movie in a Plex movie library
@@ -445,6 +482,10 @@ struct PlexMetadataDTO: Decodable {
     let genre: [PlexTagDTO]?
     let studio: String?
     let contentRating: String?  // MPAA/TV rating
+    // Playlist-specific fields
+    let playlistType: String?   // "audio", "video", or "photo"
+    let smart: Bool?            // Whether it's a smart playlist
+    let composite: String?      // Composite image path for playlists
     
     enum CodingKeys: String, CodingKey {
         case ratingKey, key, type, title, parentTitle, grandparentTitle
@@ -454,6 +495,7 @@ struct PlexMetadataDTO: Decodable {
         case media = "Media"
         case genre = "Genre"
         case studio, contentRating
+        case playlistType, smart, composite
     }
     
     func toArtist() -> PlexArtist {
@@ -592,6 +634,23 @@ struct PlexMetadataDTO: Decodable {
             media: media?.map { $0.toMedia() } ?? [],
             addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
             originallyAvailableAt: airDate
+        )
+    }
+    
+    func toPlaylist() -> PlexPlaylist {
+        PlexPlaylist(
+            id: ratingKey,
+            key: key,
+            title: title,
+            summary: summary,
+            playlistType: playlistType ?? "audio",
+            smart: smart ?? false,
+            thumb: thumb,
+            composite: composite,
+            duration: duration,
+            leafCount: leafCount ?? 0,
+            addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+            updatedAt: updatedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
         )
     }
 }

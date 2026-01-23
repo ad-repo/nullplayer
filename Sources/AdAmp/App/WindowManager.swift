@@ -30,6 +30,9 @@ class WindowManager {
     /// The currently loaded skin
     private(set) var currentSkin: Skin?
     
+    /// Path to the currently loaded custom skin (nil if using a base skin)
+    private(set) var currentSkinPath: String?
+    
     // MARK: - User Preferences
     
     /// Time display mode (elapsed vs remaining)
@@ -73,6 +76,7 @@ class WindowManager {
     
     /// Milkdrop visualization window controller
     private var milkdropWindowController: MilkdropWindowController?
+    
     
     /// Video playback time tracking
     private(set) var videoCurrentTime: TimeInterval = 0
@@ -325,6 +329,32 @@ class WindowManager {
         plexBrowserWindowController?.reloadData()
     }
     
+    // MARK: - Subsonic Sheets
+    
+    /// Subsonic dialogs
+    private var subsonicLinkSheet: SubsonicLinkSheet?
+    private var subsonicServerListSheet: SubsonicServerListSheet?
+    
+    /// Show the Subsonic server add dialog
+    func showSubsonicLinkSheet() {
+        subsonicLinkSheet = SubsonicLinkSheet()
+        subsonicLinkSheet?.showDialog { [weak self] server in
+            self?.subsonicLinkSheet = nil
+            if server != nil {
+                self?.plexBrowserWindowController?.reloadData()
+            }
+        }
+    }
+    
+    /// Show the Subsonic server list management dialog
+    func showSubsonicServerList() {
+        subsonicServerListSheet = SubsonicServerListSheet()
+        subsonicServerListSheet?.showDialog { [weak self] _ in
+            self?.subsonicServerListSheet = nil
+            self?.plexBrowserWindowController?.reloadData()
+        }
+    }
+    
     // MARK: - Video Player Window
     
     /// Show the video player with a URL and title
@@ -533,6 +563,7 @@ class WindowManager {
         do {
             let skin = try SkinLoader.shared.load(from: url)
             currentSkin = skin
+            currentSkinPath = url.path
             notifySkinChanged()
         } catch {
             print("Failed to load skin: \(error)")
@@ -546,18 +577,21 @@ class WindowManager {
     /// Load the base/default skin (Base Skin 1)
     func loadBaseSkin() {
         currentSkin = SkinLoader.shared.loadDefault()
+        currentSkinPath = nil  // Base skins don't have a custom path
         notifySkinChanged()
     }
     
     /// Load the second built-in skin (Base Skin 2)
     func loadBaseSkin2() {
         currentSkin = SkinLoader.shared.loadBaseSkin2()
+        currentSkinPath = nil  // Base skins don't have a custom path
         notifySkinChanged()
     }
     
     /// Load the third built-in skin (Base Skin 3)
     func loadBaseSkin3() {
         currentSkin = SkinLoader.shared.loadBaseSkin3()
+        currentSkinPath = nil  // Base skins don't have a custom path
         notifySkinChanged()
     }
     

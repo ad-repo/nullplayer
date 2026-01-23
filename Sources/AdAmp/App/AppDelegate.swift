@@ -50,7 +50,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         // Set up the application menu
         setupMainMenu()
         
-        // Play intro sound
+        // Always play intro sound - state will be restored after intro finishes
         playIntro()
     }
     
@@ -97,7 +97,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     }
     
     func applicationWillTerminate(_ notification: Notification) {
-        // Save state before quitting
+        // Save app state if "Remember State" is enabled
+        AppStateManager.shared.saveState()
+        
+        // Save window positions (always saved, used by snapToDefault)
         windowManager.saveWindowPositions()
     }
     
@@ -149,12 +152,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     // MARK: - AVAudioPlayerDelegate
     
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        NSLog("Intro finished playing, clearing playlist")
-        // Clear the playlist and stop when intro finishes - resets UI to clean state
+        NSLog("Intro finished playing")
+        // After intro finishes, restore saved state or clear to clean state
         // Must dispatch to main thread since this delegate may be called from audio thread
         DispatchQueue.main.async { [weak self] in
-            self?.windowManager.audioEngine.clearPlaylist()
             self?.introPlayer = nil
+            self?.windowManager.audioEngine.clearPlaylist()
+            
+            // Now restore saved state if "Remember State" is enabled
+            AppStateManager.shared.restoreState()
         }
     }
     

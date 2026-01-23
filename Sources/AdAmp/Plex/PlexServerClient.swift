@@ -45,6 +45,7 @@ class PlexServerClient {
             "X-Plex-Platform-Version": ProcessInfo.processInfo.operatingSystemVersionString,
             "X-Plex-Device": "Mac",
             "X-Plex-Device-Name": Host.current().localizedName ?? "Mac",
+            "X-Plex-Device-Icon": "https://raw.githubusercontent.com/ad-repo/adamp/main/AppIcon.png",
             "X-Plex-Token": authToken,
             "Accept": "application/json"
         ]
@@ -61,6 +62,7 @@ class PlexServerClient {
             "X-Plex-Platform-Version": ProcessInfo.processInfo.operatingSystemVersionString,
             "X-Plex-Device": "Mac",
             "X-Plex-Device-Name": Host.current().localizedName ?? "Mac",
+            "X-Plex-Device-Icon": "https://raw.githubusercontent.com/ad-repo/adamp/main/AppIcon.png",
             "X-Plex-Token": authToken
         ]
     }
@@ -413,6 +415,42 @@ class PlexServerClient {
         ]
         
         return components?.url
+    }
+    
+    // MARK: - Playlist Operations
+    
+    /// Fetch all playlists on the server
+    func fetchPlaylists() async throws -> [PlexPlaylist] {
+        guard let request = buildRequest(path: "/playlists") else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        return response.mediaContainer.metadata?.map { $0.toPlaylist() } ?? []
+    }
+    
+    /// Fetch audio (music) playlists only
+    func fetchAudioPlaylists() async throws -> [PlexPlaylist] {
+        let queryItems = [
+            URLQueryItem(name: "playlistType", value: "audio")
+        ]
+        
+        guard let request = buildRequest(path: "/playlists", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        return response.mediaContainer.metadata?.map { $0.toPlaylist() } ?? []
+    }
+    
+    /// Fetch tracks in a playlist
+    func fetchPlaylistTracks(playlistID: String) async throws -> [PlexTrack] {
+        guard let request = buildRequest(path: "/playlists/\(playlistID)/items") else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        return response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
     }
     
     /// Generate an artwork/thumbnail URL

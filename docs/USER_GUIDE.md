@@ -14,6 +14,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex Media Server integration
 - [Art Visualizer](#art-visualizer)
 - [Video Player](#video-player)
 - [Plex Integration](#plex-integration)
+- [Navidrome/Subsonic Integration](#navidromesubsonic-integration)
 - [Output Devices & Casting](#output-devices--casting)
 - [Skins](#skins)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
@@ -422,6 +423,56 @@ A track is "scrobbled" when:
 
 ---
 
+## Navidrome/Subsonic Integration
+
+AdAmp supports Navidrome, Subsonic, and other Subsonic-compatible music servers.
+
+### Adding a Server
+
+1. Open context menu > **Navidrome/Subsonic > Add Server...**
+2. Enter server details:
+   - **Name**: Display name for the server
+   - **URL**: Server address (e.g., `http://localhost:4533` or `https://music.example.com`)
+   - **Username**: Your server username
+   - **Password**: Your server password
+3. Click **Test Connection** to verify (optional)
+4. Click **Save** to add and connect
+
+### Managing Servers
+
+- **Navidrome/Subsonic > Servers** - Switch between multiple servers
+- **Navidrome/Subsonic > Manage Servers...** - Add, edit, or remove servers
+- **Navidrome/Subsonic > Disconnect** - Disconnect from current server
+- **Navidrome/Subsonic > Refresh Library** - Re-fetch artists and albums
+
+### Browsing Content
+
+Once connected, use the Library Browser to browse:
+- Artists and their albums
+- Albums (sorted alphabetically, by year, etc.)
+- Search across your library
+- Playlists from your server
+
+Select **Subsonic: [Server Name]** from the source dropdown in the Library Browser.
+
+### Play Statistics
+
+AdAmp reports playback to Subsonic servers:
+- **Now Playing** - Shows what's currently playing on the server
+- **Play count** - Increments when track is scrobbled
+
+A track is "scrobbled" when:
+- **50% of the track has played**, OR
+- **4 minutes have played** (whichever comes first)
+
+This follows standard scrobbling rules used by Last.fm and other services.
+
+### Favorites
+
+Right-click tracks, albums, or artists to add them to your favorites (starred items) on the server.
+
+---
+
 ## Output Devices & Casting
 
 ### Local Audio
@@ -574,6 +625,7 @@ Right-click anywhere on AdAmp windows to access:
 - Gapless Playback
 - Volume Normalization
 - Browser Album Art Background
+- Remember State on Quit
 
 ### Local Library
 - Track count
@@ -664,6 +716,21 @@ The main window displays real-time frequency analysis:
 - 512-point FFT (~11.6ms latency at 44.1kHz)
 - Fast attack, slow decay smoothing
 
+### Remember State on Quit
+
+**Playback Options > Remember State on Quit** saves and restores the complete app state:
+
+When enabled, the following is saved on quit and restored on launch:
+- **Window positions and visibility** (Main, EQ, Playlist, Browser, Milkdrop)
+- **Audio settings** (volume, balance, shuffle, repeat, gapless, normalization)
+- **Equalizer settings** (enabled state, preamp, all band values)
+- **Playlist** (local files only, not streaming tracks)
+- **Playback position** (resumes from where you left off)
+- **Custom skin** (if a non-default skin was loaded)
+- **UI preferences** (time display mode, always on top, double size)
+
+**Note**: Only local file playlists are saved. Streaming tracks (Plex, Subsonic) are not persisted as they require authentication on each launch.
+
 ---
 
 ## File Format Support
@@ -720,6 +787,7 @@ The main window displays real-time frequency analysis:
 | Plex credentials | macOS Keychain |
 | Window positions | UserDefaults |
 | EQ settings | UserDefaults |
+| Saved app state | UserDefaults (when "Remember State" enabled) |
 | Preferences | UserDefaults |
 
 ---
