@@ -50,7 +50,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         // Set up the application menu
         setupMainMenu()
         
-        // Always play intro sound - state will be restored after intro finishes
+        // Restore settings state first (skin, volume, EQ, windows) so intro plays with correct settings
+        AppStateManager.shared.restoreSettingsState()
+        
+        // Now play intro sound - playlist state will be restored after intro finishes
         playIntro()
     }
     
@@ -153,14 +156,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         NSLog("Intro finished playing")
-        // After intro finishes, restore saved state or clear to clean state
+        // After intro finishes, restore playlist state or clear to clean state
         // Must dispatch to main thread since this delegate may be called from audio thread
         DispatchQueue.main.async { [weak self] in
             self?.introPlayer = nil
             self?.windowManager.audioEngine.clearPlaylist()
             
-            // Now restore saved state if "Remember State" is enabled
-            AppStateManager.shared.restoreState()
+            // Now restore playlist state if "Remember State" is enabled
+            // (Settings state was already restored before intro played)
+            AppStateManager.shared.restorePlaylistState()
         }
     }
     

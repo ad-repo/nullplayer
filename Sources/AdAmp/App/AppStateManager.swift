@@ -345,7 +345,175 @@ class AppStateManager {
         }
     }
     
-    /// Apply the restored state to the app
+    /// Restore only settings state (skin, volume, EQ, windows) - call before intro
+    /// This allows the intro to play with the user's preferred settings
+    func restoreSettingsState() {
+        guard isEnabled else {
+            NSLog("AppStateManager: Remember State disabled, skipping settings restore")
+            return
+        }
+        
+        guard let data = UserDefaults.standard.data(forKey: Keys.savedAppState) else {
+            NSLog("AppStateManager: No saved state found for settings restore")
+            return
+        }
+        
+        do {
+            let decoder = JSONDecoder()
+            let state = try decoder.decode(AppState.self, from: data)
+            applySettingsState(state)
+        } catch {
+            NSLog("AppStateManager: Failed to restore settings state: %@", error.localizedDescription)
+        }
+    }
+    
+    /// Restore only playlist state - call after intro finishes
+    func restorePlaylistState() {
+        guard isEnabled else {
+            NSLog("AppStateManager: Remember State disabled, skipping playlist restore")
+            return
+        }
+        
+        guard let data = UserDefaults.standard.data(forKey: Keys.savedAppState) else {
+            NSLog("AppStateManager: No saved state found for playlist restore")
+            return
+        }
+        
+        do {
+            let decoder = JSONDecoder()
+            let state = try decoder.decode(AppState.self, from: data)
+            applyPlaylistState(state)
+        } catch {
+            NSLog("AppStateManager: Failed to restore playlist state: %@", error.localizedDescription)
+        }
+    }
+    
+    /// Apply settings state (skin, volume, EQ, windows) - no playlist
+    private func applySettingsState(_ state: AppState) {
+        let wm = WindowManager.shared
+        let engine = wm.audioEngine
+        
+        NSLog("AppStateManager: Restoring settings state - volume: %.2f", state.volume)
+        
+        // Restore audio settings
+        engine.volume = state.volume
+        engine.balance = state.balance
+        engine.shuffleEnabled = state.shuffleEnabled
+        engine.repeatEnabled = state.repeatEnabled
+        engine.gaplessPlaybackEnabled = state.gaplessPlaybackEnabled
+        engine.volumeNormalizationEnabled = state.volumeNormalizationEnabled
+        
+        // Restore Sweet Fades settings
+        engine.sweetFadeEnabled = state.sweetFadeEnabled
+        engine.sweetFadeDuration = state.sweetFadeDuration
+        
+        // Restore EQ settings
+        engine.setEQEnabled(state.eqEnabled)
+        engine.setPreamp(state.eqPreamp)
+        for (index, gain) in state.eqBands.enumerated() {
+            engine.setEQBand(index, gain: gain)
+        }
+        
+        // Restore UI preferences
+        if let mode = TimeDisplayMode(rawValue: state.timeDisplayMode) {
+            wm.timeDisplayMode = mode
+        }
+        NSLog("AppStateManager: Restoring isAlwaysOnTop = %d", state.isAlwaysOnTop ? 1 : 0)
+        wm.isAlwaysOnTop = state.isAlwaysOnTop
+        
+        // Restore skin
+        if let skinPath = state.customSkinPath {
+            let skinURL = URL(fileURLWithPath: skinPath)
+            if FileManager.default.fileExists(atPath: skinPath) {
+                wm.loadSkin(from: skinURL)
+            }
+        } else if let baseSkinIndex = state.baseSkinIndex {
+            switch baseSkinIndex {
+            case 1: wm.loadBaseSkin()
+            case 2: wm.loadBaseSkin2()
+            case 3: wm.loadBaseSkin3()
+            default: wm.loadBaseSkin()
+            }
+        }
+        
+        // Restore window frames
+        restoreWindowFrames(state)
+        
+        // Restore window visibility (after a short delay to ensure proper positioning)
+        // Parse frames before the closure to avoid capturing state
+        let playlistFrame = state.playlistWindowFrame.flatMap { NSRectFromString($0) }
+        let equalizerFrame = state.equalizerWindowFrame.flatMap { NSRectFromString($0) }
+        let browserFrame = state.plexBrowserWindowFrame.flatMap { NSRectFromString($0) }
+        let milkdropFrame = state.milkdropWindowFrame.flatMap { NSRectFromString($0) }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if state.isEqualizerVisible {
+                wm.showEqualizer(at: equalizerFrame)
+            }
+            if state.isPlaylistVisible {
+                wm.showPlaylist(at: playlistFrame)
+            }
+            if state.isPlexBrowserVisible {
+                wm.showPlexBrowser(at: browserFrame)
+            }
+            if state.isMilkdropVisible {
+                wm.showMilkdrop(at: milkdropFrame)
+            }
+        }
+        
+        NSLog("AppStateManager: Settings state restored")
+    }
+    
+    /// Apply playlist state only
+    private func applyPlaylistState(_ state: AppState) {
+        let wm = WindowManager.shared
+        let engine = wm.audioEngine
+        
+        guard !state.playlistURLs.isEmpty else {
+            NSLog("AppStateManager: No playlist to restore")
+            return
+        }
+        
+        NSLog("AppStateManager: Restoring playlist state - %d tracks", state.playlistURLs.count)
+        
+        let urls = state.playlistURLs.compactMap { URL(string: $0) }
+        let validURLs = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+        
+        guard !validURLs.isEmpty else {
+            NSLog("AppStateManager: No valid playlist files found")
+            return
+        }
+        
+        // Calculate the correct index in the filtered playlist
+        var newTrackIndex = -1
+        if state.currentTrackIndex >= 0 && state.currentTrackIndex < urls.count {
+            let originalURL = urls[state.currentTrackIndex]
+            if let validIndex = validURLs.firstIndex(of: originalURL) {
+                newTrackIndex = validIndex
+            }
+        }
+        
+        engine.loadFiles(validURLs)
+        
+        // Restore track position after a short delay to let the playlist load
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if newTrackIndex >= 0 && newTrackIndex < engine.playlist.count {
+                engine.playTrack(at: newTrackIndex)
+                
+                if state.playbackPosition > 0 {
+                    engine.seek(to: state.playbackPosition)
+                }
+                
+                if !state.wasPlaying {
+                    engine.pause()
+                }
+            }
+        }
+        
+        NSLog("AppStateManager: Playlist state restored")
+    }
+    
+    /// Apply the restored state to the app (full restore - used by restoreState())
     private func applyState(_ state: AppState) {
         let wm = WindowManager.shared
         let engine = wm.audioEngine
