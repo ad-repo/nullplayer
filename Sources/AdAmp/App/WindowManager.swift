@@ -33,6 +33,9 @@ class WindowManager {
     /// Path to the currently loaded custom skin (nil if using a base skin)
     private(set) var currentSkinPath: String?
     
+    /// Index of the currently loaded base skin (1, 2, or 3; nil if using custom skin)
+    private(set) var currentBaseSkinIndex: Int?
+    
     // MARK: - User Preferences
     
     /// Time display mode (elapsed vs remaining)
@@ -55,6 +58,7 @@ class WindowManager {
     var isAlwaysOnTop: Bool = false {
         didSet {
             UserDefaults.standard.set(isAlwaysOnTop, forKey: "isAlwaysOnTop")
+            NSLog("WindowManager: isAlwaysOnTop changed to %d, applying to windows", isAlwaysOnTop ? 1 : 0)
             applyAlwaysOnTop()
         }
     }
@@ -145,7 +149,9 @@ class WindowManager {
         }
         // Note: isDoubleSize always starts false - windows are created at 1x size
         // and we apply double size after they're created if needed
-        isAlwaysOnTop = UserDefaults.standard.bool(forKey: "isAlwaysOnTop")
+        let savedAlwaysOnTop = UserDefaults.standard.bool(forKey: "isAlwaysOnTop")
+        isAlwaysOnTop = savedAlwaysOnTop
+        NSLog("WindowManager: Loaded isAlwaysOnTop = %d from UserDefaults", savedAlwaysOnTop ? 1 : 0)
     }
     
     // MARK: - Window Management
@@ -630,6 +636,7 @@ class WindowManager {
             let skin = try SkinLoader.shared.load(from: url)
             currentSkin = skin
             currentSkinPath = url.path
+            currentBaseSkinIndex = nil  // Custom skin, not a base skin
             notifySkinChanged()
         } catch {
             print("Failed to load skin: \(error)")
@@ -644,6 +651,7 @@ class WindowManager {
     func loadBaseSkin() {
         currentSkin = SkinLoader.shared.loadDefault()
         currentSkinPath = nil  // Base skins don't have a custom path
+        currentBaseSkinIndex = 1
         notifySkinChanged()
     }
     
@@ -651,6 +659,7 @@ class WindowManager {
     func loadBaseSkin2() {
         currentSkin = SkinLoader.shared.loadBaseSkin2()
         currentSkinPath = nil  // Base skins don't have a custom path
+        currentBaseSkinIndex = 2
         notifySkinChanged()
     }
     
@@ -658,6 +667,7 @@ class WindowManager {
     func loadBaseSkin3() {
         currentSkin = SkinLoader.shared.loadBaseSkin3()
         currentSkinPath = nil  // Base skins don't have a custom path
+        currentBaseSkinIndex = 3
         notifySkinChanged()
     }
     

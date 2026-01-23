@@ -167,6 +167,9 @@ struct PlexTrack: Identifiable, Equatable {
     let media: [PlexMedia]      // Media files/parts
     let addedAt: Date?
     let updatedAt: Date?
+    let genre: String?          // Primary genre tag
+    let parentYear: Int?        // Album release year
+    let ratingCount: Int?       // Last.fm scrobble count (global popularity)
     
     /// Get the streaming part key for this track
     var partKey: String? {
@@ -239,9 +242,14 @@ struct PlexMovie: Identifiable, Equatable {
     let addedAt: Date?
     let originallyAvailableAt: Date?
     
-    /// Get the streaming part key for this movie
+    /// Get the streaming part key for this movie (uses the longest/primary media)
     var partKey: String? {
-        media.first?.parts.first?.key
+        primaryMedia?.parts.first?.key
+    }
+    
+    /// Get the primary media (longest duration - the main movie, not bonus content)
+    var primaryMedia: PlexMedia? {
+        media.max(by: { ($0.duration ?? 0) < ($1.duration ?? 0) })
     }
     
     var formattedDuration: String {
@@ -503,6 +511,17 @@ struct PlexMetadataDTO: Decodable {
     let playlistType: String?   // "audio", "video", or "photo"
     let smart: Bool?            // Whether it's a smart playlist
     let composite: String?      // Composite image path for playlists
+    // Track-specific fields for radio
+    let parentYear: Int?        // Album release year (for decade radio)
+    let ratingCount: Int?       // Last.fm scrobble count (for hits/deep cuts)
+    // Extra/bonus content identification
+    let extraType: Int?         // Non-nil means this is an extra (trailer, deleted scene, etc.)
+    let subtype: String?        // Additional type info (e.g., "trailer", "clip")
+    
+    /// Returns true if this item is an extra/bonus content (not the main movie/episode)
+    var isExtra: Bool {
+        extraType != nil || subtype != nil
+    }
     
     enum CodingKeys: String, CodingKey {
         case ratingKey, key, type, title, parentTitle, grandparentTitle
@@ -513,6 +532,8 @@ struct PlexMetadataDTO: Decodable {
         case genre = "Genre"
         case studio, contentRating
         case playlistType, smart, composite
+        case parentYear, ratingCount
+        case extraType, subtype
     }
     
     func toArtist() -> PlexArtist {
@@ -568,7 +589,10 @@ struct PlexMetadataDTO: Decodable {
             thumb: thumb,
             media: media?.map { $0.toMedia() } ?? [],
             addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
-            updatedAt: updatedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+            updatedAt: updatedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+            genre: genre?.first?.tag,
+            parentYear: parentYear,
+            ratingCount: ratingCount
         )
     }
     
@@ -580,13 +604,22 @@ struct PlexMetadataDTO: Decodable {
             releaseDate = formatter.date(from: dateStr)
         }
         
+        // Use the longest duration from all media entries (main movie, not bonus content)
+        // The top-level duration field may point to a bonus/extra file
+        let primaryDuration: Int?
+        if let mediaList = media, !mediaList.isEmpty {
+            primaryDuration = mediaList.compactMap { $0.duration }.max()
+        } else {
+            primaryDuration = duration
+        }
+        
         return PlexMovie(
             id: ratingKey,
             key: key,
             title: title,
             year: year,
             summary: summary,
-            duration: duration,
+            duration: primaryDuration,
             thumb: thumb,
             art: art,
             contentRating: contentRating,
@@ -732,6 +765,25 @@ struct PlexPartDTO: Decodable {
 
 struct PlexTagDTO: Decodable {
     let tag: String
+}
+
+// MARK: - Genre Response DTOs
+
+/// Response container for genre endpoints
+struct PlexGenreResponse: Decodable {
+    let size: Int?
+    let directory: [PlexGenreDTO]?
+    
+    enum CodingKeys: String, CodingKey {
+        case size
+        case directory = "Directory"
+    }
+}
+
+/// A genre entry from the library
+struct PlexGenreDTO: Decodable {
+    let key: String
+    let title: String
 }
 
 // MARK: - Hub Response DTOs

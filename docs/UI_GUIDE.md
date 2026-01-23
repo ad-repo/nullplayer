@@ -147,6 +147,131 @@ Sliders use programmatic color based on knob position (not sprites):
 | Middle | 0 | Yellow |
 | Bottom | -12 | Green |
 
+## Playlist Marquee Scrolling
+
+The playlist window features marquee scrolling for the currently playing track when its title is too long to fit in the available space.
+
+### Implementation
+
+Located in `Windows/Playlist/PlaylistView.swift`:
+
+```swift
+private var marqueeOffset: CGFloat = 0
+
+// Timer fires at 30fps with 1px increments for smooth scrolling
+displayTimer = Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { [weak self] _ in
+    self?.marqueeOffset += 1
+    self?.needsDisplay = true
+}
+```
+
+### Drawing Logic
+
+In `drawTrackText()`:
+1. Calculate available width (item width minus duration area)
+2. If current track AND text width exceeds available width:
+   - Draw text twice with simple spacing for seamless loop
+   - Use `marqueeOffset` modulo cycle width for smooth wrapping
+3. Clip all tracks to prevent text/duration overlap
+
+```swift
+if isCurrentTrack && textWidth > titleMaxWidth {
+    let fullText = titleText + "     "  // Simple spacing between repeats
+    let cycleWidth = fullText.size(withAttributes: attrs).width
+    let offset = marqueeOffset.truncatingRemainder(dividingBy: cycleWidth)
+    
+    fullText.draw(at: NSPoint(x: titleX - offset, y: textY), withAttributes: attrs)
+    fullText.draw(at: NSPoint(x: titleX - offset + cycleWidth, y: textY), withAttributes: attrs)
+}
+```
+
+### Text Clipping
+
+All track titles are clipped to prevent overlap with the duration column:
+
+```swift
+context.clip(to: NSRect(x: titleX, y: rect.minY, width: titleMaxWidth, height: rect.height))
+```
+
+This ensures long titles don't bleed into the duration area, even when not marquee scrolling.
+
+## Main Window Marquee
+
+The main window uses a scrolling marquee to display the current track title.
+
+### Skin Bitmap Font
+
+By default, the marquee uses the skin's `TEXT.BMP` bitmap font, which provides the authentic Winamp look. This font only supports:
+- A-Z (case-insensitive)
+- 0-9
+- Common symbols: `" @ : ( ) - ' ! _ + \ / [ ] ^ & % . = $ # ? *`
+
+### Unicode Fallback
+
+When track titles contain characters not supported by the skin font (Japanese, Cyrillic, Chinese, Korean, accented characters, etc.), the marquee automatically falls back to system font rendering:
+
+```swift
+private func containsNonLatinCharacters(_ text: String) -> Bool {
+    for char in text {
+        switch char {
+        case "A"..."Z", "a"..."z", "0"..."9":
+            continue
+        case " ", "\"", "@", ":", "(", ")", "-", "'", "!", "_", "+", "\\", "/",
+             "[", "]", "^", "&", "%", ".", "=", "$", "#", "?", "*":
+            continue
+        default:
+            return true  // Non-Latin character detected
+        }
+    }
+    return false
+}
+```
+
+This ensures:
+- **Latin text**: Uses skin bitmap font for authentic look
+- **Non-Latin text**: Falls back to system font for proper Unicode display
+- **Mixed text**: Falls back to system font if any non-Latin characters present
+
+The system font fallback maintains the green color and scrolling behavior, just with full Unicode support.
+
+## White Text Rendering
+
+Some UI elements (like library/server names in the browser) require white text instead of the standard green skin font. This is implemented in `SkinRenderer.drawSkinTextWhite()`.
+
+### Implementation
+
+White text is rendered using an offscreen buffer approach to avoid blend mode artifacts:
+
+```swift
+// For each character:
+// 1. Crop character from TEXT.BMP
+// 2. Draw to small offscreen CGContext at 1x scale
+// 3. Convert pixels: green channel (0, G, 0) → white (G, G, G)
+// 4. Draw result to main context
+
+for i in 0..<(charWidth * charHeight) {
+    let offset = i * 4
+    let g = pixels[offset + 1]  // Green channel = brightness
+    
+    // Skip transparent and magenta background pixels
+    if a == 0 || isMagenta { continue }
+    
+    // Convert to white using green channel as brightness
+    pixels[offset] = g     // R
+    pixels[offset + 1] = g // G  
+    pixels[offset + 2] = g // B
+}
+```
+
+### Why Not Blend Modes?
+
+Previous approaches using CGContext blend modes (`.color`, `.saturation`) caused artifacts:
+- Green edges visible at scaled text boundaries
+- Artifacts appearing/disappearing when switching views
+- Sub-pixel rendering issues with scaled contexts
+
+The offscreen buffer approach processes pixels at native resolution before scaling, eliminating these issues.
+
 ## Common Pitfalls
 
 1. **Using `bounds` instead of `drawBounds`** after scaling transform
@@ -154,6 +279,7 @@ Sliders use programmatic color based on knob position (not sprites):
 3. **Hit testing in view coords** - must convert to Winamp coords first
 4. **Non-tile-aligned widths** - causes sprite interpolation artifacts
 5. **Drawing over skin sprites** - they already contain labels
+6. **Using blend modes for color conversion** - causes sub-pixel artifacts when scaling; use offscreen pixel manipulation instead
 
 ## Key Files
 

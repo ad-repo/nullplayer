@@ -943,7 +943,10 @@ final class AdAmpTests: XCTestCase {
             thumb: nil,
             media: [],
             addedAt: nil,
-            updatedAt: nil
+            updatedAt: nil,
+            genre: nil,
+            parentYear: nil,
+            ratingCount: nil
         )
         
         XCTAssertEqual(track.formattedDuration, "3:05")
@@ -965,7 +968,10 @@ final class AdAmpTests: XCTestCase {
             thumb: nil,
             media: [],
             addedAt: nil,
-            updatedAt: nil
+            updatedAt: nil,
+            genre: nil,
+            parentYear: nil,
+            ratingCount: nil
         )
         
         XCTAssertEqual(track.durationInSeconds, 180.0)
@@ -1443,7 +1449,10 @@ final class AdAmpTests: XCTestCase {
             thumb: nil,
             media: [media],
             addedAt: nil,
-            updatedAt: nil
+            updatedAt: nil,
+            genre: nil,
+            parentYear: nil,
+            ratingCount: nil
         )
         
         XCTAssertEqual(track.partKey, "/library/parts/123")
@@ -1974,5 +1983,768 @@ final class AdAmpTests: XCTestCase {
         
         // Each playlist should have unique ID
         XCTAssertNotEqual(playlist1.id, playlist2.id)
+    }
+    
+    // MARK: - SubsonicServer Tests
+    
+    func testSubsonicServerCreation() {
+        let server = SubsonicServer(
+            id: "server-123",
+            name: "My Navidrome",
+            url: "http://localhost:4533",
+            username: "admin"
+        )
+        
+        XCTAssertEqual(server.id, "server-123")
+        XCTAssertEqual(server.name, "My Navidrome")
+        XCTAssertEqual(server.url, "http://localhost:4533")
+        XCTAssertEqual(server.username, "admin")
+    }
+    
+    func testSubsonicServerDisplayURL() {
+        let server = SubsonicServer(
+            id: "1",
+            name: "Test",
+            url: "http://music.example.com:4533",
+            username: "user"
+        )
+        
+        XCTAssertEqual(server.displayURL, "http://music.example.com:4533")
+    }
+    
+    func testSubsonicServerBaseURL() {
+        let server = SubsonicServer(
+            id: "1",
+            name: "Test",
+            url: "http://localhost:4533",
+            username: "user"
+        )
+        
+        XCTAssertNotNil(server.baseURL)
+        XCTAssertEqual(server.baseURL?.absoluteString, "http://localhost:4533")
+    }
+    
+    func testSubsonicServerEquality() {
+        let server1 = SubsonicServer(id: "1", name: "Server", url: "http://localhost", username: "user")
+        let server2 = SubsonicServer(id: "1", name: "Server", url: "http://localhost", username: "user")
+        
+        XCTAssertEqual(server1, server2)
+    }
+    
+    // MARK: - SubsonicServerCredentials Tests
+    
+    func testSubsonicServerCredentialsCodable() throws {
+        let credentials = SubsonicServerCredentials(
+            id: "server-1",
+            name: "My Server",
+            url: "http://localhost:4533",
+            username: "admin",
+            password: "secret123"
+        )
+        
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(credentials)
+        
+        let decoder = JSONDecoder()
+        let decoded = try decoder.decode(SubsonicServerCredentials.self, from: data)
+        
+        XCTAssertEqual(decoded.id, credentials.id)
+        XCTAssertEqual(decoded.name, credentials.name)
+        XCTAssertEqual(decoded.url, credentials.url)
+        XCTAssertEqual(decoded.username, credentials.username)
+        XCTAssertEqual(decoded.password, credentials.password)
+    }
+    
+    // MARK: - SubsonicArtist Tests
+    
+    func testSubsonicArtistCreation() {
+        let artist = SubsonicArtist(
+            id: "artist-1",
+            name: "The Beatles",
+            albumCount: 13,
+            coverArt: "ar-123",
+            artistImageUrl: "http://example.com/beatles.jpg",
+            starred: Date()
+        )
+        
+        XCTAssertEqual(artist.id, "artist-1")
+        XCTAssertEqual(artist.name, "The Beatles")
+        XCTAssertEqual(artist.albumCount, 13)
+        XCTAssertEqual(artist.coverArt, "ar-123")
+        XCTAssertNotNil(artist.starred)
+    }
+    
+    func testSubsonicArtistEquality() {
+        let artist1 = SubsonicArtist(id: "1", name: "Artist", albumCount: 5, coverArt: nil, artistImageUrl: nil, starred: nil)
+        let artist2 = SubsonicArtist(id: "1", name: "Artist", albumCount: 5, coverArt: nil, artistImageUrl: nil, starred: nil)
+        
+        XCTAssertEqual(artist1, artist2)
+    }
+    
+    // MARK: - SubsonicAlbum Tests
+    
+    func testSubsonicAlbumCreation() {
+        let album = SubsonicAlbum(
+            id: "album-1",
+            name: "Abbey Road",
+            artist: "The Beatles",
+            artistId: "artist-1",
+            year: 1969,
+            genre: "Rock",
+            coverArt: "al-123",
+            songCount: 17,
+            duration: 2834,
+            created: Date(),
+            starred: nil,
+            playCount: 42
+        )
+        
+        XCTAssertEqual(album.id, "album-1")
+        XCTAssertEqual(album.name, "Abbey Road")
+        XCTAssertEqual(album.artist, "The Beatles")
+        XCTAssertEqual(album.year, 1969)
+        XCTAssertEqual(album.songCount, 17)
+        XCTAssertEqual(album.duration, 2834)
+        XCTAssertEqual(album.playCount, 42)
+    }
+    
+    func testSubsonicAlbumFormattedDurationMinutes() {
+        let album = SubsonicAlbum(
+            id: "1",
+            name: "Album",
+            artist: nil,
+            artistId: nil,
+            year: nil,
+            genre: nil,
+            coverArt: nil,
+            songCount: 10,
+            duration: 185, // 3:05
+            created: nil,
+            starred: nil,
+            playCount: nil
+        )
+        
+        XCTAssertEqual(album.formattedDuration, "3:05")
+    }
+    
+    func testSubsonicAlbumFormattedDurationHours() {
+        let album = SubsonicAlbum(
+            id: "1",
+            name: "Album",
+            artist: nil,
+            artistId: nil,
+            year: nil,
+            genre: nil,
+            coverArt: nil,
+            songCount: 20,
+            duration: 3661, // 1:01:01
+            created: nil,
+            starred: nil,
+            playCount: nil
+        )
+        
+        XCTAssertEqual(album.formattedDuration, "1:01:01")
+    }
+    
+    func testSubsonicAlbumEquality() {
+        let album1 = SubsonicAlbum(id: "1", name: "Album", artist: nil, artistId: nil, year: nil, genre: nil, coverArt: nil, songCount: 10, duration: 100, created: nil, starred: nil, playCount: nil)
+        let album2 = SubsonicAlbum(id: "1", name: "Album", artist: nil, artistId: nil, year: nil, genre: nil, coverArt: nil, songCount: 10, duration: 100, created: nil, starred: nil, playCount: nil)
+        
+        XCTAssertEqual(album1, album2)
+    }
+    
+    // MARK: - SubsonicSong Tests
+    
+    func testSubsonicSongCreation() {
+        let song = SubsonicSong(
+            id: "song-1",
+            parent: "album-1",
+            title: "Come Together",
+            album: "Abbey Road",
+            artist: "The Beatles",
+            albumId: "album-1",
+            artistId: "artist-1",
+            track: 1,
+            year: 1969,
+            genre: "Rock",
+            coverArt: "al-123",
+            size: 8500000,
+            contentType: "audio/mpeg",
+            suffix: "mp3",
+            duration: 259,
+            bitRate: 320,
+            path: "/music/Beatles/Abbey Road/01 - Come Together.mp3",
+            discNumber: 1,
+            created: Date(),
+            starred: nil,
+            playCount: 100
+        )
+        
+        XCTAssertEqual(song.id, "song-1")
+        XCTAssertEqual(song.title, "Come Together")
+        XCTAssertEqual(song.album, "Abbey Road")
+        XCTAssertEqual(song.artist, "The Beatles")
+        XCTAssertEqual(song.track, 1)
+        XCTAssertEqual(song.duration, 259)
+        XCTAssertEqual(song.bitRate, 320)
+    }
+    
+    func testSubsonicSongFormattedDuration() {
+        let song = SubsonicSong(
+            id: "1",
+            parent: nil,
+            title: "Song",
+            album: nil,
+            artist: nil,
+            albumId: nil,
+            artistId: nil,
+            track: nil,
+            year: nil,
+            genre: nil,
+            coverArt: nil,
+            size: nil,
+            contentType: nil,
+            suffix: nil,
+            duration: 185, // 3:05
+            bitRate: nil,
+            path: nil,
+            discNumber: nil,
+            created: nil,
+            starred: nil,
+            playCount: nil
+        )
+        
+        XCTAssertEqual(song.formattedDuration, "3:05")
+    }
+    
+    func testSubsonicSongDurationInSeconds() {
+        let song = SubsonicSong(
+            id: "1",
+            parent: nil,
+            title: "Song",
+            album: nil,
+            artist: nil,
+            albumId: nil,
+            artistId: nil,
+            track: nil,
+            year: nil,
+            genre: nil,
+            coverArt: nil,
+            size: nil,
+            contentType: nil,
+            suffix: nil,
+            duration: 180,
+            bitRate: nil,
+            path: nil,
+            discNumber: nil,
+            created: nil,
+            starred: nil,
+            playCount: nil
+        )
+        
+        XCTAssertEqual(song.durationInSeconds, 180.0)
+    }
+    
+    func testSubsonicSongEquality() {
+        let song1 = SubsonicSong(id: "1", parent: nil, title: "Song", album: nil, artist: nil, albumId: nil, artistId: nil, track: nil, year: nil, genre: nil, coverArt: nil, size: nil, contentType: nil, suffix: nil, duration: 100, bitRate: nil, path: nil, discNumber: nil, created: nil, starred: nil, playCount: nil)
+        let song2 = SubsonicSong(id: "1", parent: nil, title: "Song", album: nil, artist: nil, albumId: nil, artistId: nil, track: nil, year: nil, genre: nil, coverArt: nil, size: nil, contentType: nil, suffix: nil, duration: 100, bitRate: nil, path: nil, discNumber: nil, created: nil, starred: nil, playCount: nil)
+        
+        XCTAssertEqual(song1, song2)
+    }
+    
+    // MARK: - SubsonicPlaylist Tests
+    
+    func testSubsonicPlaylistCreation() {
+        let playlist = SubsonicPlaylist(
+            id: "playlist-1",
+            name: "My Favorites",
+            comment: "Best songs ever",
+            owner: "admin",
+            isPublic: true,
+            songCount: 50,
+            duration: 10800, // 3 hours
+            created: Date(),
+            changed: Date(),
+            coverArt: "pl-123"
+        )
+        
+        XCTAssertEqual(playlist.id, "playlist-1")
+        XCTAssertEqual(playlist.name, "My Favorites")
+        XCTAssertEqual(playlist.comment, "Best songs ever")
+        XCTAssertEqual(playlist.owner, "admin")
+        XCTAssertTrue(playlist.isPublic)
+        XCTAssertEqual(playlist.songCount, 50)
+    }
+    
+    func testSubsonicPlaylistFormattedDurationMinutes() {
+        let playlist = SubsonicPlaylist(
+            id: "1",
+            name: "Test",
+            comment: nil,
+            owner: nil,
+            isPublic: false,
+            songCount: 5,
+            duration: 300, // 5:00
+            created: nil,
+            changed: nil,
+            coverArt: nil
+        )
+        
+        XCTAssertEqual(playlist.formattedDuration, "5:00")
+    }
+    
+    func testSubsonicPlaylistFormattedDurationHours() {
+        let playlist = SubsonicPlaylist(
+            id: "1",
+            name: "Test",
+            comment: nil,
+            owner: nil,
+            isPublic: false,
+            songCount: 100,
+            duration: 7261, // 2:01:01
+            created: nil,
+            changed: nil,
+            coverArt: nil
+        )
+        
+        XCTAssertEqual(playlist.formattedDuration, "2:01:01")
+    }
+    
+    func testSubsonicPlaylistEquality() {
+        let playlist1 = SubsonicPlaylist(id: "1", name: "Test", comment: nil, owner: nil, isPublic: false, songCount: 10, duration: 100, created: nil, changed: nil, coverArt: nil)
+        let playlist2 = SubsonicPlaylist(id: "1", name: "Test", comment: nil, owner: nil, isPublic: false, songCount: 10, duration: 100, created: nil, changed: nil, coverArt: nil)
+        
+        XCTAssertEqual(playlist1, playlist2)
+    }
+    
+    // MARK: - SubsonicIndex Tests
+    
+    func testSubsonicIndexCreation() {
+        let artist = SubsonicArtist(id: "1", name: "ABBA", albumCount: 10, coverArt: nil, artistImageUrl: nil, starred: nil)
+        let index = SubsonicIndex(name: "A", artists: [artist])
+        
+        XCTAssertEqual(index.name, "A")
+        XCTAssertEqual(index.artists.count, 1)
+        XCTAssertEqual(index.artists.first?.name, "ABBA")
+    }
+    
+    func testSubsonicIndexEquality() {
+        let index1 = SubsonicIndex(name: "A", artists: [])
+        let index2 = SubsonicIndex(name: "A", artists: [])
+        
+        XCTAssertEqual(index1, index2)
+    }
+    
+    // MARK: - SubsonicSearchResults Tests
+    
+    func testSubsonicSearchResultsEmpty() {
+        let results = SubsonicSearchResults()
+        
+        XCTAssertTrue(results.isEmpty)
+        XCTAssertEqual(results.totalCount, 0)
+    }
+    
+    func testSubsonicSearchResultsWithContent() {
+        let artist = SubsonicArtist(id: "1", name: "Artist", albumCount: 1, coverArt: nil, artistImageUrl: nil, starred: nil)
+        let album = SubsonicAlbum(id: "1", name: "Album", artist: nil, artistId: nil, year: nil, genre: nil, coverArt: nil, songCount: 10, duration: 100, created: nil, starred: nil, playCount: nil)
+        let song = SubsonicSong(id: "1", parent: nil, title: "Song", album: nil, artist: nil, albumId: nil, artistId: nil, track: nil, year: nil, genre: nil, coverArt: nil, size: nil, contentType: nil, suffix: nil, duration: 100, bitRate: nil, path: nil, discNumber: nil, created: nil, starred: nil, playCount: nil)
+        
+        var results = SubsonicSearchResults()
+        results.artists = [artist]
+        results.albums = [album]
+        results.songs = [song]
+        
+        XCTAssertFalse(results.isEmpty)
+        XCTAssertEqual(results.totalCount, 3)
+    }
+    
+    // MARK: - SubsonicStarred Tests
+    
+    func testSubsonicStarredEmpty() {
+        let starred = SubsonicStarred()
+        
+        XCTAssertTrue(starred.isEmpty)
+    }
+    
+    func testSubsonicStarredWithContent() {
+        let artist = SubsonicArtist(id: "1", name: "Artist", albumCount: 1, coverArt: nil, artistImageUrl: nil, starred: Date())
+        
+        var starred = SubsonicStarred()
+        starred.artists = [artist]
+        
+        XCTAssertFalse(starred.isEmpty)
+    }
+    
+    // MARK: - SubsonicClientError Tests
+    
+    func testSubsonicClientErrorDescriptions() {
+        XCTAssertNotNil(SubsonicClientError.invalidURL.errorDescription)
+        XCTAssertNotNil(SubsonicClientError.invalidResponse.errorDescription)
+        XCTAssertNotNil(SubsonicClientError.unauthorized.errorDescription)
+        XCTAssertNotNil(SubsonicClientError.serverOffline.errorDescription)
+        XCTAssertNotNil(SubsonicClientError.authenticationFailed.errorDescription)
+        XCTAssertNotNil(SubsonicClientError.noContent.errorDescription)
+    }
+    
+    func testSubsonicClientErrorHTTPCode() {
+        let error = SubsonicClientError.httpError(statusCode: 503)
+        XCTAssertTrue(error.errorDescription?.contains("503") ?? false)
+    }
+    
+    func testSubsonicClientErrorNetworkError() {
+        let underlyingError = NSError(domain: "test", code: -1, userInfo: nil)
+        let error = SubsonicClientError.networkError(underlyingError)
+        XCTAssertNotNil(error.errorDescription)
+    }
+    
+    func testSubsonicClientErrorAPIError() {
+        let apiError = SubsonicError(code: 40, message: "Wrong username or password")
+        let error = SubsonicClientError.apiError(apiError)
+        XCTAssertTrue(error.errorDescription?.contains("Wrong username or password") ?? false)
+    }
+    
+    // MARK: - SubsonicError Tests
+    
+    func testSubsonicErrorLocalizedDescription() {
+        let error = SubsonicError(code: 10, message: "Required parameter is missing")
+        XCTAssertTrue(error.localizedDescription.contains("10"))
+        XCTAssertTrue(error.localizedDescription.contains("Required parameter is missing"))
+    }
+    
+    // MARK: - ArtistDTO Tests
+    
+    func testArtistDTOToArtist() {
+        let dto = ArtistDTO(
+            id: "artist-1",
+            name: "The Beatles",
+            coverArt: "ar-123",
+            artistImageUrl: "http://example.com/image.jpg",
+            albumCount: 13,
+            starred: nil
+        )
+        
+        let artist = dto.toArtist()
+        
+        XCTAssertEqual(artist.id, "artist-1")
+        XCTAssertEqual(artist.name, "The Beatles")
+        XCTAssertEqual(artist.albumCount, 13)
+        XCTAssertEqual(artist.coverArt, "ar-123")
+    }
+    
+    func testArtistDTOToArtistWithNilAlbumCount() {
+        let dto = ArtistDTO(
+            id: "1",
+            name: "Artist",
+            coverArt: nil,
+            artistImageUrl: nil,
+            albumCount: nil,
+            starred: nil
+        )
+        
+        let artist = dto.toArtist()
+        XCTAssertEqual(artist.albumCount, 0) // Should default to 0
+    }
+    
+    // MARK: - AlbumDTO Tests
+    
+    func testAlbumDTOToAlbum() {
+        let dto = AlbumDTO(
+            id: "album-1",
+            name: "Abbey Road",
+            artist: "The Beatles",
+            artistId: "artist-1",
+            coverArt: "al-123",
+            songCount: 17,
+            duration: 2834,
+            created: "2024-01-15T10:30:00Z",
+            year: 1969,
+            genre: "Rock",
+            starred: nil,
+            playCount: 42
+        )
+        
+        let album = dto.toAlbum()
+        
+        XCTAssertEqual(album.id, "album-1")
+        XCTAssertEqual(album.name, "Abbey Road")
+        XCTAssertEqual(album.artist, "The Beatles")
+        XCTAssertEqual(album.year, 1969)
+        XCTAssertEqual(album.genre, "Rock")
+        XCTAssertEqual(album.songCount, 17)
+        XCTAssertEqual(album.duration, 2834)
+        XCTAssertEqual(album.playCount, 42)
+    }
+    
+    func testAlbumDTOToAlbumWithNilValues() {
+        let dto = AlbumDTO(
+            id: "1",
+            name: "Album",
+            artist: nil,
+            artistId: nil,
+            coverArt: nil,
+            songCount: nil,
+            duration: nil,
+            created: nil,
+            year: nil,
+            genre: nil,
+            starred: nil,
+            playCount: nil
+        )
+        
+        let album = dto.toAlbum()
+        XCTAssertEqual(album.songCount, 0) // Should default to 0
+        XCTAssertEqual(album.duration, 0)  // Should default to 0
+    }
+    
+    // MARK: - SongDTO Tests
+    
+    func testSongDTOToSong() {
+        let dto = SongDTO(
+            id: "song-1",
+            parent: "album-1",
+            title: "Come Together",
+            album: "Abbey Road",
+            artist: "The Beatles",
+            albumId: "album-1",
+            artistId: "artist-1",
+            track: 1,
+            year: 1969,
+            genre: "Rock",
+            coverArt: "al-123",
+            size: 8500000,
+            contentType: "audio/mpeg",
+            suffix: "mp3",
+            duration: 259,
+            bitRate: 320,
+            path: "/music/song.mp3",
+            discNumber: 1,
+            created: "2024-01-15T10:30:00Z",
+            starred: nil,
+            playCount: 100
+        )
+        
+        let song = dto.toSong()
+        
+        XCTAssertEqual(song.id, "song-1")
+        XCTAssertEqual(song.title, "Come Together")
+        XCTAssertEqual(song.album, "Abbey Road")
+        XCTAssertEqual(song.artist, "The Beatles")
+        XCTAssertEqual(song.track, 1)
+        XCTAssertEqual(song.duration, 259)
+        XCTAssertEqual(song.bitRate, 320)
+    }
+    
+    func testSongDTOToSongWithNilDuration() {
+        let dto = SongDTO(
+            id: "1",
+            parent: nil,
+            title: "Song",
+            album: nil,
+            artist: nil,
+            albumId: nil,
+            artistId: nil,
+            track: nil,
+            year: nil,
+            genre: nil,
+            coverArt: nil,
+            size: nil,
+            contentType: nil,
+            suffix: nil,
+            duration: nil,
+            bitRate: nil,
+            path: nil,
+            discNumber: nil,
+            created: nil,
+            starred: nil,
+            playCount: nil
+        )
+        
+        let song = dto.toSong()
+        XCTAssertEqual(song.duration, 0) // Should default to 0
+    }
+    
+    // MARK: - PlaylistDTO Tests
+    
+    func testPlaylistDTOToPlaylist() {
+        let dto = PlaylistDTO(
+            id: "playlist-1",
+            name: "My Favorites",
+            comment: "Best songs",
+            owner: "admin",
+            public: true,
+            songCount: 50,
+            duration: 10800,
+            created: "2024-01-15T10:30:00Z",
+            changed: "2024-01-20T15:45:00Z",
+            coverArt: "pl-123"
+        )
+        
+        let playlist = dto.toPlaylist()
+        
+        XCTAssertEqual(playlist.id, "playlist-1")
+        XCTAssertEqual(playlist.name, "My Favorites")
+        XCTAssertEqual(playlist.comment, "Best songs")
+        XCTAssertEqual(playlist.owner, "admin")
+        XCTAssertTrue(playlist.isPublic)
+        XCTAssertEqual(playlist.songCount, 50)
+        XCTAssertEqual(playlist.duration, 10800)
+    }
+    
+    func testPlaylistDTOToPlaylistWithNilPublic() {
+        let dto = PlaylistDTO(
+            id: "1",
+            name: "Test",
+            comment: nil,
+            owner: nil,
+            public: nil,
+            songCount: nil,
+            duration: nil,
+            created: nil,
+            changed: nil,
+            coverArt: nil
+        )
+        
+        let playlist = dto.toPlaylist()
+        XCTAssertFalse(playlist.isPublic) // Should default to false
+        XCTAssertEqual(playlist.songCount, 0) // Should default to 0
+        XCTAssertEqual(playlist.duration, 0) // Should default to 0
+    }
+    
+    // MARK: - AppStateManager.AppState Tests
+    
+    func testAppStateCodable() throws {
+        let state = AppStateManager.AppState(
+            isPlaylistVisible: true,
+            isEqualizerVisible: false,
+            isPlexBrowserVisible: true,
+            isMilkdropVisible: false,
+            mainWindowFrame: "{{100, 200}, {275, 145}}",
+            playlistWindowFrame: "{{100, 50}, {275, 200}}",
+            equalizerWindowFrame: nil,
+            plexBrowserWindowFrame: nil,
+            milkdropWindowFrame: nil,
+            volume: 0.75,
+            balance: 0.0,
+            shuffleEnabled: true,
+            repeatEnabled: false,
+            gaplessPlaybackEnabled: true,
+            volumeNormalizationEnabled: false,
+            sweetFadeEnabled: true,
+            sweetFadeDuration: 3.0,
+            eqEnabled: true,
+            eqPreamp: 2.5,
+            eqBands: [0, 1, 2, 3, 4, 5, 4, 3, 2, 1],
+            playlistURLs: ["file:///music/song1.mp3", "file:///music/song2.mp3"],
+            currentTrackIndex: 1,
+            playbackPosition: 45.5,
+            wasPlaying: true,
+            timeDisplayMode: "elapsed",
+            isAlwaysOnTop: true,
+            customSkinPath: "/path/to/skin.wsz",
+            baseSkinIndex: nil,
+            stateVersion: 1
+        )
+        
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(state)
+        
+        let decoder = JSONDecoder()
+        let decoded = try decoder.decode(AppStateManager.AppState.self, from: data)
+        
+        XCTAssertEqual(decoded.isPlaylistVisible, true)
+        XCTAssertEqual(decoded.isEqualizerVisible, false)
+        XCTAssertEqual(decoded.volume, 0.75)
+        XCTAssertEqual(decoded.balance, 0.0)
+        XCTAssertEqual(decoded.shuffleEnabled, true)
+        XCTAssertEqual(decoded.sweetFadeEnabled, true)
+        XCTAssertEqual(decoded.sweetFadeDuration, 3.0)
+        XCTAssertEqual(decoded.eqEnabled, true)
+        XCTAssertEqual(decoded.eqPreamp, 2.5)
+        XCTAssertEqual(decoded.eqBands.count, 10)
+        XCTAssertEqual(decoded.playlistURLs.count, 2)
+        XCTAssertEqual(decoded.currentTrackIndex, 1)
+        XCTAssertEqual(decoded.playbackPosition, 45.5)
+        XCTAssertEqual(decoded.wasPlaying, true)
+        XCTAssertEqual(decoded.isAlwaysOnTop, true)
+        XCTAssertEqual(decoded.customSkinPath, "/path/to/skin.wsz")
+    }
+    
+    func testAppStateBackwardCompatibility() throws {
+        // Test decoding JSON without sweetFade fields (simulating older saved state)
+        let oldStateJSON = """
+        {
+            "isPlaylistVisible": true,
+            "isEqualizerVisible": false,
+            "isPlexBrowserVisible": false,
+            "isMilkdropVisible": false,
+            "volume": 0.5,
+            "balance": 0.0,
+            "shuffleEnabled": false,
+            "repeatEnabled": false,
+            "gaplessPlaybackEnabled": false,
+            "volumeNormalizationEnabled": false,
+            "eqEnabled": false,
+            "eqPreamp": 0.0,
+            "eqBands": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            "playlistURLs": [],
+            "currentTrackIndex": -1,
+            "playbackPosition": 0.0,
+            "wasPlaying": false,
+            "timeDisplayMode": "elapsed",
+            "isAlwaysOnTop": false
+        }
+        """
+        
+        let data = oldStateJSON.data(using: .utf8)!
+        let decoder = JSONDecoder()
+        let decoded = try decoder.decode(AppStateManager.AppState.self, from: data)
+        
+        // sweetFade fields should have default values
+        XCTAssertEqual(decoded.sweetFadeEnabled, false)
+        XCTAssertEqual(decoded.sweetFadeDuration, 5.0)
+        XCTAssertEqual(decoded.stateVersion, 1)
+    }
+    
+    func testAppStateWithBaseSkinIndex() throws {
+        let state = AppStateManager.AppState(
+            isPlaylistVisible: false,
+            isEqualizerVisible: false,
+            isPlexBrowserVisible: false,
+            isMilkdropVisible: false,
+            mainWindowFrame: nil,
+            playlistWindowFrame: nil,
+            equalizerWindowFrame: nil,
+            plexBrowserWindowFrame: nil,
+            milkdropWindowFrame: nil,
+            volume: 1.0,
+            balance: 0.0,
+            shuffleEnabled: false,
+            repeatEnabled: false,
+            gaplessPlaybackEnabled: false,
+            volumeNormalizationEnabled: false,
+            sweetFadeEnabled: false,
+            sweetFadeDuration: 5.0,
+            eqEnabled: false,
+            eqPreamp: 0.0,
+            eqBands: Array(repeating: Float(0), count: 10),
+            playlistURLs: [],
+            currentTrackIndex: -1,
+            playbackPosition: 0.0,
+            wasPlaying: false,
+            timeDisplayMode: "elapsed",
+            isAlwaysOnTop: false,
+            customSkinPath: nil,
+            baseSkinIndex: 2,
+            stateVersion: 1
+        )
+        
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(state)
+        
+        let decoder = JSONDecoder()
+        let decoded = try decoder.decode(AppStateManager.AppState.self, from: data)
+        
+        XCTAssertNil(decoded.customSkinPath)
+        XCTAssertEqual(decoded.baseSkinIndex, 2)
     }
 }

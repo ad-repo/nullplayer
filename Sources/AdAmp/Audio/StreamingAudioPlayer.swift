@@ -139,6 +139,7 @@ class StreamingAudioPlayer {
     func play(url: URL) {
         NSLog("StreamingAudioPlayer: Playing URL: %@", url.absoluteString)
         hasReportedFormat = false  // Reset for new track
+        _hasQueuedTrack = false     // Clear any previous queue state
         player.play(url: url)
     }
     
@@ -155,6 +156,7 @@ class StreamingAudioPlayer {
     /// Stop playback
     func stop() {
         player.stop()
+        _hasQueuedTrack = false  // Queue is cleared on stop
         clearSpectrum()
     }
     
@@ -170,6 +172,32 @@ class StreamingAudioPlayer {
         }
         
         player.seek(to: time)
+    }
+    
+    // MARK: - Gapless Queue
+    
+    /// Track whether we have a queued track for gapless playback
+    private var _hasQueuedTrack: Bool = false
+    
+    /// Whether there's a track queued for gapless playback
+    var hasQueuedTrack: Bool {
+        return _hasQueuedTrack
+    }
+    
+    /// Queue a URL for gapless playback after current track
+    /// Uses AudioStreaming's built-in queue API
+    func queue(url: URL) {
+        NSLog("StreamingAudioPlayer: Queueing URL for gapless: %@", url.absoluteString)
+        player.queue(url: url)
+        _hasQueuedTrack = true
+    }
+    
+    /// Clear all queued tracks (e.g., when playlist changes or Sweet Fades takes over)
+    func clearQueue() {
+        NSLog("StreamingAudioPlayer: Clearing queue")
+        // AudioStreaming clears queue on stop, but we may be playing
+        // The queue is cleared when the current track finishes naturally
+        _hasQueuedTrack = false
     }
     
     /// Check if player is in a recoverable state

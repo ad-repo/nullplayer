@@ -249,12 +249,11 @@ class SkinRenderer {
     }
     
     /// Draw text in white using the skin's text.bmp font as a reference
-    /// Samples the original green text and draws white pixels where text exists
+    /// Renders each character to an offscreen buffer with direct pixel conversion, then draws the result
     @discardableResult
     func drawSkinTextWhite(_ text: String, at position: NSPoint, in context: CGContext) -> CGFloat {
-        // Just draw green text for now and overlay white using blend mode
-        guard let textImage = skin.text else {
-            // Fallback to system font in white
+        guard let textImage = skin.text,
+              let cgTextImage = textImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: NSColor.white,
                 .font: NSFont.monospacedSystemFont(ofSize: 6, weight: .regular)
@@ -263,37 +262,90 @@ class SkinRenderer {
             return CGFloat(text.count) * 5
         }
         
-        let charWidth = SkinElements.TextFont.charWidth
-        let charHeight = SkinElements.TextFont.charHeight
+        let charWidth = Int(SkinElements.TextFont.charWidth)
+        let charHeight = Int(SkinElements.TextFont.charHeight)
         var xPos = position.x
         
         for char in text.uppercased() {
             let charRect = SkinElements.TextFont.character(char)
-            let destRect = NSRect(x: xPos, y: position.y, width: charWidth, height: charHeight)
+            let destRect = NSRect(x: xPos, y: position.y, width: CGFloat(charWidth), height: CGFloat(charHeight))
             
-            // Draw the original sprite
-            drawSprite(from: textImage, sourceRect: charRect, to: destRect, in: context)
+            // Crop the character from the text image
+            let cropRect = CGRect(x: charRect.origin.x, y: charRect.origin.y, 
+                                  width: charRect.width, height: charRect.height)
+            guard let charImage = cgTextImage.cropping(to: cropRect) else {
+                xPos += CGFloat(charWidth)
+                continue
+            }
             
-            // Then overlay white using luminosity blend to replace the green with white
+            // Create offscreen buffer and draw character
+            guard let offscreenContext = CGContext(
+                data: nil,
+                width: charWidth,
+                height: charHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: charWidth * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else {
+                xPos += CGFloat(charWidth)
+                continue
+            }
+            
+            offscreenContext.draw(charImage, in: CGRect(x: 0, y: 0, width: charWidth, height: charHeight))
+            
+            // Direct pixel conversion: green (0, G, 0) -> white (G, G, G)
+            // This preserves the brightness while making it white
+            guard let data = offscreenContext.data else {
+                xPos += CGFloat(charWidth)
+                continue
+            }
+            
+            let pixels = data.bindMemory(to: UInt8.self, capacity: charWidth * charHeight * 4)
+            for i in 0..<(charWidth * charHeight) {
+                let offset = i * 4
+                let r = pixels[offset]
+                let g = pixels[offset + 1]
+                let b = pixels[offset + 2]
+                let a = pixels[offset + 3]
+                
+                // Skip fully transparent pixels
+                if a == 0 { continue }
+                
+                // Use the green channel as brightness (text is green)
+                // Also check if it's magenta background (skip those)
+                let isMagenta = r > 200 && g < 50 && b > 200
+                if isMagenta {
+                    // Make magenta transparent
+                    pixels[offset + 3] = 0
+                } else {
+                    // Convert green to white: use green value for all channels
+                    let brightness = g
+                    pixels[offset] = brightness     // R
+                    pixels[offset + 1] = brightness // G
+                    pixels[offset + 2] = brightness // B
+                    // Keep alpha as-is
+                }
+            }
+            
+            // Get the converted image
+            guard let whiteCharImage = offscreenContext.makeImage() else {
+                xPos += CGFloat(charWidth)
+                continue
+            }
+            
+            // Draw to main context with proper flipping
             context.saveGState()
-            
-            // Apply same flip as drawSprite
-            let centerY = destRect.midY
-            context.translateBy(x: 0, y: centerY)
+            context.translateBy(x: destRect.origin.x, y: destRect.origin.y + destRect.height)
             context.scaleBy(x: 1, y: -1)
-            context.translateBy(x: 0, y: -centerY)
-            
-            // Remove the green color, making it gray
-            context.setBlendMode(.color)
-            context.setFillColor(CGColor.white)
-            context.fill(destRect)
-            
+            context.interpolationQuality = .none
+            context.draw(whiteCharImage, in: CGRect(x: 0, y: 0, width: destRect.width, height: destRect.height))
             context.restoreGState()
             
-            xPos += charWidth
+            xPos += CGFloat(charWidth)
         }
         
-        return CGFloat(text.count) * charWidth
+        return CGFloat(text.count * charWidth)
     }
     
     /// Creates a white-tinted version of the skin's text image
@@ -458,19 +510,79 @@ class SkinRenderer {
     
     // MARK: - Marquee Text
     
+    /// Check if text contains characters not supported by the skin bitmap font
+    /// Skin font only supports: A-Z, 0-9, and some symbols
+    private func containsNonLatinCharacters(_ text: String) -> Bool {
+        for char in text {
+            switch char {
+            case "A"..."Z", "a"..."z", "0"..."9":
+                continue
+            case " ", "\"", "@", ":", "(", ")", "-", "'", "!", "_", "+", "\\", "/",
+                 "[", "]", "^", "&", "%", ".", "=", "$", "#", "?", "*":
+                continue
+            default:
+                return true  // Non-Latin or unsupported character
+            }
+        }
+        return false
+    }
+    
     /// Draw scrolling marquee text with circular/seamless wrapping
     func drawMarquee(text: String, offset: CGFloat, in context: CGContext) {
         let marqueeRect = SkinElements.TextFont.Positions.marqueeArea
-        let charWidth = SkinElements.TextFont.charWidth
-        let textWidth = CGFloat(text.count) * charWidth
         
         // Clip to marquee area
         context.saveGState()
         context.clip(to: marqueeRect)
         
-        // If text fits in marquee, just draw it centered (no scrolling needed)
-        if textWidth <= marqueeRect.width {
-            if let textImage = skin.text {
+        // Check if we need system font fallback for non-Latin characters (Japanese, Cyrillic, etc.)
+        let useSystemFont = skin.text == nil || containsNonLatinCharacters(text)
+        
+        if useSystemFont {
+            // System font rendering - supports all Unicode characters
+            // The context is flipped for Winamp skin rendering, so we need to unflip
+            // temporarily for NSAttributedString.draw() to render correctly
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: NSColor.green,
+                .font: NSFont.systemFont(ofSize: 8, weight: .regular)
+            ]
+            let textSize = text.size(withAttributes: attrs)
+            
+            // Save and unflip the context for text drawing
+            context.saveGState()
+            
+            // Unflip: the context was flipped with translateBy(0, height) + scaleBy(1, -1)
+            // We need to reverse this for the marquee area
+            let centerY = marqueeRect.midY
+            context.translateBy(x: 0, y: centerY)
+            context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: 0, y: -centerY)
+            
+            // If text fits, just draw it
+            if textSize.width <= marqueeRect.width {
+                text.draw(at: NSPoint(x: marqueeRect.minX, y: marqueeRect.minY), withAttributes: attrs)
+            } else {
+                // Circular scrolling with system font
+                let separator = "  -  "
+                let fullText = text + separator
+                let fullWidth = fullText.size(withAttributes: attrs).width
+                let adjustedOffset = offset.truncatingRemainder(dividingBy: fullWidth)
+                
+                for pass in 0..<2 {
+                    let xPos = marqueeRect.minX - adjustedOffset + (CGFloat(pass) * fullWidth)
+                    fullText.draw(at: NSPoint(x: xPos, y: marqueeRect.minY), withAttributes: attrs)
+                }
+            }
+            
+            context.restoreGState()
+        } else {
+            // Skin bitmap font rendering - Latin characters only
+            let charWidth = SkinElements.TextFont.charWidth
+            let textWidth = CGFloat(text.count) * charWidth
+            let textImage = skin.text!
+            
+            // If text fits in marquee, just draw it (no scrolling needed)
+            if textWidth <= marqueeRect.width {
                 var xPos = marqueeRect.minX
                 let yPos = marqueeRect.minY + (marqueeRect.height - SkinElements.TextFont.charHeight) / 2
                 
@@ -483,58 +595,35 @@ class SkinRenderer {
                     xPos += charWidth
                 }
             } else {
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .foregroundColor: NSColor.green,
-                    .font: NSFont.monospacedSystemFont(ofSize: 8, weight: .regular)
-                ]
-                text.draw(at: NSPoint(x: marqueeRect.minX, y: marqueeRect.minY + 2), withAttributes: attrs)
-            }
-            context.restoreGState()
-            return
-        }
-        
-        // Circular scrolling: draw text twice with separator for seamless wrap
-        let separator = "  -  "  // Separator using characters available in skin font
-        let separatorWidth = CGFloat(separator.count) * charWidth
-        let totalWidth = textWidth + separatorWidth  // Full cycle width
-        
-        if let textImage = skin.text {
-            let yPos = marqueeRect.minY + (marqueeRect.height - SkinElements.TextFont.charHeight) / 2
-            
-            // Draw two copies of "text + separator" for seamless looping
-            for pass in 0..<2 {
-                var xPos = marqueeRect.minX - offset + (CGFloat(pass) * totalWidth)
+                // Circular scrolling: draw text twice with separator for seamless wrap
+                let separator = "  -  "
+                let separatorWidth = CGFloat(separator.count) * charWidth
+                let totalWidth = textWidth + separatorWidth
+                let yPos = marqueeRect.minY + (marqueeRect.height - SkinElements.TextFont.charHeight) / 2
                 
-                // Draw main text
-                for char in text.uppercased() {
-                    if xPos + charWidth > marqueeRect.minX && xPos < marqueeRect.maxX {
-                        let charRect = SkinElements.TextFont.character(char)
-                        let destRect = NSRect(x: xPos, y: yPos, width: charWidth, height: SkinElements.TextFont.charHeight)
-                        drawSprite(from: textImage, sourceRect: charRect, to: destRect, in: context)
+                for pass in 0..<2 {
+                    var xPos = marqueeRect.minX - offset + (CGFloat(pass) * totalWidth)
+                    
+                    // Draw main text
+                    for char in text.uppercased() {
+                        if xPos + charWidth > marqueeRect.minX && xPos < marqueeRect.maxX {
+                            let charRect = SkinElements.TextFont.character(char)
+                            let destRect = NSRect(x: xPos, y: yPos, width: charWidth, height: SkinElements.TextFont.charHeight)
+                            drawSprite(from: textImage, sourceRect: charRect, to: destRect, in: context)
+                        }
+                        xPos += charWidth
                     }
-                    xPos += charWidth
-                }
-                
-                // Draw separator
-                for char in separator.uppercased() {
-                    if xPos + charWidth > marqueeRect.minX && xPos < marqueeRect.maxX {
-                        let charRect = SkinElements.TextFont.character(char)
-                        let destRect = NSRect(x: xPos, y: yPos, width: charWidth, height: SkinElements.TextFont.charHeight)
-                        drawSprite(from: textImage, sourceRect: charRect, to: destRect, in: context)
+                    
+                    // Draw separator
+                    for char in separator.uppercased() {
+                        if xPos + charWidth > marqueeRect.minX && xPos < marqueeRect.maxX {
+                            let charRect = SkinElements.TextFont.character(char)
+                            let destRect = NSRect(x: xPos, y: yPos, width: charWidth, height: SkinElements.TextFont.charHeight)
+                            drawSprite(from: textImage, sourceRect: charRect, to: destRect, in: context)
+                        }
+                        xPos += charWidth
                     }
-                    xPos += charWidth
                 }
-            }
-        } else {
-            // Fallback text rendering with circular scroll
-            let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor.green,
-                .font: NSFont.monospacedSystemFont(ofSize: 8, weight: .regular)
-            ]
-            let fullText = text + separator
-            for pass in 0..<2 {
-                let xPos = marqueeRect.minX - offset + (CGFloat(pass) * totalWidth)
-                fullText.draw(at: NSPoint(x: xPos, y: marqueeRect.minY + 2), withAttributes: attrs)
             }
         }
         

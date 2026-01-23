@@ -1,5 +1,5 @@
 import AppKit
-import KSPlayer
+@preconcurrency import KSPlayer
 
 /// Window controller for video playback with KSPlayer and skinned UI
 class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {

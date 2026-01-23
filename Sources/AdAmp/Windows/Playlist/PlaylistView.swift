@@ -46,6 +46,9 @@ class PlaylistView: NSView {
     /// Display update timer for playback time
     private var displayTimer: Timer?
     
+    /// Marquee scroll offset for current track
+    private var marqueeOffset: CGFloat = 0
+    
     // MARK: - Layout Constants
     
     private struct Layout {
@@ -74,8 +77,10 @@ class PlaylistView: NSView {
         // Register for drag and drop
         registerForDraggedTypes([.fileURL])
         
-        // Start display timer for playback time updates
-        displayTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        // Start display timer for playback time updates and marquee scrolling
+        // Use 30fps (0.033s) with 1px increments for smooth scrolling
+        displayTimer = Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { [weak self] _ in
+            self?.marqueeOffset += 1
             self?.needsDisplay = true
         }
         
@@ -260,39 +265,58 @@ class PlaylistView: NSView {
             let isCurrentTrack = index == currentIndex
             let textColor = isCurrentTrack ? colors.currentText : colors.normalText
             
-            // We need to flip context back for text rendering
-            drawTrackText(in: context, track: track, index: index, rect: itemRect, color: textColor, font: colors.font)
+            // Draw track text with clipping and marquee for current track
+            drawTrackText(in: context, track: track, index: index, rect: itemRect, color: textColor, font: colors.font, isCurrentTrack: isCurrentTrack)
         }
         
         context.restoreGState()
     }
     
     /// Draw track text (handles coordinate flip for proper text rendering)
-    private func drawTrackText(in context: CGContext, track: Track, index: Int, rect: NSRect, color: NSColor, font: NSFont) {
-        // Save context and flip for text drawing
-        context.saveGState()
-        
-        // Flip around the center of the text rect
-        let centerY = rect.midY
-        context.translateBy(x: 0, y: centerY)
-        context.scaleBy(x: 1, y: -1)
-        context.translateBy(x: 0, y: -centerY)
-        
+    private func drawTrackText(in context: CGContext, track: Track, index: Int, rect: NSRect, color: NSColor, font: NSFont, isCurrentTrack: Bool = false) {
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: color,
             .font: font
         ]
         
-        // Track number and title
-        let titleText = "\(index + 1). \(track.displayTitle)"
-        titleText.draw(at: NSPoint(x: rect.minX + 2, y: rect.minY + 1), withAttributes: attrs)
-        
-        // Duration (right-aligned)
+        // Calculate dimensions
+        let centerY = rect.midY
         let duration = track.duration ?? 0
         let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
         let durationSize = durationStr.size(withAttributes: attrs)
-        durationStr.draw(at: NSPoint(x: rect.maxX - durationSize.width - 4, y: rect.minY + 1), withAttributes: attrs)
+        let durationX = rect.maxX - durationSize.width - 4
+        let titleX = rect.minX + 2
+        let titleMaxWidth = durationX - titleX - 6
+        let titleText = "\(index + 1). \(track.displayTitle)"
+        let textWidth = titleText.size(withAttributes: attrs).width
         
+        // Draw duration (right-aligned)
+        context.saveGState()
+        context.translateBy(x: 0, y: centerY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -centerY)
+        durationStr.draw(at: NSPoint(x: durationX, y: rect.minY + 1), withAttributes: attrs)
+        context.restoreGState()
+        
+        // Draw title with clipping
+        context.saveGState()
+        context.clip(to: NSRect(x: titleX, y: rect.minY, width: titleMaxWidth, height: rect.height))
+        context.translateBy(x: 0, y: centerY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -centerY)
+        
+        // Marquee scroll for current track if text is too long
+        if isCurrentTrack && textWidth > titleMaxWidth {
+            let separator = "     "  // Simple spacing between repeats
+            let fullText = titleText + separator
+            let cycleWidth = fullText.size(withAttributes: attrs).width
+            let offset = marqueeOffset.truncatingRemainder(dividingBy: cycleWidth)
+            
+            fullText.draw(at: NSPoint(x: titleX - offset, y: rect.minY + 1), withAttributes: attrs)
+            fullText.draw(at: NSPoint(x: titleX - offset + cycleWidth, y: rect.minY + 1), withAttributes: attrs)
+        } else {
+            titleText.draw(at: NSPoint(x: titleX, y: rect.minY + 1), withAttributes: attrs)
+        }
         context.restoreGState()
     }
     
@@ -728,6 +752,7 @@ class PlaylistView: NSView {
         
         // Double-click plays track
         if event.clickCount == 2 {
+            NSLog("PlaylistView: Double-click on track %d, calling playTrack", index)
             WindowManager.shared.audioEngine.playTrack(at: index)
         }
         

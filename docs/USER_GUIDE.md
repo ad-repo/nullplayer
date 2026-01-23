@@ -143,6 +143,7 @@ The Playlist Editor manages your playback queue.
 - **Cmd+Click** to toggle individual selection
 - **Scroll wheel** to navigate long lists
 - **Drag & drop** files to add them
+- **Marquee scrolling** - Long track titles on the currently playing track automatically scroll horizontally
 
 ### Bottom Bar Information
 
@@ -423,7 +424,19 @@ A track is "scrobbled" when:
 
 ### Plex Radio
 
-Generate dynamic playlists based on sonic similarity to a seed track, album, or artist:
+Generate dynamic playlists from the radio icon in the library browser toolbar. Each station type has two variants:
+- **Standard**: Random tracks matching the criteria
+- **Sonic**: Tracks sonically similar to the current/seed track
+
+| Radio Station | Description |
+|---------------|-------------|
+| **Library Radio** | Random tracks from your entire library |
+| **Only the Hits** | Popular tracks (1M+ Last.fm scrobbles) |
+| **Deep Cuts** | Lesser-known tracks (under 1k scrobbles) |
+| **Genre Stations** | Tracks from specific genres (dynamically loaded from your library) |
+| **Decade Stations** | Tracks from specific decades (1920s-2020s) |
+
+**Context Menu Radio** (right-click items):
 
 | Radio Type | How to Access | Description |
 |------------|---------------|-------------|
@@ -431,7 +444,12 @@ Generate dynamic playlists based on sonic similarity to a seed track, album, or 
 | **Album Radio** | Right-click album > "Start Album Radio" | Plays tracks from sonically similar albums |
 | **Artist Radio** | Right-click artist > "Start Artist Radio" | Plays tracks from sonically similar artists |
 
-**Requirements**: Plex Pass with sonic analysis enabled on the server. Tracks need to be analyzed (look for `musicAnalysisVersion` in track metadata).
+**Radio Features**:
+- Artist variety: Max 2 tracks per artist (1 for Sonic), spread apart to avoid back-to-back
+- Genres fetched dynamically from your Plex library
+- Sonic stations use currently playing track as seed, or random if nothing playing
+
+**Requirements**: Plex Pass with sonic analysis enabled on the server for Sonic variants.
 
 ---
 
@@ -636,6 +654,8 @@ Right-click anywhere on AdAmp windows to access:
 - Shuffle
 - Gapless Playback
 - Volume Normalization
+- Sweet Fades (Crossfade)
+- Fade Duration (when Sweet Fades enabled)
 - Browser Album Art Background
 - Remember State on Quit
 
@@ -717,8 +737,28 @@ A backup is automatically created before:
 
 **Playback Options > Gapless Playback** enables seamless transitions:
 - Next track is pre-scheduled during playback
-- Works with local files only (not streaming)
+- Works with both local files and streaming (Plex/Subsonic)
 - Not compatible with Repeat Single mode
+- Disabled when Sweet Fades (crossfade) is enabled
+
+### Sweet Fades (Crossfade)
+
+**Playback Options > Sweet Fades (Crossfade)** enables smooth blending between tracks:
+- Tracks overlap and crossfade at the end of each song
+- Uses equal-power fade curve for perceptually smooth transitions
+- Works with both local files and streaming (Plex/Subsonic)
+
+**Fade Duration** options (when Sweet Fades is enabled):
+- 1s, 2s, 3s, **5s (default)**, 7s, 10s
+
+**Constraints:**
+- Disabled when casting (playback is remote)
+- Skipped for mixed source transitions (local→streaming)
+- Skipped if next track is shorter than 2× fade duration
+- Skipped in Repeat Single mode
+- Cancelled if you seek, skip, or select a different track
+
+**Note:** Sweet Fades takes precedence over Gapless Playback. When enabled, gapless pre-scheduling is disabled.
 
 ### Volume Normalization
 
@@ -742,7 +782,7 @@ The main window displays real-time frequency analysis:
 
 When enabled, the following is saved on quit and restored on launch:
 - **Window positions and visibility** (Main, EQ, Playlist, Browser, Milkdrop)
-- **Audio settings** (volume, balance, shuffle, repeat, gapless, normalization)
+- **Audio settings** (volume, balance, shuffle, repeat, gapless, normalization, Sweet Fades)
 - **Equalizer settings** (enabled state, preamp, all band values)
 - **Playlist** (local files only, not streaming tracks)
 - **Playback position** (resumes from where you left off)

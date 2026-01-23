@@ -343,27 +343,31 @@ http://192.168.0.102:32400/library/parts/653835/1723508508/file.flac?X-Plex-Toke
 ### Only the Hits Radio
 Plays only popular/hit tracks based on Last.fm scrobble data.
 
+**Threshold**: 1,000,000+ scrobbles (configurable in `RadioConfig.hitsThreshold`)
+
 **Sonic Version** - Sonically similar hits:
 ```
-GET /library/sections/{libID}/all?type=10&track.sonicallySimilar={trackID}&ratingCount>=1000&sort=random&limit=100
+GET /library/sections/{libID}/all?type=10&track.sonicallySimilar={trackID}&ratingCount>=1000000&sort=random&limit=100
 ```
 
 **Non-Sonic Version** - All hits from library:
 ```
-GET /library/sections/{libID}/all?type=10&ratingCount>=1000&sort=random&limit=100
+GET /library/sections/{libID}/all?type=10&ratingCount>=1000000&sort=random&limit=100
 ```
 
 ### Deep Cuts Radio
 Plays lesser-known tracks, excluding popular hits.
 
+**Threshold**: Under 1,000 scrobbles (configurable in `RadioConfig.deepCutsThreshold`)
+
 **Sonic Version** - Sonically similar deep cuts:
 ```
-GET /library/sections/{libID}/all?type=10&track.sonicallySimilar={trackID}&ratingCount<500&sort=random&limit=100
+GET /library/sections/{libID}/all?type=10&track.sonicallySimilar={trackID}&ratingCount<1000&sort=random&limit=100
 ```
 
 **Non-Sonic Version** - All deep cuts from library:
 ```
-GET /library/sections/{libID}/all?type=10&ratingCount<500&sort=random&limit=100
+GET /library/sections/{libID}/all?type=10&ratingCount<1000&sort=random&limit=100
 ```
 
 **Note**: Tracks without Last.fm data have no `ratingCount` field - these are considered "deep cuts" but should only be included if they have proper metadata (artist, album, title). Exclude tracks missing basic tags as they are likely poorly tagged files, not legitimate deep cuts.
@@ -384,9 +388,9 @@ GET /library/sections/{libID}/all?type=10&genre={genreID}&sort=random&limit=100
 ```
 
 ### Decade Radio
-Plays tracks from the same decade as the current track.
+Plays tracks from a specific decade.
 
-**Seed Selection**: Uses the release year of the currently playing track to determine the decade (e.g., 1987 → 1980-1989). If no track is playing, select a random track from the library and use its decade.
+**Available Decades**: 1920s, 1930s, 1940s, 1950s, 1960s, 1970s, 1980s, 1990s, 2000s, 2010s, 2020s (configurable in `RadioConfig.decades`)
 
 **Sonic Version** - Sonically similar tracks from the same decade:
 ```
@@ -397,6 +401,97 @@ GET /library/sections/{libID}/all?type=10&track.sonicallySimilar={trackID}&year>
 ```
 GET /library/sections/{libID}/all?type=10&year>=1980&year<=1989&sort=random&limit=100
 ```
+
+### Library Radio
+Plays random tracks from the entire library.
+
+**Sonic Version** - Sonically similar to seed track:
+```
+GET /library/sections/{libID}/all?type=10&track.sonicallySimilar={trackID}&sort=random&limit=100
+```
+
+**Non-Sonic Version** - Random tracks from library:
+```
+GET /library/sections/{libID}/all?type=10&sort=random&limit=100
+```
+
+## Configuration
+
+Radio station thresholds are defined in `RadioConfig` enum (`PlexServerClient.swift`):
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| `hitsThreshold` | 1,000,000 | Minimum Last.fm scrobbles for "hits" |
+| `deepCutsThreshold` | 1,000 | Maximum Last.fm scrobbles for "deep cuts" |
+| `defaultLimit` | 100 | Default number of tracks per radio station |
+| `maxTracksPerArtist` | 2 | Maximum tracks per artist for variety (1 for Sonic) |
+| `overFetchMultiplier` | 3 | Multiplier for over-fetching to allow deduplication |
+| `fallbackGenres` | Pop/Rock, Jazz, Classical, Electronic, R&B, Rap, Country, Blues | Fallback if genre fetch fails |
+| `decades` | 1920s-2020s | Available decade stations |
+
+### Dynamic Genre Fetching
+
+Genres are fetched dynamically from the Plex library via:
+```
+GET /library/sections/{libID}/genre
+```
+
+This ensures genre names match the actual tags in your library (e.g., "Pop/Rock" instead of "Rock").
+
+### Artist Variety Filter
+
+Radio playlists automatically limit duplicate artists for better variety. The system:
+1. Fetches 3x the requested tracks (`overFetchMultiplier`)
+2. Filters to allow max 2 tracks per artist (1 for Sonic stations)
+3. Spreads same-artist tracks apart to avoid back-to-back plays
+4. Returns the requested number of tracks with diverse artists
+
+This prevents radio stations from being dominated by a few prolific artists.
+
+## Video Content (Movies & TV Shows)
+
+### Fetching Movies
+
+```
+GET /library/sections/{libraryID}/all?type=1
+```
+
+Type 1 = movies. Returns all movies in the library.
+
+### Fetching TV Shows
+
+```
+GET /library/sections/{libraryID}/all?type=2
+```
+
+Type 2 = shows. Returns all TV shows in the library.
+
+### Multi-Version Movies
+
+Movies may contain multiple media versions (different qualities, bonus content, etc.):
+
+```json
+{
+  "title": "Movie Name",
+  "duration": 273472,  // WARNING: May be from first media, not primary!
+  "Media": [
+    {"id": 1, "duration": 273472, "Part": [{"file": "/video/Bonus.mkv"}]},
+    {"id": 2, "duration": 5820000, "Part": [{"file": "/video/Movie.mkv"}]}
+  ]
+}
+```
+
+**Important**: The top-level `duration` field may point to bonus content, not the main movie. AdAmp uses the **longest duration** from the `Media` array to identify the primary content.
+
+### Bonus Content Filtering
+
+Plex may misclassify bonus content (trailers, extras) as separate entries:
+- Bonus files in movie folders may appear as short movies
+- Numbered bonus files may appear as TV show episodes
+
+AdAmp filters these by:
+- Using the longest media entry for movie duration/playback
+- Filtering TV shows with ≤1 season AND ≤2 episodes (likely bonus content)
 
 ## Requirements
 

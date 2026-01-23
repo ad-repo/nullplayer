@@ -61,3 +61,4 @@ Frameworks/libprojectM-4.dylib
 # Framework tarballs (used for releases)
 VLCKit-macos.tar.gz
 libprojectM-*.tar.gz
+Frameworks/libprojectM-4.4.dylib

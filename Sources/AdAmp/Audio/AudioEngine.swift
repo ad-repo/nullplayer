@@ -77,6 +77,7 @@ class AudioEngine {
     /// This routes audio through AVAudioEngine so EQ affects streaming audio
     private var streamingPlayer: StreamingAudioPlayer?
     private var isStreamingPlayback: Bool = false
+    private var isLoadingNewStreamingTrack: Bool = false
     
     /// Current playback state
     private(set) var state: PlaybackState = .stopped {
@@ -129,7 +130,9 @@ class AudioEngine {
     /// Balance (-1.0 left, 0.0 center, 1.0 right)
     var balance: Float = 0.0 {
         didSet {
+            // Apply to both players since they alternate during crossfades
             playerNode.pan = balance
+            crossfadePlayerNode.pan = balance
         }
     }
     
@@ -169,6 +172,46 @@ class AudioEngine {
     
     /// Target loudness level for normalization (in dB, typical is -14 LUFS for streaming)
     private let targetLoudnessDB: Float = -14.0
+    
+    // MARK: - Sweet Fades (Crossfade)
+    
+    /// Sweet Fades (crossfade) enabled - smooth transition between tracks
+    var sweetFadeEnabled: Bool = false {
+        didSet {
+            UserDefaults.standard.set(sweetFadeEnabled, forKey: "sweetFadeEnabled")
+            NSLog("AudioEngine: Sweet Fades %@", sweetFadeEnabled ? "enabled" : "disabled")
+        }
+    }
+    
+    /// Crossfade duration in seconds (default 5s)
+    var sweetFadeDuration: TimeInterval = 5.0 {
+        didSet {
+            UserDefaults.standard.set(sweetFadeDuration, forKey: "sweetFadeDuration")
+            NSLog("AudioEngine: Sweet Fades duration set to %.1fs", sweetFadeDuration)
+        }
+    }
+    
+    /// Whether a crossfade is currently in progress
+    private var isCrossfading: Bool = false
+    
+    /// Timer for volume ramping during crossfade
+    private var crossfadeTimer: Timer?
+    
+    /// Secondary player node for crossfade (local files)
+    private let crossfadePlayerNode = AVAudioPlayerNode()
+    
+    /// Audio file for crossfade player
+    private var crossfadeAudioFile: AVAudioFile?
+    
+    /// Secondary streaming player for crossfade
+    private var crossfadeStreamingPlayer: StreamingAudioPlayer?
+    
+    /// Track index of the incoming crossfade track
+    private var crossfadeTargetIndex: Int = -1
+    
+    /// Track whether primary or crossfade player is currently "active" for local playback
+    /// When a crossfade completes, the crossfade player becomes the primary
+    private var crossfadePlayerIsActive: Bool = false
     
     /// Pre-scheduled next file for gapless playback
     private var nextScheduledFile: AVAudioFile?
@@ -242,15 +285,26 @@ class AudioEngine {
     private func setupAudioEngine() {
         // Attach nodes
         engine.attach(playerNode)
+        engine.attach(crossfadePlayerNode)  // For Sweet Fades crossfade
         engine.attach(eqNode)
         engine.attach(limiterNode)
         
         // Get the standard format from the mixer
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
         
-        // Connect nodes: player -> EQ -> limiter -> mixer
-        // Limiter protects against clipping when EQ boosts are applied
-        engine.connect(playerNode, to: eqNode, format: mixerFormat)
+        // Create a mixer node to combine both player nodes before EQ
+        // Signal flow: playerNode ─┐
+        //                          ├─► mixerNode ─► eqNode ─► limiter ─► output
+        //  crossfadePlayerNode ────┘
+        let mixerNode = AVAudioMixerNode()
+        engine.attach(mixerNode)
+        
+        // Connect both players to the mixer
+        engine.connect(playerNode, to: mixerNode, format: mixerFormat)
+        engine.connect(crossfadePlayerNode, to: mixerNode, format: mixerFormat)
+        
+        // Connect mixer to EQ to limiter to output
+        engine.connect(mixerNode, to: eqNode, format: mixerFormat)
         engine.connect(eqNode, to: limiterNode, format: mixerFormat)
         engine.connect(limiterNode, to: engine.mainMixerNode, format: mixerFormat)
         
@@ -259,6 +313,7 @@ class AudioEngine {
         
         // Set initial volume (didSet doesn't fire for default value)
         playerNode.volume = volume
+        crossfadePlayerNode.volume = 0  // Start silent
         
         // EQ is disabled (bypassed) by default - user must enable it
         eqNode.bypass = true
@@ -308,6 +363,10 @@ class AudioEngine {
     private func loadAudioPreferences() {
         gaplessPlaybackEnabled = UserDefaults.standard.bool(forKey: "gaplessPlaybackEnabled")
         volumeNormalizationEnabled = UserDefaults.standard.bool(forKey: "volumeNormalizationEnabled")
+        sweetFadeEnabled = UserDefaults.standard.bool(forKey: "sweetFadeEnabled")
+        // Load sweet fade duration with default of 5.0 seconds
+        let savedDuration = UserDefaults.standard.double(forKey: "sweetFadeDuration")
+        sweetFadeDuration = savedDuration > 0 ? savedDuration : 5.0
     }
     
     private func setupEqualizer() {
@@ -602,6 +661,9 @@ class AudioEngine {
     }
     
     func stop() {
+        // Cancel any in-progress crossfade
+        cancelCrossfade()
+        
         // If casting is active, stop casting as well
         if isCastingActive {
             Task {
@@ -657,6 +719,9 @@ class AudioEngine {
     }
     
     func previous() {
+        // Cancel any in-progress crossfade
+        cancelCrossfade()
+        
         guard !playlist.isEmpty else { return }
         
         if shuffleEnabled {
@@ -683,6 +748,9 @@ class AudioEngine {
     }
     
     func next() {
+        // Cancel any in-progress crossfade
+        cancelCrossfade()
+        
         guard !playlist.isEmpty else { return }
         
         if shuffleEnabled {
@@ -747,6 +815,9 @@ class AudioEngine {
     private var playbackStartDate: Date?
     
     func seek(to time: TimeInterval) {
+        // Cancel any in-progress crossfade
+        cancelCrossfade()
+        
         // If casting is active, forward command to CastManager
         if isCastingActive {
             // Update local tracking immediately for responsive UI
@@ -1049,6 +1120,14 @@ class AudioEngine {
                 self.decaySpectrum()
             }
             
+            // Check if we should start crossfade (Sweet Fades)
+            if self.sweetFadeEnabled && !self.isCrossfading && !self.isCastingActive && self.state == .playing {
+                let timeRemaining = trackDuration - current
+                if timeRemaining > 0 && timeRemaining <= self.sweetFadeDuration {
+                    self.startCrossfade()
+                }
+            }
+            
             // When casting, check if track has finished and auto-advance
             if self.isCastingActive, 
                self.castPlaybackStartDate != nil,  // Casting is playing (not paused)
@@ -1284,8 +1363,12 @@ class AudioEngine {
         audioFile = nil
         isStreamingPlayback = true
         
-        // Stop existing streaming player
-        stopStreamingPlayer()
+        // Set flag before starting new track - EOF callbacks from old track should be ignored
+        isLoadingNewStreamingTrack = true
+        
+        // DON'T call stop() before play() - the AudioStreaming library handles this internally.
+        // Calling stop() explicitly causes a race condition where the async stop callback
+        // fires AFTER play(url:) is called, cancelling the newly queued track.
         
         // Create streaming player if needed
         if streamingPlayer == nil {
@@ -1309,6 +1392,16 @@ class AudioEngine {
         // Start playback through the streaming player (routes through AVAudioEngine with EQ)
         streamingPlayer?.play(url: track.url)
         
+        // Set state to playing immediately so play() doesn't try to reload
+        state = .playing
+        playbackStartDate = Date()
+        startTimeUpdates()
+        
+        // Clear the loading flag after a brief delay to ensure EOF callback has passed
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.isLoadingNewStreamingTrack = false
+        }
+        
         // Report track start to Plex
         PlexPlaybackReporter.shared.trackDidStart(track, at: 0)
         
@@ -1322,16 +1415,18 @@ class AudioEngine {
         NSLog("  Created StreamingAudioPlayer, starting playback with EQ")
     }
     
-    /// Sync EQ settings from the main engine's EQ to the streaming player's EQ
-    private func syncEQToStreamingPlayer() {
-        guard let sp = streamingPlayer else { return }
+    /// Sync EQ settings from the main engine's EQ to a streaming player's EQ
+    /// - Parameter player: The streaming player to sync, or nil to sync to the primary streaming player
+    private func syncEQToStreamingPlayer(_ player: StreamingAudioPlayer? = nil) {
+        let sp = player ?? streamingPlayer
+        guard let targetPlayer = sp else { return }
         
         var bands: [Float] = []
         for i in 0..<10 {
             bands.append(eqNode.bands[i].gain)
         }
         
-        sp.syncEQSettings(bands: bands, preamp: eqNode.globalGain, enabled: !eqNode.bypass)
+        targetPlayer.syncEQSettings(bands: bands, preamp: eqNode.globalGain, enabled: !eqNode.bypass)
     }
     
     private func stopStreamingPlayer() {
@@ -1359,7 +1454,7 @@ class AudioEngine {
         // Report track finished to Subsonic (track stopped is called since it finished)
         SubsonicPlaybackReporter.shared.trackStopped()
         
-        // Check if we have a gaplessly pre-scheduled next track
+        // Check if we have a gaplessly pre-scheduled next track (local files)
         if gaplessPlaybackEnabled && nextScheduledFile != nil && nextScheduledTrackIndex >= 0 {
             // Gapless transition - the next file is already scheduled
             currentIndex = nextScheduledTrackIndex
@@ -1398,6 +1493,40 @@ class AudioEngine {
             return
         }
         
+        // Check if we have a gaplessly pre-scheduled streaming track
+        // AudioStreaming library automatically plays the queued track, we just need to update metadata
+        if gaplessPlaybackEnabled && isStreamingPlayback && streamingPlayer?.hasQueuedTrack == true && nextScheduledTrackIndex >= 0 {
+            // Streaming gapless transition - the player already started the queued track
+            currentIndex = nextScheduledTrackIndex
+            currentTrack = playlist[currentIndex]
+            _currentTime = 0
+            lastReportedTime = 0
+            
+            // Clear the pre-scheduled track index
+            nextScheduledTrackIndex = -1
+            streamingPlayer?.clearQueue()  // Reset queue state (track already playing)
+            
+            // Notify delegate of track change
+            delegate?.audioEngineDidChangeTrack(currentTrack)
+            
+            // Report new track to Plex
+            PlexPlaybackReporter.shared.trackDidStart(currentTrack!, at: 0)
+            
+            // Report new track to Subsonic
+            if let track = currentTrack,
+               let subsonicId = track.subsonicId,
+               let serverId = track.subsonicServerId,
+               let trackDuration = track.duration {
+                SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
+            }
+            
+            // Schedule the next track for gapless
+            scheduleNextTrackForGapless()
+            
+            NSLog("Streaming gapless transition to: %@", currentTrack?.title ?? "Unknown")
+            return
+        }
+        
         if repeatEnabled {
             if shuffleEnabled {
                 // Repeat mode + shuffle: pick a random track
@@ -1432,47 +1561,366 @@ class AudioEngine {
     /// Pre-schedule the next track for gapless playback
     private func scheduleNextTrackForGapless() {
         guard gaplessPlaybackEnabled else { return }
-        guard !isStreamingPlayback else { return }  // Gapless only for local files
+        
+        // Don't queue if Sweet Fades is enabled - it handles transitions
+        guard !sweetFadeEnabled else {
+            NSLog("Gapless: Skipping - Sweet Fades enabled")
+            return
+        }
+        
+        // Don't queue when casting - playback is remote
+        guard !isCastingActive else {
+            NSLog("Gapless: Skipping - casting is active")
+            return
+        }
+        
         guard !repeatEnabled || shuffleEnabled else {
             // For repeat single track, we'll handle it in trackDidFinish
             return
         }
         
-        let nextIndex: Int
-        if shuffleEnabled {
-            // For shuffle, pick a random next track
-            nextIndex = Int.random(in: 0..<playlist.count)
-        } else {
-            nextIndex = currentIndex + 1
-        }
-        
-        guard nextIndex < playlist.count else {
+        let nextIndex = calculateNextTrackIndex()
+        guard nextIndex >= 0 && nextIndex < playlist.count else {
             // No next track to schedule
             nextScheduledFile = nil
             nextScheduledTrackIndex = -1
+            streamingPlayer?.clearQueue()
             return
         }
         
         let nextTrack = playlist[nextIndex]
         
-        // Only schedule local files
-        guard nextTrack.url.isFileURL else { return }
+        if isStreamingPlayback {
+            // Streaming gapless - only if next track is also streaming
+            let nextIsStreaming = nextTrack.url.scheme == "http" || nextTrack.url.scheme == "https"
+            guard nextIsStreaming else {
+                NSLog("Gapless: Next track is local file, can't queue for streaming gapless")
+                return
+            }
+            
+            streamingPlayer?.queue(url: nextTrack.url)
+            nextScheduledTrackIndex = nextIndex
+            NSLog("Gapless: Queued streaming track: %@", nextTrack.title)
+        } else {
+            // Local file gapless
+            guard nextTrack.url.isFileURL else {
+                NSLog("Gapless: Next track is streaming, can't queue for local gapless")
+                return
+            }
+            
+            do {
+                let nextFile = try AVAudioFile(forReading: nextTrack.url)
+                
+                // Schedule the next file to play after the current one
+                // Use the currently active player node
+                let activePlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+                activePlayer.scheduleFile(nextFile, at: nil, completionHandler: nil)
+                
+                nextScheduledFile = nextFile
+                nextScheduledTrackIndex = nextIndex
+                
+                NSLog("Gapless: Pre-scheduled next track: %@", nextTrack.title)
+            } catch {
+                NSLog("Gapless: Failed to pre-schedule next track: %@", error.localizedDescription)
+                nextScheduledFile = nil
+                nextScheduledTrackIndex = -1
+            }
+        }
+    }
+    
+    /// Calculate the index of the next track based on shuffle/repeat settings
+    private func calculateNextTrackIndex() -> Int {
+        guard !playlist.isEmpty else { return -1 }
         
+        if shuffleEnabled {
+            return Int.random(in: 0..<playlist.count)
+        } else {
+            let next = currentIndex + 1
+            return next < playlist.count ? next : -1
+        }
+    }
+    
+    // MARK: - Sweet Fades (Crossfade)
+    
+    /// Start crossfade to the next track
+    private func startCrossfade() {
+        guard !isCrossfading else { return }
+        guard !isCastingActive else { return }
+        
+        // Don't crossfade in repeat-one mode (unusual UX)
+        if repeatEnabled && !shuffleEnabled {
+            NSLog("Sweet Fades: Skipping crossfade - repeat single mode")
+            return
+        }
+        
+        let nextIndex = calculateNextTrackIndex()
+        guard nextIndex >= 0 && nextIndex < playlist.count else {
+            NSLog("Sweet Fades: No next track available")
+            return
+        }
+        
+        let nextTrack = playlist[nextIndex]
+        
+        // Check if next track is same source type (can't crossfade mixed sources)
+        let currentIsStreaming = isStreamingPlayback
+        let nextIsStreaming = nextTrack.url.scheme == "http" || nextTrack.url.scheme == "https"
+        
+        guard currentIsStreaming == nextIsStreaming else {
+            NSLog("Sweet Fades: Skipping crossfade - mixed source types")
+            return
+        }
+        
+        // Check track duration is sufficient (must be at least 2x fade duration)
+        if let nextDuration = nextTrack.duration, nextDuration < sweetFadeDuration * 2 {
+            NSLog("Sweet Fades: Skipping crossfade - next track too short (%.1fs < %.1fs)", nextDuration, sweetFadeDuration * 2)
+            return
+        }
+        
+        isCrossfading = true
+        crossfadeTargetIndex = nextIndex
+        NSLog("Sweet Fades: Starting crossfade to '%@'", nextTrack.title)
+        
+        if isStreamingPlayback {
+            startStreamingCrossfade(to: nextTrack, nextIndex: nextIndex)
+        } else {
+            startLocalCrossfade(to: nextTrack, nextIndex: nextIndex)
+        }
+    }
+    
+    /// Start crossfade for local file playback
+    private func startLocalCrossfade(to nextTrack: Track, nextIndex: Int) {
         do {
             let nextFile = try AVAudioFile(forReading: nextTrack.url)
             
-            // Schedule the next file to play after the current one
-            playerNode.scheduleFile(nextFile, at: nil, completionHandler: nil)
+            // Determine which player is currently active and which will be the crossfade target
+            let outgoingPlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+            let incomingPlayer = crossfadePlayerIsActive ? playerNode : crossfadePlayerNode
             
-            nextScheduledFile = nextFile
-            nextScheduledTrackIndex = nextIndex
+            // Schedule on incoming player
+            incomingPlayer.stop()
+            incomingPlayer.volume = 0
+            incomingPlayer.scheduleFile(nextFile, at: nil) {
+                // This fires when the incoming track finishes
+                // We handle track completion in completeCrossfade
+            }
             
-            NSLog("Gapless: Pre-scheduled next track: %@", nextTrack.title)
+            // Start the incoming player
+            incomingPlayer.play()
+            
+            // Store the file for later
+            if crossfadePlayerIsActive {
+                audioFile = nextFile
+            } else {
+                crossfadeAudioFile = nextFile
+            }
+            
+            // Start volume ramp
+            startCrossfadeVolumeRamp(
+                outgoingVolume: { v in
+                    outgoingPlayer.volume = v
+                },
+                incomingVolume: { v in
+                    incomingPlayer.volume = v
+                },
+                completion: { [weak self] in
+                    self?.completeCrossfade(nextFile: nextFile, nextIndex: nextIndex)
+                }
+            )
         } catch {
-            NSLog("Gapless: Failed to pre-schedule next track: %@", error.localizedDescription)
-            nextScheduledFile = nil
-            nextScheduledTrackIndex = -1
+            NSLog("Sweet Fades: Failed to load next track: %@", error.localizedDescription)
+            isCrossfading = false
+            crossfadeTargetIndex = -1
         }
+    }
+    
+    /// Start crossfade for streaming playback
+    private func startStreamingCrossfade(to nextTrack: Track, nextIndex: Int) {
+        // Create secondary streaming player if needed
+        if crossfadeStreamingPlayer == nil {
+            crossfadeStreamingPlayer = StreamingAudioPlayer()
+            // Note: We don't set delegate - we handle state internally during crossfade
+        }
+        
+        // Sync EQ settings to crossfade player
+        syncEQToStreamingPlayer(crossfadeStreamingPlayer)
+        
+        // Start next track at volume 0
+        crossfadeStreamingPlayer?.volume = 0
+        crossfadeStreamingPlayer?.play(url: nextTrack.url)
+        
+        // Start volume ramp
+        startCrossfadeVolumeRamp(
+            outgoingVolume: { [weak self] v in
+                self?.streamingPlayer?.volume = v
+            },
+            incomingVolume: { [weak self] v in
+                self?.crossfadeStreamingPlayer?.volume = v
+            },
+            completion: { [weak self] in
+                self?.completeStreamingCrossfade(nextIndex: nextIndex)
+            }
+        )
+    }
+    
+    /// Perform volume ramping during crossfade
+    private func startCrossfadeVolumeRamp(
+        outgoingVolume: @escaping (Float) -> Void,
+        incomingVolume: @escaping (Float) -> Void,
+        completion: @escaping () -> Void
+    ) {
+        let startTime = Date()
+        let fadeDuration = sweetFadeDuration
+        let interval: TimeInterval = 0.05  // 50ms updates for smooth fading
+        let targetVolume = volume
+        
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] timer in
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            
+            let elapsed = Date().timeIntervalSince(startTime)
+            let progress = min(1.0, elapsed / fadeDuration)
+            
+            // Equal-power crossfade curve for perceptually smooth transition
+            // outVol = cos(progress * π/2), inVol = sin(progress * π/2)
+            let angle = progress * .pi / 2
+            let outVol = Float(cos(angle)) * targetVolume
+            let inVol = Float(sin(angle)) * targetVolume
+            
+            outgoingVolume(outVol)
+            incomingVolume(inVol)
+            
+            if progress >= 1.0 {
+                timer.invalidate()
+                self.crossfadeTimer = nil
+                completion()
+            }
+        }
+        
+        // Use .common mode so timer fires during menu tracking
+        RunLoop.main.add(timer, forMode: .common)
+        crossfadeTimer = timer
+    }
+    
+    /// Complete local file crossfade
+    private func completeCrossfade(nextFile: AVAudioFile, nextIndex: Int) {
+        // Stop outgoing player
+        let outgoingPlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+        outgoingPlayer.stop()
+        outgoingPlayer.volume = 0
+        
+        // Swap which player is active
+        crossfadePlayerIsActive.toggle()
+        
+        // Update state
+        audioFile = nextFile
+        currentIndex = nextIndex
+        currentTrack = playlist[nextIndex]
+        _currentTime = 0
+        lastReportedTime = 0
+        playbackStartDate = Date()
+        
+        // Reset crossfade state
+        isCrossfading = false
+        crossfadeTargetIndex = -1
+        
+        // Notify delegate
+        delegate?.audioEngineDidChangeTrack(currentTrack)
+        
+        // Report to Plex/Subsonic
+        if let track = currentTrack {
+            PlexPlaybackReporter.shared.trackDidStart(track, at: 0)
+            
+            if let subsonicId = track.subsonicId,
+               let serverId = track.subsonicServerId,
+               let trackDuration = track.duration {
+                SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
+            }
+        }
+        
+        // Apply normalization for new track
+        if volumeNormalizationEnabled {
+            analyzeAndApplyNormalization(file: nextFile)
+        }
+        
+        // Schedule next track for gapless (if enabled and Sweet Fades won't take over)
+        if gaplessPlaybackEnabled && !sweetFadeEnabled {
+            scheduleNextTrackForGapless()
+        }
+        
+        NSLog("Sweet Fades: Crossfade complete, now playing: %@", currentTrack?.title ?? "Unknown")
+    }
+    
+    /// Complete streaming crossfade
+    private func completeStreamingCrossfade(nextIndex: Int) {
+        // Stop outgoing player
+        streamingPlayer?.stop()
+        
+        // Swap players - crossfade player becomes primary
+        let oldPrimary = streamingPlayer
+        streamingPlayer = crossfadeStreamingPlayer
+        crossfadeStreamingPlayer = oldPrimary
+        
+        // Set delegate on new primary player
+        streamingPlayer?.delegate = self
+        crossfadeStreamingPlayer?.delegate = nil
+        
+        // Update state
+        currentIndex = nextIndex
+        currentTrack = playlist[nextIndex]
+        _currentTime = 0
+        lastReportedTime = 0
+        playbackStartDate = Date()
+        
+        // Reset crossfade state
+        isCrossfading = false
+        crossfadeTargetIndex = -1
+        
+        // Notify delegate
+        delegate?.audioEngineDidChangeTrack(currentTrack)
+        
+        // Report to Plex/Subsonic
+        if let track = currentTrack {
+            PlexPlaybackReporter.shared.trackDidStart(track, at: 0)
+            
+            if let subsonicId = track.subsonicId,
+               let serverId = track.subsonicServerId,
+               let trackDuration = track.duration {
+                SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
+            }
+        }
+        
+        NSLog("Sweet Fades: Streaming crossfade complete, now playing: %@", currentTrack?.title ?? "Unknown")
+    }
+    
+    /// Cancel an in-progress crossfade (called on seek, skip, stop)
+    private func cancelCrossfade() {
+        guard isCrossfading else { return }
+        
+        crossfadeTimer?.invalidate()
+        crossfadeTimer = nil
+        
+        // Stop incoming track/player
+        if isStreamingPlayback {
+            crossfadeStreamingPlayer?.stop()
+            crossfadeStreamingPlayer?.volume = 0
+            // Restore primary player volume
+            streamingPlayer?.volume = volume
+        } else {
+            // Stop the incoming player
+            let incomingPlayer = crossfadePlayerIsActive ? playerNode : crossfadePlayerNode
+            incomingPlayer.stop()
+            incomingPlayer.volume = 0
+            
+            // Restore outgoing player volume
+            let outgoingPlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+            outgoingPlayer.volume = volume
+        }
+        
+        isCrossfading = false
+        crossfadeTargetIndex = -1
+        NSLog("Sweet Fades: Crossfade cancelled")
     }
     
     // MARK: - Volume Normalization
@@ -1576,7 +2024,10 @@ class AudioEngine {
         
         // Clamp to valid range
         let finalVolume = max(0, min(1, normalizedVolume))
-        playerNode.volume = finalVolume
+        
+        // Apply to the currently active player (may be crossfade player after a crossfade)
+        let activePlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+        activePlayer.volume = finalVolume
         
         // Note: For streaming, normalization is not applied (would require re-analysis)
     }
@@ -1777,7 +2228,15 @@ class AudioEngine {
     }
     
     func playTrack(at index: Int) {
-        guard index >= 0 && index < playlist.count else { return }
+        // Cancel any in-progress crossfade
+        cancelCrossfade()
+        
+        guard index >= 0 && index < playlist.count else {
+            NSLog("playTrack: invalid index %d (playlist count: %d)", index, playlist.count)
+            return
+        }
+        
+        NSLog("playTrack: playing track at index %d", index)
         
         // Check if we're currently casting
         let wasCasting = isCastingActive
@@ -1934,7 +2393,14 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // Note: We call trackDidFinish() directly instead of handlePlaybackComplete()
         // because the streaming player's state change callback (.stopped) fires BEFORE
         // this callback, so self.state is already .stopped by the time we get here.
-        // The generation check is also unnecessary since we know this is a natural EOF.
+        // 
+        // IMPORTANT: When loading a new track, the old track's EOF callback fires
+        // even though we intentionally stopped it. The isLoadingNewStreamingTrack flag
+        // is set before stopping and cleared after the new track starts.
+        guard !isLoadingNewStreamingTrack else {
+            NSLog("AudioEngine: Ignoring EOF during track switch")
+            return
+        }
         NSLog("AudioEngine: Streaming track finished, advancing playlist")
         trackDidFinish()
     }

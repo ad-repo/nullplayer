@@ -169,6 +169,15 @@ install_framework() {
         return 1
     fi
     
+    # Create versioned symlink for libprojectM (dylib expects libprojectM-4.4.dylib)
+    if [[ "$target" == *"libprojectM"* ]]; then
+        local dylib_dir=$(dirname "${REPO_ROOT}/${target}")
+        local dylib_name=$(basename "${REPO_ROOT}/${target}")
+        # The dylib's install name is @rpath/libprojectM-4.4.dylib
+        ln -sf "$dylib_name" "${dylib_dir}/libprojectM-4.4.dylib"
+        log_info "Created symlink: libprojectM-4.4.dylib -> $dylib_name"
+    fi
+    
     rm -f "$tmpfile"
     log_success "${name} installed successfully"
     return 0

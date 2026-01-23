@@ -50,7 +50,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         // Set up the application menu
         setupMainMenu()
         
-        // Always play intro sound - state will be restored after intro finishes
+        // Restore settings state first (skin, volume, EQ, windows) so intro plays with correct settings
+        AppStateManager.shared.restoreSettingsState()
+        
+        // Now play intro sound - playlist state will be restored after intro finishes
         playIntro()
     }
     
@@ -153,14 +156,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         NSLog("Intro finished playing")
-        // After intro finishes, restore saved state or clear to clean state
+        // After intro finishes, restore playlist state or clear to clean state
         // Must dispatch to main thread since this delegate may be called from audio thread
         DispatchQueue.main.async { [weak self] in
             self?.introPlayer = nil
             self?.windowManager.audioEngine.clearPlaylist()
             
-            // Now restore saved state if "Remember State" is enabled
-            AppStateManager.shared.restoreState()
+            // Now restore playlist state if "Remember State" is enabled
+            // (Settings state was already restored before intro played)
+            AppStateManager.shared.restorePlaylistState()
         }
     }
     
@@ -235,13 +239,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(labelWithString: "A loaded Winamp 2 clone for macOS")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "Winamp 2 has a one nighter with Plex in macOS")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
-        taglineLabel.frame = NSRect(x: 20, y: y - 20, width: windowWidth - 40, height: 20)
+        taglineLabel.frame = NSRect(x: 20, y: y - 40, width: windowWidth - 40, height: 40)
         contentView.addSubview(taglineLabel)
-        y -= 36
+        y -= 50
         
         // Separator
         let separator = NSBox(frame: NSRect(x: 40, y: y, width: windowWidth - 80, height: 1))
@@ -276,6 +280,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         let githubButton = NSButton(frame: NSRect(x: buttonStartX, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
         githubButton.title = "GitHub"
         githubButton.bezelStyle = .rounded
+        githubButton.contentTintColor = .white
+        githubButton.wantsLayer = true
+        githubButton.layer?.backgroundColor = NSColor(white: 0.3, alpha: 1.0).cgColor
+        githubButton.layer?.cornerRadius = 5
         githubButton.target = self
         githubButton.action = #selector(openGitHub)
         contentView.addSubview(githubButton)
@@ -283,6 +291,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         let linkedinButton = NSButton(frame: NSRect(x: buttonStartX + buttonWidth + buttonSpacing, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
         linkedinButton.title = "LinkedIn"
         linkedinButton.bezelStyle = .rounded
+        linkedinButton.contentTintColor = .white
+        linkedinButton.wantsLayer = true
+        linkedinButton.layer?.backgroundColor = NSColor(white: 0.3, alpha: 1.0).cgColor
+        linkedinButton.layer?.cornerRadius = 5
         linkedinButton.target = self
         linkedinButton.action = #selector(openLinkedIn)
         contentView.addSubview(linkedinButton)

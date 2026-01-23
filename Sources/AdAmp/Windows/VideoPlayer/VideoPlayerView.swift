@@ -1,5 +1,5 @@
 import AppKit
-import KSPlayer
+@preconcurrency import KSPlayer
 
 /// Video player view using KSPlayer with FFmpeg backend, skinned title bar, and controls
 class VideoPlayerView: NSView {
@@ -185,7 +185,9 @@ class VideoPlayerView: NSView {
     private func resetControlsHideTimer() {
         controlsHideTimer?.invalidate()
         controlsHideTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
-            self?.hideControls()
+            Task { @MainActor in
+                self?.hideControls()
+            }
         }
     }
     

@@ -40,6 +40,11 @@ class AppStateManager {
         var gaplessPlaybackEnabled: Bool
         var volumeNormalizationEnabled: Bool
         
+        // Sweet Fades (crossfade) settings
+        // Default values ensure backward compatibility with saved states from older versions
+        var sweetFadeEnabled: Bool = false
+        var sweetFadeDuration: Double = 5.0
+        
         // EQ settings
         var eqEnabled: Bool
         var eqPreamp: Float
@@ -57,9 +62,138 @@ class AppStateManager {
         
         // Skin
         var customSkinPath: String?
+        var baseSkinIndex: Int?  // 1, 2, or 3 for base skins; nil for custom skin
         
         // Version for future compatibility
         var stateVersion: Int = 1
+        
+        // MARK: - Custom Decoding for Backward Compatibility
+        
+        enum CodingKeys: String, CodingKey {
+            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isMilkdropVisible
+            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, milkdropWindowFrame
+            case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
+            case sweetFadeEnabled, sweetFadeDuration
+            case eqEnabled, eqPreamp, eqBands
+            case playlistURLs, currentTrackIndex, playbackPosition, wasPlaying
+            case timeDisplayMode, isAlwaysOnTop
+            case customSkinPath, baseSkinIndex
+            case stateVersion
+        }
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            
+            // Window visibility
+            isPlaylistVisible = try container.decode(Bool.self, forKey: .isPlaylistVisible)
+            isEqualizerVisible = try container.decode(Bool.self, forKey: .isEqualizerVisible)
+            isPlexBrowserVisible = try container.decode(Bool.self, forKey: .isPlexBrowserVisible)
+            isMilkdropVisible = try container.decode(Bool.self, forKey: .isMilkdropVisible)
+            
+            // Window frames
+            mainWindowFrame = try container.decodeIfPresent(String.self, forKey: .mainWindowFrame)
+            playlistWindowFrame = try container.decodeIfPresent(String.self, forKey: .playlistWindowFrame)
+            equalizerWindowFrame = try container.decodeIfPresent(String.self, forKey: .equalizerWindowFrame)
+            plexBrowserWindowFrame = try container.decodeIfPresent(String.self, forKey: .plexBrowserWindowFrame)
+            milkdropWindowFrame = try container.decodeIfPresent(String.self, forKey: .milkdropWindowFrame)
+            
+            // Audio settings
+            volume = try container.decode(Float.self, forKey: .volume)
+            balance = try container.decode(Float.self, forKey: .balance)
+            shuffleEnabled = try container.decode(Bool.self, forKey: .shuffleEnabled)
+            repeatEnabled = try container.decode(Bool.self, forKey: .repeatEnabled)
+            gaplessPlaybackEnabled = try container.decode(Bool.self, forKey: .gaplessPlaybackEnabled)
+            volumeNormalizationEnabled = try container.decode(Bool.self, forKey: .volumeNormalizationEnabled)
+            
+            // Sweet Fades - use defaults for backward compatibility with older saved states
+            sweetFadeEnabled = try container.decodeIfPresent(Bool.self, forKey: .sweetFadeEnabled) ?? false
+            sweetFadeDuration = try container.decodeIfPresent(Double.self, forKey: .sweetFadeDuration) ?? 5.0
+            
+            // EQ settings
+            eqEnabled = try container.decode(Bool.self, forKey: .eqEnabled)
+            eqPreamp = try container.decode(Float.self, forKey: .eqPreamp)
+            eqBands = try container.decode([Float].self, forKey: .eqBands)
+            
+            // Playback state
+            playlistURLs = try container.decode([String].self, forKey: .playlistURLs)
+            currentTrackIndex = try container.decode(Int.self, forKey: .currentTrackIndex)
+            playbackPosition = try container.decode(Double.self, forKey: .playbackPosition)
+            wasPlaying = try container.decode(Bool.self, forKey: .wasPlaying)
+            
+            // UI preferences
+            timeDisplayMode = try container.decode(String.self, forKey: .timeDisplayMode)
+            isAlwaysOnTop = try container.decode(Bool.self, forKey: .isAlwaysOnTop)
+            
+            // Skin
+            customSkinPath = try container.decodeIfPresent(String.self, forKey: .customSkinPath)
+            baseSkinIndex = try container.decodeIfPresent(Int.self, forKey: .baseSkinIndex)
+            
+            // Version
+            stateVersion = try container.decodeIfPresent(Int.self, forKey: .stateVersion) ?? 1
+        }
+        
+        // Standard memberwise initializer for saving state
+        init(
+            isPlaylistVisible: Bool,
+            isEqualizerVisible: Bool,
+            isPlexBrowserVisible: Bool,
+            isMilkdropVisible: Bool,
+            mainWindowFrame: String?,
+            playlistWindowFrame: String?,
+            equalizerWindowFrame: String?,
+            plexBrowserWindowFrame: String?,
+            milkdropWindowFrame: String?,
+            volume: Float,
+            balance: Float,
+            shuffleEnabled: Bool,
+            repeatEnabled: Bool,
+            gaplessPlaybackEnabled: Bool,
+            volumeNormalizationEnabled: Bool,
+            sweetFadeEnabled: Bool,
+            sweetFadeDuration: Double,
+            eqEnabled: Bool,
+            eqPreamp: Float,
+            eqBands: [Float],
+            playlistURLs: [String],
+            currentTrackIndex: Int,
+            playbackPosition: Double,
+            wasPlaying: Bool,
+            timeDisplayMode: String,
+            isAlwaysOnTop: Bool,
+            customSkinPath: String? = nil,
+            baseSkinIndex: Int? = nil,
+            stateVersion: Int = 1
+        ) {
+            self.isPlaylistVisible = isPlaylistVisible
+            self.isEqualizerVisible = isEqualizerVisible
+            self.isPlexBrowserVisible = isPlexBrowserVisible
+            self.isMilkdropVisible = isMilkdropVisible
+            self.mainWindowFrame = mainWindowFrame
+            self.playlistWindowFrame = playlistWindowFrame
+            self.equalizerWindowFrame = equalizerWindowFrame
+            self.plexBrowserWindowFrame = plexBrowserWindowFrame
+            self.milkdropWindowFrame = milkdropWindowFrame
+            self.volume = volume
+            self.balance = balance
+            self.shuffleEnabled = shuffleEnabled
+            self.repeatEnabled = repeatEnabled
+            self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
+            self.volumeNormalizationEnabled = volumeNormalizationEnabled
+            self.sweetFadeEnabled = sweetFadeEnabled
+            self.sweetFadeDuration = sweetFadeDuration
+            self.eqEnabled = eqEnabled
+            self.eqPreamp = eqPreamp
+            self.eqBands = eqBands
+            self.playlistURLs = playlistURLs
+            self.currentTrackIndex = currentTrackIndex
+            self.playbackPosition = playbackPosition
+            self.wasPlaying = wasPlaying
+            self.timeDisplayMode = timeDisplayMode
+            self.isAlwaysOnTop = isAlwaysOnTop
+            self.customSkinPath = customSkinPath
+            self.baseSkinIndex = baseSkinIndex
+            self.stateVersion = stateVersion
+        }
     }
     
     // MARK: - Properties
@@ -119,6 +253,10 @@ class AppStateManager {
             gaplessPlaybackEnabled: engine.gaplessPlaybackEnabled,
             volumeNormalizationEnabled: engine.volumeNormalizationEnabled,
             
+            // Sweet Fades settings
+            sweetFadeEnabled: engine.sweetFadeEnabled,
+            sweetFadeDuration: engine.sweetFadeDuration,
+            
             // EQ settings
             eqEnabled: engine.isEQEnabled(),
             eqPreamp: engine.getPreamp(),
@@ -161,8 +299,9 @@ class AppStateManager {
             timeDisplayMode: wm.timeDisplayMode.rawValue,
             isAlwaysOnTop: wm.isAlwaysOnTop,
             
-            // Skin - save path if using a custom skin
-            customSkinPath: getCustomSkinPath()
+            // Skin - save path if using a custom skin, or base skin index
+            customSkinPath: getCustomSkinPath(),
+            baseSkinIndex: wm.currentBaseSkinIndex
         )
         
         // Encode and save
@@ -170,8 +309,8 @@ class AppStateManager {
             let encoder = JSONEncoder()
             let data = try encoder.encode(state)
             UserDefaults.standard.set(data, forKey: Keys.savedAppState)
-            NSLog("AppStateManager: Saved state - playlist: %d tracks, position: %.1fs, volume: %.2f",
-                  state.playlistURLs.count, state.playbackPosition, state.volume)
+            NSLog("AppStateManager: Saved state - playlist: %d tracks, position: %.1fs, volume: %.2f, alwaysOnTop: %d",
+                  state.playlistURLs.count, state.playbackPosition, state.volume, state.isAlwaysOnTop ? 1 : 0)
         } catch {
             NSLog("AppStateManager: Failed to save state: %@", error.localizedDescription)
         }
@@ -206,7 +345,175 @@ class AppStateManager {
         }
     }
     
-    /// Apply the restored state to the app
+    /// Restore only settings state (skin, volume, EQ, windows) - call before intro
+    /// This allows the intro to play with the user's preferred settings
+    func restoreSettingsState() {
+        guard isEnabled else {
+            NSLog("AppStateManager: Remember State disabled, skipping settings restore")
+            return
+        }
+        
+        guard let data = UserDefaults.standard.data(forKey: Keys.savedAppState) else {
+            NSLog("AppStateManager: No saved state found for settings restore")
+            return
+        }
+        
+        do {
+            let decoder = JSONDecoder()
+            let state = try decoder.decode(AppState.self, from: data)
+            applySettingsState(state)
+        } catch {
+            NSLog("AppStateManager: Failed to restore settings state: %@", error.localizedDescription)
+        }
+    }
+    
+    /// Restore only playlist state - call after intro finishes
+    func restorePlaylistState() {
+        guard isEnabled else {
+            NSLog("AppStateManager: Remember State disabled, skipping playlist restore")
+            return
+        }
+        
+        guard let data = UserDefaults.standard.data(forKey: Keys.savedAppState) else {
+            NSLog("AppStateManager: No saved state found for playlist restore")
+            return
+        }
+        
+        do {
+            let decoder = JSONDecoder()
+            let state = try decoder.decode(AppState.self, from: data)
+            applyPlaylistState(state)
+        } catch {
+            NSLog("AppStateManager: Failed to restore playlist state: %@", error.localizedDescription)
+        }
+    }
+    
+    /// Apply settings state (skin, volume, EQ, windows) - no playlist
+    private func applySettingsState(_ state: AppState) {
+        let wm = WindowManager.shared
+        let engine = wm.audioEngine
+        
+        NSLog("AppStateManager: Restoring settings state - volume: %.2f", state.volume)
+        
+        // Restore audio settings
+        engine.volume = state.volume
+        engine.balance = state.balance
+        engine.shuffleEnabled = state.shuffleEnabled
+        engine.repeatEnabled = state.repeatEnabled
+        engine.gaplessPlaybackEnabled = state.gaplessPlaybackEnabled
+        engine.volumeNormalizationEnabled = state.volumeNormalizationEnabled
+        
+        // Restore Sweet Fades settings
+        engine.sweetFadeEnabled = state.sweetFadeEnabled
+        engine.sweetFadeDuration = state.sweetFadeDuration
+        
+        // Restore EQ settings
+        engine.setEQEnabled(state.eqEnabled)
+        engine.setPreamp(state.eqPreamp)
+        for (index, gain) in state.eqBands.enumerated() {
+            engine.setEQBand(index, gain: gain)
+        }
+        
+        // Restore UI preferences
+        if let mode = TimeDisplayMode(rawValue: state.timeDisplayMode) {
+            wm.timeDisplayMode = mode
+        }
+        NSLog("AppStateManager: Restoring isAlwaysOnTop = %d", state.isAlwaysOnTop ? 1 : 0)
+        wm.isAlwaysOnTop = state.isAlwaysOnTop
+        
+        // Restore skin
+        if let skinPath = state.customSkinPath {
+            let skinURL = URL(fileURLWithPath: skinPath)
+            if FileManager.default.fileExists(atPath: skinPath) {
+                wm.loadSkin(from: skinURL)
+            }
+        } else if let baseSkinIndex = state.baseSkinIndex {
+            switch baseSkinIndex {
+            case 1: wm.loadBaseSkin()
+            case 2: wm.loadBaseSkin2()
+            case 3: wm.loadBaseSkin3()
+            default: wm.loadBaseSkin()
+            }
+        }
+        
+        // Restore window frames
+        restoreWindowFrames(state)
+        
+        // Restore window visibility (after a short delay to ensure proper positioning)
+        // Parse frames before the closure to avoid capturing state
+        let playlistFrame = state.playlistWindowFrame.flatMap { NSRectFromString($0) }
+        let equalizerFrame = state.equalizerWindowFrame.flatMap { NSRectFromString($0) }
+        let browserFrame = state.plexBrowserWindowFrame.flatMap { NSRectFromString($0) }
+        let milkdropFrame = state.milkdropWindowFrame.flatMap { NSRectFromString($0) }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if state.isEqualizerVisible {
+                wm.showEqualizer(at: equalizerFrame)
+            }
+            if state.isPlaylistVisible {
+                wm.showPlaylist(at: playlistFrame)
+            }
+            if state.isPlexBrowserVisible {
+                wm.showPlexBrowser(at: browserFrame)
+            }
+            if state.isMilkdropVisible {
+                wm.showMilkdrop(at: milkdropFrame)
+            }
+        }
+        
+        NSLog("AppStateManager: Settings state restored")
+    }
+    
+    /// Apply playlist state only
+    private func applyPlaylistState(_ state: AppState) {
+        let wm = WindowManager.shared
+        let engine = wm.audioEngine
+        
+        guard !state.playlistURLs.isEmpty else {
+            NSLog("AppStateManager: No playlist to restore")
+            return
+        }
+        
+        NSLog("AppStateManager: Restoring playlist state - %d tracks", state.playlistURLs.count)
+        
+        let urls = state.playlistURLs.compactMap { URL(string: $0) }
+        let validURLs = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+        
+        guard !validURLs.isEmpty else {
+            NSLog("AppStateManager: No valid playlist files found")
+            return
+        }
+        
+        // Calculate the correct index in the filtered playlist
+        var newTrackIndex = -1
+        if state.currentTrackIndex >= 0 && state.currentTrackIndex < urls.count {
+            let originalURL = urls[state.currentTrackIndex]
+            if let validIndex = validURLs.firstIndex(of: originalURL) {
+                newTrackIndex = validIndex
+            }
+        }
+        
+        engine.loadFiles(validURLs)
+        
+        // Restore track position after a short delay to let the playlist load
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if newTrackIndex >= 0 && newTrackIndex < engine.playlist.count {
+                engine.playTrack(at: newTrackIndex)
+                
+                if state.playbackPosition > 0 {
+                    engine.seek(to: state.playbackPosition)
+                }
+                
+                if !state.wasPlaying {
+                    engine.pause()
+                }
+            }
+        }
+        
+        NSLog("AppStateManager: Playlist state restored")
+    }
+    
+    /// Apply the restored state to the app (full restore - used by restoreState())
     private func applyState(_ state: AppState) {
         let wm = WindowManager.shared
         let engine = wm.audioEngine
@@ -222,6 +529,10 @@ class AppStateManager {
         engine.gaplessPlaybackEnabled = state.gaplessPlaybackEnabled
         engine.volumeNormalizationEnabled = state.volumeNormalizationEnabled
         
+        // Restore Sweet Fades settings
+        engine.sweetFadeEnabled = state.sweetFadeEnabled
+        engine.sweetFadeDuration = state.sweetFadeDuration
+        
         // Restore EQ settings
         engine.setEQEnabled(state.eqEnabled)
         engine.setPreamp(state.eqPreamp)
@@ -233,13 +544,23 @@ class AppStateManager {
         if let mode = TimeDisplayMode(rawValue: state.timeDisplayMode) {
             wm.timeDisplayMode = mode
         }
+        NSLog("AppStateManager: Restoring isAlwaysOnTop = %d", state.isAlwaysOnTop ? 1 : 0)
         wm.isAlwaysOnTop = state.isAlwaysOnTop
         
-        // Restore custom skin if set
+        // Restore skin
         if let skinPath = state.customSkinPath {
+            // Custom skin from file
             let skinURL = URL(fileURLWithPath: skinPath)
             if FileManager.default.fileExists(atPath: skinPath) {
                 wm.loadSkin(from: skinURL)
+            }
+        } else if let baseSkinIndex = state.baseSkinIndex {
+            // Base skin by index
+            switch baseSkinIndex {
+            case 1: wm.loadBaseSkin()
+            case 2: wm.loadBaseSkin2()
+            case 3: wm.loadBaseSkin3()
+            default: wm.loadBaseSkin()
             }
         }
         

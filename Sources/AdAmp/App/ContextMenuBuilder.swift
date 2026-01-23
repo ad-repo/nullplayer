@@ -10,10 +10,6 @@ class ContextMenuBuilder {
         let menu = NSMenu()
         let wm = WindowManager.shared
         
-        // Play submenu
-        menu.addItem(buildPlayMenuItem())
-        menu.addItem(NSMenuItem.separator())
-        
         // Window toggles
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
         menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
@@ -72,24 +68,6 @@ class ContextMenuBuilder {
         
         menu.autoenablesItems = false
         return menu
-    }
-    
-    // MARK: - Play Submenu
-    
-    private static func buildPlayMenuItem() -> NSMenuItem {
-        let playItem = NSMenuItem(title: "Play", action: nil, keyEquivalent: "")
-        let playMenu = NSMenu()
-        
-        let fileItem = NSMenuItem(title: "File...", action: #selector(MenuActions.openFile), keyEquivalent: "")
-        fileItem.target = MenuActions.shared
-        playMenu.addItem(fileItem)
-        
-        let folderItem = NSMenuItem(title: "Folder...", action: #selector(MenuActions.openFolder), keyEquivalent: "")
-        folderItem.target = MenuActions.shared
-        playMenu.addItem(folderItem)
-        
-        playItem.submenu = playMenu
-        return playItem
     }
     
     // MARK: - Window Toggle Items
@@ -277,6 +255,35 @@ class ContextMenuBuilder {
         normalizeItem.target = MenuActions.shared
         normalizeItem.state = engine.volumeNormalizationEnabled ? .on : .off
         optionsMenu.addItem(normalizeItem)
+        
+        optionsMenu.addItem(NSMenuItem.separator())
+        
+        // Sweet Fades (Crossfade) toggle
+        let sweetFadeItem = NSMenuItem(title: "Sweet Fades (Crossfade)", action: #selector(MenuActions.toggleSweetFade), keyEquivalent: "")
+        sweetFadeItem.target = MenuActions.shared
+        sweetFadeItem.state = engine.sweetFadeEnabled ? .on : .off
+        optionsMenu.addItem(sweetFadeItem)
+        
+        // Duration submenu (only shown if Sweet Fades enabled)
+        if engine.sweetFadeEnabled {
+            let durationItem = NSMenuItem(title: "Fade Duration", action: nil, keyEquivalent: "")
+            let durationMenu = NSMenu()
+            
+            for duration in [1.0, 2.0, 3.0, 5.0, 7.0, 10.0] {
+                let item = NSMenuItem(
+                    title: "\(Int(duration))s",
+                    action: #selector(MenuActions.setSweetFadeDuration(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = MenuActions.shared
+                item.representedObject = duration
+                item.state = engine.sweetFadeDuration == duration ? .on : .off
+                durationMenu.addItem(item)
+            }
+            
+            durationItem.submenu = durationMenu
+            optionsMenu.addItem(durationItem)
+        }
         
         optionsMenu.addItem(NSMenuItem.separator())
         
@@ -863,6 +870,15 @@ class MenuActions: NSObject {
     
     @objc func toggleVolumeNormalization() {
         WindowManager.shared.audioEngine.volumeNormalizationEnabled.toggle()
+    }
+    
+    @objc func toggleSweetFade() {
+        WindowManager.shared.audioEngine.sweetFadeEnabled.toggle()
+    }
+    
+    @objc func setSweetFadeDuration(_ sender: NSMenuItem) {
+        guard let duration = sender.representedObject as? Double else { return }
+        WindowManager.shared.audioEngine.sweetFadeDuration = duration
     }
     
     @objc func toggleBrowserArtworkBackground() {
