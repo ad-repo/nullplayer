@@ -42,6 +42,7 @@ class PlexAuthClient {
             "X-Plex-Platform-Version": ProcessInfo.processInfo.operatingSystemVersionString,
             "X-Plex-Device": "Mac",
             "X-Plex-Device-Name": Host.current().localizedName ?? "Mac",
+            "X-Plex-Device-Icon": "https://raw.githubusercontent.com/ad-repo/adamp/main/AppIcon.png",
             "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded"
         ]
