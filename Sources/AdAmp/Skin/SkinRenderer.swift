@@ -249,12 +249,11 @@ class SkinRenderer {
     }
     
     /// Draw text in white using the skin's text.bmp font as a reference
-    /// Samples the original green text and draws white pixels where text exists
+    /// Renders each character to an offscreen buffer with direct pixel conversion, then draws the result
     @discardableResult
     func drawSkinTextWhite(_ text: String, at position: NSPoint, in context: CGContext) -> CGFloat {
-        // Just draw green text for now and overlay white using blend mode
-        guard let textImage = skin.text else {
-            // Fallback to system font in white
+        guard let textImage = skin.text,
+              let cgTextImage = textImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: NSColor.white,
                 .font: NSFont.monospacedSystemFont(ofSize: 6, weight: .regular)
@@ -263,37 +262,90 @@ class SkinRenderer {
             return CGFloat(text.count) * 5
         }
         
-        let charWidth = SkinElements.TextFont.charWidth
-        let charHeight = SkinElements.TextFont.charHeight
+        let charWidth = Int(SkinElements.TextFont.charWidth)
+        let charHeight = Int(SkinElements.TextFont.charHeight)
         var xPos = position.x
         
         for char in text.uppercased() {
             let charRect = SkinElements.TextFont.character(char)
-            let destRect = NSRect(x: xPos, y: position.y, width: charWidth, height: charHeight)
+            let destRect = NSRect(x: xPos, y: position.y, width: CGFloat(charWidth), height: CGFloat(charHeight))
             
-            // Draw the original sprite
-            drawSprite(from: textImage, sourceRect: charRect, to: destRect, in: context)
+            // Crop the character from the text image
+            let cropRect = CGRect(x: charRect.origin.x, y: charRect.origin.y, 
+                                  width: charRect.width, height: charRect.height)
+            guard let charImage = cgTextImage.cropping(to: cropRect) else {
+                xPos += CGFloat(charWidth)
+                continue
+            }
             
-            // Then overlay white using luminosity blend to replace the green with white
+            // Create offscreen buffer and draw character
+            guard let offscreenContext = CGContext(
+                data: nil,
+                width: charWidth,
+                height: charHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: charWidth * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else {
+                xPos += CGFloat(charWidth)
+                continue
+            }
+            
+            offscreenContext.draw(charImage, in: CGRect(x: 0, y: 0, width: charWidth, height: charHeight))
+            
+            // Direct pixel conversion: green (0, G, 0) -> white (G, G, G)
+            // This preserves the brightness while making it white
+            guard let data = offscreenContext.data else {
+                xPos += CGFloat(charWidth)
+                continue
+            }
+            
+            let pixels = data.bindMemory(to: UInt8.self, capacity: charWidth * charHeight * 4)
+            for i in 0..<(charWidth * charHeight) {
+                let offset = i * 4
+                let r = pixels[offset]
+                let g = pixels[offset + 1]
+                let b = pixels[offset + 2]
+                let a = pixels[offset + 3]
+                
+                // Skip fully transparent pixels
+                if a == 0 { continue }
+                
+                // Use the green channel as brightness (text is green)
+                // Also check if it's magenta background (skip those)
+                let isMagenta = r > 200 && g < 50 && b > 200
+                if isMagenta {
+                    // Make magenta transparent
+                    pixels[offset + 3] = 0
+                } else {
+                    // Convert green to white: use green value for all channels
+                    let brightness = g
+                    pixels[offset] = brightness     // R
+                    pixels[offset + 1] = brightness // G
+                    pixels[offset + 2] = brightness // B
+                    // Keep alpha as-is
+                }
+            }
+            
+            // Get the converted image
+            guard let whiteCharImage = offscreenContext.makeImage() else {
+                xPos += CGFloat(charWidth)
+                continue
+            }
+            
+            // Draw to main context with proper flipping
             context.saveGState()
-            
-            // Apply same flip as drawSprite
-            let centerY = destRect.midY
-            context.translateBy(x: 0, y: centerY)
+            context.translateBy(x: destRect.origin.x, y: destRect.origin.y + destRect.height)
             context.scaleBy(x: 1, y: -1)
-            context.translateBy(x: 0, y: -centerY)
-            
-            // Remove the green color, making it gray
-            context.setBlendMode(.color)
-            context.setFillColor(CGColor.white)
-            context.fill(destRect)
-            
+            context.interpolationQuality = .none
+            context.draw(whiteCharImage, in: CGRect(x: 0, y: 0, width: destRect.width, height: destRect.height))
             context.restoreGState()
             
-            xPos += charWidth
+            xPos += CGFloat(charWidth)
         }
         
-        return CGFloat(text.count) * charWidth
+        return CGFloat(text.count * charWidth)
     }
     
     /// Creates a white-tinted version of the skin's text image

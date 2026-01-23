@@ -234,6 +234,44 @@ This ensures:
 
 The system font fallback maintains the green color and scrolling behavior, just with full Unicode support.
 
+## White Text Rendering
+
+Some UI elements (like library/server names in the browser) require white text instead of the standard green skin font. This is implemented in `SkinRenderer.drawSkinTextWhite()`.
+
+### Implementation
+
+White text is rendered using an offscreen buffer approach to avoid blend mode artifacts:
+
+```swift
+// For each character:
+// 1. Crop character from TEXT.BMP
+// 2. Draw to small offscreen CGContext at 1x scale
+// 3. Convert pixels: green channel (0, G, 0) → white (G, G, G)
+// 4. Draw result to main context
+
+for i in 0..<(charWidth * charHeight) {
+    let offset = i * 4
+    let g = pixels[offset + 1]  // Green channel = brightness
+    
+    // Skip transparent and magenta background pixels
+    if a == 0 || isMagenta { continue }
+    
+    // Convert to white using green channel as brightness
+    pixels[offset] = g     // R
+    pixels[offset + 1] = g // G  
+    pixels[offset + 2] = g // B
+}
+```
+
+### Why Not Blend Modes?
+
+Previous approaches using CGContext blend modes (`.color`, `.saturation`) caused artifacts:
+- Green edges visible at scaled text boundaries
+- Artifacts appearing/disappearing when switching views
+- Sub-pixel rendering issues with scaled contexts
+
+The offscreen buffer approach processes pixels at native resolution before scaling, eliminating these issues.
+
 ## Common Pitfalls
 
 1. **Using `bounds` instead of `drawBounds`** after scaling transform
@@ -241,6 +279,7 @@ The system font fallback maintains the green color and scrolling behavior, just 
 3. **Hit testing in view coords** - must convert to Winamp coords first
 4. **Non-tile-aligned widths** - causes sprite interpolation artifacts
 5. **Drawing over skin sprites** - they already contain labels
+6. **Using blend modes for color conversion** - causes sub-pixel artifacts when scaling; use offscreen pixel manipulation instead
 
 ## Key Files
 

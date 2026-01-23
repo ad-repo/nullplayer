@@ -1452,7 +1452,7 @@ class AudioEngine {
         // Report track finished to Subsonic (track stopped is called since it finished)
         SubsonicPlaybackReporter.shared.trackStopped()
         
-        // Check if we have a gaplessly pre-scheduled next track
+        // Check if we have a gaplessly pre-scheduled next track (local files)
         if gaplessPlaybackEnabled && nextScheduledFile != nil && nextScheduledTrackIndex >= 0 {
             // Gapless transition - the next file is already scheduled
             currentIndex = nextScheduledTrackIndex
@@ -1488,6 +1488,40 @@ class AudioEngine {
             scheduleNextTrackForGapless()
             
             NSLog("Gapless transition to: %@", currentTrack?.title ?? "Unknown")
+            return
+        }
+        
+        // Check if we have a gaplessly pre-scheduled streaming track
+        // AudioStreaming library automatically plays the queued track, we just need to update metadata
+        if gaplessPlaybackEnabled && isStreamingPlayback && streamingPlayer?.hasQueuedTrack == true && nextScheduledTrackIndex >= 0 {
+            // Streaming gapless transition - the player already started the queued track
+            currentIndex = nextScheduledTrackIndex
+            currentTrack = playlist[currentIndex]
+            _currentTime = 0
+            lastReportedTime = 0
+            
+            // Clear the pre-scheduled track index
+            nextScheduledTrackIndex = -1
+            streamingPlayer?.clearQueue()  // Reset queue state (track already playing)
+            
+            // Notify delegate of track change
+            delegate?.audioEngineDidChangeTrack(currentTrack)
+            
+            // Report new track to Plex
+            PlexPlaybackReporter.shared.trackDidStart(currentTrack!, at: 0)
+            
+            // Report new track to Subsonic
+            if let track = currentTrack,
+               let subsonicId = track.subsonicId,
+               let serverId = track.subsonicServerId,
+               let trackDuration = track.duration {
+                SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
+            }
+            
+            // Schedule the next track for gapless
+            scheduleNextTrackForGapless()
+            
+            NSLog("Streaming gapless transition to: %@", currentTrack?.title ?? "Unknown")
             return
         }
         

@@ -41,8 +41,9 @@ class AppStateManager {
         var volumeNormalizationEnabled: Bool
         
         // Sweet Fades (crossfade) settings
-        var sweetFadeEnabled: Bool
-        var sweetFadeDuration: Double
+        // Default values ensure backward compatibility with saved states from older versions
+        var sweetFadeEnabled: Bool = false
+        var sweetFadeDuration: Double = 5.0
         
         // EQ settings
         var eqEnabled: Bool
@@ -64,6 +65,131 @@ class AppStateManager {
         
         // Version for future compatibility
         var stateVersion: Int = 1
+        
+        // MARK: - Custom Decoding for Backward Compatibility
+        
+        enum CodingKeys: String, CodingKey {
+            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isMilkdropVisible
+            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, milkdropWindowFrame
+            case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
+            case sweetFadeEnabled, sweetFadeDuration
+            case eqEnabled, eqPreamp, eqBands
+            case playlistURLs, currentTrackIndex, playbackPosition, wasPlaying
+            case timeDisplayMode, isAlwaysOnTop
+            case customSkinPath
+            case stateVersion
+        }
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            
+            // Window visibility
+            isPlaylistVisible = try container.decode(Bool.self, forKey: .isPlaylistVisible)
+            isEqualizerVisible = try container.decode(Bool.self, forKey: .isEqualizerVisible)
+            isPlexBrowserVisible = try container.decode(Bool.self, forKey: .isPlexBrowserVisible)
+            isMilkdropVisible = try container.decode(Bool.self, forKey: .isMilkdropVisible)
+            
+            // Window frames
+            mainWindowFrame = try container.decodeIfPresent(String.self, forKey: .mainWindowFrame)
+            playlistWindowFrame = try container.decodeIfPresent(String.self, forKey: .playlistWindowFrame)
+            equalizerWindowFrame = try container.decodeIfPresent(String.self, forKey: .equalizerWindowFrame)
+            plexBrowserWindowFrame = try container.decodeIfPresent(String.self, forKey: .plexBrowserWindowFrame)
+            milkdropWindowFrame = try container.decodeIfPresent(String.self, forKey: .milkdropWindowFrame)
+            
+            // Audio settings
+            volume = try container.decode(Float.self, forKey: .volume)
+            balance = try container.decode(Float.self, forKey: .balance)
+            shuffleEnabled = try container.decode(Bool.self, forKey: .shuffleEnabled)
+            repeatEnabled = try container.decode(Bool.self, forKey: .repeatEnabled)
+            gaplessPlaybackEnabled = try container.decode(Bool.self, forKey: .gaplessPlaybackEnabled)
+            volumeNormalizationEnabled = try container.decode(Bool.self, forKey: .volumeNormalizationEnabled)
+            
+            // Sweet Fades - use defaults for backward compatibility with older saved states
+            sweetFadeEnabled = try container.decodeIfPresent(Bool.self, forKey: .sweetFadeEnabled) ?? false
+            sweetFadeDuration = try container.decodeIfPresent(Double.self, forKey: .sweetFadeDuration) ?? 5.0
+            
+            // EQ settings
+            eqEnabled = try container.decode(Bool.self, forKey: .eqEnabled)
+            eqPreamp = try container.decode(Float.self, forKey: .eqPreamp)
+            eqBands = try container.decode([Float].self, forKey: .eqBands)
+            
+            // Playback state
+            playlistURLs = try container.decode([String].self, forKey: .playlistURLs)
+            currentTrackIndex = try container.decode(Int.self, forKey: .currentTrackIndex)
+            playbackPosition = try container.decode(Double.self, forKey: .playbackPosition)
+            wasPlaying = try container.decode(Bool.self, forKey: .wasPlaying)
+            
+            // UI preferences
+            timeDisplayMode = try container.decode(String.self, forKey: .timeDisplayMode)
+            isAlwaysOnTop = try container.decode(Bool.self, forKey: .isAlwaysOnTop)
+            
+            // Skin
+            customSkinPath = try container.decodeIfPresent(String.self, forKey: .customSkinPath)
+            
+            // Version
+            stateVersion = try container.decodeIfPresent(Int.self, forKey: .stateVersion) ?? 1
+        }
+        
+        // Standard memberwise initializer for saving state
+        init(
+            isPlaylistVisible: Bool,
+            isEqualizerVisible: Bool,
+            isPlexBrowserVisible: Bool,
+            isMilkdropVisible: Bool,
+            mainWindowFrame: String?,
+            playlistWindowFrame: String?,
+            equalizerWindowFrame: String?,
+            plexBrowserWindowFrame: String?,
+            milkdropWindowFrame: String?,
+            volume: Float,
+            balance: Float,
+            shuffleEnabled: Bool,
+            repeatEnabled: Bool,
+            gaplessPlaybackEnabled: Bool,
+            volumeNormalizationEnabled: Bool,
+            sweetFadeEnabled: Bool,
+            sweetFadeDuration: Double,
+            eqEnabled: Bool,
+            eqPreamp: Float,
+            eqBands: [Float],
+            playlistURLs: [String],
+            currentTrackIndex: Int,
+            playbackPosition: Double,
+            wasPlaying: Bool,
+            timeDisplayMode: String,
+            isAlwaysOnTop: Bool,
+            customSkinPath: String? = nil,
+            stateVersion: Int = 1
+        ) {
+            self.isPlaylistVisible = isPlaylistVisible
+            self.isEqualizerVisible = isEqualizerVisible
+            self.isPlexBrowserVisible = isPlexBrowserVisible
+            self.isMilkdropVisible = isMilkdropVisible
+            self.mainWindowFrame = mainWindowFrame
+            self.playlistWindowFrame = playlistWindowFrame
+            self.equalizerWindowFrame = equalizerWindowFrame
+            self.plexBrowserWindowFrame = plexBrowserWindowFrame
+            self.milkdropWindowFrame = milkdropWindowFrame
+            self.volume = volume
+            self.balance = balance
+            self.shuffleEnabled = shuffleEnabled
+            self.repeatEnabled = repeatEnabled
+            self.gaplessPlaybackEnabled = gaplessPlaybackEnabled
+            self.volumeNormalizationEnabled = volumeNormalizationEnabled
+            self.sweetFadeEnabled = sweetFadeEnabled
+            self.sweetFadeDuration = sweetFadeDuration
+            self.eqEnabled = eqEnabled
+            self.eqPreamp = eqPreamp
+            self.eqBands = eqBands
+            self.playlistURLs = playlistURLs
+            self.currentTrackIndex = currentTrackIndex
+            self.playbackPosition = playbackPosition
+            self.wasPlaying = wasPlaying
+            self.timeDisplayMode = timeDisplayMode
+            self.isAlwaysOnTop = isAlwaysOnTop
+            self.customSkinPath = customSkinPath
+            self.stateVersion = stateVersion
+        }
     }
     
     // MARK: - Properties
