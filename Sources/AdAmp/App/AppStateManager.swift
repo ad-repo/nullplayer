@@ -287,15 +287,17 @@ class AppStateManager {
         
         // Restore window visibility (after a short delay to ensure proper positioning)
         // Parse frames before the closure to avoid capturing state
+        let playlistFrame = state.playlistWindowFrame.flatMap { NSRectFromString($0) }
+        let equalizerFrame = state.equalizerWindowFrame.flatMap { NSRectFromString($0) }
         let browserFrame = state.plexBrowserWindowFrame.flatMap { NSRectFromString($0) }
         let milkdropFrame = state.milkdropWindowFrame.flatMap { NSRectFromString($0) }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             if state.isEqualizerVisible {
-                wm.showEqualizer()
+                wm.showEqualizer(at: equalizerFrame)
             }
             if state.isPlaylistVisible {
-                wm.showPlaylist()
+                wm.showPlaylist(at: playlistFrame)
             }
             if state.isPlexBrowserVisible {
                 wm.showPlexBrowser(at: browserFrame)
@@ -309,9 +311,13 @@ class AppStateManager {
     }
     
     /// Restore window frames from saved state
+    /// Note: Only the main window frame is restored here since it exists at restore time.
+    /// Playlist, EQ, Browser, and Milkdrop frames are passed to their show methods
+    /// in applyState() since those windows are created lazily.
     private func restoreWindowFrames(_ state: AppState) {
         let wm = WindowManager.shared
         
+        // Main window exists at this point, so we can restore its frame directly
         if let frameString = state.mainWindowFrame,
            let window = wm.mainWindowController?.window {
             let frame = NSRectFromString(frameString)
@@ -320,24 +326,9 @@ class AppStateManager {
             }
         }
         
-        if let frameString = state.playlistWindowFrame,
-           let window = wm.playlistWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            if frame != .zero {
-                window.setFrame(frame, display: true)
-            }
-        }
-        
-        if let frameString = state.equalizerWindowFrame,
-           let window = wm.equalizerWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            if frame != .zero {
-                window.setFrame(frame, display: true)
-            }
-        }
-        
-        // Note: Plex Browser and Milkdrop frames are passed directly to their show methods
-        // in restoreState() since those windows may not exist yet when this is called
+        // Note: Playlist, EQ, Browser, and Milkdrop frames are passed directly to their
+        // show methods in applyState() since those windows are created lazily and don't
+        // exist yet when this function is called.
     }
     
     // MARK: - Helpers

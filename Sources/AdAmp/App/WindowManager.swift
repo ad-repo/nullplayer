@@ -166,15 +166,21 @@ class WindowManager {
         }
     }
     
-    func showPlaylist() {
+    func showPlaylist(at restoredFrame: NSRect? = nil) {
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
             playlistWindowController = PlaylistWindowController()
         }
         
-        // Position newly created windows relative to main window
+        // Position newly created windows
         if isNewWindow, let playlistWindow = playlistWindowController?.window {
-            positionSubWindow(playlistWindow, preferBelowEQ: false)
+            if let frame = restoredFrame, frame != .zero {
+                // Use restored frame from state restoration
+                playlistWindow.setFrame(frame, display: true)
+            } else {
+                // Position relative to main window
+                positionSubWindow(playlistWindow, preferBelowEQ: false)
+            }
             NSLog("showPlaylist: window frame = \(playlistWindow.frame)")
         }
         
@@ -197,15 +203,21 @@ class WindowManager {
         notifyMainWindowVisibilityChanged()
     }
     
-    func showEqualizer() {
+    func showEqualizer(at restoredFrame: NSRect? = nil) {
         let isNewWindow = equalizerWindowController == nil
         if isNewWindow {
             equalizerWindowController = EQWindowController()
         }
         
-        // Position newly created windows relative to main window
+        // Position newly created windows
         if isNewWindow, let eqWindow = equalizerWindowController?.window {
-            positionSubWindow(eqWindow, preferBelowEQ: true)
+            if let frame = restoredFrame, frame != .zero {
+                // Use restored frame from state restoration
+                eqWindow.setFrame(frame, display: true)
+            } else {
+                // Position relative to main window
+                positionSubWindow(eqWindow, preferBelowEQ: true)
+            }
         }
         
         equalizerWindowController?.showWindow(nil)
