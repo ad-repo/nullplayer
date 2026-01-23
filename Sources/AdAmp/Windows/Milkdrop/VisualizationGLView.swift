@@ -50,7 +50,7 @@ class VisualizationGLView: NSOpenGLView {
     /// Thread safety is managed via dataLock
     private var localSpectrum: [Float] = Array(repeating: 0, count: 75)
 
-    private let dataLock = OSAllocatedUnfairLock()  // Faster than NSLock for short critical sections
+    private let dataLock = NSLock()  // Using NSLock for Swift 5.9 compatibility
     
     // MARK: - Initialization
     
@@ -285,20 +285,20 @@ class VisualizationGLView: NSOpenGLView {
     
     /// Update PCM data (called from audio thread for low latency)
     func updatePCM(_ data: [Float]) {
-        dataLock.withLock {
-            for i in 0..<min(data.count, localPCM.count) {
-                localPCM[i] = data[i]
-            }
+        dataLock.lock()
+        for i in 0..<min(data.count, localPCM.count) {
+            localPCM[i] = data[i]
         }
+        dataLock.unlock()
     }
 
     /// Update spectrum data (called from audio thread for low latency)
     func updateSpectrum(_ data: [Float]) {
-        dataLock.withLock {
-            for i in 0..<min(data.count, localSpectrum.count) {
-                localSpectrum[i] = data[i]
-            }
+        dataLock.lock()
+        for i in 0..<min(data.count, localSpectrum.count) {
+            localSpectrum[i] = data[i]
         }
+        dataLock.unlock()
     }
 
     /// Set whether audio is actively playing
@@ -340,7 +340,10 @@ class VisualizationGLView: NSOpenGLView {
         }
 
         // Get data snapshots (thread-safe)
-        let (pcm, spectrum) = dataLock.withLock { (localPCM, localSpectrum) }
+        dataLock.lock()
+        let pcm = localPCM
+        let spectrum = localSpectrum
+        dataLock.unlock()
 
         // Get viewport dimensions
         let backingBounds = convertToBacking(bounds)
