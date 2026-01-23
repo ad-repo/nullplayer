@@ -1048,15 +1048,19 @@ class PlexBrowserView: NSView {
                 let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 
+                // In art-only mode, use tighter spacing for right side items
+                let artModeSpacing: CGFloat = isArtOnlyMode ? 12 : 24
+                let artModeVisSpacing: CGFloat = isArtOnlyMode ? 8 : 16
+                
                 // ART toggle button (before F5) - only show if artwork available
                 let artText = "ART"
                 let artWidth = CGFloat(artText.count) * scaledCharWidth
-                var artX = refreshX - artWidth - 24
+                var artX = refreshX - artWidth - artModeSpacing
                 
                 // VIS button - only show in art-only mode
                 let visText = "VIS"
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
-                var visX = artX - visWidth - 16
+                var visX = artX - visWidth - artModeVisSpacing
                 
                 if currentArtwork != nil {
                     if isArtOnlyMode {
@@ -1077,20 +1081,22 @@ class PlexBrowserView: NSView {
                     visX = artX  // No VIS button
                 }
                 
-                // Item count (positioned from right side)
+                // Item count (positioned from right side) - tighter spacing in art-only mode
                 let countNumber = "\(displayItems.count)"
-                let countLabel = " items"
+                let countLabel = " ITEMS"
                 let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                let countX = visX - countWidth - 24
+                let countSpacing: CGFloat = isArtOnlyMode ? 12 : 24
+                let countX = visX - countWidth - countSpacing
                 drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
                 let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
                 drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
                 
-                // Draw radio icon centered between library name and item count (only for music libraries)
+                // Draw radio icon with padding from item count (only for music libraries)
                 if manager.currentLibrary?.type == "artist", let radioIcon = Self.radioIcon {
                     let iconSize: CGFloat = 18
-                    // Position halfway between library end and item count start
-                    let radioX = libraryEndX + ((countX - libraryEndX) - iconSize) / 2
+                    // Position radio icon with fixed padding before item count
+                    let radioPadding: CGFloat = isArtOnlyMode ? 8 : 4
+                    let radioX = countX - iconSize - radioPadding
                     let radioY = barRect.minY + (barRect.height - iconSize) / 2
                     let iconRect = NSRect(x: radioX, y: radioY, width: iconSize, height: iconSize)
                     radioButtonRect = iconRect  // Store for hit testing
@@ -5867,22 +5873,34 @@ class PlexBrowserView: NSView {
         
         menu.addItem(NSMenuItem.separator())
         
-        // Genre Stations submenu
-        let genreSubmenu = NSMenu()
-        for genre in RadioConfig.genres {
-            let genreItem = NSMenuItem(title: "\(genre) Radio", action: #selector(radioMenuGenreRadio(_:)), keyEquivalent: "")
-            genreItem.target = self
-            genreItem.representedObject = genre
-            genreSubmenu.addItem(genreItem)
-            
-            let genreSonicItem = NSMenuItem(title: "\(genre) Radio (Sonic)", action: #selector(radioMenuGenreRadioSonic(_:)), keyEquivalent: "")
-            genreSonicItem.target = self
-            genreSonicItem.representedObject = genre
-            genreSubmenu.addItem(genreSonicItem)
-        }
+        // Genre Stations submenu - populated async
         let genreMenuItem = NSMenuItem(title: "Genre Stations", action: nil, keyEquivalent: "")
+        let genreSubmenu = NSMenu()
+        
+        // Add a placeholder that will fetch genres when hovered
+        let loadingItem = NSMenuItem(title: "Loading...", action: nil, keyEquivalent: "")
+        loadingItem.isEnabled = false
+        genreSubmenu.addItem(loadingItem)
         genreMenuItem.submenu = genreSubmenu
         menu.addItem(genreMenuItem)
+        
+        // Fetch genres async and rebuild submenu
+        Task { @MainActor in
+            let genres = await PlexManager.shared.getGenres()
+            genreSubmenu.removeAllItems()
+            
+            for genre in genres {
+                let genreItem = NSMenuItem(title: "\(genre) Radio", action: #selector(radioMenuGenreRadio(_:)), keyEquivalent: "")
+                genreItem.target = self
+                genreItem.representedObject = genre
+                genreSubmenu.addItem(genreItem)
+                
+                let genreSonicItem = NSMenuItem(title: "\(genre) Radio (Sonic)", action: #selector(radioMenuGenreRadioSonic(_:)), keyEquivalent: "")
+                genreSonicItem.target = self
+                genreSonicItem.representedObject = genre
+                genreSubmenu.addItem(genreSonicItem)
+            }
+        }
         
         menu.addItem(NSMenuItem.separator())
         

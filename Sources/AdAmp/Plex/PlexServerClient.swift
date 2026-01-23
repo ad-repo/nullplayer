@@ -17,8 +17,8 @@ enum RadioConfig {
     /// Multiplier for over-fetching to allow for artist deduplication
     static let overFetchMultiplier = 3
     
-    /// Hardcoded genres for Genre Radio
-    static let genres = ["Rock", "Pop", "Hip-Hop", "Metal", "Jazz", "Classical", "Electronic", "R&B"]
+    /// Fallback genres if library fetch fails (most libraries have these)
+    static let fallbackGenres = ["Pop/Rock", "Jazz", "Classical", "Electronic", "R&B", "Rap", "Country", "Blues"]
     
     /// Decade ranges for Decade Radio (start year, end year, display name)
     static let decades: [(start: Int, end: Int, name: String)] = [
@@ -96,7 +96,7 @@ class PlexServerClient {
     
     // MARK: - Request Building
     
-    private func buildRequest(path: String, queryItems: [URLQueryItem]? = nil) -> URLRequest? {
+    func buildRequest(path: String, queryItems: [URLQueryItem]? = nil) -> URLRequest? {
         var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
         components?.queryItems = queryItems
         
@@ -110,7 +110,7 @@ class PlexServerClient {
     }
     
     /// Perform a request with retry logic
-    private func performRequest<T: Decodable>(_ request: URLRequest, retryCount: Int = 0) async throws -> T {
+    func performRequest<T: Decodable>(_ request: URLRequest, retryCount: Int = 0) async throws -> T {
         do {
             let (data, response) = try await session.data(for: request)
             
@@ -785,6 +785,22 @@ class PlexServerClient {
         return result
     }
     
+    // MARK: - Genre Fetching
+    
+    /// Fetch available genres from a music library
+    func fetchGenres(libraryID: String) async throws -> [String] {
+        NSLog("PlexServerClient: Fetching genres for library %@", libraryID)
+        
+        guard let request = buildRequest(path: "/library/sections/\(libraryID)/genre") else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexGenreResponse> = try await performRequest(request)
+        let genres = response.mediaContainer.directory?.compactMap { $0.title } ?? []
+        NSLog("PlexServerClient: Found %d genres", genres.count)
+        return genres
+    }
+    
     // MARK: - Extended Radio API (Non-Sonic and Sonic Versions)
     
     /// Library Radio - Non-Sonic (random tracks from library)
@@ -808,6 +824,7 @@ class PlexServerClient {
     }
     
     /// Library Radio - Sonic (sonically similar to seed track)
+    /// Uses sort=random to get varied results from the sonically similar pool
     func createLibraryRadioSonic(trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating library radio (sonic) for track %@ in library %@", trackID, libraryID)
         
@@ -850,6 +867,7 @@ class PlexServerClient {
     }
     
     /// Genre Radio - Sonic (requires seed track)
+    /// Uses sort=random to get varied results from the sonically similar pool
     func createGenreRadioSonic(genre: String, trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating genre radio (sonic) for %@ with seed %@ in library %@", genre, trackID, libraryID)
         
@@ -894,6 +912,7 @@ class PlexServerClient {
     }
     
     /// Decade Radio - Sonic
+    /// Uses sort=random to get varied results from the sonically similar pool
     func createDecadeRadioSonic(startYear: Int, endYear: Int, trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating decade radio (sonic) for %d-%d with seed %@ in library %@", startYear, endYear, trackID, libraryID)
         
@@ -938,6 +957,7 @@ class PlexServerClient {
     }
     
     /// Only the Hits Radio - Sonic
+    /// Uses sort=random to get varied results from the sonically similar pool
     func createHitsRadioSonic(trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating hits radio (sonic) with seed %@ in library %@", trackID, libraryID)
         
@@ -981,6 +1001,7 @@ class PlexServerClient {
     }
     
     /// Deep Cuts Radio - Sonic
+    /// Uses sort=random to get varied results from the sonically similar pool
     func createDeepCutsRadioSonic(trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating deep cuts radio (sonic) with seed %@ in library %@", trackID, libraryID)
         

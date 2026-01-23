@@ -744,6 +744,25 @@ struct PlexTagDTO: Decodable {
     let tag: String
 }
 
+// MARK: - Genre Response DTOs
+
+/// Response container for genre endpoints
+struct PlexGenreResponse: Decodable {
+    let size: Int?
+    let directory: [PlexGenreDTO]?
+    
+    enum CodingKeys: String, CodingKey {
+        case size
+        case directory = "Directory"
+    }
+}
+
+/// A genre entry from the library
+struct PlexGenreDTO: Decodable {
+    let key: String
+    let title: String
+}
+
 // MARK: - Hub Response DTOs
 
 /// Response container for hub endpoints
