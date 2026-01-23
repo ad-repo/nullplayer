@@ -43,12 +43,12 @@ class VisualizationGLView: NSOpenGLView {
     private let idleBeatSensitivity: Float = 0.2
     
     /// Local copy of PCM data for thread-safe access
-    /// Using nonisolated(unsafe) because we manually manage thread safety via dataLock
-    private nonisolated(unsafe) var localPCM: [Float] = Array(repeating: 0, count: 512)
+    /// Thread safety is managed via dataLock
+    private var localPCM: [Float] = Array(repeating: 0, count: 512)
 
     /// Local copy of spectrum data for thread-safe access (75 bands)
-    /// Using nonisolated(unsafe) because we manually manage thread safety via dataLock
-    private nonisolated(unsafe) var localSpectrum: [Float] = Array(repeating: 0, count: 75)
+    /// Thread safety is managed via dataLock
+    private var localSpectrum: [Float] = Array(repeating: 0, count: 75)
 
     private let dataLock = OSAllocatedUnfairLock()  // Faster than NSLock for short critical sections
     
