@@ -448,6 +448,51 @@ Radio playlists automatically limit duplicate artists for better variety. The sy
 
 This prevents radio stations from being dominated by a few prolific artists.
 
+## Video Content (Movies & TV Shows)
+
+### Fetching Movies
+
+```
+GET /library/sections/{libraryID}/all?type=1
+```
+
+Type 1 = movies. Returns all movies in the library.
+
+### Fetching TV Shows
+
+```
+GET /library/sections/{libraryID}/all?type=2
+```
+
+Type 2 = shows. Returns all TV shows in the library.
+
+### Multi-Version Movies
+
+Movies may contain multiple media versions (different qualities, bonus content, etc.):
+
+```json
+{
+  "title": "Movie Name",
+  "duration": 273472,  // WARNING: May be from first media, not primary!
+  "Media": [
+    {"id": 1, "duration": 273472, "Part": [{"file": "/video/Bonus.mkv"}]},
+    {"id": 2, "duration": 5820000, "Part": [{"file": "/video/Movie.mkv"}]}
+  ]
+}
+```
+
+**Important**: The top-level `duration` field may point to bonus content, not the main movie. AdAmp uses the **longest duration** from the `Media` array to identify the primary content.
+
+### Bonus Content Filtering
+
+Plex may misclassify bonus content (trailers, extras) as separate entries:
+- Bonus files in movie folders may appear as short movies
+- Numbered bonus files may appear as TV show episodes
+
+AdAmp filters these by:
+- Using the longest media entry for movie duration/playback
+- Filtering TV shows with ≤1 season AND ≤2 episodes (likely bonus content)
+
 ## Requirements
 
 - **Plex Pass** subscription (for sonic analysis)

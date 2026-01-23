@@ -335,6 +335,7 @@ class PlexServerClient {
     // MARK: - TV Show Operations
     
     /// Fetch all shows in a TV show library
+    /// Filters out bonus content that Plex misclassifies as TV shows
     func fetchShows(libraryID: String, offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
         let queryItems = [
             URLQueryItem(name: "type", value: "2"),  // type 2 = show
@@ -347,7 +348,27 @@ class PlexServerClient {
         }
         
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
-        return response.mediaContainer.metadata?.map { $0.toShow() } ?? []
+        
+        // Filter out shows that are likely misclassified bonus content:
+        // - Shows with very few episodes (2 or less) AND only 1 season
+        // - Shows marked as extras
+        return response.mediaContainer.metadata?
+            .filter { item in
+                // Skip items marked as extras
+                if item.isExtra { return false }
+                
+                // Skip shows with 1 season and 2 or fewer episodes (likely bonus content)
+                let seasonCount = item.childCount ?? 0
+                let episodeCount = item.leafCount ?? 0
+                if seasonCount <= 1 && episodeCount <= 2 {
+                    NSLog("PlexServerClient: Filtering out likely bonus content show: '%@' (%d seasons, %d episodes)", 
+                          item.title, seasonCount, episodeCount)
+                    return false
+                }
+                
+                return true
+            }
+            .map { $0.toShow() } ?? []
     }
     
     /// Fetch seasons for a specific TV show
