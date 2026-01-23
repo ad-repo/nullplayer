@@ -5,6 +5,7 @@ import AVFoundation
 enum BrowserSource: Equatable, Codable {
     case local
     case plex(serverId: String)
+    case subsonic(serverId: String)
     
     /// Display name for the source
     var displayName: String {
@@ -16,6 +17,11 @@ enum BrowserSource: Equatable, Codable {
                 return "PLEX: \(server.name)"
             }
             return "PLEX"
+        case .subsonic(let serverId):
+            if let server = SubsonicManager.shared.servers.first(where: { $0.id == serverId }) {
+                return "SUBSONIC: \(server.name)"
+            }
+            return "SUBSONIC"
         }
     }
     
@@ -29,6 +35,33 @@ enum BrowserSource: Equatable, Codable {
                 return server.name
             }
             return "Plex"
+        case .subsonic(let serverId):
+            if let server = SubsonicManager.shared.servers.first(where: { $0.id == serverId }) {
+                return server.name
+            }
+            return "Subsonic"
+        }
+    }
+    
+    /// Whether this is a Subsonic source
+    var isSubsonic: Bool {
+        if case .subsonic = self { return true }
+        return false
+    }
+    
+    /// Whether this is a Plex source
+    var isPlex: Bool {
+        if case .plex = self { return true }
+        return false
+    }
+    
+    /// Whether this is a remote source (Plex or Subsonic)
+    var isRemote: Bool {
+        switch self {
+        case .local:
+            return false
+        case .plex, .subsonic:
+            return true
         }
     }
     
@@ -200,6 +233,16 @@ class PlexBrowserView: NSView {
     private var cachedLocalTracks: [LibraryTrack] = []
     private var expandedLocalArtists: Set<String> = []
     private var expandedLocalAlbums: Set<String> = []
+    
+    /// Cached data - Music (Subsonic)
+    private var cachedSubsonicArtists: [SubsonicArtist] = []
+    private var cachedSubsonicAlbums: [SubsonicAlbum] = []
+    private var expandedSubsonicArtists: Set<String> = []
+    private var expandedSubsonicAlbums: Set<String> = []
+    private var subsonicArtistAlbums: [String: [SubsonicAlbum]] = [:]
+    private var subsonicAlbumSongs: [String: [SubsonicSong]] = [:]
+    private var subsonicLoadTask: Task<Void, Never>?
+    private var subsonicExpandTask: Task<Void, Never>?
     
     /// Cached data - Video
     private var cachedMovies: [PlexMovie] = []
@@ -400,6 +443,15 @@ class PlexBrowserView: NSView {
                     currentSource = savedSource
                 } else if PlexManager.shared.isLinked, let firstServer = PlexManager.shared.servers.first {
                     currentSource = .plex(serverId: firstServer.id)
+                } else {
+                    currentSource = .local
+                }
+            case .subsonic(let serverId):
+                // Only restore Subsonic source if server still exists
+                if SubsonicManager.shared.servers.contains(where: { $0.id == serverId }) {
+                    currentSource = savedSource
+                } else if let firstServer = SubsonicManager.shared.servers.first {
+                    currentSource = .subsonic(serverId: firstServer.id)
                 } else {
                     currentSource = .local
                 }
@@ -767,7 +819,9 @@ class PlexBrowserView: NSView {
                 }
                 
                 // Draw list area or connection status
-                if !PlexManager.shared.isLinked {
+                // Only check Plex link status if using Plex source
+                let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
+                if needsPlexLink {
                     drawNotLinkedState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                 } else if isLoading {
                     drawLoadingState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
@@ -995,6 +1049,75 @@ class PlexBrowserView: NSView {
             } else {
                 // Plex not linked - show link message
                 let linkText = "Click to link your Plex account"
+                let linkWidth = CGFloat(linkText.count) * scaledCharWidth
+                let linkX = barRect.midX - linkWidth / 2
+                drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
+            }
+            
+        case .subsonic(let serverId):
+            let manager = SubsonicManager.shared
+            
+            if manager.currentServer != nil {
+                // Max width for server name (in characters)
+                let maxServerChars = 20
+                let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
+                
+                // Server name right after "Source:"
+                let serverName = manager.servers.first(where: { $0.id == serverId })?.name ?? "Select Server"
+                let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
+                
+                if serverTextWidth <= maxServerWidth {
+                    drawScaledWhiteSkinText(serverName, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
+                } else {
+                    drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
+                                     availableWidth: maxServerWidth, scale: textScale,
+                                     scrollOffset: serverNameScrollOffset,
+                                     renderer: renderer, in: context)
+                }
+                
+                // Right side: F5 refresh label
+                let refreshText = "F5"
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+                
+                // ART toggle button (before F5) - only show if artwork available
+                let artText = "ART"
+                let artWidth = CGFloat(artText.count) * scaledCharWidth
+                var artX = refreshX - artWidth - 24
+                
+                // VIS button - only show in art-only mode
+                let visText = "VIS"
+                let visWidth = CGFloat(visText.count) * scaledCharWidth
+                var visX = artX - visWidth - 16
+                
+                if currentArtwork != nil {
+                    if isArtOnlyMode {
+                        drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
+                        if isVisualizingArt {
+                            drawScaledWhiteSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
+                        } else {
+                            drawScaledSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
+                        }
+                    } else {
+                        drawScaledSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
+                        visX = artX
+                    }
+                } else {
+                    artX = refreshX
+                    visX = artX
+                }
+                
+                // Item count
+                let countNumber = "\(displayItems.count)"
+                let countLabel = " items"
+                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+                let countX = visX - countWidth - 24
+                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+                drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+            } else {
+                // Subsonic not connected - show add server message
+                let linkText = "Click to add a Subsonic server"
                 let linkWidth = CGFloat(linkText.count) * scaledCharWidth
                 let linkX = barRect.midX - linkWidth / 2
                 drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
@@ -3329,6 +3452,12 @@ class PlexBrowserView: NSView {
             return
         }
         
+        // For Subsonic source
+        if case .subsonic(let serverId) = currentSource {
+            loadSubsonicData(serverId: serverId)
+            return
+        }
+        
         // For Plex source, check if linked
         guard PlexManager.shared.isLinked else {
             displayItems = []
@@ -3547,6 +3676,9 @@ class PlexBrowserView: NSView {
             if let plexRatingKey = track.plexRatingKey {
                 // Plex track - load from server
                 image = await self.loadPlexArtwork(ratingKey: plexRatingKey, albumName: track.album)
+            } else if let subsonicId = track.subsonicId {
+                // Subsonic track - load from server
+                image = await self.loadSubsonicArtwork(songId: subsonicId, albumName: track.album)
             } else if track.url.isFileURL {
                 // Local file - extract embedded artwork
                 image = await self.loadLocalArtwork(url: track.url)
@@ -3716,6 +3848,73 @@ class PlexBrowserView: NSView {
             return image
         } catch {
             NSLog("PlexBrowserView: Failed to load Plex artwork: %@", error.localizedDescription)
+            return nil
+        }
+    }
+    
+    /// Load cover art from a Subsonic server
+    private func loadSubsonicArtwork(songId: String, albumName: String? = nil) async -> NSImage? {
+        // Check cache first
+        let cacheKey = NSString(string: "subsonic:\(songId)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) {
+            return cached
+        }
+        
+        // Find the cover art ID from cached data
+        var coverArtId: String?
+        
+        // Check cached albums for this song
+        for (_, songs) in subsonicAlbumSongs {
+            if let song = songs.first(where: { $0.id == songId }) {
+                coverArtId = song.coverArt
+                break
+            }
+        }
+        
+        // Check cached albums by name
+        if coverArtId == nil, let albumName = albumName {
+            if let album = cachedSubsonicAlbums.first(where: { $0.name == albumName }) {
+                coverArtId = album.coverArt
+            }
+        }
+        
+        // Try using the song ID as cover art ID (some servers support this)
+        if coverArtId == nil {
+            coverArtId = songId
+        }
+        
+        guard let artworkURL = SubsonicManager.shared.coverArtURL(coverArtId: coverArtId, size: 400) else {
+            NSLog("PlexBrowserView: Could not construct Subsonic artwork URL for song: %@", songId)
+            return nil
+        }
+        
+        NSLog("PlexBrowserView: Loading Subsonic artwork from: %@", artworkURL.absoluteString)
+        
+        // Download the image
+        do {
+            let (data, response) = try await URLSession.shared.data(from: artworkURL)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                NSLog("PlexBrowserView: Non-HTTP response for Subsonic artwork")
+                return nil
+            }
+            
+            guard httpResponse.statusCode == 200 else {
+                NSLog("PlexBrowserView: HTTP %d for Subsonic artwork", httpResponse.statusCode)
+                return nil
+            }
+            
+            guard let image = NSImage(data: data) else {
+                NSLog("PlexBrowserView: Could not create image from Subsonic artwork data")
+                return nil
+            }
+            
+            // Cache the image
+            Self.artworkCache.setObject(image, forKey: cacheKey)
+            
+            return image
+        } catch {
+            NSLog("PlexBrowserView: Failed to load Subsonic artwork: %@", error.localizedDescription)
             return nil
         }
     }
@@ -4375,6 +4574,14 @@ class PlexBrowserView: NSView {
         case .plex:
             // Refresh Plex data
             refreshData()
+        case .subsonic:
+            // Refresh Subsonic data
+            Task {
+                await SubsonicManager.shared.preloadLibraryContent()
+                await MainActor.run {
+                    self.refreshData()
+                }
+            }
         }
     }
     
@@ -4394,13 +4601,13 @@ class PlexBrowserView: NSView {
         menu.addItem(NSMenuItem.separator())
         
         // Plex servers
-        let servers = PlexManager.shared.servers
-        if servers.isEmpty && !PlexManager.shared.isLinked {
+        let plexServers = PlexManager.shared.servers
+        if plexServers.isEmpty && !PlexManager.shared.isLinked {
             let linkItem = NSMenuItem(title: "Link Plex Account...", action: #selector(linkPlexAccount), keyEquivalent: "")
             linkItem.target = self
             menu.addItem(linkItem)
         } else {
-            for server in servers {
+            for server in plexServers {
                 let serverItem = NSMenuItem(title: server.name, action: #selector(selectPlexServer(_:)), keyEquivalent: "")
                 serverItem.target = self
                 serverItem.representedObject = server.id
@@ -4409,6 +4616,26 @@ class PlexBrowserView: NSView {
                 }
                 menu.addItem(serverItem)
             }
+        }
+        
+        // Subsonic/Navidrome servers
+        let subsonicServers = SubsonicManager.shared.servers
+        if !subsonicServers.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            for server in subsonicServers {
+                let serverItem = NSMenuItem(title: "🎵 \(server.name)", action: #selector(selectSubsonicServer(_:)), keyEquivalent: "")
+                serverItem.target = self
+                serverItem.representedObject = server.id
+                if case .subsonic(let currentServerId) = currentSource, currentServerId == server.id {
+                    serverItem.state = .on
+                }
+                menu.addItem(serverItem)
+            }
+        } else {
+            menu.addItem(NSMenuItem.separator())
+            let addItem = NSMenuItem(title: "Add Navidrome/Subsonic...", action: #selector(addSubsonicServer), keyEquivalent: "")
+            addItem.target = self
+            menu.addItem(addItem)
         }
         
         // Show menu
@@ -4474,6 +4701,28 @@ class PlexBrowserView: NSView {
     
     @objc private func linkPlexAccount() {
         controller?.showLinkSheet()
+    }
+    
+    @objc private func selectSubsonicServer(_ sender: NSMenuItem) {
+        guard let serverId = sender.representedObject as? String else { return }
+        currentSource = .subsonic(serverId: serverId)
+        
+        // Connect to the selected server
+        if let server = SubsonicManager.shared.servers.first(where: { $0.id == serverId }) {
+            Task { @MainActor in
+                do {
+                    try await SubsonicManager.shared.connect(to: server)
+                    reloadData()
+                } catch {
+                    errorMessage = error.localizedDescription
+                    needsDisplay = true
+                }
+            }
+        }
+    }
+    
+    @objc private func addSubsonicServer() {
+        WindowManager.shared.showSubsonicLinkSheet()
     }
     
     @objc private func addWatchFolder() {
@@ -4940,6 +5189,39 @@ class PlexBrowserView: NSView {
             deleteItem.representedObject = artist
             menu.addItem(deleteItem)
             
+        case .subsonicTrack(let song):
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlaySubsonicSong(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = song
+            menu.addItem(playItem)
+            
+            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddSubsonicSongToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = song
+            menu.addItem(addItem)
+            
+        case .subsonicAlbum(let album):
+            let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlaySubsonicAlbum(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = album
+            menu.addItem(playItem)
+            
+            let addItem = NSMenuItem(title: "Add Album to Playlist", action: #selector(contextMenuAddSubsonicAlbumToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = album
+            menu.addItem(addItem)
+            
+        case .subsonicArtist(let artist):
+            let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlaySubsonicArtist(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = artist
+            menu.addItem(playItem)
+            
+            let expandItem = NSMenuItem(title: expandedSubsonicArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self
+            expandItem.representedObject = item
+            menu.addItem(expandItem)
+            
         case .header:
             return
         }
@@ -5112,6 +5394,44 @@ class PlexBrowserView: NSView {
             errorAlert.runModal()
         }
     }
+    
+    // MARK: - Subsonic Context Menu Actions
+    
+    @objc private func contextMenuPlaySubsonicSong(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? SubsonicSong else { return }
+        playSubsonicSong(song)
+    }
+    
+    @objc private func contextMenuAddSubsonicSongToPlaylist(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? SubsonicSong,
+              let track = SubsonicManager.shared.convertToTrack(song) else { return }
+        WindowManager.shared.audioEngine.loadTracks([track])
+    }
+    
+    @objc private func contextMenuPlaySubsonicAlbum(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? SubsonicAlbum else { return }
+        playSubsonicAlbum(album)
+    }
+    
+    @objc private func contextMenuAddSubsonicAlbumToPlaylist(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? SubsonicAlbum else { return }
+        Task { @MainActor in
+            do {
+                let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
+                let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
+                WindowManager.shared.audioEngine.loadTracks(tracks)
+            } catch {
+                NSLog("Failed to add subsonic album to playlist: %@", error.localizedDescription)
+            }
+        }
+    }
+    
+    @objc private func contextMenuPlaySubsonicArtist(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? SubsonicArtist else { return }
+        playSubsonicArtist(artist)
+    }
+    
+    // MARK: - Plex Context Menu Actions
     
     @objc private func contextMenuPlayAlbum(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? PlexAlbum else { return }
@@ -5404,6 +5724,12 @@ class PlexBrowserView: NSView {
         // Check source first - local files don't need async loading
         if case .local = currentSource {
             loadLocalData()
+            return
+        }
+        
+        // Subsonic source - use Subsonic loading
+        if case .subsonic(let serverId) = currentSource {
+            loadSubsonicData(serverId: serverId)
             return
         }
         
@@ -5994,6 +6320,187 @@ class PlexBrowserView: NSView {
         needsDisplay = true
     }
     
+    /// Load Subsonic data for the current mode
+    private func loadSubsonicData(serverId: String) {
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+        
+        let manager = SubsonicManager.shared
+        
+        // Check if we need to connect first
+        if manager.currentServer?.id != serverId {
+            if let server = manager.servers.first(where: { $0.id == serverId }) {
+                Task { @MainActor in
+                    do {
+                        try await manager.connect(to: server)
+                        loadSubsonicDataForCurrentMode()
+                    } catch {
+                        isLoading = false
+                        stopLoadingAnimation()
+                        errorMessage = error.localizedDescription
+                        needsDisplay = true
+                    }
+                }
+            } else {
+                isLoading = false
+                stopLoadingAnimation()
+                errorMessage = "Server not found"
+                needsDisplay = true
+            }
+            return
+        }
+        
+        // Already connected to this server
+        loadSubsonicDataForCurrentMode()
+    }
+    
+    /// Load Subsonic content for the current browse mode
+    private func loadSubsonicDataForCurrentMode() {
+        let manager = SubsonicManager.shared
+        
+        // Cancel any pending load task
+        subsonicLoadTask?.cancel()
+        
+        subsonicLoadTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            
+            do {
+                // Check for cancellation before each major operation
+                try Task.checkCancellation()
+                
+                switch browseMode {
+                case .artists:
+                    if cachedSubsonicArtists.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                            cachedSubsonicArtists = manager.cachedArtists
+                            cachedSubsonicAlbums = manager.cachedAlbums
+                        } else {
+                            try Task.checkCancellation()
+                            cachedSubsonicArtists = try await manager.fetchArtists()
+                            try Task.checkCancellation()
+                            cachedSubsonicAlbums = try await manager.fetchAlbums()
+                        }
+                    }
+                    try Task.checkCancellation()
+                    buildSubsonicArtistItems()
+                    
+                case .albums:
+                    if cachedSubsonicAlbums.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedAlbums.isEmpty {
+                            cachedSubsonicAlbums = manager.cachedAlbums
+                        } else {
+                            try Task.checkCancellation()
+                            cachedSubsonicAlbums = try await manager.fetchAlbums()
+                        }
+                    }
+                    try Task.checkCancellation()
+                    buildSubsonicAlbumItems()
+                    
+                case .tracks:
+                    // For Subsonic, show all albums' tracks - not typically used
+                    buildSubsonicAlbumItems()
+                    
+                case .search:
+                    // TODO: Implement Subsonic search
+                    displayItems = []
+                    
+                case .movies, .shows:
+                    // Video modes not supported for Subsonic
+                    displayItems = []
+                }
+                
+                isLoading = false
+                stopLoadingAnimation()
+                needsDisplay = true
+            } catch is CancellationError {
+                // Task was cancelled, ignore
+            } catch {
+                isLoading = false
+                stopLoadingAnimation()
+                errorMessage = error.localizedDescription
+                needsDisplay = true
+            }
+        }
+    }
+    
+    /// Build display items for Subsonic artists
+    private func buildSubsonicArtistItems() {
+        displayItems.removeAll()
+        
+        let sortedArtists = cachedSubsonicArtists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        
+        for artist in sortedArtists {
+            let albumCount = artist.albumCount ?? 0
+            let info = albumCount > 0 ? "\(albumCount) album\(albumCount == 1 ? "" : "s")" : nil
+            let isExpanded = expandedSubsonicArtists.contains(artist.id)
+            
+            displayItems.append(PlexDisplayItem(
+                id: artist.id,
+                title: artist.name,
+                info: info,
+                indentLevel: 0,
+                hasChildren: true,
+                type: .subsonicArtist(artist)
+            ))
+            
+            if isExpanded {
+                // Show albums for this artist
+                if let albums = subsonicArtistAlbums[artist.id] {
+                    for album in albums {
+                        let albumExpanded = expandedSubsonicAlbums.contains(album.id)
+                        displayItems.append(PlexDisplayItem(
+                            id: album.id,
+                            title: album.name,
+                            info: album.year.map { String($0) },
+                            indentLevel: 1,
+                            hasChildren: true,
+                            type: .subsonicAlbum(album)
+                        ))
+                        
+                        if albumExpanded, let songs = subsonicAlbumSongs[album.id] {
+                            for song in songs {
+                                displayItems.append(PlexDisplayItem(
+                                    id: song.id,
+                                    title: song.title,
+                                    info: formatDuration(song.duration),
+                                    indentLevel: 2,
+                                    hasChildren: false,
+                                    type: .subsonicTrack(song)
+                                ))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Build display items for Subsonic albums
+    private func buildSubsonicAlbumItems() {
+        displayItems = cachedSubsonicAlbums
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .map { album in
+                PlexDisplayItem(
+                    id: album.id,
+                    title: "\(album.artist ?? "Unknown") - \(album.name)",
+                    info: album.year.map { String($0) },
+                    indentLevel: 0,
+                    hasChildren: true,
+                    type: .subsonicAlbum(album)
+                )
+            }
+    }
+    
+    /// Format duration in seconds to mm:ss
+    private func formatDuration(_ seconds: Int?) -> String? {
+        guard let seconds = seconds else { return nil }
+        let mins = seconds / 60
+        let secs = seconds % 60
+        return String(format: "%d:%02d", mins, secs)
+    }
+    
     /// Load artwork from browsed local content
     private func loadLocalBrowseArtwork() {
         guard case .local = currentSource else { return }
@@ -6335,6 +6842,19 @@ class PlexBrowserView: NSView {
             case .movies, .shows:
                 displayItems = []
             }
+        } else if case .subsonic = currentSource {
+            switch browseMode {
+            case .artists:
+                buildSubsonicArtistItems()
+            case .albums:
+                buildSubsonicAlbumItems()
+            case .tracks:
+                buildSubsonicAlbumItems() // Show albums for tracks mode
+            case .search:
+                displayItems = [] // TODO: Implement Subsonic search
+            case .movies, .shows:
+                displayItems = []
+            }
         } else {
             switch browseMode {
             case .artists:
@@ -6375,6 +6895,10 @@ class PlexBrowserView: NSView {
             return expandedLocalArtists.contains(artist.id)
         case .localAlbum(let album):
             return expandedLocalAlbums.contains(album.id)
+        case .subsonicArtist(let artist):
+            return expandedSubsonicArtists.contains(artist.id)
+        case .subsonicAlbum(let album):
+            return expandedSubsonicAlbums.contains(album.id)
         default:
             return false
         }
@@ -6507,6 +7031,64 @@ class PlexBrowserView: NSView {
             }
             rebuildCurrentModeItems()
             
+        case .subsonicArtist(let artist):
+            if expandedSubsonicArtists.contains(artist.id) {
+                expandedSubsonicArtists.remove(artist.id)
+            } else {
+                expandedSubsonicArtists.insert(artist.id)
+                // Load albums for this artist if not already loaded
+                if subsonicArtistAlbums[artist.id] == nil {
+                    let artistId = artist.id
+                    subsonicExpandTask?.cancel()
+                    subsonicExpandTask = Task { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            try Task.checkCancellation()
+                            let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: artist)
+                            try Task.checkCancellation()
+                            subsonicArtistAlbums[artistId] = albums
+                            rebuildCurrentModeItems()
+                            needsDisplay = true
+                        } catch is CancellationError {
+                            // Cancelled, ignore
+                        } catch {
+                            NSLog("Failed to load albums for artist: \(error)")
+                        }
+                    }
+                    return
+                }
+            }
+            rebuildCurrentModeItems()
+            
+        case .subsonicAlbum(let album):
+            if expandedSubsonicAlbums.contains(album.id) {
+                expandedSubsonicAlbums.remove(album.id)
+            } else {
+                expandedSubsonicAlbums.insert(album.id)
+                // Load songs for this album if not already loaded
+                if subsonicAlbumSongs[album.id] == nil {
+                    let albumId = album.id
+                    subsonicExpandTask?.cancel()
+                    subsonicExpandTask = Task { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            try Task.checkCancellation()
+                            let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
+                            try Task.checkCancellation()
+                            subsonicAlbumSongs[albumId] = songs
+                            rebuildCurrentModeItems()
+                            needsDisplay = true
+                        } catch is CancellationError {
+                            // Cancelled, ignore
+                        } catch {
+                            NSLog("Failed to load songs for album: \(error)")
+                        }
+                    }
+                    return
+                }
+            }
+            rebuildCurrentModeItems()
+            
         default:
             break
         }
@@ -6608,6 +7190,55 @@ class PlexBrowserView: NSView {
             
         case .localArtist:
             toggleExpand(item)
+            
+        case .subsonicTrack(let song):
+            playSubsonicSong(song)
+            
+        case .subsonicAlbum(let album):
+            playSubsonicAlbum(album)
+            
+        case .subsonicArtist:
+            toggleExpand(item)
+        }
+    }
+    
+    // MARK: - Subsonic Playback
+    
+    private func playSubsonicSong(_ song: SubsonicSong) {
+        NSLog("playSubsonicSong: %@", song.title)
+        if let track = SubsonicManager.shared.convertToTrack(song) {
+            WindowManager.shared.audioEngine.loadTracks([track])
+        }
+    }
+    
+    private func playSubsonicAlbum(_ album: SubsonicAlbum) {
+        Task { @MainActor in
+            do {
+                let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
+                let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
+                NSLog("Playing subsonic album %@ with %d tracks", album.name, tracks.count)
+                WindowManager.shared.audioEngine.loadTracks(tracks)
+            } catch {
+                NSLog("Failed to play subsonic album: %@", error.localizedDescription)
+            }
+        }
+    }
+    
+    private func playSubsonicArtist(_ artist: SubsonicArtist) {
+        Task { @MainActor in
+            do {
+                let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: artist)
+                var allTracks: [Track] = []
+                for album in albums {
+                    let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
+                    let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
+                    allTracks.append(contentsOf: tracks)
+                }
+                NSLog("Playing subsonic artist %@ with %d tracks", artist.name, allTracks.count)
+                WindowManager.shared.audioEngine.loadTracks(allTracks)
+            } catch {
+                NSLog("Failed to play subsonic artist: %@", error.localizedDescription)
+            }
         }
     }
     
@@ -6671,5 +7302,9 @@ private struct PlexDisplayItem {
         case localArtist(Artist)
         case localAlbum(Album)
         case localTrack(LibraryTrack)
+        // Subsonic content types
+        case subsonicArtist(SubsonicArtist)
+        case subsonicAlbum(SubsonicAlbum)
+        case subsonicTrack(SubsonicSong)
     }
 }

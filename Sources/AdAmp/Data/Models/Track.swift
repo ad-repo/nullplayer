@@ -16,6 +16,12 @@ struct Track: Identifiable, Equatable {
     /// Plex rating key for play tracking (nil for local files)
     let plexRatingKey: String?
     
+    /// Subsonic song ID for scrobbling (nil for non-Subsonic tracks)
+    let subsonicId: String?
+    
+    /// Subsonic server ID to identify which server the track belongs to
+    let subsonicServerId: String?
+    
     init(url: URL) {
         self.id = UUID()
         self.url = url
@@ -124,6 +130,8 @@ struct Track: Identifiable, Equatable {
         self.sampleRate = extractedSampleRate
         self.channels = extractedChannels
         self.plexRatingKey = nil  // Local files don't have Plex rating keys
+        self.subsonicId = nil     // Local files don't have Subsonic IDs
+        self.subsonicServerId = nil
     }
     
     init(id: UUID = UUID(),
@@ -135,7 +143,9 @@ struct Track: Identifiable, Equatable {
          bitrate: Int? = nil,
          sampleRate: Int? = nil,
          channels: Int? = nil,
-         plexRatingKey: String? = nil) {
+         plexRatingKey: String? = nil,
+         subsonicId: String? = nil,
+         subsonicServerId: String? = nil) {
         self.id = id
         self.url = url
         self.title = title
@@ -146,6 +156,8 @@ struct Track: Identifiable, Equatable {
         self.sampleRate = sampleRate
         self.channels = channels
         self.plexRatingKey = plexRatingKey
+        self.subsonicId = subsonicId
+        self.subsonicServerId = subsonicServerId
     }
     
     /// Display title (artist - title or just title)

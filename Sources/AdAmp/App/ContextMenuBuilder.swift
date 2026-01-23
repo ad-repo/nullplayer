@@ -38,6 +38,9 @@ class ContextMenuBuilder {
         // Plex submenu
         menu.addItem(buildPlexMenuItem())
         
+        // Subsonic submenu
+        menu.addItem(buildSubsonicMenuItem())
+        
         // Output Devices submenu (includes local, AirPlay, and casting)
         menu.addItem(buildOutputDevicesMenuItem())
         
@@ -443,6 +446,98 @@ class ContextMenuBuilder {
         
         plexItem.submenu = plexMenu
         return plexItem
+    }
+    
+    // MARK: - Subsonic Submenu
+    
+    private static func buildSubsonicMenuItem() -> NSMenuItem {
+        let subsonicItem = NSMenuItem(title: "Navidrome/Subsonic", action: nil, keyEquivalent: "")
+        let subsonicMenu = NSMenu()
+        
+        let servers = SubsonicManager.shared.servers
+        let currentServer = SubsonicManager.shared.currentServer
+        
+        // Add Server / Manage Servers
+        if servers.isEmpty {
+            let addItem = NSMenuItem(title: "Add Server...", action: #selector(MenuActions.addSubsonicServer), keyEquivalent: "")
+            addItem.target = MenuActions.shared
+            subsonicMenu.addItem(addItem)
+        } else {
+            // Connection status
+            switch SubsonicManager.shared.connectionState {
+            case .connected:
+                if let server = currentServer {
+                    let statusItem = NSMenuItem(title: "✓ Connected to \(server.name)", action: nil, keyEquivalent: "")
+                    statusItem.isEnabled = false
+                    subsonicMenu.addItem(statusItem)
+                }
+            case .connecting:
+                let statusItem = NSMenuItem(title: "Connecting...", action: nil, keyEquivalent: "")
+                statusItem.isEnabled = false
+                subsonicMenu.addItem(statusItem)
+            case .error:
+                let statusItem = NSMenuItem(title: "⚠ Connection Error", action: nil, keyEquivalent: "")
+                statusItem.isEnabled = false
+                subsonicMenu.addItem(statusItem)
+            case .disconnected:
+                let statusItem = NSMenuItem(title: "Not Connected", action: nil, keyEquivalent: "")
+                statusItem.isEnabled = false
+                subsonicMenu.addItem(statusItem)
+            }
+            
+            subsonicMenu.addItem(NSMenuItem.separator())
+            
+            // Servers submenu
+            let serversItem = NSMenuItem(title: "Servers", action: nil, keyEquivalent: "")
+            let serversMenu = NSMenu()
+            
+            for server in servers {
+                let serverItem = NSMenuItem(title: server.name, action: #selector(MenuActions.selectSubsonicServer(_:)), keyEquivalent: "")
+                serverItem.target = MenuActions.shared
+                serverItem.representedObject = server.id
+                serverItem.state = server.id == currentServer?.id ? .on : .off
+                serversMenu.addItem(serverItem)
+            }
+            
+            serversMenu.addItem(NSMenuItem.separator())
+            
+            let addServerItem = NSMenuItem(title: "Add Server...", action: #selector(MenuActions.addSubsonicServer), keyEquivalent: "")
+            addServerItem.target = MenuActions.shared
+            serversMenu.addItem(addServerItem)
+            
+            let manageItem = NSMenuItem(title: "Manage Servers...", action: #selector(MenuActions.manageSubsonicServers), keyEquivalent: "")
+            manageItem.target = MenuActions.shared
+            serversMenu.addItem(manageItem)
+            
+            serversItem.submenu = serversMenu
+            subsonicMenu.addItem(serversItem)
+            
+            subsonicMenu.addItem(NSMenuItem.separator())
+            
+            // Disconnect option (if connected)
+            if currentServer != nil {
+                let disconnectItem = NSMenuItem(title: "Disconnect", action: #selector(MenuActions.disconnectSubsonic), keyEquivalent: "")
+                disconnectItem.target = MenuActions.shared
+                subsonicMenu.addItem(disconnectItem)
+                
+                subsonicMenu.addItem(NSMenuItem.separator())
+            }
+        }
+        
+        // Refresh Library
+        let refreshItem = NSMenuItem(title: "Refresh Library", action: #selector(MenuActions.refreshSubsonicLibrary), keyEquivalent: "")
+        refreshItem.target = MenuActions.shared
+        refreshItem.isEnabled = currentServer != nil
+        subsonicMenu.addItem(refreshItem)
+        
+        // Show in Browser
+        let browserItem = NSMenuItem(title: "Show in Library Browser", action: #selector(MenuActions.showSubsonicInBrowser), keyEquivalent: "")
+        browserItem.target = MenuActions.shared
+        browserItem.isEnabled = currentServer != nil
+        subsonicMenu.addItem(browserItem)
+        
+        subsonicItem.submenu = subsonicMenu
+        return subsonicItem
     }
     
     // MARK: - Playback Submenu
@@ -891,6 +986,70 @@ class MenuActions: NSObject {
                 }
             }
         }
+    }
+    
+    // MARK: - Subsonic
+    
+    @objc func addSubsonicServer() {
+        WindowManager.shared.showSubsonicLinkSheet()
+    }
+    
+    @objc func manageSubsonicServers() {
+        WindowManager.shared.showSubsonicServerList()
+    }
+    
+    @objc func selectSubsonicServer(_ sender: NSMenuItem) {
+        guard let serverID = sender.representedObject as? String,
+              let server = SubsonicManager.shared.servers.first(where: { $0.id == serverID }) else {
+            return
+        }
+        
+        Task {
+            do {
+                NSLog("MenuActions: Attempting to connect to Subsonic server '%@'", server.name)
+                try await SubsonicManager.shared.connect(to: server)
+                NSLog("MenuActions: Successfully connected to Subsonic server '%@'", server.name)
+                
+                await MainActor.run {
+                    NotificationCenter.default.post(name: SubsonicManager.serversDidChangeNotification, object: nil)
+                }
+            } catch {
+                NSLog("MenuActions: Failed to connect to Subsonic server '%@': %@", server.name, error.localizedDescription)
+                
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Failed to Connect"
+                    alert.informativeText = "Could not connect to \(server.name): \(error.localizedDescription)"
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            }
+        }
+    }
+    
+    @objc func disconnectSubsonic() {
+        SubsonicManager.shared.disconnect()
+        NotificationCenter.default.post(name: SubsonicManager.connectionStateDidChangeNotification, object: nil)
+    }
+    
+    @objc func refreshSubsonicLibrary() {
+        Task {
+            await SubsonicManager.shared.preloadLibraryContent()
+            NSLog("MenuActions: Subsonic library refreshed")
+        }
+    }
+    
+    @objc func showSubsonicInBrowser() {
+        // Show the library browser with Subsonic source selected
+        guard let serverId = SubsonicManager.shared.currentServer?.id else { return }
+        
+        WindowManager.shared.showPlexBrowser()
+        
+        // Set the browser source to Subsonic
+        NotificationCenter.default.post(
+            name: NSNotification.Name("SetBrowserSource"),
+            object: BrowserSource.subsonic(serverId: serverId)
+        )
     }
     
     // MARK: - Output Device

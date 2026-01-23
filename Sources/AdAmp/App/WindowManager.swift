@@ -74,6 +74,7 @@ class WindowManager {
     /// Milkdrop visualization window controller
     private var milkdropWindowController: MilkdropWindowController?
     
+    
     /// Video playback time tracking
     private(set) var videoCurrentTime: TimeInterval = 0
     private(set) var videoDuration: TimeInterval = 0
@@ -323,6 +324,32 @@ class WindowManager {
     func unlinkPlexAccount() {
         PlexManager.shared.unlinkAccount()
         plexBrowserWindowController?.reloadData()
+    }
+    
+    // MARK: - Subsonic Sheets
+    
+    /// Subsonic dialogs
+    private var subsonicLinkSheet: SubsonicLinkSheet?
+    private var subsonicServerListSheet: SubsonicServerListSheet?
+    
+    /// Show the Subsonic server add dialog
+    func showSubsonicLinkSheet() {
+        subsonicLinkSheet = SubsonicLinkSheet()
+        subsonicLinkSheet?.showDialog { [weak self] server in
+            self?.subsonicLinkSheet = nil
+            if server != nil {
+                self?.plexBrowserWindowController?.reloadData()
+            }
+        }
+    }
+    
+    /// Show the Subsonic server list management dialog
+    func showSubsonicServerList() {
+        subsonicServerListSheet = SubsonicServerListSheet()
+        subsonicServerListSheet?.showDialog { [weak self] _ in
+            self?.subsonicServerListSheet = nil
+            self?.plexBrowserWindowController?.reloadData()
+        }
     }
     
     // MARK: - Video Player Window

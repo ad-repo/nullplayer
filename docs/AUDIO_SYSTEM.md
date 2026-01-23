@@ -408,6 +408,72 @@ struct Track {
 
 The reporter checks for this key and only reports for Plex content.
 
+## Subsonic/Navidrome Streaming
+
+AdAmp supports streaming music from Subsonic-compatible servers (including Navidrome). This uses the same HTTP streaming pipeline as Plex.
+
+### SubsonicManager
+
+The `SubsonicManager` singleton handles:
+- Server connection management (multiple servers supported)
+- Library content caching (artists, albums, playlists)
+- Track conversion to AudioEngine-compatible format
+- Credential storage via KeychainHelper
+
+### SubsonicServerClient
+
+Handles all Subsonic REST API communication:
+- **Token authentication**: `md5(password + salt)` per request
+- **API version**: 1.16.1 (widely compatible)
+- **Endpoints**: getArtists, getAlbum, stream, search3, playlists, star/unstar, scrobble
+
+### Scrobbling
+
+The `SubsonicPlaybackReporter` reports playback activity to the Subsonic server:
+
+| Event | Report Type | Description |
+|-------|-------------|-------------|
+| Track starts | `submission=false` | "Now playing" indicator |
+| 50% played OR 4 minutes | `submission=true` | Track marked as played |
+
+Standard scrobbling rules: track is scrobbled when played 50% or 4 minutes, whichever comes first.
+
+### Track Model Integration
+
+Subsonic items include identifiers in the Track model:
+
+```swift
+struct Track {
+    // ... other properties ...
+    let subsonicId: String?       // Song ID for scrobbling (nil for non-Subsonic)
+    let subsonicServerId: String? // Which server the track belongs to
+}
+```
+
+### Stream URLs
+
+Stream URLs include authentication parameters:
+```
+http://server/rest/stream?id=SONG_ID&u=USERNAME&t=TOKEN&s=SALT&v=1.16.1&c=AdAmp&f=json
+```
+
+### API Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `ping` | Test server connection |
+| `getArtists` | Fetch artist list (indexed A-Z) |
+| `getArtist` | Get artist details + albums |
+| `getAlbum` | Get album details + tracks |
+| `getAlbumList2` | Browse albums (various sorts) |
+| `search3` | Full-text search |
+| `stream` | Get audio stream for a track |
+| `getCoverArt` | Get artwork image |
+| `getPlaylists` / `getPlaylist` | Playlist management |
+| `star` / `unstar` | Favorite items |
+| `getStarred2` | Get all favorites |
+| `scrobble` | Report playback |
+
 ## Historical Note
 
 Prior to the AudioStreaming integration, Plex streaming used `AVPlayer` which outputs directly to hardware, bypassing `AVAudioEngine`. An attempt was made to bridge this using `MTAudioProcessingTap` and a ring buffer to route audio through the EQ, but this failed due to fundamental timing mismatches between the tap's push model and the engine's pull model.

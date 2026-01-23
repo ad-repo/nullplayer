@@ -538,6 +538,9 @@ class AudioEngine {
             if let track = currentTrack {
                 PlexPlaybackReporter.shared.trackDidResume(at: currentTime)
             }
+            
+            // Report resume to Subsonic
+            SubsonicPlaybackReporter.shared.trackResumed()
         } else {
             // Local file playback via AVAudioEngine
             do {
@@ -553,6 +556,9 @@ class AudioEngine {
                 if let track = currentTrack {
                     PlexPlaybackReporter.shared.trackDidResume(at: currentTime)
                 }
+                
+                // Report resume to Subsonic
+                SubsonicPlaybackReporter.shared.trackResumed()
             } catch {
                 print("Failed to start audio engine: \(error)")
             }
@@ -590,6 +596,9 @@ class AudioEngine {
         
         // Report pause to Plex
         PlexPlaybackReporter.shared.trackDidPause(at: pausePosition)
+        
+        // Report pause to Subsonic
+        SubsonicPlaybackReporter.shared.trackPaused()
     }
     
     func stop() {
@@ -627,6 +636,9 @@ class AudioEngine {
         
         // Report stop to Plex (not finished - user manually stopped)
         PlexPlaybackReporter.shared.trackDidStop(at: stopPosition, finished: false)
+        
+        // Report stop to Subsonic
+        SubsonicPlaybackReporter.shared.trackStopped()
         
         // Clear spectrum analyzer
         clearSpectrum()
@@ -1020,6 +1032,18 @@ class AudioEngine {
             // Update Plex playback position (for scrobble threshold detection)
             PlexPlaybackReporter.shared.updatePosition(current)
             
+            // Update Subsonic playback position (for scrobbling)
+            if let track = self.currentTrack,
+               let subsonicId = track.subsonicId,
+               let serverId = track.subsonicServerId {
+                SubsonicPlaybackReporter.shared.updatePlayback(
+                    trackId: subsonicId,
+                    serverId: serverId,
+                    position: current,
+                    duration: trackDuration
+                )
+            }
+            
             // Decay spectrum when not playing locally (casting or stopped)
             if self.isCastingActive || self.state != .playing {
                 self.decaySpectrum()
@@ -1238,6 +1262,13 @@ class AudioEngine {
             // Report track start to Plex (no-op for local files without plexRatingKey)
             PlexPlaybackReporter.shared.trackDidStart(track, at: 0)
             
+            // Report track start to Subsonic
+            if let subsonicId = track.subsonicId,
+               let serverId = track.subsonicServerId,
+               let trackDuration = track.duration {
+                SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
+            }
+            
             NSLog("loadLocalTrack: file scheduled, EQ bypass = %d, normGain = %.2f", eqNode.bypass, normalizationGain)
         } catch {
             NSLog("loadLocalTrack: FAILED - %@", error.localizedDescription)
@@ -1281,6 +1312,13 @@ class AudioEngine {
         // Report track start to Plex
         PlexPlaybackReporter.shared.trackDidStart(track, at: 0)
         
+        // Report track start to Subsonic
+        if let subsonicId = track.subsonicId,
+           let serverId = track.subsonicServerId,
+           let trackDuration = track.duration {
+            SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
+        }
+        
         NSLog("  Created StreamingAudioPlayer, starting playback with EQ")
     }
     
@@ -1318,6 +1356,9 @@ class AudioEngine {
         let finishPosition = duration
         PlexPlaybackReporter.shared.trackDidStop(at: finishPosition, finished: true)
         
+        // Report track finished to Subsonic (track stopped is called since it finished)
+        SubsonicPlaybackReporter.shared.trackStopped()
+        
         // Check if we have a gaplessly pre-scheduled next track
         if gaplessPlaybackEnabled && nextScheduledFile != nil && nextScheduledTrackIndex >= 0 {
             // Gapless transition - the next file is already scheduled
@@ -1336,6 +1377,14 @@ class AudioEngine {
             
             // Report new track to Plex
             PlexPlaybackReporter.shared.trackDidStart(currentTrack!, at: 0)
+            
+            // Report new track to Subsonic
+            if let track = currentTrack,
+               let subsonicId = track.subsonicId,
+               let serverId = track.subsonicServerId,
+               let trackDuration = track.duration {
+                SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
+            }
             
             // Apply normalization for the new track
             if volumeNormalizationEnabled {
@@ -1678,6 +1727,9 @@ class AudioEngine {
         
         // Stop Plex playback tracking
         PlexPlaybackReporter.shared.stopTracking()
+        
+        // Stop Subsonic playback tracking
+        SubsonicPlaybackReporter.shared.trackStopped()
         
         NSLog("clearPlaylist: done, playlist count=%d", playlist.count)
         delegate?.audioEngineDidChangePlaylist()
