@@ -424,8 +424,19 @@ Radio station thresholds are defined in `RadioConfig` enum (`PlexServerClient.sw
 | `hitsThreshold` | 250,000 | Minimum Last.fm scrobbles for "hits" |
 | `deepCutsThreshold` | 1,000 | Maximum Last.fm scrobbles for "deep cuts" |
 | `defaultLimit` | 100 | Default number of tracks per radio station |
+| `maxTracksPerArtist` | 2 | Maximum tracks per artist for variety |
+| `overFetchMultiplier` | 3 | Multiplier for over-fetching to allow deduplication |
 | `genres` | Rock, Pop, Hip-Hop, Metal, Jazz, Classical, Electronic, R&B | Available genre stations |
 | `decades` | 1920s-2020s | Available decade stations |
+
+### Artist Variety Filter
+
+Radio playlists automatically limit duplicate artists for better variety. The system:
+1. Fetches 3x the requested tracks (`overFetchMultiplier`)
+2. Filters to allow max 2 tracks per artist (`maxTracksPerArtist`)
+3. Returns the requested number of tracks with diverse artists
+
+This prevents radio stations from being dominated by a few prolific artists.
 
 ## Requirements
 

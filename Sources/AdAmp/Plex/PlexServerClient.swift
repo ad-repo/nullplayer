@@ -11,6 +11,12 @@ enum RadioConfig {
     /// Default number of tracks to fetch for radio
     static let defaultLimit = 100
     
+    /// Maximum tracks per artist in a radio playlist (for variety)
+    static let maxTracksPerArtist = 2
+    
+    /// Multiplier for over-fetching to allow for artist deduplication
+    static let overFetchMultiplier = 3
+    
     /// Hardcoded genres for Genre Radio
     static let genres = ["Rock", "Pop", "Hip-Hop", "Metal", "Jazz", "Classical", "Electronic", "R&B"]
     
