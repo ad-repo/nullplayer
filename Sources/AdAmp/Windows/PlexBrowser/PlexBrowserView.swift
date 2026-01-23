@@ -1095,7 +1095,7 @@ class PlexBrowserView: NSView {
                 if manager.currentLibrary?.type == "artist", let radioIcon = Self.radioIcon {
                     let iconSize: CGFloat = 18
                     // Position radio icon with fixed padding before item count
-                    let radioPadding: CGFloat = isArtOnlyMode ? 8 : 4
+                    let radioPadding: CGFloat = isArtOnlyMode ? 14 : 10
                     let radioX = countX - iconSize - radioPadding
                     let radioY = barRect.minY + (barRect.height - iconSize) / 2
                     let iconRect = NSRect(x: radioX, y: radioY, width: iconSize, height: iconSize)
