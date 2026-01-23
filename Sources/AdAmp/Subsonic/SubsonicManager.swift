@@ -241,7 +241,9 @@ class SubsonicManager {
         
         NSLog("SubsonicManager: Connecting to server '%@'", server.name)
         
-        connectionState = .connecting
+        await MainActor.run {
+            self.connectionState = .connecting
+        }
         
         do {
             _ = try await client.ping()
@@ -258,7 +260,9 @@ class SubsonicManager {
             await preloadLibraryContent()
             
         } catch {
-            connectionState = .error(error)
+            await MainActor.run {
+                self.connectionState = .error(error)
+            }
             throw error
         }
     }

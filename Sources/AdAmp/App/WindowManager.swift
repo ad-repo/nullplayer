@@ -278,11 +278,22 @@ class WindowManager {
     // MARK: - Plex Browser Window
     
     func showPlexBrowser() {
-        if plexBrowserWindowController == nil {
+        let isNewWindow = plexBrowserWindowController == nil
+        if isNewWindow {
             plexBrowserWindowController = PlexBrowserWindowController()
         }
         plexBrowserWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
+        
+        // Restore saved window position for newly created windows
+        if isNewWindow,
+           let frameString = UserDefaults.standard.string(forKey: "PlexBrowserWindowFrame"),
+           let window = plexBrowserWindowController?.window {
+            let frame = NSRectFromString(frameString)
+            if frame != .zero {
+                window.setFrame(frame, display: true)
+            }
+        }
     }
     
     var isPlexBrowserVisible: Bool {
@@ -484,11 +495,22 @@ class WindowManager {
     // MARK: - Milkdrop Visualization Window
     
     func showMilkdrop() {
-        if milkdropWindowController == nil {
+        let isNewWindow = milkdropWindowController == nil
+        if isNewWindow {
             milkdropWindowController = MilkdropWindowController()
         }
         milkdropWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(milkdropWindowController?.window)
+        
+        // Restore saved window position for newly created windows
+        if isNewWindow,
+           let frameString = UserDefaults.standard.string(forKey: "MilkdropWindowFrame"),
+           let window = milkdropWindowController?.window {
+            let frame = NSRectFromString(frameString)
+            if frame != .zero {
+                window.setFrame(frame, display: true)
+            }
+        }
     }
     
     var isMilkdropVisible: Bool {

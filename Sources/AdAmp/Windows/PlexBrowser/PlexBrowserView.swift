@@ -4212,6 +4212,12 @@ class PlexBrowserView: NSView {
             return
         }
         
+        // Show art context menu if in art-only mode without visualization
+        if isArtOnlyMode && !isVisualizingArt && hitTestContentArea(at: winampPoint) {
+            showArtContextMenu(at: event)
+            return
+        }
+        
         // Check list area for item context menu
         if !isArtOnlyMode, let clickedIndex = hitTestListArea(at: winampPoint) {
             // Select the clicked item if not already selected
@@ -4328,6 +4334,33 @@ class PlexBrowserView: NSView {
         menu.addItem(offItem)
         
         NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+    
+    /// Show context menu for art-only mode (when visualization is off)
+    private func showArtContextMenu(at event: NSEvent) {
+        let menu = NSMenu(title: "Art")
+        
+        // Enable visualization
+        let visItem = NSMenuItem(title: "Enable Visualization", action: #selector(enableArtVisualization), keyEquivalent: "")
+        visItem.target = self
+        menu.addItem(visItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Exit art view
+        let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
+        exitItem.target = self
+        menu.addItem(exitItem)
+        
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+    
+    @objc private func enableArtVisualization() {
+        isVisualizingArt = true
+    }
+    
+    @objc private func exitArtView() {
+        isArtOnlyMode = false
     }
     
     @objc private func menuNextEffect() {

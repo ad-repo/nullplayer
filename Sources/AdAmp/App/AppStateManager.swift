@@ -297,6 +297,24 @@ class AppStateManager {
                 window.setFrame(frame, display: true)
             }
         }
+        
+        // Store Plex Browser window frame in UserDefaults
+        // WindowManager.restoreWindowPositions() will apply it when the window is shown
+        if let frameString = state.plexBrowserWindowFrame {
+            let frame = NSRectFromString(frameString)
+            if frame != .zero {
+                UserDefaults.standard.set(frameString, forKey: "PlexBrowserWindowFrame")
+            }
+        }
+        
+        // Store Milkdrop window frame in UserDefaults
+        // WindowManager.restoreWindowPositions() will apply it when the window is shown
+        if let frameString = state.milkdropWindowFrame {
+            let frame = NSRectFromString(frameString)
+            if frame != .zero {
+                UserDefaults.standard.set(frameString, forKey: "MilkdropWindowFrame")
+            }
+        }
     }
     
     // MARK: - Helpers
