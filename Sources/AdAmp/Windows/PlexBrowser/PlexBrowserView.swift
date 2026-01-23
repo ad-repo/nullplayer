@@ -708,6 +708,9 @@ class PlexBrowserView: NSView {
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
         
+        // Use low interpolation for cleaner scaling of skin sprites (none can cause artifacts)
+        context.interpolationQuality = .low
+        
         // Apply scaling for resized window
         if isShadeMode {
             // Shade mode uses uniform scaling

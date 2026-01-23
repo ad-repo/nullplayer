@@ -11,7 +11,11 @@ extension Notification.Name {
     /// Posted when new PCM audio data is available for visualization
     /// userInfo contains: "pcm" ([Float]), "sampleRate" (Double)
     static let audioPCMDataUpdated = Notification.Name("audioPCMDataUpdated")
-    
+
+    /// Posted when new spectrum data is available for visualization
+    /// userInfo contains: "spectrum" ([Float]) - 75 bands normalized 0-1
+    static let audioSpectrumDataUpdated = Notification.Name("audioSpectrumDataUpdated")
+
     /// Posted when playback state changes (playing, paused, stopped)
     /// userInfo contains: "state" (PlaybackState)
     static let audioPlaybackStateChanged = Notification.Name("audioPlaybackStateChanged")
@@ -481,6 +485,13 @@ class AudioEngine {
                 }
             }
             self.delegate?.audioEngineDidUpdateSpectrum(self.spectrumData)
+
+            // Post notification for low-latency spectrum updates
+            NotificationCenter.default.post(
+                name: .audioSpectrumDataUpdated,
+                object: self,
+                userInfo: ["spectrum": self.spectrumData]
+            )
         }
     }
     
@@ -977,6 +988,11 @@ class AudioEngine {
         // Only update delegate if there's still data decaying
         if hasData {
             delegate?.audioEngineDidUpdateSpectrum(spectrumData)
+            NotificationCenter.default.post(
+                name: .audioSpectrumDataUpdated,
+                object: self,
+                userInfo: ["spectrum": spectrumData]
+            )
         }
     }
     
@@ -986,6 +1002,11 @@ class AudioEngine {
             spectrumData[i] = 0
         }
         delegate?.audioEngineDidUpdateSpectrum(spectrumData)
+        NotificationCenter.default.post(
+            name: .audioSpectrumDataUpdated,
+            object: self,
+            userInfo: ["spectrum": spectrumData]
+        )
     }
     
     private func startTimeUpdates() {
@@ -1870,6 +1891,11 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // Forward spectrum data from streaming player to delegate
         spectrumData = levels
         delegate?.audioEngineDidUpdateSpectrum(levels)
+        NotificationCenter.default.post(
+            name: .audioSpectrumDataUpdated,
+            object: self,
+            userInfo: ["spectrum": levels]
+        )
     }
     
     func streamingPlayerDidUpdatePCM(_ samples: [Float]) {

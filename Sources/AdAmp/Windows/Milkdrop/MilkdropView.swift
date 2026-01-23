@@ -34,7 +34,10 @@ class MilkdropView: NSView {
     
     /// Observer for PCM data notifications
     private var pcmObserver: NSObjectProtocol?
-    
+
+    /// Observer for spectrum data notifications
+    private var spectrumObserver: NSObjectProtocol?
+
     /// Observer for playback state changes
     private var playbackStateObserver: NSObjectProtocol?
     
@@ -90,7 +93,16 @@ class MilkdropView: NSView {
         ) { [weak self] notification in
             self?.handlePCMUpdate(notification)
         }
-        
+
+        // Subscribe to spectrum data notifications (for TOC Spectrum renderer)
+        spectrumObserver = NotificationCenter.default.addObserver(
+            forName: .audioSpectrumDataUpdated,
+            object: nil,
+            queue: nil  // Receive on posting thread for lowest latency
+        ) { [weak self] notification in
+            self?.handleSpectrumUpdate(notification)
+        }
+
         // Subscribe to playback state changes (for idle/active visualization mode)
         playbackStateObserver = NotificationCenter.default.addObserver(
             forName: .audioPlaybackStateChanged,
@@ -142,6 +154,9 @@ class MilkdropView: NSView {
     
     deinit {
         if let observer = pcmObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = spectrumObserver {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = playbackStateObserver {
@@ -207,15 +222,26 @@ class MilkdropView: NSView {
     /// Handle PCM data notification from audio tap (called on audio thread for low latency)
     private func handlePCMUpdate(_ notification: Notification) {
         guard !isShadeMode else { return }
-        
+
         guard let userInfo = notification.userInfo,
               let pcm = userInfo["pcm"] as? [Float] else { return }
-        
+
         // Forward PCM data directly to visualization view (thread-safe via dataLock)
         // No main thread dispatch needed - updatePCM handles thread safety internally
         visualizationGLView?.updatePCM(pcm)
     }
-    
+
+    /// Handle spectrum data notification from audio engine (called on audio thread for low latency)
+    private func handleSpectrumUpdate(_ notification: Notification) {
+        guard !isShadeMode else { return }
+
+        guard let userInfo = notification.userInfo,
+              let spectrum = userInfo["spectrum"] as? [Float] else { return }
+
+        // Forward spectrum data directly to visualization view (thread-safe)
+        visualizationGLView?.updateSpectrum(spectrum)
+    }
+
     /// Handle playback state changes to update audio active state
     private func handlePlaybackStateChange(_ notification: Notification) {
         updateAudioActiveState()
@@ -612,7 +638,94 @@ class MilkdropView: NSView {
                 menu.addItem(NSMenuItem.separator())
             }
         }
-        
+
+        // Visualization Engine selector
+        let engineMenu = NSMenu()
+        let currentEngineType = visualizationGLView?.currentEngineType ?? .projectM
+
+        for engineType in VisualizationType.allCases {
+            let item = NSMenuItem(
+                title: engineType.displayName,
+                action: #selector(switchVisualizationEngine(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = engineType
+            item.state = (currentEngineType == engineType) ? .on : .off
+            engineMenu.addItem(item)
+        }
+
+        let engineMenuItem = NSMenuItem(title: "Visualization Engine", action: nil, keyEquivalent: "")
+        engineMenuItem.submenu = engineMenu
+        menu.addItem(engineMenuItem)
+
+        // TOC Spectrum settings (only visible when TOC Spectrum is active)
+        if currentEngineType == .tocSpectrum {
+            let tocSettingsMenu = NSMenu()
+
+            // Color scheme submenu
+            let colorSchemeMenu = NSMenu()
+            let currentColorScheme = TOCSpectrumSettings.shared.colorScheme
+            for scheme in TOCSpectrumSettings.availableColorSchemes {
+                let item = NSMenuItem(title: scheme.rawValue, action: #selector(setTOCColorScheme(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = scheme
+                item.state = (scheme == currentColorScheme) ? .on : .off
+                colorSchemeMenu.addItem(item)
+            }
+            let colorSchemeMenuItem = NSMenuItem(title: "Color Scheme", action: nil, keyEquivalent: "")
+            colorSchemeMenuItem.submenu = colorSchemeMenu
+            tocSettingsMenu.addItem(colorSchemeMenuItem)
+
+            // Bar count submenu
+            let barCountMenu = NSMenu()
+            let currentBarCount = TOCSpectrumSettings.shared.barCount
+            for count in TOCSpectrumSettings.availableBarCounts {
+                let item = NSMenuItem(title: "\(count) bars", action: #selector(setTOCBarCount(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = count
+                item.state = (count == currentBarCount) ? .on : .off
+                barCountMenu.addItem(item)
+            }
+            let barCountMenuItem = NSMenuItem(title: "Bar Count", action: nil, keyEquivalent: "")
+            barCountMenuItem.submenu = barCountMenu
+            tocSettingsMenu.addItem(barCountMenuItem)
+
+            // Visualization mode submenu
+            let vizModeMenu = NSMenu()
+            let currentVizMode = TOCSpectrumSettings.shared.visualizationMode
+            for mode in TOCSpectrumSettings.availableVisualizationModes {
+                let item = NSMenuItem(title: mode.rawValue, action: #selector(setTOCVisualizationMode(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = mode
+                item.state = (mode == currentVizMode) ? .on : .off
+                vizModeMenu.addItem(item)
+            }
+            let vizModeMenuItem = NSMenuItem(title: "Visualization Mode", action: nil, keyEquivalent: "")
+            vizModeMenuItem.submenu = vizModeMenu
+            tocSettingsMenu.addItem(vizModeMenuItem)
+
+            // Reflection toggle
+            tocSettingsMenu.addItem(NSMenuItem.separator())
+            let reflectionItem = NSMenuItem(title: "Reflection", action: #selector(toggleTOCReflection(_:)), keyEquivalent: "")
+            reflectionItem.target = self
+            reflectionItem.state = TOCSpectrumSettings.shared.reflectionEnabled ? .on : .off
+            tocSettingsMenu.addItem(reflectionItem)
+
+            // Wireframe toggle
+            let wireframeItem = NSMenuItem(title: "Wireframe Mode", action: #selector(toggleTOCWireframe(_:)), keyEquivalent: "")
+            wireframeItem.target = self
+            wireframeItem.state = TOCSpectrumSettings.shared.wireframeMode ? .on : .off
+            tocSettingsMenu.addItem(wireframeItem)
+
+            // Add TOC settings submenu to main menu
+            let tocSettingsMenuItem = NSMenuItem(title: "TOC Spectrum Settings", action: nil, keyEquivalent: "")
+            tocSettingsMenuItem.submenu = tocSettingsMenu
+            menu.addItem(tocSettingsMenuItem)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
         // Fullscreen option
         let fullscreenItem = NSMenuItem(title: "Fullscreen", action: #selector(toggleFullscreenAction(_:)), keyEquivalent: "f")
         fullscreenItem.target = self
@@ -681,6 +794,45 @@ class MilkdropView: NSView {
         if presetCycleMode != .off {
             startPresetCycleTimer()  // Restart with new interval
         }
+    }
+
+    // MARK: - Visualization Engine Switching
+
+    @objc private func switchVisualizationEngine(_ sender: NSMenuItem) {
+        guard let type = sender.representedObject as? VisualizationType else { return }
+        visualizationGLView?.switchEngine(to: type)
+    }
+
+    // MARK: - TOC Spectrum Settings
+
+    @objc private func setTOCColorScheme(_ sender: NSMenuItem) {
+        guard let scheme = sender.representedObject as? TOCSpectrumRenderer.ColorScheme else { return }
+        TOCSpectrumSettings.shared.colorScheme = scheme
+    }
+
+    @objc private func setTOCBarCount(_ sender: NSMenuItem) {
+        let count = sender.tag
+        TOCSpectrumSettings.shared.barCount = count
+
+        // Switching bar count requires recreating the engine
+        if let currentType = visualizationGLView?.currentEngineType,
+           currentType == .tocSpectrum {
+            // Force recreation by switching away and back
+            visualizationGLView?.switchEngine(to: .tocSpectrum)
+        }
+    }
+
+    @objc private func setTOCVisualizationMode(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? TOCSpectrumRenderer.VisualizationMode else { return }
+        TOCSpectrumSettings.shared.visualizationMode = mode
+    }
+
+    @objc private func toggleTOCReflection(_ sender: Any?) {
+        TOCSpectrumSettings.shared.reflectionEnabled.toggle()
+    }
+
+    @objc private func toggleTOCWireframe(_ sender: Any?) {
+        TOCSpectrumSettings.shared.wireframeMode.toggle()
     }
     
     private func startPresetCycleTimer() {

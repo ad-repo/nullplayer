@@ -10,7 +10,7 @@ import CProjectM
 ///
 /// This class manages a projectM instance for rendering Milkdrop presets
 /// with real-time audio visualization.
-class ProjectMWrapper {
+class ProjectMWrapper: VisualizationEngine {
     
     // MARK: - Types
     
@@ -26,7 +26,12 @@ class ProjectMWrapper {
     
     /// Whether projectM is available (library loaded)
     private(set) var isAvailable: Bool = false
-    
+
+    /// Display name for the visualization engine
+    var displayName: String {
+        return "ProjectM (Milkdrop)"
+    }
+
     /// Current viewport dimensions
     private var viewportWidth: Int = 0
     private var viewportHeight: Int = 0
@@ -156,7 +161,7 @@ class ProjectMWrapper {
     /// - Parameters:
     ///   - width: Initial viewport width
     ///   - height: Initial viewport height
-    init(width: Int = 512, height: Int = 512) {
+    required init(width: Int = 512, height: Int = 512) {
         viewportWidth = width
         viewportHeight = height
         

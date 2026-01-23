@@ -40,6 +40,10 @@ override func draw(_ dirtyRect: NSRect) {
     context.translateBy(x: 0, y: bounds.height)
     context.scaleBy(x: 1, y: -1)
     
+    // Use low interpolation for clean sprite scaling on large monitors
+    // .none causes artifacts, .high causes blur
+    context.interpolationQuality = .low
+    
     if scale != 1.0 {
         let scaledWidth = originalWindowSize.width * scale
         let scaledHeight = originalWindowSize.height * scale
