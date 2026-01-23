@@ -334,6 +334,23 @@ struct PlexEpisode: Identifiable, Equatable {
     }
 }
 
+// MARK: - Hubs (Related Content)
+
+/// A content hub containing related/similar items (for radio/mix generation)
+struct PlexHub: Identifiable {
+    let id: String
+    let type: String                // "artist", "album", "track"
+    let hubIdentifier: String       // "track.similar", "artist.similar", etc.
+    let title: String
+    let size: Int
+    let items: [PlexMetadataDTO]    // Raw metadata for flexibility
+    
+    /// Check if this hub contains similar/related content
+    var isSimilarContent: Bool {
+        hubIdentifier.contains("similar") || hubIdentifier.contains("related")
+    }
+}
+
 // MARK: - Media Info
 
 /// Media info for a Plex item
@@ -715,6 +732,47 @@ struct PlexPartDTO: Decodable {
 
 struct PlexTagDTO: Decodable {
     let tag: String
+}
+
+// MARK: - Hub Response DTOs
+
+/// Response container for hub endpoints
+struct PlexHubsResponse: Decodable {
+    let hubs: [PlexHubDTO]?
+    
+    enum CodingKeys: String, CodingKey {
+        case hubs = "Hub"
+    }
+}
+
+/// A hub containing related content
+struct PlexHubDTO: Decodable {
+    let hubKey: String?
+    let key: String?
+    let type: String
+    let hubIdentifier: String
+    let title: String
+    let size: Int?
+    let more: Bool?
+    let style: String?
+    let promoted: Bool?
+    let metadata: [PlexMetadataDTO]?
+    
+    enum CodingKeys: String, CodingKey {
+        case hubKey, key, type, hubIdentifier, title, size, more, style, promoted
+        case metadata = "Metadata"
+    }
+    
+    func toHub() -> PlexHub {
+        PlexHub(
+            id: hubKey ?? hubIdentifier,
+            type: type,
+            hubIdentifier: hubIdentifier,
+            title: title,
+            size: size ?? metadata?.count ?? 0,
+            items: metadata ?? []
+        )
+    }
 }
 
 // MARK: - Resources/Servers Response

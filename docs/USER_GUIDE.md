@@ -421,6 +421,18 @@ A track is "scrobbled" when:
 - At least 30 seconds have played, AND
 - 90% completion OR track finishes naturally
 
+### Plex Radio
+
+Generate dynamic playlists based on sonic similarity to a seed track, album, or artist:
+
+| Radio Type | How to Access | Description |
+|------------|---------------|-------------|
+| **Track Radio** | Right-click track > "Start Track Radio" | Plays sonically similar tracks |
+| **Album Radio** | Right-click album > "Start Album Radio" | Plays tracks from sonically similar albums |
+| **Artist Radio** | Right-click artist > "Start Artist Radio" | Plays tracks from sonically similar artists |
+
+**Requirements**: Plex Pass with sonic analysis enabled on the server. Tracks need to be analyzed (look for `musicAnalysisVersion` in track metadata).
+
 ---
 
 ## Navidrome/Subsonic Integration
@@ -642,6 +654,14 @@ Right-click anywhere on AdAmp windows to access:
 - Libraries (submenu)
 - Refresh Servers
 - Show Plex Browser
+
+### Plex Context Menu (Right-click in Library Browser)
+
+| Item Type | Menu Options |
+|-----------|--------------|
+| **Track** | Play, Add to Playlist, Start Track Radio |
+| **Album** | Play Album, Add Album to Playlist, Start Album Radio |
+| **Artist** | Play All by Artist, Expand/Collapse, Start Artist Radio |
 
 ### Output Devices
 - Local Audio devices

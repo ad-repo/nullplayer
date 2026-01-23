@@ -612,6 +612,150 @@ class PlexServerClient {
         }
     }
     
+    // MARK: - Radio API (Sonic Analysis)
+    
+    /// Create a track radio using Plex's sonic analysis
+    /// - Parameters:
+    ///   - trackID: The seed track's rating key
+    ///   - libraryID: The library section ID
+    ///   - limit: Maximum number of tracks to return
+    /// - Returns: Array of sonically similar tracks
+    func createTrackRadio(trackID: String, libraryID: String, limit: Int = 100) async throws -> [PlexTrack] {
+        NSLog("PlexServerClient: Creating track radio for track %@ in library %@", trackID, libraryID)
+        
+        // Use the sonicallySimilar filter with random sort for diverse results
+        let queryItems = [
+            URLQueryItem(name: "type", value: "10"),  // type 10 = tracks
+            URLQueryItem(name: "track.sonicallySimilar", value: trackID),
+            URLQueryItem(name: "sort", value: "random"),
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
+        
+        guard let request = buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
+        
+        NSLog("PlexServerClient: Track radio returned %d sonically similar tracks", tracks.count)
+        return tracks
+    }
+    
+    /// Create an artist radio using Plex's sonic analysis
+    /// Fetches tracks from sonically similar artists
+    /// - Parameters:
+    ///   - artistID: The seed artist's rating key
+    ///   - libraryID: The library section ID
+    ///   - limit: Maximum number of tracks to return
+    /// - Returns: Array of tracks from similar artists
+    func createArtistRadio(artistID: String, libraryID: String, limit: Int = 100) async throws -> [PlexTrack] {
+        NSLog("PlexServerClient: Creating artist radio for artist %@ in library %@", artistID, libraryID)
+        
+        // First get sonically similar artists
+        let artistQueryItems = [
+            URLQueryItem(name: "type", value: "8"),  // type 8 = artists
+            URLQueryItem(name: "artist.sonicallySimilar", value: artistID),
+            URLQueryItem(name: "limit", value: "15")
+        ]
+        
+        guard let artistRequest = buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: artistQueryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let artistResponse: PlexResponse<PlexMetadataResponse> = try await performRequest(artistRequest)
+        let similarArtists = artistResponse.mediaContainer.metadata ?? []
+        
+        NSLog("PlexServerClient: Found %d similar artists", similarArtists.count)
+        
+        if similarArtists.isEmpty {
+            return []
+        }
+        
+        // Get tracks from each similar artist
+        var allTracks: [PlexTrack] = []
+        let tracksPerArtist = max(5, limit / similarArtists.count)
+        
+        for artist in similarArtists {
+            let trackQueryItems = [
+                URLQueryItem(name: "type", value: "10"),
+                URLQueryItem(name: "artist.id", value: artist.ratingKey),
+                URLQueryItem(name: "sort", value: "random"),
+                URLQueryItem(name: "limit", value: String(tracksPerArtist))
+            ]
+            
+            guard let trackRequest = buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: trackQueryItems) else {
+                continue
+            }
+            
+            do {
+                let trackResponse: PlexResponse<PlexMetadataResponse> = try await performRequest(trackRequest)
+                let tracks = trackResponse.mediaContainer.metadata?.map { $0.toTrack() } ?? []
+                allTracks.append(contentsOf: tracks)
+            } catch {
+                NSLog("PlexServerClient: Failed to get tracks for artist %@: %@", artist.ratingKey, error.localizedDescription)
+            }
+            
+            if allTracks.count >= limit {
+                break
+            }
+        }
+        
+        // Shuffle and limit the final result
+        let result = Array(allTracks.shuffled().prefix(limit))
+        NSLog("PlexServerClient: Artist radio created with %d tracks", result.count)
+        return result
+    }
+    
+    /// Create an album radio using Plex's sonic analysis
+    /// - Parameters:
+    ///   - albumID: The seed album's rating key
+    ///   - libraryID: The library section ID
+    ///   - limit: Maximum number of tracks to return
+    /// - Returns: Array of tracks from sonically similar albums
+    func createAlbumRadio(albumID: String, libraryID: String, limit: Int = 100) async throws -> [PlexTrack] {
+        NSLog("PlexServerClient: Creating album radio for album %@ in library %@", albumID, libraryID)
+        
+        // Get sonically similar albums
+        let albumQueryItems = [
+            URLQueryItem(name: "type", value: "9"),  // type 9 = albums
+            URLQueryItem(name: "album.sonicallySimilar", value: albumID),
+            URLQueryItem(name: "limit", value: "10")
+        ]
+        
+        guard let albumRequest = buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: albumQueryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let albumResponse: PlexResponse<PlexMetadataResponse> = try await performRequest(albumRequest)
+        let similarAlbums = albumResponse.mediaContainer.metadata ?? []
+        
+        NSLog("PlexServerClient: Found %d similar albums", similarAlbums.count)
+        
+        if similarAlbums.isEmpty {
+            return []
+        }
+        
+        // Get tracks from each similar album
+        var allTracks: [PlexTrack] = []
+        let tracksPerAlbum = max(5, limit / similarAlbums.count)
+        
+        for album in similarAlbums {
+            let tracks = try await fetchTracks(forAlbum: album.ratingKey)
+            let shuffledTracks = tracks.shuffled().prefix(tracksPerAlbum)
+            allTracks.append(contentsOf: shuffledTracks)
+            
+            if allTracks.count >= limit {
+                break
+            }
+        }
+        
+        // Shuffle and limit the final result
+        let result = Array(allTracks.shuffled().prefix(limit))
+        NSLog("PlexServerClient: Album radio created with %d tracks", result.count)
+        return result
+    }
+    
     // MARK: - Server Status
     
     /// Check if the server is reachable (with short timeout)

@@ -741,4 +741,97 @@ class PlexManager {
     func convertToTracks(_ plexTracks: [PlexTrack]) -> [Track] {
         plexTracks.compactMap { convertToTrack($0) }
     }
+    
+    // MARK: - Radio/Mix Generation
+    
+    /// Create a track radio based on a seed track
+    /// - Parameters:
+    ///   - track: The seed track
+    ///   - limit: Maximum number of tracks to include
+    /// - Returns: Array of tracks for the radio playlist, or empty if unavailable
+    func createTrackRadio(from track: PlexTrack, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient, let library = currentLibrary else {
+            NSLog("PlexManager: Cannot create track radio - no server or library connected")
+            return []
+        }
+        
+        do {
+            let plexTracks = try await client.createTrackRadio(
+                trackID: track.id,
+                libraryID: library.id,
+                limit: limit
+            )
+            
+            let tracks = convertToTracks(plexTracks)
+            NSLog("PlexManager: Track radio created with %d tracks", tracks.count)
+            return tracks
+        } catch {
+            NSLog("PlexManager: Failed to create track radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+    
+    /// Create an artist radio based on a seed artist
+    /// - Parameters:
+    ///   - artist: The seed artist
+    ///   - limit: Maximum number of tracks to include
+    /// - Returns: Array of tracks for the radio playlist, or empty if unavailable
+    func createArtistRadio(from artist: PlexArtist, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient, let library = currentLibrary else {
+            NSLog("PlexManager: Cannot create artist radio - no server or library connected")
+            return []
+        }
+        
+        do {
+            let plexTracks = try await client.createArtistRadio(
+                artistID: artist.id,
+                libraryID: library.id,
+                limit: limit
+            )
+            
+            let tracks = convertToTracks(plexTracks)
+            NSLog("PlexManager: Artist radio created with %d tracks", tracks.count)
+            return tracks
+        } catch {
+            NSLog("PlexManager: Failed to create artist radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+    
+    /// Create an album radio based on a seed album
+    /// - Parameters:
+    ///   - album: The seed album
+    ///   - limit: Maximum number of tracks to include
+    /// - Returns: Array of tracks for the radio playlist, or empty if unavailable
+    func createAlbumRadio(from album: PlexAlbum, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient, let library = currentLibrary else {
+            NSLog("PlexManager: Cannot create album radio - no server or library connected")
+            return []
+        }
+        
+        do {
+            let plexTracks = try await client.createAlbumRadio(
+                albumID: album.id,
+                libraryID: library.id,
+                limit: limit
+            )
+            
+            let tracks = convertToTracks(plexTracks)
+            NSLog("PlexManager: Album radio created with %d tracks", tracks.count)
+            return tracks
+        } catch {
+            NSLog("PlexManager: Failed to create album radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+    
+    /// Check if radio features are likely available (requires Plex Pass + sonic analysis)
+    /// This is a best-effort check; actual availability depends on server configuration
+    var isRadioLikelyAvailable: Bool {
+        // Radio features require a connected music library
+        guard serverClient != nil, currentLibrary?.isMusicLibrary == true else {
+            return false
+        }
+        return true
+    }
 }

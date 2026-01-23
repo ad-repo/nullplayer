@@ -408,6 +408,50 @@ struct Track {
 
 The reporter checks for this key and only reports for Plex content.
 
+## Plex Radio/Mix
+
+AdAmp supports Plex radio features, allowing you to generate dynamic playlists based on a seed track, album, or artist. This is similar to PlexAmp's "Track Radio", "Artist Radio", and "Album Radio" features.
+
+### Accessing Radio Features
+
+Right-click on any Plex track, album, or artist in the browser to access radio options:
+
+| Item Type | Menu Option | Description |
+|-----------|-------------|-------------|
+| Track | "Start Track Radio" | Plays sonically similar tracks based on the seed track |
+| Album | "Start Album Radio" | Plays tracks from sonically similar albums |
+| Artist | "Start Artist Radio" | Plays tracks from sonically similar artists |
+
+### How It Works
+
+The radio feature uses Plex's sonic analysis API to find similar content:
+
+1. **Track Radio**: Uses `track.sonicallySimilar={trackID}` filter with random sorting
+2. **Album Radio**: Fetches sonically similar albums, then gets tracks from each
+3. **Artist Radio**: Fetches sonically similar artists, then gets tracks from each
+
+### Technical Requirements
+
+Full radio functionality requires:
+
+- **Plex Pass** subscription (for sonic analysis features)
+- **Plex Media Server v1.24.0+** (64-bit)
+- **Sonic analysis enabled** on the server for the music library
+
+Tracks with sonic analysis have a `musicAnalysisVersion` attribute in their metadata.
+
+### API Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/library/sections/{libraryID}/all?type=10&track.sonicallySimilar={id}` | Fetch sonically similar tracks |
+| `/library/sections/{libraryID}/all?type=9&album.sonicallySimilar={id}` | Fetch sonically similar albums |
+| `/library/sections/{libraryID}/all?type=8&artist.sonicallySimilar={id}` | Fetch sonically similar artists |
+
+### Radio Playlist Size
+
+By default, radio playlists include up to 100 tracks. The results use `sort=random` for variety.
+
 ## Subsonic/Navidrome Streaming
 
 AdAmp supports streaming music from Subsonic-compatible servers (including Navidrome). This uses the same HTTP streaming pipeline as Plex.
