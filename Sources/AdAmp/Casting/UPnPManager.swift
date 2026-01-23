@@ -952,7 +952,22 @@ class UPnPManager {
     
     // MARK: - SOAP Helpers
     
-    /// Send a RenderingControl SOAP action
+    /// Maximum number of retries for transient SOAP errors
+    private let maxRetries = 2
+    
+    /// Base delay between retries (will be multiplied by attempt number for backoff)
+    private let retryBaseDelay: UInt64 = 500_000_000  // 0.5 seconds in nanoseconds
+    
+    /// HTTP status codes that are considered transient and worth retrying
+    private func isTransientError(_ statusCode: Int) -> Bool {
+        // 500 Internal Server Error - device temporarily busy
+        // 502 Bad Gateway - proxy/gateway issue
+        // 503 Service Unavailable - device overloaded
+        // 504 Gateway Timeout - timeout from device
+        return [500, 502, 503, 504].contains(statusCode)
+    }
+    
+    /// Send a RenderingControl SOAP action with retry logic for transient errors
     @discardableResult
     private func sendRenderingControlAction(controlURL: URL, action: String, arguments: [(String, String)]) async throws -> String {
         let serviceType = "urn:schemas-upnp-org:service:RenderingControl:1"
@@ -974,29 +989,73 @@ class UPnPManager {
         </s:Envelope>
         """
         
-        var request = URLRequest(url: controlURL)
-        request.httpMethod = "POST"
-        request.setValue("text/xml; charset=\"utf-8\"", forHTTPHeaderField: "Content-Type")
-        request.setValue("\"\(serviceType)#\(action)\"", forHTTPHeaderField: "SOAPACTION")
-        request.httpBody = soapBody.data(using: .utf8)
-        request.timeoutInterval = 10
+        var lastError: Error?
         
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw CastError.networkError(NSError(domain: "UPnP", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
+        for attempt in 0...maxRetries {
+            if attempt > 0 {
+                // Exponential backoff: 0.5s, 1s, 2s
+                let delay = retryBaseDelay * UInt64(1 << (attempt - 1))
+                NSLog("UPnPManager: Retrying RenderingControl %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
+                try? await Task.sleep(nanoseconds: delay)
+            }
+            
+            var request = URLRequest(url: controlURL)
+            request.httpMethod = "POST"
+            request.setValue("text/xml; charset=\"utf-8\"", forHTTPHeaderField: "Content-Type")
+            request.setValue("\"\(serviceType)#\(action)\"", forHTTPHeaderField: "SOAPACTION")
+            request.httpBody = soapBody.data(using: .utf8)
+            request.timeoutInterval = 10
+            
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw CastError.networkError(NSError(domain: "UPnP", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
+                }
+                
+                if httpResponse.statusCode >= 400 {
+                    let errorBody = String(data: data, encoding: .utf8) ?? ""
+                    
+                    // Check if this is a transient error worth retrying
+                    if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
+                        NSLog("UPnPManager: RenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
+                        lastError = CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
+                        continue
+                    }
+                    
+                    NSLog("UPnPManager: RenderingControl SOAP error %d: %@", httpResponse.statusCode, errorBody)
+                    throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
+                }
+                
+                // Success
+                if attempt > 0 {
+                    NSLog("UPnPManager: RenderingControl %@ succeeded on retry attempt %d", action, attempt + 1)
+                }
+                return String(data: data, encoding: .utf8) ?? ""
+                
+            } catch let error as CastError {
+                lastError = error
+                // Don't retry CastErrors that aren't from transient HTTP errors
+                if case .playbackFailed(let msg) = error, msg.contains("SOAP error") {
+                    // Already handled above - this is from a non-transient error
+                    throw error
+                }
+                throw error
+            } catch {
+                // Network errors might be transient too
+                if attempt < maxRetries {
+                    NSLog("UPnPManager: RenderingControl %@ network error, will retry: %@", action, error.localizedDescription)
+                    lastError = CastError.networkError(error)
+                    continue
+                }
+                throw CastError.networkError(error)
+            }
         }
         
-        if httpResponse.statusCode >= 400 {
-            let errorBody = String(data: data, encoding: .utf8) ?? ""
-            NSLog("UPnPManager: RenderingControl SOAP error %d: %@", httpResponse.statusCode, errorBody)
-            throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
-        }
-        
-        return String(data: data, encoding: .utf8) ?? ""
+        throw lastError ?? CastError.playbackFailed("Unknown error after retries")
     }
     
-    /// Send a SOAP action to the device
+    /// Send a SOAP action to the device with retry logic for transient errors
     @discardableResult
     private func sendSOAPAction(controlURL: URL, action: String, arguments: [(String, String)]) async throws -> String {
         let serviceType = "urn:schemas-upnp-org:service:AVTransport:1"
@@ -1018,26 +1077,70 @@ class UPnPManager {
         </s:Envelope>
         """
         
-        var request = URLRequest(url: controlURL)
-        request.httpMethod = "POST"
-        request.setValue("text/xml; charset=\"utf-8\"", forHTTPHeaderField: "Content-Type")
-        request.setValue("\"\(serviceType)#\(action)\"", forHTTPHeaderField: "SOAPACTION")
-        request.httpBody = soapBody.data(using: .utf8)
-        request.timeoutInterval = 10
+        var lastError: Error?
         
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw CastError.networkError(NSError(domain: "UPnP", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
+        for attempt in 0...maxRetries {
+            if attempt > 0 {
+                // Exponential backoff: 0.5s, 1s, 2s
+                let delay = retryBaseDelay * UInt64(1 << (attempt - 1))
+                NSLog("UPnPManager: Retrying AVTransport %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
+                try? await Task.sleep(nanoseconds: delay)
+            }
+            
+            var request = URLRequest(url: controlURL)
+            request.httpMethod = "POST"
+            request.setValue("text/xml; charset=\"utf-8\"", forHTTPHeaderField: "Content-Type")
+            request.setValue("\"\(serviceType)#\(action)\"", forHTTPHeaderField: "SOAPACTION")
+            request.httpBody = soapBody.data(using: .utf8)
+            request.timeoutInterval = 10
+            
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw CastError.networkError(NSError(domain: "UPnP", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
+                }
+                
+                if httpResponse.statusCode >= 400 {
+                    let errorBody = String(data: data, encoding: .utf8) ?? ""
+                    
+                    // Check if this is a transient error worth retrying
+                    if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
+                        NSLog("UPnPManager: AVTransport %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
+                        lastError = CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
+                        continue
+                    }
+                    
+                    NSLog("UPnPManager: SOAP error %d: %@", httpResponse.statusCode, errorBody)
+                    throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
+                }
+                
+                // Success
+                if attempt > 0 {
+                    NSLog("UPnPManager: AVTransport %@ succeeded on retry attempt %d", action, attempt + 1)
+                }
+                return String(data: data, encoding: .utf8) ?? ""
+                
+            } catch let error as CastError {
+                lastError = error
+                // Don't retry CastErrors that aren't from transient HTTP errors
+                if case .playbackFailed(let msg) = error, msg.contains("SOAP error") {
+                    // Already handled above - this is from a non-transient error
+                    throw error
+                }
+                throw error
+            } catch {
+                // Network errors might be transient too
+                if attempt < maxRetries {
+                    NSLog("UPnPManager: AVTransport %@ network error, will retry: %@", action, error.localizedDescription)
+                    lastError = CastError.networkError(error)
+                    continue
+                }
+                throw CastError.networkError(error)
+            }
         }
         
-        if httpResponse.statusCode >= 400 {
-            let errorBody = String(data: data, encoding: .utf8) ?? ""
-            NSLog("UPnPManager: SOAP error %d: %@", httpResponse.statusCode, errorBody)
-            throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
-        }
-        
-        return String(data: data, encoding: .utf8) ?? ""
+        throw lastError ?? CastError.playbackFailed("Unknown error after retries")
     }
     
     /// Format time as HH:MM:SS for SOAP
