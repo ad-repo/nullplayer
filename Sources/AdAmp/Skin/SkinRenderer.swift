@@ -488,15 +488,27 @@ class SkinRenderer {
         
         if useSystemFont {
             // System font rendering - supports all Unicode characters
+            // The context is flipped for Winamp skin rendering, so we need to unflip
+            // temporarily for NSAttributedString.draw() to render correctly
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: NSColor.green,
                 .font: NSFont.systemFont(ofSize: 8, weight: .regular)
             ]
             let textSize = text.size(withAttributes: attrs)
             
+            // Save and unflip the context for text drawing
+            context.saveGState()
+            
+            // Unflip: the context was flipped with translateBy(0, height) + scaleBy(1, -1)
+            // We need to reverse this for the marquee area
+            let centerY = marqueeRect.midY
+            context.translateBy(x: 0, y: centerY)
+            context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: 0, y: -centerY)
+            
             // If text fits, just draw it
             if textSize.width <= marqueeRect.width {
-                text.draw(at: NSPoint(x: marqueeRect.minX, y: marqueeRect.minY + 2), withAttributes: attrs)
+                text.draw(at: NSPoint(x: marqueeRect.minX, y: marqueeRect.minY), withAttributes: attrs)
             } else {
                 // Circular scrolling with system font
                 let separator = "  -  "
@@ -506,9 +518,11 @@ class SkinRenderer {
                 
                 for pass in 0..<2 {
                     let xPos = marqueeRect.minX - adjustedOffset + (CGFloat(pass) * fullWidth)
-                    fullText.draw(at: NSPoint(x: xPos, y: marqueeRect.minY + 2), withAttributes: attrs)
+                    fullText.draw(at: NSPoint(x: xPos, y: marqueeRect.minY), withAttributes: attrs)
                 }
             }
+            
+            context.restoreGState()
         } else {
             // Skin bitmap font rendering - Latin characters only
             let charWidth = SkinElements.TextFont.charWidth
