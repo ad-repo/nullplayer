@@ -748,6 +748,62 @@ class PlexManager {
         plexTracks.compactMap { convertToTrack($0) }
     }
     
+    /// Convert a Plex movie to an AudioEngine-compatible Track (video type)
+    func convertToTrack(_ movie: PlexMovie) -> Track? {
+        guard let streamURL = streamURL(for: movie) else {
+            NSLog("PlexManager: Cannot convert movie '%@' - no stream URL", movie.title)
+            return nil
+        }
+        
+        return Track(
+            url: streamURL,
+            title: movie.title,
+            artist: movie.studio,  // Use studio as "artist" for movies
+            album: nil,
+            duration: movie.durationInSeconds,
+            bitrate: movie.media.first?.bitrate,
+            sampleRate: nil,
+            channels: movie.media.first?.audioChannels,
+            plexRatingKey: movie.id,
+            mediaType: .video
+        )
+    }
+    
+    /// Convert a Plex episode to an AudioEngine-compatible Track (video type)
+    func convertToTrack(_ episode: PlexEpisode) -> Track? {
+        guard let streamURL = streamURL(for: episode) else {
+            NSLog("PlexManager: Cannot convert episode '%@' - no stream URL", episode.title)
+            return nil
+        }
+        
+        // Build a descriptive title: "Show - S01E02 - Episode Title"
+        let showTitle = episode.grandparentTitle ?? "Unknown Show"
+        let episodeTitle = "\(showTitle) - \(episode.episodeIdentifier) - \(episode.title)"
+        
+        return Track(
+            url: streamURL,
+            title: episodeTitle,
+            artist: showTitle,  // Use show name as "artist"
+            album: episode.parentTitle,  // Use season name as "album"
+            duration: episode.durationInSeconds,
+            bitrate: episode.media.first?.bitrate,
+            sampleRate: nil,
+            channels: episode.media.first?.audioChannels,
+            plexRatingKey: episode.id,
+            mediaType: .video
+        )
+    }
+    
+    /// Convert multiple Plex movies to AudioEngine-compatible Tracks
+    func convertToTracks(_ movies: [PlexMovie]) -> [Track] {
+        movies.compactMap { convertToTrack($0) }
+    }
+    
+    /// Convert multiple Plex episodes to AudioEngine-compatible Tracks
+    func convertToTracks(_ episodes: [PlexEpisode]) -> [Track] {
+        episodes.compactMap { convertToTrack($0) }
+    }
+    
     // MARK: - Radio/Mix Generation
     
     /// Create a track radio based on a seed track

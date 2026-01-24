@@ -437,6 +437,34 @@ class WindowManager {
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
     }
     
+    /// Play a video Track from the playlist
+    /// Called by AudioEngine when it encounters a video track
+    func playVideoTrack(_ track: Track) {
+        guard track.mediaType == .video else {
+            NSLog("WindowManager: playVideoTrack called with non-video track")
+            return
+        }
+        
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        
+        // Set up callback for when video finishes (to advance playlist)
+        videoPlayerWindowController?.onVideoFinishedForPlaylist = { [weak self] in
+            self?.videoTrackDidFinish()
+        }
+        
+        videoPlayerWindowController?.play(url: track.url, title: track.displayTitle)
+        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+        NSLog("WindowManager: Playing video track from playlist: %@", track.title)
+    }
+    
+    /// Called when a video track from the playlist finishes playing
+    private func videoTrackDidFinish() {
+        NSLog("WindowManager: Video track finished, advancing playlist")
+        audioEngine.next()
+    }
+    
     var isVideoPlayerVisible: Bool {
         videoPlayerWindowController?.window?.isVisible == true
     }

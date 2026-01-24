@@ -5286,11 +5286,21 @@ class PlexBrowserView: NSView {
             playItem.representedObject = movie
             menu.addItem(playItem)
             
+            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddMovieToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = movie
+            menu.addItem(addItem)
+            
         case .show(let show):
             let expandItem = NSMenuItem(title: expandedShows.contains(show.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
             expandItem.representedObject = item
             menu.addItem(expandItem)
+            
+            let addItem = NSMenuItem(title: "Add All Episodes to Playlist", action: #selector(contextMenuAddShowToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = show
+            menu.addItem(addItem)
             
         case .season(let season):
             let expandItem = NSMenuItem(title: expandedSeasons.contains(season.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
@@ -5298,11 +5308,21 @@ class PlexBrowserView: NSView {
             expandItem.representedObject = item
             menu.addItem(expandItem)
             
+            let addItem = NSMenuItem(title: "Add Season to Playlist", action: #selector(contextMenuAddSeasonToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = season
+            menu.addItem(addItem)
+            
         case .episode(let episode):
             let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEpisode(_:)), keyEquivalent: "")
             playItem.target = self
             playItem.representedObject = episode
             menu.addItem(playItem)
+            
+            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddEpisodeToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = episode
+            menu.addItem(addItem)
             
         case .localTrack(let track):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalTrack(_:)), keyEquivalent: "")
@@ -5682,6 +5702,65 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuPlayArtist(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? PlexArtist else { return }
         playArtist(artist)
+    }
+    
+    // MARK: - Plex Video Context Menu Actions
+    
+    @objc private func contextMenuAddMovieToPlaylist(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie,
+              let track = PlexManager.shared.convertToTrack(movie) else {
+            NSLog("Failed to convert movie to track for playlist")
+            return
+        }
+        WindowManager.shared.audioEngine.loadTracks([track])
+        NSLog("Added movie to playlist: %@", movie.title)
+    }
+    
+    @objc private func contextMenuAddEpisodeToPlaylist(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode,
+              let track = PlexManager.shared.convertToTrack(episode) else {
+            NSLog("Failed to convert episode to track for playlist")
+            return
+        }
+        WindowManager.shared.audioEngine.loadTracks([track])
+        NSLog("Added episode to playlist: %@", episode.title)
+    }
+    
+    @objc private func contextMenuAddSeasonToPlaylist(_ sender: NSMenuItem) {
+        guard let season = sender.representedObject as? PlexSeason else { return }
+        Task { @MainActor in
+            do {
+                let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                let tracks = PlexManager.shared.convertToTracks(episodes)
+                if !tracks.isEmpty {
+                    WindowManager.shared.audioEngine.loadTracks(tracks)
+                    NSLog("Added %d episodes from season to playlist: %@", tracks.count, season.title)
+                }
+            } catch {
+                NSLog("Failed to add season to playlist: %@", error.localizedDescription)
+            }
+        }
+    }
+    
+    @objc private func contextMenuAddShowToPlaylist(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow else { return }
+        Task { @MainActor in
+            do {
+                let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
+                var allTracks: [Track] = []
+                for season in seasons {
+                    let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                    let tracks = PlexManager.shared.convertToTracks(episodes)
+                    allTracks.append(contentsOf: tracks)
+                }
+                if !allTracks.isEmpty {
+                    WindowManager.shared.audioEngine.loadTracks(allTracks)
+                    NSLog("Added %d episodes from show to playlist: %@", allTracks.count, show.title)
+                }
+            } catch {
+                NSLog("Failed to add show to playlist: %@", error.localizedDescription)
+            }
+        }
     }
     
     // MARK: - Plex Radio Actions

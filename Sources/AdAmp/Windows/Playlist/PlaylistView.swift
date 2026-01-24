@@ -287,7 +287,10 @@ class PlaylistView: NSView {
         let durationX = rect.maxX - durationSize.width - 4
         let titleX = rect.minX + 2
         let titleMaxWidth = durationX - titleX - 6
-        let titleText = "\(index + 1). \(track.displayTitle)"
+        
+        // Prepend [V] indicator for video tracks
+        let videoPrefix = track.mediaType == .video ? "[V] " : ""
+        let titleText = "\(index + 1). \(videoPrefix)\(track.displayTitle)"
         let textWidth = titleText.size(withAttributes: attrs).width
         
         // Draw duration (right-aligned)

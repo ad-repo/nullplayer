@@ -26,6 +26,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Current Plex episode (if playing Plex content)
     private var currentPlexEpisode: PlexEpisode?
     
+    /// Callback for when video finishes playing (for playlist integration)
+    var onVideoFinishedForPlaylist: (() -> Void)?
+    
+    /// Flag to track if this video was started from the playlist
+    private var isFromPlaylist: Bool = false
+    
     /// Current playback time
     var currentTime: TimeInterval {
         return videoPlayerView.currentPlaybackTime
@@ -135,10 +141,22 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             PlexVideoPlaybackReporter.shared.updatePosition(position)
         }
         
-        // Track playback completion for Plex scrobbling
+        // Track playback completion for Plex scrobbling and playlist advancement
         videoPlayerView.onPlaybackFinished = { [weak self] position in
-            guard let self = self, self.isPlexContent else { return }
-            PlexVideoPlaybackReporter.shared.videoDidStop(at: position, finished: true)
+            guard let self = self else { return }
+            
+            // Report to Plex if playing Plex content
+            if self.isPlexContent {
+                PlexVideoPlaybackReporter.shared.videoDidStop(at: position, finished: true)
+            }
+            
+            // Advance playlist if this video was from the playlist
+            if self.isFromPlaylist {
+                NSLog("VideoPlayer: Video finished from playlist, invoking callback")
+                self.isFromPlaylist = false
+                self.onVideoFinishedForPlaylist?()
+                self.onVideoFinishedForPlaylist = nil  // Clear callback after use
+            }
         }
         
         // Set up local event monitor for keyboard shortcuts (especially Escape in fullscreen)
@@ -203,6 +221,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Playback Control
     
     /// Play a video from URL with optional title
+    /// If called from WindowManager.playVideoTrack, the onVideoFinishedForPlaylist callback will be set
     func play(url: URL, title: String) {
         // Report stop to Plex if currently playing Plex content (before clearing state)
         if isPlexContent {
@@ -213,6 +232,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Clear any Plex content (this is a non-Plex video)
         currentPlexMovie = nil
         currentPlexEpisode = nil
+        
+        // Check if this is being played from the playlist (callback was set)
+        isFromPlaylist = onVideoFinishedForPlaylist != nil
         
         currentTitle = title
         window?.title = title
