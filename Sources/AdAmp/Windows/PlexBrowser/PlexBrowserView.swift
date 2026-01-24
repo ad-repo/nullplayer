@@ -1007,7 +1007,7 @@ class PlexBrowserView: NSView {
             let countX = visX - countWidth - 24
             drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
             let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-            drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+            drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             
         case .plex(let serverId):
             let manager = PlexManager.shared
@@ -1127,7 +1127,7 @@ class PlexBrowserView: NSView {
                 let countX = visX - countWidth - countSpacing
                 drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
                 let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
                 
                 // Draw radio icon with padding from item count (only for music libraries)
                 if manager.currentLibrary?.type == "artist" {
@@ -1219,7 +1219,7 @@ class PlexBrowserView: NSView {
                 let countX = visX - countWidth - 24
                 drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
                 let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 // No Subsonic server configured - show add server message
                 let linkText = "Click to add a Subsonic server"

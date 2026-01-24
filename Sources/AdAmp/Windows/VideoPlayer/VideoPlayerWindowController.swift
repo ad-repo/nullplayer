@@ -167,8 +167,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             if self.isFromPlaylist {
                 NSLog("VideoPlayer: Video finished from playlist, invoking callback")
                 self.isFromPlaylist = false
-                self.onVideoFinishedForPlaylist?()
-                self.onVideoFinishedForPlaylist = nil  // Clear callback after use
+                // Capture and clear callback BEFORE invoking to prevent clearing a newly-set callback
+                // (the callback may load the next video which sets a new callback)
+                let callback = self.onVideoFinishedForPlaylist
+                self.onVideoFinishedForPlaylist = nil
+                callback?()
             }
         }
         
