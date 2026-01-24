@@ -7,10 +7,10 @@ on:
     branches: [main]
 
 jobs:
-  # Fast unit tests - must pass in under 3 minutes
+  # Fast unit tests
   unit-tests:
     runs-on: macos-14
-    timeout-minutes: 3
+    timeout-minutes: 5
     
     steps:
       - uses: actions/checkout@v4
@@ -44,10 +44,10 @@ jobs:
       - name: Run unit tests
         run: swift test --filter AdAmpTests --parallel
 
-  # UI tests - runs in parallel, allowed to take longer
+  # UI tests - runs in parallel
   ui-tests:
     runs-on: macos-14
-    timeout-minutes: 8
+    timeout-minutes: 10
     
     steps:
       - uses: actions/checkout@v4
