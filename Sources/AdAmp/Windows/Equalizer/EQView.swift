@@ -3,7 +3,7 @@ import AppKit
 // =============================================================================
 // EQ VIEW - Equalizer window implementation
 // =============================================================================
-// For skin format documentation, see: docs/SKIN_FORMAT_RESEARCH.md
+// For skin format documentation, see: AGENT_DOCS/SKIN_FORMAT_RESEARCH.md
 //
 // Color scale for sliders and graph curve:
 // - RED at top (+12dB boost)

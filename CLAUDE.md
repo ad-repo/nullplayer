@@ -11,12 +11,12 @@
 
 | Doc | Purpose |
 |-----|---------|
-| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Features, menus, keyboard shortcuts |
-| [docs/UI_GUIDE.md](docs/UI_GUIDE.md) | Coordinate systems, scaling, skin sprites |
-| [docs/AUDIO_SYSTEM.md](docs/AUDIO_SYSTEM.md) | Audio engine, EQ, spectrum, Plex/Subsonic streaming |
-| [docs/VISUALIZATIONS.md](docs/VISUALIZATIONS.md) | Album art and ProjectM visualizers |
-| [docs/TESTING.md](docs/TESTING.md) | UI testing mode, accessibility identifiers |
-| [docs/SONOS.md](docs/SONOS.md) | Sonos discovery (SSDP + mDNS), casting, troubleshooting |
+| [AGENT_DOCS/USER_GUIDE.md](AGENT_DOCS/USER_GUIDE.md) | Features, menus, keyboard shortcuts |
+| [AGENT_DOCS/UI_GUIDE.md](AGENT_DOCS/UI_GUIDE.md) | Coordinate systems, scaling, skin sprites |
+| [AGENT_DOCS/AUDIO_SYSTEM.md](AGENT_DOCS/AUDIO_SYSTEM.md) | Audio engine, EQ, spectrum, Plex/Subsonic streaming |
+| [AGENT_DOCS/VISUALIZATIONS.md](AGENT_DOCS/VISUALIZATIONS.md) | Album art and ProjectM visualizers |
+| [AGENT_DOCS/TESTING.md](AGENT_DOCS/TESTING.md) | UI testing mode, accessibility identifiers |
+| [AGENT_DOCS/SONOS.md](AGENT_DOCS/SONOS.md) | Sonos discovery (SSDP + mDNS), casting, troubleshooting |
 
 ## Architecture
 
@@ -68,7 +68,7 @@ Sources/AdAmp/
 
 ## Before Making UI Changes
 
-1. Read [docs/UI_GUIDE.md](docs/UI_GUIDE.md)
+1. Read [AGENT_DOCS/UI_GUIDE.md](AGENT_DOCS/UI_GUIDE.md)
 2. Check `SkinElements.swift` for sprite coordinates
 3. Follow existing patterns in `MainWindowView` or `EQView`
 4. Test at different window sizes (scaling bugs)

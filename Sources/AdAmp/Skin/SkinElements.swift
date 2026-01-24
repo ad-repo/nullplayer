@@ -4,7 +4,7 @@ import AppKit
 // SKIN ELEMENTS - Sprite coordinates and layout constants
 // =============================================================================
 // For comprehensive documentation on Winamp skin format, sprite coordinates,
-// and implementation notes, see: docs/SKIN_FORMAT_RESEARCH.md
+// and implementation notes, see: AGENT_DOCS/SKIN_FORMAT_RESEARCH.md
 //
 // Primary external reference for coordinates:
 // https://raw.githubusercontent.com/captbaritone/webamp/master/packages/webamp/js/skinSprites.ts

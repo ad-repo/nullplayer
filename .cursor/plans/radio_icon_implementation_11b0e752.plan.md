@@ -33,7 +33,7 @@ isProject: false
 
 ## Overview
 
-Implement all radio station types documented in [PLEX_API.md](docs/PLEX_API.md) with both **Sonic** and **Non-Sonic** versions (no fallback between them).
+Implement all radio station types documented in [PLEX_API.md](AGENT_DOCS/PLEX_API.md) with both **Sonic** and **Non-Sonic** versions (no fallback between them).
 
 ## Radio Menu Structure
 
