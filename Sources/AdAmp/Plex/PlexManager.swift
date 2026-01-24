@@ -652,6 +652,32 @@ class PlexManager {
         return try await client.fetchEpisodes(forSeason: season.id)
     }
     
+    // MARK: - Detailed Metadata (includes external IDs)
+    
+    /// Fetch detailed movie metadata including IMDB/TMDB IDs
+    func fetchMovieDetails(movieID: String) async throws -> PlexMovie? {
+        guard let client = serverClient else {
+            return nil
+        }
+        return try await client.fetchMovieDetails(movieID: movieID)
+    }
+    
+    /// Fetch detailed show metadata including IMDB/TMDB/TVDB IDs
+    func fetchShowDetails(showID: String) async throws -> PlexShow? {
+        guard let client = serverClient else {
+            return nil
+        }
+        return try await client.fetchShowDetails(showID: showID)
+    }
+    
+    /// Fetch detailed episode metadata including IMDB ID
+    func fetchEpisodeDetails(episodeID: String) async throws -> PlexEpisode? {
+        guard let client = serverClient else {
+            return nil
+        }
+        return try await client.fetchEpisodeDetails(episodeID: episodeID)
+    }
+    
     // MARK: - Playlist Operations
     
     /// Fetch all playlists (not library-specific)

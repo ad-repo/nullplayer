@@ -493,6 +493,30 @@ AdAmp filters these by:
 - Using the longest media entry for movie duration/playback
 - Filtering TV shows with ≤1 season AND ≤2 episodes (likely bonus content)
 
+### External IDs (IMDB, TMDB, TVDB)
+
+Movies, TV shows, and episodes include external service IDs in the `Guid` array:
+
+```json
+{
+  "title": "The Matrix",
+  "Guid": [
+    {"id": "imdb://tt0133093"},
+    {"id": "tmdb://603"},
+    {"id": "tvdb://12345"}
+  ]
+}
+```
+
+| Service | URL Pattern | Used For |
+|---------|-------------|----------|
+| IMDB | `https://www.imdb.com/title/{id}/` | Movies, Shows, Episodes |
+| TMDB | `https://www.themoviedb.org/movie/{id}` | Movies |
+| TMDB | `https://www.themoviedb.org/tv/{id}` | TV Shows |
+| TVDB | `https://www.thetvdb.com/series/{id}` | TV Shows |
+
+AdAmp uses these IDs to provide "View Online" context menu links for IMDB, TMDB, and Rotten Tomatoes (search).
+
 ## Requirements
 
 - **Plex Pass** subscription (for sonic analysis)

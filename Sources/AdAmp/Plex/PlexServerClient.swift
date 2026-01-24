@@ -156,6 +156,20 @@ class PlexServerClient {
                 
                 // Log detailed decoding error for debugging
                 NSLog("PlexServerClient: JSON decoding failed for %@ (data size: %d bytes)", request.url?.path ?? "unknown", data.count)
+                if let decodingError = initialError as? DecodingError {
+                    switch decodingError {
+                    case .typeMismatch(let type, let context):
+                        NSLog("PlexServerClient: Type mismatch: expected %@, path: %@", String(describing: type), context.codingPath.map { $0.stringValue }.joined(separator: "."))
+                    case .valueNotFound(let type, let context):
+                        NSLog("PlexServerClient: Value not found: %@, path: %@", String(describing: type), context.codingPath.map { $0.stringValue }.joined(separator: "."))
+                    case .keyNotFound(let key, let context):
+                        NSLog("PlexServerClient: Key not found: %@, path: %@", key.stringValue, context.codingPath.map { $0.stringValue }.joined(separator: "."))
+                    case .dataCorrupted(let context):
+                        NSLog("PlexServerClient: Data corrupted: %@, path: %@", context.debugDescription, context.codingPath.map { $0.stringValue }.joined(separator: "."))
+                    @unknown default:
+                        NSLog("PlexServerClient: Unknown decoding error: %@", initialError.localizedDescription)
+                    }
+                }
                 
                 throw initialError
             }
@@ -389,6 +403,47 @@ class PlexServerClient {
         
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         return response.mediaContainer.metadata?.map { $0.toEpisode() } ?? []
+    }
+    
+    // MARK: - Detailed Item Metadata
+    
+    /// Fetch detailed metadata for a movie (includes external IDs like IMDB, TMDB)
+    func fetchMovieDetails(movieID: String) async throws -> PlexMovie? {
+        let queryItems = [
+            URLQueryItem(name: "includeGuids", value: "1")
+        ]
+        guard let request = buildRequest(path: "/library/metadata/\(movieID)", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        return response.mediaContainer.metadata?.first?.toMovie()
+    }
+    
+    /// Fetch detailed metadata for a TV show (includes external IDs like IMDB, TMDB, TVDB)
+    func fetchShowDetails(showID: String) async throws -> PlexShow? {
+        let queryItems = [
+            URLQueryItem(name: "includeGuids", value: "1")
+        ]
+        guard let request = buildRequest(path: "/library/metadata/\(showID)", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        return response.mediaContainer.metadata?.first?.toShow()
+    }
+    
+    /// Fetch detailed metadata for an episode (includes external IDs like IMDB)
+    func fetchEpisodeDetails(episodeID: String) async throws -> PlexEpisode? {
+        let queryItems = [
+            URLQueryItem(name: "includeGuids", value: "1")
+        ]
+        guard let request = buildRequest(path: "/library/metadata/\(episodeID)", queryItems: queryItems) else {
+            throw PlexServerError.invalidURL
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        return response.mediaContainer.metadata?.first?.toEpisode()
     }
     
     // MARK: - Search

@@ -4515,6 +4515,9 @@ class PlexBrowserView: NSView {
             }
             
             let item = displayItems[clickedIndex]
+            
+            // Show context menu - uses search URLs as fallback for external links
+            // Direct IMDB/TMDB links will be used if IDs are already available
             showContextMenu(for: item, at: event)
             return
         }
@@ -5276,22 +5279,15 @@ class PlexBrowserView: NSView {
         } else {
             selectedIndices = [index]
             
-            // Single-click on playable items plays them immediately
+            // Single-click on playable audio items plays them immediately
+            // Video items (movies, episodes) require double-click to play
             switch item.type {
             case .track:
                 playTrack(item)
-            case .movie(let movie):
-                // Load poster in browser background, then play
-                loadArtworkForSelection()
-                playMovie(movie)
-            case .episode(let episode):
-                // Load poster in browser background, then play
-                loadArtworkForSelection()
-                playEpisode(episode)
             case .localTrack(let track):
                 playLocalTrack(track)
             default:
-                // For non-playable items, load artwork from selection
+                // For non-playable items and video items, just load artwork
                 loadArtworkForSelection()
             }
         }
@@ -5466,6 +5462,76 @@ class PlexBrowserView: NSView {
     // Note: rightMouseDown is now defined in the Mouse Events section above
     // This section just contains the showContextMenu helper
     
+    // MARK: Detailed Metadata Fetching for Context Menu
+    
+    /// Fetch detailed movie metadata (with IMDB/TMDB IDs) for context menu
+    private func fetchMovieDetailsForMenu(_ movie: PlexMovie) async -> PlexMovie {
+        // If we already have the IMDB ID, no need to fetch
+        if movie.imdbId != nil {
+            return movie
+        }
+        
+        do {
+            if let detailed = try await PlexManager.shared.fetchMovieDetails(movieID: movie.id) {
+                NSLog("Fetched movie details for %@: imdbId=%@, tmdbId=%@", movie.title, detailed.imdbId ?? "nil", detailed.tmdbId ?? "nil")
+                return detailed
+            }
+        } catch {
+            NSLog("Failed to fetch movie details: %@", error.localizedDescription)
+        }
+        return movie
+    }
+    
+    /// Fetch detailed show metadata (with IMDB/TMDB/TVDB IDs) for context menu
+    private func fetchShowDetailsForMenu(_ show: PlexShow) async -> PlexShow {
+        // If we already have the IMDB ID, no need to fetch
+        if show.imdbId != nil {
+            return show
+        }
+        
+        do {
+            if let detailed = try await PlexManager.shared.fetchShowDetails(showID: show.id) {
+                NSLog("Fetched show details for %@: imdbId=%@, tmdbId=%@", show.title, detailed.imdbId ?? "nil", detailed.tmdbId ?? "nil")
+                return detailed
+            }
+        } catch {
+            NSLog("Failed to fetch show details: %@", error.localizedDescription)
+        }
+        return show
+    }
+    
+    /// Fetch detailed episode metadata (with IMDB ID) for context menu
+    private func fetchEpisodeDetailsForMenu(_ episode: PlexEpisode) async -> PlexEpisode {
+        // If we already have the IMDB ID, no need to fetch
+        if episode.imdbId != nil {
+            return episode
+        }
+        
+        do {
+            if let detailed = try await PlexManager.shared.fetchEpisodeDetails(episodeID: episode.id) {
+                NSLog("Fetched episode details for %@: imdbId=%@", episode.title, detailed.imdbId ?? "nil")
+                return detailed
+            }
+        } catch {
+            NSLog("Failed to fetch episode details: %@", error.localizedDescription)
+        }
+        return episode
+    }
+    
+    /// Show context menu with a specific item type (used when we've fetched detailed metadata)
+    private func showContextMenu(for itemType: PlexDisplayItem.ItemType, item: PlexDisplayItem, at event: NSEvent) {
+        // Create a new display item with the detailed type
+        let detailedItem = PlexDisplayItem(
+            id: item.id,
+            title: item.title,
+            info: item.info,
+            indentLevel: item.indentLevel,
+            hasChildren: item.hasChildren,
+            type: itemType
+        )
+        showContextMenu(for: detailedItem, at: event)
+    }
+    
     private func showContextMenu(for item: PlexDisplayItem, at event: NSEvent) {
         let menu = NSMenu()
         
@@ -5538,6 +5604,30 @@ class PlexBrowserView: NSView {
             addItem.representedObject = movie
             menu.addItem(addItem)
             
+            // External links submenu
+            menu.addItem(NSMenuItem.separator())
+            
+            let linksItem = NSMenuItem(title: "View Online", action: nil, keyEquivalent: "")
+            let linksMenu = NSMenu()
+            
+            let imdbItem = NSMenuItem(title: "IMDB", action: #selector(contextMenuOpenIMDB(_:)), keyEquivalent: "")
+            imdbItem.target = self
+            imdbItem.representedObject = movie
+            linksMenu.addItem(imdbItem)
+            
+            let tmdbItem = NSMenuItem(title: "TMDB", action: #selector(contextMenuOpenTMDB(_:)), keyEquivalent: "")
+            tmdbItem.target = self
+            tmdbItem.representedObject = movie
+            linksMenu.addItem(tmdbItem)
+            
+            let rtItem = NSMenuItem(title: "Rotten Tomatoes", action: #selector(contextMenuOpenRottenTomatoes(_:)), keyEquivalent: "")
+            rtItem.target = self
+            rtItem.representedObject = movie
+            linksMenu.addItem(rtItem)
+            
+            linksItem.submenu = linksMenu
+            menu.addItem(linksItem)
+            
         case .show(let show):
             let expandItem = NSMenuItem(title: expandedShows.contains(show.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
@@ -5548,6 +5638,30 @@ class PlexBrowserView: NSView {
             addItem.target = self
             addItem.representedObject = show
             menu.addItem(addItem)
+            
+            // External links submenu
+            menu.addItem(NSMenuItem.separator())
+            
+            let linksItem = NSMenuItem(title: "View Online", action: nil, keyEquivalent: "")
+            let linksMenu = NSMenu()
+            
+            let imdbItem = NSMenuItem(title: "IMDB", action: #selector(contextMenuOpenIMDBShow(_:)), keyEquivalent: "")
+            imdbItem.target = self
+            imdbItem.representedObject = show
+            linksMenu.addItem(imdbItem)
+            
+            let tmdbItem = NSMenuItem(title: "TMDB", action: #selector(contextMenuOpenTMDBShow(_:)), keyEquivalent: "")
+            tmdbItem.target = self
+            tmdbItem.representedObject = show
+            linksMenu.addItem(tmdbItem)
+            
+            let rtItem = NSMenuItem(title: "Rotten Tomatoes", action: #selector(contextMenuOpenRottenTomatoesShow(_:)), keyEquivalent: "")
+            rtItem.target = self
+            rtItem.representedObject = show
+            linksMenu.addItem(rtItem)
+            
+            linksItem.submenu = linksMenu
+            menu.addItem(linksItem)
             
         case .season(let season):
             let expandItem = NSMenuItem(title: expandedSeasons.contains(season.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
@@ -5570,6 +5684,30 @@ class PlexBrowserView: NSView {
             addItem.target = self
             addItem.representedObject = episode
             menu.addItem(addItem)
+            
+            // External links submenu
+            menu.addItem(NSMenuItem.separator())
+            
+            let linksItem = NSMenuItem(title: "View Online", action: nil, keyEquivalent: "")
+            let linksMenu = NSMenu()
+            
+            let imdbItem = NSMenuItem(title: "IMDB", action: #selector(contextMenuOpenIMDBEpisode(_:)), keyEquivalent: "")
+            imdbItem.target = self
+            imdbItem.representedObject = episode
+            linksMenu.addItem(imdbItem)
+            
+            let tmdbItem = NSMenuItem(title: "TMDB", action: #selector(contextMenuOpenTMDBEpisode(_:)), keyEquivalent: "")
+            tmdbItem.target = self
+            tmdbItem.representedObject = episode
+            linksMenu.addItem(tmdbItem)
+            
+            let rtItem = NSMenuItem(title: "Rotten Tomatoes", action: #selector(contextMenuOpenRottenTomatoesEpisode(_:)), keyEquivalent: "")
+            rtItem.target = self
+            rtItem.representedObject = episode
+            linksMenu.addItem(rtItem)
+            
+            linksItem.submenu = linksMenu
+            menu.addItem(linksItem)
             
         case .localTrack(let track):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalTrack(_:)), keyEquivalent: "")
@@ -6145,6 +6283,173 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuPlayEpisode(_ sender: NSMenuItem) {
         guard let episode = sender.representedObject as? PlexEpisode else { return }
         playEpisode(episode)
+    }
+    
+    // MARK: - External Links Context Menu Actions
+    
+    @objc private func contextMenuOpenIMDB(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie else { return }
+        
+        // If we already have the IMDB ID, open directly
+        if let imdbId = movie.imdbId {
+            if let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        
+        // Fetch detailed metadata to get IMDB ID
+        Task { @MainActor in
+            do {
+                if let detailed = try await PlexManager.shared.fetchMovieDetails(movieID: movie.id),
+                   let imdbId = detailed.imdbId,
+                   let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            } catch {
+                NSLog("Failed to fetch movie details: %@", error.localizedDescription)
+            }
+            // Fallback to search if fetch fails
+            if let url = movie.imdbURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    @objc private func contextMenuOpenTMDB(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie else { return }
+        
+        if let tmdbId = movie.tmdbId {
+            if let url = URL(string: "https://www.themoviedb.org/movie/\(tmdbId)") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        
+        Task { @MainActor in
+            do {
+                if let detailed = try await PlexManager.shared.fetchMovieDetails(movieID: movie.id),
+                   let tmdbId = detailed.tmdbId,
+                   let url = URL(string: "https://www.themoviedb.org/movie/\(tmdbId)") {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            } catch {
+                NSLog("Failed to fetch movie details: %@", error.localizedDescription)
+            }
+            if let url = movie.tmdbURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    @objc private func contextMenuOpenRottenTomatoes(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie,
+              let url = movie.rottenTomatoesSearchURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+    
+    @objc private func contextMenuOpenIMDBShow(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow else { return }
+        
+        if let imdbId = show.imdbId {
+            if let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        
+        Task { @MainActor in
+            do {
+                if let detailed = try await PlexManager.shared.fetchShowDetails(showID: show.id),
+                   let imdbId = detailed.imdbId,
+                   let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            } catch {
+                NSLog("Failed to fetch show details: %@", error.localizedDescription)
+            }
+            if let url = show.imdbURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    @objc private func contextMenuOpenTMDBShow(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow else { return }
+        
+        if let tmdbId = show.tmdbId {
+            if let url = URL(string: "https://www.themoviedb.org/tv/\(tmdbId)") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        
+        Task { @MainActor in
+            do {
+                if let detailed = try await PlexManager.shared.fetchShowDetails(showID: show.id),
+                   let tmdbId = detailed.tmdbId,
+                   let url = URL(string: "https://www.themoviedb.org/tv/\(tmdbId)") {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            } catch {
+                NSLog("Failed to fetch show details: %@", error.localizedDescription)
+            }
+            if let url = show.tmdbURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    @objc private func contextMenuOpenRottenTomatoesShow(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow,
+              let url = show.rottenTomatoesSearchURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+    
+    @objc private func contextMenuOpenIMDBEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode else { return }
+        
+        if let imdbId = episode.imdbId {
+            if let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        
+        Task { @MainActor in
+            do {
+                if let detailed = try await PlexManager.shared.fetchEpisodeDetails(episodeID: episode.id),
+                   let imdbId = detailed.imdbId,
+                   let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            } catch {
+                NSLog("Failed to fetch episode details: %@", error.localizedDescription)
+            }
+            if let url = episode.imdbURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    @objc private func contextMenuOpenTMDBEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode else { return }
+        
+        // Episodes don't have individual TMDB IDs, use search
+        if let url = episode.tmdbSearchURL {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    @objc private func contextMenuOpenRottenTomatoesEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode,
+              let url = episode.rottenTomatoesSearchURL else { return }
+        NSWorkspace.shared.open(url)
     }
     
     // MARK: - Server/Library Selection Menus
