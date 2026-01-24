@@ -55,6 +55,11 @@ let package = Package(
             name: "AdAmpTests",
             dependencies: ["AdAmp"],
             path: "Tests/AdAmpTests"
+        ),
+        .testTarget(
+            name: "AdAmpUITests",
+            dependencies: ["AdAmp"],
+            path: "Tests/AdAmpUITests"
         )
     ],
     // Use Swift 5 language mode to keep concurrency warnings as warnings, not errors

@@ -40,9 +40,9 @@ xcodebuild test -scheme AdAmp -enableCodeCoverage YES
 
 ```
 Tests/
-├── AdAmpTests/           # Unit tests (177 tests)
+├── AdAmpTests/           # Unit tests (218 tests) - run with swift test
 │   └── AdAmpTests.swift  # All unit tests in single file
-└── AdAmpUITests.disabled/ # UI tests (disabled - require app running)
+└── AdAmpUITests/         # UI tests - run with xcodebuild
     ├── AdAmpUITestCase.swift      # Base test class
     ├── Helpers/
     │   ├── AccessibilityIdentifiers.swift
