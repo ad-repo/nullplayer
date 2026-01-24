@@ -198,9 +198,18 @@ class VideoPlayerView: NSView {
         menu.addItem(withTitle: "Track Settings...", action: #selector(contextTrackSettings), keyEquivalent: "")
         
         menu.addItem(NSMenuItem.separator())
+        
+        // Always on Top toggle
+        let alwaysOnTopItem = NSMenuItem(title: "Always on Top", action: #selector(contextToggleAlwaysOnTop), keyEquivalent: "")
+        alwaysOnTopItem.target = self
+        menu.addItem(alwaysOnTopItem)
+        
         menu.addItem(withTitle: "Toggle Fullscreen", action: #selector(contextFullscreen), keyEquivalent: "f")
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Close", action: #selector(contextClose), keyEquivalent: "w")
+        
+        // Set delegate to update menu state
+        menu.delegate = self
         
         self.menu = menu
     }
@@ -214,6 +223,7 @@ class VideoPlayerView: NSView {
         )
         addTrackingArea(trackingArea)
     }
+    
     
     // MARK: - Context Menu Actions
     
@@ -240,6 +250,18 @@ class VideoPlayerView: NSView {
     
     @objc private func contextTrackSettings() {
         showTrackSelectionPanel()
+    }
+    
+    @objc private func contextToggleAlwaysOnTop() {
+        guard let window = window else { return }
+        
+        if window.level == .floating {
+            window.level = .normal
+            NSLog("VideoPlayerView: Always on Top disabled")
+        } else {
+            window.level = .floating
+            NSLog("VideoPlayerView: Always on Top enabled")
+        }
     }
     
     @objc private func contextSelectAudioTrack(_ sender: NSMenuItem) {
@@ -1186,6 +1208,15 @@ extension VideoPlayerView: TrackSelectionPanelDelegate {
 // MARK: - NSMenuDelegate
 
 extension VideoPlayerView: NSMenuDelegate {
+    func menuWillOpen(_ menu: NSMenu) {
+        // Update Always on Top checkmark when main context menu opens
+        if menu === self.menu {
+            if let alwaysOnTopItem = menu.items.first(where: { $0.action == #selector(contextToggleAlwaysOnTop) }) {
+                alwaysOnTopItem.state = (window?.level == .floating) ? .on : .off
+            }
+        }
+    }
+    
     func menuNeedsUpdate(_ menu: NSMenu) {
         // Find the parent menu item to determine which submenu this is
         guard let parentItem = self.menu?.items.first(where: { $0.submenu === menu }) else { return }

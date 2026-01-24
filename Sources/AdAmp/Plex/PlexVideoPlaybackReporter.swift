@@ -100,6 +100,25 @@ class PlexVideoPlaybackReporter {
         )
     }
     
+    /// Called when a Plex video track from playlist starts playing
+    /// Used when we have a Track with plexRatingKey but not the full PlexMovie/PlexEpisode object
+    /// - Parameters:
+    ///   - ratingKey: The Plex rating key
+    ///   - title: Video title
+    ///   - durationSeconds: Duration in seconds
+    ///   - position: Starting position in seconds (for resume)
+    func videoTrackDidStart(ratingKey: String, title: String, durationSeconds: TimeInterval, at position: TimeInterval = 0) {
+        NSLog("PlexVideoPlaybackReporter: Video track started - %@ (key: %@)", title, ratingKey)
+        
+        startTracking(
+            ratingKey: ratingKey,
+            title: title,
+            durationMs: Int(durationSeconds * 1000),
+            videoType: .movie,  // Default to movie type for playlist tracks
+            position: position
+        )
+    }
+    
     /// Called when playback is paused
     /// - Parameter position: Current position in seconds
     func videoDidPause(at position: TimeInterval) {
@@ -230,7 +249,7 @@ class PlexVideoPlaybackReporter {
         currentDurationMs = durationMs
         currentVideoType = videoType
         hasScrobbled = false
-        totalPlayTime = position  // Start from resume position
+        totalPlayTime = 0  // Track actual session playtime, not resume position
         playbackStartTime = Date()
         currentState = .playing
         lastReportedPosition = Int(position * 1000)

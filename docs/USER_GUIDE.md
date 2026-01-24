@@ -411,6 +411,10 @@ When playing Plex content, external subtitle files stored on the server are also
 | **A** | Cycle through audio tracks |
 | **Cmd+S** | Open track selection panel |
 
+### Known Issues
+
+**Cursor appearance on window edges**: The cursor may display resize icons (horizontal resize or X) when moving from window edges into the video content area. This is a limitation of using the KSPlayer video library with borderless resizable windows on macOS. The video player is fully functional - this is only a cosmetic cursor issue.
+
 ### Main Window Integration
 
 While video plays:

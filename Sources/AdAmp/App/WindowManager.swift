@@ -458,7 +458,14 @@ class WindowManager {
         }
         
         videoPlayerWindowController?.volume = audioEngine.volume
-        videoPlayerWindowController?.play(url: track.url, title: track.displayTitle)
+        
+        // Use Plex-aware playback if track has a plexRatingKey (for scrobbling/progress)
+        if track.plexRatingKey != nil {
+            videoPlayerWindowController?.play(plexTrack: track)
+        } else {
+            videoPlayerWindowController?.play(url: track.url, title: track.displayTitle)
+        }
+        
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
         NSLog("WindowManager: Playing video track from playlist: %@", track.title)
     }

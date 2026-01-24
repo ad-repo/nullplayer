@@ -26,6 +26,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Current Plex episode (if playing Plex content)
     private var currentPlexEpisode: PlexEpisode?
     
+    /// Current Plex rating key (for playlist tracks that have plexRatingKey but not full movie/episode)
+    private var currentPlexRatingKey: String?
+    
     /// Callback for when video finishes playing (for playlist integration)
     var onVideoFinishedForPlaylist: (() -> Void)?
     
@@ -70,7 +73,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Initialization
     
     init() {
-        // Create a borderless window for skinned video playback
+        // Create a borderless resizable window for video playback
         let contentRect = NSRect(x: 0, y: 0, width: 854, height: 480)
         let styleMask: NSWindow.StyleMask = [.borderless, .resizable, .fullSizeContentView]
         let window = NSWindow(
@@ -175,7 +178,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Whether current content is from Plex
     private var isPlexContent: Bool {
-        currentPlexMovie != nil || currentPlexEpisode != nil
+        currentPlexMovie != nil || currentPlexEpisode != nil || currentPlexRatingKey != nil
     }
     
     private func setupKeyboardMonitor() {
@@ -259,6 +262,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Clear any Plex content (this is a non-Plex video)
         currentPlexMovie = nil
         currentPlexEpisode = nil
+        currentPlexRatingKey = nil
         
         // Check if this is being played from the playlist (callback was set)
         isFromPlaylist = onVideoFinishedForPlaylist != nil
@@ -270,6 +274,50 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         WindowManager.shared.videoPlaybackDidStart()
+    }
+    
+    /// Play a Plex video track from the playlist
+    /// Used when the Track has a plexRatingKey but we don't have the full PlexMovie/PlexEpisode
+    func play(plexTrack track: Track) {
+        guard let ratingKey = track.plexRatingKey else {
+            // Fall back to regular play if no Plex rating key
+            play(url: track.url, title: track.displayTitle)
+            return
+        }
+        
+        // Report stop to Plex if currently playing Plex content
+        if isPlexContent {
+            let position = videoPlayerView.currentPlaybackTime
+            PlexVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
+        }
+        
+        // Clear movie/episode objects but keep track of the rating key for isPlexContent
+        currentPlexMovie = nil
+        currentPlexEpisode = nil
+        currentPlexRatingKey = ratingKey
+        
+        // Check if this is being played from the playlist (callback was set)
+        isFromPlaylist = onVideoFinishedForPlaylist != nil
+        
+        // Get Plex streaming headers
+        let headers = PlexManager.shared.streamingHeaders
+        
+        currentTitle = track.displayTitle
+        window?.title = track.displayTitle
+        videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: true, plexHeaders: headers)
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+        isPlaying = true
+        WindowManager.shared.videoPlaybackDidStart()
+        
+        // Start Plex playback reporting
+        PlexVideoPlaybackReporter.shared.videoTrackDidStart(
+            ratingKey: ratingKey,
+            title: track.displayTitle,
+            durationSeconds: track.duration ?? 0
+        )
+        
+        NSLog("VideoPlayerWindowController: Playing Plex track from playlist: %@ (key: %@)", track.displayTitle, ratingKey)
     }
     
     /// Play a Plex movie
@@ -292,6 +340,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Store Plex content for reporting
         currentPlexMovie = movie
         currentPlexEpisode = nil
+        currentPlexRatingKey = nil
         
         currentTitle = movie.title
         window?.title = movie.title
@@ -330,6 +379,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Store Plex content for reporting
         currentPlexMovie = nil
         currentPlexEpisode = episode
+        currentPlexRatingKey = nil
         
         currentTitle = title
         window?.title = title
@@ -363,6 +413,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentTitle = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
+        currentPlexRatingKey = nil
         WindowManager.shared.videoPlaybackDidStop()
         close()
     }
@@ -408,6 +459,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             currentTitle = nil
             currentPlexMovie = nil
             currentPlexEpisode = nil
+            currentPlexRatingKey = nil
             WindowManager.shared.videoPlaybackDidStop()
         }
         removeKeyboardMonitor()
