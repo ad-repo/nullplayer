@@ -52,6 +52,13 @@ class VideoPlayerView: NSView {
     var currentPlaybackTime: TimeInterval { currentTime }
     var totalPlaybackDuration: TimeInterval { totalDuration }
     
+    /// Volume level (0.0 - 1.0)
+    var volume: Float = 1.0 {
+        didSet {
+            playerLayer?.player.playbackVolume = volume
+        }
+    }
+    
     /// Callback when close button is clicked
     var onClose: (() -> Void)?
     
@@ -363,6 +370,9 @@ class VideoPlayerView: NSView {
         // Create new player layer with the URL
         let layer = KSPlayerLayer(url: url, options: options, delegate: self)
         playerLayer = layer
+        
+        // Apply current volume to the new player
+        layer.player.playbackVolume = volume
         
         // Add player view to host
         if let playerView = layer.player.view {

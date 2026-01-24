@@ -118,6 +118,9 @@ class AudioEngine {
             applyNormalizationGain()
             streamingPlayer?.volume = volume
             
+            // Apply volume to video player
+            WindowManager.shared.setVideoVolume(volume)
+            
             // Also set volume on cast device if casting
             if isCastingActive {
                 Task {

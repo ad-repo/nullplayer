@@ -42,6 +42,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         return videoPlayerView.totalPlaybackDuration
     }
     
+    /// Volume level (0.0 - 1.0)
+    var volume: Float {
+        get { videoPlayerView.volume }
+        set { videoPlayerView.volume = newValue }
+    }
+    
     // MARK: - Static Configuration
     
     /// Configure KSPlayer globally (call once at app startup)

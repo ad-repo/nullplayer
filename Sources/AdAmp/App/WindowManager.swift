@@ -415,6 +415,7 @@ class WindowManager {
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
+        videoPlayerWindowController?.volume = audioEngine.volume
         videoPlayerWindowController?.play(url: url, title: title)
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
     }
@@ -424,6 +425,7 @@ class WindowManager {
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
+        videoPlayerWindowController?.volume = audioEngine.volume
         videoPlayerWindowController?.play(movie: movie)
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
     }
@@ -433,6 +435,7 @@ class WindowManager {
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
+        videoPlayerWindowController?.volume = audioEngine.volume
         videoPlayerWindowController?.play(episode: episode)
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
     }
@@ -454,6 +457,7 @@ class WindowManager {
             self?.videoTrackDidFinish()
         }
         
+        videoPlayerWindowController?.volume = audioEngine.volume
         videoPlayerWindowController?.play(url: track.url, title: track.displayTitle)
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
         NSLog("WindowManager: Playing video track from playlist: %@", track.title)
@@ -495,6 +499,11 @@ class WindowManager {
     /// Stop video playback
     func stopVideo() {
         videoPlayerWindowController?.stop()
+    }
+    
+    /// Set video player volume
+    func setVideoVolume(_ volume: Float) {
+        videoPlayerWindowController?.volume = volume
     }
     
     /// Skip video forward
