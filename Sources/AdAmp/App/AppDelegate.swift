@@ -239,7 +239,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(wrappingLabelWithString: "Winamp 2 all hopped up on macOS has a one nighter with Plex")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "Winamp 2 says 👋 to Plex")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
