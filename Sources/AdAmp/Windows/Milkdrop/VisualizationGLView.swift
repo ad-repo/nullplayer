@@ -172,15 +172,6 @@ class VisualizationGLView: NSOpenGLView {
                 return nil
             }
 
-        case .tocSpectrum:
-            let renderer = TOCSpectrumRenderer(width: width, height: height)
-            if renderer.isAvailable {
-                NSLog("VisualizationGLView: TOC Spectrum initialized successfully")
-                return renderer
-            } else {
-                NSLog("VisualizationGLView: TOC Spectrum initialization failed")
-                return nil
-            }
         }
     }
 
@@ -368,11 +359,6 @@ class VisualizationGLView: NSOpenGLView {
 
         // Feed PCM data to engine
         engine.addPCMMono(pcm)
-
-        // For TOC Spectrum, also provide spectrum data
-        if let tocRenderer = engine as? TOCSpectrumRenderer {
-            tocRenderer.updateSpectrum(spectrum)
-        }
 
         // Render the frame
         engine.renderFrame()

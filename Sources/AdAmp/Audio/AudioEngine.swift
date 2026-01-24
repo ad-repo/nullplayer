@@ -118,6 +118,9 @@ class AudioEngine {
             applyNormalizationGain()
             streamingPlayer?.volume = volume
             
+            // Apply volume to video player
+            WindowManager.shared.setVideoVolume(volume)
+            
             // Also set volume on cast device if casting
             if isCastingActive {
                 Task {
@@ -1282,6 +1285,28 @@ class AudioEngine {
         guard index >= 0 && index < playlist.count else { return }
         
         let track = playlist[index]
+        
+        // Route video tracks to the video player
+        if track.mediaType == .video {
+            NSLog("AudioEngine: Routing video track to video player: %@", track.title)
+            currentTrack = track
+            currentIndex = index
+            _currentTime = 0
+            lastReportedTime = 0
+            
+            // Stop any audio playback
+            if isStreamingPlayback {
+                streamingPlayer?.stop()
+            } else {
+                playerNode.stop()
+            }
+            
+            // Route to video player via WindowManager
+            DispatchQueue.main.async {
+                WindowManager.shared.playVideoTrack(track)
+            }
+            return
+        }
         
         // Check if this is a remote URL (streaming)
         if track.url.scheme == "http" || track.url.scheme == "https" {

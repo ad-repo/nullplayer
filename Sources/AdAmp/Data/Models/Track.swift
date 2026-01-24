@@ -1,7 +1,13 @@
 import Foundation
 import AVFoundation
 
-/// Represents a single audio track
+/// Media type for a track (audio or video)
+enum MediaType: String, Codable {
+    case audio
+    case video
+}
+
+/// Represents a single audio or video track
 struct Track: Identifiable, Equatable {
     let id: UUID
     let url: URL
@@ -21,6 +27,9 @@ struct Track: Identifiable, Equatable {
     
     /// Subsonic server ID to identify which server the track belongs to
     let subsonicServerId: String?
+    
+    /// Media type (audio or video)
+    let mediaType: MediaType
     
     init(url: URL) {
         self.id = UUID()
@@ -132,6 +141,10 @@ struct Track: Identifiable, Equatable {
         self.plexRatingKey = nil  // Local files don't have Plex rating keys
         self.subsonicId = nil     // Local files don't have Subsonic IDs
         self.subsonicServerId = nil
+        
+        // Detect media type by checking for video tracks in the asset
+        let videoTracks = asset.tracks(withMediaType: .video)
+        self.mediaType = videoTracks.isEmpty ? .audio : .video
     }
     
     init(id: UUID = UUID(),
@@ -145,7 +158,8 @@ struct Track: Identifiable, Equatable {
          channels: Int? = nil,
          plexRatingKey: String? = nil,
          subsonicId: String? = nil,
-         subsonicServerId: String? = nil) {
+         subsonicServerId: String? = nil,
+         mediaType: MediaType = .audio) {
         self.id = id
         self.url = url
         self.title = title
@@ -158,6 +172,7 @@ struct Track: Identifiable, Equatable {
         self.plexRatingKey = plexRatingKey
         self.subsonicId = subsonicId
         self.subsonicServerId = subsonicServerId
+        self.mediaType = mediaType
     }
     
     /// Display title (artist - title or just title)

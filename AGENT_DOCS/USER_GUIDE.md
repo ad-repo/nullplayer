@@ -269,6 +269,11 @@ When connected to Plex:
 
 Enable **Browser Album Art Background** in Playback Options to show a blurred artwork background while browsing.
 
+- **Selection Artwork**: Artwork updates as you browse and select items (albums, tracks, movies, shows, etc.)
+- **Playback Artwork**: When a track plays, artwork from the playing item takes priority
+- **Movie Posters**: Movies and TV episodes show poster art from Plex, with TMDb (The Movie Database) as a fallback
+- **Music Artwork**: Album art loads from Plex/Subsonic servers, embedded metadata, or iTunes Search API
+
 ### Art Visualizer
 
 When viewing album art, click the **VIS** button to open the Art Visualizer with audio-reactive effects.
@@ -352,7 +357,7 @@ The Art Visualizer transforms album artwork with audio-reactive shader effects.
 
 ## Video Player
 
-AdAmp supports video playback for Plex movies and TV shows.
+AdAmp supports video playback for Plex movies and TV shows with full audio/subtitle track selection.
 
 ### Playing Video
 
@@ -367,9 +372,36 @@ Hover over the video to reveal controls:
 - **Skip backward** (10 seconds)
 - **Skip forward** (10 seconds)
 - **Seek slider** - Drag to jump to any position
+- **Track Settings** button (speech bubble icon) - Open audio/subtitle selection panel
 - **Fullscreen** toggle
 
 Controls auto-hide after 3 seconds during playback.
+
+### Audio & Subtitle Track Selection
+
+The video player supports multiple audio and subtitle tracks:
+
+**Track Selection Panel:**
+- Click the **Track Settings** button (speech bubble icon) in the control bar
+- Or press **Cmd+S** to open the Netflix-style selection panel
+- Panel slides in from the right edge
+
+**Panel Features:**
+- **Audio Section** - Lists all available audio tracks with language and codec info
+- **Subtitles Section** - Lists all subtitle tracks with an "Off" option
+- **Subtitle Settings** - Adjust subtitle delay (-5s to +5s)
+- Checkmark indicates currently selected track
+- Click outside the panel to dismiss
+
+**Quick Access:**
+- **S key** - Cycle through subtitle tracks (including Off)
+- **A key** - Cycle through audio tracks
+- **Right-click > Audio** - Submenu for quick audio track selection
+- **Right-click > Subtitles** - Submenu for quick subtitle selection
+
+### External Subtitles (Plex)
+
+When playing Plex content, external subtitle files stored on the server are also available in the track selection panel. These are marked as "External" and support formats like SRT, ASS, and VTT.
 
 ### Keyboard Controls
 
@@ -377,9 +409,16 @@ Controls auto-hide after 3 seconds during playback.
 |-----|--------|
 | **Space** | Toggle play/pause |
 | **F** | Toggle fullscreen |
-| **Escape** | Exit fullscreen or close |
+| **Escape** | Exit fullscreen, close panel, or close player |
 | **←** | Skip back 10 seconds |
 | **→** | Skip forward 10 seconds |
+| **S** | Cycle through subtitle tracks |
+| **A** | Cycle through audio tracks |
+| **Cmd+S** | Open track selection panel |
+
+### Known Issues
+
+**Cursor appearance on window edges**: The cursor may display resize icons (horizontal resize or X) when moving from window edges into the video content area. This is a limitation of using the KSPlayer video library with borderless resizable windows on macOS. The video player is fully functional - this is only a cosmetic cursor issue.
 
 ### Main Window Integration
 
@@ -589,9 +628,12 @@ Enable this option to keep the Library Browser and Milkdrop windows using the de
 |-----|--------|
 | **Space** | Play/Pause |
 | **F** | Toggle fullscreen |
-| **Escape** | Exit fullscreen / Close |
+| **Escape** | Exit fullscreen / Close panel / Close |
 | **←** | Skip back 10 seconds |
 | **→** | Skip forward 10 seconds |
+| **S** | Cycle subtitle tracks |
+| **A** | Cycle audio tracks |
+| **Cmd+S** | Open track selection panel |
 
 ### Milkdrop
 
@@ -682,6 +724,19 @@ Right-click anywhere on AdAmp windows to access:
 | **Track** | Play, Add to Playlist, Start Track Radio |
 | **Album** | Play Album, Add Album to Playlist, Start Album Radio |
 | **Artist** | Play All by Artist, Expand/Collapse, Start Artist Radio |
+
+### Video Player Context Menu (Right-click on video)
+
+| Menu Item | Description |
+|-----------|-------------|
+| **Play/Pause** | Toggle playback |
+| **Skip Backward 10s** | Rewind 10 seconds |
+| **Skip Forward 10s** | Fast forward 10 seconds |
+| **Audio** | Submenu listing available audio tracks |
+| **Subtitles** | Submenu listing subtitle tracks (includes "Off") |
+| **Track Settings...** | Opens the track selection panel |
+| **Toggle Fullscreen** | Enter/exit fullscreen mode |
+| **Close** | Stop playback and close the video player |
 
 ### Output Devices
 - Local Audio devices

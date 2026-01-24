@@ -718,6 +718,8 @@ final class AdAmpTests: XCTestCase {
         XCTAssertNotNil(CastError.playbackFailed("reason").errorDescription)
         XCTAssertNotNil(CastError.unsupportedDevice.errorDescription)
         XCTAssertNotNil(CastError.invalidURL.errorDescription)
+        XCTAssertNotNil(CastError.noTrackPlaying.errorDescription)
+        XCTAssertNotNil(CastError.localFileNotCastable.errorDescription)
         XCTAssertNotNil(CastError.sessionNotActive.errorDescription)
         XCTAssertNotNil(CastError.deviceOffline.errorDescription)
         XCTAssertNotNil(CastError.authenticationRequired.errorDescription)
@@ -991,7 +993,9 @@ final class AdAmpTests: XCTestCase {
             studio: nil,
             media: [],
             addedAt: nil,
-            originallyAvailableAt: nil
+            originallyAvailableAt: nil,
+            imdbId: nil,
+            tmdbId: nil
         )
         
         XCTAssertEqual(movie.formattedDuration, "2:00:00")
@@ -1012,7 +1016,10 @@ final class AdAmpTests: XCTestCase {
             thumb: nil,
             media: [],
             addedAt: nil,
-            originallyAvailableAt: nil
+            originallyAvailableAt: nil,
+            imdbId: nil,
+            tmdbId: nil,
+            tvdbId: nil
         )
         
         XCTAssertEqual(episode.episodeIdentifier, "S01E05")
@@ -1431,7 +1438,7 @@ final class AdAmpTests: XCTestCase {
     // MARK: - More Plex Model Tests
     
     func testPlexTrackPartKey() {
-        let part = PlexPart(id: 1, key: "/library/parts/123", duration: nil, file: nil, size: nil, container: nil, audioProfile: nil)
+        let part = PlexPart(id: 1, key: "/library/parts/123", duration: nil, file: nil, size: nil, container: nil, audioProfile: nil, streams: [])
         let media = PlexMedia(id: 1, duration: nil, bitrate: nil, audioChannels: nil, audioCodec: nil, videoCodec: nil, videoResolution: nil, width: nil, height: nil, container: nil, parts: [part])
         
         let track = PlexTrack(
@@ -1459,7 +1466,7 @@ final class AdAmpTests: XCTestCase {
     }
     
     func testPlexMoviePartKey() {
-        let part = PlexPart(id: 1, key: "/library/parts/456", duration: nil, file: nil, size: nil, container: nil, audioProfile: nil)
+        let part = PlexPart(id: 1, key: "/library/parts/456", duration: nil, file: nil, size: nil, container: nil, audioProfile: nil, streams: [])
         let media = PlexMedia(id: 1, duration: nil, bitrate: nil, audioChannels: nil, audioCodec: nil, videoCodec: nil, videoResolution: nil, width: nil, height: nil, container: nil, parts: [part])
         
         let movie = PlexMovie(
@@ -1475,14 +1482,16 @@ final class AdAmpTests: XCTestCase {
             studio: nil,
             media: [media],
             addedAt: nil,
-            originallyAvailableAt: nil
+            originallyAvailableAt: nil,
+            imdbId: nil,
+            tmdbId: nil
         )
         
         XCTAssertEqual(movie.partKey, "/library/parts/456")
     }
     
     func testPlexEpisodePartKey() {
-        let part = PlexPart(id: 1, key: "/library/parts/789", duration: nil, file: nil, size: nil, container: nil, audioProfile: nil)
+        let part = PlexPart(id: 1, key: "/library/parts/789", duration: nil, file: nil, size: nil, container: nil, audioProfile: nil, streams: [])
         let media = PlexMedia(id: 1, duration: nil, bitrate: nil, audioChannels: nil, audioCodec: nil, videoCodec: nil, videoResolution: nil, width: nil, height: nil, container: nil, parts: [part])
         
         let episode = PlexEpisode(
@@ -1499,14 +1508,17 @@ final class AdAmpTests: XCTestCase {
             thumb: nil,
             media: [media],
             addedAt: nil,
-            originallyAvailableAt: nil
+            originallyAvailableAt: nil,
+            imdbId: nil,
+            tmdbId: nil,
+            tvdbId: nil
         )
         
         XCTAssertEqual(episode.partKey, "/library/parts/789")
     }
     
     func testPlexMediaCodable() throws {
-        let part = PlexPart(id: 1, key: "/parts/1", duration: 180, file: "/path/to/file", size: 1000, container: "mp3", audioProfile: "lc")
+        let part = PlexPart(id: 1, key: "/parts/1", duration: 180, file: "/path/to/file", size: 1000, container: "mp3", audioProfile: "lc", streams: [])
         let media = PlexMedia(id: 1, duration: 180000, bitrate: 320, audioChannels: 2, audioCodec: "mp3", videoCodec: nil, videoResolution: nil, width: nil, height: nil, container: "mp3", parts: [part])
         
         let encoder = JSONEncoder()
@@ -1897,7 +1909,10 @@ final class AdAmpTests: XCTestCase {
             studio: "Studio",
             childCount: 5,
             leafCount: 50,
-            addedAt: nil
+            addedAt: nil,
+            imdbId: nil,
+            tmdbId: nil,
+            tvdbId: nil
         )
         
         XCTAssertEqual(show.id, "1")

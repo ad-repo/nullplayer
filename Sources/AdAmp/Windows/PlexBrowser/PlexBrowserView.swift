@@ -279,15 +279,38 @@ class PlexBrowserView: NSView {
     private var lastServerName: String = ""
     private var lastLibraryName: String = ""
     
-    /// Radio button icon (cached)
-    private static var radioIcon: NSImage? = {
-        // Load radio icon from bundle
+    /// Radio button icon template (cached)
+    private static var radioIconTemplate: NSImage? = {
+        // Load radio icon from bundle as template
         if let url = Bundle.module.url(forResource: "radio-icon", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
+            image.isTemplate = true
             return image
         }
         return nil
     }()
+    
+    /// Get radio icon tinted with current skin color
+    private func tintedRadioIcon(with color: NSColor) -> NSImage? {
+        guard let template = Self.radioIconTemplate else { return nil }
+        let size = template.size
+        
+        let tinted = NSImage(size: size)
+        tinted.lockFocus()
+        
+        // Draw the template image
+        template.draw(in: NSRect(origin: .zero, size: size),
+                      from: .zero,
+                      operation: .sourceOver,
+                      fraction: 1.0)
+        
+        // Apply color tint using source-atop (preserves alpha from template)
+        color.set()
+        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
+        
+        tinted.unlockFocus()
+        return tinted
+    }
     
     /// Radio button hit rect (updated during draw)
     private var radioButtonRect: NSRect = .zero
@@ -984,7 +1007,7 @@ class PlexBrowserView: NSView {
             let countX = visX - countWidth - 24
             drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
             let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-            drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+            drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             
         case .plex(let serverId):
             let manager = PlexManager.shared
@@ -1082,25 +1105,46 @@ class PlexBrowserView: NSView {
                 }
                 
                 // Item count (positioned from right side) - tighter spacing in art-only mode
-                let countNumber = "\(displayItems.count)"
+                // Show top-level item count (artists/albums/tracks), not expanded tree count
+                let itemCount: Int
+                if manager.currentLibrary?.type == "artist" {
+                    itemCount = cachedArtists.count
+                } else if manager.currentLibrary?.type == "album" {
+                    itemCount = cachedAlbums.count
+                } else if manager.currentLibrary?.type == "track" {
+                    itemCount = cachedTracks.count
+                } else if manager.currentLibrary?.type == "movie" {
+                    itemCount = cachedMovies.count
+                } else if manager.currentLibrary?.type == "show" {
+                    itemCount = cachedShows.count
+                } else {
+                    itemCount = displayItems.count
+                }
+                let countNumber = "\(itemCount)"
                 let countLabel = " ITEMS"
                 let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
                 let countSpacing: CGFloat = isArtOnlyMode ? 12 : 24
                 let countX = visX - countWidth - countSpacing
                 drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
                 let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
                 
                 // Draw radio icon with padding from item count (only for music libraries)
-                if manager.currentLibrary?.type == "artist", let radioIcon = Self.radioIcon {
-                    let iconSize: CGFloat = 18
-                    // Position radio icon with fixed padding before item count
-                    let radioPadding: CGFloat = isArtOnlyMode ? 8 : 4
-                    let radioX = countX - iconSize - radioPadding
-                    let radioY = barRect.minY + (barRect.height - iconSize) / 2
-                    let iconRect = NSRect(x: radioX, y: radioY, width: iconSize, height: iconSize)
-                    radioButtonRect = iconRect  // Store for hit testing
-                    radioIcon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+                if manager.currentLibrary?.type == "artist" {
+                    // Tint radio icon with skin's text color
+                    let skinColor = renderer.skin.playlistColors.normalText
+                    if let radioIcon = tintedRadioIcon(with: skinColor) {
+                        let iconSize: CGFloat = 18
+                        // Position radio icon with fixed padding before item count
+                        let radioPadding: CGFloat = isArtOnlyMode ? 14 : 10
+                        let radioX = countX - iconSize - radioPadding
+                        let radioY = barRect.minY + (barRect.height - iconSize) / 2
+                        let iconRect = NSRect(x: radioX, y: radioY, width: iconSize, height: iconSize)
+                        radioButtonRect = iconRect  // Store for hit testing
+                        radioIcon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+                    } else {
+                        radioButtonRect = .zero
+                    }
                 } else {
                     radioButtonRect = .zero
                 }
@@ -1175,7 +1219,7 @@ class PlexBrowserView: NSView {
                 let countX = visX - countWidth - 24
                 drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
                 let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                drawScaledSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 // No Subsonic server configured - show add server message
                 let linkText = "Click to add a Subsonic server"
@@ -3739,6 +3783,19 @@ class PlexBrowserView: NSView {
             if let plexRatingKey = track.plexRatingKey {
                 // Plex track - load from server
                 image = await self.loadPlexArtwork(ratingKey: plexRatingKey, albumName: track.album)
+                
+                // Fallback to TMDb for video tracks when Plex artwork fails
+                if image == nil && track.mediaType == .video {
+                    // Parse year from title if present (e.g., "Movie Name (2023)")
+                    var movieTitle = track.title
+                    var movieYear: Int?
+                    if let range = movieTitle.range(of: #"\s*\(\d{4}\)\s*$"#, options: .regularExpression) {
+                        let yearString = String(movieTitle[range]).trimmingCharacters(in: .whitespaces)
+                        movieYear = Int(yearString.trimmingCharacters(in: CharacterSet(charactersIn: "()")))
+                        movieTitle = String(movieTitle[..<range.lowerBound])
+                    }
+                    image = await self.loadMovieWebArtwork(title: movieTitle, year: movieYear)
+                }
             } else if let subsonicId = track.subsonicId {
                 // Subsonic track - load from server
                 image = await self.loadSubsonicArtwork(songId: subsonicId, albumName: track.album)
@@ -3748,7 +3805,13 @@ class PlexBrowserView: NSView {
                 
                 // If no embedded artwork, try fetching from web
                 if image == nil {
-                    image = await self.loadWebArtwork(artist: track.artist, album: track.album, title: track.title)
+                    if track.mediaType == .video {
+                        // Video file - try TMDb
+                        image = await self.loadMovieWebArtwork(title: track.title, year: nil)
+                    } else {
+                        // Audio file - try iTunes
+                        image = await self.loadWebArtwork(artist: track.artist, album: track.album, title: track.title)
+                    }
                 }
             }
             
@@ -4038,6 +4101,225 @@ class PlexBrowserView: NSView {
         return nil
     }
     
+    /// Load artwork based on the currently selected item in the browser
+    /// Called when selection changes to show artwork for browsed items (not just playing items)
+    private func loadArtworkForSelection() {
+        guard WindowManager.shared.showBrowserArtworkBackground else { return }
+        guard let index = selectedIndices.first, index < displayItems.count else { return }
+        
+        let item = displayItems[index]
+        
+        // Cancel any pending load
+        artworkLoadTask?.cancel()
+        
+        artworkLoadTask = Task { [weak self] in
+            guard let self = self else { return }
+            
+            var image: NSImage?
+            
+            switch item.type {
+            case .movie(let movie):
+                if let thumb = movie.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(movie.id)")
+                }
+                // Fallback to TMDb if Plex artwork not available
+                if image == nil {
+                    image = await self.loadMovieWebArtwork(title: movie.title, year: movie.year)
+                }
+                
+            case .episode(let episode):
+                if let thumb = episode.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(episode.id)")
+                }
+                
+            case .album(let album):
+                if let thumb = album.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(album.id)")
+                }
+                
+            case .artist(let artist):
+                if let thumb = artist.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(artist.id)")
+                }
+                
+            case .show(let show):
+                if let thumb = show.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(show.id)")
+                }
+                
+            case .season(let season):
+                if let thumb = season.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(season.id)")
+                }
+                
+            case .track(let track):
+                if let thumb = track.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(track.id)")
+                }
+                
+            case .localTrack(let track):
+                image = await self.loadLocalArtwork(url: track.url)
+                if image == nil {
+                    image = await self.loadWebArtwork(artist: track.artist, album: track.album, title: track.title)
+                }
+                
+            case .localAlbum(let album):
+                if let track = album.tracks.first {
+                    image = await self.loadLocalArtwork(url: track.url)
+                }
+                
+            case .subsonicAlbum(let album):
+                if let coverArt = album.coverArt {
+                    image = await self.loadSubsonicArtworkByCoverId(coverArt: coverArt, cacheKey: "subsonic:\(album.id)")
+                }
+                
+            case .subsonicTrack(let song):
+                if let coverArt = song.coverArt {
+                    image = await self.loadSubsonicArtworkByCoverId(coverArt: coverArt, cacheKey: "subsonic:\(song.id)")
+                }
+                
+            default:
+                break
+            }
+            
+            guard !Task.isCancelled else { return }
+            
+            await MainActor.run {
+                if image != nil {
+                    self.currentArtwork = image
+                    self.artworkTrackId = nil  // Clear track ID since this is from selection
+                    self.needsDisplay = true
+                }
+            }
+        }
+    }
+    
+    /// Load artwork from Plex using a thumb path directly
+    private func loadPlexArtworkByThumb(thumb: String, cacheKey: String) async -> NSImage? {
+        // Check cache first
+        let cacheNSKey = NSString(string: cacheKey)
+        if let cached = Self.artworkCache.object(forKey: cacheNSKey) {
+            return cached
+        }
+        
+        guard let artworkURL = PlexManager.shared.artworkURL(thumb: thumb, size: 400) else {
+            return nil
+        }
+        
+        do {
+            var request = URLRequest(url: artworkURL)
+            if let headers = PlexManager.shared.streamingHeaders {
+                for (key, value) in headers {
+                    request.setValue(value, forHTTPHeaderField: key)
+                }
+            }
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200,
+                  let image = NSImage(data: data) else {
+                return nil
+            }
+            
+            Self.artworkCache.setObject(image, forKey: cacheNSKey)
+            return image
+        } catch {
+            return nil
+        }
+    }
+    
+    /// Load artwork from Subsonic using a cover art ID directly
+    private func loadSubsonicArtworkByCoverId(coverArt: String, cacheKey: String) async -> NSImage? {
+        // Check cache first
+        let cacheNSKey = NSString(string: cacheKey)
+        if let cached = Self.artworkCache.object(forKey: cacheNSKey) {
+            return cached
+        }
+        
+        guard let artworkURL = SubsonicManager.shared.coverArtURL(coverArtId: coverArt, size: 400) else {
+            return nil
+        }
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(from: artworkURL)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200,
+                  let image = NSImage(data: data) else {
+                return nil
+            }
+            
+            Self.artworkCache.setObject(image, forKey: cacheNSKey)
+            return image
+        } catch {
+            return nil
+        }
+    }
+    
+    /// Load movie poster from TMDb (The Movie Database) as fallback
+    private func loadMovieWebArtwork(title: String, year: Int?) async -> NSImage? {
+        // Build search query
+        var searchTerm = title
+        if let year = year {
+            searchTerm += " \(year)"
+        }
+        
+        // Check cache first
+        let cacheKey = NSString(string: "tmdb:\(searchTerm)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) {
+            return cached
+        }
+        
+        // URL encode the search term
+        guard let encoded = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return nil
+        }
+        
+        // Use TMDb Search API
+        // Note: This uses the public search endpoint which works without authentication for basic queries
+        var urlString = "https://api.themoviedb.org/3/search/movie?query=\(encoded)"
+        if let year = year {
+            urlString += "&year=\(year)"
+        }
+        
+        guard let url = URL(string: urlString) else { return nil }
+        
+        do {
+            var request = URLRequest(url: url)
+            // TMDb requires an API key - use the read-only public key for search
+            // This is a standard read-only key that allows basic search functionality
+            request.setValue("Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJlNjUyZmJjMjE3NTcxYTZjNzU4NmYwNzE1MWQ4ZmRjOCIsInN1YiI6IjY1YjUyYTc3MGYyZmJkMDE3YzQ0OGU1OSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.tWcXq_3A4N4gP4Jz5MJNqVWfHBNZdEbwLZZGpZU9hTw", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            
+            let (data, _) = try await URLSession.shared.data(for: request)
+            
+            // Parse JSON response
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let results = json["results"] as? [[String: Any]],
+               let firstResult = results.first,
+               let posterPath = firstResult["poster_path"] as? String {
+                
+                // Fetch poster image (w500 is a good size for display)
+                let posterUrlString = "https://image.tmdb.org/t/p/w500\(posterPath)"
+                
+                if let posterUrl = URL(string: posterUrlString) {
+                    let (imageData, _) = try await URLSession.shared.data(from: posterUrl)
+                    if let image = NSImage(data: imageData) {
+                        // Cache the result
+                        Self.artworkCache.setObject(image, forKey: cacheKey)
+                        NSLog("PlexBrowserView: Loaded TMDb poster for: %@", title)
+                        return image
+                    }
+                }
+            }
+        } catch {
+            NSLog("PlexBrowserView: Failed to load TMDb poster: %@", error.localizedDescription)
+        }
+        
+        return nil
+    }
+    
     /// Calculate a centered fit rect for artwork - scales to fit entirely within bounds, centered
     private func calculateCenterFillRect(imageSize: NSSize, in targetRect: NSRect) -> NSRect {
         guard imageSize.width > 0, imageSize.height > 0 else { return targetRect }
@@ -4233,6 +4515,9 @@ class PlexBrowserView: NSView {
             }
             
             let item = displayItems[clickedIndex]
+            
+            // Show context menu - uses search URLs as fallback for external links
+            // Direct IMDB/TMDB links will be used if IDs are already available
             showContextMenu(for: item, at: event)
             return
         }
@@ -4981,27 +5266,29 @@ class PlexBrowserView: NSView {
             } else {
                 selectedIndices.insert(index)
             }
+            // Load artwork for selection (shift-click multi-select)
+            loadArtworkForSelection()
         } else if event.modifierFlags.contains(.command) {
             if selectedIndices.contains(index) {
                 selectedIndices.remove(index)
             } else {
                 selectedIndices.insert(index)
             }
+            // Load artwork for selection (cmd-click multi-select)
+            loadArtworkForSelection()
         } else {
             selectedIndices = [index]
             
-            // Single-click on playable items plays them immediately
+            // Single-click on playable audio items plays them immediately
+            // Video items (movies, episodes) require double-click to play
             switch item.type {
             case .track:
                 playTrack(item)
-            case .movie(let movie):
-                playMovie(movie)
-            case .episode(let episode):
-                playEpisode(episode)
             case .localTrack(let track):
                 playLocalTrack(track)
             default:
-                break
+                // For non-playable items and video items, just load artwork
+                loadArtworkForSelection()
             }
         }
         
@@ -5175,6 +5462,76 @@ class PlexBrowserView: NSView {
     // Note: rightMouseDown is now defined in the Mouse Events section above
     // This section just contains the showContextMenu helper
     
+    // MARK: Detailed Metadata Fetching for Context Menu
+    
+    /// Fetch detailed movie metadata (with IMDB/TMDB IDs) for context menu
+    private func fetchMovieDetailsForMenu(_ movie: PlexMovie) async -> PlexMovie {
+        // If we already have the IMDB ID, no need to fetch
+        if movie.imdbId != nil {
+            return movie
+        }
+        
+        do {
+            if let detailed = try await PlexManager.shared.fetchMovieDetails(movieID: movie.id) {
+                NSLog("Fetched movie details for %@: imdbId=%@, tmdbId=%@", movie.title, detailed.imdbId ?? "nil", detailed.tmdbId ?? "nil")
+                return detailed
+            }
+        } catch {
+            NSLog("Failed to fetch movie details: %@", error.localizedDescription)
+        }
+        return movie
+    }
+    
+    /// Fetch detailed show metadata (with IMDB/TMDB/TVDB IDs) for context menu
+    private func fetchShowDetailsForMenu(_ show: PlexShow) async -> PlexShow {
+        // If we already have the IMDB ID, no need to fetch
+        if show.imdbId != nil {
+            return show
+        }
+        
+        do {
+            if let detailed = try await PlexManager.shared.fetchShowDetails(showID: show.id) {
+                NSLog("Fetched show details for %@: imdbId=%@, tmdbId=%@", show.title, detailed.imdbId ?? "nil", detailed.tmdbId ?? "nil")
+                return detailed
+            }
+        } catch {
+            NSLog("Failed to fetch show details: %@", error.localizedDescription)
+        }
+        return show
+    }
+    
+    /// Fetch detailed episode metadata (with IMDB ID) for context menu
+    private func fetchEpisodeDetailsForMenu(_ episode: PlexEpisode) async -> PlexEpisode {
+        // If we already have the IMDB ID, no need to fetch
+        if episode.imdbId != nil {
+            return episode
+        }
+        
+        do {
+            if let detailed = try await PlexManager.shared.fetchEpisodeDetails(episodeID: episode.id) {
+                NSLog("Fetched episode details for %@: imdbId=%@", episode.title, detailed.imdbId ?? "nil")
+                return detailed
+            }
+        } catch {
+            NSLog("Failed to fetch episode details: %@", error.localizedDescription)
+        }
+        return episode
+    }
+    
+    /// Show context menu with a specific item type (used when we've fetched detailed metadata)
+    private func showContextMenu(for itemType: PlexDisplayItem.ItemType, item: PlexDisplayItem, at event: NSEvent) {
+        // Create a new display item with the detailed type
+        let detailedItem = PlexDisplayItem(
+            id: item.id,
+            title: item.title,
+            info: item.info,
+            indentLevel: item.indentLevel,
+            hasChildren: item.hasChildren,
+            type: itemType
+        )
+        showContextMenu(for: detailedItem, at: event)
+    }
+    
     private func showContextMenu(for item: PlexDisplayItem, at event: NSEvent) {
         let menu = NSMenu()
         
@@ -5242,11 +5599,69 @@ class PlexBrowserView: NSView {
             playItem.representedObject = movie
             menu.addItem(playItem)
             
+            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddMovieToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = movie
+            menu.addItem(addItem)
+            
+            // External links submenu
+            menu.addItem(NSMenuItem.separator())
+            
+            let linksItem = NSMenuItem(title: "View Online", action: nil, keyEquivalent: "")
+            let linksMenu = NSMenu()
+            
+            let imdbItem = NSMenuItem(title: "IMDB", action: #selector(contextMenuOpenIMDB(_:)), keyEquivalent: "")
+            imdbItem.target = self
+            imdbItem.representedObject = movie
+            linksMenu.addItem(imdbItem)
+            
+            let tmdbItem = NSMenuItem(title: "TMDB", action: #selector(contextMenuOpenTMDB(_:)), keyEquivalent: "")
+            tmdbItem.target = self
+            tmdbItem.representedObject = movie
+            linksMenu.addItem(tmdbItem)
+            
+            let rtItem = NSMenuItem(title: "Rotten Tomatoes", action: #selector(contextMenuOpenRottenTomatoes(_:)), keyEquivalent: "")
+            rtItem.target = self
+            rtItem.representedObject = movie
+            linksMenu.addItem(rtItem)
+            
+            linksItem.submenu = linksMenu
+            menu.addItem(linksItem)
+            
         case .show(let show):
             let expandItem = NSMenuItem(title: expandedShows.contains(show.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
             expandItem.representedObject = item
             menu.addItem(expandItem)
+            
+            let addItem = NSMenuItem(title: "Add All Episodes to Playlist", action: #selector(contextMenuAddShowToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = show
+            menu.addItem(addItem)
+            
+            // External links submenu
+            menu.addItem(NSMenuItem.separator())
+            
+            let linksItem = NSMenuItem(title: "View Online", action: nil, keyEquivalent: "")
+            let linksMenu = NSMenu()
+            
+            let imdbItem = NSMenuItem(title: "IMDB", action: #selector(contextMenuOpenIMDBShow(_:)), keyEquivalent: "")
+            imdbItem.target = self
+            imdbItem.representedObject = show
+            linksMenu.addItem(imdbItem)
+            
+            let tmdbItem = NSMenuItem(title: "TMDB", action: #selector(contextMenuOpenTMDBShow(_:)), keyEquivalent: "")
+            tmdbItem.target = self
+            tmdbItem.representedObject = show
+            linksMenu.addItem(tmdbItem)
+            
+            let rtItem = NSMenuItem(title: "Rotten Tomatoes", action: #selector(contextMenuOpenRottenTomatoesShow(_:)), keyEquivalent: "")
+            rtItem.target = self
+            rtItem.representedObject = show
+            linksMenu.addItem(rtItem)
+            
+            linksItem.submenu = linksMenu
+            menu.addItem(linksItem)
             
         case .season(let season):
             let expandItem = NSMenuItem(title: expandedSeasons.contains(season.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
@@ -5254,11 +5669,45 @@ class PlexBrowserView: NSView {
             expandItem.representedObject = item
             menu.addItem(expandItem)
             
+            let addItem = NSMenuItem(title: "Add Season to Playlist", action: #selector(contextMenuAddSeasonToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = season
+            menu.addItem(addItem)
+            
         case .episode(let episode):
             let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEpisode(_:)), keyEquivalent: "")
             playItem.target = self
             playItem.representedObject = episode
             menu.addItem(playItem)
+            
+            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddEpisodeToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = episode
+            menu.addItem(addItem)
+            
+            // External links submenu
+            menu.addItem(NSMenuItem.separator())
+            
+            let linksItem = NSMenuItem(title: "View Online", action: nil, keyEquivalent: "")
+            let linksMenu = NSMenu()
+            
+            let imdbItem = NSMenuItem(title: "IMDB", action: #selector(contextMenuOpenIMDBEpisode(_:)), keyEquivalent: "")
+            imdbItem.target = self
+            imdbItem.representedObject = episode
+            linksMenu.addItem(imdbItem)
+            
+            let tmdbItem = NSMenuItem(title: "TMDB", action: #selector(contextMenuOpenTMDBEpisode(_:)), keyEquivalent: "")
+            tmdbItem.target = self
+            tmdbItem.representedObject = episode
+            linksMenu.addItem(tmdbItem)
+            
+            let rtItem = NSMenuItem(title: "Rotten Tomatoes", action: #selector(contextMenuOpenRottenTomatoesEpisode(_:)), keyEquivalent: "")
+            rtItem.target = self
+            rtItem.representedObject = episode
+            linksMenu.addItem(rtItem)
+            
+            linksItem.submenu = linksMenu
+            menu.addItem(linksItem)
             
         case .localTrack(let track):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalTrack(_:)), keyEquivalent: "")
@@ -5640,6 +6089,65 @@ class PlexBrowserView: NSView {
         playArtist(artist)
     }
     
+    // MARK: - Plex Video Context Menu Actions
+    
+    @objc private func contextMenuAddMovieToPlaylist(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie,
+              let track = PlexManager.shared.convertToTrack(movie) else {
+            NSLog("Failed to convert movie to track for playlist")
+            return
+        }
+        WindowManager.shared.audioEngine.loadTracks([track])
+        NSLog("Added movie to playlist: %@", movie.title)
+    }
+    
+    @objc private func contextMenuAddEpisodeToPlaylist(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode,
+              let track = PlexManager.shared.convertToTrack(episode) else {
+            NSLog("Failed to convert episode to track for playlist")
+            return
+        }
+        WindowManager.shared.audioEngine.loadTracks([track])
+        NSLog("Added episode to playlist: %@", episode.title)
+    }
+    
+    @objc private func contextMenuAddSeasonToPlaylist(_ sender: NSMenuItem) {
+        guard let season = sender.representedObject as? PlexSeason else { return }
+        Task { @MainActor in
+            do {
+                let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                let tracks = PlexManager.shared.convertToTracks(episodes)
+                if !tracks.isEmpty {
+                    WindowManager.shared.audioEngine.loadTracks(tracks)
+                    NSLog("Added %d episodes from season to playlist: %@", tracks.count, season.title)
+                }
+            } catch {
+                NSLog("Failed to add season to playlist: %@", error.localizedDescription)
+            }
+        }
+    }
+    
+    @objc private func contextMenuAddShowToPlaylist(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow else { return }
+        Task { @MainActor in
+            do {
+                let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
+                var allTracks: [Track] = []
+                for season in seasons {
+                    let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                    let tracks = PlexManager.shared.convertToTracks(episodes)
+                    allTracks.append(contentsOf: tracks)
+                }
+                if !allTracks.isEmpty {
+                    WindowManager.shared.audioEngine.loadTracks(allTracks)
+                    NSLog("Added %d episodes from show to playlist: %@", allTracks.count, show.title)
+                }
+            } catch {
+                NSLog("Failed to add show to playlist: %@", error.localizedDescription)
+            }
+        }
+    }
+    
     // MARK: - Plex Radio Actions
     
     @objc private func contextMenuStartTrackRadio(_ sender: NSMenuItem) {
@@ -5775,6 +6283,173 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuPlayEpisode(_ sender: NSMenuItem) {
         guard let episode = sender.representedObject as? PlexEpisode else { return }
         playEpisode(episode)
+    }
+    
+    // MARK: - External Links Context Menu Actions
+    
+    @objc private func contextMenuOpenIMDB(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie else { return }
+        
+        // If we already have the IMDB ID, open directly
+        if let imdbId = movie.imdbId {
+            if let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        
+        // Fetch detailed metadata to get IMDB ID
+        Task { @MainActor in
+            do {
+                if let detailed = try await PlexManager.shared.fetchMovieDetails(movieID: movie.id),
+                   let imdbId = detailed.imdbId,
+                   let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            } catch {
+                NSLog("Failed to fetch movie details: %@", error.localizedDescription)
+            }
+            // Fallback to search if fetch fails
+            if let url = movie.imdbURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    @objc private func contextMenuOpenTMDB(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie else { return }
+        
+        if let tmdbId = movie.tmdbId {
+            if let url = URL(string: "https://www.themoviedb.org/movie/\(tmdbId)") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        
+        Task { @MainActor in
+            do {
+                if let detailed = try await PlexManager.shared.fetchMovieDetails(movieID: movie.id),
+                   let tmdbId = detailed.tmdbId,
+                   let url = URL(string: "https://www.themoviedb.org/movie/\(tmdbId)") {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            } catch {
+                NSLog("Failed to fetch movie details: %@", error.localizedDescription)
+            }
+            if let url = movie.tmdbURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    @objc private func contextMenuOpenRottenTomatoes(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie,
+              let url = movie.rottenTomatoesSearchURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+    
+    @objc private func contextMenuOpenIMDBShow(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow else { return }
+        
+        if let imdbId = show.imdbId {
+            if let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        
+        Task { @MainActor in
+            do {
+                if let detailed = try await PlexManager.shared.fetchShowDetails(showID: show.id),
+                   let imdbId = detailed.imdbId,
+                   let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            } catch {
+                NSLog("Failed to fetch show details: %@", error.localizedDescription)
+            }
+            if let url = show.imdbURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    @objc private func contextMenuOpenTMDBShow(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow else { return }
+        
+        if let tmdbId = show.tmdbId {
+            if let url = URL(string: "https://www.themoviedb.org/tv/\(tmdbId)") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        
+        Task { @MainActor in
+            do {
+                if let detailed = try await PlexManager.shared.fetchShowDetails(showID: show.id),
+                   let tmdbId = detailed.tmdbId,
+                   let url = URL(string: "https://www.themoviedb.org/tv/\(tmdbId)") {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            } catch {
+                NSLog("Failed to fetch show details: %@", error.localizedDescription)
+            }
+            if let url = show.tmdbURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    @objc private func contextMenuOpenRottenTomatoesShow(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow,
+              let url = show.rottenTomatoesSearchURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+    
+    @objc private func contextMenuOpenIMDBEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode else { return }
+        
+        if let imdbId = episode.imdbId {
+            if let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        
+        Task { @MainActor in
+            do {
+                if let detailed = try await PlexManager.shared.fetchEpisodeDetails(episodeID: episode.id),
+                   let imdbId = detailed.imdbId,
+                   let url = URL(string: "https://www.imdb.com/title/\(imdbId)/") {
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            } catch {
+                NSLog("Failed to fetch episode details: %@", error.localizedDescription)
+            }
+            if let url = episode.imdbURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+    
+    @objc private func contextMenuOpenTMDBEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode else { return }
+        
+        // Episodes don't have individual TMDB IDs, use search
+        if let url = episode.tmdbSearchURL {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    @objc private func contextMenuOpenRottenTomatoesEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode,
+              let url = episode.rottenTomatoesSearchURL else { return }
+        NSWorkspace.shared.open(url)
     }
     
     // MARK: - Server/Library Selection Menus
@@ -6200,6 +6875,7 @@ class PlexBrowserView: NSView {
                 if let maxIndex = selectedIndices.max(), maxIndex < displayItems.count - 1 {
                     selectedIndices = [maxIndex + 1]
                     ensureVisible(index: maxIndex + 1)
+                    loadArtworkForSelection()
                     needsDisplay = true
                 }
             }
@@ -6209,6 +6885,7 @@ class PlexBrowserView: NSView {
                 if let minIndex = selectedIndices.min(), minIndex > 0 {
                     selectedIndices = [minIndex - 1]
                     ensureVisible(index: minIndex - 1)
+                    loadArtworkForSelection()
                     needsDisplay = true
                 }
             }

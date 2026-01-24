@@ -8,7 +8,7 @@ class AdAmpUITestCase: XCTestCase {
     var app: XCUIApplication!
     
     /// Timeout for UI element waits
-    let defaultTimeout: TimeInterval = 5
+    let defaultTimeout: TimeInterval = 2
     
     // MARK: - Setup and Teardown
     

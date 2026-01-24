@@ -287,7 +287,10 @@ class PlaylistView: NSView {
         let durationX = rect.maxX - durationSize.width - 4
         let titleX = rect.minX + 2
         let titleMaxWidth = durationX - titleX - 6
-        let titleText = "\(index + 1). \(track.displayTitle)"
+        
+        // Prepend [V] indicator for video tracks
+        let videoPrefix = track.mediaType == .video ? "[V] " : ""
+        let titleText = "\(index + 1). \(videoPrefix)\(track.displayTitle)"
         let textWidth = titleText.size(withAttributes: attrs).width
         
         // Draw duration (right-aligned)
@@ -381,6 +384,7 @@ class PlaylistView: NSView {
     private func drawBottomBarInfo(in context: CGContext, drawBounds: NSRect, renderer: SkinRenderer) {
         let engine = WindowManager.shared.audioEngine
         let tracks = engine.playlist
+        let isVideoActive = WindowManager.shared.isVideoActivePlayback
         
         // Don't draw if no tracks
         guard !tracks.isEmpty else { return }
@@ -397,9 +401,22 @@ class PlaylistView: NSView {
         var remainingSeconds = 0
         
         // Add remaining time in current track
-        if engine.state == .playing || engine.currentTime > 0 {
-            let currentDuration = engine.duration
-            let currentTime = engine.currentTime
+        // Use video time if video is active, otherwise use audio engine
+        let currentTime: TimeInterval
+        let currentDuration: TimeInterval
+        let isPlaying: Bool
+        
+        if isVideoActive {
+            currentTime = WindowManager.shared.videoCurrentTime
+            currentDuration = WindowManager.shared.videoDuration
+            isPlaying = WindowManager.shared.isVideoPlaying
+        } else {
+            currentTime = engine.currentTime
+            currentDuration = engine.duration
+            isPlaying = engine.state == .playing
+        }
+        
+        if isPlaying || currentTime > 0 {
             remainingSeconds += max(0, Int(currentDuration - currentTime))
         } else if currentIndex < tracks.count {
             // Not playing yet, add full duration of current track
@@ -444,11 +461,23 @@ class PlaylistView: NSView {
     /// Draw current playback time in the colon area of the bottom bar using skin font
     private func drawPlaybackTime(in context: CGContext, drawBounds: NSRect, renderer: SkinRenderer) {
         let engine = WindowManager.shared.audioEngine
+        let isVideoActive = WindowManager.shared.isVideoActivePlayback
+        
+        // Get current time and playing state from video or audio engine
+        let currentTime: TimeInterval
+        let isPlaying: Bool
+        
+        if isVideoActive {
+            currentTime = WindowManager.shared.videoCurrentTime
+            isPlaying = WindowManager.shared.isVideoPlaying
+        } else {
+            currentTime = engine.currentTime
+            isPlaying = engine.state == .playing
+        }
         
         // Only draw if playing or has position
-        guard engine.state == .playing || engine.currentTime > 0 else { return }
+        guard isPlaying || currentTime > 0 else { return }
         
-        let currentTime = engine.currentTime
         let minutes = Int(currentTime) / 60
         let seconds = Int(currentTime) % 60
         

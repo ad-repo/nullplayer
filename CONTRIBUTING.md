@@ -57,7 +57,7 @@ These services have restrictive APIs and licensing terms that are incompatible w
 
 Before making UI changes:
 
-1. Read [docs/UI_GUIDE.md](docs/UI_GUIDE.md)
+1. Read [AGENT_DOCS/UI_GUIDE.md](AGENT_DOCS/UI_GUIDE.md)
 2. Check `SkinElements.swift` for sprite coordinates
 3. Follow existing patterns in `MainWindowView` or `EQView`
 4. Test at different window sizes
@@ -66,7 +66,7 @@ Before making UI changes:
 ## Documentation
 
 - Update relevant docs if your change affects user-facing behavior
-- Keep [docs/USER_GUIDE.md](docs/USER_GUIDE.md) current for feature changes
+- Keep [AGENT_DOCS/USER_GUIDE.md](AGENT_DOCS/USER_GUIDE.md) current for feature changes
 - Update [AGENTS.md](AGENTS.md) if adding new key files
 
 ## Pull Request Guidelines

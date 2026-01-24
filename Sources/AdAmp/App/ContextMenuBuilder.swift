@@ -89,6 +89,7 @@ class ContextMenuBuilder {
     
     private static func buildSkinsSubmenu() -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false
         
         // Load Skin...
         let loadSkin = NSMenuItem(title: "Load Skin...", action: #selector(MenuActions.loadSkinFromFile), keyEquivalent: "")
@@ -127,11 +128,7 @@ class ContextMenuBuilder {
         
         // Available skins from Skins directory
         let availableSkins = WindowManager.shared.availableSkins()
-        if availableSkins.isEmpty {
-            let noSkins = NSMenuItem(title: "(No skins found)", action: nil, keyEquivalent: "")
-            noSkins.isEnabled = false
-            menu.addItem(noSkins)
-        } else {
+        if !availableSkins.isEmpty {
             for skin in availableSkins {
                 let skinItem = NSMenuItem(title: skin.name, action: #selector(MenuActions.loadSkin(_:)), keyEquivalent: "")
                 skinItem.target = MenuActions.shared
@@ -148,6 +145,7 @@ class ContextMenuBuilder {
     private static func buildVisualizationsMenuItem() -> NSMenuItem {
         let visItem = NSMenuItem(title: "Visualizations", action: nil, keyEquivalent: "")
         let visMenu = NSMenu()
+        visMenu.autoenablesItems = false
         
         let wm = WindowManager.shared
         let isProjectMAvailable = wm.isProjectMAvailable
@@ -165,13 +163,11 @@ class ContextMenuBuilder {
             }
             
             let infoItem = NSMenuItem(title: infoText, action: nil, keyEquivalent: "")
-            infoItem.isEnabled = false
             visMenu.addItem(infoItem)
             
             visMenu.addItem(NSMenuItem.separator())
         } else {
             let unavailableItem = NSMenuItem(title: "projectM not available", action: nil, keyEquivalent: "")
-            unavailableItem.isEnabled = false
             visMenu.addItem(unavailableItem)
             
             visMenu.addItem(NSMenuItem.separator())
@@ -215,6 +211,7 @@ class ContextMenuBuilder {
     private static func buildOptionsMenuItem() -> NSMenuItem {
         let optionsItem = NSMenuItem(title: "Playback Options", action: nil, keyEquivalent: "")
         let optionsMenu = NSMenu()
+        optionsMenu.autoenablesItems = false
         
         let wm = WindowManager.shared
         let engine = wm.audioEngine
@@ -268,6 +265,7 @@ class ContextMenuBuilder {
         if engine.sweetFadeEnabled {
             let durationItem = NSMenuItem(title: "Fade Duration", action: nil, keyEquivalent: "")
             let durationMenu = NSMenu()
+            durationMenu.autoenablesItems = false
             
             for duration in [1.0, 2.0, 3.0, 5.0, 7.0, 10.0] {
                 let item = NSMenuItem(
@@ -302,12 +300,12 @@ class ContextMenuBuilder {
     private static func buildLocalLibraryMenuItem() -> NSMenuItem {
         let libraryItem = NSMenuItem(title: "Local Library", action: nil, keyEquivalent: "")
         let libraryMenu = NSMenu()
+        libraryMenu.autoenablesItems = false
         
         let trackCount = MediaLibrary.shared.tracksSnapshot.count
         
         // Library info header
         let infoItem = NSMenuItem(title: "\(trackCount) tracks in library", action: nil, keyEquivalent: "")
-        infoItem.isEnabled = false
         libraryMenu.addItem(infoItem)
         
         libraryMenu.addItem(NSMenuItem.separator())
@@ -320,6 +318,7 @@ class ContextMenuBuilder {
         // Restore Library submenu
         let restoreItem = NSMenuItem(title: "Restore Library", action: nil, keyEquivalent: "")
         let restoreMenu = NSMenu()
+        restoreMenu.autoenablesItems = false
         
         // Restore from File option
         let restoreFromFile = NSMenuItem(title: "From File...", action: #selector(MenuActions.restoreLibraryFromFile), keyEquivalent: "")
@@ -332,7 +331,6 @@ class ContextMenuBuilder {
             restoreMenu.addItem(NSMenuItem.separator())
             
             let backupsHeader = NSMenuItem(title: "Recent Backups", action: nil, keyEquivalent: "")
-            backupsHeader.isEnabled = false
             restoreMenu.addItem(backupsHeader)
             
             // Show up to 10 most recent backups
@@ -384,6 +382,7 @@ class ContextMenuBuilder {
     private static func buildPlexMenuItem() -> NSMenuItem {
         let plexItem = NSMenuItem(title: "Plex", action: nil, keyEquivalent: "")
         let plexMenu = NSMenu()
+        plexMenu.autoenablesItems = false
         
         let isLinked = PlexManager.shared.isLinked
         
@@ -391,7 +390,6 @@ class ContextMenuBuilder {
         if isLinked {
             let accountName = PlexManager.shared.account?.username ?? "Account"
             let accountItem = NSMenuItem(title: "✓ \(accountName)", action: nil, keyEquivalent: "")
-            accountItem.isEnabled = false
             plexMenu.addItem(accountItem)
             
             let unlinkItem = NSMenuItem(title: "Unlink Account", action: #selector(MenuActions.unlinkPlexAccount), keyEquivalent: "")
@@ -409,6 +407,7 @@ class ContextMenuBuilder {
         if isLinked && !PlexManager.shared.servers.isEmpty {
             let serversItem = NSMenuItem(title: "Servers", action: nil, keyEquivalent: "")
             let serversMenu = NSMenu()
+            serversMenu.autoenablesItems = false
             
             for server in PlexManager.shared.servers {
                 let serverItem = NSMenuItem(title: server.name, action: #selector(MenuActions.selectPlexServer(_:)), keyEquivalent: "")
@@ -425,6 +424,7 @@ class ContextMenuBuilder {
             if !PlexManager.shared.availableLibraries.isEmpty {
                 let librariesItem = NSMenuItem(title: "Libraries", action: nil, keyEquivalent: "")
                 let librariesMenu = NSMenu()
+                librariesMenu.autoenablesItems = false
                 
                 for library in PlexManager.shared.availableLibraries {
                     let libraryItem = NSMenuItem(title: library.title, action: #selector(MenuActions.selectPlexLibrary(_:)), keyEquivalent: "")
@@ -466,6 +466,7 @@ class ContextMenuBuilder {
     private static func buildSubsonicMenuItem() -> NSMenuItem {
         let subsonicItem = NSMenuItem(title: "Navidrome/Subsonic", action: nil, keyEquivalent: "")
         let subsonicMenu = NSMenu()
+        subsonicMenu.autoenablesItems = false
         
         let servers = SubsonicManager.shared.servers
         let currentServer = SubsonicManager.shared.currentServer
@@ -481,20 +482,16 @@ class ContextMenuBuilder {
             case .connected:
                 if let server = currentServer {
                     let statusItem = NSMenuItem(title: "✓ Connected to \(server.name)", action: nil, keyEquivalent: "")
-                    statusItem.isEnabled = false
                     subsonicMenu.addItem(statusItem)
                 }
             case .connecting:
                 let statusItem = NSMenuItem(title: "Connecting...", action: nil, keyEquivalent: "")
-                statusItem.isEnabled = false
                 subsonicMenu.addItem(statusItem)
             case .error:
                 let statusItem = NSMenuItem(title: "⚠ Connection Error", action: nil, keyEquivalent: "")
-                statusItem.isEnabled = false
                 subsonicMenu.addItem(statusItem)
             case .disconnected:
                 let statusItem = NSMenuItem(title: "Not Connected", action: nil, keyEquivalent: "")
-                statusItem.isEnabled = false
                 subsonicMenu.addItem(statusItem)
             }
             
@@ -503,6 +500,7 @@ class ContextMenuBuilder {
             // Servers submenu
             let serversItem = NSMenuItem(title: "Servers", action: nil, keyEquivalent: "")
             let serversMenu = NSMenu()
+            serversMenu.autoenablesItems = false
             
             for server in servers {
                 let serverItem = NSMenuItem(title: server.name, action: #selector(MenuActions.selectSubsonicServer(_:)), keyEquivalent: "")
@@ -559,6 +557,7 @@ class ContextMenuBuilder {
     private static func buildOutputDevicesMenuItem() -> NSMenuItem {
         let outputItem = NSMenuItem(title: "Output Devices", action: nil, keyEquivalent: "")
         let outputMenu = NSMenu()
+        outputMenu.autoenablesItems = false
         
         let audioManager = AudioOutputManager.shared
         let castManager = CastManager.shared
@@ -573,7 +572,6 @@ class ContextMenuBuilder {
         
         // ========== Local Audio Section ==========
         let localHeader = NSMenuItem(title: "Local Audio", action: nil, keyEquivalent: "")
-        localHeader.isEnabled = false
         outputMenu.addItem(localHeader)
         
         // System Default option
@@ -603,11 +601,11 @@ class ContextMenuBuilder {
             // AirPlay submenu
             let airplayItem = NSMenuItem(title: "AirPlay", action: nil, keyEquivalent: "")
             let airplayMenu = NSMenu()
+            airplayMenu.autoenablesItems = false
             
             // Connected AirPlay devices (via Core Audio)
             if !coreAudioWireless.isEmpty {
                 let connectedHeader = NSMenuItem(title: "Connected", action: nil, keyEquivalent: "")
-                connectedHeader.isEnabled = false
                 airplayMenu.addItem(connectedHeader)
                 
                 for device in coreAudioWireless {
@@ -626,7 +624,6 @@ class ContextMenuBuilder {
                 }
                 
                 let availableHeader = NSMenuItem(title: "Available (Connect in Sound Settings)", action: nil, keyEquivalent: "")
-                availableHeader.isEnabled = false
                 airplayMenu.addItem(availableHeader)
                 
                 for device in airPlayDevices {
@@ -659,12 +656,30 @@ class ContextMenuBuilder {
         // Cast Devices submenu
         let castItem = NSMenuItem(title: "Cast Devices", action: nil, keyEquivalent: "")
         let castMenu = NSMenu()
+        castMenu.autoenablesItems = false
+        
+        // Show discovery status with user instructions
+        let totalDeviceCount = chromecastDevices.count + sonosDevices.count + tvDevices.count
+        let isRefreshing = castManager.isRefreshing
+        
+        if !hasCastDevices {
+            // No devices yet - show helpful message
+            let statusItem = NSMenuItem(title: "Searching for devices...", action: nil, keyEquivalent: "")
+            castMenu.addItem(statusItem)
+            
+            let hintItem = NSMenuItem(title: "(Reopen menu in a few seconds)", action: nil, keyEquivalent: "")
+            castMenu.addItem(hintItem)
+        } else if isRefreshing {
+            // Refreshing - show status but keep existing devices visible
+            let statusItem = NSMenuItem(title: "Refreshing... (\(totalDeviceCount) device\(totalDeviceCount == 1 ? "" : "s"))", action: nil, keyEquivalent: "")
+            castMenu.addItem(statusItem)
+            castMenu.addItem(NSMenuItem.separator())
+        }
         
         if hasCastDevices {
             // Chromecast section
             if !chromecastDevices.isEmpty {
                 let chromecastHeader = NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: "")
-                chromecastHeader.isEnabled = false
                 castMenu.addItem(chromecastHeader)
                 
                 for device in chromecastDevices {
@@ -683,7 +698,6 @@ class ContextMenuBuilder {
                 }
                 
                 let sonosHeader = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
-                sonosHeader.isEnabled = false
                 castMenu.addItem(sonosHeader)
                 
                 for device in sonosDevices {
@@ -702,7 +716,6 @@ class ContextMenuBuilder {
                 }
                 
                 let tvHeader = NSMenuItem(title: "TVs (DLNA)", action: nil, keyEquivalent: "")
-                tvHeader.isEnabled = false
                 castMenu.addItem(tvHeader)
                 
                 for device in tvDevices {
@@ -714,10 +727,6 @@ class ContextMenuBuilder {
                     castMenu.addItem(deviceItem)
                 }
             }
-        } else {
-            let noDevicesItem = NSMenuItem(title: "(Searching for devices...)", action: nil, keyEquivalent: "")
-            noDevicesItem.isEnabled = false
-            castMenu.addItem(noDevicesItem)
         }
         
         // Cast controls

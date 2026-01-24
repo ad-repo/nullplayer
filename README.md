@@ -1,12 +1,16 @@
 # AdAmp
 
-A faithful recreation of Winamp 2.x for macOS loaded up with Plex, Navidrome/Subsonic, and Sonos support!
+A loaded recreation of Winamp 2.x for macOS
 
 ## Features
 
-- Somewhat kind of maybe Pixel-perfect recreation of the classic Winamp 2.x interface
+- A Recreation of the classic Winamp 2.x interface with some surprises
 - A Brand new library browser window for Plex, Navidrome/Subsonic, and local library files
+- Plex Media Server integration with PIN-based authentication
+- Plex music and video streaming and playlist support
 - ProjectM visualizations with 100 included. Users can download more
+- Just like PlexAmp, sonic similarity supportuing radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
+- Much better Sonos playlist support than the current PlexAmp (Jan 2026)
 - Full Winamp 2 skin support (.wsz files)
 - Main player, Playlist editor, and 10-band Equalizer windows
 - Classic window snapping and docking behavior
@@ -16,14 +20,11 @@ A faithful recreation of Winamp 2.x for macOS loaded up with Plex, Navidrome/Sub
 - Sweet Fades (crossfade) with configurable fade duration
 - Volume normalization for consistent loudness
 - Local media library with metadata parsing
-- Media library backup and restore
-- Plex Media Server integration with PIN-based authentication
-- Plex music and video streaming
-- Plex Radio stations (Library, Genre, Decade, Hits, Deep Cuts) with sonic similarity
+- Local media library backup and restore
 - Navidrome/Subsonic server integration with scrobbling support
-- Album art visualizations
-- Casting to Chromecast, Sonos, and DLNA devices
-- Airplay support
+- Album/Cover/Movie art browser with visualizations
+- IMDB integration
+- Airplay and Casting to Chromecast, Sonos, and DLNA devices
 
 ## Requirements
 

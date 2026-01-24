@@ -26,7 +26,7 @@ func printDeviceDebugInfo() {
 ## 2. Debug Print Statements
 
 **File:** `Sources/AdAmp/Windows/Playlist/PlaylistView.swift`  
-**Lines:** 876-882
+**Lines:** 948-953
 
 ```swift
 print(">>> STOP BUTTON PRESSED <<<")
@@ -65,7 +65,7 @@ class SliderDragTracker {
 ## 4. Unused `VideoTitleBarView` Class
 
 **File:** `Sources/AdAmp/Windows/VideoPlayer/VideoPlayerView.swift`  
-**Lines:** 670-837
+**Lines:** 1020-1183
 
 ```swift
 class VideoTitleBarView: NSView {
@@ -73,7 +73,7 @@ class VideoTitleBarView: NSView {
     var isWindowActive: Bool = true
     var onClose: (() -> Void)?
     var onMinimize: (() -> Void)?
-    // ... ~170 lines of implementation
+    // ... ~164 lines of implementation
 }
 ```
 
@@ -82,28 +82,7 @@ class VideoTitleBarView: NSView {
 
 ---
 
-## 5. Unused `VisualizationDataSource` Protocol
-
-**File:** `Sources/AdAmp/Windows/Milkdrop/VisualizationGLView.swift`  
-**Lines:** 11-20, 29
-
-```swift
-protocol VisualizationDataSource: AnyObject {
-    var spectrumData: [Float] { get }
-    var pcmData: [Float] { get }
-    var sampleRate: Double { get }
-}
-
-// In VisualizationGLView:
-weak var dataSource: VisualizationDataSource?  // Never assigned
-```
-
-**Status:** Protocol defined and property declared, but `dataSource` is never assigned. The visualization receives data via `NotificationCenter` instead.  
-**Recommendation:** Remove the protocol and the `dataSource` property.
-
----
-
-## 6. Unused `LibraryFilter` Struct and `filteredTracks` Function
+## 5. Unused `LibraryFilter` Struct and `filteredTracks` Function
 
 **File:** `Sources/AdAmp/Data/Models/MediaLibrary.swift`
 
@@ -132,7 +111,7 @@ func filteredTracks(filter: LibraryFilter, sortBy: LibrarySortOption, ascending:
 
 ---
 
-## 7. Unused `hexString` Property
+## 6. Unused `hexString` Property
 
 **File:** `Sources/AdAmp/Skin/Skin.swift`  
 **Lines:** 176-182
@@ -154,20 +133,70 @@ extension NSColor {
 
 ---
 
+## 7. Unused `FlexibleDouble` Struct
+
+**File:** `Sources/AdAmp/Data/Models/PlexModels.swift`  
+**Lines:** 29-48
+
+```swift
+/// A type that can decode either a String or a numeric value into a Double
+/// Used for Plex fields that inconsistently return strings vs numbers (like frameRate)
+struct FlexibleDouble: Codable, Equatable {
+    let value: Double?
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let doubleValue = try? container.decode(Double.self) {
+            value = doubleValue
+        } else if let intValue = try? container.decode(Int.self) {
+            value = Double(intValue)
+        } else if let stringValue = try? container.decode(String.self) {
+            value = Double(stringValue)
+        } else {
+            value = nil
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(value)
+    }
+}
+```
+
+**Status:** Struct defined but never used as a type anywhere. Similar `FlexibleString` IS used for `frameRate` decoding.  
+**Recommendation:** Remove entirely.
+
+---
+
 ## Summary
 
 | Item | File | Lines | Severity |
 |------|------|-------|----------|
 | `printDeviceDebugInfo()` | AudioOutputManager.swift | 387-446 | Low |
-| Debug prints | PlaylistView.swift | 876-882 | Low |
+| Debug prints | PlaylistView.swift | 948-953 | Low |
 | `SliderDragTracker` | SkinRegion.swift | 508-553 | Medium |
-| `VideoTitleBarView` | VideoPlayerView.swift | 670-837 | Medium |
-| `VisualizationDataSource` | VisualizationGLView.swift | 11-20, 29 | Low |
+| `VideoTitleBarView` | VideoPlayerView.swift | 1020-1183 | Medium |
 | `LibraryFilter` + `filteredTracks` | MediaLibrary.swift | 169-179, 476-549 | Medium |
 | `hexString` | Skin.swift | 176-182 | Low |
+| `FlexibleDouble` | PlexModels.swift | 29-48 | Low |
 
-**Estimated removable lines:** ~400 lines
+**Estimated removable lines:** ~380 lines
 
 ---
 
-*Generated: 2026-01-21*
+## Unimplemented TODO Comments
+
+These TODO comments indicate incomplete functionality that may warrant attention:
+
+| File | Line | Description |
+|------|------|-------------|
+| PlexBrowserView.swift | 7584 | `// TODO: Build local playlist items` |
+| PlexBrowserView.swift | 7680 | `// TODO: Implement Subsonic search` |
+| PlexBrowserView.swift | 8169 | `// TODO: Build local playlist items` |
+| PlexBrowserView.swift | 8183 | `displayItems = [] // TODO: Implement Subsonic search` |
+| SkinLoader.swift | 464 | `// TODO: Implement .cur/.ani file parsing` |
+
+---
+
+*Last updated: 2026-01-24*

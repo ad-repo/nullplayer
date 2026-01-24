@@ -543,6 +543,30 @@ struct Track {
 
 The reporter checks for this key and only reports for Plex content.
 
+### PlexVideoPlaybackReporter
+
+The `PlexVideoPlaybackReporter` singleton manages Plex reporting for **video content** (movies and TV episodes):
+
+```swift
+// Automatic integration - VideoPlayerWindowController calls the reporter:
+- movieDidStart()      // When a Plex movie begins playing
+- episodeDidStart()    // When a Plex episode begins playing
+- videoDidPause()      // When video playback is paused
+- videoDidResume()     // When video playback resumes
+- videoDidStop()       // When video playback stops or finishes
+- updatePosition()     // Called during playback for progress tracking
+```
+
+**Video Scrobbling Rules:**
+- Video is marked as "watched" when reaching **90% completion** or finishing naturally
+- Minimum **60 seconds** of playback required (prevents accidental scrobbles)
+- Reports `type: "movie"` or `type: "episode"` to distinguish video from audio
+
+**Video Integration:**
+- `VideoPlayerWindowController.play(movie:)` - Starts tracking for movies
+- `VideoPlayerWindowController.play(episode:)` - Starts tracking for TV episodes
+- Non-Plex videos (local files) are not reported
+
 ## Plex Radio/Mix
 
 AdAmp supports Plex radio features, allowing you to generate dynamic playlists based on a seed track, album, or artist. This is similar to PlexAmp's "Track Radio", "Artist Radio", and "Album Radio" features.

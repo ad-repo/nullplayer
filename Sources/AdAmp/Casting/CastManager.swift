@@ -68,6 +68,12 @@ class CastManager {
     /// Discovery refresh timer
     private var discoveryRefreshTimer: Timer?
     
+    /// Timestamp of last refresh (for UI feedback)
+    private(set) var lastRefreshTime: Date?
+    
+    /// Whether a refresh is currently in progress
+    private(set) var isRefreshing: Bool = false
+    
     // MARK: - Initialization
     
     private init() {
@@ -107,23 +113,57 @@ class CastManager {
     }
     
     /// Refresh device list (restart discovery)
+    /// Keeps existing devices visible - doesn't clear until new devices are found
     func refreshDevices() {
         NSLog("CastManager: Refreshing devices...")
         
-        // Clear existing devices
-        chromecastManager.clearDevices()
-        upnpManager.clearDevices()
+        isRefreshing = true
+        lastRefreshTime = Date()
         
-        // Restart discovery
+        // Stop discovery (closes sockets/browsers)
+        // DON'T clear existing devices - keep them visible throughout refresh
         chromecastManager.stopDiscovery()
         upnpManager.stopDiscovery()
+        isDiscovering = false
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.chromecastManager.startDiscovery()
-            self?.upnpManager.startDiscovery()
+        // Reset only the internal discovery state (pending descriptions, etc.)
+        // but keep the visible device lists intact
+        upnpManager.resetDiscoveryState()
+        
+        // Wait 2s for clean socket shutdown before restarting
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self else { return }
+            NSLog("CastManager: Restarting discovery after refresh delay")
+            
+            self.isDiscovering = true
+            self.chromecastManager.startDiscovery()
+            self.upnpManager.startDiscovery()
         }
         
-        NotificationCenter.default.post(name: Self.devicesDidChangeNotification, object: nil)
+        // Post-refresh discovery boosts
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+            guard let self = self, self.isDiscovering else { return }
+            NSLog("CastManager: Sending discovery boost at +10s")
+            self.upnpManager.sendDiscoveryBoost()
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15.0) { [weak self] in
+            guard let self = self else { return }
+            // Always clear refreshing flag, regardless of discovery state
+            self.isRefreshing = false
+            
+            if self.isDiscovering {
+                NSLog("CastManager: Sending discovery boost at +15s")
+                self.upnpManager.sendDiscoveryBoost()
+            }
+            NSLog("CastManager: Refresh complete")
+        }
+    }
+    
+    /// Get the number of seconds since last refresh
+    var secondsSinceLastRefresh: Int? {
+        guard let lastRefresh = lastRefreshTime else { return nil }
+        return Int(Date().timeIntervalSince(lastRefresh))
     }
     
     // MARK: - Casting
@@ -187,7 +227,7 @@ class CastManager {
     func castCurrentTrack(to device: CastDevice) async throws {
         let engine = WindowManager.shared.audioEngine
         guard let track = engine.currentTrack else {
-            throw CastError.invalidURL
+            throw CastError.noTrackPlaying
         }
         
         // Capture current position before casting
@@ -209,7 +249,7 @@ class CastManager {
             }
         } else {
             // Local files can't be cast (no HTTP server)
-            throw CastError.invalidURL
+            throw CastError.localFileNotCastable
         }
         
         // Get artwork URL if available
@@ -245,7 +285,7 @@ class CastManager {
                 castURL = track.url
             }
         } else {
-            throw CastError.invalidURL
+            throw CastError.localFileNotCastable
         }
         
         // Get artwork URL if available

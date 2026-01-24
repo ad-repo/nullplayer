@@ -415,6 +415,7 @@ class WindowManager {
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
+        videoPlayerWindowController?.volume = audioEngine.volume
         videoPlayerWindowController?.play(url: url, title: title)
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
     }
@@ -424,6 +425,7 @@ class WindowManager {
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
+        videoPlayerWindowController?.volume = audioEngine.volume
         videoPlayerWindowController?.play(movie: movie)
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
     }
@@ -433,8 +435,45 @@ class WindowManager {
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
+        videoPlayerWindowController?.volume = audioEngine.volume
         videoPlayerWindowController?.play(episode: episode)
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+    }
+    
+    /// Play a video Track from the playlist
+    /// Called by AudioEngine when it encounters a video track
+    func playVideoTrack(_ track: Track) {
+        guard track.mediaType == .video else {
+            NSLog("WindowManager: playVideoTrack called with non-video track")
+            return
+        }
+        
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        
+        // Set up callback for when video finishes (to advance playlist)
+        videoPlayerWindowController?.onVideoFinishedForPlaylist = { [weak self] in
+            self?.videoTrackDidFinish()
+        }
+        
+        videoPlayerWindowController?.volume = audioEngine.volume
+        
+        // Use Plex-aware playback if track has a plexRatingKey (for scrobbling/progress)
+        if track.plexRatingKey != nil {
+            videoPlayerWindowController?.play(plexTrack: track)
+        } else {
+            videoPlayerWindowController?.play(url: track.url, title: track.displayTitle)
+        }
+        
+        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+        NSLog("WindowManager: Playing video track from playlist: %@", track.title)
+    }
+    
+    /// Called when a video track from the playlist finishes playing
+    private func videoTrackDidFinish() {
+        NSLog("WindowManager: Video track finished, advancing playlist")
+        audioEngine.next()
     }
     
     var isVideoPlayerVisible: Bool {
@@ -467,6 +506,11 @@ class WindowManager {
     /// Stop video playback
     func stopVideo() {
         videoPlayerWindowController?.stop()
+    }
+    
+    /// Set video player volume
+    func setVideoVolume(_ volume: Float) {
+        videoPlayerWindowController?.volume = volume
     }
     
     /// Skip video forward
@@ -518,9 +562,19 @@ class WindowManager {
         mainWindowController?.updateTime(current: current, duration: duration)
     }
     
-    /// Whether video is the active playback source (video is playing)
+    /// Whether video is the active playback source (video session is active)
+    /// Returns true when a video is loaded in the video player (even if paused)
+    /// This is used by playlist mini controls to route commands correctly
     var isVideoActivePlayback: Bool {
-        return isVideoPlaying
+        // A video session is active if the video player is visible AND has a video loaded
+        // (indicated by currentTitle being set). This is different from isVideoPlaying
+        // which only returns true when actively playing (not paused).
+        guard let controller = videoPlayerWindowController,
+              let window = controller.window,
+              window.isVisible else {
+            return false
+        }
+        return controller.currentTitle != nil
     }
     
     /// Get current video playback state for main window display
@@ -972,8 +1026,10 @@ class WindowManager {
         }
         
         // Check if we should undock (break free from the group)
-        // Only title bar drags can undock - interior drags always move the whole group
-        if isTitleBarDrag && !dockedWindowsToMove.isEmpty {
+        // Only non-main windows can undock when dragged by title bar
+        // Main window ALWAYS moves the entire docked group - it never detaches
+        let isMainWindow = window === mainWindowController?.window
+        if !isMainWindow && isTitleBarDrag && !dockedWindowsToMove.isEmpty {
             let dragDistance = hypot(newOrigin.x - dragStartOrigin.x, newOrigin.y - dragStartOrigin.y)
             if dragDistance > undockThreshold {
                 // Break the dock - this window now moves alone

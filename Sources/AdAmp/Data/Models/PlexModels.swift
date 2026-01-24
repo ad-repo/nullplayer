@@ -1,5 +1,53 @@
 import Foundation
 
+// MARK: - Flexible Decodable Types
+
+/// A type that can decode either a String or a numeric value into a String
+/// Used for Plex fields that inconsistently return strings vs numbers
+struct FlexibleString: Decodable {
+    let value: String
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let stringValue = try? container.decode(String.self) {
+            value = stringValue
+        } else if let intValue = try? container.decode(Int.self) {
+            value = String(intValue)
+        } else if let doubleValue = try? container.decode(Double.self) {
+            value = String(doubleValue)
+        } else {
+            throw DecodingError.typeMismatch(String.self, DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Expected String, Int, or Double"
+            ))
+        }
+    }
+}
+
+/// A type that can decode either a String or a numeric value into a Double
+/// Used for Plex fields that inconsistently return strings vs numbers (like frameRate)
+struct FlexibleDouble: Codable, Equatable {
+    let value: Double?
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let doubleValue = try? container.decode(Double.self) {
+            value = doubleValue
+        } else if let intValue = try? container.decode(Int.self) {
+            value = Double(intValue)
+        } else if let stringValue = try? container.decode(String.self) {
+            value = Double(stringValue)
+        } else {
+            value = nil
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(value)
+    }
+}
+
 // MARK: - Plex Account & Authentication
 
 /// Plex account info obtained via PIN authentication
@@ -241,6 +289,8 @@ struct PlexMovie: Identifiable, Equatable {
     let media: [PlexMedia]
     let addedAt: Date?
     let originallyAvailableAt: Date?
+    let imdbId: String?         // IMDB ID (e.g., "tt1234567")
+    let tmdbId: String?         // TMDB ID
     
     /// Get the streaming part key for this movie (uses the longest/primary media)
     var partKey: String? {
@@ -267,6 +317,35 @@ struct PlexMovie: Identifiable, Equatable {
         guard let duration = duration else { return 0 }
         return TimeInterval(duration) / 1000.0
     }
+    
+    /// URL to the IMDB page for this movie (direct link if ID available, otherwise search)
+    var imdbURL: URL? {
+        if let imdbId = imdbId {
+            return URL(string: "https://www.imdb.com/title/\(imdbId)/")
+        }
+        // Fall back to search
+        let searchQuery = year != nil ? "\(title) (\(year!))" : title
+        guard let encoded = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "https://www.imdb.com/find/?q=\(encoded)&s=tt&ttype=ft")
+    }
+    
+    /// URL to the TMDB page for this movie (direct link if ID available, otherwise search)
+    var tmdbURL: URL? {
+        if let tmdbId = tmdbId {
+            return URL(string: "https://www.themoviedb.org/movie/\(tmdbId)")
+        }
+        // Fall back to search
+        let searchQuery = year != nil ? "\(title) (\(year!))" : title
+        guard let encoded = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "https://www.themoviedb.org/search?query=\(encoded)")
+    }
+    
+    /// URL to search for this movie on Rotten Tomatoes
+    var rottenTomatoesSearchURL: URL? {
+        let searchQuery = year != nil ? "\(title) (\(year!))" : title
+        guard let encoded = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "https://www.rottentomatoes.com/search?search=\(encoded)")
+    }
 }
 
 /// A TV show in a Plex show library
@@ -283,6 +362,38 @@ struct PlexShow: Identifiable, Equatable {
     let childCount: Int         // Number of seasons
     let leafCount: Int          // Total number of episodes
     let addedAt: Date?
+    let imdbId: String?         // IMDB ID (e.g., "tt1234567")
+    let tmdbId: String?         // TMDB ID
+    let tvdbId: String?         // TVDB ID
+    
+    /// URL to the IMDB page for this show (direct link if ID available, otherwise search)
+    var imdbURL: URL? {
+        if let imdbId = imdbId {
+            return URL(string: "https://www.imdb.com/title/\(imdbId)/")
+        }
+        // Fall back to search
+        let searchQuery = year != nil ? "\(title) (\(year!))" : title
+        guard let encoded = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "https://www.imdb.com/find/?q=\(encoded)&s=tt&ttype=tv")
+    }
+    
+    /// URL to the TMDB page for this show (direct link if ID available, otherwise search)
+    var tmdbURL: URL? {
+        if let tmdbId = tmdbId {
+            return URL(string: "https://www.themoviedb.org/tv/\(tmdbId)")
+        }
+        // Fall back to search
+        let searchQuery = year != nil ? "\(title) (\(year!))" : title
+        guard let encoded = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "https://www.themoviedb.org/search/tv?query=\(encoded)")
+    }
+    
+    /// URL to search for this show on Rotten Tomatoes
+    var rottenTomatoesSearchURL: URL? {
+        let searchQuery = year != nil ? "\(title) (\(year!))" : title
+        guard let encoded = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "https://www.rottentomatoes.com/search?search=\(encoded)")
+    }
 }
 
 /// A season of a TV show
@@ -314,6 +425,9 @@ struct PlexEpisode: Identifiable, Equatable {
     let media: [PlexMedia]
     let addedAt: Date?
     let originallyAvailableAt: Date?
+    let imdbId: String?         // IMDB ID (e.g., "tt1234567")
+    let tmdbId: String?         // TMDB ID
+    let tvdbId: String?         // TVDB ID
     
     /// Get the streaming part key for this episode
     var partKey: String? {
@@ -329,6 +443,33 @@ struct PlexEpisode: Identifiable, Equatable {
             return String(format: "%d:%02d:%02d", hours, minutes % 60, seconds % 60)
         }
         return String(format: "%d:%02d", minutes, seconds % 60)
+    }
+    
+    /// URL to the IMDB page for this episode (direct link if ID available, otherwise search for show)
+    var imdbURL: URL? {
+        if let imdbId = imdbId {
+            return URL(string: "https://www.imdb.com/title/\(imdbId)/")
+        }
+        // Fall back to searching for the show
+        let searchQuery = grandparentTitle ?? title
+        guard let encoded = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "https://www.imdb.com/find/?q=\(encoded)&s=tt&ttype=tv")
+    }
+    
+    /// URL to search for this episode on TMDB
+    var tmdbSearchURL: URL? {
+        // Search for the show name
+        let searchQuery = grandparentTitle ?? title
+        guard let encoded = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "https://www.themoviedb.org/search/tv?query=\(encoded)")
+    }
+    
+    /// URL to search for this episode on Rotten Tomatoes
+    var rottenTomatoesSearchURL: URL? {
+        // Search for the show name
+        let searchQuery = grandparentTitle ?? title
+        guard let encoded = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "https://www.rottentomatoes.com/search?search=\(encoded)")
     }
     
     var durationInSeconds: TimeInterval {
@@ -385,6 +526,113 @@ struct PlexPart: Codable, Equatable {
     let size: Int64?
     let container: String?
     let audioProfile: String?
+    let streams: [PlexStream]   // Audio, video, and subtitle streams
+}
+
+// MARK: - Stream Info
+
+/// Stream type enumeration for Plex media streams
+enum PlexStreamType: Int, Codable, Equatable {
+    case video = 1
+    case audio = 2
+    case subtitle = 3
+    
+    var displayName: String {
+        switch self {
+        case .video: return "Video"
+        case .audio: return "Audio"
+        case .subtitle: return "Subtitle"
+        }
+    }
+}
+
+/// A media stream (video, audio, or subtitle track) within a Plex media part
+struct PlexStream: Codable, Equatable, Identifiable {
+    let id: Int
+    let streamType: PlexStreamType  // 1=video, 2=audio, 3=subtitle
+    let index: Int?                  // Stream index in container
+    let codec: String?               // e.g., "aac", "ac3", "srt", "ass"
+    let language: String?            // ISO language code (e.g., "en", "es")
+    let languageTag: String?         // Full language tag (e.g., "en-US")
+    let languageCode: String?        // Three-letter code (e.g., "eng")
+    let displayTitle: String?        // Human-readable title (e.g., "English (AC3 5.1)")
+    let extendedDisplayTitle: String? // Extended title with more details
+    let title: String?               // Custom track title
+    let selected: Bool               // Whether this is the default/selected track
+    let `default`: Bool?             // Whether this is marked as default in the file
+    let forced: Bool?                // Whether this is a forced subtitle track
+    let hearingImpaired: Bool?       // Whether this is for hearing impaired (SDH)
+    let key: String?                 // URL path for external subtitles
+    
+    // Audio-specific properties
+    let channels: Int?               // Number of audio channels
+    let channelLayout: String?       // e.g., "5.1", "stereo"
+    let bitrate: Int?                // Audio bitrate
+    let samplingRate: Int?           // Audio sample rate
+    let bitDepth: Int?               // Audio bit depth
+    
+    // Video-specific properties
+    let width: Int?
+    let height: Int?
+    let frameRate: Double?
+    let profile: String?             // e.g., "main", "high"
+    let level: Int?
+    let colorSpace: String?
+    
+    // Subtitle-specific properties
+    let format: String?              // Subtitle format (e.g., "srt", "ass", "pgs")
+    
+    /// Whether this is an external subtitle (has a download URL)
+    var isExternal: Bool {
+        key != nil && streamType == .subtitle
+    }
+    
+    /// User-friendly display name for the stream
+    var localizedDisplayTitle: String {
+        if let displayTitle = displayTitle, !displayTitle.isEmpty {
+            return displayTitle
+        }
+        
+        var parts: [String] = []
+        
+        // Add language if available
+        if let lang = language ?? languageCode {
+            let locale = Locale(identifier: lang)
+            if let languageName = Locale.current.localizedString(forLanguageCode: lang) {
+                parts.append(languageName)
+            } else {
+                parts.append(lang.uppercased())
+            }
+        } else {
+            parts.append("Unknown")
+        }
+        
+        // Add codec/format info
+        if let codec = codec?.uppercased() {
+            if streamType == .audio {
+                if let channels = channels {
+                    let channelDesc = channels == 2 ? "Stereo" : "\(channels)ch"
+                    parts.append("(\(codec) \(channelDesc))")
+                } else {
+                    parts.append("(\(codec))")
+                }
+            } else {
+                parts.append("(\(codec))")
+            }
+        }
+        
+        // Add SDH/Forced indicators for subtitles
+        if streamType == .subtitle {
+            if hearingImpaired == true {
+                parts.append("[SDH]")
+            }
+            if forced == true {
+                parts.append("[Forced]")
+            }
+        }
+        
+        return parts.joined(separator: " ")
+    }
 }
 
 // MARK: - API Response Containers
@@ -517,10 +765,27 @@ struct PlexMetadataDTO: Decodable {
     // Extra/bonus content identification
     let extraType: Int?         // Non-nil means this is an extra (trailer, deleted scene, etc.)
     let subtype: String?        // Additional type info (e.g., "trailer", "clip")
+    // External IDs (IMDB, TMDB, TVDB)
+    let guids: [PlexGuidDTO]?   // External ID references
     
     /// Returns true if this item is an extra/bonus content (not the main movie/episode)
     var isExtra: Bool {
         extraType != nil || subtype != nil
+    }
+    
+    /// Extract IMDB ID from guids array
+    var imdbId: String? {
+        guids?.compactMap { $0.imdbId }.first
+    }
+    
+    /// Extract TMDB ID from guids array
+    var tmdbId: String? {
+        guids?.compactMap { $0.tmdbId }.first
+    }
+    
+    /// Extract TVDB ID from guids array
+    var tvdbId: String? {
+        guids?.compactMap { $0.tvdbId }.first
     }
     
     enum CodingKeys: String, CodingKey {
@@ -534,6 +799,7 @@ struct PlexMetadataDTO: Decodable {
         case playlistType, smart, composite
         case parentYear, ratingCount
         case extraType, subtype
+        case guids = "Guid"
     }
     
     func toArtist() -> PlexArtist {
@@ -626,7 +892,9 @@ struct PlexMetadataDTO: Decodable {
             studio: studio,
             media: media?.map { $0.toMedia() } ?? [],
             addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
-            originallyAvailableAt: releaseDate
+            originallyAvailableAt: releaseDate,
+            imdbId: imdbId,
+            tmdbId: tmdbId
         )
     }
     
@@ -643,7 +911,10 @@ struct PlexMetadataDTO: Decodable {
             studio: studio,
             childCount: childCount ?? 0,
             leafCount: leafCount ?? 0,
-            addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+            addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
+            imdbId: imdbId,
+            tmdbId: tmdbId,
+            tvdbId: tvdbId
         )
     }
     
@@ -683,7 +954,10 @@ struct PlexMetadataDTO: Decodable {
             thumb: thumb,
             media: media?.map { $0.toMedia() } ?? [],
             addedAt: addedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
-            originallyAvailableAt: airDate
+            originallyAvailableAt: airDate,
+            imdbId: imdbId,
+            tmdbId: tmdbId,
+            tvdbId: tvdbId
         )
     }
     
@@ -749,6 +1023,12 @@ struct PlexPartDTO: Decodable {
     let size: Int64?
     let container: String?
     let audioProfile: String?
+    let streams: [PlexStreamDTO]?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, key, duration, file, size, container, audioProfile
+        case streams = "Stream"
+    }
     
     func toPart() -> PlexPart {
         PlexPart(
@@ -758,13 +1038,105 @@ struct PlexPartDTO: Decodable {
             file: file,
             size: size,
             container: container,
-            audioProfile: audioProfile
+            audioProfile: audioProfile,
+            streams: streams?.map { $0.toStream() } ?? []
+        )
+    }
+}
+
+struct PlexStreamDTO: Decodable {
+    let id: Int
+    let streamType: Int
+    let index: Int?
+    let codec: String?
+    let language: String?
+    let languageTag: String?
+    let languageCode: String?
+    let displayTitle: String?
+    let extendedDisplayTitle: String?
+    let title: String?
+    let selected: Bool?
+    let `default`: Bool?
+    let forced: Bool?
+    let hearingImpaired: Bool?
+    let key: String?
+    
+    // Audio-specific
+    let channels: Int?
+    let channelLayout: String?
+    let bitrate: Int?
+    let samplingRate: Int?
+    let bitDepth: Int?
+    
+    // Video-specific
+    let width: Int?
+    let height: Int?
+    let frameRate: FlexibleString?  // Plex returns this as either string or number
+    let profile: String?
+    let level: Int?
+    let colorSpace: String?
+    
+    // Subtitle-specific
+    let format: String?
+    
+    func toStream() -> PlexStream {
+        PlexStream(
+            id: id,
+            streamType: PlexStreamType(rawValue: streamType) ?? .video,
+            index: index,
+            codec: codec,
+            language: language,
+            languageTag: languageTag,
+            languageCode: languageCode,
+            displayTitle: displayTitle,
+            extendedDisplayTitle: extendedDisplayTitle,
+            title: title,
+            selected: selected ?? false,
+            default: `default`,
+            forced: forced,
+            hearingImpaired: hearingImpaired,
+            key: key,
+            channels: channels,
+            channelLayout: channelLayout,
+            bitrate: bitrate,
+            samplingRate: samplingRate,
+            bitDepth: bitDepth,
+            width: width,
+            height: height,
+            frameRate: frameRate.flatMap { Double($0.value) },
+            profile: profile,
+            level: level,
+            colorSpace: colorSpace,
+            format: format
         )
     }
 }
 
 struct PlexTagDTO: Decodable {
     let tag: String
+}
+
+/// External ID reference (IMDB, TMDB, TVDB, etc.)
+struct PlexGuidDTO: Decodable {
+    let id: String
+    
+    /// Extract the IMDB ID if this is an IMDB guid
+    var imdbId: String? {
+        guard id.hasPrefix("imdb://") else { return nil }
+        return String(id.dropFirst("imdb://".count))
+    }
+    
+    /// Extract the TMDB ID if this is a TMDB guid
+    var tmdbId: String? {
+        guard id.hasPrefix("tmdb://") else { return nil }
+        return String(id.dropFirst("tmdb://".count))
+    }
+    
+    /// Extract the TVDB ID if this is a TVDB guid
+    var tvdbId: String? {
+        guard id.hasPrefix("tvdb://") else { return nil }
+        return String(id.dropFirst("tvdb://".count))
+    }
 }
 
 // MARK: - Genre Response DTOs

@@ -134,11 +134,16 @@ class ChromecastManager {
         }
     }
     
-    /// Resolve a Bonjour service to get IP address and port
+    /// Resolve a Bonjour service to get IP address and port with retry logic
     private func resolveService(result: NWBrowser.Result, name: String, completion: @escaping (CastDevice?) -> Void) {
+        resolveServiceWithRetry(result: result, name: name, attempt: 1, maxAttempts: 3, completion: completion)
+    }
+    
+    /// Internal retry implementation for service resolution
+    private func resolveServiceWithRetry(result: NWBrowser.Result, name: String, attempt: Int, maxAttempts: Int, completion: @escaping (CastDevice?) -> Void) {
         let endpoint = result.endpoint
         
-        NSLog("ChromecastManager: Resolving endpoint: %@", String(describing: endpoint))
+        NSLog("ChromecastManager: Resolving endpoint: %@ (attempt %d/%d)", String(describing: endpoint), attempt, maxAttempts)
         
         // Try to extract info directly from the endpoint if possible
         if case let .service(serviceName, _, _, _) = endpoint {
@@ -168,13 +173,23 @@ class ChromecastManager {
                     } else {
                         NSLog("ChromecastManager: No remote endpoint found for %@", serviceName)
                         connection.cancel()
-                        completion(nil)
+                        // Retry if we have attempts left
+                        if attempt < maxAttempts {
+                            self?.retryResolution(result: result, name: name, attempt: attempt, maxAttempts: maxAttempts, completion: completion)
+                        } else {
+                            completion(nil)
+                        }
                     }
                 case .failed(let error):
                     completed = true
                     NSLog("ChromecastManager: Connection failed for %@: %@", serviceName, error.localizedDescription)
                     connection.cancel()
-                    completion(nil)
+                    // Retry if we have attempts left
+                    if attempt < maxAttempts {
+                        self?.retryResolution(result: result, name: name, attempt: attempt, maxAttempts: maxAttempts, completion: completion)
+                    } else {
+                        completion(nil)
+                    }
                 case .cancelled:
                     if !completed {
                         completed = true
@@ -189,16 +204,37 @@ class ChromecastManager {
             
             connection.start(queue: .main)
             
-            // Timeout the resolution
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+            // Timeout the resolution (shorter timeout per attempt: 5s instead of 10s)
+            let timeout: TimeInterval = 5.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
                 guard !completed else { return }
                 completed = true
-                NSLog("ChromecastManager: Connection timeout for %@", serviceName)
+                NSLog("ChromecastManager: Connection timeout for %@ (attempt %d)", serviceName, attempt)
                 connection.cancel()
-                completion(nil)
+                // Retry if we have attempts left
+                if attempt < maxAttempts {
+                    self?.retryResolution(result: result, name: name, attempt: attempt, maxAttempts: maxAttempts, completion: completion)
+                } else {
+                    completion(nil)
+                }
             }
         } else {
             completion(nil)
+        }
+    }
+    
+    /// Schedule a retry for service resolution with backoff
+    private func retryResolution(result: NWBrowser.Result, name: String, attempt: Int, maxAttempts: Int, completion: @escaping (CastDevice?) -> Void) {
+        // Exponential backoff: 1s, 2s, 4s
+        let delay = TimeInterval(1 << (attempt - 1))
+        NSLog("ChromecastManager: Scheduling retry for %@ in %.0fs", name, delay)
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard self?.isDiscovering == true else {
+                completion(nil)
+                return
+            }
+            self?.resolveServiceWithRetry(result: result, name: name, attempt: attempt + 1, maxAttempts: maxAttempts, completion: completion)
         }
     }
     

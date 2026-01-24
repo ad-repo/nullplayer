@@ -522,9 +522,9 @@ class MainWindowView: NSView {
         marqueeTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
-            // Use video title if video is playing, otherwise track title
+            // Use video title if video session is active, otherwise track title
             let title: String
-            if WindowManager.shared.isVideoPlaying, let videoTitle = WindowManager.shared.currentVideoTitle {
+            if WindowManager.shared.isVideoActivePlayback, let videoTitle = WindowManager.shared.currentVideoTitle {
                 title = videoTitle
             } else {
                 title = self.currentTrack?.displayTitle ?? "AdAmp"

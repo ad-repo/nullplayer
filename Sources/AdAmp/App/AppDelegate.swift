@@ -239,7 +239,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(wrappingLabelWithString: "Winamp 2 has a one nighter with Plex in macOS")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "Winamp 2 says 👋 to Plex")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
@@ -254,16 +254,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         y -= 20
         
         // Credits
-        let creditLabel = NSTextField(labelWithString: "Re-imagined by ad")
-        creditLabel.font = NSFont.systemFont(ofSize: 13)
-        creditLabel.textColor = NSColor(white: 0.7, alpha: 1.0)
-        creditLabel.alignment = .center
-        creditLabel.frame = NSRect(x: 20, y: y - 18, width: windowWidth - 40, height: 18)
-        contentView.addSubview(creditLabel)
-        y -= 24
-        
-        let thanksLabel = NSTextField(labelWithString: "Thanks to Nullsoft and Winamp")
-        thanksLabel.font = NSFont.systemFont(ofSize: 12)
+        let thanksLabel = NSTextField(labelWithString: "Thanks to Nullsoft and Plex")
+        thanksLabel.font = NSFont.systemFont(ofSize: 14)
         thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         thanksLabel.alignment = .center
         thanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
@@ -343,8 +335,8 @@ extension AppDelegate: AudioEngineDelegate {
     }
     
     func audioEngineDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
-        // Don't update main window time if video is playing (video has its own time source)
-        guard !windowManager.isVideoPlaying else { return }
+        // Don't update main window time if video session is active (video has its own time source)
+        guard !windowManager.isVideoActivePlayback else { return }
         windowManager.mainWindowController?.updateTime(current: current, duration: duration)
     }
     

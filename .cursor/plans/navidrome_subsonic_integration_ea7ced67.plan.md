@@ -341,6 +341,6 @@ private func reportPlaybackToSubsonic(track: Track, position: TimeInterval) {
 
 Update these docs after implementation:
 
-- [docs/AUDIO_SYSTEM.md](docs/AUDIO_SYSTEM.md) - Add Subsonic streaming section
-- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) - Add Subsonic setup instructions
+- [AGENT_DOCS/AUDIO_SYSTEM.md](AGENT_DOCS/AUDIO_SYSTEM.md) - Add Subsonic streaming section
+- [AGENT_DOCS/USER_GUIDE.md](AGENT_DOCS/USER_GUIDE.md) - Add Subsonic setup instructions
 - [AGENTS.md](AGENTS.md) - Add Subsonic to key files table

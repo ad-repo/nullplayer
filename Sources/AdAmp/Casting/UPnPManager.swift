@@ -32,12 +32,21 @@ class UPnPManager {
     /// Dispatch source for reading socket
     private var readSource: DispatchSourceRead?
     
+    /// mDNS browser for Sonos discovery (fallback/supplement to SSDP)
+    private var sonosBrowser: NWBrowser?
+    
     /// Pending device descriptions being fetched - access via stateQueue
     private var _pendingDescriptions: Set<String> = []
+    
+    /// Active URL tasks for device description fetches (can be cancelled)
+    private var activeTasks: [String: URLSessionTask] = [:]
     
     /// Sonos zone information for group detection
     private var sonosZones: [String: SonosZoneInfo] = [:]  // UDN -> ZoneInfo
     private var sonosGroupsFetched = false
+    
+    /// Work item for Sonos group topology fetch (can be cancelled)
+    private var sonosTopologyWorkItem: DispatchWorkItem?
     
     // MARK: - Sonos Zone Types
     
@@ -88,28 +97,193 @@ class UPnPManager {
     
     /// Start discovering UPnP devices on the network
     func startDiscovery() {
-        guard !isDiscovering else { return }
+        guard !isDiscovering else {
+            NSLog("UPnPManager: Already discovering, skipping start")
+            return
+        }
         
-        NSLog("UPnPManager: Starting SSDP discovery...")
+        NSLog("UPnPManager: Starting discovery (SSDP + mDNS)...")
         isDiscovering = true
         
-        // Create and configure UDP socket
+        // Start SSDP discovery for DLNA devices and Sonos
         setupSocket()
         
-        // Send M-SEARCH requests with delays
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.sendMSearchRequests()
+        if ssdpSocket >= 0 {
+            // Send M-SEARCH requests with delays for thorough discovery
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.sendMSearchRequests()
+            }
+            
+            // Repeat search periodically to catch slow-responding devices
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard self?.isDiscovering == true else { return }
+                self?.sendMSearchRequests()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+                guard self?.isDiscovering == true else { return }
+                self?.sendMSearchRequests()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 9) { [weak self] in
+                guard self?.isDiscovering == true else { return }
+                self?.sendMSearchRequests()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+                guard self?.isDiscovering == true else { return }
+                self?.sendMSearchRequests()
+            }
+        } else {
+            NSLog("UPnPManager: SSDP socket setup failed, relying on mDNS only")
         }
         
-        // Repeat search periodically
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            guard self?.isDiscovering == true else { return }
-            self?.sendMSearchRequests()
+        // Start mDNS discovery for Sonos (more reliable fallback)
+        startSonosMDNSDiscovery()
+    }
+    
+    /// Send an immediate M-SEARCH boost (for refresh operations)
+    /// This can be called externally to trigger additional discovery
+    func sendDiscoveryBoost() {
+        guard isDiscovering else {
+            NSLog("UPnPManager: Cannot send discovery boost - not discovering")
+            return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
-            guard self?.isDiscovering == true else { return }
-            self?.sendMSearchRequests()
+        
+        if ssdpSocket >= 0 {
+            NSLog("UPnPManager: Sending discovery boost M-SEARCH")
+            sendMSearchRequests()
+        } else {
+            NSLog("UPnPManager: SSDP socket invalid, mDNS discovery still active")
         }
+    }
+    
+    // MARK: - Sonos mDNS Discovery
+    
+    /// Start mDNS/Bonjour discovery for Sonos devices
+    /// This is a fallback/supplement to SSDP discovery
+    private func startSonosMDNSDiscovery() {
+        NSLog("UPnPManager: Starting Sonos mDNS discovery (_sonos._tcp)...")
+        
+        // Browse for Sonos devices via mDNS
+        let descriptor = NWBrowser.Descriptor.bonjour(type: "_sonos._tcp", domain: "local.")
+        let parameters = NWParameters()
+        
+        sonosBrowser = NWBrowser(for: descriptor, using: parameters)
+        
+        sonosBrowser?.browseResultsChangedHandler = { [weak self] results, changes in
+            guard let self = self else { return }
+            
+            for change in changes {
+                switch change {
+                case .added(let result):
+                    self.handleSonosMDNSResult(result)
+                case .removed(let result):
+                    NSLog("UPnPManager: Sonos mDNS device removed: %@", String(describing: result.endpoint))
+                default:
+                    break
+                }
+            }
+        }
+        
+        sonosBrowser?.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                NSLog("UPnPManager: Sonos mDNS browser ready")
+            case .failed(let error):
+                NSLog("UPnPManager: Sonos mDNS browser failed: %@", error.localizedDescription)
+            case .cancelled:
+                NSLog("UPnPManager: Sonos mDNS browser cancelled")
+            default:
+                break
+            }
+        }
+        
+        sonosBrowser?.start(queue: .main)
+    }
+    
+    /// Handle a Sonos device discovered via mDNS
+    private func handleSonosMDNSResult(_ result: NWBrowser.Result) {
+        guard case let .service(name, _, _, _) = result.endpoint else { return }
+        
+        NSLog("UPnPManager: Sonos mDNS found: %@", name)
+        
+        // Resolve the service to get IP address
+        let parameters = NWParameters.tcp
+        let connection = NWConnection(to: result.endpoint, using: parameters)
+        var resolved = false
+        
+        connection.stateUpdateHandler = { [weak self] state in
+            guard !resolved else { return }
+            
+            switch state {
+            case .ready:
+                resolved = true
+                if let path = connection.currentPath,
+                   let remoteEndpoint = path.remoteEndpoint {
+                    self?.processSonosMDNSEndpoint(remoteEndpoint, name: name)
+                }
+                connection.cancel()
+                
+            case .failed, .cancelled:
+                resolved = true
+                connection.cancel()
+                
+            default:
+                break
+            }
+        }
+        
+        connection.start(queue: .main)
+        
+        // Timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            guard !resolved else { return }
+            resolved = true
+            connection.cancel()
+        }
+    }
+    
+    /// Process a resolved Sonos mDNS endpoint
+    private func processSonosMDNSEndpoint(_ endpoint: NWEndpoint, name: String) {
+        var address: String?
+        
+        switch endpoint {
+        case .hostPort(let host, _):
+            switch host {
+            case .ipv4(let ipv4):
+                address = "\(ipv4)"
+            case .ipv6(let ipv6):
+                // Skip IPv6 for now, Sonos works fine with IPv4
+                NSLog("UPnPManager: Skipping IPv6 address for Sonos: %@", "\(ipv6)")
+                return
+            case .name(let hostname, _):
+                address = hostname
+            @unknown default:
+                break
+            }
+        default:
+            break
+        }
+        
+        guard let deviceAddress = address else { return }
+        
+        // Sonos always uses port 1400 for UPnP
+        let descriptionURL = "http://\(deviceAddress):1400/xml/device_description.xml"
+        
+        NSLog("UPnPManager: Sonos mDNS resolved: %@ -> %@", name, descriptionURL)
+        
+        // Check if we've already fetched this description (via SSDP or mDNS)
+        let shouldFetch = stateQueue.sync { () -> Bool in
+            guard !_pendingDescriptions.contains(descriptionURL) else { return false }
+            _pendingDescriptions.insert(descriptionURL)
+            return true
+        }
+        
+        guard shouldFetch else {
+            NSLog("UPnPManager: Already fetched description for %@", deviceAddress)
+            return
+        }
+        
+        // Fetch device description (same as SSDP flow)
+        fetchDeviceDescription(from: descriptionURL)
     }
     
     /// Stop discovering devices
@@ -117,23 +291,43 @@ class UPnPManager {
         NSLog("UPnPManager: Stopping discovery")
         isDiscovering = false
         
-        readSource?.cancel()
-        readSource = nil
+        // Stop SSDP discovery
+        if let source = readSource {
+            source.cancel()
+            readSource = nil
+        }
         
         if ssdpSocket >= 0 {
             close(ssdpSocket)
             ssdpSocket = -1
+            NSLog("UPnPManager: SSDP socket closed")
+        }
+        
+        // Stop mDNS discovery
+        if sonosBrowser != nil {
+            sonosBrowser?.cancel()
+            sonosBrowser = nil
+            NSLog("UPnPManager: Sonos mDNS browser stopped")
         }
     }
     
     /// Setup UDP socket for SSDP
     private func setupSocket() {
+        // Ensure any previous socket is cleaned up
+        if ssdpSocket >= 0 {
+            NSLog("UPnPManager: Warning - previous socket still exists, closing it")
+            close(ssdpSocket)
+            ssdpSocket = -1
+        }
+        
         // Create UDP socket
         ssdpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
         guard ssdpSocket >= 0 else {
             NSLog("UPnPManager: Failed to create socket: %d", errno)
             return
         }
+        
+        NSLog("UPnPManager: Created socket fd=%d", ssdpSocket)
         
         // Allow address reuse
         var reuseAddr: Int32 = 1
@@ -161,7 +355,7 @@ class UPnPManager {
         
         // Set non-blocking
         let flags = fcntl(ssdpSocket, F_GETFL, 0)
-        fcntl(ssdpSocket, F_SETFL, flags | O_NONBLOCK)
+        _ = fcntl(ssdpSocket, F_SETFL, flags | O_NONBLOCK)
         
         // Create dispatch source for reading
         readSource = DispatchSource.makeReadSource(fileDescriptor: ssdpSocket, queue: .main)
@@ -170,7 +364,7 @@ class UPnPManager {
         }
         readSource?.resume()
         
-        NSLog("UPnPManager: SSDP socket ready")
+        NSLog("UPnPManager: SSDP socket ready (fd=%d)", ssdpSocket)
     }
     
     /// Send M-SEARCH requests for UPnP devices
@@ -293,13 +487,17 @@ class UPnPManager {
         let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
             
-            // Remove from pending (thread-safe)
+            // Remove from pending and active tasks (thread-safe)
             self.stateQueue.async {
                 self._pendingDescriptions.remove(urlString)
+                self.activeTasks.removeValue(forKey: urlString)
             }
             
             if let error = error {
-                NSLog("UPnPManager: Failed to fetch description: %@", error.localizedDescription)
+                // Don't log cancellation errors (expected during refresh)
+                if (error as NSError).code != NSURLErrorCancelled {
+                    NSLog("UPnPManager: Failed to fetch description: %@", error.localizedDescription)
+                }
                 return
             }
             
@@ -310,6 +508,12 @@ class UPnPManager {
                 self.parseDeviceDescription(data, baseURL: url)
             }
         }
+        
+        // Track the task for potential cancellation
+        stateQueue.async { [weak self] in
+            self?.activeTasks[urlString] = task
+        }
+        
         task.resume()
     }
     
@@ -370,11 +574,18 @@ class UPnPManager {
                 // Wait 6 seconds to allow more zones to be discovered
                 if isFirstZone && !self.sonosGroupsFetched {
                     self.sonosGroupsFetched = true  // Set flag immediately to prevent duplicates
-                    NSLog("UPnPManager: Scheduling group topology fetch in 6 seconds...")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) {
+                    NSLog("UPnPManager: Scheduling group topology fetch in 3 seconds...")
+                    
+                    // Cancel any existing work item
+                    UPnPManager.shared.sonosTopologyWorkItem?.cancel()
+                    
+                    // Create new cancellable work item
+                    let workItem = DispatchWorkItem {
                         NSLog("UPnPManager: Group topology fetch timer fired")
                         UPnPManager.shared.fetchSonosGroupTopology()
                     }
+                    UPnPManager.shared.sonosTopologyWorkItem = workItem
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: workItem)
                 }
             }
             return
@@ -688,11 +899,61 @@ class UPnPManager {
     
     /// Remove all discovered devices
     func clearDevices() {
+        NSLog("UPnPManager: clearDevices called")
+        
+        // Cancel any pending Sonos topology fetch (on main queue where it was scheduled)
+        sonosTopologyWorkItem?.cancel()
+        sonosTopologyWorkItem = nil
+        
         stateQueue.async { [weak self] in
-            self?._devices.removeAll()
-            self?._pendingDescriptions.removeAll()
-            self?.sonosZones.removeAll()
-            self?.sonosGroupsFetched = false
+            guard let self = self else { return }
+            
+            // Cancel all in-flight description fetches
+            let taskCount = self.activeTasks.count
+            for (_, task) in self.activeTasks {
+                task.cancel()
+            }
+            self.activeTasks.removeAll()
+            
+            // Clear all state atomically
+            let deviceCount = self._devices.count
+            let zoneCount = self.sonosZones.count
+            self._devices.removeAll()
+            self._pendingDescriptions.removeAll()
+            self.sonosZones.removeAll()
+            self.sonosGroupsFetched = false
+            
+            NSLog("UPnPManager: Cleared %d devices, %d zones, cancelled %d tasks", deviceCount, zoneCount, taskCount)
+        }
+    }
+    
+    /// Reset discovery state without clearing visible devices
+    /// Used during refresh to allow re-discovery while keeping existing devices visible
+    func resetDiscoveryState() {
+        NSLog("UPnPManager: Resetting discovery state (keeping devices)")
+        
+        // Cancel any pending Sonos topology fetch
+        sonosTopologyWorkItem?.cancel()
+        sonosTopologyWorkItem = nil
+        
+        stateQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Cancel in-flight description fetches
+            for (_, task) in self.activeTasks {
+                task.cancel()
+            }
+            self.activeTasks.removeAll()
+            
+            // Clear pending descriptions so devices can be re-fetched
+            self._pendingDescriptions.removeAll()
+            
+            // Clear Sonos zone tracking so groups can be re-detected
+            // But DON'T clear _devices - keep them visible
+            self.sonosZones.removeAll()
+            self.sonosGroupsFetched = false
+            
+            NSLog("UPnPManager: Reset discovery state, kept %d devices visible", self._devices.count)
         }
     }
     
