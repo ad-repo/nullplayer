@@ -183,6 +183,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             
             NSLog("VideoPlayer keyDown: keyCode=%d, isFullScreen=%d", event.keyCode, window.styleMask.contains(.fullScreen) ? 1 : 0)
             
+            // Check for Cmd+S to open track selection panel
+            if event.keyCode == 1 && event.modifierFlags.contains(.command) { // Cmd+S
+                self.videoPlayerView.showTrackSelectionPanel()
+                return nil
+            }
+            
             switch event.keyCode {
             case 53: // Escape
                 NSLog("VideoPlayer: Escape pressed, fullscreen=%d", window.styleMask.contains(.fullScreen) ? 1 : 0)
@@ -190,6 +196,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                     window.toggleFullScreen(nil)
                     return nil // Consume the event
                 } else {
+                    // If track selection panel is visible, close it instead of the window
+                    if self.videoPlayerView.trackSelectionPanelVisible {
+                        self.videoPlayerView.hideTrackSelectionPanel()
+                        return nil
+                    }
                     self.close()
                     return nil
                 }
@@ -198,6 +209,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 return nil
             case 3: // F key - toggle fullscreen
                 window.toggleFullScreen(nil)
+                return nil
+            case 1: // S key - cycle subtitles
+                self.videoPlayerView.cycleSubtitleTrack()
+                return nil
+            case 0: // A key - cycle audio tracks
+                self.videoPlayerView.cycleAudioTrack()
                 return nil
             case 123: // Left arrow - skip back
                 self.skipBackward(10)
@@ -276,6 +293,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         
         // Start Plex playback reporting
         PlexVideoPlaybackReporter.shared.movieDidStart(movie)
+        
+        // Pass Plex streams for external subtitle support
+        let allStreams = movie.media.flatMap { $0.parts.flatMap { $0.streams } }
+        videoPlayerView.setPlexStreams(allStreams)
     }
     
     /// Play a Plex episode
@@ -310,6 +331,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         
         // Start Plex playback reporting
         PlexVideoPlaybackReporter.shared.episodeDidStart(episode)
+        
+        // Pass Plex streams for external subtitle support
+        let allStreams = episode.media.flatMap { $0.parts.flatMap { $0.streams } }
+        videoPlayerView.setPlexStreams(allStreams)
     }
     
     /// Stop playback

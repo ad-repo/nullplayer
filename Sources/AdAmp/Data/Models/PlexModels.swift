@@ -385,6 +385,113 @@ struct PlexPart: Codable, Equatable {
     let size: Int64?
     let container: String?
     let audioProfile: String?
+    let streams: [PlexStream]   // Audio, video, and subtitle streams
+}
+
+// MARK: - Stream Info
+
+/// Stream type enumeration for Plex media streams
+enum PlexStreamType: Int, Codable, Equatable {
+    case video = 1
+    case audio = 2
+    case subtitle = 3
+    
+    var displayName: String {
+        switch self {
+        case .video: return "Video"
+        case .audio: return "Audio"
+        case .subtitle: return "Subtitle"
+        }
+    }
+}
+
+/// A media stream (video, audio, or subtitle track) within a Plex media part
+struct PlexStream: Codable, Equatable, Identifiable {
+    let id: Int
+    let streamType: PlexStreamType  // 1=video, 2=audio, 3=subtitle
+    let index: Int?                  // Stream index in container
+    let codec: String?               // e.g., "aac", "ac3", "srt", "ass"
+    let language: String?            // ISO language code (e.g., "en", "es")
+    let languageTag: String?         // Full language tag (e.g., "en-US")
+    let languageCode: String?        // Three-letter code (e.g., "eng")
+    let displayTitle: String?        // Human-readable title (e.g., "English (AC3 5.1)")
+    let extendedDisplayTitle: String? // Extended title with more details
+    let title: String?               // Custom track title
+    let selected: Bool               // Whether this is the default/selected track
+    let `default`: Bool?             // Whether this is marked as default in the file
+    let forced: Bool?                // Whether this is a forced subtitle track
+    let hearingImpaired: Bool?       // Whether this is for hearing impaired (SDH)
+    let key: String?                 // URL path for external subtitles
+    
+    // Audio-specific properties
+    let channels: Int?               // Number of audio channels
+    let channelLayout: String?       // e.g., "5.1", "stereo"
+    let bitrate: Int?                // Audio bitrate
+    let samplingRate: Int?           // Audio sample rate
+    let bitDepth: Int?               // Audio bit depth
+    
+    // Video-specific properties
+    let width: Int?
+    let height: Int?
+    let frameRate: Double?
+    let profile: String?             // e.g., "main", "high"
+    let level: Int?
+    let colorSpace: String?
+    
+    // Subtitle-specific properties
+    let format: String?              // Subtitle format (e.g., "srt", "ass", "pgs")
+    
+    /// Whether this is an external subtitle (has a download URL)
+    var isExternal: Bool {
+        key != nil && streamType == .subtitle
+    }
+    
+    /// User-friendly display name for the stream
+    var localizedDisplayTitle: String {
+        if let displayTitle = displayTitle, !displayTitle.isEmpty {
+            return displayTitle
+        }
+        
+        var parts: [String] = []
+        
+        // Add language if available
+        if let lang = language ?? languageCode {
+            let locale = Locale(identifier: lang)
+            if let languageName = Locale.current.localizedString(forLanguageCode: lang) {
+                parts.append(languageName)
+            } else {
+                parts.append(lang.uppercased())
+            }
+        } else {
+            parts.append("Unknown")
+        }
+        
+        // Add codec/format info
+        if let codec = codec?.uppercased() {
+            if streamType == .audio {
+                if let channels = channels {
+                    let channelDesc = channels == 2 ? "Stereo" : "\(channels)ch"
+                    parts.append("(\(codec) \(channelDesc))")
+                } else {
+                    parts.append("(\(codec))")
+                }
+            } else {
+                parts.append("(\(codec))")
+            }
+        }
+        
+        // Add SDH/Forced indicators for subtitles
+        if streamType == .subtitle {
+            if hearingImpaired == true {
+                parts.append("[SDH]")
+            }
+            if forced == true {
+                parts.append("[Forced]")
+            }
+        }
+        
+        return parts.joined(separator: " ")
+    }
 }
 
 // MARK: - API Response Containers
@@ -749,6 +856,12 @@ struct PlexPartDTO: Decodable {
     let size: Int64?
     let container: String?
     let audioProfile: String?
+    let streams: [PlexStreamDTO]?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, key, duration, file, size, container, audioProfile
+        case streams = "Stream"
+    }
     
     func toPart() -> PlexPart {
         PlexPart(
@@ -758,7 +871,76 @@ struct PlexPartDTO: Decodable {
             file: file,
             size: size,
             container: container,
-            audioProfile: audioProfile
+            audioProfile: audioProfile,
+            streams: streams?.map { $0.toStream() } ?? []
+        )
+    }
+}
+
+struct PlexStreamDTO: Decodable {
+    let id: Int
+    let streamType: Int
+    let index: Int?
+    let codec: String?
+    let language: String?
+    let languageTag: String?
+    let languageCode: String?
+    let displayTitle: String?
+    let extendedDisplayTitle: String?
+    let title: String?
+    let selected: Bool?
+    let `default`: Bool?
+    let forced: Bool?
+    let hearingImpaired: Bool?
+    let key: String?
+    
+    // Audio-specific
+    let channels: Int?
+    let channelLayout: String?
+    let bitrate: Int?
+    let samplingRate: Int?
+    let bitDepth: Int?
+    
+    // Video-specific
+    let width: Int?
+    let height: Int?
+    let frameRate: String?  // Plex returns this as a string
+    let profile: String?
+    let level: Int?
+    let colorSpace: String?
+    
+    // Subtitle-specific
+    let format: String?
+    
+    func toStream() -> PlexStream {
+        PlexStream(
+            id: id,
+            streamType: PlexStreamType(rawValue: streamType) ?? .video,
+            index: index,
+            codec: codec,
+            language: language,
+            languageTag: languageTag,
+            languageCode: languageCode,
+            displayTitle: displayTitle,
+            extendedDisplayTitle: extendedDisplayTitle,
+            title: title,
+            selected: selected ?? false,
+            default: `default`,
+            forced: forced,
+            hearingImpaired: hearingImpaired,
+            key: key,
+            channels: channels,
+            channelLayout: channelLayout,
+            bitrate: bitrate,
+            samplingRate: samplingRate,
+            bitDepth: bitDepth,
+            width: width,
+            height: height,
+            frameRate: frameRate.flatMap { Double($0) },
+            profile: profile,
+            level: level,
+            colorSpace: colorSpace,
+            format: format
         )
     }
 }

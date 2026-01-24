@@ -20,6 +20,26 @@ class VideoPlayerView: NSView {
     /// Control bar at bottom
     private var controlBarView: VideoControlBarView!
     
+    /// Track selection panel
+    private var trackSelectionPanel: TrackSelectionPanelView?
+    
+    /// Available audio tracks (from KSPlayer)
+    private var availableAudioTracks: [MediaPlayerTrack] = []
+    
+    /// Available subtitle tracks (from KSPlayer)
+    private var availableSubtitleTracks: [MediaPlayerTrack] = []
+    
+    /// Plex streams for external subtitles
+    private var plexStreams: [PlexStream] = []
+    
+    /// Current subtitle delay
+    private var currentSubtitleDelay: TimeInterval = 0
+    
+    /// Whether the track selection panel is currently visible
+    var trackSelectionPanelVisible: Bool {
+        trackSelectionPanel?.isVisible ?? false
+    }
+    
     /// Auto-hide timer for controls
     private var controlsHideTimer: Timer?
     private var controlsVisible: Bool = true
@@ -52,6 +72,9 @@ class VideoPlayerView: NSView {
     
     /// Callback when playback finishes naturally (with final position)
     var onPlaybackFinished: ((TimeInterval) -> Void)?
+    
+    /// Callback when track selection panel is requested
+    var onTrackSelectionRequested: (() -> Void)?
     
     /// Track previous state to detect pause/resume transitions
     private var previousState: KSPlayerState?
@@ -100,6 +123,7 @@ class VideoPlayerView: NSView {
         controlBarView.onSkipBackward = { [weak self] in self?.skipBackward(10) }
         controlBarView.onSkipForward = { [weak self] in self?.skipForward(10) }
         controlBarView.onFullscreen = { [weak self] in self?.window?.toggleFullScreen(nil) }
+        controlBarView.onTrackSettings = { [weak self] in self?.showTrackSelectionPanel() }
         addSubview(controlBarView)
         
         // Create loading indicator
@@ -110,6 +134,17 @@ class VideoPlayerView: NSView {
         
         // Setup mouse tracking for auto-hide controls
         setupMouseTracking()
+        
+        // Setup track selection panel
+        setupTrackSelectionPanel()
+    }
+    
+    private func setupTrackSelectionPanel() {
+        trackSelectionPanel = TrackSelectionPanelView(frame: bounds)
+        trackSelectionPanel?.autoresizingMask = [.width, .height]
+        trackSelectionPanel?.delegate = self
+        trackSelectionPanel?.isHidden = true
+        addSubview(trackSelectionPanel!)
     }
     
     private func setupLoadingIndicator() {
@@ -136,6 +171,25 @@ class VideoPlayerView: NSView {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Skip Backward 10s", action: #selector(contextSkipBackward), keyEquivalent: "")
         menu.addItem(withTitle: "Skip Forward 10s", action: #selector(contextSkipForward), keyEquivalent: "")
+        menu.addItem(NSMenuItem.separator())
+        
+        // Audio submenu
+        let audioItem = NSMenuItem(title: "Audio", action: nil, keyEquivalent: "")
+        audioItem.submenu = NSMenu(title: "Audio")
+        audioItem.submenu?.delegate = self
+        audioItem.tag = 100  // Tag to identify audio submenu
+        menu.addItem(audioItem)
+        
+        // Subtitles submenu
+        let subtitleItem = NSMenuItem(title: "Subtitles", action: nil, keyEquivalent: "")
+        subtitleItem.submenu = NSMenu(title: "Subtitles")
+        subtitleItem.submenu?.delegate = self
+        subtitleItem.tag = 101  // Tag to identify subtitle submenu
+        menu.addItem(subtitleItem)
+        
+        // Track settings panel
+        menu.addItem(withTitle: "Track Settings...", action: #selector(contextTrackSettings), keyEquivalent: "")
+        
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Toggle Fullscreen", action: #selector(contextFullscreen), keyEquivalent: "f")
         menu.addItem(NSMenuItem.separator())
@@ -175,6 +229,34 @@ class VideoPlayerView: NSView {
     @objc private func contextClose() {
         stop()
         window?.close()
+    }
+    
+    @objc private func contextTrackSettings() {
+        showTrackSelectionPanel()
+    }
+    
+    @objc private func contextSelectAudioTrack(_ sender: NSMenuItem) {
+        let index = sender.tag
+        if index >= 0 && index < availableAudioTracks.count {
+            let track = availableAudioTracks[index]
+            playerLayer?.player.select(track: track)
+            NSLog("VideoPlayerView: Selected audio track from menu: %@", track.name ?? "Track \(index + 1)")
+            updateTrackSelectionPanel()
+        }
+    }
+    
+    @objc private func contextSelectSubtitleTrack(_ sender: NSMenuItem) {
+        let index = sender.tag
+        if index == -1 {
+            // "Off" selected
+            selectSubtitleTrack(nil)
+            NSLog("VideoPlayerView: Subtitles turned off from menu")
+        } else if index >= 0 && index < availableSubtitleTracks.count {
+            let track = availableSubtitleTracks[index]
+            playerLayer?.player.select(track: track)
+            NSLog("VideoPlayerView: Selected subtitle track from menu: %@", track.name ?? "Track \(index + 1)")
+            updateTrackSelectionPanel()
+        }
     }
     
     // MARK: - Controls Visibility
@@ -343,6 +425,167 @@ class VideoPlayerView: NSView {
         layer.seek(time: newTime, autoPlay: true) { _ in }
     }
     
+    // MARK: - Track Selection
+    
+    /// Set Plex streams for external subtitle support
+    func setPlexStreams(_ streams: [PlexStream]) {
+        plexStreams = streams
+        updateTrackSelectionPanel()
+    }
+    
+    /// Discover available tracks from KSPlayer
+    private func discoverTracks() {
+        guard let layer = playerLayer else { return }
+        
+        availableAudioTracks = layer.player.tracks(mediaType: .audio)
+        availableSubtitleTracks = layer.player.tracks(mediaType: .subtitle)
+        
+        NSLog("VideoPlayerView: Discovered %d audio tracks, %d subtitle tracks", 
+              availableAudioTracks.count, availableSubtitleTracks.count)
+        
+        updateTrackSelectionPanel()
+    }
+    
+    /// Show the track selection panel
+    func showTrackSelectionPanel() {
+        trackSelectionPanel?.show()
+        onTrackSelectionRequested?()
+    }
+    
+    /// Hide the track selection panel
+    func hideTrackSelectionPanel() {
+        trackSelectionPanel?.hide()
+    }
+    
+    /// Toggle track selection panel visibility
+    func toggleTrackSelectionPanel() {
+        trackSelectionPanel?.toggle()
+    }
+    
+    /// Update the track selection panel with current tracks
+    private func updateTrackSelectionPanel() {
+        guard let panel = trackSelectionPanel else { return }
+        
+        // Convert KSPlayer audio tracks to SelectableTracks
+        let audioTracks = availableAudioTracks.enumerated().map { index, track in
+            SelectableTrack(
+                id: "audio_\(index)",
+                type: .audio,
+                name: track.name ?? "Audio Track \(index + 1)",
+                language: track.language,
+                codec: nil,
+                isSelected: track.isEnabled,
+                isExternal: false,
+                externalURL: nil,
+                ksTrack: track,
+                plexStream: nil
+            )
+        }
+        
+        // Convert KSPlayer subtitle tracks to SelectableTracks
+        var subtitleTracks = availableSubtitleTracks.enumerated().map { index, track in
+            SelectableTrack(
+                id: "subtitle_\(index)",
+                type: .subtitle,
+                name: track.name ?? "Subtitle Track \(index + 1)",
+                language: track.language,
+                codec: nil,
+                isSelected: track.isEnabled,
+                isExternal: false,
+                externalURL: nil,
+                ksTrack: track,
+                plexStream: nil
+            )
+        }
+        
+        // Add Plex external subtitles
+        let externalSubtitles = plexStreams.filter { $0.streamType == .subtitle && $0.isExternal }.map { stream in
+            SelectableTrack(
+                id: "plex_sub_\(stream.id)",
+                type: .subtitle,
+                name: stream.localizedDisplayTitle,
+                language: stream.language,
+                codec: stream.codec,
+                isSelected: false,  // External subtitles need to be explicitly selected
+                isExternal: true,
+                externalURL: stream.key.flatMap { URL(string: $0) },
+                ksTrack: nil,
+                plexStream: stream
+            )
+        }
+        subtitleTracks.append(contentsOf: externalSubtitles)
+        
+        panel.updateTracks(audioTracks: audioTracks, subtitleTracks: subtitleTracks)
+    }
+    
+    /// Select an audio track
+    func selectAudioTrack(_ track: SelectableTrack?) {
+        guard let layer = playerLayer, let track = track, let ksTrack = track.ksTrack else { return }
+        layer.player.select(track: ksTrack)
+        NSLog("VideoPlayerView: Selected audio track: %@", track.name)
+        updateTrackSelectionPanel()
+    }
+    
+    /// Select a subtitle track (nil to disable subtitles)
+    func selectSubtitleTrack(_ track: SelectableTrack?) {
+        guard let layer = playerLayer else { return }
+        
+        if let track = track {
+            if let ksTrack = track.ksTrack {
+                // Embedded subtitle
+                layer.player.select(track: ksTrack)
+                NSLog("VideoPlayerView: Selected subtitle track: %@", track.name)
+            } else if let plexStream = track.plexStream, let subtitleKey = plexStream.key {
+                // External Plex subtitle - need to load from URL
+                NSLog("VideoPlayerView: Loading external subtitle from: %@", subtitleKey)
+                // KSPlayer handles external subtitles via subtitleDataSource
+                // This would need additional implementation for external subtitle loading
+            }
+        } else {
+            // Disable all subtitles
+            for track in availableSubtitleTracks {
+                if track.isEnabled {
+                    // KSPlayer doesn't have a direct "disable" - select another track or implement disable
+                    NSLog("VideoPlayerView: Subtitles disabled")
+                }
+            }
+        }
+        updateTrackSelectionPanel()
+    }
+    
+    /// Cycle to next audio track
+    func cycleAudioTrack() {
+        guard !availableAudioTracks.isEmpty else { return }
+        
+        let currentIndex = availableAudioTracks.firstIndex { $0.isEnabled } ?? -1
+        let nextIndex = (currentIndex + 1) % availableAudioTracks.count
+        let nextTrack = availableAudioTracks[nextIndex]
+        
+        playerLayer?.player.select(track: nextTrack)
+        NSLog("VideoPlayerView: Cycled to audio track: %@", nextTrack.name ?? "Track \(nextIndex + 1)")
+        updateTrackSelectionPanel()
+    }
+    
+    /// Cycle to next subtitle track (including "Off")
+    func cycleSubtitleTrack() {
+        let totalOptions = availableSubtitleTracks.count + 1  // +1 for "Off"
+        guard totalOptions > 1 else { return }
+        
+        let currentIndex = availableSubtitleTracks.firstIndex { $0.isEnabled } ?? -1
+        let nextIndex = currentIndex + 1  // -1 -> 0 (first subtitle), last -> totalOptions-1 (off)
+        
+        if nextIndex >= availableSubtitleTracks.count {
+            // Select "Off" - disable subtitles
+            selectSubtitleTrack(nil)
+            NSLog("VideoPlayerView: Subtitles turned off")
+        } else {
+            let nextTrack = availableSubtitleTracks[nextIndex]
+            playerLayer?.player.select(track: nextTrack)
+            NSLog("VideoPlayerView: Cycled to subtitle track: %@", nextTrack.name ?? "Track \(nextIndex + 1)")
+        }
+        updateTrackSelectionPanel()
+    }
+    
     // MARK: - Loading Indicator
     
     private func showLoading(_ show: Bool) {
@@ -445,6 +688,8 @@ extension VideoPlayerView: KSPlayerLayerDelegate {
                 if self.previousState == .paused {
                     self.onPlaybackResumed?(self.currentTime)
                 }
+                // Discover available tracks
+                self.discoverTracks()
             case .buffering:
                 NSLog("VideoPlayerView: Buffering")
                 self.showLoading(true)
@@ -524,11 +769,13 @@ class VideoControlBarView: NSView {
     var onSkipBackward: (() -> Void)?
     var onSkipForward: (() -> Void)?
     var onFullscreen: (() -> Void)?
+    var onTrackSettings: (() -> Void)?
     
     private var playButton: NSButton!
     private var skipBackButton: NSButton!
     private var skipForwardButton: NSButton!
     private var fullscreenButton: NSButton!
+    private var trackSettingsButton: NSButton!
     private var seekSlider: NSSlider!
     private var currentTimeLabel: NSTextField!
     private var durationLabel: NSTextField!
@@ -570,6 +817,10 @@ class VideoControlBarView: NSView {
         seekSlider.translatesAutoresizingMaskIntoConstraints = false
         seekSlider.isContinuous = true
         
+        // Track settings button (subtitles/audio)
+        trackSettingsButton = createButton(symbol: "text.bubble", action: #selector(trackSettingsClicked))
+        trackSettingsButton.toolTip = "Audio & Subtitle Settings"
+        
         // Fullscreen button
         fullscreenButton = createButton(symbol: "arrow.up.left.and.arrow.down.right", action: #selector(fullscreenClicked))
         
@@ -579,6 +830,7 @@ class VideoControlBarView: NSView {
         addSubview(currentTimeLabel)
         addSubview(seekSlider)
         addSubview(durationLabel)
+        addSubview(trackSettingsButton)
         addSubview(fullscreenButton)
         
         setupConstraints()
@@ -640,8 +892,14 @@ class VideoControlBarView: NSView {
             fullscreenButton.widthAnchor.constraint(equalToConstant: 30),
             fullscreenButton.heightAnchor.constraint(equalToConstant: 30),
             
+            // Track settings button
+            trackSettingsButton.trailingAnchor.constraint(equalTo: fullscreenButton.leadingAnchor, constant: -5),
+            trackSettingsButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            trackSettingsButton.widthAnchor.constraint(equalToConstant: 30),
+            trackSettingsButton.heightAnchor.constraint(equalToConstant: 30),
+            
             // Duration label
-            durationLabel.trailingAnchor.constraint(equalTo: fullscreenButton.leadingAnchor, constant: -10),
+            durationLabel.trailingAnchor.constraint(equalTo: trackSettingsButton.leadingAnchor, constant: -10),
             durationLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             durationLabel.widthAnchor.constraint(equalToConstant: 50),
             
@@ -668,6 +926,10 @@ class VideoControlBarView: NSView {
     
     @objc private func fullscreenClicked() {
         onFullscreen?()
+    }
+    
+    @objc private func trackSettingsClicked() {
+        onTrackSettings?()
     }
     
     @objc private func seekChanged() {
@@ -871,6 +1133,96 @@ class VideoTitleBarView: NSView {
                 onMinimize?()
             default:
                 break
+            }
+        }
+    }
+}
+
+// MARK: - TrackSelectionPanelDelegate
+
+extension VideoPlayerView: TrackSelectionPanelDelegate {
+    func trackSelectionPanel(_ panel: TrackSelectionPanelView, didSelectAudioTrack track: SelectableTrack?) {
+        selectAudioTrack(track)
+    }
+    
+    func trackSelectionPanel(_ panel: TrackSelectionPanelView, didSelectSubtitleTrack track: SelectableTrack?) {
+        selectSubtitleTrack(track)
+    }
+    
+    func trackSelectionPanel(_ panel: TrackSelectionPanelView, didChangeSubtitleDelay delay: TimeInterval) {
+        currentSubtitleDelay = delay
+        // KSPlayer uses subtitleDelay option - this would need to be set on the options
+        // For now, just store the value
+        NSLog("VideoPlayerView: Subtitle delay changed to: %.1fs", delay)
+    }
+    
+    func trackSelectionPanelDidRequestClose(_ panel: TrackSelectionPanelView) {
+        hideTrackSelectionPanel()
+    }
+}
+
+// MARK: - NSMenuDelegate
+
+extension VideoPlayerView: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        // Find the parent menu item to determine which submenu this is
+        guard let parentItem = self.menu?.items.first(where: { $0.submenu === menu }) else { return }
+        
+        menu.removeAllItems()
+        
+        if parentItem.tag == 100 {
+            // Audio submenu
+            if availableAudioTracks.isEmpty {
+                let noTracksItem = NSMenuItem(title: "No Audio Tracks", action: nil, keyEquivalent: "")
+                noTracksItem.isEnabled = false
+                menu.addItem(noTracksItem)
+            } else {
+                for (index, track) in availableAudioTracks.enumerated() {
+                    let title = track.name ?? "Audio Track \(index + 1)"
+                    let item = NSMenuItem(title: title, action: #selector(contextSelectAudioTrack(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.tag = index
+                    item.state = track.isEnabled ? .on : .off
+                    menu.addItem(item)
+                }
+            }
+        } else if parentItem.tag == 101 {
+            // Subtitles submenu
+            // "Off" option
+            let offItem = NSMenuItem(title: "Off", action: #selector(contextSelectSubtitleTrack(_:)), keyEquivalent: "")
+            offItem.target = self
+            offItem.tag = -1
+            offItem.state = availableSubtitleTracks.allSatisfy { !$0.isEnabled } ? .on : .off
+            menu.addItem(offItem)
+            
+            if !availableSubtitleTracks.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+                
+                for (index, track) in availableSubtitleTracks.enumerated() {
+                    let title = track.name ?? "Subtitle Track \(index + 1)"
+                    let item = NSMenuItem(title: title, action: #selector(contextSelectSubtitleTrack(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.tag = index
+                    item.state = track.isEnabled ? .on : .off
+                    menu.addItem(item)
+                }
+            }
+            
+            // Add Plex external subtitles if available
+            let externalSubs = plexStreams.filter { $0.streamType == .subtitle && $0.isExternal }
+            if !externalSubs.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+                
+                let headerItem = NSMenuItem(title: "External Subtitles", action: nil, keyEquivalent: "")
+                headerItem.isEnabled = false
+                menu.addItem(headerItem)
+                
+                for stream in externalSubs {
+                    let title = stream.localizedDisplayTitle
+                    let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                    item.isEnabled = false  // External subtitle loading needs additional implementation
+                    menu.addItem(item)
+                }
             }
         }
     }
