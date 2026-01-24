@@ -16,6 +16,7 @@
 | [docs/AUDIO_SYSTEM.md](docs/AUDIO_SYSTEM.md) | Audio engine, EQ, spectrum, Plex/Subsonic streaming |
 | [docs/VISUALIZATIONS.md](docs/VISUALIZATIONS.md) | Album art and ProjectM visualizers |
 | [docs/TESTING.md](docs/TESTING.md) | UI testing mode, accessibility identifiers |
+| [docs/SONOS.md](docs/SONOS.md) | Sonos discovery (SSDP + mDNS), casting, troubleshooting |
 
 ## Architecture
 
@@ -23,6 +24,7 @@
 Sources/AdAmp/
 ├── App/              # AppDelegate, WindowManager, menus
 ├── Audio/            # AudioEngine, StreamingAudioPlayer, EQ
+├── Casting/          # Chromecast, Sonos, DLNA casting
 ├── Skin/             # Winamp skin loading and rendering
 ├── Windows/          # All window views (MainWindow, Playlist, EQ, etc.)
 ├── Plex/             # Plex server integration
@@ -41,6 +43,7 @@ Sources/AdAmp/
 | Visualization | `Windows/Milkdrop/`, `Windows/PlexBrowser/PlexBrowserView.swift`, `Visualization/ProjectMWrapper.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
+| Casting | `Casting/CastManager.swift`, `Casting/UPnPManager.swift`, `Casting/ChromecastManager.swift` |
 | App | `App/WindowManager.swift`, `App/ContextMenuBuilder.swift` |
 
 ## Common Tasks

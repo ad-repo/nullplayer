@@ -718,6 +718,8 @@ final class AdAmpTests: XCTestCase {
         XCTAssertNotNil(CastError.playbackFailed("reason").errorDescription)
         XCTAssertNotNil(CastError.unsupportedDevice.errorDescription)
         XCTAssertNotNil(CastError.invalidURL.errorDescription)
+        XCTAssertNotNil(CastError.noTrackPlaying.errorDescription)
+        XCTAssertNotNil(CastError.localFileNotCastable.errorDescription)
         XCTAssertNotNil(CastError.sessionNotActive.errorDescription)
         XCTAssertNotNil(CastError.deviceOffline.errorDescription)
         XCTAssertNotNil(CastError.authenticationRequired.errorDescription)
