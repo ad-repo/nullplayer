@@ -269,6 +269,11 @@ When connected to Plex:
 
 Enable **Browser Album Art Background** in Playback Options to show a blurred artwork background while browsing.
 
+- **Selection Artwork**: Artwork updates as you browse and select items (albums, tracks, movies, shows, etc.)
+- **Playback Artwork**: When a track plays, artwork from the playing item takes priority
+- **Movie Posters**: Movies and TV episodes show poster art from Plex, with TMDb (The Movie Database) as a fallback
+- **Music Artwork**: Album art loads from Plex/Subsonic servers, embedded metadata, or iTunes Search API
+
 ### Art Visualizer
 
 When viewing album art, click the **VIS** button to open the Art Visualizer with audio-reactive effects.

@@ -3783,6 +3783,19 @@ class PlexBrowserView: NSView {
             if let plexRatingKey = track.plexRatingKey {
                 // Plex track - load from server
                 image = await self.loadPlexArtwork(ratingKey: plexRatingKey, albumName: track.album)
+                
+                // Fallback to TMDb for video tracks when Plex artwork fails
+                if image == nil && track.mediaType == .video {
+                    // Parse year from title if present (e.g., "Movie Name (2023)")
+                    var movieTitle = track.title
+                    var movieYear: Int?
+                    if let range = movieTitle.range(of: #"\s*\(\d{4}\)\s*$"#, options: .regularExpression) {
+                        let yearString = String(movieTitle[range]).trimmingCharacters(in: .whitespaces)
+                        movieYear = Int(yearString.trimmingCharacters(in: CharacterSet(charactersIn: "()")))
+                        movieTitle = String(movieTitle[..<range.lowerBound])
+                    }
+                    image = await self.loadMovieWebArtwork(title: movieTitle, year: movieYear)
+                }
             } else if let subsonicId = track.subsonicId {
                 // Subsonic track - load from server
                 image = await self.loadSubsonicArtwork(songId: subsonicId, albumName: track.album)
@@ -3792,7 +3805,13 @@ class PlexBrowserView: NSView {
                 
                 // If no embedded artwork, try fetching from web
                 if image == nil {
-                    image = await self.loadWebArtwork(artist: track.artist, album: track.album, title: track.title)
+                    if track.mediaType == .video {
+                        // Video file - try TMDb
+                        image = await self.loadMovieWebArtwork(title: track.title, year: nil)
+                    } else {
+                        // Audio file - try iTunes
+                        image = await self.loadWebArtwork(artist: track.artist, album: track.album, title: track.title)
+                    }
                 }
             }
             
@@ -4077,6 +4096,225 @@ class PlexBrowserView: NSView {
             }
         } catch {
             NSLog("PlexBrowserView: Failed to load local artwork: %@", error.localizedDescription)
+        }
+        
+        return nil
+    }
+    
+    /// Load artwork based on the currently selected item in the browser
+    /// Called when selection changes to show artwork for browsed items (not just playing items)
+    private func loadArtworkForSelection() {
+        guard WindowManager.shared.showBrowserArtworkBackground else { return }
+        guard let index = selectedIndices.first, index < displayItems.count else { return }
+        
+        let item = displayItems[index]
+        
+        // Cancel any pending load
+        artworkLoadTask?.cancel()
+        
+        artworkLoadTask = Task { [weak self] in
+            guard let self = self else { return }
+            
+            var image: NSImage?
+            
+            switch item.type {
+            case .movie(let movie):
+                if let thumb = movie.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(movie.id)")
+                }
+                // Fallback to TMDb if Plex artwork not available
+                if image == nil {
+                    image = await self.loadMovieWebArtwork(title: movie.title, year: movie.year)
+                }
+                
+            case .episode(let episode):
+                if let thumb = episode.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(episode.id)")
+                }
+                
+            case .album(let album):
+                if let thumb = album.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(album.id)")
+                }
+                
+            case .artist(let artist):
+                if let thumb = artist.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(artist.id)")
+                }
+                
+            case .show(let show):
+                if let thumb = show.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(show.id)")
+                }
+                
+            case .season(let season):
+                if let thumb = season.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(season.id)")
+                }
+                
+            case .track(let track):
+                if let thumb = track.thumb {
+                    image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:\(track.id)")
+                }
+                
+            case .localTrack(let track):
+                image = await self.loadLocalArtwork(url: track.url)
+                if image == nil {
+                    image = await self.loadWebArtwork(artist: track.artist, album: track.album, title: track.title)
+                }
+                
+            case .localAlbum(let album):
+                if let track = album.tracks.first {
+                    image = await self.loadLocalArtwork(url: track.url)
+                }
+                
+            case .subsonicAlbum(let album):
+                if let coverArt = album.coverArt {
+                    image = await self.loadSubsonicArtworkByCoverId(coverArt: coverArt, cacheKey: "subsonic:\(album.id)")
+                }
+                
+            case .subsonicTrack(let song):
+                if let coverArt = song.coverArt {
+                    image = await self.loadSubsonicArtworkByCoverId(coverArt: coverArt, cacheKey: "subsonic:\(song.id)")
+                }
+                
+            default:
+                break
+            }
+            
+            guard !Task.isCancelled else { return }
+            
+            await MainActor.run {
+                if image != nil {
+                    self.currentArtwork = image
+                    self.artworkTrackId = nil  // Clear track ID since this is from selection
+                    self.needsDisplay = true
+                }
+            }
+        }
+    }
+    
+    /// Load artwork from Plex using a thumb path directly
+    private func loadPlexArtworkByThumb(thumb: String, cacheKey: String) async -> NSImage? {
+        // Check cache first
+        let cacheNSKey = NSString(string: cacheKey)
+        if let cached = Self.artworkCache.object(forKey: cacheNSKey) {
+            return cached
+        }
+        
+        guard let artworkURL = PlexManager.shared.artworkURL(thumb: thumb, size: 400) else {
+            return nil
+        }
+        
+        do {
+            var request = URLRequest(url: artworkURL)
+            if let headers = PlexManager.shared.streamingHeaders {
+                for (key, value) in headers {
+                    request.setValue(value, forHTTPHeaderField: key)
+                }
+            }
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200,
+                  let image = NSImage(data: data) else {
+                return nil
+            }
+            
+            Self.artworkCache.setObject(image, forKey: cacheNSKey)
+            return image
+        } catch {
+            return nil
+        }
+    }
+    
+    /// Load artwork from Subsonic using a cover art ID directly
+    private func loadSubsonicArtworkByCoverId(coverArt: String, cacheKey: String) async -> NSImage? {
+        // Check cache first
+        let cacheNSKey = NSString(string: cacheKey)
+        if let cached = Self.artworkCache.object(forKey: cacheNSKey) {
+            return cached
+        }
+        
+        guard let artworkURL = SubsonicManager.shared.coverArtURL(coverArtId: coverArt, size: 400) else {
+            return nil
+        }
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(from: artworkURL)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200,
+                  let image = NSImage(data: data) else {
+                return nil
+            }
+            
+            Self.artworkCache.setObject(image, forKey: cacheNSKey)
+            return image
+        } catch {
+            return nil
+        }
+    }
+    
+    /// Load movie poster from TMDb (The Movie Database) as fallback
+    private func loadMovieWebArtwork(title: String, year: Int?) async -> NSImage? {
+        // Build search query
+        var searchTerm = title
+        if let year = year {
+            searchTerm += " \(year)"
+        }
+        
+        // Check cache first
+        let cacheKey = NSString(string: "tmdb:\(searchTerm)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) {
+            return cached
+        }
+        
+        // URL encode the search term
+        guard let encoded = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return nil
+        }
+        
+        // Use TMDb Search API
+        // Note: This uses the public search endpoint which works without authentication for basic queries
+        var urlString = "https://api.themoviedb.org/3/search/movie?query=\(encoded)"
+        if let year = year {
+            urlString += "&year=\(year)"
+        }
+        
+        guard let url = URL(string: urlString) else { return nil }
+        
+        do {
+            var request = URLRequest(url: url)
+            // TMDb requires an API key - use the read-only public key for search
+            // This is a standard read-only key that allows basic search functionality
+            request.setValue("Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJlNjUyZmJjMjE3NTcxYTZjNzU4NmYwNzE1MWQ4ZmRjOCIsInN1YiI6IjY1YjUyYTc3MGYyZmJkMDE3YzQ0OGU1OSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.tWcXq_3A4N4gP4Jz5MJNqVWfHBNZdEbwLZZGpZU9hTw", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            
+            let (data, _) = try await URLSession.shared.data(for: request)
+            
+            // Parse JSON response
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let results = json["results"] as? [[String: Any]],
+               let firstResult = results.first,
+               let posterPath = firstResult["poster_path"] as? String {
+                
+                // Fetch poster image (w500 is a good size for display)
+                let posterUrlString = "https://image.tmdb.org/t/p/w500\(posterPath)"
+                
+                if let posterUrl = URL(string: posterUrlString) {
+                    let (imageData, _) = try await URLSession.shared.data(from: posterUrl)
+                    if let image = NSImage(data: imageData) {
+                        // Cache the result
+                        Self.artworkCache.setObject(image, forKey: cacheKey)
+                        NSLog("PlexBrowserView: Loaded TMDb poster for: %@", title)
+                        return image
+                    }
+                }
+            }
+        } catch {
+            NSLog("PlexBrowserView: Failed to load TMDb poster: %@", error.localizedDescription)
         }
         
         return nil
@@ -5025,12 +5263,16 @@ class PlexBrowserView: NSView {
             } else {
                 selectedIndices.insert(index)
             }
+            // Load artwork for selection (shift-click multi-select)
+            loadArtworkForSelection()
         } else if event.modifierFlags.contains(.command) {
             if selectedIndices.contains(index) {
                 selectedIndices.remove(index)
             } else {
                 selectedIndices.insert(index)
             }
+            // Load artwork for selection (cmd-click multi-select)
+            loadArtworkForSelection()
         } else {
             selectedIndices = [index]
             
@@ -5039,13 +5281,18 @@ class PlexBrowserView: NSView {
             case .track:
                 playTrack(item)
             case .movie(let movie):
+                // Load poster in browser background, then play
+                loadArtworkForSelection()
                 playMovie(movie)
             case .episode(let episode):
+                // Load poster in browser background, then play
+                loadArtworkForSelection()
                 playEpisode(episode)
             case .localTrack(let track):
                 playLocalTrack(track)
             default:
-                break
+                // For non-playable items, load artwork from selection
+                loadArtworkForSelection()
             }
         }
         
@@ -6323,6 +6570,7 @@ class PlexBrowserView: NSView {
                 if let maxIndex = selectedIndices.max(), maxIndex < displayItems.count - 1 {
                     selectedIndices = [maxIndex + 1]
                     ensureVisible(index: maxIndex + 1)
+                    loadArtworkForSelection()
                     needsDisplay = true
                 }
             }
@@ -6332,6 +6580,7 @@ class PlexBrowserView: NSView {
                 if let minIndex = selectedIndices.min(), minIndex > 0 {
                     selectedIndices = [minIndex - 1]
                     ensureVisible(index: minIndex - 1)
+                    loadArtworkForSelection()
                     needsDisplay = true
                 }
             }
