@@ -23,6 +23,9 @@ class CastManager {
     
     // MARK: - Properties
     
+    /// Rooms selected for Sonos casting (UDNs) - used before casting starts
+    var selectedSonosRooms: Set<String> = []
+    
     /// All discovered cast devices, grouped by type
     var discoveredDevices: [CastDevice] {
         var all: [CastDevice] = []
@@ -44,6 +47,47 @@ class CastManager {
     /// DLNA TV devices only
     var dlnaTVDevices: [CastDevice] {
         upnpManager.devices.filter { $0.type == .dlnaTV }
+    }
+    
+    // MARK: - Sonos Grouping
+    
+    /// All individual Sonos zones (for grouping UI)
+    var allSonosZones: [UPnPManager.SonosZoneSummary] {
+        upnpManager.allSonosZones
+    }
+    
+    /// Current Sonos group topology (for grouping UI)
+    var sonosGroups: [UPnPManager.SonosGroupSummary] {
+        upnpManager.sonosGroups
+    }
+    
+    /// Get zone name by UDN
+    func sonosZoneName(for udn: String) -> String? {
+        upnpManager.zoneName(for: udn)
+    }
+    
+    /// Unique Sonos rooms for simplified grouping UI
+    var sonosRooms: [UPnPManager.SonosRoomSummary] {
+        upnpManager.sonosRooms
+    }
+    
+    /// Join a Sonos speaker to a group
+    /// - Parameters:
+    ///   - zoneUDN: The UDN of the zone to join
+    ///   - coordinatorUDN: The UDN of the group coordinator
+    func joinSonosToGroup(zoneUDN: String, coordinatorUDN: String) async throws {
+        try await upnpManager.joinSonosZone(zoneUDN, toCoordinator: coordinatorUDN)
+    }
+    
+    /// Make a Sonos speaker standalone (leave its group)
+    /// - Parameter zoneUDN: The UDN of the zone to make standalone
+    func unjoinSonos(zoneUDN: String) async throws {
+        try await upnpManager.unjoinSonosZone(zoneUDN)
+    }
+    
+    /// Refresh Sonos group topology
+    func refreshSonosGroups() async {
+        await upnpManager.refreshSonosGroupTopology()
     }
     
     /// Current active cast session (if any)
@@ -248,8 +292,20 @@ class CastManager {
                 castURL = track.url
             }
         } else {
-            // Local files can't be cast (no HTTP server)
-            throw CastError.localFileNotCastable
+            // Local file - register with HTTP server
+            // Ensure server is running
+            if !LocalMediaServer.shared.isRunning {
+                do {
+                    try await LocalMediaServer.shared.start()
+                } catch {
+                    throw CastError.localServerError("Could not start local media server: \(error.localizedDescription)")
+                }
+            }
+            
+            guard let serverURL = LocalMediaServer.shared.registerFile(track.url) else {
+                throw CastError.localServerError("Could not register file with local media server")
+            }
+            castURL = serverURL
         }
         
         // Get artwork URL if available
@@ -285,7 +341,11 @@ class CastManager {
                 castURL = track.url
             }
         } else {
-            throw CastError.localFileNotCastable
+            // Local file - register with HTTP server
+            guard let serverURL = LocalMediaServer.shared.registerFile(track.url) else {
+                throw CastError.localServerError("Could not register file with local media server")
+            }
+            castURL = serverURL
         }
         
         // Get artwork URL if available
@@ -334,6 +394,12 @@ class CastManager {
             try? await upnpManager.stop()
             upnpManager.disconnect()
         }
+        
+        // Clear Sonos room selection
+        selectedSonosRooms.removeAll()
+        
+        // Unregister all files from local media server
+        LocalMediaServer.shared.unregisterAll()
         
         // Resume local playback from current position
         await MainActor.run {

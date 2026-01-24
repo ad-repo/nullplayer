@@ -50,7 +50,7 @@ class UPnPManager {
     
     // MARK: - Sonos Zone Types
     
-    /// Information about a Sonos zone (speaker)
+    /// Information about a Sonos zone (speaker) - internal use
     private struct SonosZoneInfo {
         let udn: String
         let roomName: String
@@ -60,12 +60,207 @@ class UPnPManager {
         let descriptionURL: URL
     }
     
-    /// Sonos group with coordinator and members
+    /// Sonos group with coordinator and members - internal use
     private struct SonosGroup {
         let coordinatorUDN: String
         let memberUDNs: [String]
         
         var memberCount: Int { memberUDNs.count }
+    }
+    
+    /// Last fetched group topology (for UI access)
+    private var lastFetchedGroups: [SonosGroup] = []
+    
+    /// Zones that are bonded (stereo pairs, surrounds) and can't be grouped independently
+    /// These have Invisible="1" in the topology
+    private var bondedZoneUDNs: Set<String> = []
+    
+    /// Satellite speakers in surround systems (from HTSatChanMapSet) - should not be room representatives
+    private var satelliteZoneUDNs: Set<String> = []
+    
+    /// Main units that control surround systems (have HTSatChanMapSet) - prefer these as room representatives
+    private var mainUnitZoneUDNs: Set<String> = []
+    
+    // MARK: - Public Sonos Summary Types (for UI)
+    
+    /// Public summary of a Sonos zone for grouping UI
+    struct SonosZoneSummary: Identifiable {
+        let id: String      // UDN
+        let name: String    // Room name
+        let address: String
+        let port: Int
+    }
+    
+    /// Public summary of a Sonos group for grouping UI
+    struct SonosGroupSummary: Identifiable {
+        let id: String              // Coordinator UDN
+        let coordinatorName: String
+        let memberUDNs: [String]
+        var memberCount: Int { memberUDNs.count }
+    }
+    
+    /// All individual Sonos zones (for grouping UI)
+    /// Filters out devices that can't be grouped independently:
+    /// - Sub, Boost, Bridge devices
+    /// - Bonded speakers (stereo pairs, surround satellites with Invisible="1")
+    var allSonosZones: [SonosZoneSummary] {
+        stateQueue.sync {
+            sonosZones.values
+                .filter { zone in
+                    // Filter out devices that can't be grouped independently
+                    let nameLower = zone.roomName.lowercased()
+                    let isSubOrBridge = nameLower == "sub" || 
+                                        nameLower.hasSuffix(" sub") ||
+                                        nameLower == "boost" ||
+                                        nameLower == "bridge"
+                    
+                    // Filter out bonded speakers (stereo pairs, surround satellites)
+                    let isBonded = bondedZoneUDNs.contains(zone.udn)
+                    
+                    if isBonded {
+                        NSLog("UPnPManager: Filtering out bonded zone '%@' from grouping UI", zone.roomName)
+                    }
+                    
+                    return !isSubOrBridge && !isBonded
+                }
+                .map { zone in
+                    SonosZoneSummary(
+                        id: zone.udn,
+                        name: zone.roomName,
+                        address: zone.address,
+                        port: zone.port
+                    )
+                }
+                .sorted { $0.name < $1.name }
+        }
+    }
+    
+    /// Current Sonos group topology (for grouping UI)
+    var sonosGroups: [SonosGroupSummary] {
+        stateQueue.sync {
+            lastFetchedGroups.compactMap { group in
+                guard let coordinatorZone = sonosZones[group.coordinatorUDN] else { return nil }
+                return SonosGroupSummary(
+                    id: group.coordinatorUDN,
+                    coordinatorName: coordinatorZone.roomName,
+                    memberUDNs: group.memberUDNs
+                )
+            }.sorted { $0.coordinatorName < $1.coordinatorName }
+        }
+    }
+    
+    /// Get zone name by UDN (for UI display)
+    func zoneName(for udn: String) -> String? {
+        stateQueue.sync {
+            sonosZones[udn]?.roomName
+        }
+    }
+    
+    /// Summary of a room for the simplified grouping UI
+    struct SonosRoomSummary: Identifiable {
+        let id: String              // Representative zone UDN (coordinator of this room's speakers)
+        let name: String            // Room name
+        let isGroupCoordinator: Bool // Is this room the coordinator of a multi-room group?
+        let isInGroup: Bool         // Is this room part of another room's group?
+        let groupCoordinatorUDN: String? // If in a group, the coordinator's UDN
+        let groupCoordinatorName: String? // If in a group, the coordinator's room name
+    }
+    
+    /// Get unique rooms for simplified grouping UI
+    /// Returns one entry per room name (not per speaker), with group membership info
+    var sonosRooms: [SonosRoomSummary] {
+        stateQueue.sync {
+            // Build map of zone UDN -> its group's coordinator UDN
+            var zoneToGroupCoordinator: [String: String] = [:]
+            var groupCoordinatorUDNs: Set<String> = []
+            var multiRoomGroups: Set<String> = []  // Coordinators that have members from different rooms
+            
+            for group in lastFetchedGroups {
+                groupCoordinatorUDNs.insert(group.coordinatorUDN)
+                
+                // Get unique room names in this group, but EXCLUDE satellites and bonded speakers
+                // (they can have different names like "Sub" but shouldn't count as separate rooms)
+                var roomNamesInGroup: Set<String> = []
+                for memberUDN in group.memberUDNs {
+                    zoneToGroupCoordinator[memberUDN] = group.coordinatorUDN
+                    
+                    // Skip satellites (surround speakers) and bonded speakers (stereo pair secondaries)
+                    if satelliteZoneUDNs.contains(memberUDN) || bondedZoneUDNs.contains(memberUDN) {
+                        continue
+                    }
+                    
+                    if let roomName = sonosZones[memberUDN]?.roomName {
+                        roomNamesInGroup.insert(roomName)
+                    }
+                }
+                
+                // If more than one unique room name (from non-satellite speakers), it's a multi-room group
+                if roomNamesInGroup.count > 1 {
+                    multiRoomGroups.insert(group.coordinatorUDN)
+                }
+            }
+            
+            // Get unique room names (dedup by name, pick the best representative for each room)
+            // Priority: main unit (soundbar) > group coordinator > first found
+            var roomsByName: [String: SonosZoneInfo] = [:]
+            for zone in sonosZones.values {
+                // Skip bonded (Invisible) zones - stereo pair secondary speakers
+                if bondedZoneUDNs.contains(zone.udn) {
+                    continue
+                }
+                
+                // Skip satellite speakers (surround rears, sub) - they can't be controlled independently
+                if satelliteZoneUDNs.contains(zone.udn) {
+                    continue
+                }
+                
+                // Skip Sub, Boost, Bridge by name
+                let nameLower = zone.roomName.lowercased()
+                if nameLower == "sub" || nameLower.hasSuffix(" sub") ||
+                   nameLower == "boost" || nameLower == "bridge" {
+                    continue
+                }
+                
+                // Pick the best representative for each room name
+                if roomsByName[zone.roomName] == nil {
+                    roomsByName[zone.roomName] = zone
+                } else {
+                    // Prefer main units (soundbars with HTSatChanMapSet) - they control the whole surround
+                    if mainUnitZoneUDNs.contains(zone.udn) {
+                        NSLog("UPnPManager: Preferring main unit %@ for room '%@'", zone.udn, zone.roomName)
+                        roomsByName[zone.roomName] = zone
+                    }
+                    // Otherwise prefer group coordinators
+                    else if groupCoordinatorUDNs.contains(zone.udn) && !mainUnitZoneUDNs.contains(roomsByName[zone.roomName]!.udn) {
+                        roomsByName[zone.roomName] = zone
+                    }
+                }
+            }
+            
+            // Build room summaries
+            var rooms: [SonosRoomSummary] = []
+            for (roomName, zone) in roomsByName {
+                let groupCoordUDN = zoneToGroupCoordinator[zone.udn]
+                let isGroupCoordinator = groupCoordinatorUDNs.contains(zone.udn) && multiRoomGroups.contains(zone.udn)
+                let isInOtherGroup = groupCoordUDN != nil && groupCoordUDN != zone.udn && multiRoomGroups.contains(groupCoordUDN!)
+                
+                var coordName: String? = nil
+                if let coordUDN = groupCoordUDN, isInOtherGroup {
+                    coordName = sonosZones[coordUDN]?.roomName
+                }
+                
+                rooms.append(SonosRoomSummary(
+                    id: zone.udn,
+                    name: roomName,
+                    isGroupCoordinator: isGroupCoordinator,
+                    isInGroup: isInOtherGroup,
+                    groupCoordinatorUDN: isInOtherGroup ? groupCoordUDN : nil,
+                    groupCoordinatorName: coordName
+                ))
+            }
+            
+            return rooms.sorted { $0.name < $1.name }
+        }
     }
     
     // MARK: - Constants
@@ -707,6 +902,7 @@ class UPnPManager {
     /// Parse Sonos zone group state XML
     private func parseSonosGroupState(_ xml: String) -> [SonosGroup] {
         var groups: [SonosGroup] = []
+        var newBondedZones: Set<String> = []
         
         // Extract ZoneGroupState content (it's HTML-encoded inside the SOAP response)
         guard let stateMatch = xml.range(of: "<ZoneGroupState>", options: .caseInsensitive),
@@ -723,6 +919,67 @@ class UPnPManager {
             .replacingOccurrences(of: "&gt;", with: ">")
             .replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&amp;", with: "&")
+        
+        // First pass: find all bonded/invisible zones and surround satellites
+        // We need to match both ZoneGroupMember and Satellite tags
+        // Tags can be self-closing (<Tag .../>) or have content (<Tag ...>...</Tag>)
+        var newSatellites: Set<String> = []
+        var newMainUnits: Set<String> = []
+        
+        // Match opening tags for ZoneGroupMember and Satellite (capture the whole tag including attributes)
+        let tagPattern = "<(ZoneGroupMember|Satellite)[^>]*UUID=\"([^\"]+)\"[^>]*"
+        if let tagRegex = try? NSRegularExpression(pattern: tagPattern, options: []) {
+            let allMatches = tagRegex.matches(in: zoneGroupState, range: NSRange(zoneGroupState.startIndex..., in: zoneGroupState))
+            for match in allMatches {
+                if let matchRange = Range(match.range, in: zoneGroupState),
+                   let uuidRange = Range(match.range(at: 2), in: zoneGroupState) {
+                    let tagXML = String(zoneGroupState[matchRange])
+                    let uuid = String(zoneGroupState[uuidRange])
+                    let udn = "uuid:\(uuid)"
+                    
+                    // Check for Invisible="1" (stereo pair secondary or surround satellite)
+                    if tagXML.contains("Invisible=\"1\"") {
+                        newBondedZones.insert(udn)
+                        NSLog("UPnPManager: Zone %@ is bonded (Invisible=1) - excluding from grouping", uuid)
+                    }
+                    
+                    // Check for HTSatChanMapSet (surround system - main unit or satellite)
+                    // The main unit has LF,RF channels, satellites have SW, LR, or RR
+                    if let htSatRange = tagXML.range(of: "HTSatChanMapSet=\"") {
+                        let afterQuote = tagXML[htSatRange.upperBound...]
+                        if let endQuote = afterQuote.firstIndex(of: "\"") {
+                            let htSatValue = String(afterQuote[..<endQuote])
+                            
+                            // Find which channels this zone has
+                            let entries = htSatValue.components(separatedBy: ";")
+                            for entry in entries {
+                                let parts = entry.components(separatedBy: ":")
+                                if parts.count >= 2 && parts[0] == uuid {
+                                    let channels = parts[1]
+                                    if channels.contains("LF") || channels.contains("RF") {
+                                        // This is the main unit (soundbar)
+                                        newMainUnits.insert(udn)
+                                        NSLog("UPnPManager: Zone %@ is surround main unit (%@)", uuid, channels)
+                                    } else {
+                                        // This is a satellite (sub, rear speakers)
+                                        newSatellites.insert(udn)
+                                        NSLog("UPnPManager: Zone %@ is surround satellite (%@)", uuid, channels)
+                                    }
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Store bonded zones and satellites
+        stateQueue.async { [weak self] in
+            self?.bondedZoneUDNs = newBondedZones
+            self?.satelliteZoneUDNs = newSatellites
+            self?.mainUnitZoneUDNs = newMainUnits
+        }
         
         // Parse ZoneGroup elements
         // Pattern: <ZoneGroup Coordinator="RINCON_xxx" ...>...<ZoneGroupMember UUID="RINCON_xxx".../>...</ZoneGroup>
@@ -742,7 +999,7 @@ class UPnPManager {
             let coordinatorUUID = String(zoneGroupState[coordinatorRange])
             let membersXML = String(zoneGroupState[membersRange])
             
-            // Find all member UUIDs
+            // Find all member UUIDs (excluding invisible/bonded ones from count)
             let memberPattern = "UUID=\"([^\"]+)\""
             guard let memberRegex = try? NSRegularExpression(pattern: memberPattern, options: []) else {
                 continue
@@ -778,6 +1035,9 @@ class UPnPManager {
             
             self.sonosGroupsFetched = true
             
+            // Store groups for UI access
+            self.lastFetchedGroups = groups ?? []
+            
             // Remove any existing Sonos devices
             self._devices.removeAll(where: { $0.type == .sonos })
             
@@ -806,13 +1066,8 @@ class UPnPManager {
                         continue
                     }
                     
-                    // Build display name: "Room Name" or "Room Name +N" for grouped speakers
-                    let displayName: String
-                    if group.memberCount > 1 {
-                        displayName = "\(coordinatorZone.roomName) +\(group.memberCount - 1)"
-                    } else {
-                        displayName = coordinatorZone.roomName
-                    }
+                    // Just use the room name
+                    let displayName = coordinatorZone.roomName
                     
                     let device = CastDevice(
                         id: group.coordinatorUDN,
@@ -921,6 +1176,10 @@ class UPnPManager {
             self._devices.removeAll()
             self._pendingDescriptions.removeAll()
             self.sonosZones.removeAll()
+            self.lastFetchedGroups.removeAll()
+            self.bondedZoneUDNs.removeAll()
+            self.satelliteZoneUDNs.removeAll()
+            self.mainUnitZoneUDNs.removeAll()
             self.sonosGroupsFetched = false
             
             NSLog("UPnPManager: Cleared %d devices, %d zones, cancelled %d tasks", deviceCount, zoneCount, taskCount)
@@ -930,7 +1189,7 @@ class UPnPManager {
     /// Reset discovery state without clearing visible devices
     /// Used during refresh to allow re-discovery while keeping existing devices visible
     func resetDiscoveryState() {
-        NSLog("UPnPManager: Resetting discovery state (keeping devices)")
+        NSLog("UPnPManager: Resetting discovery state (keeping devices and zone info)")
         
         // Cancel any pending Sonos topology fetch
         sonosTopologyWorkItem?.cancel()
@@ -948,12 +1207,14 @@ class UPnPManager {
             // Clear pending descriptions so devices can be re-fetched
             self._pendingDescriptions.removeAll()
             
-            // Clear Sonos zone tracking so groups can be re-detected
-            // But DON'T clear _devices - keep them visible
-            self.sonosZones.removeAll()
+            // IMPORTANT: Keep sonosZones, lastFetchedGroups, and bonded/satellite info intact
+            // so that sonosRooms keeps returning valid data during refresh.
+            // These will be updated when new zone info comes in.
+            // Only reset the "fetched" flag so topology gets re-fetched.
             self.sonosGroupsFetched = false
             
-            NSLog("UPnPManager: Reset discovery state, kept %d devices visible", self._devices.count)
+            NSLog("UPnPManager: Reset discovery state, kept %d devices and %d zones visible", 
+                  self._devices.count, self.sonosZones.count)
         }
     }
     
@@ -1211,6 +1472,111 @@ class UPnPManager {
         return components.url!
     }
     
+    // MARK: - Sonos Grouping
+    
+    /// Join a Sonos zone to a group (make it follow the coordinator)
+    /// Uses AVTransport SetAVTransportURI with x-rincon:{coordinator_uid} URI
+    /// - Parameters:
+    ///   - zoneUDN: The UDN of the zone to join (e.g., "uuid:RINCON_xxx")
+    ///   - coordinatorUDN: The UDN of the group coordinator to join
+    func joinSonosZone(_ zoneUDN: String, toCoordinator coordinatorUDN: String) async throws {
+        // Get zone info for the joining zone
+        let zoneInfo = stateQueue.sync { sonosZones[zoneUDN] }
+        guard let zone = zoneInfo else {
+            NSLog("UPnPManager: Zone not found: %@", zoneUDN)
+            throw CastError.playbackFailed("Zone not found: \(zoneUDN)")
+        }
+        
+        // Build the AVTransport control URL for the joining zone
+        // If the zone doesn't have a dedicated AVTransport URL, construct it
+        let controlURL: URL
+        if let avURL = zone.avTransportURL {
+            controlURL = avURL
+        } else {
+            // Construct standard Sonos AVTransport URL
+            guard let url = URL(string: "http://\(zone.address):\(zone.port)/MediaRenderer/AVTransport/Control") else {
+                throw CastError.playbackFailed("Cannot construct AVTransport URL")
+            }
+            controlURL = url
+        }
+        
+        // Extract the RINCON ID from the coordinator UDN (remove "uuid:" prefix)
+        let coordinatorRincon = coordinatorUDN.replacingOccurrences(of: "uuid:", with: "")
+        let rinconURI = "x-rincon:\(coordinatorRincon)"
+        
+        NSLog("UPnPManager: Joining zone '%@' (%@) to coordinator '%@'", zone.roomName, zone.address, coordinatorRincon)
+        NSLog("UPnPManager: Using control URL: %@", controlURL.absoluteString)
+        NSLog("UPnPManager: Using x-rincon URI: %@", rinconURI)
+        
+        // Send SetAVTransportURI with x-rincon: URI to join the group
+        try await sendSOAPAction(
+            controlURL: controlURL,
+            action: "SetAVTransportURI",
+            arguments: [
+                ("InstanceID", "0"),
+                ("CurrentURI", rinconURI),
+                ("CurrentURIMetaData", "")
+            ]
+        )
+        
+        NSLog("UPnPManager: Zone '%@' joined group", zone.roomName)
+        
+        // Refresh group topology after a short delay to let Sonos update
+        try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
+        await refreshSonosGroupTopology()
+    }
+    
+    /// Make a Sonos zone standalone (leave its current group)
+    /// Uses AVTransport BecomeCoordinatorOfStandaloneGroup action
+    /// - Parameter zoneUDN: The UDN of the zone to make standalone
+    func unjoinSonosZone(_ zoneUDN: String) async throws {
+        // Get zone info
+        let zoneInfo = stateQueue.sync { sonosZones[zoneUDN] }
+        guard let zone = zoneInfo else {
+            NSLog("UPnPManager: Zone not found: %@", zoneUDN)
+            throw CastError.playbackFailed("Zone not found: \(zoneUDN)")
+        }
+        
+        // Build the AVTransport control URL
+        // If the zone doesn't have a dedicated AVTransport URL, construct it
+        let controlURL: URL
+        if let avURL = zone.avTransportURL {
+            controlURL = avURL
+        } else {
+            // Construct standard Sonos AVTransport URL
+            guard let url = URL(string: "http://\(zone.address):\(zone.port)/MediaRenderer/AVTransport/Control") else {
+                throw CastError.playbackFailed("Cannot construct AVTransport URL")
+            }
+            controlURL = url
+        }
+        
+        NSLog("UPnPManager: Making zone '%@' (%@) standalone", zone.roomName, zone.address)
+        NSLog("UPnPManager: Using control URL: %@", controlURL.absoluteString)
+        
+        // Send BecomeCoordinatorOfStandaloneGroup to leave the group
+        try await sendSOAPAction(
+            controlURL: controlURL,
+            action: "BecomeCoordinatorOfStandaloneGroup",
+            arguments: [
+                ("InstanceID", "0")
+            ]
+        )
+        
+        NSLog("UPnPManager: Zone '%@' is now standalone", zone.roomName)
+        
+        // Refresh group topology after a short delay
+        try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
+        await refreshSonosGroupTopology()
+    }
+    
+    /// Refresh Sonos group topology and update devices
+    func refreshSonosGroupTopology() async {
+        // Run on main queue to use existing fetchSonosGroupTopology
+        await MainActor.run {
+            fetchSonosGroupTopology()
+        }
+    }
+    
     // MARK: - SOAP Helpers
     
     /// Maximum number of retries for transient SOAP errors
@@ -1365,15 +1731,23 @@ class UPnPManager {
                 if httpResponse.statusCode >= 400 {
                     let errorBody = String(data: data, encoding: .utf8) ?? ""
                     
+                    // Parse SOAP fault for more details
+                    var errorDetail = "SOAP error \(httpResponse.statusCode)"
+                    if let faultString = extractXMLValue(errorBody, tag: "faultstring") {
+                        errorDetail = faultString
+                    } else if let upnpError = extractXMLValue(errorBody, tag: "errorDescription") {
+                        errorDetail = upnpError
+                    }
+                    
                     // Check if this is a transient error worth retrying
                     if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
                         NSLog("UPnPManager: AVTransport %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
-                        lastError = CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
+                        lastError = CastError.playbackFailed(errorDetail)
                         continue
                     }
                     
-                    NSLog("UPnPManager: SOAP error %d: %@", httpResponse.statusCode, errorBody)
-                    throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
+                    NSLog("UPnPManager: SOAP error %d for %@: %@", httpResponse.statusCode, action, errorBody)
+                    throw CastError.playbackFailed(errorDetail)
                 }
                 
                 // Success

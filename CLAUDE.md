@@ -16,7 +16,7 @@
 | [AGENT_DOCS/AUDIO_SYSTEM.md](AGENT_DOCS/AUDIO_SYSTEM.md) | Audio engine, EQ, spectrum, Plex/Subsonic streaming |
 | [AGENT_DOCS/VISUALIZATIONS.md](AGENT_DOCS/VISUALIZATIONS.md) | Album art and ProjectM visualizers |
 | [AGENT_DOCS/TESTING.md](AGENT_DOCS/TESTING.md) | UI testing mode, accessibility identifiers |
-| [AGENT_DOCS/SONOS.md](AGENT_DOCS/SONOS.md) | Sonos discovery (SSDP + mDNS), casting, troubleshooting |
+| [AGENT_DOCS/SONOS.md](AGENT_DOCS/SONOS.md) | Sonos discovery, multi-room casting, custom checkbox UI |
 
 ## Architecture
 
@@ -43,7 +43,7 @@ Sources/AdAmp/
 | Visualization | `Windows/Milkdrop/`, `Windows/PlexBrowser/PlexBrowserView.swift`, `Visualization/ProjectMWrapper.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
-| Casting | `Casting/CastManager.swift`, `Casting/UPnPManager.swift`, `Casting/ChromecastManager.swift` |
+| Casting | `Casting/CastManager.swift`, `Casting/UPnPManager.swift`, `Casting/ChromecastManager.swift`, `Casting/LocalMediaServer.swift` |
 | App | `App/WindowManager.swift`, `App/ContextMenuBuilder.swift` |
 
 ## Common Tasks
@@ -79,6 +79,8 @@ Sources/AdAmp/
 - **Skin coordinates**: Winamp skins use top-left origin, macOS uses bottom-left
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
 - **Window docking**: Complex snapping logic in `WindowManager` - test edge cases
+- **Sonos menu**: Uses custom `SonosRoomCheckboxView` to keep menu open during multi-select
+- **Sonos room IDs**: `sonosRooms` returns room UDNs, `sonosDevices` only has group coordinators - match carefully
 - **No Spotify/Apple/Amazon**: These integrations are explicitly not accepted
 
 ## Testing
@@ -94,4 +96,5 @@ Manual QA for UI/playback changes:
 - Multiple skins
 - Window snapping/docking
 - Visualizations
+- Sonos casting (multi-room selection, join/leave while casting)
 

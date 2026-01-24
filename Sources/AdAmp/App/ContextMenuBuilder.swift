@@ -644,115 +644,248 @@ class ContextMenuBuilder {
             outputMenu.addItem(airplayItem)
         }
         
-        // ========== Cast Devices Section ==========
+        // ========== Sonos Submenu with flat checkbox list ==========
+        let rooms = castManager.sonosRooms
+        NSLog("ContextMenuBuilder: sonosRooms count = %d", rooms.count)
+        for room in rooms {
+            NSLog("ContextMenuBuilder: Room '%@' isCoord=%d isInGroup=%d", room.name, room.isGroupCoordinator ? 1 : 0, room.isInGroup ? 1 : 0)
+        }
+        if !rooms.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+            
+            let sonosItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
+            let sonosMenu = NSMenu()
+            sonosMenu.autoenablesItems = false
+            
+            // Determine checkbox state based on whether we're casting
+            let castTargetUDN = castManager.activeSession?.device.id
+            let isCastingToSonos = castManager.activeSession?.device.type == .sonos
+            
+            for room in rooms {
+                var isChecked = false
+                
+                if isCastingToSonos, let targetUDN = castTargetUDN {
+                    // WHILE CASTING: checked = receiving audio from cast session
+                    // Direct match: this room is the cast target
+                    if room.id == targetUDN {
+                        isChecked = true
+                    }
+                    // This room's coordinator is the cast target
+                    else if room.groupCoordinatorUDN == targetUDN {
+                        isChecked = true
+                    }
+                    // This room IS a coordinator and has the cast target as a member
+                    else if room.isGroupCoordinator {
+                        let targetRoom = rooms.first { $0.id == targetUDN }
+                        if targetRoom?.groupCoordinatorUDN == room.id {
+                            isChecked = true
+                        }
+                    }
+                } else {
+                    // NOT CASTING: checked = room is selected for future cast
+                    isChecked = castManager.selectedSonosRooms.contains(room.id)
+                }
+                
+                let toggleInfo = SonosRoomToggle(
+                    roomUDN: room.id,
+                    roomName: room.name,
+                    coordinatorUDN: castTargetUDN ?? room.groupCoordinatorUDN ?? rooms.first?.id ?? "",
+                    coordinatorName: room.groupCoordinatorName ?? rooms.first?.name ?? "",
+                    isCurrentlyInGroup: isChecked,
+                    isCoordinator: room.id == castTargetUDN
+                )
+                
+                // Use custom view that keeps menu open when clicked
+                let roomItem = NSMenuItem()
+                roomItem.view = SonosRoomCheckboxView(info: toggleInfo, isChecked: isChecked, menu: sonosMenu)
+                sonosMenu.addItem(roomItem)
+            }
+            
+            sonosMenu.addItem(NSMenuItem.separator())
+            
+            // Cast controls
+            if isCastingToSonos {
+                let stopItem = NSMenuItem(title: "🔴 Stop Casting", action: #selector(MenuActions.stopCasting), keyEquivalent: "")
+                stopItem.target = MenuActions.shared
+                sonosMenu.addItem(stopItem)
+            } else {
+                let castItem = NSMenuItem(title: "🟢 Start Casting", action: #selector(MenuActions.castToSonosRoom(_:)), keyEquivalent: "")
+                castItem.target = MenuActions.shared
+                sonosMenu.addItem(castItem)
+            }
+            
+            // Refresh
+            let refreshItem = NSMenuItem(title: "Refresh", action: #selector(MenuActions.refreshSonosRooms), keyEquivalent: "")
+            refreshItem.target = MenuActions.shared
+            sonosMenu.addItem(refreshItem)
+            
+            sonosItem.submenu = sonosMenu
+            outputMenu.addItem(sonosItem)
+        }
+        
+        // ========== Other Cast Devices ==========
         let chromecastDevices = castManager.chromecastDevices
         let sonosDevices = castManager.sonosDevices
         let tvDevices = castManager.dlnaTVDevices
-        let hasCastDevices = !chromecastDevices.isEmpty || !sonosDevices.isEmpty || !tvDevices.isEmpty
         let activeSession = castManager.activeSession
         
-        outputMenu.addItem(NSMenuItem.separator())
-        
-        // Cast Devices submenu
-        let castItem = NSMenuItem(title: "Cast Devices", action: nil, keyEquivalent: "")
-        let castMenu = NSMenu()
-        castMenu.autoenablesItems = false
-        
-        // Show discovery status with user instructions
-        let totalDeviceCount = chromecastDevices.count + sonosDevices.count + tvDevices.count
-        let isRefreshing = castManager.isRefreshing
-        
-        if !hasCastDevices {
-            // No devices yet - show helpful message
-            let statusItem = NSMenuItem(title: "Searching for devices...", action: nil, keyEquivalent: "")
-            castMenu.addItem(statusItem)
+        // Chromecast (if any)
+        if !chromecastDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+            let chromecastHeader = NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: "")
+            outputMenu.addItem(chromecastHeader)
             
-            let hintItem = NSMenuItem(title: "(Reopen menu in a few seconds)", action: nil, keyEquivalent: "")
-            castMenu.addItem(hintItem)
-        } else if isRefreshing {
-            // Refreshing - show status but keep existing devices visible
-            let statusItem = NSMenuItem(title: "Refreshing... (\(totalDeviceCount) device\(totalDeviceCount == 1 ? "" : "s"))", action: nil, keyEquivalent: "")
-            castMenu.addItem(statusItem)
-            castMenu.addItem(NSMenuItem.separator())
-        }
-        
-        if hasCastDevices {
-            // Chromecast section
-            if !chromecastDevices.isEmpty {
-                let chromecastHeader = NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: "")
-                castMenu.addItem(chromecastHeader)
-                
-                for device in chromecastDevices {
-                    let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
-                    deviceItem.target = MenuActions.shared
-                    deviceItem.representedObject = device
-                    deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
-                    castMenu.addItem(deviceItem)
-                }
-            }
-            
-            // Sonos section
-            if !sonosDevices.isEmpty {
-                if !chromecastDevices.isEmpty {
-                    castMenu.addItem(NSMenuItem.separator())
-                }
-                
-                let sonosHeader = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
-                castMenu.addItem(sonosHeader)
-                
-                for device in sonosDevices {
-                    let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
-                    deviceItem.target = MenuActions.shared
-                    deviceItem.representedObject = device
-                    deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
-                    castMenu.addItem(deviceItem)
-                }
-            }
-            
-            // DLNA TVs section
-            if !tvDevices.isEmpty {
-                if !chromecastDevices.isEmpty || !sonosDevices.isEmpty {
-                    castMenu.addItem(NSMenuItem.separator())
-                }
-                
-                let tvHeader = NSMenuItem(title: "TVs (DLNA)", action: nil, keyEquivalent: "")
-                castMenu.addItem(tvHeader)
-                
-                for device in tvDevices {
-                    let displayName = device.manufacturer != nil ? "\(device.name) [\(device.manufacturer!)]" : device.name
-                    let deviceItem = NSMenuItem(title: "  \(displayName)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
-                    deviceItem.target = MenuActions.shared
-                    deviceItem.representedObject = device
-                    deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
-                    castMenu.addItem(deviceItem)
-                }
+            for device in chromecastDevices {
+                let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device
+                deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
+                outputMenu.addItem(deviceItem)
             }
         }
         
-        // Cast controls
-        castMenu.addItem(NSMenuItem.separator())
-        
-        // Stop Casting (only shown when casting)
-        if castManager.isCasting {
-            let stopCastingItem = NSMenuItem(title: "Stop Casting", action: #selector(MenuActions.stopCasting), keyEquivalent: "")
-            stopCastingItem.target = MenuActions.shared
-            if let session = activeSession {
-                stopCastingItem.title = "Stop Casting to \(session.device.name)"
+        // DLNA TVs (if any)
+        if !tvDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+            let tvHeader = NSMenuItem(title: "TVs (DLNA)", action: nil, keyEquivalent: "")
+            outputMenu.addItem(tvHeader)
+            
+            for device in tvDevices {
+                let displayName = device.manufacturer != nil ? "\(device.name) [\(device.manufacturer!)]" : device.name
+                let deviceItem = NSMenuItem(title: "  \(displayName)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device
+                deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
+                outputMenu.addItem(deviceItem)
             }
-            castMenu.addItem(stopCastingItem)
         }
-        
-        // Refresh Devices
-        let refreshItem = NSMenuItem(title: "Refresh Devices", action: #selector(MenuActions.refreshCastDevices), keyEquivalent: "")
-        refreshItem.target = MenuActions.shared
-        castMenu.addItem(refreshItem)
-        
-        castItem.submenu = castMenu
-        outputMenu.addItem(castItem)
         
         outputItem.submenu = outputMenu
         return outputItem
     }
+    
+    // MARK: - Sonos Groups Submenu
+}
+
+// MARK: - Custom Checkbox View (keeps menu open on click)
+
+/// A custom view for menu items that toggles a checkbox without closing the menu
+class SonosRoomCheckboxView: NSView {
+    private let checkbox: NSButton
+    private let info: SonosRoomToggle
+    private weak var parentMenu: NSMenu?
+    
+    init(info: SonosRoomToggle, isChecked: Bool, menu: NSMenu?) {
+        self.info = info
+        self.parentMenu = menu
+        
+        checkbox = NSButton(checkboxWithTitle: info.roomName, target: nil, action: nil)
+        checkbox.state = isChecked ? .on : .off
+        checkbox.font = NSFont.menuFont(ofSize: 0)
+        
+        // Calculate frame size based on checkbox
+        checkbox.sizeToFit()
+        let frame = NSRect(x: 0, y: 0, width: checkbox.frame.width + 32, height: 22)
+        
+        super.init(frame: frame)
+        
+        checkbox.frame.origin = NSPoint(x: 16, y: (frame.height - checkbox.frame.height) / 2)
+        checkbox.target = self
+        checkbox.action = #selector(checkboxClicked(_:))
+        
+        addSubview(checkbox)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    @objc private func checkboxClicked(_ sender: NSButton) {
+        let isNowChecked = sender.state == .on
+        
+        // Toggle the selection state
+        let castManager = CastManager.shared
+        let isCastingToSonos = castManager.activeSession?.device.type == .sonos
+        
+        NSLog("SonosRoomCheckboxView: Toggled '%@' to %d, isCasting=%d", 
+              info.roomName, isNowChecked ? 1 : 0, isCastingToSonos ? 1 : 0)
+        
+        if isCastingToSonos {
+            // WHILE CASTING: toggle actually joins/unjoins the Sonos group
+            Task {
+                do {
+                    if !isNowChecked {
+                        // Was checked, now unchecked - remove from group
+                        NSLog("SonosRoomCheckboxView: Removing '%@' from cast group", info.roomName)
+                        try await castManager.unjoinSonos(zoneUDN: info.roomUDN)
+                    } else {
+                        // Was unchecked, now checked - join to active cast
+                        if let coordinatorUDN = castManager.activeSession?.device.id {
+                            NSLog("SonosRoomCheckboxView: Adding '%@' to cast group", info.roomName)
+                            try await castManager.joinSonosToGroup(
+                                zoneUDN: info.roomUDN,
+                                coordinatorUDN: coordinatorUDN
+                            )
+                        }
+                    }
+                    
+                    // Refresh topology to update UI
+                    await castManager.refreshSonosGroups()
+                    NSLog("SonosRoomCheckboxView: Toggle complete for '%@'", info.roomName)
+                    
+                } catch {
+                    NSLog("SonosRoomCheckboxView: Toggle failed for '%@': %@", info.roomName, error.localizedDescription)
+                    // Revert checkbox state on error
+                    await MainActor.run {
+                        sender.state = isNowChecked ? .off : .on
+                    }
+                }
+            }
+        } else {
+            // NOT CASTING: just toggle selection state (stored locally)
+            if isNowChecked {
+                castManager.selectedSonosRooms.insert(info.roomUDN)
+                NSLog("SonosRoomCheckboxView: Selected '%@' for casting", info.roomName)
+            } else {
+                castManager.selectedSonosRooms.remove(info.roomUDN)
+                NSLog("SonosRoomCheckboxView: Deselected '%@' for casting", info.roomName)
+            }
+        }
+        
+        // Keep menu open by canceling the close - the menu stays open because we're in a custom view
+    }
+}
+
+/// Info for toggling a room in/out of a group
+struct SonosRoomToggle {
+    let roomUDN: String
+    let roomName: String
+    let coordinatorUDN: String
+    let coordinatorName: String
+    let isCurrentlyInGroup: Bool
+    let isCoordinator: Bool
+}
+
+/// Info about a Sonos zone for grouping menu actions (legacy)
+struct SonosGroupingInfo {
+    let zoneUDN: String
+    let zoneName: String
+    let coordinatorUDN: String
+    let coordinatorName: String
+    let isCurrentlyInGroup: Bool
+    let isCoordinator: Bool
+}
+
+/// Action for simplified room grouping
+struct SonosRoomAction {
+    enum ActionType {
+        case leave
+        case join(coordinatorUDN: String, coordinatorName: String)
+    }
+    
+    let roomUDN: String
+    let roomName: String
+    let action: ActionType
 }
 
 // MARK: - Menu Actions
@@ -1151,6 +1284,304 @@ class MenuActions: NSObject {
     @objc func refreshCastDevices() {
         CastManager.shared.refreshDevices()
         NSLog("MenuActions: Refreshing cast devices")
+    }
+    
+    @objc func refreshSonosRooms() {
+        Task {
+            await CastManager.shared.refreshSonosGroups()
+            NSLog("MenuActions: Refreshed Sonos rooms")
+        }
+    }
+    
+    @objc func castToSonosRoom(_ sender: NSMenuItem) {
+        let castManager = CastManager.shared
+        
+        // Check if music is loaded
+        guard WindowManager.shared.audioEngine.currentTrack != nil else {
+            NSLog("MenuActions: Cannot cast - no music loaded")
+            Task { @MainActor in
+                let alert = NSAlert()
+                alert.messageText = "No Music"
+                alert.informativeText = "Load a track before casting."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+            return
+        }
+        
+        // Get selected rooms
+        let selectedUDNs = castManager.selectedSonosRooms
+        
+        // If no rooms selected, show error
+        if selectedUDNs.isEmpty {
+            NSLog("MenuActions: Cannot cast - no rooms selected")
+            Task { @MainActor in
+                let alert = NSAlert()
+                alert.messageText = "No Room Selected"
+                alert.informativeText = "Select a room first by checking it in the Sonos menu."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+            return
+        }
+        
+        // Find a device to cast to
+        // sonosRooms has room UDNs, but sonosDevices only has group coordinator devices
+        // We need to find a device that matches one of our selected rooms
+        let rooms = castManager.sonosRooms
+        let devices = castManager.sonosDevices
+        
+        NSLog("MenuActions: Selected UDNs: %@", selectedUDNs.joined(separator: ", "))
+        NSLog("MenuActions: Available devices: %@", devices.map { "\($0.name):\($0.id)" }.joined(separator: ", "))
+        NSLog("MenuActions: Available rooms: %@", rooms.map { "\($0.name):\($0.id)" }.joined(separator: ", "))
+        
+        // Find the first device that matches a selected room
+        var targetDevice: CastDevice?
+        var targetRoomUDN: String?
+        
+        for udn in selectedUDNs {
+            // First try direct match (room is a coordinator)
+            if let device = devices.first(where: { $0.id == udn }) {
+                targetDevice = device
+                targetRoomUDN = udn
+                break
+            }
+            
+            // If no direct match, find by room name
+            if let room = rooms.first(where: { $0.id == udn }) {
+                if let device = devices.first(where: { $0.name.hasPrefix(room.name) }) {
+                    targetDevice = device
+                    targetRoomUDN = udn
+                    break
+                }
+            }
+        }
+        
+        // If still no match, just use the first available Sonos device
+        if targetDevice == nil, let firstDevice = devices.first {
+            NSLog("MenuActions: No exact match, using first available device: %@", firstDevice.name)
+            targetDevice = firstDevice
+            targetRoomUDN = selectedUDNs.first
+        }
+        
+        guard let device = targetDevice, let firstUDN = targetRoomUDN else {
+            NSLog("MenuActions: Could not find any Sonos device to cast to")
+            Task { @MainActor in
+                let alert = NSAlert()
+                alert.messageText = "No Device Found"
+                alert.informativeText = "Could not find a Sonos device to cast to. Try refreshing."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+            return
+        }
+        
+        Task {
+            do {
+                // Start casting to first room
+                NSLog("MenuActions: Starting cast to '%@' (id: %@)", device.name, device.id)
+                try await castManager.castCurrentTrack(to: device)
+                
+                // Join additional selected rooms to the group
+                let otherUDNs = selectedUDNs.filter { $0 != firstUDN }
+                if !otherUDNs.isEmpty {
+                    // Wait a moment for cast to establish
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    
+                    for udn in otherUDNs {
+                        NSLog("MenuActions: Joining room %@ to cast group (coordinator: %@)", udn, device.id)
+                        try await castManager.joinSonosToGroup(zoneUDN: udn, coordinatorUDN: device.id)
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                    }
+                }
+                
+                // Refresh topology
+                await castManager.refreshSonosGroups()
+                
+            } catch {
+                NSLog("MenuActions: Cast to Sonos failed: %@", error.localizedDescription)
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Cast Failed"
+                    alert.informativeText = error.localizedDescription
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            }
+        }
+    }
+    
+    // MARK: - Sonos Grouping
+    
+    @objc func sonosRoomJoinGroup(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? SonosRoomAction,
+              case .join(let coordinatorUDN, let coordinatorName) = action.action else { return }
+        
+        Task {
+            do {
+                NSLog("MenuActions: Joining room '%@' to '%@'", action.roomName, coordinatorName)
+                try await CastManager.shared.joinSonosToGroup(
+                    zoneUDN: action.roomUDN,
+                    coordinatorUDN: coordinatorUDN
+                )
+                NSLog("MenuActions: '%@' joined '%@'", action.roomName, coordinatorName)
+            } catch {
+                NSLog("MenuActions: Sonos grouping failed: %@", error.localizedDescription)
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Sonos Grouping Failed"
+                    alert.informativeText = "Could not join \(action.roomName) to \(coordinatorName): \(error.localizedDescription)"
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            }
+        }
+    }
+    
+    @objc func sonosRoomLeaveGroup(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? SonosRoomAction,
+              case .leave = action.action else { return }
+        
+        Task {
+            do {
+                NSLog("MenuActions: Making room '%@' standalone", action.roomName)
+                try await CastManager.shared.unjoinSonos(zoneUDN: action.roomUDN)
+                NSLog("MenuActions: '%@' is now standalone", action.roomName)
+            } catch {
+                NSLog("MenuActions: Sonos ungrouping failed: %@", error.localizedDescription)
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Sonos Ungrouping Failed"
+                    alert.informativeText = "Could not make \(action.roomName) standalone: \(error.localizedDescription)"
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            }
+        }
+    }
+    
+    /// Toggle a Sonos room in/out of cast group
+    @objc func toggleSonosRoom(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? SonosRoomToggle else {
+            NSLog("MenuActions: toggleSonosRoom - no info found")
+            return
+        }
+        
+        let castManager = CastManager.shared
+        let isCastingToSonos = castManager.activeSession?.device.type == .sonos
+        
+        NSLog("MenuActions: toggleSonosRoom '%@' isChecked=%d isCasting=%d", 
+              info.roomName, info.isCurrentlyInGroup ? 1 : 0, isCastingToSonos ? 1 : 0)
+        
+        if isCastingToSonos {
+            // WHILE CASTING: toggle actually joins/unjoins the Sonos group
+            Task {
+                do {
+                    if info.isCurrentlyInGroup {
+                        // Currently receiving audio - remove from group
+                        NSLog("MenuActions: Removing '%@' from cast group", info.roomName)
+                        try await castManager.unjoinSonos(zoneUDN: info.roomUDN)
+                    } else {
+                        // Not receiving audio - join to active cast
+                        if let coordinatorUDN = castManager.activeSession?.device.id {
+                            NSLog("MenuActions: Adding '%@' to cast group", info.roomName)
+                            try await castManager.joinSonosToGroup(
+                                zoneUDN: info.roomUDN,
+                                coordinatorUDN: coordinatorUDN
+                            )
+                        }
+                    }
+                    
+                    // Refresh topology to update UI
+                    await castManager.refreshSonosGroups()
+                    NSLog("MenuActions: Toggle complete for '%@'", info.roomName)
+                    
+                } catch {
+                    NSLog("MenuActions: Toggle failed for '%@': %@", info.roomName, error.localizedDescription)
+                }
+            }
+        } else {
+            // NOT CASTING: just toggle selection state (stored locally)
+            if info.isCurrentlyInGroup {
+                castManager.selectedSonosRooms.remove(info.roomUDN)
+                NSLog("MenuActions: Deselected '%@' for casting", info.roomName)
+            } else {
+                castManager.selectedSonosRooms.insert(info.roomUDN)
+                NSLog("MenuActions: Selected '%@' for casting", info.roomName)
+            }
+        }
+    }
+    
+    /// Legacy toggle handler
+    @objc func toggleSonosZoneInGroup(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? SonosGroupingInfo else { return }
+        
+        Task {
+            do {
+                if info.isCurrentlyInGroup {
+                    NSLog("MenuActions: Removing '%@' from group '%@'", info.zoneName, info.coordinatorName)
+                    try await CastManager.shared.unjoinSonos(zoneUDN: info.zoneUDN)
+                } else {
+                    NSLog("MenuActions: Adding '%@' to group '%@'", info.zoneName, info.coordinatorName)
+                    try await CastManager.shared.joinSonosToGroup(
+                        zoneUDN: info.zoneUDN,
+                        coordinatorUDN: info.coordinatorUDN
+                    )
+                }
+            } catch {
+                NSLog("MenuActions: Sonos grouping failed: %@", error.localizedDescription)
+            }
+        }
+    }
+    
+    @objc func ungroupAllSonos() {
+        let rooms = CastManager.shared.sonosRooms
+        
+        // Find rooms that are in groups
+        let roomsToUnjoin = rooms.filter { $0.isInGroup }
+        
+        if roomsToUnjoin.isEmpty {
+            NSLog("MenuActions: No rooms to ungroup")
+            return
+        }
+        
+        NSLog("MenuActions: Ungrouping %d rooms", roomsToUnjoin.count)
+        
+        Task {
+            // Use actor-isolated storage for thread safety
+            actor FailedRoomsCollector {
+                var failed: [String] = []
+                func add(_ name: String) { failed.append(name) }
+                func getAll() -> [String] { failed }
+            }
+            let collector = FailedRoomsCollector()
+            
+            for room in roomsToUnjoin {
+                do {
+                    try await CastManager.shared.unjoinSonos(zoneUDN: room.id)
+                    NSLog("MenuActions: Ungrouped '%@'", room.name)
+                } catch {
+                    NSLog("MenuActions: Failed to ungroup '%@': %@", room.name, error.localizedDescription)
+                    await collector.add(room.name)
+                }
+                
+                // Small delay between commands to avoid overwhelming Sonos
+                try? await Task.sleep(nanoseconds: 300_000_000)  // 0.3 seconds
+            }
+            
+            let failedRooms = await collector.getAll()
+            if !failedRooms.isEmpty {
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Some Rooms Failed to Ungroup"
+                    alert.informativeText = "Failed to ungroup: \(failedRooms.joined(separator: ", "))"
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            } else {
+                NSLog("MenuActions: All rooms ungrouped successfully")
+            }
+        }
     }
     
     // MARK: - Local Library

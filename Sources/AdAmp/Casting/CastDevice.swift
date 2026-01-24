@@ -173,7 +173,7 @@ enum CastError: Error, LocalizedError {
     case unsupportedDevice
     case invalidURL
     case noTrackPlaying
-    case localFileNotCastable
+    case localServerError(String)
     case networkError(Error)
     case sessionNotActive
     case deviceOffline
@@ -195,8 +195,8 @@ enum CastError: Error, LocalizedError {
             return "Invalid media URL"
         case .noTrackPlaying:
             return "No track loaded. Load a track first, then cast."
-        case .localFileNotCastable:
-            return "Local files cannot be cast. Only streaming content can be cast to speakers."
+        case .localServerError(let message):
+            return "Local server error: \(message)"
         case .networkError(let error):
             return "Network error: \(error.localizedDescription)"
         case .sessionNotActive:

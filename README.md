@@ -24,7 +24,8 @@ A loaded recreation of Winamp 2.x for macOS
 - Navidrome/Subsonic server integration with scrobbling support
 - Album/Cover/Movie art browser with visualizations
 - IMDB integration
-- Airplay and Casting to Chromecast, Sonos, and DLNA devices
+- AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
+- Cast local files to Sonos via embedded HTTP server
 
 ## Requirements
 
@@ -62,6 +63,7 @@ open Package.swift
 | [SQLite.swift](https://github.com/stephencelis/SQLite.swift) | Media library storage |
 | [KSPlayer](https://github.com/kingslay/KSPlayer) | Video playback with FFmpeg backend |
 | [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) | HTTP audio streaming for Plex |
+| [FlyingFox](https://github.com/swhitty/FlyingFox) | Embedded HTTP server for local file casting |
 | [libprojectM](https://github.com/projectM-visualizer/projectm) | Milkdrop visualizations |
 
 ## Media Library

@@ -558,19 +558,76 @@ Right-click tracks, albums, or artists to add them to your favorites (starred it
 
 Click **Sound Settings...** to manage AirPlay connections.
 
-### Cast Devices
+### Sonos Casting
 
-**Output Devices > Cast Devices** discovers:
+**Output Devices > Sonos** provides multi-room casting to Sonos speakers.
+
+#### Sonos Menu Structure
+
+```
+Sonos                          ▸
+├── ☐ Dining Room                 (checkbox)
+├── ☐ Living Room                 (checkbox)  
+├── ☐ Kitchen                     (checkbox)
+├── ─────────────────
+├── 🟢 Start Casting              (or 🔴 Stop Casting)
+└── Refresh
+```
+
+#### How to Cast to Sonos
+
+1. **Load music** - Play or load a track (Plex, Subsonic, or local files)
+2. **Open Sonos menu** - Right-click → Output Devices → Sonos
+3. **Select rooms** - Check one or more room checkboxes (menu stays open!)
+4. **Start casting** - Click **🟢 Start Casting**
+
+#### Multi-Room Selection
+
+The room checkboxes use a special view that **keeps the menu open** when clicked. This lets you:
+- Check multiple rooms without reopening the menu
+- Configure all your targets before starting
+- Click "Start Casting" when ready
+
+#### Checkbox Meanings
+
+| When... | Checked (☑) | Unchecked (☐) |
+|---------|-------------|---------------|
+| NOT casting | Room selected for casting | Room not selected |
+| Casting | Room receiving audio | Room not receiving audio |
+
+#### While Casting
+
+- **Check a room** → Room joins the cast and starts playing
+- **Uncheck a room** → Room leaves the cast and stops playing
+- **🔴 Stop Casting** → Stops all rooms, clears selection
+
+#### Errors
+
+| Error | Solution |
+|-------|----------|
+| "No Music" | Load a track before casting |
+| "No Room Selected" | Check at least one room |
+| "No Device Found" | Click Refresh, wait 10 seconds |
+
+#### Requirements
+
+- **UPnP must be enabled** in the Sonos app (Account → Privacy & Security → Connection Security)
+- Sonos speakers must be on the same network as your Mac
+- Works with Plex/Subsonic streaming and local files
+- Local file casting requires firewall to allow port 8765
+
+### Chromecast & DLNA
+
+**Output Devices** also discovers:
 - **Chromecast** - Google Cast speakers and displays
-- **Sonos** - Sonos speakers on your network
 - **TVs (DLNA)** - DLNA-compatible televisions
 
 To cast:
 1. Start playing audio in AdAmp
-2. Select a cast device from the menu
+2. Select a device from the menu
 3. **Stop Casting** to return to local playback
 
-**Refresh Devices** rescans your network.
+**Refresh Devices** rescans your network for all cast targets.
 
 ---
 
@@ -929,6 +986,16 @@ When enabled, the following is saved on quit and restored on launch:
 
 - **Devices not found**: Use Refresh Devices, check network
 - **Casting fails**: Ensure device is on same network as AdAmp
+
+### Sonos Issues
+
+- **No Sonos devices appear**: Ensure UPnP is enabled in Sonos app settings
+- **"No Music" error**: Load a track before casting
+- **"No Room Selected" error**: Check at least one room checkbox
+- **Room won't join cast**: Click Refresh, ensure UPnP is enabled
+- **Checkbox changes don't work**: Wait for discovery to complete (10+ seconds after refresh)
+- **Menu disappears during refresh**: Close and reopen context menu - data is preserved
+- **Local files won't cast**: Ensure firewall allows port 8765 and Mac has a local network IP
 
 ---
 

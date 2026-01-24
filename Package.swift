@@ -21,6 +21,8 @@ let package = Package(
         .package(url: "https://github.com/kingslay/KSPlayer.git", branch: "main"),
         // Audio streaming with AVAudioEngine support (for Plex EQ)
         .package(url: "https://github.com/dimitris-c/AudioStreaming.git", from: "1.4.0"),
+        // Lightweight HTTP server for local file casting
+        .package(url: "https://github.com/swhitty/FlyingFox.git", from: "0.16.0"),
     ],
     targets: [
         // System library target for libprojectM (Milkdrop visualization)
@@ -42,6 +44,7 @@ let package = Package(
                 "KSPlayer",
                 "AudioStreaming",
                 "CProjectM",
+                "FlyingFox",
             ],
             path: "Sources/AdAmp",
             resources: [
