@@ -562,9 +562,19 @@ class WindowManager {
         mainWindowController?.updateTime(current: current, duration: duration)
     }
     
-    /// Whether video is the active playback source (video is playing)
+    /// Whether video is the active playback source (video session is active)
+    /// Returns true when a video is loaded in the video player (even if paused)
+    /// This is used by playlist mini controls to route commands correctly
     var isVideoActivePlayback: Bool {
-        return isVideoPlaying
+        // A video session is active if the video player is visible AND has a video loaded
+        // (indicated by currentTitle being set). This is different from isVideoPlaying
+        // which only returns true when actively playing (not paused).
+        guard let controller = videoPlayerWindowController,
+              let window = controller.window,
+              window.isVisible else {
+            return false
+        }
+        return controller.currentTitle != nil
     }
     
     /// Get current video playback state for main window display

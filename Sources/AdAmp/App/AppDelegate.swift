@@ -335,8 +335,8 @@ extension AppDelegate: AudioEngineDelegate {
     }
     
     func audioEngineDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
-        // Don't update main window time if video is playing (video has its own time source)
-        guard !windowManager.isVideoPlaying else { return }
+        // Don't update main window time if video session is active (video has its own time source)
+        guard !windowManager.isVideoActivePlayback else { return }
         windowManager.mainWindowController?.updateTime(current: current, duration: duration)
     }
     
