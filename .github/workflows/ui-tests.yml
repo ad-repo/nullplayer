@@ -2,14 +2,15 @@ name: UI Tests
 
 on:
   push:
-    branches: [main, test-dev]
+    branches: [main, test-dev, fixes]
   pull_request:
     branches: [main]
 
 jobs:
-  ui-tests:
-    runs-on: macos-14  # M1 runner, faster for macOS apps
-    timeout-minutes: 30
+  # Build job - builds once and uploads artifacts for test jobs
+  build:
+    runs-on: macos-14
+    timeout-minutes: 15
     
     steps:
       - uses: actions/checkout@v4
@@ -17,85 +18,52 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.1.app || sudo xcode-select -s /Applications/Xcode_16.app || sudo xcode-select -s /Applications/Xcode.app
       
-      - name: Show Xcode and Swift version
-        run: |
-          xcodebuild -version
-          swift --version
-      
-      - name: Cache SPM build
+      - name: Cache SPM packages
         uses: actions/cache@v4
         with:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-spm-build-${{ hashFiles('Package.swift', 'Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-spm-build-
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: ${{ runner.os }}-spm-
       
       - name: Cache Frameworks
         uses: actions/cache@v4
         with:
           path: Frameworks
-          key: ${{ runner.os }}-frameworks-v1
+          key: ${{ runner.os }}-frameworks-${{ hashFiles('scripts/bootstrap.sh') }}
+          restore-keys: ${{ runner.os }}-frameworks-
       
-      - name: Bootstrap (download frameworks)
+      - name: Bootstrap
         run: ./scripts/bootstrap.sh
       
       - name: Build for testing
         run: |
-          # First try building with xcodebuild
           xcodebuild build-for-testing \
             -scheme AdAmp \
             -destination 'platform=macOS' \
             -derivedDataPath DerivedData \
-            2>&1 | tee build.log || {
-              # If xcodebuild fails, fall back to swift build
-              echo "xcodebuild failed, trying swift build..."
-              swift build
-            }
+            -parallelizeTargets \
+            -jobs $(sysctl -n hw.ncpu)
       
-      - name: Run UI tests
-        run: |
-          xcodebuild test-without-building \
-            -scheme AdAmp \
-            -destination 'platform=macOS' \
-            -derivedDataPath DerivedData \
-            -only-testing:AdAmpUITests \
-            -resultBundlePath TestResults.xcresult \
-            2>&1 | tee test.log || {
-              echo "UI tests failed or not available"
-              exit 0  # Don't fail the build if UI tests aren't set up
-            }
-      
-      - name: Upload test results
+      - name: Upload DerivedData
         uses: actions/upload-artifact@v4
-        if: always()  # Upload even on failure
         with:
-          name: test-results
-          path: TestResults.xcresult
-          if-no-files-found: ignore
+          name: derived-data
+          path: DerivedData
+          retention-days: 1
       
-      - name: Upload build logs
+      - name: Upload Frameworks
         uses: actions/upload-artifact@v4
-        if: failure()
         with:
-          name: build-logs
-          path: |
-            build.log
-            test.log
-      
-      - name: Upload failure screenshots
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: failure-screenshots
-          path: DerivedData/Logs/Test/**/*.png
-          if-no-files-found: ignore
+          name: frameworks
+          path: Frameworks
+          retention-days: 1
 
-  # Unit tests job (runs in parallel)
+  # Unit tests - fast, run with swift test
   unit-tests:
     runs-on: macos-14
-    timeout-minutes: 20
+    timeout-minutes: 10
     
     steps:
       - uses: actions/checkout@v4
@@ -103,40 +71,36 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.1.app || sudo xcode-select -s /Applications/Xcode_16.app || sudo xcode-select -s /Applications/Xcode.app
       
-      - name: Show Swift version
-        run: swift --version
-      
-      - name: Cache SPM build
+      - name: Cache SPM packages
         uses: actions/cache@v4
         with:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-spm-build-${{ hashFiles('Package.swift', 'Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-spm-build-
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: ${{ runner.os }}-spm-
       
       - name: Cache Frameworks
         uses: actions/cache@v4
         with:
           path: Frameworks
-          key: ${{ runner.os }}-frameworks-v1
+          key: ${{ runner.os }}-frameworks-${{ hashFiles('scripts/bootstrap.sh') }}
+          restore-keys: ${{ runner.os }}-frameworks-
       
-      - name: Bootstrap (download frameworks)
+      - name: Bootstrap
         run: ./scripts/bootstrap.sh
       
       - name: Run unit tests
         run: |
-          # Create symlink in .build directory for test runtime
           mkdir -p .build/arm64-apple-macosx/debug
           ln -sf ../../../Frameworks/libprojectM-4.dylib .build/arm64-apple-macosx/debug/libprojectM-4.4.dylib
-          # Run only unit tests (UI tests require xcodebuild with app host)
-          swift test --filter AdAmpTests
+          swift test --filter AdAmpTests --parallel
 
-  # Optional: Parallel test execution for faster CI
-  ui-tests-parallel:
+  # UI tests - run in parallel using shared build artifacts
+  ui-tests:
+    needs: build
     runs-on: macos-14
-    timeout-minutes: 20
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -154,28 +118,17 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.1.app || sudo xcode-select -s /Applications/Xcode_16.app || sudo xcode-select -s /Applications/Xcode.app
       
-      - name: Cache Swift packages
-        uses: actions/cache@v4
+      - name: Download DerivedData
+        uses: actions/download-artifact@v4
         with:
-          path: |
-            .build
-            ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
-          restore-keys: ${{ runner.os }}-spm-
+          name: derived-data
+          path: DerivedData
       
-      - name: Bootstrap
-        run: ./scripts/bootstrap.sh
-      
-      - name: Build for testing
-        run: |
-          xcodebuild build-for-testing \
-            -scheme AdAmp \
-            -destination 'platform=macOS' \
-            -derivedDataPath DerivedData \
-            2>&1 | tee build.log || {
-              echo "xcodebuild build-for-testing failed, trying swift build..."
-              swift build
-            }
+      - name: Download Frameworks
+        uses: actions/download-artifact@v4
+        with:
+          name: frameworks
+          path: Frameworks
       
       - name: Run ${{ matrix.test-class }}
         run: |
@@ -185,8 +138,8 @@ jobs:
             -derivedDataPath DerivedData \
             -only-testing:AdAmpUITests/${{ matrix.test-class }} \
             -resultBundlePath TestResults-${{ matrix.test-class }}.xcresult \
-            2>&1 | tee test.log || {
-              echo "UI tests for ${{ matrix.test-class }} failed or not available"
+            2>&1 || {
+              echo "UI tests for ${{ matrix.test-class }} not available"
               exit 0
             }
       
