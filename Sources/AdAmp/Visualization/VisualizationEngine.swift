@@ -81,9 +81,6 @@ enum VisualizationType: String, CaseIterable, Codable {
     /// ProjectM engine (Milkdrop/WinAmp presets)
     case projectM = "ProjectM (Milkdrop)"
 
-    /// TOC Spectrum analyzer
-    case tocSpectrum = "TOC Spectrum"
-
     /// Human-readable display name
     var displayName: String {
         return self.rawValue

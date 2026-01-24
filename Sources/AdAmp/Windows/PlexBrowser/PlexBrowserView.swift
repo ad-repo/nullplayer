@@ -1082,7 +1082,22 @@ class PlexBrowserView: NSView {
                 }
                 
                 // Item count (positioned from right side) - tighter spacing in art-only mode
-                let countNumber = "\(displayItems.count)"
+                // Show top-level item count (artists/albums/tracks), not expanded tree count
+                let itemCount: Int
+                if manager.currentLibrary?.type == "artist" {
+                    itemCount = cachedArtists.count
+                } else if manager.currentLibrary?.type == "album" {
+                    itemCount = cachedAlbums.count
+                } else if manager.currentLibrary?.type == "track" {
+                    itemCount = cachedTracks.count
+                } else if manager.currentLibrary?.type == "movie" {
+                    itemCount = cachedMovies.count
+                } else if manager.currentLibrary?.type == "show" {
+                    itemCount = cachedShows.count
+                } else {
+                    itemCount = displayItems.count
+                }
+                let countNumber = "\(itemCount)"
                 let countLabel = " ITEMS"
                 let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
                 let countSpacing: CGFloat = isArtOnlyMode ? 12 : 24

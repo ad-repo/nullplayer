@@ -127,11 +127,7 @@ class ContextMenuBuilder {
         
         // Available skins from Skins directory
         let availableSkins = WindowManager.shared.availableSkins()
-        if availableSkins.isEmpty {
-            let noSkins = NSMenuItem(title: "(No skins found)", action: nil, keyEquivalent: "")
-            noSkins.isEnabled = false
-            menu.addItem(noSkins)
-        } else {
+        if !availableSkins.isEmpty {
             for skin in availableSkins {
                 let skinItem = NSMenuItem(title: skin.name, action: #selector(MenuActions.loadSkin(_:)), keyEquivalent: "")
                 skinItem.target = MenuActions.shared
