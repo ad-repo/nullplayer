@@ -19,6 +19,9 @@ class PlaylistView: NSView {
     /// Selected track indices
     private var selectedIndices: Set<Int> = []
     
+    /// The anchor index for shift-selection (where shift-click range starts from)
+    private var selectionAnchor: Int?
+    
     /// Scroll offset (in pixels)
     private var scrollOffset: CGFloat = 0
     
@@ -506,6 +509,7 @@ class PlaylistView: NSView {
     
     func reloadData() {
         selectedIndices.removeAll()
+        selectionAnchor = nil
         scrollOffset = 0
         needsDisplay = true
     }
@@ -757,16 +761,12 @@ class PlaylistView: NSView {
     /// Handle track click (selection)
     private func handleTrackClick(index: Int, event: NSEvent) {
         if event.modifierFlags.contains(.shift) {
-            // Extend selection
-            if let lastSelected = selectedIndices.max() {
-                let start = min(lastSelected, index)
-                let end = max(lastSelected, index)
-                for i in start...end {
-                    selectedIndices.insert(i)
-                }
-            } else {
-                selectedIndices.insert(index)
-            }
+            // Extend selection from anchor
+            let anchor = selectionAnchor ?? selectedIndices.min() ?? index
+            let start = min(anchor, index)
+            let end = max(anchor, index)
+            selectedIndices = Set(start...end)
+            // Don't update anchor - shift-click extends from existing anchor
         } else if event.modifierFlags.contains(.command) {
             // Toggle selection
             if selectedIndices.contains(index) {
@@ -774,9 +774,12 @@ class PlaylistView: NSView {
             } else {
                 selectedIndices.insert(index)
             }
+            // Set anchor to clicked item for future shift-clicks
+            selectionAnchor = index
         } else {
-            // Single selection
+            // Single selection - set new anchor
             selectedIndices = [index]
+            selectionAnchor = index
         }
         
         // Double-click plays track
@@ -1179,6 +1182,7 @@ class PlaylistView: NSView {
     @objc private func removeAll(_ sender: Any?) {
         WindowManager.shared.audioEngine.clearPlaylist()
         selectedIndices.removeAll()
+        selectionAnchor = nil
         scrollOffset = 0
         needsDisplay = true
     }
@@ -1196,6 +1200,7 @@ class PlaylistView: NSView {
         
         // Update selection indices
         selectedIndices = Set(0..<engine.playlist.count)
+        selectionAnchor = 0
         needsDisplay = true
     }
     
@@ -1208,6 +1213,7 @@ class PlaylistView: NSView {
         }
         
         selectedIndices.removeAll()
+        selectionAnchor = nil
         needsDisplay = true
     }
     
@@ -1228,6 +1234,7 @@ class PlaylistView: NSView {
         }
         
         selectedIndices.removeAll()
+        selectionAnchor = nil
         needsDisplay = true
     }
     
@@ -1235,17 +1242,20 @@ class PlaylistView: NSView {
         let tracks = WindowManager.shared.audioEngine.playlist
         let allIndices = Set(0..<tracks.count)
         selectedIndices = allIndices.subtracting(selectedIndices)
+        selectionAnchor = selectedIndices.min()
         needsDisplay = true
     }
     
     @objc private func selectNone(_ sender: Any?) {
         selectedIndices.removeAll()
+        selectionAnchor = nil
         needsDisplay = true
     }
     
     @objc override func selectAll(_ sender: Any?) {
         let tracks = WindowManager.shared.audioEngine.playlist
         selectedIndices = Set(0..<tracks.count)
+        selectionAnchor = 0
         needsDisplay = true
     }
     
@@ -1355,6 +1365,8 @@ class PlaylistView: NSView {
     
     override func keyDown(with event: NSEvent) {
         let engine = WindowManager.shared.audioEngine
+        let tracks = engine.playlist
+        let hasShift = event.modifierFlags.contains(.shift)
         
         switch event.keyCode {
         case 51: // Delete - remove selected
@@ -1370,9 +1382,129 @@ class PlaylistView: NSView {
                 selectAll(nil)
             }
             
+        case 126: // Up arrow - move selection up
+            guard !tracks.isEmpty else { return }
+            navigateSelection(direction: -1, extend: hasShift)
+            
+        case 125: // Down arrow - move selection down
+            guard !tracks.isEmpty else { return }
+            navigateSelection(direction: 1, extend: hasShift)
+            
+        case 115: // Home - go to first track
+            guard !tracks.isEmpty else { return }
+            if hasShift {
+                extendSelectionTo(0)
+            } else {
+                selectedIndices = [0]
+                selectionAnchor = 0
+            }
+            scrollToSelection()
+            needsDisplay = true
+            
+        case 119: // End - go to last track
+            guard !tracks.isEmpty else { return }
+            let lastIndex = tracks.count - 1
+            if hasShift {
+                extendSelectionTo(lastIndex)
+            } else {
+                selectedIndices = [lastIndex]
+                selectionAnchor = lastIndex
+            }
+            scrollToSelection()
+            needsDisplay = true
+            
+        case 116: // Page Up - move selection up by visible page
+            guard !tracks.isEmpty else { return }
+            let visibleCount = visibleTrackCount
+            navigateSelection(direction: -visibleCount, extend: hasShift)
+            
+        case 121: // Page Down - move selection down by visible page
+            guard !tracks.isEmpty else { return }
+            let visibleCount = visibleTrackCount
+            navigateSelection(direction: visibleCount, extend: hasShift)
+            
         default:
             super.keyDown(with: event)
         }
+    }
+    
+    /// Number of tracks visible in the current view
+    private var visibleTrackCount: Int {
+        let originalSize = originalWindowSize
+        let listHeight = originalSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+        return max(1, Int(listHeight / itemHeight))
+    }
+    
+    /// Navigate selection by a direction amount (-1 = up, 1 = down, or larger for page jumps)
+    private func navigateSelection(direction: Int, extend: Bool) {
+        let tracks = WindowManager.shared.audioEngine.playlist
+        guard !tracks.isEmpty else { return }
+        
+        // Determine the current focus index (where we navigate from)
+        let currentFocus: Int
+        if let anchor = selectionAnchor, selectedIndices.contains(anchor) {
+            // Use the selection anchor if it's still selected
+            currentFocus = anchor
+        } else if direction < 0 {
+            // Moving up: start from the topmost selected item
+            currentFocus = selectedIndices.min() ?? 0
+        } else {
+            // Moving down: start from the bottommost selected item
+            currentFocus = selectedIndices.max() ?? 0
+        }
+        
+        // Calculate new index, clamped to valid range
+        let newIndex = max(0, min(tracks.count - 1, currentFocus + direction))
+        
+        if extend {
+            extendSelectionTo(newIndex)
+        } else {
+            selectedIndices = [newIndex]
+            selectionAnchor = newIndex
+        }
+        
+        scrollToSelection()
+        needsDisplay = true
+    }
+    
+    /// Extend selection from anchor to the given index
+    private func extendSelectionTo(_ targetIndex: Int) {
+        let anchor = selectionAnchor ?? selectedIndices.min() ?? 0
+        let start = min(anchor, targetIndex)
+        let end = max(anchor, targetIndex)
+        selectedIndices = Set(start...end)
+        // Keep anchor unchanged so user can continue extending
+    }
+    
+    /// Scroll to ensure the current selection is visible
+    private func scrollToSelection() {
+        guard let focusIndex = selectionAnchor ?? selectedIndices.min() else { return }
+        
+        let originalSize = originalWindowSize
+        let listHeight = originalSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+        let tracks = WindowManager.shared.audioEngine.playlist
+        
+        // Calculate the top and bottom of the selected item
+        let itemTop = CGFloat(focusIndex) * itemHeight
+        let itemBottom = itemTop + itemHeight
+        
+        // Calculate visible range
+        let visibleTop = scrollOffset
+        let visibleBottom = scrollOffset + listHeight
+        
+        // Scroll to keep selection visible
+        if itemTop < visibleTop {
+            // Item is above visible area - scroll up
+            scrollOffset = itemTop
+        } else if itemBottom > visibleBottom {
+            // Item is below visible area - scroll down
+            scrollOffset = itemBottom - listHeight
+        }
+        
+        // Clamp scroll offset to valid range
+        let totalContentHeight = CGFloat(tracks.count) * itemHeight
+        let maxScroll = max(0, totalContentHeight - listHeight)
+        scrollOffset = max(0, min(maxScroll, scrollOffset))
     }
     
     // MARK: - Drag and Drop

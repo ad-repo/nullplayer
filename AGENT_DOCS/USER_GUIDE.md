@@ -734,6 +734,15 @@ Enable this option to keep the Library Browser and Milkdrop windows using the de
 
 | Key | Action |
 |-----|--------|
+| **↑** | Move selection up |
+| **↓** | Move selection down |
+| **Shift+↑** | Extend selection up |
+| **Shift+↓** | Extend selection down |
+| **Home** | Jump to first track |
+| **End** | Jump to last track |
+| **Page Up** | Move selection up by a page |
+| **Page Down** | Move selection down by a page |
+| **Shift+Home/End/PgUp/PgDn** | Extend selection to target |
 | **Delete** | Remove selected tracks |
 | **Enter** | Play selected track |
 | **Cmd+A** | Select all |
