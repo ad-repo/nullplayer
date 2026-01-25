@@ -76,6 +76,19 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         castUpdateTimer = nil
     }
     
+    /// Reset cast state when starting a new video
+    /// This ensures the player doesn't think it's still casting from a previous session
+    private func resetCastState() {
+        if isCastingVideo {
+            stopCastUpdateTimer()
+            isCastingVideo = false
+            castTargetDevice = nil
+            castStartPosition = 0
+            castPlaybackStartDate = nil
+            castDuration = 0
+        }
+    }
+    
     /// Callback for when video finishes playing (for playlist integration)
     var onVideoFinishedForPlaylist: (() -> Void)?
     
@@ -327,6 +340,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Play a video from URL with optional title
     /// If called from WindowManager.playVideoTrack, the onVideoFinishedForPlaylist callback will be set
     func play(url: URL, title: String) {
+        // Reset any lingering cast state from previous video
+        resetCastState()
+        
         // Report stop to Plex if currently playing Plex content (before clearing state)
         if isPlexContent {
             let position = videoPlayerView.currentPlaybackTime
@@ -361,6 +377,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             play(url: track.url, title: track.displayTitle)
             return
         }
+        
+        // Reset any lingering cast state from previous video
+        resetCastState()
         
         // Report stop to Plex if currently playing Plex content
         if isPlexContent {
@@ -400,6 +419,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Play a Plex movie
     func play(movie: PlexMovie) {
+        // Reset any lingering cast state from previous video
+        resetCastState()
+        
         // Report stop to Plex if currently playing Plex content (before starting new video)
         if isPlexContent {
             let position = videoPlayerView.currentPlaybackTime
@@ -439,6 +461,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Play a Plex episode
     func play(episode: PlexEpisode) {
+        // Reset any lingering cast state from previous video
+        resetCastState()
+        
         // Report stop to Plex if currently playing Plex content (before starting new video)
         if isPlexContent {
             let position = videoPlayerView.currentPlaybackTime

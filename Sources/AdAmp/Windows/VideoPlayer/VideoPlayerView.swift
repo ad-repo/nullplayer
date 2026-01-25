@@ -494,6 +494,9 @@ class VideoPlayerView: NSView {
         controlBarView.updateTime(current: 0, total: 0)
         controlBarView.updatePlayState(isPlaying: false)
         
+        // Reset cast state when starting a new video (ensures UI shows local playback)
+        controlBarView.updateCastState(isPlaying: false, deviceName: nil)
+        
         // Configure options
         let options = KSOptions()
         if isPlexURL, let headers = plexHeaders {
