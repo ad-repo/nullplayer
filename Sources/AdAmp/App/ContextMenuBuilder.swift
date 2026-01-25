@@ -148,28 +148,26 @@ class ContextMenuBuilder {
         visMenu.autoenablesItems = false
         
         let wm = WindowManager.shared
-        let isProjectMAvailable = wm.isProjectMAvailable
         
-        // Preset info header
-        if isProjectMAvailable {
-            let info = wm.visualizationPresetsInfo
-            let totalPresets = wm.visualizationPresetCount
-            
+        // Show preset count (can be determined without window open)
+        let counts = ProjectMWrapper.staticPresetCounts
+        let totalPresets = counts.bundled + counts.custom
+        
+        if totalPresets > 0 {
             let infoText: String
-            if info.customPath != nil {
-                infoText = "\(totalPresets) presets (\(info.bundledCount) bundled, \(info.customCount) custom)"
+            if counts.custom > 0 {
+                infoText = "\(totalPresets) presets (\(counts.bundled) bundled, \(counts.custom) custom)"
             } else {
                 infoText = "\(totalPresets) presets (bundled)"
             }
             
             let infoItem = NSMenuItem(title: infoText, action: nil, keyEquivalent: "")
             visMenu.addItem(infoItem)
-            
             visMenu.addItem(NSMenuItem.separator())
-        } else {
+        } else if wm.isMilkdropVisible && !wm.isProjectMAvailable {
+            // Only show error if window is open but projectM failed to initialize
             let unavailableItem = NSMenuItem(title: "projectM not available", action: nil, keyEquivalent: "")
             visMenu.addItem(unavailableItem)
-            
             visMenu.addItem(NSMenuItem.separator())
         }
         

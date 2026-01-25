@@ -495,6 +495,40 @@ extension ProjectMWrapper {
         return false
     }
     
+    /// Gets preset counts without needing an instance (for menu display)
+    /// Returns (bundledCount, customCount)
+    static var staticPresetCounts: (bundled: Int, custom: Int) {
+        var bundledCount = 0
+        var customCount = 0
+        
+        // Count bundled presets
+        if let bundledPath = bundledPresetsPath {
+            bundledCount = countMilkFiles(in: bundledPath)
+        }
+        
+        // Count custom presets
+        if let customPath = customPresetsFolder,
+           FileManager.default.fileExists(atPath: customPath) {
+            customCount = countMilkFiles(in: customPath)
+        }
+        
+        return (bundledCount, customCount)
+    }
+    
+    /// Counts .milk files in a directory recursively
+    private static func countMilkFiles(in path: String) -> Int {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(atPath: path) else { return 0 }
+        
+        var count = 0
+        while let file = enumerator.nextObject() as? String {
+            if file.lowercased().hasSuffix(".milk") {
+                count += 1
+            }
+        }
+        return count
+    }
+    
     /// Adds presets from a custom folder
     /// - Parameter path: Path to the folder containing .milk files
     /// - Returns: Number of presets found
