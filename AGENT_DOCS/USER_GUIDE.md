@@ -634,7 +634,9 @@ To cast audio:
 
 AdAmp supports casting Plex movies and TV episodes to video-capable devices (Chromecast and DLNA TVs). Sonos is audio-only.
 
-#### Casting from Video Player
+There are **two casting paths** with different control behaviors:
+
+#### Path 1: Casting from Video Player
 
 1. Open a movie or episode in the video player
 2. Click the **Cast** button (TV icon) in the control bar
@@ -644,12 +646,16 @@ AdAmp supports casting Plex movies and TV episodes to video-capable devices (Chr
 4. Video pauses locally and casts to the selected device
 5. Playback resumes from current position on the TV
 
-#### Casting from Plex Browser
+**Controls**: Use the video player window controls or main window transport buttons.
+
+#### Path 2: Casting from Plex Browser (Menu)
 
 Right-click a movie or episode in the Library Browser:
 1. Select **Cast to...** from the context menu
 2. Choose a target device
-3. Video plays directly on the TV (no local playback required)
+3. Video plays directly on the TV (no local video player window)
+
+**Controls**: Use the **main window transport buttons** (Play, Pause, Stop) to control playback. The main window time display and position slider also work for seeking.
 
 #### Video Casting Requirements
 
@@ -658,9 +664,14 @@ Right-click a movie or episode in the Library Browser:
 - Local video files: Served via embedded HTTP server (port 8765)
 - Resume position: Casting remembers where you were in the video
 
+#### Stopping Video Cast
+
+- **From video player**: Click the Cast button again or close the player
+- **From menu cast**: Use Stop button on main window, or right-click → Output Devices → select the active device again
+
 #### Known Limitations
 
-**Chromecast**: Video casting to Chromecast is not yet fully implemented. Chromecast requires the Google Cast Protocol which needs additional development. For now, use DLNA TVs for video casting. Audio casting to Chromecast works for supported formats.
+**Chromecast**: Fully supported for both audio and video casting using the Google Cast Protocol v2. Supports playback controls (play, pause, seek, volume) from AdAmp.
 
 **Samsung TVs**: Samsung TVs have limited DLNA control support. While video casting works for playback, remote control features (seek, volume, pause) may not be available. This is a Samsung firmware limitation - use the TV's remote to control playback. (Tested on Samsung QN90BA 75")
 

@@ -7,6 +7,51 @@
 ./scripts/kill_build_run.sh # Build and run
 ```
 
+## Build Script and Log Monitoring
+
+### Running the App
+
+The `kill_build_run.sh` script:
+1. Kills any running AdAmp instances (`pkill -9 -x AdAmp`)
+2. Builds with `swift build`
+3. Launches the app in background (`.build/debug/AdAmp &`)
+
+**Important**: The script exits immediately after launching the app. The app continues running independently.
+
+### Monitoring Logs
+
+When running the build script via the Shell tool with `is_background: true`, logs are captured to a terminal file in:
+```
+/Users/ad/.cursor/projects/Users-ad-Projects-adamp/terminals/<shell_id>.txt
+```
+
+**To find and monitor the correct terminal:**
+
+1. **List terminals folder** to see recent files:
+   ```bash
+   ls -lt /Users/ad/.cursor/projects/Users-ad-Projects-adamp/terminals/*.txt | head -5
+   ```
+
+2. **Find the terminal with AdAmp output** - look for the one that ran kill_build_run.sh
+
+3. **Monitor logs continuously**:
+   ```bash
+   tail -f /Users/ad/.cursor/projects/Users-ad-Projects-adamp/terminals/<id>.txt
+   ```
+
+4. **Search for specific activity**:
+   ```bash
+   cat /Users/ad/.cursor/projects/Users-ad-Projects-adamp/terminals/<id>.txt | grep -i "cast\|error\|fail"
+   ```
+
+**Note**: The terminal file will show `exit_code: 0` after the build script completes, but new logs from the running app continue to be appended below that marker.
+
+### Checking if App is Running
+
+```bash
+pgrep -l AdAmp  # Shows PID if running
+```
+
 ## Documentation
 
 | Doc | Purpose |
@@ -17,6 +62,7 @@
 | [AGENT_DOCS/VISUALIZATIONS.md](AGENT_DOCS/VISUALIZATIONS.md) | Album art and ProjectM visualizers |
 | [AGENT_DOCS/TESTING.md](AGENT_DOCS/TESTING.md) | UI testing mode, accessibility identifiers |
 | [AGENT_DOCS/SONOS.md](AGENT_DOCS/SONOS.md) | Sonos discovery, multi-room casting, custom checkbox UI |
+| [AGENT_DOCS/CHROMECAST.md](AGENT_DOCS/CHROMECAST.md) | Google Cast protocol, debugging, test scripts |
 
 ## Architecture
 
@@ -43,7 +89,7 @@ Sources/AdAmp/
 | Visualization | `Windows/Milkdrop/`, `Windows/PlexBrowser/PlexBrowserView.swift`, `Visualization/ProjectMWrapper.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
-| Casting | `Casting/CastManager.swift`, `Casting/UPnPManager.swift`, `Casting/ChromecastManager.swift`, `Casting/LocalMediaServer.swift` |
+| Casting | `Casting/CastManager.swift`, `Casting/CastProtocol.swift`, `Casting/ChromecastManager.swift`, `Casting/UPnPManager.swift`, `Casting/LocalMediaServer.swift` |
 | App | `App/WindowManager.swift`, `App/ContextMenuBuilder.swift` |
 
 ## Common Tasks
@@ -81,6 +127,20 @@ Sources/AdAmp/
 - **Window docking**: Complex snapping logic in `WindowManager` - test edge cases
 - **Sonos menu**: Uses custom `SonosRoomCheckboxView` to keep menu open during multi-select
 - **Sonos room IDs**: `sonosRooms` returns room UDNs, `sonosDevices` only has group coordinators - match carefully
+- **Video casting has TWO paths** - handle both in control logic:
+  - **Player path**: Cast button in video player → `VideoPlayerWindowController.isCastingVideo`
+  - **Menu path**: Right-click → Cast to... → `CastManager.shared.isVideoCasting` (no video player window!)
+  - Controls must check both: `WindowManager.toggleVideoCastPlayPause()` handles routing
+- **Swift Data slicing pitfall**: When you slice a `Data`, it maintains original indices! Use `data.startIndex` explicitly:
+  ```swift
+  // WRONG - may read wrong bytes if data is a slice:
+  let byte = data[0]
+  let slice = data[4..<total]
+  
+  // CORRECT - always works:
+  let byte = data[data.startIndex]
+  let slice = data[(data.startIndex + 4)..<(data.startIndex + total)]
+  ```
 - **No Spotify/Apple/Amazon**: These integrations are explicitly not accepted
 
 ## Testing
@@ -98,4 +158,47 @@ Manual QA for UI/playback changes:
 - Visualizations
 - Sonos casting (multi-room selection, join/leave while casting)
 - Video casting (Plex movies/episodes to Chromecast/DLNA TVs)
+
+## Troubleshooting Integrations
+
+### Standalone Test Programs
+
+When debugging complex protocol integrations (Chromecast, UPnP, etc.), create standalone Swift test scripts to isolate the problem from the full app:
+
+```bash
+# Run a standalone test script
+swift scripts/test_chromecast.swift
+```
+
+**Benefits:**
+- Faster iteration (no full app rebuild)
+- Isolated environment (no interference from other systems)
+- Easier to add debug output
+- Can test specific protocol steps in sequence
+
+**Example test script structure** (see `scripts/test_chromecast.swift`):
+1. Minimal protocol implementation (encode/decode)
+2. Direct network connection
+3. Step-by-step message exchange with logging
+4. Clear success/failure output
+
+**When to use:**
+- Silent crashes with no stack trace
+- Protocol timeouts where you can't tell what's failing
+- Complex async flows that are hard to debug in the full app
+- Third-party device communication issues
+
+### Chromecast Debugging
+
+The Chromecast implementation uses Google Cast Protocol v2:
+- TLS connection to port 8009
+- Protobuf-framed messages (4-byte big-endian length prefix)
+- Key namespaces: `connection`, `heartbeat`, `receiver`, `media`
+
+Test with: `swift scripts/test_chromecast.swift`
+
+Common issues:
+- **Silent crash on receive**: Check Data slice indexing (use `startIndex`)
+- **Timeout waiting for transportId**: Check receive loop is processing buffer
+- **TLS errors**: Chromecast uses self-signed certs, must accept in verify block
 

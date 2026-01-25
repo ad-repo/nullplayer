@@ -279,8 +279,16 @@ class CastManager {
         // Connect and cast based on device type
         switch device.type {
         case .chromecast:
-            try await chromecastManager.connect(to: device)
-            try await chromecastManager.cast(url: url, metadata: metadata)
+            NSLog("CastManager: Connecting to Chromecast...")
+            do {
+                try await chromecastManager.connect(to: device)
+                NSLog("CastManager: Connected to Chromecast, now casting...")
+                try await chromecastManager.cast(url: url, metadata: metadata)
+                NSLog("CastManager: Cast started successfully")
+            } catch {
+                NSLog("CastManager: Chromecast error: %@", error.localizedDescription)
+                throw error
+            }
             
         case .sonos, .dlnaTV:
             try await upnpManager.connect(to: device)
@@ -492,8 +500,16 @@ class CastManager {
             summary: movie.summary
         )
         
-        NSLog("CastManager: Casting Plex movie '%@' to %@", movie.title, device.name)
-        try await cast(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
+        NSLog("CastManager: Casting Plex movie '%@' to %@ (type: %@)", movie.title, device.name, device.type.rawValue)
+        NSLog("CastManager: Cast URL: %@", castURL.absoluteString)
+        
+        do {
+            try await cast(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
+            NSLog("CastManager: Cast completed successfully")
+        } catch {
+            NSLog("CastManager: Cast failed with error: %@", error.localizedDescription)
+            throw error
+        }
     }
     
     /// Cast a Plex episode to a video-capable device

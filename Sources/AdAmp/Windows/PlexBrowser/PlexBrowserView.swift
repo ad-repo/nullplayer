@@ -6324,7 +6324,13 @@ class PlexBrowserView: NSView {
     }
     
     @objc private func contextMenuCastMovie(_ sender: NSMenuItem) {
-        guard let (movie, device) = sender.representedObject as? (PlexMovie, CastDevice) else { return }
+        NSLog("PlexBrowserView: contextMenuCastMovie ENTER")
+        guard let (movie, device) = sender.representedObject as? (PlexMovie, CastDevice) else {
+            NSLog("PlexBrowserView: Failed to get movie/device from menu item")
+            return
+        }
+        
+        NSLog("PlexBrowserView: Casting movie '%@' to device '%@' (type: %@)", movie.title, device.name, device.type.rawValue)
         
         // Prevent dual casting - check if already casting
         if WindowManager.shared.isVideoCastingActive {
@@ -6337,21 +6343,21 @@ class PlexBrowserView: NSView {
             return
         }
         
-        Task {
+        Task { @MainActor in
+            NSLog("PlexBrowserView: Starting cast Task")
             do {
                 try await CastManager.shared.castPlexMovie(movie, to: device)
-                NSLog("PlexBrowserView: Cast movie '%@' to %@", movie.title, device.name)
+                NSLog("PlexBrowserView: Cast movie '%@' to %@ - SUCCESS", movie.title, device.name)
             } catch {
                 NSLog("PlexBrowserView: Failed to cast movie: %@", error.localizedDescription)
-                await MainActor.run {
-                    let alert = NSAlert()
-                    alert.messageText = "Cast Failed"
-                    alert.informativeText = error.localizedDescription
-                    alert.alertStyle = .warning
-                    alert.runModal()
-                }
+                let alert = NSAlert()
+                alert.messageText = "Cast Failed"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.runModal()
             }
         }
+        NSLog("PlexBrowserView: contextMenuCastMovie EXIT (Task launched)")
     }
     
     @objc private func contextMenuCastEpisode(_ sender: NSMenuItem) {
