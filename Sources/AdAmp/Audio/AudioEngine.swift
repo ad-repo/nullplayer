@@ -1048,6 +1048,29 @@ class AudioEngine {
         state = .playing
     }
     
+    /// Update cast position from Chromecast status updates
+    /// This syncs the local time tracking with the actual position from the cast device
+    func updateCastPosition(currentTime: TimeInterval, isPlaying: Bool, isBuffering: Bool) {
+        guard isCastingActive else { return }
+        
+        // Sync position from Chromecast
+        castStartPosition = currentTime
+        
+        if isBuffering {
+            // During buffering, pause interpolation to prevent drift
+            castPlaybackStartDate = nil
+        } else if isPlaying {
+            // Playing - restart interpolation from this position
+            castPlaybackStartDate = Date()
+        } else {
+            // Paused - stop interpolation
+            castPlaybackStartDate = nil
+        }
+        
+        // Update reported time for UI sync
+        lastReportedTime = currentTime
+    }
+    
     /// Stop cast playback and resume local playback at current position
     /// - Parameter resumeLocally: If true, resume local playback from current cast position
     func stopCastPlayback(resumeLocally: Bool = false) {

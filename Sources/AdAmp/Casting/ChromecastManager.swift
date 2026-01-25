@@ -1,14 +1,18 @@
-
 import Foundation
 import Network
 
 /// Protocol for Chromecast discovery and playback control
 /// Uses mDNS to discover devices advertising _googlecast._tcp
-class ChromecastManager {
+class ChromecastManager: CastSessionControllerDelegate {
     
     // MARK: - Singleton
     
     static let shared = ChromecastManager()
+    
+    // MARK: - Notifications
+    
+    /// Posted when media status is updated from Chromecast (contains CastMediaStatus in userInfo)
+    static let mediaStatusDidUpdateNotification = Notification.Name("ChromecastMediaStatusDidUpdate")
     
     // MARK: - Properties
     
@@ -320,6 +324,7 @@ class ChromecastManager {
         }
         
         sessionController = controller
+        sessionController?.delegate = self
         activeSession = CastSession(device: device)
         activeSession?.state = .connected
         
@@ -332,6 +337,8 @@ class ChromecastManager {
         
         NSLog("ChromecastManager: Disconnecting from %@", session.device.name)
         
+        // Stop status polling before disconnecting
+        sessionController?.stopStatusPolling()
         sessionController?.disconnect()
         sessionController = nil
         
@@ -387,6 +394,9 @@ class ChromecastManager {
         activeSession?.currentURL = url
         activeSession?.metadata = metadata
         
+        // Start polling for status updates to keep position synced
+        controller.startStatusPolling(interval: 1.0)
+        
         NSLog("ChromecastManager: Successfully started casting to %@", session.device.name)
         
         NotificationCenter.default.post(name: CastManager.playbackStateDidChangeNotification, object: nil)
@@ -398,6 +408,8 @@ class ChromecastManager {
         
         NSLog("ChromecastManager: Stopping playback on %@", session.device.name)
         
+        // Stop status polling
+        sessionController?.stopStatusPolling()
         sessionController?.stop()
         
         session.state = .connected
@@ -447,5 +459,32 @@ class ChromecastManager {
         guard let session = activeSession else { return }
         NSLog("ChromecastManager: Setting mute to %@ on %@", muted ? "ON" : "OFF", session.device.name)
         sessionController?.setMute(muted)
+    }
+    
+    // MARK: - CastSessionControllerDelegate
+    
+    func castSessionDidUpdateMediaStatus(_ status: CastMediaStatus) {
+        // Post notification so CastManager can update time tracking
+        NotificationCenter.default.post(
+            name: Self.mediaStatusDidUpdateNotification,
+            object: self,
+            userInfo: ["status": status]
+        )
+    }
+    
+    func castSessionDidClose() {
+        NSLog("ChromecastManager: Session closed unexpectedly")
+        
+        // Stop status polling
+        sessionController?.stopStatusPolling()
+        
+        // Update session state
+        if let session = activeSession {
+            session.state = .idle
+            session.currentURL = nil
+            session.metadata = nil
+        }
+        
+        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
     }
 }

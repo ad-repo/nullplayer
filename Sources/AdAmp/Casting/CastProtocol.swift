@@ -151,6 +151,37 @@ struct CastMessage {
     }
 }
 
+// MARK: - Cast Media Status
+
+/// Represents the current media playback status from a Chromecast device
+struct CastMediaStatus {
+    /// Current playback position in seconds
+    var currentTime: TimeInterval = 0
+    /// Total media duration in seconds (if known)
+    var duration: TimeInterval?
+    /// Current player state
+    var playerState: CastPlayerState = .unknown
+    /// Media session ID
+    var mediaSessionId: Int = 0
+}
+
+/// Chromecast player states
+enum CastPlayerState: String {
+    case idle = "IDLE"
+    case buffering = "BUFFERING"
+    case playing = "PLAYING"
+    case paused = "PAUSED"
+    case unknown = "UNKNOWN"
+}
+
+/// Delegate protocol for receiving Chromecast status updates
+protocol CastSessionControllerDelegate: AnyObject {
+    /// Called when media status is updated (position, state changes)
+    func castSessionDidUpdateMediaStatus(_ status: CastMediaStatus)
+    /// Called when the session is closed (e.g., app stopped, connection lost)
+    func castSessionDidClose()
+}
+
 // MARK: - Cast Session Controller (Class-based with manual synchronization)
 
 /// Thread-safe session controller using class with locks
@@ -162,9 +193,13 @@ class CastSessionController {
     private var requestId = 0
     private var isConnected = false
     private var heartbeatTimer: Timer?
+    private var statusPollTimer: Timer?
     
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "com.adamp.castcontroller")
+    
+    /// Delegate for receiving status updates
+    weak var delegate: CastSessionControllerDelegate?
     
     // Completion handlers for async operations
     private var transportIdCompletion: ((String?) -> Void)?
@@ -231,9 +266,12 @@ class CastSessionController {
     func disconnect() {
         NSLog("CastSessionController: Disconnecting")
         
+        // Stop timers
         DispatchQueue.main.async { [weak self] in
             self?.heartbeatTimer?.invalidate()
             self?.heartbeatTimer = nil
+            self?.statusPollTimer?.invalidate()
+            self?.statusPollTimer = nil
         }
         
         withLock {
@@ -353,9 +391,18 @@ class CastSessionController {
     }
     
     func stop() {
-        guard let tid = withLock({ transportId }),
-              let msid = withLock({ mediaSessionId }) else { return }
+        let (tid, msid) = withLock { (transportId, mediaSessionId) }
         
+        guard let tid = tid else {
+            NSLog("CastSessionController: stop() - no transportId, cannot send STOP command")
+            return
+        }
+        guard let msid = msid else {
+            NSLog("CastSessionController: stop() - no mediaSessionId, cannot send STOP command")
+            return
+        }
+        
+        NSLog("CastSessionController: Sending STOP command with mediaSessionId: %d", msid)
         sendMessage(namespace: .media, payload: [
             "type": "STOP",
             "mediaSessionId": msid,
@@ -364,13 +411,37 @@ class CastSessionController {
     }
     
     func seek(to time: TimeInterval) {
-        guard let tid = withLock({ transportId }),
-              let msid = withLock({ mediaSessionId }) else { return }
+        let (tid, msid) = withLock { (transportId, mediaSessionId) }
         
+        guard let tid = tid else {
+            NSLog("CastSessionController: seek() - no transportId, cannot send SEEK command")
+            return
+        }
+        guard let msid = msid else {
+            NSLog("CastSessionController: seek() - no mediaSessionId, cannot send SEEK command")
+            return
+        }
+        
+        NSLog("CastSessionController: Sending SEEK command to %.1fs with mediaSessionId: %d", time, msid)
         sendMessage(namespace: .media, payload: [
             "type": "SEEK",
             "mediaSessionId": msid,
             "currentTime": time,
+            "requestId": nextRequestId()
+        ], to: tid)
+        
+        // Request status update after seek to confirm position and get updated mediaSessionId
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.requestMediaStatus()
+        }
+    }
+    
+    /// Request current media status from the Chromecast
+    func requestMediaStatus() {
+        guard let tid = withLock({ transportId }) else { return }
+        
+        sendMessage(namespace: .media, payload: [
+            "type": "GET_STATUS",
             "requestId": nextRequestId()
         ], to: tid)
     }
@@ -534,14 +605,54 @@ class CastSessionController {
             
         case "MEDIA_STATUS":
             if let statuses = json["status"] as? [[String: Any]],
-               let status = statuses.first,
-               let msid = status["mediaSessionId"] as? Int {
-                withLock { self.mediaSessionId = msid }
-                NSLog("CastSessionController: Got mediaSessionId: %d", msid)
+               let status = statuses.first {
+                
+                // Extract mediaSessionId
+                if let msid = status["mediaSessionId"] as? Int {
+                    withLock { self.mediaSessionId = msid }
+                    
+                    // Build status object with all available info
+                    var mediaStatus = CastMediaStatus()
+                    mediaStatus.mediaSessionId = msid
+                    
+                    // Extract currentTime (playback position)
+                    if let currentTime = status["currentTime"] as? Double {
+                        mediaStatus.currentTime = currentTime
+                    }
+                    
+                    // Extract playerState
+                    if let stateString = status["playerState"] as? String,
+                       let state = CastPlayerState(rawValue: stateString) {
+                        mediaStatus.playerState = state
+                    }
+                    
+                    // Extract duration from media object if present
+                    if let media = status["media"] as? [String: Any],
+                       let duration = media["duration"] as? Double {
+                        mediaStatus.duration = duration
+                    }
+                    
+                    NSLog("CastSessionController: MEDIA_STATUS - sessionId: %d, time: %.1f, state: %@", 
+                          msid, mediaStatus.currentTime, mediaStatus.playerState.rawValue)
+                    
+                    // Notify delegate on main thread
+                    DispatchQueue.main.async { [weak self] in
+                        self?.delegate?.castSessionDidUpdateMediaStatus(mediaStatus)
+                    }
+                } else {
+                    NSLog("CastSessionController: MEDIA_STATUS - no mediaSessionId in status")
+                }
+            } else {
+                // Empty status array might indicate media stopped
+                NSLog("CastSessionController: MEDIA_STATUS - empty or invalid status array")
             }
             
         case "CLOSE":
             NSLog("CastSessionController: Received CLOSE from %@", msg.sourceId)
+            // Notify delegate that session closed
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.castSessionDidClose()
+            }
             
         default:
             break
@@ -553,6 +664,29 @@ class CastSessionController {
             self?.heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
                 self?.sendMessage(namespace: .heartbeat, payload: ["type": "PING"], to: "receiver-0")
             }
+        }
+    }
+    
+    /// Start polling for media status updates (keeps position synced during buffering)
+    func startStatusPolling(interval: TimeInterval = 1.0) {
+        stopStatusPolling()
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.statusPollTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+                self?.requestMediaStatus()
+            }
+            // Also use common mode so timer fires during menu tracking
+            if let timer = self?.statusPollTimer {
+                RunLoop.main.add(timer, forMode: .common)
+            }
+        }
+    }
+    
+    /// Stop polling for media status
+    func stopStatusPolling() {
+        DispatchQueue.main.async { [weak self] in
+            self?.statusPollTimer?.invalidate()
+            self?.statusPollTimer = nil
         }
     }
 }

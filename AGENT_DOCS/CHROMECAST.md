@@ -52,6 +52,26 @@ The `CastSessionController` class manages a single Chromecast session:
 - Thread-safe with `NSLock` for state access
 - Uses `NWConnection` for TLS socket
 - Completion-based async API (bridged to async/await in ChromecastManager)
+- Implements `CastSessionControllerDelegate` protocol for status updates
+
+### Position Synchronization
+
+To keep the main window timer synced with actual Chromecast playback:
+
+1. **Status Polling**: `CastSessionController.startStatusPolling()` polls for `MEDIA_STATUS` every second
+2. **Status Parsing**: `MEDIA_STATUS` responses contain `currentTime`, `playerState`, and `mediaSessionId`
+3. **Delegate Callback**: `CastSessionControllerDelegate.castSessionDidUpdateMediaStatus()` forwards updates
+4. **UI Update**: `AudioEngine.updateCastPosition()` syncs local tracking with actual position
+
+This handles buffering delays - when Chromecast buffers, the `playerState` changes to `BUFFERING` and local time interpolation pauses until playback resumes.
+
+### CastMediaStatus
+
+The `CastMediaStatus` struct contains:
+- `currentTime`: Current playback position in seconds
+- `duration`: Total media duration (if known)
+- `playerState`: One of IDLE, BUFFERING, PLAYING, PAUSED
+- `mediaSessionId`: The media session identifier
 
 ### Protobuf Encoding
 
@@ -103,6 +123,9 @@ The test script:
 | Timeout waiting for transportId | Buffer not being processed | Check receive loop continuity |
 | TLS connection fails | Certificate rejection | Accept self-signed in verify block |
 | No devices found | mDNS not working | Check network, firewall |
+| Timer drifts during buffering | Not using actual position from Chromecast | Use status polling and `CastMediaStatus.currentTime` |
+| Stop doesn't work after seek | mediaSessionId became nil/invalid | Check logs for "no mediaSessionId" - ensure MEDIA_STATUS is being received |
+| Controls stop working | CLOSE message received | Check `castSessionDidClose()` delegate callback |
 
 ### Adding Debug Logging
 
@@ -152,6 +175,28 @@ After successful LOAD, use the `transportId` for media commands:
 | PAUSE | `{"type":"PAUSE","mediaSessionId":1,"requestId":N}` |
 | STOP | `{"type":"STOP","mediaSessionId":1,"requestId":N}` |
 | SEEK | `{"type":"SEEK","mediaSessionId":1,"currentTime":30.5,"requestId":N}` |
+| GET_STATUS | `{"type":"GET_STATUS","requestId":N}` |
+
+### MEDIA_STATUS Response
+
+After LOAD, SEEK, or GET_STATUS, Chromecast sends a `MEDIA_STATUS` message:
+
+```json
+{
+  "type": "MEDIA_STATUS",
+  "status": [{
+    "mediaSessionId": 1,
+    "currentTime": 42.5,
+    "playerState": "PLAYING",
+    "media": {
+      "duration": 180.0
+    }
+  }],
+  "requestId": N
+}
+```
+
+**Important**: After seeking, always request status to confirm the position and get an updated `mediaSessionId`. The seek operation may not update `mediaSessionId` but subsequent operations need the current one.
 
 ## Volume Control
 

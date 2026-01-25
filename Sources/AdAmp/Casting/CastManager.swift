@@ -176,10 +176,62 @@ class CastManager {
         discoveryRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.refreshDevices()
         }
+        
+        // Subscribe to Chromecast status updates for position syncing
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleChromecastMediaStatusUpdate),
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil
+        )
     }
     
     deinit {
         discoveryRefreshTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    // MARK: - Chromecast Status Updates
+    
+    /// Handle media status updates from Chromecast for position syncing
+    @objc private func handleChromecastMediaStatusUpdate(_ notification: Notification) {
+        guard let status = notification.userInfo?["status"] as? CastMediaStatus else { return }
+        
+        // Only process if we're actively casting
+        guard isCasting || isVideoCasting else { return }
+        
+        let isPlaying = status.playerState == .playing
+        let isBuffering = status.playerState == .buffering
+        
+        // Update video cast tracking if video casting
+        if isVideoCasting {
+            // Sync position from Chromecast
+            videoCastStartPosition = status.currentTime
+            
+            if isBuffering {
+                // Pause interpolation during buffering
+                videoCastStartDate = nil
+            } else if isPlaying {
+                videoCastStartDate = Date()
+                isVideoCastPlaying = true
+            } else {
+                // Paused or idle
+                videoCastStartDate = nil
+                isVideoCastPlaying = false
+            }
+            
+            // Update duration if provided
+            if let duration = status.duration, duration > 0 {
+                videoCastDuration = duration
+            }
+        } else if isCasting {
+            // Audio casting - forward position sync to AudioEngine
+            WindowManager.shared.audioEngine.updateCastPosition(
+                currentTime: status.currentTime,
+                isPlaying: isPlaying,
+                isBuffering: isBuffering
+            )
+        }
     }
     
     // MARK: - Discovery
