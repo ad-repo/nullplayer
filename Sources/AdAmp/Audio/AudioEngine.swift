@@ -279,10 +279,13 @@ class AudioEngine {
     // MARK: - Initialization
     
     init() {
+        // NOTE: We intentionally do NOT restore saved output device here.
+        // setOutputDevice() changes the CoreAudio device but can cause format
+        // mismatches that break the audio graph. The system default device works
+        // correctly. Users can manually select a different device from the menu.
         setupAudioEngine()
         setupEqualizer()
         setupSpectrumAnalyzer()
-        restoreSavedOutputDevice()
     }
     
     deinit {
@@ -638,7 +641,7 @@ class AudioEngine {
                 startTimeUpdates()
                 
                 // Report resume to Plex (local files won't have plexRatingKey so this is a no-op)
-                if let track = currentTrack {
+                if currentTrack != nil {
                     PlexPlaybackReporter.shared.trackDidResume(at: currentTime)
                 }
                 
@@ -2290,16 +2293,11 @@ class AudioEngine {
         return AudioOutputManager.shared.outputDevices.first { $0.id == deviceID }
     }
     
-    /// Restore the saved output device from UserDefaults
-    private func restoreSavedOutputDevice() {
-        // Check if there's a saved device
-        if let savedDevice = AudioOutputManager.shared.currentDeviceID {
-            // Delay slightly to ensure engine is fully set up
-            DispatchQueue.main.async { [weak self] in
-                self?.setOutputDevice(savedDevice)
-            }
-        }
-    }
+    // NOTE: We intentionally do NOT auto-restore saved output device on startup.
+    // Changing the CoreAudio output device via setOutputDevice() can cause format
+    // mismatches that break the AVAudioEngine node connections. The system default
+    // device works correctly. Users can manually select a different device from
+    // the Output Device menu if needed.
     
     // MARK: - Playlist Management
     
