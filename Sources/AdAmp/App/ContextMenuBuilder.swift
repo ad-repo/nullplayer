@@ -1385,6 +1385,12 @@ class MenuActions: NSObject {
     
     @objc func toggleRememberState() {
         AppStateManager.shared.isEnabled.toggle()
+        
+        // When enabling, immediately save current state to avoid
+        // restoring stale state from previous session
+        if AppStateManager.shared.isEnabled {
+            AppStateManager.shared.saveState()
+        }
     }
     
     @objc func toggleAlwaysOnTop() {
