@@ -25,6 +25,13 @@ let package = Package(
         .package(url: "https://github.com/swhitty/FlyingFox.git", from: "0.16.0"),
     ],
     targets: [
+        // Lightweight core library containing model types
+        // Unit tests depend only on this target for fast compilation
+        .target(
+            name: "AdAmpCore",
+            dependencies: [],
+            path: "Sources/AdAmpCore"
+        ),
         // System library target for libprojectM (Milkdrop visualization)
         // To enable projectM support:
         // 1. Build libprojectM v4.1.6+ as a universal binary
@@ -39,6 +46,7 @@ let package = Package(
         .executableTarget(
             name: "AdAmp",
             dependencies: [
+                "AdAmpCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "KSPlayer",

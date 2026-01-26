@@ -10,7 +10,7 @@ jobs:
   # Fast unit tests
   unit-tests:
     runs-on: macos-14
-    timeout-minutes: 5
+    timeout-minutes: 10  # Increased from 5 to allow for cache misses
     
     steps:
       - uses: actions/checkout@v4
@@ -18,14 +18,17 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.1.app || sudo xcode-select -s /Applications/Xcode_16.app
       
-      - name: Cache SPM
+      - name: Cache SPM dependencies
         uses: actions/cache@v4
         with:
           path: |
             .build
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
-          restore-keys: ${{ runner.os }}-spm-
+          # Include source hash to ensure rebuild when code changes
+          key: ${{ runner.os }}-spm-unit-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**/*.swift', 'Tests/**/*.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-unit-${{ hashFiles('Package.resolved') }}-
+            ${{ runner.os }}-spm-unit-
       
       - name: Cache Frameworks
         uses: actions/cache@v4
