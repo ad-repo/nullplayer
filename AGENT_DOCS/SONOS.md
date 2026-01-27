@@ -270,6 +270,29 @@ Key actions:
 - `Stop` - Stop playback
 - `Seek` - Seek to position (REL_TIME format: HH:MM:SS)
 
+### Fire-and-Forget Commands
+
+For Sonos audio casting, playback control commands use a **fire-and-forget** pattern:
+
+| Command | Behavior |
+|---------|----------|
+| `Pause` | Sends SOAP request, returns immediately |
+| `Resume` | Sends SOAP request, returns immediately |
+| `Seek` | Sends SOAP request, returns immediately |
+
+**Why fire-and-forget?**
+- Sonos SOAP requests can take 5-10 seconds due to network latency
+- Blocking on responses makes the UI unresponsive
+- The commands succeed even without waiting for acknowledgment
+
+**Implementation:**
+- Commands spawn a background `Task` to send the SOAP request
+- UI updates immediately (optimistic update)
+- Errors are logged but don't block the user
+- TV/DLNA casting still uses blocking behavior (needed for video sync)
+
+This differs from track changes (`SetAVTransportURI` + `Play`) which use the generation counter pattern to handle rapid clicking - see the loading overlay in `MainWindowView`.
+
 ### Volume Control
 Via RenderingControl service:
 - Control URL: `http://{ip}:1400/MediaRenderer/RenderingControl/Control`

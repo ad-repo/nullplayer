@@ -14,6 +14,7 @@ class CastManager {
     static let devicesDidChangeNotification = Notification.Name("CastDevicesDidChange")
     static let sessionDidChangeNotification = Notification.Name("CastSessionDidChange")
     static let playbackStateDidChangeNotification = Notification.Name("CastPlaybackStateDidChange")
+    static let trackChangeLoadingNotification = Notification.Name("CastTrackChangeLoading")
     static let errorNotification = Notification.Name("CastError")
     
     // MARK: - Sub-managers
@@ -170,6 +171,26 @@ class CastManager {
     
     /// Discovery refresh timer
     private var discoveryRefreshTimer: Timer?
+    
+    /// Generation counter for track casting - incremented on each castNewTrack call
+    /// Used to detect and discard stale operations when user rapidly changes tracks
+    /// Access must be synchronized - use MainActor for safety
+    @MainActor private var castTrackGeneration: Int = 0
+    
+    /// Whether a track cast operation is in progress (for UI loading state)
+    /// This is used by AudioEngine to block rapid clicks during local file casting
+    @MainActor var isCastingTrackChange: Bool = false
+    
+    /// The track currently being cast (for UI display during loading)
+    @MainActor var pendingCastTrack: Track?
+    
+    /// Check if a local file cast is in progress (synchronous, must be called from main thread)
+    /// Used by AudioEngine to block rapid clicks during local file casting
+    func isLocalFileCastInProgress() -> Bool {
+        // This must be called from main thread
+        assert(Thread.isMainThread, "isLocalFileCastInProgress must be called from main thread")
+        return MainActor.assumeIsolated { isCastingTrackChange }
+    }
     
     /// Timestamp of last refresh (for UI feedback)
     private(set) var lastRefreshTime: Date?
@@ -503,6 +524,39 @@ class CastManager {
             throw CastError.sessionNotActive
         }
         
+        // Check if this is a local file (needs loading state due to async registration)
+        let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+        
+        // Increment generation to invalidate any in-flight cast operations
+        // This prevents race conditions when user rapidly clicks through tracks
+        // Must be done on MainActor for thread safety
+        let myGeneration = await MainActor.run {
+            castTrackGeneration += 1
+            
+            // Set loading state for local files only (they have async registration)
+            if isLocalFile {
+                isCastingTrackChange = true
+                pendingCastTrack = track
+                NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": true, "track": track])
+            }
+            
+            return castTrackGeneration
+        }
+        
+        NSLog("CastManager: castNewTrack '%@' starting (generation %d, local=%d)", track.title, myGeneration, isLocalFile ? 1 : 0)
+        
+        // Helper to clear loading state and notify UI
+        @MainActor func clearLoadingState() {
+            if myGeneration == castTrackGeneration {
+                isCastingTrackChange = false
+                pendingCastTrack = nil
+                // Post notification so MainWindowView removes loading overlay
+                if isLocalFile {
+                    NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
+                }
+            }
+        }
+        
         // Get castable URL (with token for Plex content)
         let castURL: URL
         if track.url.scheme == "http" || track.url.scheme == "https" {
@@ -514,9 +568,18 @@ class CastManager {
         } else {
             // Local file - register with HTTP server
             guard let serverURL = LocalMediaServer.shared.registerFile(track.url) else {
+                await clearLoadingState()
                 throw CastError.localServerError("Could not register file with local media server")
             }
             castURL = serverURL
+        }
+        
+        // Check if we've been superseded by a newer track change
+        let currentGen1 = await MainActor.run { castTrackGeneration }
+        guard myGeneration == currentGen1 else {
+            NSLog("CastManager: castNewTrack '%@' abandoned - superseded by generation %d", track.title, currentGen1)
+            // Don't clear loading state - newer operation owns it
+            return
         }
         
         // Get artwork URL if available
@@ -534,19 +597,44 @@ class CastManager {
             contentType: "audio/mpeg"
         )
         
-        NSLog("CastManager: Casting new track '%@' to %@", track.title, session.device.name)
+        NSLog("CastManager: Casting new track '%@' to %@ (generation %d)", track.title, session.device.name, myGeneration)
         
         // Cast to the existing connected device
-        switch session.device.type {
-        case .chromecast:
-            try await chromecastManager.cast(url: castURL, metadata: metadata)
-            
-        case .sonos, .dlnaTV:
-            try await upnpManager.cast(url: castURL, metadata: metadata)
+        // Wrap in do/catch to ensure loading state is cleared on failure
+        do {
+            switch session.device.type {
+            case .chromecast:
+                try await chromecastManager.cast(url: castURL, metadata: metadata)
+                
+            case .sonos, .dlnaTV:
+                try await upnpManager.cast(url: castURL, metadata: metadata)
+            }
+        } catch {
+            NSLog("CastManager: castNewTrack '%@' failed: %@", track.title, error.localizedDescription)
+            await clearLoadingState()
+            throw error
+        }
+        
+        // Check again after the network call - another track change may have started
+        let currentGen2 = await MainActor.run { castTrackGeneration }
+        guard myGeneration == currentGen2 else {
+            NSLog("CastManager: castNewTrack '%@' post-cast abandoned - superseded by generation %d", track.title, currentGen2)
+            return
         }
         
         // Reset cast playback time tracking from position 0 for new track
         await MainActor.run {
+            // Final check on main thread before updating UI
+            guard myGeneration == self.castTrackGeneration else {
+                NSLog("CastManager: castNewTrack '%@' UI update abandoned - superseded", track.title)
+                return
+            }
+            
+            // Clear loading state - cast completed successfully
+            isCastingTrackChange = false
+            pendingCastTrack = nil
+            NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
+            
             if session.device.type == .chromecast {
                 // Chromecast provides status updates - wait for PLAYING status to start timer
                 WindowManager.shared.audioEngine.initializeCastPlayback(from: 0)

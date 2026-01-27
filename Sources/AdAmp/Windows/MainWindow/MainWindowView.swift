@@ -19,6 +19,15 @@ class MainWindowView: NSView {
     /// Current video title (when video is playing)
     private var currentVideoTitle: String?
     
+    /// Whether a local file cast is in progress (shows loading indicator)
+    private var isCastingLocalFile: Bool = false
+    
+    /// Loading animation timer
+    private var loadingAnimationTimer: Timer?
+    
+    /// Loading animation phase (0-1)
+    private var loadingAnimationPhase: CGFloat = 0
+    
     /// Spectrum analyzer levels
     private var spectrumLevels: [Float] = []
     
@@ -106,6 +115,10 @@ class MainWindowView: NSView {
                                                name: CastManager.sessionDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(castingStateDidChange),
                                                name: CastManager.playbackStateDidChangeNotification, object: nil)
+        
+        // Observe local file cast loading state
+        NotificationCenter.default.addObserver(self, selector: #selector(castLoadingStateDidChange),
+                                               name: CastManager.trackChangeLoadingNotification, object: nil)
     }
     
     // MARK: - Accessibility
@@ -285,6 +298,7 @@ class MainWindowView: NSView {
     
     deinit {
         marqueeTimer?.invalidate()
+        loadingAnimationTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -293,6 +307,34 @@ class MainWindowView: NSView {
     }
     
     @objc private func castingStateDidChange() {
+        needsDisplay = true
+    }
+    
+    @objc private func castLoadingStateDidChange(_ notification: Notification) {
+        guard let isLoading = notification.userInfo?["isLoading"] as? Bool else { return }
+        
+        NSLog("MainWindowView: castLoadingStateDidChange - isLoading=%d (was %d)", isLoading ? 1 : 0, isCastingLocalFile ? 1 : 0)
+        
+        isCastingLocalFile = isLoading
+        
+        if isLoading {
+            // Start loading animation
+            loadingAnimationPhase = 0
+            loadingAnimationTimer?.invalidate()
+            loadingAnimationTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                self.loadingAnimationPhase += 0.1
+                if self.loadingAnimationPhase > 2 * .pi {
+                    self.loadingAnimationPhase = 0
+                }
+                self.needsDisplay = true
+            }
+        } else {
+            // Stop loading animation
+            loadingAnimationTimer?.invalidate()
+            loadingAnimationTimer = nil
+        }
+        
         needsDisplay = true
     }
     
@@ -380,6 +422,64 @@ class MainWindowView: NSView {
         } else {
             // Draw normal mode with original bounds
             drawNormalModeScaled(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
+        }
+        
+        context.restoreGState()
+        
+        // Draw loading overlay if casting local file
+        if isCastingLocalFile {
+            drawLoadingOverlay(in: context)
+        }
+    }
+    
+    /// Draw a semi-transparent loading overlay with pulsing animation
+    private func drawLoadingOverlay(in context: CGContext) {
+        context.saveGState()
+        
+        // Semi-transparent dark overlay
+        let overlayColor = NSColor(white: 0, alpha: 0.6)
+        context.setFillColor(overlayColor.cgColor)
+        context.fill(bounds)
+        
+        // Calculate pulsing alpha (0.5 to 1.0)
+        let pulseAlpha = 0.5 + 0.5 * abs(sin(loadingAnimationPhase))
+        
+        // Draw "Loading..." text centered
+        let text = "Loading..."
+        let font = NSFont.boldSystemFont(ofSize: 14)
+        let textColor = NSColor(white: 1, alpha: CGFloat(pulseAlpha))
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: textColor
+        ]
+        
+        let textSize = text.size(withAttributes: attributes)
+        let textX = (bounds.width - textSize.width) / 2
+        let textY = (bounds.height - textSize.height) / 2
+        
+        // Flip context for text drawing (AppKit coordinate system)
+        context.saveGState()
+        text.draw(at: NSPoint(x: textX, y: textY), withAttributes: attributes)
+        context.restoreGState()
+        
+        // Draw spinning dots around the text
+        let centerX = bounds.width / 2
+        let centerY = bounds.height / 2 + textSize.height + 10
+        let dotRadius: CGFloat = 3
+        let circleRadius: CGFloat = 15
+        let numDots = 8
+        
+        for i in 0..<numDots {
+            let angle = loadingAnimationPhase + CGFloat(i) * (2 * .pi / CGFloat(numDots))
+            let dotX = centerX + cos(angle) * circleRadius
+            let dotY = centerY + sin(angle) * circleRadius
+            
+            // Fade dots based on position in rotation
+            let dotAlpha = 0.3 + 0.7 * (CGFloat(i) / CGFloat(numDots))
+            context.setFillColor(NSColor(white: 1, alpha: dotAlpha).cgColor)
+            
+            let dotRect = CGRect(x: dotX - dotRadius, y: dotY - dotRadius, width: dotRadius * 2, height: dotRadius * 2)
+            context.fillEllipse(in: dotRect)
         }
         
         context.restoreGState()
@@ -528,8 +628,11 @@ class MainWindowView: NSView {
             guard let self = self else { return }
             
             // Use video title if video session is active, otherwise track title
+            // Show "Loading..." when casting a local file (prevents UI jumping during rapid clicks)
             let title: String
-            if WindowManager.shared.isVideoActivePlayback, let videoTitle = WindowManager.shared.currentVideoTitle {
+            if self.isCastingLocalFile {
+                title = "Loading..."
+            } else if WindowManager.shared.isVideoActivePlayback, let videoTitle = WindowManager.shared.currentVideoTitle {
                 title = videoTitle
             } else {
                 title = self.currentTrack?.displayTitle ?? "AdAmp"
@@ -951,6 +1054,7 @@ class MainWindowView: NSView {
                 engine.play()
             }
         case .pause:
+            NSLog("MainWindowView: Pause button pressed (isVideoActive=%d, isCastingLocalFile=%d)", isVideoActive ? 1 : 0, isCastingLocalFile ? 1 : 0)
             if isVideoActive {
                 WindowManager.shared.toggleVideoPlayPause()
             } else {
