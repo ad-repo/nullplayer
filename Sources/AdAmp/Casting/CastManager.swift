@@ -578,7 +578,8 @@ class CastManager {
         let currentGen1 = await MainActor.run { castTrackGeneration }
         guard myGeneration == currentGen1 else {
             NSLog("CastManager: castNewTrack '%@' abandoned - superseded by generation %d", track.title, currentGen1)
-            // Don't clear loading state - newer operation owns it
+            // Clear loading state - the newer operation may be a streaming file that doesn't manage loading overlay
+            await clearLoadingState()
             return
         }
         
@@ -619,6 +620,8 @@ class CastManager {
         let currentGen2 = await MainActor.run { castTrackGeneration }
         guard myGeneration == currentGen2 else {
             NSLog("CastManager: castNewTrack '%@' post-cast abandoned - superseded by generation %d", track.title, currentGen2)
+            // Clear loading state - the newer operation may be a streaming file that doesn't manage loading overlay
+            await clearLoadingState()
             return
         }
         
@@ -627,6 +630,13 @@ class CastManager {
             // Final check on main thread before updating UI
             guard myGeneration == self.castTrackGeneration else {
                 NSLog("CastManager: castNewTrack '%@' UI update abandoned - superseded", track.title)
+                // Clear loading state even when superseded - the newer operation may not be a local file
+                // and won't clear the loading overlay we set
+                if isLocalFile {
+                    isCastingTrackChange = false
+                    pendingCastTrack = nil
+                    NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
+                }
                 return
             }
             
