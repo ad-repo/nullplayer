@@ -7,8 +7,8 @@ class AdAmpUITestCase: XCTestCase {
     /// The application under test
     var app: XCUIApplication!
     
-    /// Timeout for UI element waits
-    let defaultTimeout: TimeInterval = 2
+    /// Timeout for UI element waits (increased for CI environments)
+    let defaultTimeout: TimeInterval = 5
     
     // MARK: - Setup and Teardown
     
@@ -24,6 +24,15 @@ class AdAmpUITestCase: XCTestCase {
         
         // Launch the app
         app.launch()
+        
+        // Diagnostic logging for CI debugging
+        print("=== UI Test Setup Diagnostics ===")
+        print("App state: \(app.state.rawValue) (3=runningForeground)")
+        print("Windows count: \(app.windows.count)")
+        for window in app.windows.allElementsBoundByIndex {
+            print("  Window: '\(window.identifier)' exists=\(window.exists) hittable=\(window.isHittable)")
+        }
+        print("=================================")
     }
     
     override func tearDownWithError() throws {

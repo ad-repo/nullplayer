@@ -105,8 +105,7 @@ jobs:
             -only-testing:AdAmpUITests \
             -parallel-testing-enabled NO \
             -disableAutomaticPackageResolution \
-            -resultBundlePath TestResults.xcresult \
-            -quiet
+            -resultBundlePath TestResults.xcresult
       
       - name: Upload test results
         uses: actions/upload-artifact@v4
