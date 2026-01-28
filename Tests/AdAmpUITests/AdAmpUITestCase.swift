@@ -17,7 +17,16 @@ class AdAmpUITestCase: XCTestCase {
         continueAfterFailure = false
         
         // Initialize the application
-        app = XCUIApplication()
+        // For CI (SPM builds), use explicit URL path since test configuration doesn't have target app
+        // For local Xcode runs, use bundle identifier
+        if let appPath = ProcessInfo.processInfo.environment["TEST_APP_PATH"],
+           let appURL = URL(string: "file://\(appPath)") {
+            print("Using app at path: \(appPath)")
+            app = XCUIApplication(url: appURL)
+        } else {
+            // Fallback: try bundle identifier for local development
+            app = XCUIApplication(bundleIdentifier: "com.adamp.player")
+        }
         
         // Set UI testing launch argument
         app.launchArguments = ["--ui-testing"]

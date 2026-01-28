@@ -97,6 +97,8 @@ jobs:
         run: cp Frameworks/libprojectM-4.dylib DerivedData/Build/Products/Debug/libprojectM-4.4.dylib
       
       - name: Run UI tests
+        env:
+          TEST_APP_PATH: ${{ github.workspace }}/DerivedData/Build/Products/Debug/AdAmp.app
         run: |
           xcodebuild test-without-building \
             -scheme AdAmp \
@@ -105,8 +107,7 @@ jobs:
             -only-testing:AdAmpUITests \
             -parallel-testing-enabled NO \
             -disableAutomaticPackageResolution \
-            -resultBundlePath TestResults.xcresult \
-            TEST_TARGET_APPLICATION_PATH="$(pwd)/DerivedData/Build/Products/Debug/AdAmp.app"
+            -resultBundlePath TestResults.xcresult
       
       - name: Upload test results
         uses: actions/upload-artifact@v4
