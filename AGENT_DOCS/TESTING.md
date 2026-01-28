@@ -263,17 +263,22 @@ if CommandLine.arguments.contains("--ui-testing") {
 
 ### CI (GitHub Actions)
 
-Tests run automatically on:
-- Push to `main` or `test-dev` branches
+**Unit tests** run automatically on:
+- Push to `main`, `test-dev`, or `fixes` branches
 - Pull requests targeting `main`
 
 See `.github/workflows/ui-tests.yml` for configuration.
 
+**Important: UI tests do not run in CI.** SPM test targets are unit test bundles, and `XCUIApplication` requires a UI test bundle configuration that SPM cannot provide. UI tests must be run locally using Xcode:
+
+1. Open `Package.swift` in Xcode
+2. Select the `AdAmpUITests` target
+3. Run with Cmd+U
+
 **CI Features:**
-- Parallel unit and UI test jobs
-- Test result artifacts (`.xcresult` bundles)
-- Failure screenshot capture
-- Build log preservation on failure
+- Unit tests via `swift test`
+- Caching of SPM dependencies and frameworks
+- Automatic Xcode version selection
 
 ---
 

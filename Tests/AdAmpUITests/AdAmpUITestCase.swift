@@ -16,17 +16,17 @@ class AdAmpUITestCase: XCTestCase {
         // Stop immediately on failure
         continueAfterFailure = false
         
-        // Initialize the application
-        // For CI (SPM builds), use explicit URL path since test configuration doesn't have target app
-        // For local Xcode runs, use bundle identifier
-        if let appPath = ProcessInfo.processInfo.environment["TEST_APP_PATH"],
-           let appURL = URL(string: "file://\(appPath)") {
-            print("Using app at path: \(appPath)")
-            app = XCUIApplication(url: appURL)
-        } else {
-            // Fallback: try bundle identifier for local development
-            app = XCUIApplication(bundleIdentifier: "com.adamp.player")
-        }
+        // Note: UI tests must be run locally with Xcode, not in CI.
+        // SPM test targets are unit test bundles, and XCUIApplication requires
+        // a UI test bundle configuration that SPM cannot provide.
+        //
+        // To run UI tests:
+        //   1. Open Package.swift in Xcode
+        //   2. Select the AdAmpUITests target
+        //   3. Run with Cmd+U
+        
+        // Initialize the application with bundle identifier
+        app = XCUIApplication(bundleIdentifier: "com.adamp.player")
         
         // Set UI testing launch argument
         app.launchArguments = ["--ui-testing"]

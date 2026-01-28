@@ -769,8 +769,12 @@ class AudioEngine {
         if isCastingActive {
             NSLog("AudioEngine.pause() - forwarding to CastManager")
             Task {
-                try? await CastManager.shared.pause()
-                NSLog("AudioEngine.pause() - CastManager.pause() completed")
+                do {
+                    try await CastManager.shared.pause()
+                    NSLog("AudioEngine.pause() - CastManager.pause() completed")
+                } catch {
+                    NSLog("AudioEngine.pause() - CastManager.pause() failed: %@", error.localizedDescription)
+                }
             }
             return
         }
@@ -872,6 +876,9 @@ class AudioEngine {
             return
         }
         
+        // Capture previous index before changing (for rollback on cast failure)
+        let previousIndex = currentIndex
+        
         if shuffleEnabled {
             currentIndex = Int.random(in: 0..<playlist.count)
         } else {
@@ -900,6 +907,12 @@ class AudioEngine {
                     }
                 } catch {
                     NSLog("AudioEngine: previous() cast failed: %@", error.localizedDescription)
+                    // Restore index on failure to keep playlist navigation consistent
+                    if isLocalFile {
+                        await MainActor.run {
+                            self.currentIndex = previousIndex
+                        }
+                    }
                 }
             }
             return
@@ -922,6 +935,9 @@ class AudioEngine {
             NSLog("AudioEngine: next() blocked - local file cast in progress")
             return
         }
+        
+        // Capture previous index before changing (for rollback on cast failure)
+        let previousIndex = currentIndex
         
         if shuffleEnabled {
             currentIndex = Int.random(in: 0..<playlist.count)
@@ -951,6 +967,12 @@ class AudioEngine {
                     }
                 } catch {
                     NSLog("AudioEngine: next() cast failed: %@", error.localizedDescription)
+                    // Restore index on failure to keep playlist navigation consistent
+                    if isLocalFile {
+                        await MainActor.run {
+                            self.currentIndex = previousIndex
+                        }
+                    }
                 }
             }
             return
@@ -1415,6 +1437,9 @@ class AudioEngine {
         // Prevent multiple calls
         castPlaybackStartDate = nil
         
+        // Capture previous index before any changes (for rollback on cast failure)
+        let previousIndex = currentIndex
+        
         if repeatEnabled {
             if shuffleEnabled {
                 // Repeat mode + shuffle: pick a random track
@@ -1439,6 +1464,12 @@ class AudioEngine {
                     }
                 } catch {
                     NSLog("castTrackDidFinish: failed to cast: %@", error.localizedDescription)
+                    // Restore index on failure (only if shuffle changed it)
+                    if isLocalFile && shuffleEnabled {
+                        await MainActor.run {
+                            self.currentIndex = previousIndex
+                        }
+                    }
                 }
             }
         } else if !playlist.isEmpty {
@@ -1468,6 +1499,12 @@ class AudioEngine {
                         }
                     } catch {
                         NSLog("castTrackDidFinish: failed to cast next: %@", error.localizedDescription)
+                        // Restore index on failure to keep playlist navigation consistent
+                        if isLocalFile {
+                            await MainActor.run {
+                                self.currentIndex = previousIndex
+                            }
+                        }
                     }
                 }
             } else {

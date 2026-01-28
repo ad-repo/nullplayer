@@ -1315,28 +1315,48 @@ class UPnPManager {
         NotificationCenter.default.post(name: CastManager.playbackStateDidChangeNotification, object: nil)
     }
     
-    /// Pause playback (fire-and-forget - returns immediately, doesn't wait for device response)
+    /// Pause playback (fire-and-forget for Sonos, blocking for DLNA TVs)
     func pause() async throws {
         guard let session = activeSession,
               let controlURL = session.device.avTransportControlURL else {
             throw CastError.sessionNotActive
         }
         
-        NSLog("UPnPManager: Pausing playback on %@ at %@ (fire-and-forget)", session.device.name, controlURL.absoluteString)
-        
-        sendPlaybackControlFireAndForget(controlURL: controlURL, action: "Pause", arguments: [("InstanceID", "0")])
+        // For Sonos (audio), use fire-and-forget to avoid blocking UI
+        if session.device.type == .sonos {
+            NSLog("UPnPManager: Pausing playback on %@ (fire-and-forget)", session.device.name)
+            sendPlaybackControlFireAndForget(controlURL: controlURL, action: "Pause", arguments: [("InstanceID", "0")])
+        } else {
+            // For TVs/DLNA, use blocking SOAP to preserve error handling and retries
+            NSLog("UPnPManager: Pausing playback on %@", session.device.name)
+            try await sendSOAPAction(
+                controlURL: controlURL,
+                action: "Pause",
+                arguments: [("InstanceID", "0")]
+            )
+        }
     }
     
-    /// Resume playback (fire-and-forget - returns immediately, doesn't wait for device response)
+    /// Resume playback (fire-and-forget for Sonos, blocking for DLNA TVs)
     func resume() async throws {
         guard let session = activeSession,
               let controlURL = session.device.avTransportControlURL else {
             throw CastError.sessionNotActive
         }
         
-        NSLog("UPnPManager: Resuming playback on %@ (fire-and-forget)", session.device.name)
-        
-        sendPlaybackControlFireAndForget(controlURL: controlURL, action: "Play", arguments: [("InstanceID", "0"), ("Speed", "1")])
+        // For Sonos (audio), use fire-and-forget to avoid blocking UI
+        if session.device.type == .sonos {
+            NSLog("UPnPManager: Resuming playback on %@ (fire-and-forget)", session.device.name)
+            sendPlaybackControlFireAndForget(controlURL: controlURL, action: "Play", arguments: [("InstanceID", "0"), ("Speed", "1")])
+        } else {
+            // For TVs/DLNA, use blocking SOAP to preserve error handling and retries
+            NSLog("UPnPManager: Resuming playback on %@", session.device.name)
+            try await sendSOAPAction(
+                controlURL: controlURL,
+                action: "Play",
+                arguments: [("InstanceID", "0"), ("Speed", "1")]
+            )
+        }
     }
     
     /// Send a playback control command without waiting for the response

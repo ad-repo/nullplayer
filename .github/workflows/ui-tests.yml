@@ -7,10 +7,10 @@ on:
     branches: [main]
 
 jobs:
-  # Fast unit tests
+  # Unit tests - SPM test targets work correctly for unit tests
   unit-tests:
     runs-on: macos-14
-    timeout-minutes: 10  # Increased from 5 to allow for cache misses
+    timeout-minutes: 10
     
     steps:
       - uses: actions/checkout@v4
@@ -47,72 +47,8 @@ jobs:
       - name: Run unit tests
         run: swift test --filter AdAmpTests --parallel
 
-  # UI tests - runs in parallel
-  ui-tests:
-    runs-on: macos-14
-    timeout-minutes: 10
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app || sudo xcode-select -s /Applications/Xcode_16.1.app || sudo xcode-select -s /Applications/Xcode_16.app
-      
-      - name: Cache SPM
-        uses: actions/cache@v4
-        with:
-          path: |
-            .build
-            ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
-          restore-keys: ${{ runner.os }}-spm-
-      
-      - name: Cache Frameworks
-        uses: actions/cache@v4
-        with:
-          path: Frameworks
-          key: ${{ runner.os }}-frameworks-${{ hashFiles('scripts/bootstrap.sh') }}
-      
-      - name: Cache DerivedData
-        uses: actions/cache@v4
-        with:
-          path: DerivedData
-          key: ${{ runner.os }}-derived-${{ hashFiles('Package.resolved', 'Sources/**/*.swift') }}
-          restore-keys: ${{ runner.os }}-derived-
-      
-      - name: Bootstrap
-        run: ./scripts/bootstrap.sh
-      
-      - name: Build for UI tests
-        run: |
-          xcodebuild build-for-testing \
-            -scheme AdAmp \
-            -destination 'platform=macOS' \
-            -derivedDataPath DerivedData \
-            -parallelizeTargets \
-            -jobs $(sysctl -n hw.ncpu) \
-            -quiet
-      
-      - name: Setup libprojectM
-        run: cp Frameworks/libprojectM-4.dylib DerivedData/Build/Products/Debug/libprojectM-4.4.dylib
-      
-      - name: Run UI tests
-        env:
-          TEST_APP_PATH: ${{ github.workspace }}/DerivedData/Build/Products/Debug/AdAmp.app
-        run: |
-          xcodebuild test-without-building \
-            -scheme AdAmp \
-            -destination 'platform=macOS' \
-            -derivedDataPath DerivedData \
-            -only-testing:AdAmpUITests \
-            -parallel-testing-enabled NO \
-            -disableAutomaticPackageResolution \
-            -resultBundlePath TestResults.xcresult
-      
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results
-          path: TestResults.xcresult
-          if-no-files-found: ignore
+  # Note: UI tests are skipped in CI because SPM test targets are unit test bundles,
+  # and XCUIApplication requires a UI test bundle configuration that SPM cannot provide.
+  # UI tests must be run locally using Xcode:
+  #   1. Open Package.swift in Xcode
+  #   2. Run AdAmpUITests target with Cmd+U

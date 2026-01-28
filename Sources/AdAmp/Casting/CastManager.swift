@@ -546,12 +546,15 @@ class CastManager {
         NSLog("CastManager: castNewTrack '%@' starting (generation %d, local=%d)", track.title, myGeneration, isLocalFile ? 1 : 0)
         
         // Helper to clear loading state and notify UI
+        // Always posts notification to ensure loading overlay is cleared even for non-local failures
         @MainActor func clearLoadingState() {
             if myGeneration == castTrackGeneration {
+                let wasLoading = isCastingTrackChange
                 isCastingTrackChange = false
                 pendingCastTrack = nil
                 // Post notification so MainWindowView removes loading overlay
-                if isLocalFile {
+                // Always post if we were loading, to handle edge cases where non-local fails after local
+                if wasLoading {
                     NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
                 }
             }
@@ -711,14 +714,7 @@ class CastManager {
         )
         
         NSLog("CastManager: Casting Plex movie '%@' to %@ (type: %@)", movie.title, device.name, device.type.rawValue)
-        // Redact Plex token before logging to prevent credential leakage
-        if var components = URLComponents(url: castURL, resolvingAgainstBaseURL: false) {
-            components.queryItems?.removeAll { $0.name == "X-Plex-Token" }
-            let safeURL = components.url?.absoluteString ?? "<invalid URL>"
-            NSLog("CastManager: Cast URL: %@", safeURL)
-        } else {
-            NSLog("CastManager: Cast URL: <redacted>")
-        }
+        NSLog("CastManager: Cast URL: %@", redactedURL(castURL))
         
         do {
             try await cast(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
@@ -778,6 +774,7 @@ class CastManager {
         )
         
         NSLog("CastManager: Casting Plex episode '%@' to %@", title, device.name)
+        NSLog("CastManager: Cast URL: %@", redactedURL(castURL))
         try await cast(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
     }
     
@@ -1070,6 +1067,15 @@ class CastManager {
     private func findPlexTrack(matching track: Track) -> PlexTrack? {
         // This is a simplified lookup - in production, you'd want to track this association
         return nil
+    }
+    
+    /// Redact sensitive tokens from URL for safe logging
+    private func redactedURL(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return "<invalid URL>"
+        }
+        components.queryItems?.removeAll { $0.name == "X-Plex-Token" }
+        return components.url?.absoluteString ?? "<redacted>"
     }
 }
 
