@@ -734,6 +734,12 @@ class AudioEngine {
             SubsonicPlaybackReporter.shared.trackResumed()
         } else {
             // Local file playback via AVAudioEngine
+            // Ensure we have a valid audio file loaded before attempting to play
+            guard audioFile != nil else {
+                NSLog("play(): No audio file loaded - cannot start local playback")
+                return
+            }
+            
             do {
                 if !engine.isRunning {
                     try engine.start()
@@ -1525,14 +1531,73 @@ class AudioEngine {
     
     func loadFiles(_ urls: [URL]) {
         NSLog("loadFiles: %d URLs", urls.count)
-        let tracks = urls.compactMap { Track(url: $0) }
-        NSLog("loadFiles: %d tracks created", tracks.count)
+        
+        // Filter out missing local files (remote URLs pass through)
+        var missingCount = 0
+        let validURLs = urls.filter { url in
+            // Remote URLs (Plex/Subsonic streams) don't need file existence check
+            if url.scheme == "http" || url.scheme == "https" {
+                return true
+            }
+            // Local file - check existence
+            if FileManager.default.fileExists(atPath: url.path) {
+                return true
+            }
+            missingCount += 1
+            return false
+        }
+        
+        // Show single alert if any files were missing
+        if missingCount > 0 {
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Files Not Found"
+                alert.informativeText = missingCount == 1
+                    ? "1 file could not be found and was skipped."
+                    : "\(missingCount) files could not be found and were skipped."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
+        
+        let tracks = validURLs.compactMap { Track(url: $0) }
+        NSLog("loadFiles: %d tracks created (%d skipped)", tracks.count, missingCount)
         loadTracks(tracks)
     }
     
     /// Load tracks with metadata (for Plex and other sources with pre-populated info)
     func loadTracks(_ tracks: [Track]) {
         NSLog("loadTracks: %d tracks, currentTrack=%@", tracks.count, currentTrack?.title ?? "nil")
+        
+        // Filter out missing local files (remote URLs pass through)
+        var missingCount = 0
+        let validTracks = tracks.filter { track in
+            // Remote URLs (Plex/Subsonic streams) don't need file existence check
+            if track.url.scheme == "http" || track.url.scheme == "https" {
+                return true
+            }
+            // Local file - check existence
+            if FileManager.default.fileExists(atPath: track.url.path) {
+                return true
+            }
+            missingCount += 1
+            return false
+        }
+        
+        // Show single alert if any files were missing
+        if missingCount > 0 {
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Files Not Found"
+                alert.informativeText = missingCount == 1
+                    ? "1 file could not be found and was skipped."
+                    : "\(missingCount) files could not be found and were skipped."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
+        
+        NSLog("loadTracks: %d valid tracks (%d skipped)", validTracks.count, missingCount)
         
         // Check if we're currently casting - we want to keep the cast session active
         let wasCasting = isCastingActive
@@ -1550,9 +1615,9 @@ class AudioEngine {
         }
         
         playlist.removeAll()
-        playlist.append(contentsOf: tracks)
+        playlist.append(contentsOf: validTracks)
         
-        if !tracks.isEmpty {
+        if !validTracks.isEmpty {
             currentIndex = 0
             
             if wasCasting {
@@ -1618,7 +1683,35 @@ class AudioEngine {
     
     /// Append files to the playlist without starting playback
     func appendFiles(_ urls: [URL]) {
-        let tracks = urls.compactMap { Track(url: $0) }
+        // Filter out missing local files (remote URLs pass through)
+        var missingCount = 0
+        let validURLs = urls.filter { url in
+            // Remote URLs (Plex/Subsonic streams) don't need file existence check
+            if url.scheme == "http" || url.scheme == "https" {
+                return true
+            }
+            // Local file - check existence
+            if FileManager.default.fileExists(atPath: url.path) {
+                return true
+            }
+            missingCount += 1
+            return false
+        }
+        
+        // Show single alert if any files were missing
+        if missingCount > 0 {
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Files Not Found"
+                alert.informativeText = missingCount == 1
+                    ? "1 file could not be found and was skipped."
+                    : "\(missingCount) files could not be found and were skipped."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
+        
+        let tracks = validURLs.compactMap { Track(url: $0) }
         playlist.append(contentsOf: tracks)
         delegate?.audioEngineDidChangePlaylist()
     }
@@ -1662,12 +1755,29 @@ class AudioEngine {
         if track.url.scheme == "http" || track.url.scheme == "https" {
             loadStreamingTrack(track)
         } else {
-            loadLocalTrack(track)
+            if !loadLocalTrack(track) {
+                // File doesn't exist or failed to load - skip to next track silently
+                NSLog("loadTrack: Failed to load track at index %d, skipping to next", index)
+                if index + 1 < playlist.count {
+                    currentIndex = index + 1
+                    loadTrack(at: currentIndex)
+                }
+                // If no more tracks, just stop (don't start playback)
+            }
         }
     }
     
-    private func loadLocalTrack(_ track: Track) {
+    @discardableResult
+    private func loadLocalTrack(_ track: Track) -> Bool {
         NSLog("loadLocalTrack: %@", track.url.lastPathComponent)
+        
+        // Check if file exists before attempting to load
+        let filePath = track.url.path
+        if !FileManager.default.fileExists(atPath: filePath) {
+            NSLog("loadLocalTrack: File does not exist - %@", filePath)
+            return false
+        }
+        
         // Stop any streaming playback
         stopStreamingPlayer()
         isStreamingPlayback = false
@@ -1724,8 +1834,10 @@ class AudioEngine {
             }
             
             NSLog("loadLocalTrack: file scheduled, EQ bypass = %d, normGain = %.2f", eqNode.bypass, normalizationGain)
+            return true
         } catch {
             NSLog("loadLocalTrack: FAILED - %@", error.localizedDescription)
+            return false
         }
     }
     
