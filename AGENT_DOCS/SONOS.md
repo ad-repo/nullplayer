@@ -135,7 +135,10 @@ The app will:
 
 While casting is active:
 - **Check a room** → Room joins the cast group and starts playing
-- **Uncheck a room** → Room leaves the group and stops playing
+- **Uncheck a non-coordinator room** → Room leaves the group and stops playing
+- **Uncheck the coordinator room** → Casting stops entirely (user must restart with a different room selected)
+
+**Note:** The coordinator is the first room you started casting to. Other rooms join its group. If you want to switch to a different primary room, stop casting and restart with the new room selected.
 
 ### Stopping a Cast
 

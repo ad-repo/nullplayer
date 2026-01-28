@@ -1136,15 +1136,19 @@ class PlexBrowserView: NSView {
             let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             
+            // In art-only mode, use tighter spacing for right side items
+            let artModeSpacing: CGFloat = isArtOnlyMode ? 12 : 24
+            let artModeVisSpacing: CGFloat = isArtOnlyMode ? 8 : 16
+            
             // ART toggle button (before F5) - only show if artwork available
             let artText = "ART"
             let artWidth = CGFloat(artText.count) * scaledCharWidth
-            var artX = refreshX - artWidth - 24
+            var artX = refreshX - artWidth - artModeSpacing
             
             // VIS button - only show in art-only mode
             let visText = "VIS"
             let visWidth = CGFloat(visText.count) * scaledCharWidth
-            var visX = artX - visWidth - 16
+            var visX = artX - visWidth - artModeVisSpacing
             
             if currentArtwork != nil {
                 if isArtOnlyMode {

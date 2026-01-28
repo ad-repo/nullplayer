@@ -1238,17 +1238,23 @@ class UPnPManager {
         NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
     }
     
-    /// Disconnect from current device
-    func disconnect() {
+    /// Disconnect from current device (async - waits for stop to complete)
+    func disconnect() async {
         guard let session = activeSession else { return }
         
         NSLog("UPnPManager: Disconnecting from %@", session.device.name)
         
-        // Stop playback first
-        Task {
-            try? await stop()
-        }
+        // Stop playback first and wait for completion
+        try? await stop()
         
+        activeSession = nil
+        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+    }
+    
+    /// Synchronous disconnect for app termination (skips stop command to avoid blocking)
+    func disconnectSync() {
+        guard activeSession != nil else { return }
+        NSLog("UPnPManager: Disconnecting (sync for termination)")
         activeSession = nil
         NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
     }

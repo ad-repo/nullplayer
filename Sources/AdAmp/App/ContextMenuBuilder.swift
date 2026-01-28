@@ -823,7 +823,18 @@ class SonosRoomCheckboxView: NSView {
             Task {
                 do {
                     if !isNowChecked {
-                        // Was checked, now unchecked - remove from group
+                        // Check if we're unchecking the current coordinator
+                        let isCoordinator = info.roomUDN == castManager.activeSession?.device.id
+                        
+                        if isCoordinator {
+                            // Unchecking the coordinator - must stop casting
+                            // User can restart casting with a different room selected
+                            NSLog("SonosRoomCheckboxView: Unchecking coordinator '%@' - stopping cast", info.roomName)
+                            await castManager.stopCasting()
+                            return
+                        }
+                        
+                        // Not the coordinator - just unjoin this room from the group
                         NSLog("SonosRoomCheckboxView: Removing '%@' from cast group", info.roomName)
                         try await castManager.unjoinSonos(zoneUDN: info.roomUDN)
                     } else {
