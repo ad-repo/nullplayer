@@ -250,8 +250,11 @@ class SkinLoader {
                 // Skip warm colors (red/yellow/orange dominant)
                 if r > b && g >= b { continue }
                 
+                // Skip green-dominant pixels (used for indicators like stereo, mono)
+                if g > r && g > b { continue }
+                
                 // This pixel has blue tint - convert to grayscale
-                if b > r || b > g {
+                if b > r && b > g {
                     let gray = Int(Double(r) * 0.299 + Double(g) * 0.587 + Double(b) * 0.114)
                     let newColor = NSColor(calibratedRed: CGFloat(gray)/255.0,
                                            green: CGFloat(gray)/255.0,
