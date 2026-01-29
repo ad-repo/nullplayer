@@ -246,6 +246,7 @@ struct PlexPlaylist: Identifiable, Equatable {
     let summary: String?
     let playlistType: String    // "audio", "video", or "photo"
     let smart: Bool             // Whether it's a smart playlist
+    let content: String?        // Filter URI for smart playlists (e.g., "/library/sections/15/all?type=10&...")
     let thumb: String?          // Playlist artwork
     let composite: String?      // Composite image path
     let duration: Int?          // Total duration in milliseconds
@@ -259,6 +260,19 @@ struct PlexPlaylist: Identifiable, Equatable {
     
     var isVideoPlaylist: Bool {
         playlistType == "video"
+    }
+    
+    /// Extract library section ID from smart playlist content URI
+    var librarySectionID: String? {
+        guard let content = content else { return nil }
+        // Parse "/library/sections/15/all?..." to extract "15"
+        let pattern = #"/library/sections/(\d+)/"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)),
+              let range = Range(match.range(at: 1), in: content) else {
+            return nil
+        }
+        return String(content[range])
     }
     
     var formattedDuration: String? {
@@ -760,6 +774,7 @@ struct PlexMetadataDTO: Decodable {
     let playlistType: String?   // "audio", "video", or "photo"
     let smart: Bool?            // Whether it's a smart playlist
     let composite: String?      // Composite image path for playlists
+    let content: String?        // Filter URI for smart playlists
     // Track-specific fields for radio
     let parentYear: Int?        // Album release year (for decade radio)
     let ratingCount: Int?       // Last.fm scrobble count (for hits/deep cuts)
@@ -798,7 +813,7 @@ struct PlexMetadataDTO: Decodable {
         case media = "Media"
         case genre = "Genre"
         case studio, contentRating
-        case playlistType, smart, composite
+        case playlistType, smart, composite, content
         case parentYear, ratingCount, userRating
         case extraType, subtype
         case guids = "Guid"
@@ -972,6 +987,7 @@ struct PlexMetadataDTO: Decodable {
             summary: summary,
             playlistType: playlistType ?? "audio",
             smart: smart ?? false,
+            content: content,
             thumb: thumb,
             composite: composite,
             duration: duration,

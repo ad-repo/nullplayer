@@ -131,6 +131,13 @@ class PlexServerClient {
             }
             
             guard httpResponse.statusCode == 200 else {
+                // Log the error response body for debugging
+                let errorBody = String(data: data, encoding: .utf8) ?? "(non-UTF8 data)"
+                NSLog("PlexServerClient: HTTP %d error for %@: %@", 
+                      httpResponse.statusCode, 
+                      request.url?.path ?? "unknown",
+                      String(errorBody.prefix(500)))
+                
                 if httpResponse.statusCode == 401 {
                     throw PlexServerError.unauthorized
                 }
@@ -602,13 +609,118 @@ class PlexServerClient {
     }
     
     /// Fetch tracks in a playlist
-    func fetchPlaylistTracks(playlistID: String) async throws -> [PlexTrack] {
+    /// For smart playlists, falls back to executing the filter query directly if the items endpoint fails
+    /// - Parameters:
+    ///   - playlistID: The playlist ratingKey
+    ///   - smartContent: Optional filter URI for smart playlists (e.g., "/library/sections/15/all?type=10&...")
+    func fetchPlaylistTracks(playlistID: String, smartContent: String? = nil) async throws -> [PlexTrack] {
+        // Try the standard playlist items endpoint first
         guard let request = buildRequest(path: "/playlists/\(playlistID)/items") else {
             throw PlexServerError.invalidURL
         }
         
+        do {
+            let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+            return response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
+        } catch PlexServerError.httpError(let statusCode) where statusCode == 500 {
+            // Server returned 500 - try fallback for smart playlists
+            NSLog("PlexServerClient: Playlist items endpoint returned 500, trying smart playlist fallback")
+            
+            // If we don't have the content URI, try to fetch it from the playlist details
+            var contentURI = smartContent
+            if contentURI == nil || contentURI!.isEmpty {
+                NSLog("PlexServerClient: Fetching playlist details to get content URI")
+                if let details = try? await fetchPlaylistDetails(playlistID: playlistID) {
+                    contentURI = details.content
+                    NSLog("PlexServerClient: Got content URI from playlist details: %@", contentURI ?? "nil")
+                }
+            }
+            
+            guard let content = contentURI, !content.isEmpty else {
+                NSLog("PlexServerClient: No smart content URI available for fallback")
+                throw PlexServerError.httpError(statusCode: statusCode)
+            }
+            
+            return try await fetchSmartPlaylistContent(contentURI: content)
+        }
+    }
+    
+    /// Fetch full details for a single playlist (includes content URI for smart playlists)
+    func fetchPlaylistDetails(playlistID: String) async throws -> PlexPlaylist {
+        guard let request = buildRequest(path: "/playlists/\(playlistID)") else {
+            throw PlexServerError.invalidURL
+        }
+        
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
-        return response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
+        guard let metadata = response.mediaContainer.metadata?.first else {
+            throw PlexServerError.invalidResponse
+        }
+        return metadata.toPlaylist()
+    }
+    
+    /// Fetch tracks by executing a smart playlist's filter query directly
+    /// - Parameter contentURI: The filter URI from the smart playlist's content field
+    private func fetchSmartPlaylistContent(contentURI: String) async throws -> [PlexTrack] {
+        NSLog("PlexServerClient: Fetching smart playlist via content URI: %@", contentURI)
+        
+        // The content URI can be in different formats:
+        // 1. Direct path: "/library/sections/15/all?type=10&..."
+        // 2. Plex library URI: "library://x/directory/%2Flibrary%2Fsections%2F3%2Fall%3Ftype%3D10..."
+        //    This needs to be decoded - the actual path is URL-encoded after "library://x/directory/"
+        
+        var apiPath = contentURI
+        
+        if contentURI.hasPrefix("library://") {
+            // Parse the library:// URI scheme
+            // Format: library://x/directory/{url-encoded-path}
+            if let directoryRange = contentURI.range(of: "/directory/") {
+                let encodedPath = String(contentURI[directoryRange.upperBound...])
+                // URL decode the path (may be double-encoded)
+                var decoded = encodedPath.removingPercentEncoding ?? encodedPath
+                // Handle double-encoding (e.g., %253E becomes %3E then >)
+                while decoded.contains("%") && decoded != decoded.removingPercentEncoding {
+                    decoded = decoded.removingPercentEncoding ?? decoded
+                }
+                apiPath = decoded
+                NSLog("PlexServerClient: Decoded library URI to path: %@", apiPath)
+            }
+        }
+        
+        // Build the URL manually since the path may contain query parameters
+        // that we don't want to double-encode
+        let fullURL: URL
+        if apiPath.contains("?") {
+            // Path includes query string - build URL directly
+            guard let url = URL(string: baseURL.absoluteString + apiPath) else {
+                throw PlexServerError.invalidURL
+            }
+            fullURL = url
+        } else {
+            fullURL = baseURL.appendingPathComponent(apiPath)
+        }
+        
+        // Add auth token to URL
+        var components = URLComponents(url: fullURL, resolvingAgainstBaseURL: false)
+        var queryItems = components?.queryItems ?? []
+        queryItems.append(URLQueryItem(name: "X-Plex-Token", value: authToken))
+        components?.queryItems = queryItems
+        
+        guard let finalURL = components?.url else {
+            throw PlexServerError.invalidURL
+        }
+        
+        NSLog("PlexServerClient: Final smart playlist URL: %@", finalURL.absoluteString)
+        
+        var request = URLRequest(url: finalURL)
+        for (key, value) in standardHeaders {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        
+        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+        let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
+        
+        NSLog("PlexServerClient: Smart playlist content returned %d tracks", tracks.count)
+        return tracks
     }
     
     /// Generate an artwork/thumbnail URL

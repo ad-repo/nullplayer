@@ -435,7 +435,7 @@ class PlaylistView: NSView {
         let remainingHours = remainingMinutes / 60
         
         // Build the info string for skin font
-        let trackCountStr = "\(remainingTracks) TRACKS/"
+        let trackCountStr = "\(remainingTracks)/"
         let remainingTimeStr: String
         if remainingHours > 0 {
             remainingTimeStr = String(format: "%d:%02d:%02d", remainingHours, remainingMinutes % 60, remainingSeconds % 60)

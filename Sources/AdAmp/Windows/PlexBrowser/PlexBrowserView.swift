@@ -4289,6 +4289,8 @@ class PlexBrowserView: NSView {
         cachedShows = []
         showSeasons = [:]
         seasonEpisodes = [:]
+        cachedPlexPlaylists = []
+        plexPlaylistTracks = [:]
         searchResults = nil
         
         // Reset expanded states
@@ -4296,6 +4298,7 @@ class PlexBrowserView: NSView {
         expandedAlbums = []
         expandedShows = []
         expandedSeasons = []
+        expandedPlexPlaylists = []
         
         // Reset selection and scroll
         selectedIndices = []
@@ -4307,6 +4310,9 @@ class PlexBrowserView: NSView {
         displayItems = []
         startLoadingAnimation()
         needsDisplay = true
+        
+        // Also clear PlexManager's cached content to ensure fresh fetch
+        PlexManager.shared.clearCachedContent()
         
         NSLog("PlexBrowserView: Refreshing data...")
         
@@ -9590,10 +9596,14 @@ class PlexBrowserView: NSView {
                 // Load tracks for this playlist if not already loaded
                 if plexPlaylistTracks[playlist.id] == nil {
                     let playlistId = playlist.id
+                    let smartContent = playlist.smart ? playlist.content : nil
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
-                            let tracks = try await PlexManager.shared.fetchPlaylistTracks(playlistID: playlistId)
+                            let tracks = try await PlexManager.shared.fetchPlaylistTracks(
+                                playlistID: playlistId,
+                                smartContent: smartContent
+                            )
                             plexPlaylistTracks[playlistId] = tracks
                             rebuildCurrentModeItems()
                             needsDisplay = true
@@ -9674,14 +9684,35 @@ class PlexBrowserView: NSView {
     }
     
     private func playPlexPlaylist(_ playlist: PlexPlaylist) {
+        // Show loading screen while fetching playlist tracks
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+        
         Task { @MainActor in
             do {
-                let tracks = try await PlexManager.shared.fetchPlaylistTracks(playlistID: playlist.id)
+                NSLog("playPlexPlaylist: Starting for '%@' (id=%@, key=%@, smart=%d, content=%@)", 
+                      playlist.title, playlist.id, playlist.key, playlist.smart ? 1 : 0, playlist.content ?? "nil")
+                // Pass the content URI for smart playlists as fallback
+                let tracks = try await PlexManager.shared.fetchPlaylistTracks(
+                    playlistID: playlist.id, 
+                    smartContent: playlist.smart ? playlist.content : nil
+                )
                 let convertedTracks = PlexManager.shared.convertToTracks(tracks)
-                NSLog("Playing Plex playlist %@ with %d tracks", playlist.title, convertedTracks.count)
+                NSLog("Playing Plex playlist %@ with %d tracks (fetched %d)", playlist.title, convertedTracks.count, tracks.count)
+                
+                isLoading = false
+                stopLoadingAnimation()
+                needsDisplay = true
+                
                 WindowManager.shared.audioEngine.loadTracks(convertedTracks)
             } catch {
-                NSLog("Failed to play Plex playlist: %@", error.localizedDescription)
+                NSLog("Failed to play Plex playlist '%@' (id=%@): %@", playlist.title, playlist.id, error.localizedDescription)
+                isLoading = false
+                stopLoadingAnimation()
+                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                needsDisplay = true
             }
         }
     }
@@ -9779,14 +9810,29 @@ class PlexBrowserView: NSView {
     }
     
     private func playSubsonicPlaylist(_ playlist: SubsonicPlaylist) {
+        // Show loading screen while fetching playlist tracks
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+        
         Task { @MainActor in
             do {
                 let (_, songs) = try await SubsonicManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
                 let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
                 NSLog("Playing subsonic playlist %@ with %d tracks", playlist.name, tracks.count)
+                
+                isLoading = false
+                stopLoadingAnimation()
+                needsDisplay = true
+                
                 WindowManager.shared.audioEngine.loadTracks(tracks)
             } catch {
                 NSLog("Failed to play subsonic playlist: %@", error.localizedDescription)
+                isLoading = false
+                stopLoadingAnimation()
+                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                needsDisplay = true
             }
         }
     }

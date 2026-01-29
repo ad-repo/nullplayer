@@ -72,11 +72,18 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
     }
     
     /// Display title (artist - title or just title)
+    /// Sanitizes newlines and control characters for proper display
     var displayTitle: String {
+        let result: String
         if let artist = artist, !artist.isEmpty {
-            return "\(artist) - \(title)"
+            result = "\(artist) - \(title)"
+        } else {
+            result = title
         }
-        return title
+        // Remove newlines and other control characters that break playlist display
+        return result.replacingOccurrences(of: "\n", with: " ")
+                     .replacingOccurrences(of: "\r", with: " ")
+                     .replacingOccurrences(of: "\t", with: " ")
     }
     
     /// Formatted duration string (MM:SS)

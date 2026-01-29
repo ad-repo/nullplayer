@@ -404,8 +404,8 @@ class PlexManager {
         }
     }
     
-    /// Clear cached library content (called when library or server changes)
-    private func clearCachedContent() {
+    /// Clear cached library content (called when library or server changes, or on refresh)
+    func clearCachedContent() {
         cachedArtists = []
         cachedAlbums = []
         cachedMovies = []
@@ -699,11 +699,12 @@ class PlexManager {
     }
     
     /// Fetch tracks in a playlist
-    func fetchPlaylistTracks(playlistID: String) async throws -> [PlexTrack] {
+    /// For smart playlists, pass the content URI as fallback
+    func fetchPlaylistTracks(playlistID: String, smartContent: String? = nil) async throws -> [PlexTrack] {
         guard let client = serverClient else {
             return []
         }
-        return try await client.fetchPlaylistTracks(playlistID: playlistID)
+        return try await client.fetchPlaylistTracks(playlistID: playlistID, smartContent: smartContent)
     }
     
     // MARK: - URL Generation
