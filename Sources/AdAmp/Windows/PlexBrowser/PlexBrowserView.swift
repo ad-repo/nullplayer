@@ -213,6 +213,40 @@ class PlexBrowserView: NSView {
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0
     
+    /// Column sort state (overrides currentSort when set)
+    private var columnSortId: String? {
+        didSet {
+            saveColumnSort()
+            applyColumnSort()
+        }
+    }
+    private var columnSortAscending: Bool = true {
+        didSet {
+            saveColumnSort()
+            applyColumnSort()
+        }
+    }
+    
+    /// Save column sort to UserDefaults
+    private func saveColumnSort() {
+        if let id = columnSortId {
+            UserDefaults.standard.set(id, forKey: "BrowserColumnSortId")
+            UserDefaults.standard.set(columnSortAscending, forKey: "BrowserColumnSortAscending")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "BrowserColumnSortId")
+        }
+    }
+    
+    /// Load column sort from UserDefaults
+    private func loadColumnSort() {
+        columnSortId = UserDefaults.standard.string(forKey: "BrowserColumnSortId")
+        columnSortAscending = UserDefaults.standard.bool(forKey: "BrowserColumnSortAscending")
+        // Default to true if not set
+        if UserDefaults.standard.object(forKey: "BrowserColumnSortAscending") == nil {
+            columnSortAscending = true
+        }
+    }
+    
     /// Whether any content uses columns (for showing headers)
     private var hasColumnContent: Bool {
         displayItems.contains { item in
@@ -227,6 +261,12 @@ class PlexBrowserView: NSView {
             return BrowserColumn.trackColumns
         case .album, .subsonicAlbum, .localAlbum:
             return BrowserColumn.albumColumns
+        case .artist, .subsonicArtist, .localArtist:
+            // Only show columns for top-level artists (not nested under search results)
+            if item.indentLevel == 0 {
+                return BrowserColumn.artistColumns
+            }
+            return nil
         default:
             return nil
         }
@@ -254,6 +294,126 @@ class PlexBrowserView: NSView {
         if let saved = UserDefaults.standard.dictionary(forKey: "BrowserColumnWidths") as? [String: CGFloat] {
             columnWidths = saved
         }
+    }
+    
+    /// Apply column sort to display items
+    private func applyColumnSort() {
+        guard let sortColumnId = columnSortId, !displayItems.isEmpty else {
+            needsDisplay = true
+            return
+        }
+        
+        // Find the column definition
+        let column: BrowserColumn?
+        if let c = BrowserColumn.trackColumns.first(where: { $0.id == sortColumnId }) {
+            column = c
+        } else if let c = BrowserColumn.albumColumns.first(where: { $0.id == sortColumnId }) {
+            column = c
+        } else if let c = BrowserColumn.artistColumns.first(where: { $0.id == sortColumnId }) {
+            column = c
+        } else {
+            column = nil
+        }
+        
+        guard let sortColumn = column else {
+            needsDisplay = true
+            return
+        }
+        
+        // Sort items that have columns (tracks/albums), keep others in place
+        // We need to sort contiguous groups of sortable items while preserving hierarchy
+        var sortableIndices: [Int] = []
+        var sortableItems: [PlexDisplayItem] = []
+        
+        for (index, item) in displayItems.enumerated() {
+            if columnsForItem(item) != nil && item.indentLevel == 0 {
+                // Top-level sortable item (not nested under artist/album)
+                sortableIndices.append(index)
+                sortableItems.append(item)
+            }
+        }
+        
+        guard !sortableItems.isEmpty else {
+            needsDisplay = true
+            return
+        }
+        
+        // Sort the sortable items
+        let ascending = columnSortAscending
+        sortableItems.sort { a, b in
+            let aVal = a.columnValue(for: sortColumn)
+            let bVal = b.columnValue(for: sortColumn)
+            
+            // Try numeric comparison for numeric columns
+            if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" || sortColumn.id == "albums" {
+                let aNum = Int(aVal.components(separatedBy: "-").last ?? aVal) ?? 0
+                let bNum = Int(bVal.components(separatedBy: "-").last ?? bVal) ?? 0
+                return ascending ? aNum < bNum : aNum > bNum
+            }
+            
+            // Duration comparison (convert to seconds)
+            if sortColumn.id == "duration" {
+                let aSeconds = parseDuration(aVal)
+                let bSeconds = parseDuration(bVal)
+                return ascending ? aSeconds < bSeconds : aSeconds > bSeconds
+            }
+            
+            // Bitrate comparison
+            if sortColumn.id == "bitrate" {
+                let aKbps = Int(aVal.replacingOccurrences(of: "k", with: "")) ?? 0
+                let bKbps = Int(bVal.replacingOccurrences(of: "k", with: "")) ?? 0
+                return ascending ? aKbps < bKbps : aKbps > bKbps
+            }
+            
+            // Size comparison
+            if sortColumn.id == "size" {
+                let aSize = parseSize(aVal)
+                let bSize = parseSize(bVal)
+                return ascending ? aSize < bSize : aSize > bSize
+            }
+            
+            // Rating comparison (star count)
+            if sortColumn.id == "rating" {
+                let aStars = aVal.filter { $0 == "★" }.count
+                let bStars = bVal.filter { $0 == "★" }.count
+                return ascending ? aStars < bStars : aStars > bStars
+            }
+            
+            // Default string comparison
+            let result = aVal.localizedCaseInsensitiveCompare(bVal)
+            return ascending ? result == .orderedAscending : result == .orderedDescending
+        }
+        
+        // Put sorted items back
+        for (sortedIndex, originalIndex) in sortableIndices.enumerated() {
+            displayItems[originalIndex] = sortableItems[sortedIndex]
+        }
+        
+        needsDisplay = true
+    }
+    
+    /// Parse duration string (e.g., "3:45" or "1:23:45") to seconds
+    private func parseDuration(_ str: String) -> Int {
+        let parts = str.split(separator: ":").compactMap { Int($0) }
+        switch parts.count {
+        case 3: return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        case 2: return parts[0] * 60 + parts[1]
+        case 1: return parts[0]
+        default: return 0
+        }
+    }
+    
+    /// Parse size string (e.g., "12.5M" or "1.2G") to bytes
+    private func parseSize(_ str: String) -> Int64 {
+        let trimmed = str.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasSuffix("G") {
+            let num = Double(trimmed.dropLast()) ?? 0
+            return Int64(num * 1024 * 1024 * 1024)
+        } else if trimmed.hasSuffix("M") {
+            let num = Double(trimmed.dropLast()) ?? 0
+            return Int64(num * 1024 * 1024)
+        }
+        return Int64(trimmed) ?? 0
     }
     
     /// Current display items
@@ -561,8 +721,9 @@ class PlexBrowserView: NSView {
     private func setupView() {
         wantsLayer = true
         
-        // Load saved column widths
+        // Load saved column widths and sort
         loadColumnWidths()
+        loadColumnSort()
         
         // Load saved source
         if let savedSource = BrowserSource.load() {
@@ -1793,7 +1954,7 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Determine which columns to show in header (use track columns if any tracks, else album columns)
+        // Determine which columns to show in header (priority: tracks > albums > artists)
         let headerColumns: [BrowserColumn]?
         if displayItems.contains(where: { 
             switch $0.type { 
@@ -1809,6 +1970,13 @@ class PlexBrowserView: NSView {
             }
         }) {
             headerColumns = BrowserColumn.albumColumns
+        } else if displayItems.contains(where: {
+            switch $0.type {
+            case .artist, .subsonicArtist, .localArtist: return true
+            default: return false
+            }
+        }) {
+            headerColumns = BrowserColumn.artistColumns
         } else {
             headerColumns = nil
         }
@@ -1975,15 +2143,19 @@ class PlexBrowserView: NSView {
         
         let headerFont = NSFont.systemFont(ofSize: 9, weight: .medium)
         let headerColor = colors.normalText.withAlphaComponent(0.7)
+        let sortedHeaderColor = colors.normalText.withAlphaComponent(0.9)
         let separatorColor = colors.normalText.withAlphaComponent(0.2)
         
         var x = rect.minX + 4
         for (index, column) in columns.enumerated() {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns)
             
+            // Check if this column is the sort column
+            let isSortColumn = columnSortId == column.id
+            
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: headerFont,
-                .foregroundColor: headerColor
+                .foregroundColor: isSortColumn ? sortedHeaderColor : headerColor
             ]
             
             let textSize = column.title.size(withAttributes: attrs)
@@ -1992,6 +2164,17 @@ class PlexBrowserView: NSView {
             // Left aligned
             let textX = x + 4
             column.title.draw(at: NSPoint(x: textX, y: textY), withAttributes: attrs)
+            
+            // Draw sort indicator if this is the sorted column
+            if isSortColumn {
+                let indicator = columnSortAscending ? "▲" : "▼"
+                let indicatorAttrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 7),
+                    .foregroundColor: sortedHeaderColor
+                ]
+                let indicatorX = textX + textSize.width + 3
+                indicator.draw(at: NSPoint(x: indicatorX, y: textY + 1), withAttributes: indicatorAttrs)
+            }
             
             // Draw column separator (except for last column)
             if index < columns.count - 1 {
@@ -5038,22 +5221,29 @@ class PlexBrowserView: NSView {
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return nil }
         
-        // Check if in header area
-        let headerY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
+        // Check if in header area (account for search bar when in search mode)
+        var headerY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
+        if browseMode == .search {
+            headerY += Layout.searchBarHeight
+        }
         let headerRect = NSRect(x: Layout.leftBorder, y: headerY,
                                width: originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth,
                                height: columnHeaderHeight)
         
         guard headerRect.contains(winampPoint) else { return nil }
         
-        // Determine which columns to check
+        // Determine which columns to check (priority: tracks > albums > artists)
         let columns: [BrowserColumn]
         if displayItems.contains(where: {
             switch $0.type { case .track, .subsonicTrack, .localTrack: return true; default: return false }
         }) {
             columns = BrowserColumn.trackColumns
-        } else {
+        } else if displayItems.contains(where: {
+            switch $0.type { case .album, .subsonicAlbum, .localAlbum: return true; default: return false }
+        }) {
             columns = BrowserColumn.albumColumns
+        } else {
+            columns = BrowserColumn.artistColumns
         }
         
         // Check if near a column separator (within 4 pixels)
@@ -5076,6 +5266,56 @@ class PlexBrowserView: NSView {
         return nil
     }
     
+    /// Check if point hits a column header (returns column id for sorting)
+    private func hitTestColumnHeader(at winampPoint: NSPoint) -> String? {
+        // Only applies when columns are shown
+        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        guard hasColumns else { return nil }
+        
+        // Check if in header area
+        var headerY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
+        if browseMode == .search {
+            headerY += Layout.searchBarHeight
+        }
+        let headerRect = NSRect(x: Layout.leftBorder, y: headerY,
+                               width: originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth,
+                               height: columnHeaderHeight)
+        
+        guard headerRect.contains(winampPoint) else { return nil }
+        
+        // Check if on a resize handle first (don't trigger sort)
+        if hitTestColumnResize(at: winampPoint) != nil {
+            return nil
+        }
+        
+        // Determine which columns to check (priority: tracks > albums > artists)
+        let columns: [BrowserColumn]
+        if displayItems.contains(where: {
+            switch $0.type { case .track, .subsonicTrack, .localTrack: return true; default: return false }
+        }) {
+            columns = BrowserColumn.trackColumns
+        } else if displayItems.contains(where: {
+            switch $0.type { case .album, .subsonicAlbum, .localAlbum: return true; default: return false }
+        }) {
+            columns = BrowserColumn.albumColumns
+        } else {
+            columns = BrowserColumn.artistColumns
+        }
+        
+        // Find which column was clicked
+        var x = headerRect.minX + 4
+        
+        for column in columns {
+            let width = widthForColumn(column, availableWidth: headerRect.width, columns: columns)
+            if winampPoint.x >= x && winampPoint.x < x + width {
+                return column.id
+            }
+            x += width
+        }
+        
+        return nil
+    }
+    
     /// Check if point hits the scrollbar
     private func hitTestScrollbar(at winampPoint: NSPoint) -> Bool {
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
@@ -5084,11 +5324,12 @@ class PlexBrowserView: NSView {
         }
         let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
         
-        // Scrollbar is positioned to the left of the right border
+        // Scrollbar hit area is wider than visual scrollbar for easier grabbing
+        let hitPadding: CGFloat = 4
         let scrollbarRect = NSRect(
-            x: originalWindowSize.width - Layout.rightBorder - Layout.scrollbarWidth,
+            x: originalWindowSize.width - Layout.rightBorder - Layout.scrollbarWidth - hitPadding,
             y: listY,
-            width: Layout.scrollbarWidth,
+            width: Layout.scrollbarWidth + hitPadding + Layout.rightBorder,
             height: listHeight
         )
         
@@ -5391,12 +5632,33 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Check for column resize (before other checks)
+        // Check scrollbar FIRST (priority over column operations)
+        if hitTestScrollbar(at: winampPoint) {
+            isDraggingScrollbar = true
+            scrollbarDragStartY = winampPoint.y
+            scrollbarDragStartOffset = scrollOffset
+            return
+        }
+        
+        // Check for column resize
         if let columnId = hitTestColumnResize(at: winampPoint) {
             resizingColumnId = columnId
             resizeStartX = winampPoint.x
-            resizeStartWidth = columnWidths[columnId] ?? BrowserColumn.trackColumns.first(where: { $0.id == columnId })?.minWidth ?? 50
+            resizeStartWidth = columnWidths[columnId] ?? BrowserColumn.findColumn(id: columnId)?.minWidth ?? 50
             NSCursor.resizeLeftRight.push()
+            return
+        }
+        
+        // Check for column header click (for sorting)
+        if let columnId = hitTestColumnHeader(at: winampPoint) {
+            if columnSortId == columnId {
+                // Same column - toggle direction
+                columnSortAscending.toggle()
+            } else {
+                // New column - sort ascending
+                columnSortId = columnId
+                columnSortAscending = true
+            }
             return
         }
         
@@ -5450,14 +5712,6 @@ class PlexBrowserView: NSView {
         // Check alphabet index
         if hitTestAlphabetIndex(at: winampPoint) {
             handleAlphabetClick(at: winampPoint)
-            return
-        }
-        
-        // Check scrollbar
-        if hitTestScrollbar(at: winampPoint) {
-            isDraggingScrollbar = true
-            scrollbarDragStartY = winampPoint.y
-            scrollbarDragStartOffset = scrollOffset
             return
         }
         
@@ -5943,7 +6197,7 @@ class PlexBrowserView: NSView {
             let point = convert(event.locationInWindow, from: nil)
             let winampPoint = convertToWinampCoordinates(point)
             let deltaX = winampPoint.x - resizeStartX
-            let minWidth = BrowserColumn.trackColumns.first(where: { $0.id == columnId })?.minWidth ?? 30
+            let minWidth = BrowserColumn.findColumn(id: columnId)?.minWidth ?? 30
             let newWidth = max(minWidth, resizeStartWidth + deltaX)
             columnWidths[columnId] = newWidth
             needsDisplay = true
@@ -9045,6 +9299,11 @@ class PlexBrowserView: NSView {
             }
         }
         
+        // Apply column sort if set
+        if columnSortId != nil {
+            applyColumnSort()
+        }
+        
         // Ensure view updates
         needsDisplay = true
     }
@@ -9774,6 +10033,22 @@ private struct BrowserColumn {
     static let albumColumns: [BrowserColumn] = [
         .title, .year, .genre, .duration, .rating
     ]
+    
+    // Artist-specific columns
+    static let albums = BrowserColumn(id: "albums", title: "Albums", minWidth: 55)
+    
+    /// Columns shown for artist lists
+    static let artistColumns: [BrowserColumn] = [
+        .title, .albums, .genre
+    ]
+    
+    /// Find a column by ID across all column types
+    static func findColumn(id: String) -> BrowserColumn? {
+        if let c = trackColumns.first(where: { $0.id == id }) { return c }
+        if let c = albumColumns.first(where: { $0.id == id }) { return c }
+        if let c = artistColumns.first(where: { $0.id == id }) { return c }
+        return nil
+    }
 }
 
 // MARK: - Column Value Extraction
@@ -9799,6 +10074,12 @@ extension PlexDisplayItem {
             return subsonicAlbumValue(album, for: column)
         case .localAlbum(let album):
             return localAlbumValue(album, for: column)
+        case .artist(let artist):
+            return plexArtistValue(artist, for: column)
+        case .subsonicArtist(let artist):
+            return subsonicArtistValue(artist, for: column)
+        case .localArtist(let artist):
+            return localArtistValue(artist, for: column)
         default:
             return ""
         }
@@ -9948,6 +10229,45 @@ extension PlexDisplayItem {
             return album.formattedDuration
         case "rating":
             return ""
+        default:
+            return ""
+        }
+    }
+    
+    // MARK: - Plex Artist Values
+    
+    private func plexArtistValue(_ artist: PlexArtist, for column: BrowserColumn) -> String {
+        switch column.id {
+        case "albums":
+            return String(artist.albumCount)
+        case "genre":
+            return artist.genre ?? ""
+        default:
+            return ""
+        }
+    }
+    
+    // MARK: - Subsonic Artist Values
+    
+    private func subsonicArtistValue(_ artist: SubsonicArtist, for column: BrowserColumn) -> String {
+        switch column.id {
+        case "albums":
+            return String(artist.albumCount)
+        case "genre":
+            return ""  // Subsonic artists don't have genre
+        default:
+            return ""
+        }
+    }
+    
+    // MARK: - Local Artist Values
+    
+    private func localArtistValue(_ artist: Artist, for column: BrowserColumn) -> String {
+        switch column.id {
+        case "albums":
+            return String(artist.albums.count)
+        case "genre":
+            return ""  // Local artists don't have genre at artist level
         default:
             return ""
         }
