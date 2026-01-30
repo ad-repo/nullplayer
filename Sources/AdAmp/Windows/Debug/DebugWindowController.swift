@@ -8,6 +8,10 @@ class DebugWindowController: NSWindowController, NSWindowDelegate {
     private var textView: NSTextView!
     private var scrollView: NSScrollView!
     private var stopToolbarItem: NSToolbarItem?
+    private var upnpFilterToolbarItem: NSToolbarItem?
+    
+    /// Whether to hide UPnPManager messages
+    private var hideUPnPMessages = false
     
     // MARK: - Initialization
     
@@ -86,12 +90,20 @@ class DebugWindowController: NSWindowController, NSWindowDelegate {
     }
     
     private func loadExistingMessages() {
-        let messages = DebugConsoleManager.shared.getMessages()
+        let messages = getFilteredMessages()
         if !messages.isEmpty {
             let text = messages.joined(separator: "\n") + "\n"
             textView.string = text
             scrollToBottom()
         }
+    }
+    
+    private func getFilteredMessages() -> [String] {
+        var messages = DebugConsoleManager.shared.getMessages()
+        if hideUPnPMessages {
+            messages = messages.filter { !$0.contains("UPnPManager") }
+        }
+        return messages
     }
     
     private func subscribeToMessages() {
@@ -107,7 +119,7 @@ class DebugWindowController: NSWindowController, NSWindowDelegate {
     
     @objc private func handleNewMessage() {
         // Reload all messages (simple approach)
-        let messages = DebugConsoleManager.shared.getMessages()
+        let messages = getFilteredMessages()
         let text = messages.joined(separator: "\n") + (messages.isEmpty ? "" : "\n")
         textView.string = text
         scrollToBottom()
@@ -139,6 +151,13 @@ class DebugWindowController: NSWindowController, NSWindowDelegate {
         updateStopButtonState()
     }
     
+    @objc func toggleUPnPFilter(_ sender: Any?) {
+        hideUPnPMessages.toggle()
+        updateUPnPFilterButtonState()
+        // Refresh display with new filter state
+        handleNewMessage()
+    }
+    
     private func updateStopButtonState() {
         guard let item = stopToolbarItem else { return }
         let isCapturing = DebugConsoleManager.shared.isCapturing
@@ -156,6 +175,22 @@ class DebugWindowController: NSWindowController, NSWindowDelegate {
         
         item.label = isCapturing ? "Logging" : "Paused"
         item.toolTip = isCapturing ? "Click to pause logging" : "Click to resume logging"
+    }
+    
+    private func updateUPnPFilterButtonState() {
+        guard let item = upnpFilterToolbarItem else { return }
+        
+        // Use eye symbol - slashed when filtering (hiding)
+        let symbolName = hideUPnPMessages ? "eye.slash" : "eye"
+        let color = hideUPnPMessages ? NSColor.systemOrange : NSColor.secondaryLabelColor
+        
+        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: hideUPnPMessages ? "Show UPnP" : "Hide UPnP") {
+            let config = NSImage.SymbolConfiguration(paletteColors: [color])
+            item.image = image.withSymbolConfiguration(config)
+        }
+        
+        item.label = hideUPnPMessages ? "UPnP Hidden" : "UPnP Shown"
+        item.toolTip = hideUPnPMessages ? "Click to show UPnP messages" : "Click to hide UPnP messages"
     }
     
     // MARK: - NSWindowDelegate
@@ -213,6 +248,25 @@ extension DebugWindowController: NSToolbarDelegate {
             item.action = #selector(copyAll(_:))
             return item
             
+        case "UPnPFilter":
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            
+            // Use eye symbol - normal when showing, slashed when hiding
+            let symbolName = hideUPnPMessages ? "eye.slash" : "eye"
+            let color = hideUPnPMessages ? NSColor.systemOrange : NSColor.secondaryLabelColor
+            
+            if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: hideUPnPMessages ? "Show UPnP" : "Hide UPnP") {
+                let config = NSImage.SymbolConfiguration(paletteColors: [color])
+                item.image = image.withSymbolConfiguration(config)
+            }
+            
+            item.label = hideUPnPMessages ? "UPnP Hidden" : "UPnP Shown"
+            item.toolTip = hideUPnPMessages ? "Click to show UPnP messages" : "Click to hide UPnP messages"
+            item.target = self
+            item.action = #selector(toggleUPnPFilter(_:))
+            upnpFilterToolbarItem = item
+            return item
+            
         default:
             return nil
         }
@@ -223,6 +277,7 @@ extension DebugWindowController: NSToolbarDelegate {
             NSToolbarItem.Identifier("Stop"),
             NSToolbarItem.Identifier("Clear"),
             NSToolbarItem.Identifier("Copy"),
+            NSToolbarItem.Identifier("UPnPFilter"),
             .flexibleSpace
         ]
     }
