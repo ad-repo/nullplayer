@@ -369,6 +369,30 @@ self.setNeedsDisplay(listRect)
 
 3. **Performance consideration** - Image processing at load time adds startup overhead on non-Retina displays (minimal impact in practice)
 
+## Known Issues (Future Fixes)
+
+### Multi-Monitor Window Rendering
+
+**Problem**: When dragging a window across two monitors, the window cannot render across both screens simultaneously. At approximately 60% dragged onto the new monitor, the window "transitions" - it suddenly appears on the new monitor while the portion on the old monitor goes blank. Continuing to drag reveals the rest of the window on the new monitor.
+
+**Symptoms**:
+- Window content disappears from the original monitor before fully appearing on the new monitor
+- Affects all windows (main, EQ, playlist, browser, milkdrop)
+- More noticeable when crossing between Retina and non-Retina displays
+
+**Likely Causes**:
+1. **Backing scale factor changes** - When crossing between Retina (2x) and non-Retina (1x) displays, the window's backing properties change, potentially triggering a redraw that can't span both displays
+2. **Custom drawing context** - The skin renderer's custom `draw()` implementation may assume a single-screen context
+3. **GPU/display binding** - The window's layer may be bound to one display's GPU at a time
+
+**Investigation Areas**:
+- `viewDidChangeBackingProperties()` notifications in view classes
+- How `SkinRenderer` handles drawing context when backing scale changes
+- Whether using `wantsLayer = true` and CALayer-based rendering would help
+- NSWindow's `displaysWhenScreenProfileChanges` property
+
+**Workaround**: None currently. Windows must fully transition to one monitor before content renders correctly.
+
 ## Key Learnings
 
 1. **Don't disable anti-aliasing** - It actually helps blend problematic pixels
