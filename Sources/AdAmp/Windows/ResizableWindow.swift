@@ -97,7 +97,11 @@ class ResizableWindow: NSWindow {
         if windowPoint.x < edgeThickness {
             edges.insert(.left)
         } else if windowPoint.x > size.width - edgeThickness {
-            edges.insert(.right)
+            // Only allow right edge resize near the bottom of the window
+            // The rest of the right edge has the scrollbar
+            if windowPoint.y < edgeThickness * 2 {
+                edges.insert(.right)
+            }
         }
         
         // Check vertical edges (window coordinates: 0 is at bottom)

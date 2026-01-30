@@ -5358,16 +5358,45 @@ class PlexBrowserView: NSView {
         }
         let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
         
-        // Scrollbar hit area is wider than visual scrollbar for easier grabbing
-        let hitPadding: CGFloat = 4
+        // Scrollbar is drawn at x = bounds.width - 11 (width 8, with 3px edge)
+        // Use generous 30px wide hit area on the right edge
         let scrollbarRect = NSRect(
-            x: originalWindowSize.width - Layout.rightBorder - Layout.scrollbarWidth - hitPadding,
+            x: originalWindowSize.width - 30,
             y: listY,
-            width: Layout.scrollbarWidth + hitPadding + Layout.rightBorder,
+            width: 30,
             height: listHeight
         )
         
         return scrollbarRect.contains(winampPoint)
+    }
+    
+    // MARK: - Cursor Tracking
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+    
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let winampPoint = convertToWinampCoordinates(point)
+        
+        // Show resize cursor when over column resize handles
+        if hitTestColumnResize(at: winampPoint) != nil {
+            NSCursor.resizeLeftRight.set()
+        } else {
+            NSCursor.arrow.set()
+        }
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        NSCursor.arrow.set()
     }
     
     // MARK: - Mouse Events
