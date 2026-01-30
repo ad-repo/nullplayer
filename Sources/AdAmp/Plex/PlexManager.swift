@@ -767,6 +767,7 @@ class PlexManager {
             sampleRate: nil,  // Plex doesn't provide sample rate in API
             channels: channels,
             plexRatingKey: plexTrack.id,  // Store rating key for play tracking
+            artworkThumb: plexTrack.thumb,
             genre: plexTrack.genre
         )
     }
@@ -793,6 +794,7 @@ class PlexManager {
             sampleRate: nil,
             channels: movie.media.first?.audioChannels,
             plexRatingKey: movie.id,
+            artworkThumb: movie.thumb,
             mediaType: .video
         )
     }
@@ -818,6 +820,7 @@ class PlexManager {
             sampleRate: nil,
             channels: episode.media.first?.audioChannels,
             plexRatingKey: episode.id,
+            artworkThumb: episode.thumb,
             mediaType: .video
         )
     }

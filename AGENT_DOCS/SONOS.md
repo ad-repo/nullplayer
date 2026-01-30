@@ -335,6 +335,28 @@ Local files are supported via an embedded HTTP server (LocalMediaServer):
 - Firewall must allow incoming connections on port 8765
 - Local network interface (en0 or en1) must have an IP address
 
+### Artwork Display
+
+AdAmp sends artwork URLs to Sonos via DIDL-Lite metadata so album art appears in the Sonos app during playback.
+
+**How artwork URLs are determined:**
+
+| Source | Artwork URL |
+|--------|-------------|
+| Plex | `PlexManager.artworkURL(thumb:)` - Uses Plex's `/photo/:/transcode` endpoint |
+| Subsonic | `SubsonicManager.coverArtURL(coverArtId:)` - Uses Subsonic's `/rest/getCoverArt` endpoint |
+| Local files | LocalMediaServer extracts embedded artwork and serves via `http://{ip}:8765/artwork/{token}.jpg` |
+
+**Requirements:**
+- Sonos speakers must be able to reach the artwork URL (same network)
+- Local file artwork requires embedded ID3/iTunes artwork tags
+- Artwork is served as JPEG regardless of original format
+
+**Troubleshooting:**
+- If artwork doesn't appear, check that the Plex/Subsonic server is reachable from Sonos
+- For local files, verify artwork is embedded (check in Finder "Get Info" or a tag editor)
+- Check Console.app for "LocalMediaServer: Registered artwork" log messages
+
 ---
 
 ## Troubleshooting

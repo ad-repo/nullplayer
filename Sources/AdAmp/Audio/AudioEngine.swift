@@ -2965,7 +2965,12 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                 bitrate: track.bitrate,
                 sampleRate: track.sampleRate ?? sampleRate,
                 channels: track.channels ?? channels,
-                plexRatingKey: track.plexRatingKey
+                plexRatingKey: track.plexRatingKey,
+                subsonicId: track.subsonicId,
+                subsonicServerId: track.subsonicServerId,
+                artworkThumb: track.artworkThumb,
+                mediaType: track.mediaType,
+                genre: track.genre
             )
             
             currentTrack = updatedTrack

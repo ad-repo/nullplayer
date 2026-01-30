@@ -498,6 +498,7 @@ class SubsonicManager {
             plexRatingKey: nil,
             subsonicId: song.id,
             subsonicServerId: currentServer?.id,
+            artworkThumb: song.coverArt,
             genre: song.genre
         )
     }

@@ -28,6 +28,9 @@ struct Track: Identifiable, Equatable {
     /// Subsonic server ID to identify which server the track belongs to
     let subsonicServerId: String?
     
+    /// Artwork identifier for casting (Plex thumb path or Subsonic coverArt ID)
+    let artworkThumb: String?
+    
     /// Media type (audio or video)
     let mediaType: MediaType
     
@@ -151,6 +154,7 @@ struct Track: Identifiable, Equatable {
         self.plexRatingKey = nil  // Local files don't have Plex rating keys
         self.subsonicId = nil     // Local files don't have Subsonic IDs
         self.subsonicServerId = nil
+        self.artworkThumb = nil   // Local files use embedded artwork
         
         // Detect media type by checking for video tracks in the asset
         let videoTracks = asset.tracks(withMediaType: .video)
@@ -170,6 +174,7 @@ struct Track: Identifiable, Equatable {
          plexRatingKey: String? = nil,
          subsonicId: String? = nil,
          subsonicServerId: String? = nil,
+         artworkThumb: String? = nil,
          mediaType: MediaType = .audio,
          genre: String? = nil) {
         self.id = id
@@ -184,6 +189,7 @@ struct Track: Identifiable, Equatable {
         self.plexRatingKey = plexRatingKey
         self.subsonicId = subsonicId
         self.subsonicServerId = subsonicServerId
+        self.artworkThumb = artworkThumb
         self.mediaType = mediaType
         self.genre = genre
     }

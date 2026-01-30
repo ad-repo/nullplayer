@@ -27,6 +27,9 @@ public struct Track: Identifiable, Equatable, Sendable {
     /// Subsonic server ID to identify which server the track belongs to
     public let subsonicServerId: String?
     
+    /// Artwork identifier for casting (Plex thumb path or Subsonic coverArt ID)
+    public let artworkThumb: String?
+    
     /// Media type (audio or video)
     public let mediaType: MediaType
     
@@ -42,6 +45,7 @@ public struct Track: Identifiable, Equatable, Sendable {
                 plexRatingKey: String? = nil,
                 subsonicId: String? = nil,
                 subsonicServerId: String? = nil,
+                artworkThumb: String? = nil,
                 mediaType: MediaType = .audio) {
         self.id = id
         self.url = url
@@ -55,6 +59,7 @@ public struct Track: Identifiable, Equatable, Sendable {
         self.plexRatingKey = plexRatingKey
         self.subsonicId = subsonicId
         self.subsonicServerId = subsonicServerId
+        self.artworkThumb = artworkThumb
         self.mediaType = mediaType
     }
     
@@ -72,6 +77,7 @@ public struct Track: Identifiable, Equatable, Sendable {
         self.plexRatingKey = nil
         self.subsonicId = nil
         self.subsonicServerId = nil
+        self.artworkThumb = nil
         self.mediaType = .audio
     }
     
