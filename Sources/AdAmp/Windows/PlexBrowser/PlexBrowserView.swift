@@ -348,14 +348,21 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Sort items that have columns (tracks/albums), keep others in place
-        // We need to sort contiguous groups of sortable items while preserving hierarchy
+        // If there are any nested/expanded items (indentLevel > 0), skip column sorting
+        // to avoid orphaning children from their parents. The build functions already
+        // handle proper ordering of hierarchical items.
+        let hasNestedItems = displayItems.contains { $0.indentLevel > 0 }
+        if hasNestedItems {
+            needsDisplay = true
+            return
+        }
+        
+        // Sort top-level items only (flat list with no expanded children)
         var sortableIndices: [Int] = []
         var sortableItems: [PlexDisplayItem] = []
         
         for (index, item) in displayItems.enumerated() {
             if columnsForItem(item) != nil && item.indentLevel == 0 {
-                // Top-level sortable item (not nested under artist/album)
                 sortableIndices.append(index)
                 sortableItems.append(item)
             }
@@ -412,7 +419,7 @@ class PlexBrowserView: NSView {
             return ascending ? result == .orderedAscending : result == .orderedDescending
         }
         
-        // Put sorted items back
+        // Put sorted items back at their original indices
         for (sortedIndex, originalIndex) in sortableIndices.enumerated() {
             displayItems[originalIndex] = sortableItems[sortedIndex]
         }
