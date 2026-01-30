@@ -5466,12 +5466,12 @@ class PlexBrowserView: NSView {
         }
         let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
         
-        // Scrollbar is drawn at x = bounds.width - 11 (width 8, with 3px edge)
-        // Use generous 30px wide hit area on the right edge
+        // Scrollbar hit area: scrollbar (10px) + right border (6px) = 16px
+        // Must not overlap with alphabet index area (which is to the left of scrollbar)
         let scrollbarRect = NSRect(
-            x: originalWindowSize.width - 30,
+            x: originalWindowSize.width - Layout.rightBorder - Layout.scrollbarWidth,
             y: listY,
-            width: 30,
+            width: Layout.rightBorder + Layout.scrollbarWidth,
             height: listHeight
         )
         
