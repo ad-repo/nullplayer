@@ -893,7 +893,8 @@ class PlexBrowserView: NSView {
         silenceFrames = 0
         visualizerTimer?.invalidate()
         // 60fps for smooth trippy effects
-        visualizerTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
+        // Use .common run loop mode so timer continues during context menu display
+        let timer = Timer(timeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.visualizerTime += 1.0/60.0
             
@@ -936,6 +937,8 @@ class PlexBrowserView: NSView {
             let contentRect = NSRect(x: 0, y: nativeY, width: self.bounds.width, height: contentHeight)
             self.setNeedsDisplay(contentRect)
         }
+        RunLoop.main.add(timer, forMode: .common)
+        visualizerTimer = timer
         
         // Start cycle timer if in cycle mode
         if visMode == .cycle {
@@ -954,7 +957,8 @@ class PlexBrowserView: NSView {
     /// Start cycle mode timer
     private func startCycleTimer() {
         cycleTimer?.invalidate()
-        cycleTimer = Timer.scheduledTimer(withTimeInterval: cycleInterval, repeats: true) { [weak self] _ in
+        // Use .common run loop mode so timer continues during context menu display
+        let timer = Timer(timeInterval: cycleInterval, repeats: true) { [weak self] _ in
             guard let self = self, self.visMode == .cycle else { return }
             let effects = VisEffect.allCases
             if let currentIndex = effects.firstIndex(of: self.currentVisEffect) {
@@ -962,6 +966,8 @@ class PlexBrowserView: NSView {
                 self.currentVisEffect = effects[nextIndex]
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        cycleTimer = timer
     }
     
     /// Toggle visualization mode
@@ -4128,7 +4134,8 @@ class PlexBrowserView: NSView {
     
     private func startLoadingAnimation() {
         guard loadingAnimationTimer == nil else { return }
-        loadingAnimationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        // Use .common run loop mode so timer continues during context menu display
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.loadingAnimationFrame += 1
             if self.isLoading {
@@ -4147,6 +4154,8 @@ class PlexBrowserView: NSView {
                 self.stopLoadingAnimation()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        loadingAnimationTimer = timer
     }
     
     private func stopLoadingAnimation() {
