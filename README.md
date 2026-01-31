@@ -21,15 +21,22 @@ A loaded recreation of Winamp 2.x for macOS
 - Volume normalization for consistent loudness
 - Local media library with metadata parsing
 - Local media library backup and restore
+- Media Drag and drop support
 - Navidrome/Subsonic server integration with scrobbling support
 - Album/Cover/Movie art browser with visualizations
 - IMDB integration
 - AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
 - Cast local files to Sonos via embedded HTTP server
+- macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
+- [Discord Music Presence](https://github.com/ungive/discord-music-presence) support
 
 ## Installation
 
 Download the latest DMG from [Releases](https://github.com/ad-repo/adamp/releases).
+
+Follow [r/AdAmp](https://www.reddit.com/r/AdAmp/) for release notifications. Report bugs on [GitHub Issues](https://github.com/ad-repo/adamp/issues) or the subreddit.
+
+**If you enjoy AdAmp, please star the project on GitHub!**
 
 ### Fixing "App is damaged" Error
 

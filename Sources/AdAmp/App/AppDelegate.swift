@@ -31,6 +31,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         // Initialize the window manager
         windowManager = WindowManager.shared
         
+        // Initialize Now Playing integration for Discord Music Presence and media controls
+        NowPlayingManager.shared.setup()
+        
         // Set up audio engine delegate
         windowManager.audioEngine.delegate = self
         
@@ -78,6 +81,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         
         // Initialize the window manager
         windowManager = WindowManager.shared
+        
+        // Initialize Now Playing integration (still useful in test mode for media key handling)
+        NowPlayingManager.shared.setup()
         
         // Set up audio engine delegate
         windowManager.audioEngine.delegate = self

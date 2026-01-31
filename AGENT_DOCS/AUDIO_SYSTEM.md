@@ -691,6 +691,27 @@ http://server/rest/stream?id=SONG_ID&u=USERNAME&t=TOKEN&s=SALT&v=1.16.1&c=AdAmp&
 | `getStarred2` | Get all favorites |
 | `scrobble` | Report playback |
 
+## Now Playing Integration
+
+AdAmp reports playback information to macOS via `MPNowPlayingInfoCenter`, enabling:
+- Discord Music Presence (https://github.com/ungive/discord-music-presence)
+- macOS Control Center media controls
+- Touch Bar controls
+- Bluetooth headphone controls (AirPods, etc.)
+
+The integration is managed by `NowPlayingManager` in `Sources/AdAmp/App/NowPlayingManager.swift`.
+
+### Reported Metadata
+- Title, Artist, Album
+- Duration and elapsed time
+- Album artwork (loaded asynchronously)
+- Playback state (playing/paused/stopped)
+
+### Remote Commands Supported
+- Play, Pause, Toggle Play/Pause
+- Next Track, Previous Track
+- Seek to position (scrubbing)
+
 ## Historical Note
 
 Prior to the AudioStreaming integration, Plex streaming used `AVPlayer` which outputs directly to hardware, bypassing `AVAudioEngine`. An attempt was made to bridge this using `MTAudioProcessingTap` and a ring buffer to route audio through the EQ, but this failed due to fundamental timing mismatches between the tap's push model and the engine's pull model.
