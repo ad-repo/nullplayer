@@ -10,6 +10,7 @@ protocol StreamingAudioPlayerDelegate: AnyObject {
     func streamingPlayerDidUpdateSpectrum(_ levels: [Float])
     func streamingPlayerDidUpdatePCM(_ samples: [Float])
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int)
+    func streamingPlayerDidEncounterError(_ error: AudioPlayerError)
 }
 
 /// Wrapper around AudioStreaming's AudioPlayer that provides EQ and spectrum analysis
@@ -465,6 +466,7 @@ extension StreamingAudioPlayer: AudioPlayerDelegate {
     
     func audioPlayerUnexpectedError(player: AudioPlayer, error: AudioPlayerError) {
         NSLog("StreamingAudioPlayer: Unexpected error: %@", String(describing: error))
+        delegate?.streamingPlayerDidEncounterError(error)
     }
     
     func audioPlayerDidCancel(player: AudioPlayer, queuedItems: [AudioEntryId]) {

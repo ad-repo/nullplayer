@@ -516,6 +516,10 @@ Formats supported by AVAudioFile:
 - MP3, AAC, Ogg Vorbis streams
 - Shoutcast/Icecast with metadata
 
+**M4A Limitation:** Only "fast-start" optimized M4A files are supported for HTTP streaming. Non-optimized M4A files (where the `moov` atom is at the end of the file) will fail with a `streamParseBytesFailure` error. This is a limitation of Apple's AudioFileStream Services. When this error occurs, AdAmp automatically advances to the next track.
+
+To fix problematic M4A files, re-encode with `ffmpeg -i input.m4a -movflags +faststart output.m4a`.
+
 ## Dependencies
 
 | Library | Purpose | Version |
