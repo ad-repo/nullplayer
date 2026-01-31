@@ -28,7 +28,11 @@ context.restoreGState()
 
 ## Scaling Architecture
 
-Windows scale via context transform. Draw at original size:
+AdAmp uses two different resize modes for windows:
+
+### Scaling Mode (Main Window, EQ)
+
+Windows scale via context transform. Draw at original size, everything gets bigger/smaller proportionally:
 
 ```swift
 var scaleFactor: CGFloat {
@@ -59,7 +63,34 @@ override func draw(_ dirtyRect: NSRect) {
 }
 ```
 
-## Hit Testing
+### Vertical Expansion Mode (Playlist)
+
+The playlist window uses **vertical expansion with width-based scaling** - width is locked to match the main window, only height can change:
+- Width matches main window (fixed, no horizontal resizing)
+- Height expands to show more tracks (drag bottom edge)
+- Title bar (20px), bottom bar (38px), and side borders stay fixed size
+- SkinRenderer tiles sprites vertically to fill the space
+- Scale factor is based on WIDTH only (not min of width/height like other windows)
+
+The width lock is enforced via `minSize.width == maxSize.width`:
+
+```swift
+// Lock width (only vertical resizing allowed)
+window.minSize = NSSize(width: mainFrame.width, height: Skin.playlistMinSize.height)
+window.maxSize = NSSize(width: mainFrame.width, height: CGFloat.greatestFiniteMagnitude)
+```
+
+The `effectiveWindowSize` allows the height to expand beyond the minimum:
+
+```swift
+private var effectiveWindowSize: NSSize {
+    let scale = scaleFactor  // width-based only
+    let effectiveHeight = bounds.height / scale
+    return NSSize(width: originalWindowSize.width, height: max(originalWindowSize.height, effectiveHeight))
+}
+```
+
+## Hit Testing (Scaling Mode)
 
 Convert view coordinates to Winamp coordinates:
 

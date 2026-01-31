@@ -1025,21 +1025,23 @@ class WindowManager {
         }
         
         // Playlist - position below EQ (or main if no EQ)
+        // Playlist width matches main window, height can be expanded vertically
         if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible {
             let baseMinSize = Skin.playlistMinSize
-            let minWidth = baseMinSize.width * scale
             let minHeight = baseMinSize.height * scale
-            playlistWindow.minSize = NSSize(width: minWidth, height: minHeight)
             
-            // Scale current size
+            // Lock width to match main window
+            playlistWindow.minSize = NSSize(width: mainFrame.width, height: minHeight)
+            playlistWindow.maxSize = NSSize(width: mainFrame.width, height: CGFloat.greatestFiniteMagnitude)
+            
+            // Scale height proportionally
             let currentFrame = playlistWindow.frame
-            let newWidth = max(minWidth, currentFrame.width * (isDoubleSize ? 2.0 : 0.5))
             let newHeight = max(minHeight, currentFrame.height * (isDoubleSize ? 2.0 : 0.5))
             
             let playlistFrame = NSRect(
                 x: mainFrame.minX,
                 y: nextY - newHeight,
-                width: newWidth,
+                width: mainFrame.width,
                 height: newHeight
             )
             playlistWindow.setFrame(playlistFrame, display: true, animate: true)

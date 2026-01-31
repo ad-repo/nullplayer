@@ -41,15 +41,19 @@ class PlaylistWindowController: NSWindowController {
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.minSize = Skin.playlistMinSize
         window.title = "Playlist"
         
         // Match main window's width and position below it (or below EQ if visible)
+        // Playlist can be expanded vertically to show more tracks
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
             let mainFrame = mainWindow.frame
             let scale = mainFrame.width / Skin.mainWindowSize.width
             // Use same width as main window to match scaling
             let playlistHeight = Skin.playlistMinSize.height * scale
+            
+            // Lock width to match main window (only vertical resizing allowed)
+            window.minSize = NSSize(width: mainFrame.width, height: playlistHeight)
+            window.maxSize = NSSize(width: mainFrame.width, height: CGFloat.greatestFiniteMagnitude)
             
             // Check if EQ window is visible and position below it
             var positionY = mainFrame.minY - playlistHeight
@@ -66,6 +70,7 @@ class PlaylistWindowController: NSWindowController {
             )
             window.setFrame(newFrame, display: true)
         } else {
+            window.minSize = Skin.playlistMinSize
             window.center()
         }
         

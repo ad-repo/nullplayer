@@ -106,39 +106,42 @@ class PlaylistView: NSView {
     
     // MARK: - Scaling Support
     
-    /// Calculate scale factor based on current bounds vs original (base) size
+    /// Calculate scale factor based on WIDTH only (to match main window)
+    /// This allows vertical expansion to show more tracks
     private var scaleFactor: CGFloat {
         let originalSize = originalWindowSize
-        let scaleX = bounds.width / originalSize.width
-        let scaleY = bounds.height / originalSize.height
-        return min(scaleX, scaleY)
+        return bounds.width / originalSize.width
     }
     
-    /// Get the original window size for drawing and hit testing
+    /// Get the original window size (unscaled base size)
     private var originalWindowSize: NSSize {
         if isShadeMode {
-            // Shade mode: width scales with window, height is fixed
             return NSSize(width: SkinElements.Playlist.minSize.width, height: SkinElements.PlaylistShade.height)
         } else {
             return SkinElements.Playlist.minSize
         }
     }
     
+    /// Get the effective window size for drawing (allows vertical expansion)
+    /// Width matches original, height can be taller to show more tracks
+    private var effectiveWindowSize: NSSize {
+        let scale = scaleFactor
+        let originalSize = originalWindowSize
+        // Height in "original" coordinates based on actual window height
+        let effectiveHeight = bounds.height / scale
+        return NSSize(width: originalSize.width, height: max(originalSize.height, effectiveHeight))
+    }
+    
     /// Convert a point from view coordinates to original (unscaled) Winamp coordinates
     private func convertToWinampCoordinates(_ point: NSPoint) -> NSPoint {
         let scale = scaleFactor
-        let originalSize = originalWindowSize
+        let effectiveSize = effectiveWindowSize
         
-        // Calculate offset (centering) if scaled
-        let scaledWidth = originalSize.width * scale
-        let scaledHeight = originalSize.height * scale
-        let offsetX = (bounds.width - scaledWidth) / 2
-        let offsetY = (bounds.height - scaledHeight) / 2
-        
+        // No horizontal centering needed (width-based scale)
         // Transform point back to original coordinates
-        let x = (point.x - offsetX) / scale
+        let x = point.x / scale
         // Convert from macOS coords (origin bottom-left) to Winamp coords (origin top-left)
-        let y = originalSize.height - ((point.y - offsetY) / scale)
+        let y = effectiveSize.height - (point.y / scale)
         
         return NSPoint(x: x, y: y)
     }
@@ -148,8 +151,8 @@ class PlaylistView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
-        let originalSize = originalWindowSize
         let scale = scaleFactor
+        let effectiveSize = effectiveWindowSize
         
         let skin = WindowManager.shared.currentSkin
         let renderer = SkinRenderer(skin: skin ?? SkinLoader.shared.loadDefault())
@@ -160,28 +163,23 @@ class PlaylistView: NSView {
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
         
-        // Apply scaling for resized window (like MainWindowView and EQView)
+        // Apply width-based scaling (allows vertical expansion for more tracks)
         if scale != 1.0 {
-            // Center the scaled content
-            let scaledWidth = originalSize.width * scale
-            let scaledHeight = originalSize.height * scale
-            let offsetX = (bounds.width - scaledWidth) / 2
-            let offsetY = (bounds.height - scaledHeight) / 2
-            context.translateBy(x: offsetX, y: offsetY)
             context.scaleBy(x: scale, y: scale)
         }
         
-        // Use original bounds for drawing (scaling is applied via transform)
-        let drawBounds = NSRect(origin: .zero, size: originalSize)
+        // Use effective bounds for drawing (height can be taller than original for more tracks)
+        let drawBounds = NSRect(origin: .zero, size: effectiveSize)
         
         if isShadeMode {
-            renderer.drawPlaylistShade(in: context, bounds: drawBounds, isActive: isActive, 
-                                       pressedButton: mapToButtonType(pressedButton))
+            let shadeSize = NSSize(width: effectiveSize.width, height: SkinElements.PlaylistShade.height)
+            renderer.drawPlaylistShade(in: context, bounds: NSRect(origin: .zero, size: shadeSize), 
+                                       isActive: isActive, pressedButton: mapToButtonType(pressedButton))
         } else {
             // Calculate scroll position for scrollbar (0-1)
             let scrollPosition = calculateScrollPosition()
             
-            // Draw window frame using skin sprites
+            // Draw window frame using skin sprites (SkinRenderer tiles to fill the space)
             renderer.drawPlaylistWindow(in: context, bounds: drawBounds, isActive: isActive,
                                         pressedButton: pressedButton, scrollPosition: scrollPosition)
             
@@ -212,8 +210,8 @@ class PlaylistView: NSView {
     /// Calculate scroll position as 0-1 value
     private func calculateScrollPosition() -> CGFloat {
         let tracks = WindowManager.shared.audioEngine.playlist
-        let originalSize = originalWindowSize
-        let listHeight = originalSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+        let effectiveSize = effectiveWindowSize
+        let listHeight = effectiveSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
         let totalContentHeight = CGFloat(tracks.count) * itemHeight
         
         guard totalContentHeight > listHeight else { return 0 }
@@ -538,34 +536,34 @@ class PlaylistView: NSView {
     
     /// Check if point hits title bar (for dragging)
     private func hitTestTitleBar(at winampPoint: NSPoint) -> Bool {
-        let originalSize = originalWindowSize
+        let effectiveSize = effectiveWindowSize
         return winampPoint.y < Layout.titleBarHeight && 
-               winampPoint.x < originalSize.width - 30  // Leave room for window buttons
+               winampPoint.x < effectiveSize.width - 30  // Leave room for window buttons
     }
     
     /// Check if point hits close button
     private func hitTestCloseButton(at winampPoint: NSPoint) -> Bool {
-        let originalSize = originalWindowSize
-        let closeRect = NSRect(x: originalSize.width - SkinElements.Playlist.TitleBarButtons.closeOffset - 9,
+        let effectiveSize = effectiveWindowSize
+        let closeRect = NSRect(x: effectiveSize.width - SkinElements.Playlist.TitleBarButtons.closeOffset - 9,
                                y: 3, width: 9, height: 9)
         return closeRect.contains(winampPoint)
     }
     
     /// Check if point hits shade button
     private func hitTestShadeButton(at winampPoint: NSPoint) -> Bool {
-        let originalSize = originalWindowSize
-        let shadeRect = NSRect(x: originalSize.width - SkinElements.Playlist.TitleBarButtons.shadeOffset - 9,
+        let effectiveSize = effectiveWindowSize
+        let shadeRect = NSRect(x: effectiveSize.width - SkinElements.Playlist.TitleBarButtons.shadeOffset - 9,
                                y: 3, width: 9, height: 9)
         return shadeRect.contains(winampPoint)
     }
     
     /// Check if point hits a bottom bar button, return which one
     private func hitTestBottomButton(at winampPoint: NSPoint) -> SkinRenderer.PlaylistButtonType? {
-        let originalSize = originalWindowSize
-        let bottomY = originalSize.height - Layout.bottomBarHeight
+        let effectiveSize = effectiveWindowSize
+        let bottomY = effectiveSize.height - Layout.bottomBarHeight
         
         // Check if in bottom bar area
-        guard winampPoint.y >= bottomY && winampPoint.y < originalSize.height else { return nil }
+        guard winampPoint.y >= bottomY && winampPoint.y < effectiveSize.height else { return nil }
         
         let relativeY = winampPoint.y - bottomY
         let x = winampPoint.x
@@ -615,9 +613,9 @@ class PlaylistView: NSView {
         }
         
         // MISC/LIST buttons on the right side
-        if x >= originalSize.width - 50 {
-            if x >= originalSize.width - 44 && x < originalSize.width - 22 { return .misc }
-            if x >= originalSize.width - 22 && x < originalSize.width { return .list }
+        if x >= effectiveSize.width - 50 {
+            if x >= effectiveSize.width - 44 && x < effectiveSize.width - 22 { return .misc }
+            if x >= effectiveSize.width - 22 && x < effectiveSize.width { return .list }
         }
         
         return nil
@@ -625,15 +623,15 @@ class PlaylistView: NSView {
     
     /// Check if point hits the scrollbar
     private func hitTestScrollbar(at winampPoint: NSPoint) -> Bool {
-        let originalSize = originalWindowSize
+        let effectiveSize = effectiveWindowSize
         let titleHeight = Layout.titleBarHeight
         let bottomHeight = Layout.bottomBarHeight
         
         let scrollbarRect = NSRect(
-            x: originalSize.width - Layout.rightBorder,
+            x: effectiveSize.width - Layout.rightBorder,
             y: titleHeight,
             width: Layout.rightBorder,
-            height: originalSize.height - titleHeight - bottomHeight
+            height: effectiveSize.height - titleHeight - bottomHeight
         )
         
         return scrollbarRect.contains(winampPoint)
@@ -641,15 +639,15 @@ class PlaylistView: NSView {
     
     /// Check if point hits the track list
     private func hitTestTrackList(at winampPoint: NSPoint) -> Int? {
-        let originalSize = originalWindowSize
+        let effectiveSize = effectiveWindowSize
         let titleHeight = Layout.titleBarHeight
         let bottomHeight = Layout.bottomBarHeight
         
         let listRect = NSRect(
             x: Layout.leftBorder,
             y: titleHeight,
-            width: originalSize.width - Layout.leftBorder - Layout.rightBorder,
-            height: originalSize.height - titleHeight - bottomHeight
+            width: effectiveSize.width - Layout.leftBorder - Layout.rightBorder,
+            height: effectiveSize.height - titleHeight - bottomHeight
         )
         
         guard listRect.contains(winampPoint) else { return nil }
@@ -733,12 +731,12 @@ class PlaylistView: NSView {
     
     /// Handle mouse down in shade mode
     private func handleShadeMouseDown(at winampPoint: NSPoint, event: NSEvent) {
-        let originalSize = originalWindowSize
+        let effectiveSize = effectiveWindowSize
         // Check window control buttons (relative to right edge)
-        let closeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
+        let closeRect = NSRect(x: effectiveSize.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
                                y: SkinElements.PlaylistShade.Positions.closeButton.minY,
                                width: 9, height: 9)
-        let shadeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
+        let shadeRect = NSRect(x: effectiveSize.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
                                y: SkinElements.PlaylistShade.Positions.shadeButton.minY,
                                width: 9, height: 9)
         
@@ -803,8 +801,8 @@ class PlaylistView: NSView {
             
             let deltaY = winampPoint.y - scrollbarDragStartY
             let tracks = WindowManager.shared.audioEngine.playlist
-            let originalSize = originalWindowSize
-            let listHeight = originalSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+            let effectiveSize = effectiveWindowSize
+            let listHeight = effectiveSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
             let totalContentHeight = CGFloat(tracks.count) * itemHeight
             
             if totalContentHeight > listHeight {
@@ -987,12 +985,12 @@ class PlaylistView: NSView {
     
     /// Handle mouse up in shade mode
     private func handleShadeMouseUp(at winampPoint: NSPoint) {
-        let originalSize = originalWindowSize
+        let effectiveSize = effectiveWindowSize
         if let pressed = pressedButton {
-            let closeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
+            let closeRect = NSRect(x: effectiveSize.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
                                    y: SkinElements.PlaylistShade.Positions.closeButton.minY,
                                    width: 9, height: 9)
-            let shadeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
+            let shadeRect = NSRect(x: effectiveSize.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
                                    y: SkinElements.PlaylistShade.Positions.shadeButton.minY,
                                    width: 9, height: 9)
             
@@ -1016,8 +1014,8 @@ class PlaylistView: NSView {
     
     override func scrollWheel(with event: NSEvent) {
         let tracks = WindowManager.shared.audioEngine.playlist
-        let originalSize = originalWindowSize
-        let listHeight = originalSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+        let effectiveSize = effectiveWindowSize
+        let listHeight = effectiveSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
         let totalHeight = CGFloat(tracks.count) * itemHeight
         
         if totalHeight > listHeight {
@@ -1434,8 +1432,8 @@ class PlaylistView: NSView {
     
     /// Number of tracks visible in the current view
     private var visibleTrackCount: Int {
-        let originalSize = originalWindowSize
-        let listHeight = originalSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+        let effectiveSize = effectiveWindowSize
+        let listHeight = effectiveSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
         return max(1, Int(listHeight / itemHeight))
     }
     
@@ -1484,8 +1482,8 @@ class PlaylistView: NSView {
     private func scrollToSelection() {
         guard let focusIndex = selectionAnchor ?? selectedIndices.min() else { return }
         
-        let originalSize = originalWindowSize
-        let listHeight = originalSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+        let effectiveSize = effectiveWindowSize
+        let listHeight = effectiveSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
         let tracks = WindowManager.shared.audioEngine.playlist
         
         // Calculate the top and bottom of the selected item
