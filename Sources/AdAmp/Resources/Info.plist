@@ -47,10 +47,6 @@
         <true/>
     </dict>
     
-    <!-- Privacy descriptions for potential future features -->
-    <key>NSMicrophoneUsageDescription</key>
-    <string>AdAmp may use the microphone for audio input features.</string>
-    
     <!-- Document Types - Audio file associations -->
     <key>CFBundleDocumentTypes</key>
     <array>
