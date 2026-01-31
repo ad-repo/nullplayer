@@ -246,14 +246,23 @@ class MediaLibrary {
     
     // MARK: - Library Management
     
-    /// Add a single track to the library
+    /// Add a single track to the library (quick validates file before adding)
+    /// Set skipValidation to true for internal use when validation was already done
     @discardableResult
-    func addTrack(url: URL) -> LibraryTrack? {
+    func addTrack(url: URL, skipValidation: Bool = false) -> LibraryTrack? {
         let path = url.path
 
         // Quick check under lock
         if let existing = dataQueue.sync(execute: { tracksByPath[path] }) {
             return existing
+        }
+        
+        // Quick validate file (existence + extension check - fast)
+        if !skipValidation {
+            if let error = AudioFileValidator.quickValidate(url: url) {
+                NSLog("MediaLibrary: Skipping invalid file '%@': %@", url.lastPathComponent, error)
+                return nil
+            }
         }
         
         // Create track with metadata outside lock
@@ -282,10 +291,19 @@ class MediaLibrary {
         return result
     }
     
-    /// Add multiple tracks to the library
+    /// Add multiple tracks to the library (quick validates all files first)
     func addTracks(urls: [URL]) {
-        for url in urls {
-            addTrack(url: url)
+        // Quick validate all files first (existence + extension - fast)
+        let validation = AudioFileValidator.quickValidate(urls: urls)
+        
+        // Notify about invalid files
+        if validation.hasInvalidFiles {
+            AudioFileValidator.notifyInvalidFiles(validation.invalidFiles)
+        }
+        
+        // Add valid files (skip validation since we just did it)
+        for url in validation.validURLs {
+            addTrack(url: url, skipValidation: true)
         }
         saveLibrary()
     }

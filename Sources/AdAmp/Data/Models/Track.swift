@@ -69,6 +69,8 @@ struct Track: Identifiable, Equatable {
                     }
                 }
             } catch {
+                // Log the failure - this file will likely also fail during playback
+                NSLog("Track: AVAudioFile failed for '%@': %@ (will try AVAsset fallback)", url.lastPathComponent, error.localizedDescription)
                 // Fall through to AVAsset approach
             }
         }

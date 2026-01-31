@@ -37,6 +37,9 @@ class MainWindowView: NSView {
     /// Bitrate scroll offset (for 4+ digit bitrates)
     private var bitrateScrollOffset: CGFloat = 0
     
+    /// Temporary error message to display in marquee (persists until new track loads)
+    private var errorMessage: String?
+    
     /// Marquee timer
     private var marqueeTimer: Timer?
     
@@ -122,6 +125,10 @@ class MainWindowView: NSView {
         // Observe local file cast loading state
         NotificationCenter.default.addObserver(self, selector: #selector(castLoadingStateDidChange),
                                                name: CastManager.trackChangeLoadingNotification, object: nil)
+        
+        // Observe track load failures to show error in marquee
+        NotificationCenter.default.addObserver(self, selector: #selector(trackDidFailToLoad(_:)),
+                                               name: .audioTrackDidFailToLoad, object: nil)
     }
     
     // MARK: - Accessibility
@@ -341,6 +348,15 @@ class MainWindowView: NSView {
         needsDisplay = true
     }
     
+    @objc private func trackDidFailToLoad(_ notification: Notification) {
+        guard let message = notification.userInfo?["message"] as? String else { return }
+        
+        // Show error message in marquee - persists until user loads something else
+        errorMessage = "[Error] \(message)"
+        marqueeOffset = 0  // Reset scroll to show error from start
+        needsDisplay = true
+    }
+    
     // MARK: - Drawing
     
     /// Calculate scale factor based on current bounds vs original (base) size
@@ -507,9 +523,11 @@ class MainWindowView: NSView {
         let seconds = Int(absTime) % 60
         renderer.drawTimeDisplay(minutes: minutes, seconds: seconds, isNegative: isNegative, in: context)
         
-        // Draw song title marquee - show video title if video is playing
+        // Draw song title marquee - show error, video title, or track title
         let marqueeText: String
-        if WindowManager.shared.isVideoActivePlayback, let videoTitle = currentVideoTitle {
+        if let error = errorMessage {
+            marqueeText = error
+        } else if WindowManager.shared.isVideoActivePlayback, let videoTitle = currentVideoTitle {
             marqueeText = videoTitle
         } else {
             marqueeText = currentTrack?.displayTitle ?? "AdAmp"
@@ -600,6 +618,7 @@ class MainWindowView: NSView {
     func updateTrackInfo(_ track: Track?) {
         self.currentTrack = track
         self.currentVideoTitle = nil  // Clear video title when audio track changes
+        self.errorMessage = nil  // Clear any error message when track loads successfully
         marqueeOffset = 0  // Reset scroll position
         bitrateScrollOffset = 0  // Reset bitrate scroll
         needsDisplay = true

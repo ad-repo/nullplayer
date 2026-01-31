@@ -451,4 +451,9 @@ extension AppDelegate: AudioEngineDelegate {
     func audioEngineDidChangePlaylist() {
         windowManager.playlistWindowController?.reloadPlaylist()
     }
+    
+    func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {
+        // Log the failure - UI notification is handled via NotificationCenter
+        NSLog("AppDelegate: Failed to load track '%@': %@", track.title, error.localizedDescription)
+    }
 }
