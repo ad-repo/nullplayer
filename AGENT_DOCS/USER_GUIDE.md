@@ -39,7 +39,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex Media Server integration
 
 1. Launch AdAmp to see the classic Winamp 2.x main player window
 2. Right-click anywhere on the player to access the context menu
-3. Use **Play > File...** or **Play > Folder...** to add music
+3. **Drag & drop** audio files onto the player, or use **Play > File...** / **Play > Folder...** to add music
 4. Or connect your **Plex** account to browse your media library
 
 ### Window Layout
@@ -119,6 +119,14 @@ The main window provides core playback controls and track information.
 | **Minimize** | Minimize to dock |
 | **Shade** | Toggle compact "shade" mode |
 | **Close** | Quit AdAmp |
+
+### Drag & Drop
+
+Drop audio files or folders onto the main player window to add them to the playlist:
+- Files are **appended** to the existing playlist (not replaced)
+- Folders are scanned recursively for audio files
+- Playback starts from the **first dropped file**
+- Supported formats: MP3, M4A, AAC, WAV, AIFF, FLAC, OGG, ALAC
 
 ### Shade Mode
 

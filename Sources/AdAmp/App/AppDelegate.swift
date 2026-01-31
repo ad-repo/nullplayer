@@ -31,6 +31,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         // Initialize the window manager
         windowManager = WindowManager.shared
         
+        // Initialize Now Playing integration for Discord Music Presence and media controls
+        NowPlayingManager.shared.setup()
+        
         // Set up audio engine delegate
         windowManager.audioEngine.delegate = self
         
@@ -78,6 +81,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         
         // Initialize the window manager
         windowManager = WindowManager.shared
+        
+        // Initialize Now Playing integration (still useful in test mode for media key handling)
+        NowPlayingManager.shared.setup()
         
         // Set up audio engine delegate
         windowManager.audioEngine.delegate = self
@@ -199,7 +205,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     @objc private func showAbout() {
         // Create custom About window
         let windowWidth: CGFloat = 340
-        let windowHeight: CGFloat = 440
+        let windowHeight: CGFloat = 480
         
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
@@ -269,11 +275,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         contentView.addSubview(thanksLabel)
         y -= 36
         
-        // Buttons
-        let buttonWidth: CGFloat = 120
+        // Buttons (3 on one row)
+        let buttonWidth: CGFloat = 90
         let buttonHeight: CGFloat = 28
-        let buttonSpacing: CGFloat = 12
-        let totalButtonWidth = buttonWidth * 2 + buttonSpacing
+        let buttonSpacing: CGFloat = 10
+        let totalButtonWidth = buttonWidth * 3 + buttonSpacing * 2
         let buttonStartX = (windowWidth - totalButtonWidth) / 2
         
         let githubButton = NSButton(frame: NSRect(x: buttonStartX, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
@@ -297,7 +303,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         linkedinButton.target = self
         linkedinButton.action = #selector(openLinkedIn)
         contentView.addSubview(linkedinButton)
-        y -= buttonHeight + 16
+        
+        let redditButton = NSButton(frame: NSRect(x: buttonStartX + (buttonWidth + buttonSpacing) * 2, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
+        redditButton.title = "Reddit"
+        redditButton.bezelStyle = .rounded
+        redditButton.contentTintColor = .white
+        redditButton.wantsLayer = true
+        redditButton.layer?.backgroundColor = NSColor(white: 0.3, alpha: 1.0).cgColor
+        redditButton.layer?.cornerRadius = 5
+        redditButton.target = self
+        redditButton.action = #selector(openReddit)
+        contentView.addSubview(redditButton)
+        y -= buttonHeight + 12
+        
+        // Disclaimer
+        let disclaimerLabel = NSTextField(wrappingLabelWithString: "This is a clean-room OSS project and has no affiliation with Winamp")
+        disclaimerLabel.font = NSFont.systemFont(ofSize: 10)
+        disclaimerLabel.textColor = NSColor(white: 0.4, alpha: 1.0)
+        disclaimerLabel.alignment = .center
+        disclaimerLabel.frame = NSRect(x: 20, y: y - 28, width: windowWidth - 40, height: 28)
+        contentView.addSubview(disclaimerLabel)
+        y -= 36
         
         // OK button (centered, prominent)
         let okButton = NSButton(frame: NSRect(x: (windowWidth - buttonWidth) / 2, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
@@ -328,6 +354,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     
     @objc private func openLinkedIn() {
         if let url = URL(string: "https://www.linkedin.com/in/andrew-d-9b83aa148/") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    @objc private func openReddit() {
+        if let url = URL(string: "https://www.reddit.com/r/AdAmp/") {
             NSWorkspace.shared.open(url)
         }
     }

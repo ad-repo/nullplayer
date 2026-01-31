@@ -97,6 +97,9 @@ class MainWindowView: NSView {
         // Enable layer-backed rendering for better performance
         layer?.backgroundColor = NSColor.clear.cgColor
         
+        // Register for drag and drop
+        registerForDraggedTypes([.fileURL])
+        
         // Start marquee scrolling
         startMarquee()
         
@@ -1191,5 +1194,53 @@ class MainWindowView: NSView {
         }
         
         needsDisplay = true
+    }
+    
+    // MARK: - Drag and Drop
+    
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        return .copy
+    }
+    
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] else {
+            return false
+        }
+        
+        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
+        var mediaURLs: [URL] = []
+        
+        for url in items {
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+                if isDirectory.boolValue {
+                    // Scan folder recursively for audio files
+                    if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey]) {
+                        while let fileURL = enumerator.nextObject() as? URL {
+                            if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
+                                mediaURLs.append(fileURL)
+                            }
+                        }
+                    }
+                } else {
+                    // Add individual audio file
+                    if audioExtensions.contains(url.pathExtension.lowercased()) {
+                        mediaURLs.append(url)
+                    }
+                }
+            }
+        }
+        
+        // Sort files alphabetically
+        mediaURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
+        
+        if !mediaURLs.isEmpty {
+            let audioEngine = WindowManager.shared.audioEngine
+            let firstNewIndex = audioEngine.playlist.count  // Index where first new track will be
+            audioEngine.appendFiles(mediaURLs)  // Append without replacing playlist
+            audioEngine.playTrack(at: firstNewIndex)  // Start playing first dropped file
+            return true
+        }
+        return false
     }
 }
