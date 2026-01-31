@@ -173,14 +173,19 @@ class ProjectMWrapper: VisualizationEngine {
             projectm_set_window_size(h, size_t(viewportWidth), size_t(viewportHeight))
             
             // Set reasonable defaults
-            projectm_set_preset_duration(h, 30.0)  // 30 seconds per preset
-            projectm_set_soft_cut_duration(h, 3.0)  // 3 second blend
-            projectm_set_hard_cut_enabled(h, true)
+            // NOTE: Auto-switching is disabled by default to prevent race conditions
+            // projectM's internal timer-based switching can cause crashes when it
+            // switches presets while we're in the middle of rendering a frame.
+            // Users can enable auto-switching via the UI if desired.
+            projectm_set_preset_duration(h, 0.0)  // 0 = no auto-switching
+            projectm_set_soft_cut_duration(h, 0.0)  // No blending (hard cuts only)
+            projectm_set_hard_cut_enabled(h, false)  // No beat-triggered switches
             projectm_set_beat_sensitivity(h, 1.0)
             projectm_set_fps(h, 60)
             projectm_set_aspect_correction(h, true)
+            projectm_set_preset_locked(h, true)  // Lock preset to prevent internal switching
             
-            NSLog("ProjectMWrapper: Initialized projectM instance")
+            NSLog("ProjectMWrapper: Initialized projectM instance (auto-switching disabled for stability)")
         } else {
             NSLog("ProjectMWrapper: Failed to create projectM instance")
         }
@@ -208,8 +213,8 @@ class ProjectMWrapper: VisualizationEngine {
         #if canImport(CProjectM)
         guard let h = handle else { return }
         
-        // Lock to ensure thread safety and atomic update of dimensions
-        renderLock.lock()
+        // Non-blocking lock attempt - skip if locked (during preset switch)
+        guard renderLock.try() else { return }
         defer { renderLock.unlock() }
         
         // Check inside the lock to avoid race conditions
@@ -218,8 +223,8 @@ class ProjectMWrapper: VisualizationEngine {
         viewportWidth = width
         viewportHeight = height
         
-        // Don't resize during preset loading - projectM may crash
-        guard !_presetLoadInProgress else { return }
+        // Don't resize during preset loading or before preset is ready
+        guard !_presetLoadInProgress && _presetLoaded && _framesAfterLoad >= framesRequiredAfterLoad else { return }
         
         projectm_set_window_size(h, size_t(width), size_t(height))
         #else
@@ -263,7 +268,7 @@ class ProjectMWrapper: VisualizationEngine {
     var hasValidPreset: Bool {
         renderLock.lock()
         defer { renderLock.unlock() }
-        return presetCount > 0 && _currentPresetIndex >= 0 && _presetLoaded && !_presetLoadInProgress
+        return presetCount > 0 && _currentPresetIndex >= 0 && _presetLoaded && !_presetLoadInProgress && _framesAfterLoad >= framesRequiredAfterLoad
     }
     
     /// Flag indicating a preset has been successfully loaded
@@ -272,19 +277,48 @@ class ProjectMWrapper: VisualizationEngine {
     /// Flag indicating a preset load is currently in progress
     private var _presetLoadInProgress: Bool = false
     
+    /// Counter for frames rendered since last preset load
+    /// Used to give projectM time to fully initialize internal state
+    private var _framesAfterLoad: Int = 0
+    
+    /// Number of frames to wait after preset load before rendering
+    /// This gives projectM time to fully initialize textures and shaders
+    private let framesRequiredAfterLoad: Int = 3
+    
+    /// Flag indicating we're currently inside renderFrame
+    /// Used to detect and prevent re-entry
+    private var _isRendering: Bool = false
+    
     /// Renders a single frame of visualization
     /// Must be called with a valid OpenGL context active
     func renderFrame() {
         #if canImport(CProjectM)
         guard let h = handle else { return }
         
-        // Lock to prevent concurrent preset switching during render
-        renderLock.lock()
+        // Non-blocking lock attempt - skip frame if locked (during preset switch)
+        // This prevents the CVDisplayLink thread from blocking
+        guard renderLock.try() else { return }
         defer { renderLock.unlock() }
+        
+        // Prevent re-entry (shouldn't happen, but defensive)
+        guard !_isRendering else { return }
+        _isRendering = true
+        defer { _isRendering = false }
         
         // Don't render until a preset is fully loaded - projectM crashes without one
         // Also skip if a preset load is in progress
         guard _presetLoaded && !_presetLoadInProgress else { return }
+        
+        // Wait a few frames after preset load before rendering
+        // This gives projectM time to fully initialize shaders and textures
+        if _framesAfterLoad < framesRequiredAfterLoad {
+            _framesAfterLoad += 1
+            // Clear to black while waiting
+            glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
+            glClearColor(0.0, 0.0, 0.0, 1.0)
+            glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+            return
+        }
         
         // Update viewport
         glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
@@ -395,9 +429,11 @@ class ProjectMWrapper: VisualizationEngine {
         // Mark that we're loading - this prevents rendering during the load
         _presetLoadInProgress = true
         _presetLoaded = false
+        _framesAfterLoad = 0  // Reset frame counter for new preset
         
-        // Load the preset file
-        projectm_load_preset_file(h, path, smoothTransition)
+        // Load the preset file (use hard cut to avoid blend race conditions)
+        // Soft transitions can cause crashes when accessing textures from both presets
+        projectm_load_preset_file(h, path, false)  // Always use hard cut for safety
         
         // Update state after load completes
         _currentPresetIndex = index
@@ -548,6 +584,7 @@ extension ProjectMWrapper {
         presetFiles.removeAll()
         _currentPresetIndex = 0
         _presetLoaded = false
+        _framesAfterLoad = 0
         
         // Reload bundled presets
         if let bundledPath = Self.bundledPresetsPath {

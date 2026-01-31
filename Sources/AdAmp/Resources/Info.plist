@@ -15,9 +15,9 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.9.2</string>
+    <string>0.9.3</string>
     <key>CFBundleVersion</key>
-    <string>3</string>
+    <string>4</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>NSHighResolutionCapable</key>
@@ -46,10 +46,6 @@
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
-    
-    <!-- Privacy descriptions for potential future features -->
-    <key>NSMicrophoneUsageDescription</key>
-    <string>AdAmp may use the microphone for audio input features.</string>
     
     <!-- Document Types - Audio file associations -->
     <key>CFBundleDocumentTypes</key>

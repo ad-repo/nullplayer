@@ -175,16 +175,17 @@ Place `.milk` preset files in this folder and use "Reload Presets" from the cont
 
 | Mode | Behavior |
 |------|----------|
-| **Manual Only** | Presets only change via user input |
+| **Manual Only** | Presets only change via user input (default) |
 | **Auto-Cycle** | Advances to next preset sequentially at interval |
 | **Auto-Random** | Jumps to random preset at interval |
 
+**Note**: Auto-switching modes are disabled by default for stability. Some presets may cause visual glitches during transitions. If you experience issues, stick with Manual Only mode.
+
 ### Preset Transitions
 
-- **Soft Cut**: Smooth blend between presets (default)
-- **Hard Cut**: Instant switch with no transition (hold Shift)
+- **Hard Cut**: Instant switch with no transition (always used for stability)
 
-The blend duration is controlled by projectM's soft cut settings.
+**Note**: Soft cuts (blended transitions) are disabled to prevent potential crashes caused by race conditions in libprojectM when accessing resources from multiple presets simultaneously.
 
 ### Technical Details
 
@@ -257,3 +258,9 @@ ProjectM adjusts its visuals based on detected beats. AdAmp uses two sensitivity
 - Close other GPU-intensive applications
 - Some presets are more demanding than others
 - Try a different preset
+
+**Crashes during preset switching:**
+- This was fixed by disabling soft cuts (blended transitions)
+- Some presets reference textures that may cause issues
+- If crashes persist, try different presets or stick to Manual Only mode
+- Check Console.app for "projectM" errors to identify problematic presets
