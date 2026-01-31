@@ -26,6 +26,10 @@ class VisualizationGLView: NSOpenGLView {
     /// Current engine type
     private(set) var currentEngineType: VisualizationType = .projectM
 
+    /// Lock for thread-safe engine access during rendering
+    /// Protects engine reference and ensures render completes before engine destruction
+    private let engineLock = NSLock()
+
     /// Whether projectM is available and initialized (backward compatibility)
     var isProjectMAvailable: Bool {
         guard case .projectM = currentEngineType else { return false }
@@ -106,10 +110,15 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     deinit {
+        // Stop rendering first and wait for any in-flight render to complete
         stopRendering()
+        
+        // Acquire engine lock to ensure no render is in progress
+        engineLock.lock()
         cleanupOpenGL()
         engine?.cleanup()
         engine = nil
+        engineLock.unlock()
     }
     
     // MARK: - OpenGL Setup
@@ -211,6 +220,10 @@ class VisualizationGLView: NSOpenGLView {
 
         NSLog("VisualizationGLView: Switching engine from %@ to %@", currentEngineType.displayName, type.displayName)
 
+        // Acquire engine lock to ensure no render is in progress during switch
+        engineLock.lock()
+        defer { engineLock.unlock() }
+
         // Update the engine type
         currentEngineType = type
 
@@ -269,6 +282,11 @@ class VisualizationGLView: NSOpenGLView {
         
         CVDisplayLinkStop(displayLink)
         isRendering = false
+        
+        // Wait briefly to ensure any in-flight render callback completes
+        // CVDisplayLinkStop doesn't block - callback may still be running
+        Thread.sleep(forTimeInterval: 0.05)
+        
         NSLog("VisualizationGLView: Stopped rendering")
     }
     
@@ -317,6 +335,10 @@ class VisualizationGLView: NSOpenGLView {
     
     private func renderFrame() {
         guard let context = openGLContext else { return }
+        
+        // Try to acquire engine lock - if we can't (engine being destroyed), skip this frame
+        guard engineLock.try() else { return }
+        defer { engineLock.unlock() }
 
         // Make context current on this thread
         context.makeCurrentContext()
@@ -338,7 +360,7 @@ class VisualizationGLView: NSOpenGLView {
         let viewportWidth = Int(backingBounds.width)
         let viewportHeight = Int(backingBounds.height)
 
-        // Render with the current engine
+        // Render with the current engine (safe because we hold engineLock)
         if let eng = engine, eng.isAvailable {
             renderEngine(engine: eng, pcm: pcm, spectrum: spectrum, width: viewportWidth, height: viewportHeight)
         } else {
