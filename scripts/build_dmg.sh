@@ -26,8 +26,11 @@ REPO_ROOT=$(pwd)
 # Configuration
 APP_NAME="AdAmp"
 BUNDLE_ID="com.adamp.player"
-VERSION="1.0"
-BUILD_NUMBER="1"
+INFO_PLIST="$REPO_ROOT/Sources/AdAmp/Resources/Info.plist"
+
+# Read version from Info.plist (single source of truth)
+VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$INFO_PLIST")
+BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$INFO_PLIST")
 
 # Directories
 DIST_DIR="$REPO_ROOT/dist"

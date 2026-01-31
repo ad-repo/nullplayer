@@ -17,6 +17,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     /// Whether the app has finished launching and is ready to handle file opens
     private var isAppReady = false
     
+    /// UserDefaults key for tracking the last launched app version
+    private let lastLaunchedVersionKey = "lastLaunchedAppVersion"
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Check for UI testing mode
         if CommandLine.arguments.contains("--ui-testing") {
@@ -68,9 +71,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         // If files were passed at launch (double-clicked to open), play them instead of intro
         if !pendingFilesToOpen.isEmpty {
             processPendingFiles()
-        } else {
-            // Now play intro sound - playlist state will be restored after intro finishes
+        } else if shouldPlayIntro() {
+            // Play intro sound only on new install or update
+            // Playlist state will be restored after intro finishes
             playIntro()
+        } else {
+            // No intro - restore playlist state immediately
+            AppStateManager.shared.restorePlaylistState()
         }
     }
     
@@ -205,6 +212,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     
     // MARK: - Intro Sound
     
+    /// Check if the intro should play (new install or app was updated)
+    /// Updates the stored version after checking
+    private func shouldPlayIntro() -> Bool {
+        // Get current app version
+        let fullVersion = BundleHelper.fullVersion
+        
+        // Get last launched version
+        let lastVersion = UserDefaults.standard.string(forKey: lastLaunchedVersionKey)
+        
+        // Store current version for next launch
+        UserDefaults.standard.set(fullVersion, forKey: lastLaunchedVersionKey)
+        
+        // Play intro if:
+        // 1. New install (no stored version)
+        // 2. Update (version changed)
+        if lastVersion == nil {
+            NSLog("AppDelegate: First launch - playing intro")
+            return true
+        } else if lastVersion != fullVersion {
+            NSLog("AppDelegate: App updated from %@ to %@ - playing intro", lastVersion!, fullVersion)
+            return true
+        } else {
+            NSLog("AppDelegate: Same version %@ - skipping intro", fullVersion)
+            return false
+        }
+    }
+    
     private func playIntro() {
         // Use BundleHelper to work in both SPM development and standalone app bundle
         guard let introURL = BundleHelper.url(forResource: "DJ Mike Llama - Llama Whippin Intro", withExtension: "mp3") else {
@@ -303,7 +337,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         y -= 40
         
         // Version
-        let versionLabel = NSTextField(labelWithString: "Version 1.0")
+        let versionLabel = NSTextField(labelWithString: "Version \(BundleHelper.appVersion)")
         versionLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         versionLabel.textColor = NSColor(white: 0.6, alpha: 1.0)
         versionLabel.alignment = .center

@@ -7,6 +7,25 @@ import Foundation
 /// build directory. We must check Bundle.main FIRST and only use Bundle.module in DEBUG builds.
 enum BundleHelper {
     
+    // MARK: - App Version
+    
+    /// The app's marketing version (e.g., "1.0") from Info.plist CFBundleShortVersionString
+    static var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+    
+    /// The app's build number (e.g., "1") from Info.plist CFBundleVersion
+    static var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+    }
+    
+    /// Full version string combining version and build (e.g., "1.0.1")
+    static var fullVersion: String {
+        "\(appVersion).\(buildNumber)"
+    }
+    
+    // MARK: - Resources
+    
     /// Returns the bundle containing app resources
     /// - In SPM development: Uses Bundle.module
     /// - In standalone app: Uses Bundle.main's Resources folder

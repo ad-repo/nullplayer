@@ -38,9 +38,12 @@ A faithful recreation of Winamp 2.x for macOS with Plex Media Server integration
 ### First Launch
 
 1. Launch AdAmp to see the classic Winamp 2.x main player window
-2. Right-click anywhere on the player to access the context menu
-3. **Drag & drop** audio files onto the player, or use **Play > File...** / **Play > Folder...** to add music
-4. Or connect your **Plex** account to browse your media library
+2. On first launch (or after an update), the classic Winamp intro sound plays
+3. Right-click anywhere on the player to access the context menu
+4. **Drag & drop** audio files onto the player, or use **Play > File...** / **Play > Folder...** to add music
+5. Or connect your **Plex** account to browse your media library
+
+**Note**: The intro sound only plays on new installs or after updating to a new version. Regular launches skip the intro for a faster startup experience.
 
 ### Window Layout
 

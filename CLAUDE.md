@@ -19,7 +19,7 @@ The `build_dmg.sh` script creates a distributable DMG:
 
 Output:
 - `dist/AdAmp.app` - The application bundle
-- `dist/AdAmp-1.0.dmg` - The distributable DMG with Applications symlink
+- `dist/AdAmp-X.Y.dmg` - The distributable DMG with Applications symlink
 
 The script:
 1. Builds a release binary (`swift build -c release`)
@@ -27,6 +27,20 @@ The script:
 3. Copies VLCKit.framework and libprojectM-4.dylib
 4. Fixes rpaths for framework loading
 5. Creates DMG with drag-to-Applications install
+
+## Versioning
+
+**Single source of truth:** `Sources/AdAmp/Resources/Info.plist`
+
+To release a new version:
+1. Edit `Info.plist`:
+   - `CFBundleShortVersionString` - Marketing version (e.g., `1.0`, `1.1`, `2.0`)
+   - `CFBundleVersion` - Build number (e.g., `1`, `2`, `3`)
+2. Run `./scripts/build_dmg.sh`
+
+The build script reads version from Info.plist automatically. The DMG is named `AdAmp-{version}.dmg`.
+
+**Version in code:** Use `BundleHelper.appVersion`, `BundleHelper.buildNumber`, or `BundleHelper.fullVersion` to access version info in Swift.
 
 ## Build Script and Log Monitoring
 
