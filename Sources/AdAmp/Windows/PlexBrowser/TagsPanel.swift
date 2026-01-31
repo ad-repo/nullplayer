@@ -226,6 +226,7 @@ class TagsPanel: NSWindow, NSWindowDelegate {
     // MARK: - Presentation
     
     func show() {
+        self.level = .modalPanel  // Ensure dialog appears above floating windows
         center()
         makeKeyAndOrderFront(nil)
     }

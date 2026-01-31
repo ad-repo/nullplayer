@@ -336,6 +336,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
         
         // Store window reference and show
         aboutWindow = window
+        window.level = .modalPanel  // Ensure dialog appears above floating windows
         window.makeKeyAndOrderFront(nil)
     }
     

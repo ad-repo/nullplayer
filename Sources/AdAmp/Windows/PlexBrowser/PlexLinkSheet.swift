@@ -217,6 +217,7 @@ class PlexLinkSheet: NSWindow {
     /// Show as a standalone window
     func showAsWindow(completion: ((Bool) -> Void)? = nil) {
         self.completionHandler = completion
+        self.level = .modalPanel  // Ensure dialog appears above floating windows
         center()
         makeKeyAndOrderFront(nil)
         startLinking()
