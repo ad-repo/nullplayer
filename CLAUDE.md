@@ -180,13 +180,19 @@ Sources/AdAmp/
   let slice = data[(data.startIndex + 4)..<(data.startIndex + total)]
   ```
 - **No Spotify/Apple/Amazon**: These integrations are explicitly not accepted
-- **Plex API filter operators**: `URLQueryItem` will URL-encode operators like `>=`, `<=`, `<` which breaks Plex filtering. Build URLs manually for filter params:
+- **Plex API filter operators**: `URLQueryItem` will URL-encode operators like `>=`, `<=` which breaks Plex filtering. Build URLs manually for filter params. Note: Plex only supports `>=`, `<=`, `=`, `!=` operators - **NOT `<` or `>`** (use `<=` with value-1 instead):
   ```swift
   // WRONG - URLQueryItem encodes >= as %3E%3D, Plex ignores the filter:
   URLQueryItem(name: "userRating>=", value: "8")
   
+  // WRONG - Plex doesn't support < operator (returns 400 Bad Request):
+  let url = "...&ratingCount<1000&..."
+  
   // CORRECT - manual URL with literal operators:
   let url = "\(baseURL)/library/sections/\(id)/all?type=10&userRating>=8&..."
+  
+  // CORRECT - use <= with threshold-1 instead of <:
+  let url = "...&ratingCount<=999&..."  // equivalent to <1000
   ```
 
 ## Testing

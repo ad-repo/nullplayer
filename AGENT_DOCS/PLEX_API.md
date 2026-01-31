@@ -363,12 +363,12 @@ Plays lesser-known tracks, excluding popular hits.
 
 **Sonic Version** - Sonically similar deep cuts:
 ```
-GET /library/sections/{libID}/all?type=10&track.sonicallySimilar={trackID}&ratingCount<1000&sort=random&limit=100
+GET /library/sections/{libID}/all?type=10&track.sonicallySimilar={trackID}&ratingCount<=999&sort=random&limit=100
 ```
 
 **Non-Sonic Version** - All deep cuts from library:
 ```
-GET /library/sections/{libID}/all?type=10&ratingCount<1000&sort=random&limit=100
+GET /library/sections/{libID}/all?type=10&ratingCount<=999&sort=random&limit=100
 ```
 
 **Note**: Tracks without Last.fm data have no `ratingCount` field - these are considered "deep cuts" but should only be included if they have proper metadata (artist, album, title). Exclude tracks missing basic tags as they are likely poorly tagged files, not legitimate deep cuts.
@@ -441,10 +441,12 @@ GET /library/sections/{libID}/all?type=10&userRating>=8&sort=random&limit=100
 
 ### URL Encoding Warning
 
-**IMPORTANT**: Plex filter operators (`>=`, `<=`, `<`, `>`) must NOT be URL-encoded in query parameters.
+**IMPORTANT**: Plex filter operators (`>=`, `<=`, `=`, `!=`) must NOT be URL-encoded in query parameters.
 
 - **WRONG**: `userRating%3E%3D=8` (URLQueryItem encodes `>=` as `%3E%3D`)
 - **CORRECT**: `userRating>=8` (literal `>=` in the URL)
+
+**Note**: Plex only supports these comparison operators: `>=`, `<=`, `=`, `!=`. The `<` and `>` operators (without equals) are NOT supported and will return HTTP 400 errors. Use `<=` with value-1 instead of `<` (e.g., `ratingCount<=999` instead of `ratingCount<1000`).
 
 When using Swift's `URLQueryItem`, it will incorrectly encode the operator. Build URLs manually for filter parameters:
 ```swift
@@ -455,7 +457,7 @@ URLQueryItem(name: "userRating>=", value: "8")  // produces userRating%3E%3D=8
 let urlString = "\(baseURL)/library/sections/\(id)/all?type=10&userRating>=8&..."
 ```
 
-This applies to all filter operators: `>=`, `<=`, `<`, `>`, `!=`
+This applies to all filter operators: `>=`, `<=`, `=`, `!=`
 
 ## Configuration
 

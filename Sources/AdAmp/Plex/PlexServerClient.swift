@@ -1263,12 +1263,13 @@ class PlexServerClient {
     }
     
     /// Deep Cuts Radio - Non-Sonic
-    /// - Note: Uses raw query string because Plex requires literal < operator
+    /// - Note: Uses raw query string because Plex requires literal <= operator (not URL-encoded)
     func createDeepCutsRadio(libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating deep cuts radio (non-sonic) in library %@", libraryID)
         
-        // Build URL manually - Plex filter syntax requires unencoded < operator
-        let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&ratingCount<\(RadioConfig.deepCutsThreshold)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
+        // Build URL manually - Plex filter syntax requires unencoded <= operator
+        // Using <= with threshold-1 because Plex doesn't support < operator (only >=, <=, =, !=)
+        let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&ratingCount<=\(RadioConfig.deepCutsThreshold - 1)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
         
         guard let url = URL(string: urlString) else {
             throw PlexServerError.invalidURL
@@ -1287,12 +1288,13 @@ class PlexServerClient {
     
     /// Deep Cuts Radio - Sonic
     /// Uses sort=random to get varied results from the sonically similar pool
-    /// - Note: Uses raw query string because Plex requires literal < operator
+    /// - Note: Uses raw query string because Plex requires literal <= operator (not URL-encoded)
     func createDeepCutsRadioSonic(trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating deep cuts radio (sonic) with seed %@ in library %@", trackID, libraryID)
         
-        // Build URL manually - Plex filter syntax requires unencoded < operator
-        let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&ratingCount<\(RadioConfig.deepCutsThreshold)&track.sonicallySimilar=\(trackID)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
+        // Build URL manually - Plex filter syntax requires unencoded <= operator
+        // Using <= with threshold-1 because Plex doesn't support < operator (only >=, <=, =, !=)
+        let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&ratingCount<=\(RadioConfig.deepCutsThreshold - 1)&track.sonicallySimilar=\(trackID)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
         
         guard let url = URL(string: urlString) else {
             throw PlexServerError.invalidURL
