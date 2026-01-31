@@ -370,10 +370,42 @@ player.frameFiltering.add(entry: "spectrumAnalyzer") { [weak self] buffer, _ in
 3. **FFT** - 512-point DFT using Accelerate framework (vDSP) (~11.6ms at 44.1kHz)
 4. **Magnitude calculation** - Convert complex output to magnitudes
 5. **Frequency mapping** - Map FFT bins to 75 bands (logarithmic, 20Hz-20kHz)
-6. **Normalization** - Normalize to peak and apply power curve (0.4)
-7. **Smoothing** - Fast attack, slow decay for visual appeal
+6. **Frequency weighting** - Apply compensation curve to reduce bass dominance
+7. **Adaptive normalization** - Normalize using slow-adapting reference level
+8. **Smoothing** - Fast attack, slow decay for visual appeal
 
 **Note:** The FFT size was reduced from 2048 to 512 samples to decrease audio-to-visualization latency from ~46ms to ~11.6ms.
+
+### Frequency Weighting
+
+Modern music tends to have heavy bass content that would otherwise dominate the spectrum display. A frequency-dependent weighting curve compensates for this:
+
+| Frequency Range | Weight | Reason |
+|-----------------|--------|--------|
+| < 60 Hz (sub-bass) | 0.15 | Heavy attenuation - sub-bass energy is usually felt, not seen |
+| 60-150 Hz (bass) | 0.25 | Strong attenuation - bass carries most musical energy |
+| 150-400 Hz (low-mid) | 0.45 | Moderate attenuation |
+| 400-1000 Hz (mid) | 0.70 | Slight attenuation |
+| 1-4 kHz (upper-mid) | 1.00 | Full level - ear is most sensitive here |
+| 4-8 kHz (presence) | 0.95 | Nearly full |
+| > 8 kHz (treble) | 0.85 | Slight rolloff |
+
+This approximates an equal-loudness contour, making the display more perceptually balanced.
+
+### Adaptive Normalization
+
+Instead of normalizing each frame to its own peak (which makes everything look maxed-out with modern compressed music), the analyzer uses an adaptive reference level:
+
+1. **Peak tracking** - Track the current frame's peak magnitude
+2. **Slow-adapting average** - Maintain a running average that rises quickly (0.3 blend) but decays slowly (0.995 blend)
+3. **Reference level** - Use 80% of the adaptive average (or 50% of current peak if higher) as the normalization reference
+4. **Power curve** - Apply a 0.6 power curve for visual dynamics
+
+This ensures:
+- Quiet passages show proportionally lower levels
+- Loud passages don't instantly max out
+- The display adapts to different overall loudness levels over time
+- Dynamic range is preserved even with heavily compressed music
 
 ### Output
 

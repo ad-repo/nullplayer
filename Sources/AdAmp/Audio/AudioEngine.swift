@@ -247,6 +247,10 @@ class AudioEngine {
     /// Spectrum analyzer data (75 bands for Winamp-style visualization)
     private(set) var spectrumData: [Float] = Array(repeating: 0, count: 75)
     
+    /// Running peak averages for adaptive spectrum normalization (per frequency region)
+    /// Index 0 = bass (bands 0-24), 1 = mid (bands 25-49), 2 = treble (bands 50-74)
+    private var spectrumRegionPeaks: [Float] = [0.0, 0.0, 0.0]
+    
     /// Raw PCM audio data for waveform visualization (mono, normalized -1 to 1)
     private(set) var pcmData: [Float] = Array(repeating: 0, count: 512)
     
@@ -256,6 +260,31 @@ class AudioEngine {
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
     private let fftSize: Int = 512  // ~11.6ms at 44.1kHz (reduced from 2048 for lowest latency)
+    
+    /// Pre-computed frequency weights for spectrum analyzer (light compensation)
+    private let spectrumFrequencyWeights: [Float] = {
+        // Generate weights for 75 bands spanning 20Hz-20kHz logarithmically
+        // Light compensation - let bass punch through
+        let bandCount = 75
+        let minFreq: Float = 20
+        let maxFreq: Float = 20000
+        
+        return (0..<bandCount).map { band in
+            let freqRatio = Float(band) / Float(bandCount - 1)
+            let freq = minFreq * pow(maxFreq / minFreq, freqRatio)
+            
+            // Minimal frequency weighting - just slight sub-bass reduction
+            if freq < 40 {
+                return 0.70  // Sub-bass: light reduction
+            } else if freq < 100 {
+                return 0.85  // Bass: very light reduction
+            } else if freq < 300 {
+                return 0.92  // Low-mid: minimal reduction
+            } else {
+                return 1.0   // Everything else: full level
+            }
+        }
+    }()
     
     /// Tap for audio analysis
     private var analysisTap: AVAudioNodeTapBlock?
@@ -641,30 +670,52 @@ class AudioEngine {
                     count += 1
                 }
                 
-                newSpectrum[band] = sum / count
+                // Apply frequency weighting to compensate for bass dominance
+                newSpectrum[band] = (sum / count) * spectrumFrequencyWeights[band]
             }
         }
         
-        // Find peak magnitude for normalization
-        let peakMag = newSpectrum.max() ?? 1.0
-        guard peakMag > 0 else { return }
+        // Per-region normalization so bass doesn't drown out mids/treble
+        // Each frequency region (bass, mid, treble) normalizes independently
+        let regionRanges = [(0, 25), (25, 50), (50, 75)]  // bass, mid, treble
         
-        // Normalize relative to peak and apply curve for visual dynamics
-        for i in 0..<bandCount {
-            let normalized = newSpectrum[i] / peakMag
-            // Apply power curve to spread out values (0.5 = square root for more dynamics)
-            newSpectrum[i] = pow(normalized, 0.4)
+        for (regionIndex, (start, end)) in regionRanges.enumerated() {
+            // Find peak in this region
+            var regionPeak: Float = 0.0
+            for i in start..<end {
+                regionPeak = max(regionPeak, newSpectrum[i])
+            }
+            
+            guard regionPeak > 0 else { continue }
+            
+            // Update adaptive peak for this region
+            // Fast rise, moderate decay for responsiveness
+            if regionPeak > spectrumRegionPeaks[regionIndex] {
+                spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.4 + regionPeak * 0.6
+            } else {
+                spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.97 + regionPeak * 0.03
+            }
+            
+            // Reference level for this region
+            let referenceLevel = max(spectrumRegionPeaks[regionIndex] * 0.5, regionPeak * 0.3)
+            
+            // Normalize bands in this region
+            for i in start..<end {
+                let normalized = min(1.0, newSpectrum[i] / referenceLevel)
+                // Square root curve for good dynamic spread
+                newSpectrum[i] = pow(normalized, 0.5)
+            }
         }
         
         // Smooth with previous values (decay)
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             for i in 0..<bandCount {
-                // Fast attack, slow decay
+                // Fast attack, snappy decay for tight beat following
                 if newSpectrum[i] > self.spectrumData[i] {
                     self.spectrumData[i] = newSpectrum[i]
                 } else {
-                    self.spectrumData[i] = self.spectrumData[i] * 0.85 + newSpectrum[i] * 0.15
+                    self.spectrumData[i] = self.spectrumData[i] * 0.55 + newSpectrum[i] * 0.45
                 }
             }
             self.delegate?.audioEngineDidUpdateSpectrum(self.spectrumData)
@@ -1397,6 +1448,7 @@ class AudioEngine {
         for i in 0..<spectrumData.count {
             spectrumData[i] = 0
         }
+        spectrumRegionPeaks = [0.0, 0.0, 0.0]  // Reset adaptive peaks for new track
         delegate?.audioEngineDidUpdateSpectrum(spectrumData)
         NotificationCenter.default.post(
             name: .audioSpectrumDataUpdated,

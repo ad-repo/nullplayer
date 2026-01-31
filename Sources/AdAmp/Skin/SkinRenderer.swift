@@ -704,9 +704,8 @@ class SkinRenderer {
             let barX = displayArea.minX + CGFloat(barIndex) * (barWidth + barSpacing)
             
             // Calculate bar height (0-16 pixels based on level)
-            // Apply a slight boost for visual appeal
-            let boostedLevel = min(1.0, level * 1.2)
-            let barHeight = Int(boostedLevel * Float(maxHeight))
+            // Level is already 0-1 from audio processing with frequency weighting
+            let barHeight = Int(level * Float(maxHeight))
             
             guard barHeight > 0 else { continue }
             
