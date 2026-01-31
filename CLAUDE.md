@@ -5,7 +5,28 @@
 ```bash
 ./scripts/bootstrap.sh      # Download frameworks (first time)
 ./scripts/kill_build_run.sh # Build and run
+./scripts/build_dmg.sh      # Build distributable DMG
 ```
+
+## Distribution
+
+The `build_dmg.sh` script creates a distributable DMG:
+
+```bash
+./scripts/build_dmg.sh           # Full release build + DMG
+./scripts/build_dmg.sh --skip-build  # Use existing release build
+```
+
+Output:
+- `dist/AdAmp.app` - The application bundle
+- `dist/AdAmp-1.0.dmg` - The distributable DMG with Applications symlink
+
+The script:
+1. Builds a release binary (`swift build -c release`)
+2. Creates proper app bundle structure with Info.plist
+3. Copies VLCKit.framework and libprojectM-4.dylib
+4. Fixes rpaths for framework loading
+5. Creates DMG with drag-to-Applications install
 
 ## Build Script and Log Monitoring
 

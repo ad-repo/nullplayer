@@ -12,6 +12,7 @@ DerivedData/
 *.build/
 *.o
 *.dSYM/
+dist/
 
 # Swift Package Manager
 .build/

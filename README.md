@@ -27,13 +27,34 @@ A loaded recreation of Winamp 2.x for macOS
 - AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
 - Cast local files to Sonos via embedded HTTP server
 
+## Installation
+
+Download the latest DMG from [Releases](https://github.com/ad-repo/adamp/releases).
+
+### Fixing "App is damaged" Error
+
+Since the app is not code-signed, macOS Gatekeeper will block it. To fix this:
+
+**Option 1: Terminal (Recommended)**
+```bash
+xattr -cr /Applications/AdAmp.app
+```
+
+**Option 2: System Settings**
+1. Try to open AdAmp (it will be blocked)
+2. Go to **System Settings → Privacy & Security**
+3. Scroll down and click **Open Anyway** next to the AdAmp message
+4. Click **Open** in the confirmation dialog
+
+After either option, AdAmp will open normally.
+
 ## Requirements
 
 - macOS 13.0 (Ventura) or later
-- Xcode 15.0+ with Command Line Tools
-- Swift 5.9+
 
-## Building
+## Building from Source
+
+Requires Xcode 15.0+ with Command Line Tools and Swift 5.9+.
 
 ```bash
 # Clone the repository
