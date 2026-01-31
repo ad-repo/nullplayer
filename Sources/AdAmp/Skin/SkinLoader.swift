@@ -35,17 +35,15 @@ class SkinLoader {
     /// Load the default/built-in skin from the app bundle (Base Skin 1)
     func loadDefault() -> Skin {
         // Try to load the bundled base-2.91.wsz skin
-        // Swift Package Manager puts resources in a bundle named after the target
-        let bundle = Bundle.module
-        
-        if let bundledSkinURL = bundle.url(forResource: "base-2.91", withExtension: "wsz") {
+        // Use BundleHelper to work in both SPM development and standalone app bundle
+        if let bundledSkinURL = BundleHelper.url(forResource: "base-2.91", withExtension: "wsz") {
             do {
                 return try load(from: bundledSkinURL)
             } catch {
                 print("Failed to load bundled skin: \(error)")
             }
         } else {
-            print("Could not find bundled skin in bundle: \(bundle.bundlePath)")
+            print("Could not find bundled skin base-2.91.wsz")
         }
         
         // Fallback: Return a skin with nil images - will use fallback rendering
@@ -75,16 +73,14 @@ class SkinLoader {
     
     /// Load the second built-in skin from the app bundle (Base Skin 2)
     func loadBaseSkin2() -> Skin {
-        let bundle = Bundle.module
-        
-        if let bundledSkinURL = bundle.url(forResource: "base-skin-2", withExtension: "wsz") {
+        if let bundledSkinURL = BundleHelper.url(forResource: "base-skin-2", withExtension: "wsz") {
             do {
                 return try load(from: bundledSkinURL)
             } catch {
                 print("Failed to load Base Skin 2: \(error)")
             }
         } else {
-            print("Could not find Base Skin 2 in bundle: \(bundle.bundlePath)")
+            print("Could not find Base Skin 2")
         }
         
         // Fallback to default skin
@@ -93,16 +89,14 @@ class SkinLoader {
     
     /// Load the third built-in skin from the app bundle (Base Skin 3)
     func loadBaseSkin3() -> Skin {
-        let bundle = Bundle.module
-        
-        if let bundledSkinURL = bundle.url(forResource: "base-skin-3", withExtension: "wsz") {
+        if let bundledSkinURL = BundleHelper.url(forResource: "base-skin-3", withExtension: "wsz") {
             do {
                 return try load(from: bundledSkinURL)
             } catch {
                 print("Failed to load Base Skin 3: \(error)")
             }
         } else {
-            print("Could not find Base Skin 3 in bundle: \(bundle.bundlePath)")
+            print("Could not find Base Skin 3")
         }
         
         // Fallback to default skin

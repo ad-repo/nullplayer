@@ -549,7 +549,8 @@ class PlexBrowserView: NSView {
     /// Radio button icon template (cached)
     private static var radioIconTemplate: NSImage? = {
         // Load radio icon from bundle as template
-        if let url = Bundle.module.url(forResource: "radio-icon", withExtension: "png"),
+        // Use BundleHelper to work in both SPM development and standalone app bundle
+        if let url = BundleHelper.url(forResource: "radio-icon", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             image.isTemplate = true
             return image

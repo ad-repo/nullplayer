@@ -130,7 +130,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     
     private func setupDockIcon() {
         // Load the app icon from the Resources bundle
-        if let iconURL = Bundle.module.url(forResource: "AppIcon", withExtension: "png", subdirectory: "Resources"),
+        // Use BundleHelper to work in both SPM development and standalone app bundle
+        if let iconURL = BundleHelper.url(forResource: "AppIcon", withExtension: "png"),
            let iconImage = NSImage(contentsOf: iconURL) {
             NSApplication.shared.applicationIconImage = iconImage
         }
@@ -139,7 +140,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
     // MARK: - Intro Sound
     
     private func playIntro() {
-        guard let introURL = Bundle.module.url(forResource: "DJ Mike Llama - Llama Whippin Intro", withExtension: "mp3", subdirectory: "Resources") else {
+        // Use BundleHelper to work in both SPM development and standalone app bundle
+        guard let introURL = BundleHelper.url(forResource: "DJ Mike Llama - Llama Whippin Intro", withExtension: "mp3") else {
             return
         }
         
