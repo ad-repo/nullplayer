@@ -1016,11 +1016,11 @@ When enabled, the following is saved on quit and restored on launch:
 - **Audio settings** (volume, balance, shuffle, repeat, gapless, normalization, Sweet Fades)
 - **Equalizer settings** (enabled state, preamp, all band values)
 - **Playlist** (local files only, not streaming tracks)
-- **Playback position** (resumes from where you left off)
+- **Milkdrop preset** (restores the last-used visualization preset)
 - **Custom skin** (if a non-default skin was loaded)
 - **UI preferences** (time display mode, always on top, double size)
 
-**Note**: Only local file playlists are saved. Streaming tracks (Plex, Subsonic) are not persisted as they require authentication on each launch.
+**Note**: Only local file playlists are saved. Streaming tracks (Plex, Subsonic) are not persisted as they require authentication on each launch. The playlist is restored but no track is automatically loaded or played - you choose when to start playback.
 
 ---
 

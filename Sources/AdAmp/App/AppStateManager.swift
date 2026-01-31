@@ -65,6 +65,9 @@ class AppStateManager {
         var customSkinPath: String?
         var baseSkinIndex: Int?  // 1, 2, or 3 for base skins; nil for custom skin
         
+        // Milkdrop preset
+        var milkdropPresetIndex: Int?
+        
         // Version for future compatibility
         var stateVersion: Int = 1
         
@@ -79,6 +82,7 @@ class AppStateManager {
             case playlistURLs, currentTrackIndex, playbackPosition, wasPlaying
             case timeDisplayMode, isAlwaysOnTop
             case customSkinPath, baseSkinIndex
+            case milkdropPresetIndex
             case stateVersion
         }
         
@@ -130,6 +134,9 @@ class AppStateManager {
             customSkinPath = try container.decodeIfPresent(String.self, forKey: .customSkinPath)
             baseSkinIndex = try container.decodeIfPresent(Int.self, forKey: .baseSkinIndex)
             
+            // Milkdrop preset - nil for backward compatibility with older saved states
+            milkdropPresetIndex = try container.decodeIfPresent(Int.self, forKey: .milkdropPresetIndex)
+            
             // Version
             stateVersion = try container.decodeIfPresent(Int.self, forKey: .stateVersion) ?? 1
         }
@@ -165,6 +172,7 @@ class AppStateManager {
             isAlwaysOnTop: Bool,
             customSkinPath: String? = nil,
             baseSkinIndex: Int? = nil,
+            milkdropPresetIndex: Int? = nil,
             stateVersion: Int = 1
         ) {
             self.isPlaylistVisible = isPlaylistVisible
@@ -196,6 +204,7 @@ class AppStateManager {
             self.isAlwaysOnTop = isAlwaysOnTop
             self.customSkinPath = customSkinPath
             self.baseSkinIndex = baseSkinIndex
+            self.milkdropPresetIndex = milkdropPresetIndex
             self.stateVersion = stateVersion
         }
     }
@@ -306,7 +315,10 @@ class AppStateManager {
             
             // Skin - save path if using a custom skin, or base skin index
             customSkinPath: getCustomSkinPath(),
-            baseSkinIndex: wm.currentBaseSkinIndex
+            baseSkinIndex: wm.currentBaseSkinIndex,
+            
+            // Milkdrop preset
+            milkdropPresetIndex: wm.visualizationPresetIndex
         )
         
         // Encode and save
@@ -451,6 +463,7 @@ class AppStateManager {
         let equalizerFrame = state.equalizerWindowFrame.flatMap { NSRectFromString($0) }
         let browserFrame = state.plexBrowserWindowFrame.flatMap { NSRectFromString($0) }
         let milkdropFrame = state.milkdropWindowFrame.flatMap { NSRectFromString($0) }
+        let milkdropPresetIndex = state.milkdropPresetIndex
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             if state.isEqualizerVisible {
@@ -464,6 +477,15 @@ class AppStateManager {
             }
             if state.isMilkdropVisible {
                 wm.showMilkdrop(at: milkdropFrame)
+                
+                // Restore Milkdrop preset after engine is initialized on render thread
+                // The engine setup is deferred and takes ~200ms to complete
+                if let presetIndex = milkdropPresetIndex {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        wm.selectVisualizationPreset(at: presetIndex)
+                        NSLog("AppStateManager: Restored Milkdrop preset index: %d", presetIndex)
+                    }
+                }
             }
         }
         
@@ -471,6 +493,7 @@ class AppStateManager {
     }
     
     /// Apply playlist state only
+    /// Populates the playlist but does NOT load or play any track
     private func applyPlaylistState(_ state: AppState) {
         let wm = WindowManager.shared
         let engine = wm.audioEngine
@@ -483,38 +506,9 @@ class AppStateManager {
         NSLog("AppStateManager: Restoring playlist state - %d tracks", state.playlistURLs.count)
         
         let urls = state.playlistURLs.compactMap { URL(string: $0) }
-        let validURLs = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
         
-        guard !validURLs.isEmpty else {
-            NSLog("AppStateManager: No valid playlist files found")
-            return
-        }
-        
-        // Calculate the correct index in the filtered playlist
-        var newTrackIndex = -1
-        if state.currentTrackIndex >= 0 && state.currentTrackIndex < urls.count {
-            let originalURL = urls[state.currentTrackIndex]
-            if let validIndex = validURLs.firstIndex(of: originalURL) {
-                newTrackIndex = validIndex
-            }
-        }
-        
-        engine.loadFiles(validURLs)
-        
-        // Restore track position after a short delay to let the playlist load
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            if newTrackIndex >= 0 && newTrackIndex < engine.playlist.count {
-                engine.playTrack(at: newTrackIndex)
-                
-                if state.playbackPosition > 0 {
-                    engine.seek(to: state.playbackPosition)
-                }
-                
-                if !state.wasPlaying {
-                    engine.pause()
-                }
-            }
-        }
+        // Use setPlaylistFiles which populates the playlist without auto-playing
+        engine.setPlaylistFiles(urls)
         
         NSLog("AppStateManager: Playlist state restored")
     }
@@ -574,43 +568,12 @@ class AppStateManager {
         // Restore window frames
         restoreWindowFrames(state)
         
-        // Restore playlist
+        // Restore playlist (only populate, don't select or play any track)
         if !state.playlistURLs.isEmpty {
             let urls = state.playlistURLs.compactMap { URL(string: $0) }
-            let validURLs = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
-            
-            if !validURLs.isEmpty {
-                // Calculate the correct index in the filtered playlist
-                // The saved index was relative to the full saved list, but some files may have been deleted
-                var newTrackIndex = -1
-                if state.currentTrackIndex >= 0 && state.currentTrackIndex < urls.count {
-                    let originalURL = urls[state.currentTrackIndex]
-                    // Find where this URL ended up in the filtered list
-                    if let validIndex = validURLs.firstIndex(of: originalURL) {
-                        newTrackIndex = validIndex
-                    }
-                }
-                
-                engine.loadFiles(validURLs)
-                
-                // Restore track position after a short delay to let the playlist load
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    // Set the current track index (use the recalculated index for the filtered playlist)
-                    if newTrackIndex >= 0 && newTrackIndex < engine.playlist.count {
-                        engine.playTrack(at: newTrackIndex)
-                        
-                        // Seek to the saved position
-                        if state.playbackPosition > 0 {
-                            engine.seek(to: state.playbackPosition)
-                        }
-                        
-                        // Pause if it wasn't playing when saved
-                        if !state.wasPlaying {
-                            engine.pause()
-                        }
-                    }
-                }
-            }
+            // Use setPlaylistFiles which populates the playlist without auto-playing
+            engine.setPlaylistFiles(urls)
+            NSLog("AppStateManager: Playlist restored")
         }
         
         // Restore window visibility (after a short delay to ensure proper positioning)
@@ -619,6 +582,7 @@ class AppStateManager {
         let equalizerFrame = state.equalizerWindowFrame.flatMap { NSRectFromString($0) }
         let browserFrame = state.plexBrowserWindowFrame.flatMap { NSRectFromString($0) }
         let milkdropFrame = state.milkdropWindowFrame.flatMap { NSRectFromString($0) }
+        let milkdropPresetIndex = state.milkdropPresetIndex
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             if state.isEqualizerVisible {
@@ -632,6 +596,15 @@ class AppStateManager {
             }
             if state.isMilkdropVisible {
                 wm.showMilkdrop(at: milkdropFrame)
+                
+                // Restore Milkdrop preset after engine is initialized on render thread
+                // The engine setup is deferred and takes ~200ms to complete
+                if let presetIndex = milkdropPresetIndex {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        wm.selectVisualizationPreset(at: presetIndex)
+                        NSLog("AppStateManager: Restored Milkdrop preset index: %d", presetIndex)
+                    }
+                }
             }
         }
         

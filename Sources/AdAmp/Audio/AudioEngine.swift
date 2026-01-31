@@ -1738,6 +1738,39 @@ class AudioEngine {
         delegate?.audioEngineDidChangePlaylist()
     }
     
+    /// Set the playlist files without starting playback (for state restoration)
+    /// This clears the existing playlist and populates it with the given files,
+    /// but does NOT load or play any track.
+    func setPlaylistFiles(_ urls: [URL]) {
+        NSLog("setPlaylistFiles: %d URLs", urls.count)
+        
+        // Filter out missing local files (remote URLs pass through)
+        var missingCount = 0
+        let validURLs = urls.filter { url in
+            // Remote URLs (Plex/Subsonic streams) don't need file existence check
+            if url.scheme == "http" || url.scheme == "https" {
+                return true
+            }
+            // Local file - check existence
+            if FileManager.default.fileExists(atPath: url.path) {
+                return true
+            }
+            missingCount += 1
+            return false
+        }
+        
+        NSLog("setPlaylistFiles: %d valid URLs (%d missing)", validURLs.count, missingCount)
+        
+        let tracks = validURLs.compactMap { Track(url: $0) }
+        
+        // Clear and set playlist without loading or playing
+        playlist.removeAll()
+        playlist.append(contentsOf: tracks)
+        currentIndex = -1  // No track selected
+        
+        delegate?.audioEngineDidChangePlaylist()
+    }
+    
     private func loadTrack(at index: Int) {
         guard index >= 0 && index < playlist.count else { return }
         

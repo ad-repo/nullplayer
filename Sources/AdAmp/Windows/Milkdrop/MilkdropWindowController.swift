@@ -255,6 +255,14 @@ class MilkdropWindowController: NSWindowController {
         milkdropView.visualizationGLView?.previousPreset(hardCut: hardCut)
     }
     
+    /// Select preset at specific index
+    /// - Parameters:
+    ///   - index: The preset index to select
+    ///   - hardCut: If true, switch immediately without blending
+    func selectPreset(at index: Int, hardCut: Bool = false) {
+        milkdropView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
+    }
+    
     /// Select a random preset
     /// - Parameter hardCut: If true, switch immediately without blending
     func randomPreset(hardCut: Bool = false) {
@@ -283,6 +291,11 @@ class MilkdropWindowController: NSWindowController {
     /// Current preset name
     var currentPresetName: String {
         return milkdropView.visualizationGLView?.currentPresetName ?? ""
+    }
+    
+    /// Current preset index
+    var currentPresetIndex: Int {
+        return milkdropView.visualizationGLView?.currentPresetIndex ?? 0
     }
     
     /// Total number of presets

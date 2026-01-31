@@ -840,6 +840,11 @@ class WindowManager {
         milkdropWindowController?.presetCount ?? 0
     }
     
+    /// Current visualization preset index
+    var visualizationPresetIndex: Int? {
+        milkdropWindowController?.currentPresetIndex
+    }
+    
     /// Get information about loaded presets (bundled count, custom count, custom path)
     var visualizationPresetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
         milkdropWindowController?.presetsInfo ?? (0, 0, nil)
@@ -848,6 +853,11 @@ class WindowManager {
     /// Reload all visualization presets from bundled and custom folders
     func reloadVisualizationPresets() {
         milkdropWindowController?.reloadPresets()
+    }
+    
+    /// Select a visualization preset by index
+    func selectVisualizationPreset(at index: Int) {
+        milkdropWindowController?.selectPreset(at: index)
     }
 
     func notifyMainWindowVisibilityChanged() {
