@@ -3090,4 +3090,40 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             delegate?.audioEngineDidChangeTrack(updatedTrack)
         }
     }
+    
+    func streamingPlayerDidEncounterError(_ error: AudioPlayerError) {
+        // Handle streaming errors gracefully
+        // The error callback fires BEFORE the state changes to .error
+        // so we handle recovery here
+        NSLog("AudioEngine: Streaming error - %@", String(describing: error))
+        
+        // Check if this is the M4A packet table error (non-optimized M4A file)
+        let errorDescription = String(describing: error)
+        let isPacketTableError = errorDescription.contains("packet table") || 
+                                  errorDescription.contains("streamParseBytesFailure")
+        
+        if isPacketTableError {
+            NSLog("AudioEngine: M4A parsing error - file may not be optimized for streaming")
+            
+            // Show error in marquee briefly, then advance to next track
+            if let track = currentTrack {
+                let errorMessage = "Cannot play: \(track.title) (format not supported for streaming)"
+                NotificationCenter.default.post(
+                    name: .audioTrackDidFailToLoad,
+                    object: self,
+                    userInfo: ["track": track, "error": error, "message": errorMessage]
+                )
+            }
+            
+            // Advance to next track after a brief delay to let error state settle
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self = self else { return }
+                // Only advance if we're still in error/stopped state
+                if self.state == .stopped {
+                    NSLog("AudioEngine: Auto-advancing after streaming error")
+                    self.next()
+                }
+            }
+        }
+    }
 }
