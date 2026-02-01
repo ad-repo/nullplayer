@@ -5683,18 +5683,6 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Right-click on empty space in radio mode - show add station option
-        if case .radio = currentSource, !isArtOnlyMode {
-            let menu = NSMenu()
-            
-            let addStationItem = NSMenuItem(title: "Add Station...", action: #selector(showAddRadioStationDialog), keyEquivalent: "")
-            addStationItem.target = self
-            menu.addItem(addStationItem)
-            
-            NSMenu.popUpContextMenu(menu, with: event, for: self)
-            return
-        }
-        
         // Default right-click behavior
         super.rightMouseDown(with: event)
     }
