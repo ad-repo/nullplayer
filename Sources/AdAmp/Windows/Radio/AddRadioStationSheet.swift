@@ -99,7 +99,7 @@ class AddRadioStationSheet: NSWindowController, NSWindowDelegate {
         completionHandler = completion
         window?.center()
         showWindow(nil)
-        window?.makeKey()
+        window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
     

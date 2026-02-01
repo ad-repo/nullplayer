@@ -533,6 +533,9 @@ class PlexBrowserView: NSView {
     /// Cached data - Radio Stations
     private var cachedRadioStations: [RadioStation] = []
     
+    /// Strong reference to prevent deallocation while dialog is open
+    private var activeRadioStationSheet: AddRadioStationSheet?
+    
     /// Cached data - Video
     private var cachedMovies: [PlexMovie] = []
     private var cachedShows: [PlexShow] = []
@@ -5688,9 +5691,15 @@ class PlexBrowserView: NSView {
             addStationItem.target = self
             menu.addItem(addStationItem)
             
-            let addPlaylistItem = NSMenuItem(title: "Add Playlist URL...", action: #selector(showAddRadioPlaylistDialog), keyEquivalent: "")
+            menu.addItem(NSMenuItem.separator())
+            
+            let addPlaylistItem = NSMenuItem(title: "Import Playlist URL...", action: #selector(showAddRadioPlaylistDialog), keyEquivalent: "")
             addPlaylistItem.target = self
             menu.addItem(addPlaylistItem)
+            
+            let importFileItem = NSMenuItem(title: "Import Playlist File...", action: #selector(importRadioPlaylistFile), keyEquivalent: "")
+            importFileItem.target = self
+            menu.addItem(importFileItem)
             
             NSMenu.popUpContextMenu(menu, with: event, for: self)
             return
@@ -6315,9 +6324,9 @@ class PlexBrowserView: NSView {
     @objc private func showAddRadioPlaylistDialog() {
         // Show a simple dialog to enter a playlist URL (.m3u, .pls)
         let alert = NSAlert()
-        alert.messageText = "Add Playlist URL"
+        alert.messageText = "Import Playlist URL"
         alert.informativeText = "Enter the URL of a .m3u or .pls playlist file containing radio streams:"
-        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Import")
         alert.addButton(withTitle: "Cancel")
         
         let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
@@ -6336,6 +6345,48 @@ class PlexBrowserView: NSView {
             
             // Fetch and parse the playlist
             fetchAndParsePlaylist(from: url)
+        }
+    }
+    
+    @objc private func importRadioPlaylistFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [
+            .init(filenameExtension: "m3u")!,
+            .init(filenameExtension: "m3u8")!,
+            .init(filenameExtension: "pls")!
+        ]
+        panel.message = "Select playlist files containing radio streams"
+        
+        if panel.runModal() == .OK {
+            var totalStations = 0
+            
+            for url in panel.urls {
+                do {
+                    let content = try String(contentsOf: url, encoding: .utf8)
+                    let stations = parsePlaylistContent(content, sourceURL: url)
+                    
+                    for station in stations {
+                        RadioManager.shared.addStation(station)
+                    }
+                    totalStations += stations.count
+                } catch {
+                    NSLog("Failed to read playlist file %@: %@", url.path, error.localizedDescription)
+                }
+            }
+            
+            if totalStations > 0 {
+                loadRadioStations()
+                
+                let successAlert = NSAlert()
+                successAlert.messageText = "Playlist Imported"
+                successAlert.informativeText = "Added \(totalStations) station\(totalStations == 1 ? "" : "s") from the playlist\(panel.urls.count == 1 ? "" : "s")."
+                successAlert.runModal()
+            } else {
+                showPlaylistError("No valid radio streams found in the selected file(s)")
+            }
         }
     }
     
@@ -6480,8 +6531,9 @@ class PlexBrowserView: NSView {
     }
     
     @objc private func showAddRadioStationDialog() {
-        let sheet = AddRadioStationSheet()
-        sheet.showDialog { [weak self] station in
+        activeRadioStationSheet = AddRadioStationSheet(station: nil)
+        activeRadioStationSheet?.showDialog { [weak self] station in
+            self?.activeRadioStationSheet = nil  // Release reference when done
             if let newStation = station {
                 RadioManager.shared.addStation(newStation)
                 // Switch to radio source if not already
@@ -7496,8 +7548,9 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuEditRadioStation(_ sender: NSMenuItem) {
         guard let station = sender.representedObject as? RadioStation else { return }
         
-        let sheet = AddRadioStationSheet(station: station)
-        sheet.showDialog { [weak self] updatedStation in
+        activeRadioStationSheet = AddRadioStationSheet(station: station)
+        activeRadioStationSheet?.showDialog { [weak self] updatedStation in
+            self?.activeRadioStationSheet = nil  // Release reference when done
             if let updated = updatedStation {
                 RadioManager.shared.updateStation(updated)
                 self?.loadRadioStations()
