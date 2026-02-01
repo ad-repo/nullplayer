@@ -435,6 +435,9 @@ class RadioManager {
                         genre: station.genre,
                         iconURL: station.iconURL
                     )
+                    // Update currentStation to use resolved URL so loadTracks check passes
+                    // (loadTracks compares track.url with currentStation.url to detect radio content)
+                    self.currentStation = resolvedStation
                     let track = resolvedStation.toTrack()
                     WindowManager.shared.audioEngine.loadTracks([track])
                     // Only call play() for local playback - casting is handled by loadTracks
