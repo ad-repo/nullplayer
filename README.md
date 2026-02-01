@@ -32,8 +32,9 @@
 - Navidrome/Subsonic server integration with scrobbling support
 - Album/Cover/Movie art browser with visualizations
 - IMDB integration
+- Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
 - AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
-- Cast local files to Sonos via embedded HTTP server
+- Cast local files, Navidrome/Subsonic streams, and internet radio to Sonos
 - macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
 - [Discord Music Presence](https://github.com/ungive/discord-music-presence) support
 

@@ -15,6 +15,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex Media Server integration
 - [Video Player](#video-player)
 - [Plex Integration](#plex-integration)
 - [Navidrome/Subsonic Integration](#navidromesubsonic-integration)
+- [Internet Radio](#internet-radio)
 - [Output Devices & Casting](#output-devices--casting)
 - [Skins](#skins)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
@@ -506,15 +507,21 @@ A track is "scrobbled" when:
 
 ### Plex Radio
 
-Generate dynamic playlists from the radio icon in the library browser toolbar. Each station type has two variants:
+Access Plex Radio stations from the **RADIO** tab in the Library Browser when connected to a Plex music library. Each station type has two variants:
 - **Standard**: Random tracks matching the criteria
 - **Sonic**: Tracks sonically similar to the current/seed track
+
+**To access Plex Radio:**
+1. Connect to a Plex server with a music library
+2. Click the **RADIO** tab in the Library Browser
+3. Double-click any station to start playback
 
 | Radio Station | Description |
 |---------------|-------------|
 | **Library Radio** | Random tracks from your entire library |
 | **Only the Hits** | Popular tracks (1M+ Last.fm scrobbles) |
 | **Deep Cuts** | Lesser-known tracks (under 1k scrobbles) |
+| **My Ratings** | Tracks based on your star ratings (5★, 4+★, 3+★, etc.) |
 | **Genre Stations** | Tracks from specific genres (dynamically loaded from your library) |
 | **Decade Stations** | Tracks from specific decades (1920s-2020s) |
 
@@ -530,6 +537,7 @@ Generate dynamic playlists from the radio icon in the library browser toolbar. E
 - Artist variety: Max 2 tracks per artist (1 for Sonic), spread apart to avoid back-to-back
 - Genres fetched dynamically from your Plex library
 - Sonic stations use currently playing track as seed, or random if nothing playing
+- Stations sorted by category for easy browsing
 
 **Requirements**: Plex Pass with sonic analysis enabled on the server for Sonic variants.
 
@@ -585,6 +593,86 @@ Right-click tracks, albums, or artists to add them to your favorites (starred it
 
 ---
 
+## Internet Radio
+
+AdAmp supports Shoutcast and Icecast internet radio streaming with automatic reconnection and live metadata.
+
+### Adding Radio Stations
+
+1. Open the **Library Browser** (click the logo or use context menu)
+2. Click the source dropdown and select **Internet Radio**
+3. Click the **+ADD** button in the source bar to show add options:
+   - **Add Station...** - Add a single radio stream URL
+   - **Add Playlist URL...** - Import stations from a .m3u or .pls playlist URL
+4. For adding a station, enter:
+   - **Name**: Display name for the station
+   - **URL**: Stream URL (e.g., `https://ice2.somafm.com/groovesalad-128-mp3`)
+   - **Genre**: Optional genre tag
+5. Click **Test** to verify the stream works (optional)
+6. Click **Save** to add the station
+
+**Tip**: Right-click anywhere in the station list to access the same add options.
+
+### Playing Radio Stations
+
+- **Double-click** a station to start playback
+- **Right-click** for context menu options (Play, Edit, Delete)
+- The track marquee displays the current song from ICY metadata
+
+### Importing from Playlists
+
+You can import multiple stations at once from playlist files using the **+ADD** button:
+
+**From URL:**
+1. Click **+ADD** > **Import Playlist URL...**
+2. Enter the URL of a .m3u, .m3u8, or .pls playlist file
+3. Click **Import** to fetch and import all streams
+
+**From Local File:**
+1. Click **+ADD** > **Import Playlist File...**
+2. Select one or more .m3u, .m3u8, or .pls files from your computer
+3. All radio streams will be imported
+
+**Drag and Drop:**
+- Simply drag .m3u, .m3u8, or .pls files onto the library browser window
+- Stations will be automatically imported and the view switches to Internet Radio
+
+Supported formats:
+- **M3U/M3U8** - Standard playlist format with optional #EXTINF metadata
+- **PLS** - INI-style playlist format with File/Title entries
+
+### Default Stations
+
+New installations include a few sample stations from SomaFM to get started. You can remove or edit these as needed.
+
+### Auto-Reconnect
+
+When a radio stream disconnects (network issues, server restart, etc.):
+- AdAmp automatically attempts to reconnect
+- The marquee shows "Reconnecting... (attempt X/5)"
+- Exponential backoff (2s, 4s, 8s, 16s, 32s between attempts)
+- After 5 failed attempts, shows "Connection failed"
+
+**Note**: Manual stop (pressing Stop or switching tracks) does not trigger auto-reconnect.
+
+### Live Metadata (ICY)
+
+Many internet radio streams include real-time metadata (artist/song info). When available:
+- The track marquee updates with the current song
+- Format: "Artist - Song Title" (depends on station)
+
+### Casting Radio to Sonos
+
+Internet radio stations can be cast to Sonos speakers:
+
+1. Start playing a radio station locally
+2. Right-click → **Output Devices → Sonos**
+3. Select rooms and click **🟢 Start Casting**
+
+**Note:** Radio streams are live and don't support seeking. When you cast a playing radio station, Sonos starts from the live stream (time resets to 0:00).
+
+---
+
 ## Output Devices & Casting
 
 ### Local Audio
@@ -619,7 +707,7 @@ Sonos                          ▸
 
 #### How to Cast to Sonos
 
-1. **Load music** - Play or load a track (Plex, Subsonic, or local files)
+1. **Load music** - Play or load a track (Plex, Subsonic, local files, or internet radio)
 2. **Open Sonos menu** - Right-click → Output Devices → Sonos
 3. **Select rooms** - Check one or more room checkboxes (menu stays open!)
 4. **Start casting** - Click **🟢 Start Casting**
@@ -656,7 +744,7 @@ The room checkboxes use a special view that **keeps the menu open** when clicked
 
 - **UPnP must be enabled** in the Sonos app (Account → Privacy & Security → Connection Security)
 - Sonos speakers must be on the same network as your Mac
-- Works with Plex/Subsonic streaming and local files
+- Works with Plex/Subsonic streaming, local files, and internet radio
 - Local file casting requires firewall to allow port 8765
 
 ### Chromecast & DLNA

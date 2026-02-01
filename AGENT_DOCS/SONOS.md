@@ -121,7 +121,7 @@ The room checkboxes use a custom view that **keeps the menu open** when clicked.
 
 ### Starting a Cast
 
-1. **Load music** - Play or load a track from Plex, Subsonic, or local files
+1. **Load music** - Play or load a track from Plex, Subsonic, local files, or internet radio
 2. **Open Sonos menu** - Right-click → Output Devices → Sonos
 3. **Select rooms** - Check one or more room checkboxes
 4. **Start casting** - Click "🟢 Start Casting"
@@ -130,6 +130,8 @@ The app will:
 - Cast to the first selected room
 - Join additional rooms to that group
 - Update checkboxes to show which rooms are receiving audio
+
+**Internet Radio Note:** Radio streams are live and don't support seeking. When you cast a radio station that's already playing locally, playback on Sonos starts fresh from the live stream (time resets to 0:00).
 
 ### Managing Rooms While Casting
 
@@ -327,8 +329,23 @@ Local files are supported via an embedded HTTP server (LocalMediaServer):
 
 **Supported content:**
 - ✅ Plex streaming (with token in URL)
-- ✅ Subsonic/Navidrome streaming
+- ✅ Subsonic/Navidrome streaming (via proxy)
 - ✅ Local files (via embedded HTTP server)
+- ✅ Internet radio (Shoutcast/Icecast streams)
+
+**Subsonic/Navidrome Casting:**
+Subsonic streams are proxied through LocalMediaServer for Sonos casting. This is necessary because:
+1. Sonos has issues with URLs containing query parameters (authentication tokens)
+2. Navidrome may be bound to localhost only, unreachable by Sonos speakers
+
+The proxy flow:
+1. AdAmp registers the Subsonic stream URL with LocalMediaServer
+2. LocalMediaServer provides a simple URL: `http://{mac-ip}:8765/stream/{token}`
+3. When Sonos requests this URL, LocalMediaServer fetches from Navidrome and streams to Sonos
+4. Content-Type is passed through (e.g., `audio/flac`) - no transcoding occurs
+
+**Concurrent stream limitation:**
+Navidrome and most Subsonic servers limit concurrent streams per user (often to 1). When casting starts, AdAmp fully stops local streaming playback to release the connection, allowing the proxy to stream without conflict. This is handled automatically by `AudioEngine.stopLocalForCasting()`.
 
 **Requirements for local file casting:**
 - Mac must be on the same network as Sonos speakers

@@ -6,6 +6,7 @@ enum BrowserSource: Equatable, Codable {
     case local
     case plex(serverId: String)
     case subsonic(serverId: String)
+    case radio
     
     /// Display name for the source
     var displayName: String {
@@ -22,6 +23,8 @@ enum BrowserSource: Equatable, Codable {
                 return "SUBSONIC: \(server.name)"
             }
             return "SUBSONIC"
+        case .radio:
+            return "INTERNET RADIO"
         }
     }
     
@@ -40,6 +43,8 @@ enum BrowserSource: Equatable, Codable {
                 return server.name
             }
             return "Subsonic"
+        case .radio:
+            return "Radio"
         }
     }
     
@@ -55,10 +60,16 @@ enum BrowserSource: Equatable, Codable {
         return false
     }
     
+    /// Whether this is a radio source
+    var isRadio: Bool {
+        if case .radio = self { return true }
+        return false
+    }
+    
     /// Whether this is a remote source (Plex or Subsonic)
     var isRemote: Bool {
         switch self {
-        case .local:
+        case .local, .radio:
             return false
         case .plex, .subsonic:
             return true
@@ -94,6 +105,7 @@ enum PlexBrowseMode: Int, CaseIterable {
     case movies = 4
     case shows = 5
     case search = 6
+    case radio = 7
     
     var title: String {
         switch self {
@@ -104,6 +116,7 @@ enum PlexBrowseMode: Int, CaseIterable {
         case .movies: return "Movies"
         case .shows: return "Shows"
         case .search: return "Search"
+        case .radio: return "Radio"
         }
     }
     
@@ -113,6 +126,10 @@ enum PlexBrowseMode: Int, CaseIterable {
     
     var isMusicMode: Bool {
         self == .artists || self == .albums || self == .tracks || self == .plists
+    }
+    
+    var isRadioMode: Bool {
+        self == .radio
     }
 }
 
@@ -519,6 +536,12 @@ class PlexBrowserView: NSView {
     private var subsonicLoadTask: Task<Void, Never>?
     private var subsonicExpandTask: Task<Void, Never>?
     
+    /// Cached data - Radio Stations
+    private var cachedRadioStations: [RadioStation] = []
+    
+    /// Strong reference to prevent deallocation while dialog is open
+    private var activeRadioStationSheet: AddRadioStationSheet?
+    
     /// Cached data - Video
     private var cachedMovies: [PlexMovie] = []
     private var cachedShows: [PlexShow] = []
@@ -548,43 +571,6 @@ class PlexBrowserView: NSView {
     private var serverScrollTimer: Timer?
     private var lastServerName: String = ""
     private var lastLibraryName: String = ""
-    
-    /// Radio button icon template (cached)
-    private static var radioIconTemplate: NSImage? = {
-        // Load radio icon from bundle as template
-        // Use BundleHelper to work in both SPM development and standalone app bundle
-        if let url = BundleHelper.url(forResource: "radio-icon", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            image.isTemplate = true
-            return image
-        }
-        return nil
-    }()
-    
-    /// Get radio icon tinted with current skin color
-    private func tintedRadioIcon(with color: NSColor) -> NSImage? {
-        guard let template = Self.radioIconTemplate else { return nil }
-        let size = template.size
-        
-        let tinted = NSImage(size: size)
-        tinted.lockFocus()
-        
-        // Draw the template image
-        template.draw(in: NSRect(origin: .zero, size: size),
-                      from: .zero,
-                      operation: .sourceOver,
-                      fraction: 1.0)
-        
-        // Apply color tint using source-atop (preserves alpha from template)
-        color.set()
-        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
-        
-        tinted.unlockFocus()
-        return tinted
-    }
-    
-    /// Radio button hit rect (updated during draw)
-    private var radioButtonRect: NSRect = .zero
     
     /// Shade mode state
     private(set) var isShadeMode = false
@@ -816,6 +802,8 @@ class PlexBrowserView: NSView {
                 } else {
                     currentSource = .local
                 }
+            case .radio:
+                currentSource = .radio
             }
         } else {
             // Default: local if not linked to Plex, otherwise first Plex server
@@ -878,6 +866,14 @@ class PlexBrowserView: NSView {
             self,
             selector: #selector(mediaLibraryDidChange),
             name: MediaLibrary.libraryDidChangeNotification,
+            object: nil
+        )
+        
+        // Observe RadioManager changes for radio source
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(radioStationsDidChange),
+            name: RadioManager.stationsDidChangeNotification,
             object: nil
         )
         
@@ -1124,6 +1120,19 @@ class PlexBrowserView: NSView {
         isLoading = false
         stopLoadingAnimation()
         
+        // Sync browse mode with radio source
+        if case .radio = currentSource {
+            // When switching to Internet Radio source, automatically switch to radio tab
+            browseMode = .radio
+        } else if browseMode == .radio, case .local = currentSource {
+            // When switching to Local source from radio tab, switch to artists tab
+            // (Plex and Subsonic modes support radio tab for Plex Radio)
+            browseMode = .artists
+        } else if browseMode == .radio, case .subsonic = currentSource {
+            // Subsonic doesn't support radio tab, switch to artists tab
+            browseMode = .artists
+        }
+        
         // Reload data for new source
         reloadData()
     }
@@ -1138,12 +1147,14 @@ class PlexBrowserView: NSView {
     }
     
     @objc private func mediaLibraryDidChange() {
-        // Only reload if we're showing local content
+        // Only reload if we're showing local content (not on radio tab)
         guard case .local = currentSource else { return }
+        guard browseMode != .radio else { return }
         
         DispatchQueue.main.async { [weak self] in
-            self?.loadLocalData()
-            self?.needsDisplay = true
+            guard let self = self, self.browseMode != .radio else { return }
+            self.loadLocalData()
+            self.needsDisplay = true
         }
     }
     
@@ -1526,9 +1537,6 @@ class PlexBrowserView: NSView {
                 }
                 context.restoreGState()
                 
-                // Calculate the end of the library text area for radio icon positioning
-                let libraryEndX = libraryX + maxLibraryWidth
-                
                 // Right side: F5 refresh label
                 let refreshText = "F5"
                 let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
@@ -1603,23 +1611,6 @@ class PlexBrowserView: NSView {
                     
                     // Store hit rect for click detection (covers all stars)
                     rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
-                    
-                    // Draw radio icon to the left of stars (only for music libraries)
-                    if manager.currentLibrary?.type == "artist" {
-                        if let radioIcon = tintedRadioIcon(with: greenColor) {
-                            let iconSize: CGFloat = 18
-                            let radioPadding: CGFloat = 10
-                            let radioX = starsX - iconSize - radioPadding
-                            let radioY = barRect.minY + (barRect.height - iconSize) / 2
-                            let iconRect = NSRect(x: radioX, y: radioY, width: iconSize, height: iconSize)
-                            radioButtonRect = iconRect
-                            radioIcon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-                        } else {
-                            radioButtonRect = .zero
-                        }
-                    } else {
-                        radioButtonRect = .zero
-                    }
                 } else {
                     // Normal item count display
                     rateButtonRect = .zero
@@ -1646,26 +1637,6 @@ class PlexBrowserView: NSView {
                     drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
                     let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
                     drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
-                    
-                    // Draw radio icon with padding from item count (only for music libraries)
-                    if manager.currentLibrary?.type == "artist" {
-                        // Tint radio icon with skin's text color
-                        let skinColor = renderer.skin.playlistColors.normalText
-                        if let radioIcon = tintedRadioIcon(with: skinColor) {
-                            let iconSize: CGFloat = 18
-                            // Position radio icon with fixed padding before item count
-                            let radioPadding: CGFloat = isArtOnlyMode ? 14 : 10
-                            let radioX = countX - iconSize - radioPadding
-                            let radioY = barRect.minY + (barRect.height - iconSize) / 2
-                            let iconRect = NSRect(x: radioX, y: radioY, width: iconSize, height: iconSize)
-                            radioButtonRect = iconRect  // Store for hit testing
-                            radioIcon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-                        } else {
-                            radioButtonRect = .zero
-                        }
-                    } else {
-                        radioButtonRect = .zero
-                    }
                 }
             } else {
                 // Plex not linked and no servers - show link message
@@ -1746,6 +1717,31 @@ class PlexBrowserView: NSView {
                 let linkX = barRect.midX - linkWidth / 2
                 drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
             }
+        
+        case .radio:
+            // INTERNET RADIO mode
+            let sourceText = "Internet Radio"
+            drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
+            
+            // +ADD button after source name (green text)
+            let addText = "+ADD"
+            let addX = sourceNameStartX + sourceTextWidth + 28
+            drawScaledSkinText(addText, at: NSPoint(x: addX, y: textY), scale: textScale, renderer: renderer, in: context)
+            
+            // Right side: F5 refresh label
+            let refreshText = "F5"
+            let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+            drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+            
+            // Item count
+            let countNumber = "\(displayItems.count)"
+            let countLabel = " stations"
+            let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+            let countX = refreshX - countWidth - 24
+            drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+            drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
         }
     }
     
@@ -1817,7 +1813,7 @@ class PlexBrowserView: NSView {
         let shouldRound = backingScale < 1.5
         
         // Calculate sort indicator width (on the right)
-        let sortText = "Sort:\(currentSort.shortName)"
+        let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
         
         // Draw tabs (leave room for sort indicator)
@@ -2025,6 +2021,8 @@ class PlexBrowserView: NSView {
             message = "No playlists found"
         case .search:
             message = searchQuery.isEmpty ? "Type to search" : "No results found"
+        case .radio:
+            message = "No radio stations found"
         }
         
         // Draw using green skin text, centered
@@ -4311,6 +4309,29 @@ class PlexBrowserView: NSView {
     // MARK: - Public Methods
     
     func reloadData() {
+        // Radio source - only radio tab has content (Internet Radio stations)
+        if case .radio = currentSource {
+            if browseMode == .radio {
+                loadRadioStations()
+            } else {
+                displayItems = []
+            }
+            needsDisplay = true
+            return
+        }
+        
+        // Non-radio sources: radio tab shows Plex Radio options (for Plex) or empty
+        if browseMode == .radio {
+            if case .plex = currentSource, PlexManager.shared.isLinked {
+                // Show Plex Radio options in the RADIO tab when in Plex mode
+                loadPlexRadioStations()
+            } else {
+                displayItems = []
+            }
+            needsDisplay = true
+            return
+        }
+        
         // For local source, we don't need Plex to be linked
         if case .local = currentSource {
             loadLocalData()
@@ -4510,6 +4531,9 @@ class PlexBrowserView: NSView {
                     }
                 case .local:
                     break
+                case .radio:
+                    self.currentSource = .radio
+                    return
                 }
             }
             
@@ -5347,7 +5371,7 @@ class PlexBrowserView: NSView {
         let charWidth = SkinElements.TextFont.charWidth
         let textScale: CGFloat = 1.5
         let scaledCharWidth = charWidth * textScale
-        let sortText = "Sort:\(currentSort.shortName)"
+        let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
         
         // Tabs area excludes sort indicator
@@ -5924,7 +5948,9 @@ class PlexBrowserView: NSView {
         
         // Check server bar
         if hitTestServerBar(at: winampPoint) {
-            if !PlexManager.shared.isLinked {
+            // For local files, radio, or subsonic - always handle the click
+            // For Plex - check if linked first
+            if case .plex = currentSource, !PlexManager.shared.isLinked {
                 controller?.showLinkSheet()
             } else {
                 handleServerBarClick(at: winampPoint, event: event)
@@ -6082,18 +6108,6 @@ class PlexBrowserView: NSView {
                 }
             }
             
-            // Check for radio button click (right before item count, use stored rect)
-            if !radioButtonRect.isEmpty {
-                // Convert radioButtonRect to relative X coordinates
-                let radioRelativeStart = radioButtonRect.minX - Layout.leftBorder
-                let radioRelativeEnd = radioButtonRect.maxX - Layout.leftBorder
-                if relativeX >= radioRelativeStart && relativeX <= radioRelativeEnd {
-                    // Radio button click - show radio menu
-                    showRadioMenu(at: event)
-                    return
-                }
-            }
-            
             if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd {
                 // Library dropdown click (includes label)
                 showLibraryMenu(at: event)
@@ -6111,11 +6125,42 @@ class PlexBrowserView: NSView {
                 // Source/server area = source dropdown
                 showSourceMenu(at: event)
             }
+        } else if case .radio = currentSource {
+            // Radio mode - Source and +ADD on left
+            let radioNameWidth: CGFloat = 14 * charWidth  // "Internet Radio"
+            let sourceZoneEnd = sourcePrefix + radioNameWidth
+            let addZoneStart = sourceZoneEnd + 24
+            let addZoneEnd = addZoneStart + 4 * charWidth + 8  // "+ADD" (4 chars)
+            
+            if relativeX >= addZoneStart && relativeX <= addZoneEnd {
+                // +ADD button click - show add menu
+                showRadioAddMenu(at: event)
+            } else if relativeX < sourceZoneEnd {
+                // Source area = source dropdown
+                showSourceMenu(at: event)
+            }
         }
     }
     
     /// Handle refresh button click based on current source
     private func handleRefreshClick() {
+        // Radio source (Internet Radio) - only radio tab has content to refresh
+        if case .radio = currentSource {
+            if browseMode == .radio {
+                loadRadioStations()
+            }
+            // Non-radio tabs on radio source - nothing to refresh
+            return
+        }
+        
+        // Radio tab on Plex source - refresh Plex Radio stations
+        if browseMode == .radio {
+            if case .plex = currentSource {
+                loadPlexRadioStations()
+            }
+            return
+        }
+        
         switch currentSource {
         case .local:
             // Rescan watch folders
@@ -6133,6 +6178,9 @@ class PlexBrowserView: NSView {
                     self.refreshData()
                 }
             }
+        case .radio:
+            // Already handled above
+            break
         }
     }
     
@@ -6147,6 +6195,14 @@ class PlexBrowserView: NSView {
             localItem.state = .on
         }
         menu.addItem(localItem)
+        
+        // Internet Radio option
+        let radioItem = NSMenuItem(title: "Internet Radio", action: #selector(selectRadioSource), keyEquivalent: "")
+        radioItem.target = self
+        if case .radio = currentSource {
+            radioItem.state = .on
+        }
+        menu.addItem(radioItem)
         
         // Separator
         menu.addItem(NSMenuItem.separator())
@@ -6210,6 +6266,221 @@ class PlexBrowserView: NSView {
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
     }
     
+    /// Show the +ADD menu for radio mode
+    private func showRadioAddMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        
+        let addStationItem = NSMenuItem(title: "Add Station...", action: #selector(showAddRadioStationDialog), keyEquivalent: "")
+        addStationItem.target = self
+        menu.addItem(addStationItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        let addPlaylistItem = NSMenuItem(title: "Import Playlist URL...", action: #selector(showAddRadioPlaylistDialog), keyEquivalent: "")
+        addPlaylistItem.target = self
+        menu.addItem(addPlaylistItem)
+        
+        let importFileItem = NSMenuItem(title: "Import Playlist File...", action: #selector(importRadioPlaylistFile), keyEquivalent: "")
+        importFileItem.target = self
+        menu.addItem(importFileItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        let addDefaultsItem = NSMenuItem(title: "Add Missing Defaults", action: #selector(addMissingRadioDefaults), keyEquivalent: "")
+        addDefaultsItem.target = self
+        menu.addItem(addDefaultsItem)
+        
+        let resetDefaultsItem = NSMenuItem(title: "Reset to Defaults", action: #selector(resetRadioToDefaults), keyEquivalent: "")
+        resetDefaultsItem.target = self
+        menu.addItem(resetDefaultsItem)
+        
+        let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
+        menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
+    }
+    
+    @objc private func showAddRadioPlaylistDialog() {
+        // Show a simple dialog to enter a playlist URL (.m3u, .pls)
+        let alert = NSAlert()
+        alert.messageText = "Import Playlist URL"
+        alert.informativeText = "Enter the URL of a .m3u or .pls playlist file containing radio streams:"
+        alert.addButton(withTitle: "Import")
+        alert.addButton(withTitle: "Cancel")
+        
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        textField.placeholderString = "https://example.com/playlist.m3u"
+        alert.accessoryView = textField
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            let urlString = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !urlString.isEmpty, let url = URL(string: urlString) else {
+                let errorAlert = NSAlert()
+                errorAlert.messageText = "Invalid URL"
+                errorAlert.informativeText = "Please enter a valid URL."
+                errorAlert.runModal()
+                return
+            }
+            
+            // Fetch and parse the playlist
+            fetchAndParsePlaylist(from: url)
+        }
+    }
+    
+    @objc private func importRadioPlaylistFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [
+            .init(filenameExtension: "m3u")!,
+            .init(filenameExtension: "m3u8")!,
+            .init(filenameExtension: "pls")!
+        ]
+        panel.message = "Select playlist files containing radio streams"
+        
+        if panel.runModal() == .OK {
+            var totalStations = 0
+            
+            for url in panel.urls {
+                do {
+                    let content = try String(contentsOf: url, encoding: .utf8)
+                    let stations = parsePlaylistContent(content, sourceURL: url)
+                    
+                    for station in stations {
+                        RadioManager.shared.addStation(station)
+                    }
+                    totalStations += stations.count
+                } catch {
+                    NSLog("Failed to read playlist file %@: %@", url.path, error.localizedDescription)
+                }
+            }
+            
+            if totalStations > 0 {
+                loadRadioStations()
+                
+                let successAlert = NSAlert()
+                successAlert.messageText = "Playlist Imported"
+                successAlert.informativeText = "Added \(totalStations) station\(totalStations == 1 ? "" : "s") from the playlist\(panel.urls.count == 1 ? "" : "s")."
+                successAlert.runModal()
+            } else {
+                showPlaylistError("No valid radio streams found in the selected file(s)")
+            }
+        }
+    }
+    
+    private func fetchAndParsePlaylist(from url: URL) {
+        Task { @MainActor in
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                guard let content = String(data: data, encoding: .utf8) else {
+                    showPlaylistError("Could not read playlist content")
+                    return
+                }
+                
+                let stations = parsePlaylistContent(content, sourceURL: url)
+                if stations.isEmpty {
+                    showPlaylistError("No valid streams found in playlist")
+                    return
+                }
+                
+                // Add all stations
+                for station in stations {
+                    RadioManager.shared.addStation(station)
+                }
+                
+                // Reload and show success
+                loadRadioStations()
+                
+                let successAlert = NSAlert()
+                successAlert.messageText = "Playlist Added"
+                successAlert.informativeText = "Added \(stations.count) station\(stations.count == 1 ? "" : "s") from the playlist."
+                successAlert.runModal()
+            } catch {
+                showPlaylistError("Failed to fetch playlist: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    private func parsePlaylistContent(_ content: String, sourceURL: URL) -> [RadioStation] {
+        var stations: [RadioStation] = []
+        let lines = content.components(separatedBy: .newlines)
+        
+        // Detect format
+        let isM3U = content.hasPrefix("#EXTM3U") || sourceURL.pathExtension.lowercased() == "m3u" || sourceURL.pathExtension.lowercased() == "m3u8"
+        let isPLS = content.lowercased().contains("[playlist]") || sourceURL.pathExtension.lowercased() == "pls"
+        
+        if isM3U {
+            // Parse M3U format
+            var currentTitle: String?
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("#EXTINF:") {
+                    // Extract title from #EXTINF:-1,Station Name
+                    if let commaIndex = trimmed.firstIndex(of: ",") {
+                        currentTitle = String(trimmed[trimmed.index(after: commaIndex)...])
+                    }
+                } else if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+                    if let streamURL = URL(string: trimmed) {
+                        let name = currentTitle ?? streamURL.lastPathComponent
+                        stations.append(RadioStation(name: name, url: streamURL))
+                    }
+                    currentTitle = nil
+                }
+            }
+        } else if isPLS {
+            // Parse PLS format
+            var files: [Int: String] = [:]
+            var titles: [Int: String] = [:]
+            
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.lowercased().hasPrefix("file") {
+                    // File1=http://...
+                    if let equalIndex = trimmed.firstIndex(of: "=") {
+                        let numPart = trimmed[trimmed.index(trimmed.startIndex, offsetBy: 4)..<equalIndex]
+                        if let num = Int(numPart) {
+                            files[num] = String(trimmed[trimmed.index(after: equalIndex)...])
+                        }
+                    }
+                } else if trimmed.lowercased().hasPrefix("title") {
+                    // Title1=Station Name
+                    if let equalIndex = trimmed.firstIndex(of: "=") {
+                        let numPart = trimmed[trimmed.index(trimmed.startIndex, offsetBy: 5)..<equalIndex]
+                        if let num = Int(numPart) {
+                            titles[num] = String(trimmed[trimmed.index(after: equalIndex)...])
+                        }
+                    }
+                }
+            }
+            
+            for (num, urlString) in files {
+                if let url = URL(string: urlString) {
+                    let name = titles[num] ?? url.lastPathComponent
+                    stations.append(RadioStation(name: name, url: url))
+                }
+            }
+        } else {
+            // Try to extract any http URLs
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+                    if let url = URL(string: trimmed) {
+                        stations.append(RadioStation(name: url.lastPathComponent, url: url))
+                    }
+                }
+            }
+        }
+        
+        return stations
+    }
+    
+    private func showPlaylistError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Playlist Error"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+    
     @objc private func addFiles() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -6230,6 +6501,50 @@ class PlexBrowserView: NSView {
     
     @objc private func selectLocalSource() {
         currentSource = .local
+    }
+    
+    @objc private func selectRadioSource() {
+        currentSource = .radio
+    }
+    
+    @objc private func showAddRadioStationDialog() {
+        activeRadioStationSheet = AddRadioStationSheet(station: nil)
+        activeRadioStationSheet?.showDialog { [weak self] station in
+            self?.activeRadioStationSheet = nil  // Release reference when done
+            if let newStation = station {
+                RadioManager.shared.addStation(newStation)
+                // Switch to radio source if not already
+                if case .radio = self?.currentSource {
+                    self?.loadRadioStations()
+                } else {
+                    self?.currentSource = .radio
+                }
+            }
+        }
+    }
+    
+    @objc private func addMissingRadioDefaults() {
+        RadioManager.shared.addMissingDefaults()
+        if case .radio = currentSource {
+            loadRadioStations()
+        }
+    }
+    
+    @objc private func resetRadioToDefaults() {
+        // Show confirmation dialog
+        let alert = NSAlert()
+        alert.messageText = "Reset to Defaults"
+        alert.informativeText = "This will remove all your saved radio stations and replace them with the default stations. Are you sure?"
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            RadioManager.shared.resetToDefaults()
+            if case .radio = currentSource {
+                loadRadioStations()
+            }
+        }
     }
     
     @objc private func selectPlexServer(_ sender: NSMenuItem) {
@@ -6624,10 +6939,29 @@ class PlexBrowserView: NSView {
         }
     }
     
-    // MARK: - Drag and Drop (Local Files)
+    // MARK: - Drag and Drop (Local Files and Playlists)
     
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        return .copy
+        guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
+            return []
+        }
+        
+        // Check if we have valid files to drop
+        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
+        let playlistExtensions = ["m3u", "m3u8", "pls"]
+        
+        for url in items {
+            let ext = url.pathExtension.lowercased()
+            var isDirectory: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            
+            // Accept audio files, directories, or playlist files
+            if isDirectory.boolValue || audioExtensions.contains(ext) || playlistExtensions.contains(ext) {
+                return .copy
+            }
+        }
+        
+        return []
     }
     
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -6636,34 +6970,74 @@ class PlexBrowserView: NSView {
         }
         
         var fileURLs: [URL] = []
+        var playlistURLs: [URL] = []
+        var processedDirectories = false
         let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
+        let playlistExtensions = ["m3u", "m3u8", "pls"]
         
         for url in items {
             var isDirectory: ObjCBool = false
             if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+                let ext = url.pathExtension.lowercased()
+                
                 if isDirectory.boolValue {
                     // Add folder as watch folder and scan
                     MediaLibrary.shared.addWatchFolder(url)
                     MediaLibrary.shared.scanFolder(url)
-                } else {
-                    // Add individual audio file
-                    if audioExtensions.contains(url.pathExtension.lowercased()) {
-                        fileURLs.append(url)
-                    }
+                    processedDirectories = true
+                } else if playlistExtensions.contains(ext) {
+                    // Playlist file
+                    playlistURLs.append(url)
+                } else if audioExtensions.contains(ext) {
+                    // Audio file
+                    fileURLs.append(url)
                 }
             }
         }
         
+        // Handle playlist files - import as radio stations
+        if !playlistURLs.isEmpty {
+            var totalStations = 0
+            for url in playlistURLs {
+                do {
+                    let content = try String(contentsOf: url, encoding: .utf8)
+                    let stations = parsePlaylistContent(content, sourceURL: url)
+                    
+                    for station in stations {
+                        RadioManager.shared.addStation(station)
+                    }
+                    totalStations += stations.count
+                } catch {
+                    NSLog("Failed to read playlist file %@: %@", url.path, error.localizedDescription)
+                }
+            }
+            
+            if totalStations > 0 {
+                // Switch to radio source to show added stations
+                if case .radio = currentSource {
+                    loadRadioStations()
+                } else {
+                    currentSource = .radio
+                }
+                
+                let alert = NSAlert()
+                alert.messageText = "Playlist Imported"
+                alert.informativeText = "Added \(totalStations) station\(totalStations == 1 ? "" : "s") from the playlist\(playlistURLs.count == 1 ? "" : "s")."
+                alert.runModal()
+            }
+        }
+        
+        // Handle audio files
         if !fileURLs.isEmpty {
             MediaLibrary.shared.addTracks(urls: fileURLs)
+            
+            // Switch to local source to show added content
+            if case .plex = currentSource {
+                currentSource = .local
+            }
         }
         
-        // Switch to local source to show added content
-        if case .plex = currentSource {
-            currentSource = .local
-        }
-        
-        return true
+        return !fileURLs.isEmpty || !playlistURLs.isEmpty || processedDirectories
     }
     
     // MARK: - Right-Click Context Menu (for list items)
@@ -7092,6 +7466,30 @@ class PlexBrowserView: NSView {
             expandItem.representedObject = item
             menu.addItem(expandItem)
             
+        case .radioStation(let station):
+            let playItem = NSMenuItem(title: "Play Station", action: #selector(contextMenuPlayRadioStation(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = station
+            menu.addItem(playItem)
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            let editItem = NSMenuItem(title: "Edit Station...", action: #selector(contextMenuEditRadioStation(_:)), keyEquivalent: "")
+            editItem.target = self
+            editItem.representedObject = station
+            menu.addItem(editItem)
+            
+            let deleteItem = NSMenuItem(title: "Delete Station", action: #selector(contextMenuDeleteRadioStation(_:)), keyEquivalent: "")
+            deleteItem.target = self
+            deleteItem.representedObject = station
+            menu.addItem(deleteItem)
+            
+        case .plexRadioStation(let radioType):
+            let playItem = NSMenuItem(title: "Play \(radioType.displayName)", action: #selector(contextMenuPlayPlexRadioStation(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = item
+            menu.addItem(playItem)
+            
         case .header:
             return
         }
@@ -7204,6 +7602,50 @@ class PlexBrowserView: NSView {
                 MediaLibrary.shared.removeTrack(track)
             }
         }
+    }
+    
+    // MARK: - Radio Station Context Menu Actions
+    
+    @objc private func contextMenuPlayRadioStation(_ sender: NSMenuItem) {
+        guard let station = sender.representedObject as? RadioStation else { return }
+        playRadioStation(station)
+    }
+    
+    @objc private func contextMenuEditRadioStation(_ sender: NSMenuItem) {
+        guard let station = sender.representedObject as? RadioStation else { return }
+        
+        activeRadioStationSheet = AddRadioStationSheet(station: station)
+        activeRadioStationSheet?.showDialog { [weak self] updatedStation in
+            self?.activeRadioStationSheet = nil  // Release reference when done
+            if let updated = updatedStation {
+                RadioManager.shared.updateStation(updated)
+                self?.loadRadioStations()
+            }
+        }
+    }
+    
+    @objc private func contextMenuDeleteRadioStation(_ sender: NSMenuItem) {
+        guard let station = sender.representedObject as? RadioStation else { return }
+        
+        let alert = NSAlert()
+        alert.messageText = "Delete radio station?"
+        alert.informativeText = "Are you sure you want to delete '\(station.name)'?"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            RadioManager.shared.removeStation(station)
+            loadRadioStations()
+        }
+    }
+    
+    // MARK: - Plex Radio Station Context Menu Actions
+    
+    @objc private func contextMenuPlayPlexRadioStation(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem,
+              case .plexRadioStation(let radioType) = item.type else { return }
+        playPlexRadioStation(radioType)
     }
     
     @objc private func contextMenuDeleteLocalArtist(_ sender: NSMenuItem) {
@@ -7831,284 +8273,6 @@ class PlexBrowserView: NSView {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
-    /// Show the radio station menu
-    private func showRadioMenu(at event: NSEvent) {
-        let menu = NSMenu()
-        menu.title = "Radio"
-        
-        // Library Radio
-        let libraryRadioItem = NSMenuItem(title: "Library Radio", action: #selector(radioMenuLibraryRadio), keyEquivalent: "")
-        libraryRadioItem.target = self
-        menu.addItem(libraryRadioItem)
-        
-        let libraryRadioSonicItem = NSMenuItem(title: "Library Radio (Sonic)", action: #selector(radioMenuLibraryRadioSonic), keyEquivalent: "")
-        libraryRadioSonicItem.target = self
-        menu.addItem(libraryRadioSonicItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Only the Hits
-        let hitsRadioItem = NSMenuItem(title: "Only the Hits", action: #selector(radioMenuHitsRadio), keyEquivalent: "")
-        hitsRadioItem.target = self
-        menu.addItem(hitsRadioItem)
-        
-        let hitsRadioSonicItem = NSMenuItem(title: "Only the Hits (Sonic)", action: #selector(radioMenuHitsRadioSonic), keyEquivalent: "")
-        hitsRadioSonicItem.target = self
-        menu.addItem(hitsRadioSonicItem)
-        
-        // Deep Cuts
-        let deepCutsItem = NSMenuItem(title: "Deep Cuts", action: #selector(radioMenuDeepCutsRadio), keyEquivalent: "")
-        deepCutsItem.target = self
-        menu.addItem(deepCutsItem)
-        
-        let deepCutsSonicItem = NSMenuItem(title: "Deep Cuts (Sonic)", action: #selector(radioMenuDeepCutsRadioSonic), keyEquivalent: "")
-        deepCutsSonicItem.target = self
-        menu.addItem(deepCutsSonicItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Rating Stations submenu - based on user's star ratings
-        let ratingSubmenu = NSMenu()
-        for station in RadioConfig.ratingStations {
-            let ratingItem = NSMenuItem(title: "\(station.name) Radio", action: #selector(radioMenuRatingRadio(_:)), keyEquivalent: "")
-            ratingItem.target = self
-            ratingItem.representedObject = station.minRating
-            ratingItem.toolTip = station.description
-            ratingSubmenu.addItem(ratingItem)
-            
-            let ratingSonicItem = NSMenuItem(title: "\(station.name) Radio (Sonic)", action: #selector(radioMenuRatingRadioSonic(_:)), keyEquivalent: "")
-            ratingSonicItem.target = self
-            ratingSonicItem.representedObject = station.minRating
-            ratingSonicItem.toolTip = station.description
-            ratingSubmenu.addItem(ratingSonicItem)
-        }
-        let ratingMenuItem = NSMenuItem(title: "My Ratings", action: nil, keyEquivalent: "")
-        ratingMenuItem.submenu = ratingSubmenu
-        menu.addItem(ratingMenuItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Genre Stations submenu - populated async
-        let genreMenuItem = NSMenuItem(title: "Genre Stations", action: nil, keyEquivalent: "")
-        let genreSubmenu = NSMenu()
-        
-        // Add a placeholder that will fetch genres when hovered
-        let loadingItem = NSMenuItem(title: "Loading...", action: nil, keyEquivalent: "")
-        loadingItem.isEnabled = false
-        genreSubmenu.addItem(loadingItem)
-        genreMenuItem.submenu = genreSubmenu
-        menu.addItem(genreMenuItem)
-        
-        // Fetch genres async and rebuild submenu
-        Task { @MainActor in
-            let genres = await PlexManager.shared.getGenres()
-            genreSubmenu.removeAllItems()
-            
-            for genre in genres {
-                let genreItem = NSMenuItem(title: "\(genre) Radio", action: #selector(radioMenuGenreRadio(_:)), keyEquivalent: "")
-                genreItem.target = self
-                genreItem.representedObject = genre
-                genreSubmenu.addItem(genreItem)
-                
-                let genreSonicItem = NSMenuItem(title: "\(genre) Radio (Sonic)", action: #selector(radioMenuGenreRadioSonic(_:)), keyEquivalent: "")
-                genreSonicItem.target = self
-                genreSonicItem.representedObject = genre
-                genreSubmenu.addItem(genreSonicItem)
-            }
-        }
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Decade Stations submenu
-        let decadeSubmenu = NSMenu()
-        for decade in RadioConfig.decades {
-            let decadeItem = NSMenuItem(title: "\(decade.name) Radio", action: #selector(radioMenuDecadeRadio(_:)), keyEquivalent: "")
-            decadeItem.target = self
-            decadeItem.representedObject = decade
-            decadeSubmenu.addItem(decadeItem)
-            
-            let decadeSonicItem = NSMenuItem(title: "\(decade.name) Radio (Sonic)", action: #selector(radioMenuDecadeRadioSonic(_:)), keyEquivalent: "")
-            decadeSonicItem.target = self
-            decadeSonicItem.representedObject = decade
-            decadeSubmenu.addItem(decadeSonicItem)
-        }
-        let decadeMenuItem = NSMenuItem(title: "Decade Stations", action: nil, keyEquivalent: "")
-        decadeMenuItem.submenu = decadeSubmenu
-        menu.addItem(decadeMenuItem)
-        
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
-    }
-    
-    // MARK: - Radio Menu Handlers
-    
-    @objc private func radioMenuLibraryRadio() {
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createLibraryRadio()
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("Library Radio started with %d tracks", tracks.count)
-            }
-        }
-    }
-    
-    @objc private func radioMenuLibraryRadioSonic() {
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createLibraryRadioSonic()
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("Library Radio (Sonic) started with %d tracks", tracks.count)
-            }
-        }
-    }
-    
-    @objc private func radioMenuHitsRadio() {
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createHitsRadio()
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("Hits Radio started with %d tracks", tracks.count)
-            }
-        }
-    }
-    
-    @objc private func radioMenuHitsRadioSonic() {
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createHitsRadioSonic()
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("Hits Radio (Sonic) started with %d tracks", tracks.count)
-            }
-        }
-    }
-    
-    @objc private func radioMenuDeepCutsRadio() {
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createDeepCutsRadio()
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("Deep Cuts Radio started with %d tracks", tracks.count)
-            }
-        }
-    }
-    
-    @objc private func radioMenuDeepCutsRadioSonic() {
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createDeepCutsRadioSonic()
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("Deep Cuts Radio (Sonic) started with %d tracks", tracks.count)
-            }
-        }
-    }
-    
-    @objc private func radioMenuGenreRadio(_ sender: NSMenuItem) {
-        guard let genre = sender.representedObject as? String else { return }
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createGenreRadio(genre: genre)
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("%@ Radio started with %d tracks", genre, tracks.count)
-            }
-        }
-    }
-    
-    @objc private func radioMenuGenreRadioSonic(_ sender: NSMenuItem) {
-        guard let genre = sender.representedObject as? String else { return }
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createGenreRadioSonic(genre: genre)
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("%@ Radio (Sonic) started with %d tracks", genre, tracks.count)
-            }
-        }
-    }
-    
-    @objc private func radioMenuDecadeRadio(_ sender: NSMenuItem) {
-        guard let decade = sender.representedObject as? (start: Int, end: Int, name: String) else { return }
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createDecadeRadio(startYear: decade.start, endYear: decade.end)
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("%@ Radio started with %d tracks", decade.name, tracks.count)
-            }
-        }
-    }
-    
-    @objc private func radioMenuDecadeRadioSonic(_ sender: NSMenuItem) {
-        guard let decade = sender.representedObject as? (start: Int, end: Int, name: String) else { return }
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createDecadeRadioSonic(startYear: decade.start, endYear: decade.end)
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("%@ Radio (Sonic) started with %d tracks", decade.name, tracks.count)
-            }
-        }
-    }
-    
-    @objc private func radioMenuRatingRadio(_ sender: NSMenuItem) {
-        guard let minRating = sender.representedObject as? Double else { return }
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createRatingRadio(minRating: minRating)
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                let stars = minRating / 2
-                NSLog("Rating Radio (%.1f+ stars) started with %d tracks", stars, tracks.count)
-            } else {
-                NSLog("Rating Radio: No tracks found with %.1f+ stars rating", minRating / 2)
-            }
-        }
-    }
-    
-    @objc private func radioMenuRatingRadioSonic(_ sender: NSMenuItem) {
-        guard let minRating = sender.representedObject as? Double else { return }
-        Task { @MainActor in
-            let tracks = await PlexManager.shared.createRatingRadioSonic(minRating: minRating)
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                let stars = minRating / 2
-                NSLog("Rating Radio (Sonic, %.1f+ stars) started with %d tracks", stars, tracks.count)
-            } else {
-                NSLog("Rating Radio (Sonic): No tracks found with %.1f+ stars rating", minRating / 2)
-            }
-        }
-    }
-    
     @objc private func selectServer(_ sender: NSMenuItem) {
         guard let serverID = sender.representedObject as? String,
               let server = PlexManager.shared.servers.first(where: { $0.id == serverID }) else {
@@ -8321,6 +8485,36 @@ class PlexBrowserView: NSView {
     // MARK: - Data Management
     
     private func loadDataForCurrentMode() {
+        // Radio source - only radio tab has content
+        if case .radio = currentSource {
+            if browseMode == .radio {
+                loadRadioStations()
+            } else {
+                // Non-radio tabs show empty for radio source
+                isLoading = false
+                errorMessage = nil
+                stopLoadingAnimation()
+                displayItems = []
+                needsDisplay = true
+            }
+            return
+        }
+        
+        // Non-radio sources: radio tab shows Plex Radio options (for Plex) or empty
+        if browseMode == .radio {
+            if case .plex = currentSource, PlexManager.shared.isLinked {
+                // Show Plex Radio options in the RADIO tab when in Plex mode
+                loadPlexRadioStations()
+            } else {
+                isLoading = false
+                errorMessage = nil
+                stopLoadingAnimation()
+                displayItems = []
+                needsDisplay = true
+            }
+            return
+        }
+        
         // Check source first - local files don't need async loading
         if case .local = currentSource {
             loadLocalData()
@@ -8433,6 +8627,11 @@ class PlexBrowserView: NSView {
                     } else {
                         displayItems = []
                     }
+                    
+                case .radio:
+                    // Radio is handled at the start of loadDataForCurrentMode()
+                    // This case should never be reached but is here for exhaustive switch
+                    loadRadioStations()
                 }
                 
                 isLoading = false
@@ -8980,12 +9179,206 @@ class PlexBrowserView: NSView {
         case .movies, .shows:
             // Video modes not supported for local content - show empty
             displayItems = []
+        case .radio:
+            // Radio is handled by loadRadioStations() in loadDataForCurrentMode()
+            break
         }
         
         // Load artwork from browsed content
         loadLocalBrowseArtwork()
         
         needsDisplay = true
+    }
+    
+    /// Load radio stations
+    private func loadRadioStations() {
+        isLoading = false
+        errorMessage = nil
+        stopLoadingAnimation()
+        
+        // Load stations from RadioManager
+        cachedRadioStations = RadioManager.shared.stations
+        
+        // Build display items for radio stations
+        buildRadioStationItems()
+        
+        needsDisplay = true
+    }
+    
+    /// Build display items for radio stations
+    private func buildRadioStationItems() {
+        displayItems.removeAll()
+        
+        for station in cachedRadioStations {
+            let item = PlexDisplayItem(
+                id: station.id.uuidString,
+                title: station.name,
+                info: station.genre,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .radioStation(station)
+            )
+            displayItems.append(item)
+        }
+        
+        // Sort by genre first, then by name within each genre
+        displayItems.sort { a, b in
+            let genreA = a.info ?? ""
+            let genreB = b.info ?? ""
+            if genreA != genreB {
+                // Empty genre goes last
+                if genreA.isEmpty { return false }
+                if genreB.isEmpty { return true }
+                return genreA.localizedCaseInsensitiveCompare(genreB) == .orderedAscending
+            }
+            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+        }
+    }
+    
+    /// Load Plex Radio stations (dynamic playlists from Plex library)
+    private func loadPlexRadioStations() {
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+        
+        // Fetch genres async and build items
+        Task { @MainActor in
+            let genres = await PlexManager.shared.getGenres()
+            buildPlexRadioStationItems(genres: genres)
+            isLoading = false
+            stopLoadingAnimation()
+            needsDisplay = true
+        }
+    }
+    
+    /// Build display items for Plex Radio stations
+    private func buildPlexRadioStationItems(genres: [String]) {
+        displayItems.removeAll()
+        
+        // Library Radio
+        displayItems.append(PlexDisplayItem(
+            id: "plex-radio-library",
+            title: "Library Radio",
+            info: "Library",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .plexRadioStation(.libraryRadio)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "plex-radio-library-sonic",
+            title: "Library Radio (Sonic)",
+            info: "Library",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .plexRadioStation(.libraryRadioSonic)
+        ))
+        
+        // Popularity - Only the Hits
+        displayItems.append(PlexDisplayItem(
+            id: "plex-radio-hits",
+            title: "Only the Hits",
+            info: "Popularity",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .plexRadioStation(.hitsRadio)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "plex-radio-hits-sonic",
+            title: "Only the Hits (Sonic)",
+            info: "Popularity",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .plexRadioStation(.hitsRadioSonic)
+        ))
+        
+        // Popularity - Deep Cuts
+        displayItems.append(PlexDisplayItem(
+            id: "plex-radio-deepcuts",
+            title: "Deep Cuts",
+            info: "Popularity",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .plexRadioStation(.deepCutsRadio)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "plex-radio-deepcuts-sonic",
+            title: "Deep Cuts (Sonic)",
+            info: "Popularity",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .plexRadioStation(.deepCutsRadioSonic)
+        ))
+        
+        // Rating stations
+        for station in RadioConfig.ratingStations {
+            displayItems.append(PlexDisplayItem(
+                id: "plex-radio-rating-\(station.minRating)",
+                title: "\(station.name) Radio",
+                info: "My Ratings",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .plexRadioStation(.ratingRadio(minRating: station.minRating, name: station.name))
+            ))
+            displayItems.append(PlexDisplayItem(
+                id: "plex-radio-rating-\(station.minRating)-sonic",
+                title: "\(station.name) Radio (Sonic)",
+                info: "My Ratings",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .plexRadioStation(.ratingRadioSonic(minRating: station.minRating, name: station.name))
+            ))
+        }
+        
+        // Genre stations (dynamically loaded)
+        for genre in genres {
+            displayItems.append(PlexDisplayItem(
+                id: "plex-radio-genre-\(genre)",
+                title: "\(genre) Radio",
+                info: "Genre",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .plexRadioStation(.genreRadio(genre))
+            ))
+            displayItems.append(PlexDisplayItem(
+                id: "plex-radio-genre-\(genre)-sonic",
+                title: "\(genre) Radio (Sonic)",
+                info: "Genre",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .plexRadioStation(.genreRadioSonic(genre))
+            ))
+        }
+        
+        // Decade stations
+        for decade in RadioConfig.decades {
+            displayItems.append(PlexDisplayItem(
+                id: "plex-radio-decade-\(decade.name)",
+                title: "\(decade.name) Radio",
+                info: "Decade",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .plexRadioStation(.decadeRadio(start: decade.start, end: decade.end, name: decade.name))
+            ))
+            displayItems.append(PlexDisplayItem(
+                id: "plex-radio-decade-\(decade.name)-sonic",
+                title: "\(decade.name) Radio (Sonic)",
+                info: "Decade",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .plexRadioStation(.decadeRadioSonic(start: decade.start, end: decade.end, name: decade.name))
+            ))
+        }
+    }
+    
+    @objc private func radioStationsDidChange() {
+        // Only reload if we're showing radio content
+        guard case .radio = currentSource else { return }
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.loadRadioStations()
+            self?.needsDisplay = true
+        }
     }
     
     /// Load Subsonic data for the current mode
@@ -9091,6 +9484,10 @@ class PlexBrowserView: NSView {
                 case .movies, .shows:
                     // Video modes not supported for Subsonic
                     displayItems = []
+                    
+                case .radio:
+                    // Radio is handled by loadRadioStations() in loadDataForCurrentMode()
+                    break
                 }
                 
                 isLoading = false
@@ -9551,6 +9948,30 @@ class PlexBrowserView: NSView {
         // Reset horizontal scroll when items change
         horizontalScrollOffset = 0
         
+        // Radio source - only radio tab has content
+        if case .radio = currentSource {
+            if browseMode == .radio {
+                buildRadioStationItems()
+            } else {
+                displayItems = []
+            }
+            needsDisplay = true
+            return
+        }
+        
+        // Non-radio sources: radio tab shows Plex Radio options (for Plex) or empty
+        if browseMode == .radio {
+            if case .plex = currentSource, PlexManager.shared.isLinked {
+                // Plex Radio items are built async by loadPlexRadioStations()
+                // Don't clear displayItems here - they're already populated
+                needsDisplay = true
+            } else {
+                displayItems = []
+                needsDisplay = true
+            }
+            return
+        }
+        
         // Check source type
         if case .local = currentSource {
             switch browseMode {
@@ -9567,6 +9988,9 @@ class PlexBrowserView: NSView {
                 displayItems = []
             case .movies, .shows:
                 displayItems = []
+            case .radio:
+                // Handled above
+                break
             }
         } else if case .subsonic = currentSource {
             switch browseMode {
@@ -9582,6 +10006,9 @@ class PlexBrowserView: NSView {
                 buildSubsonicPlaylistItems()
             case .movies, .shows:
                 displayItems = []
+            case .radio:
+                // Handled above
+                break
             }
         } else {
             switch browseMode {
@@ -9599,6 +10026,9 @@ class PlexBrowserView: NSView {
                 buildPlexPlaylistItems()
             case .search:
                 buildSearchItems()
+            case .radio:
+                // Handled above
+                break
             }
         }
         
@@ -10035,6 +10465,65 @@ class PlexBrowserView: NSView {
             
         case .plexPlaylist(let playlist):
             playPlexPlaylist(playlist)
+            
+        case .radioStation(let station):
+            playRadioStation(station)
+            
+        case .plexRadioStation(let radioType):
+            playPlexRadioStation(radioType)
+        }
+    }
+    
+    // MARK: - Radio Playback
+    
+    private func playRadioStation(_ station: RadioStation) {
+        NSLog("playRadioStation: %@", station.name)
+        RadioManager.shared.play(station: station)
+    }
+    
+    /// Play a Plex Radio station (dynamic playlist from Plex library)
+    private func playPlexRadioStation(_ radioType: PlexRadioType) {
+        NSLog("playPlexRadioStation: %@", radioType.displayName)
+        
+        Task { @MainActor in
+            var tracks: [Track] = []
+            
+            switch radioType {
+            case .libraryRadio:
+                tracks = await PlexManager.shared.createLibraryRadio()
+            case .libraryRadioSonic:
+                tracks = await PlexManager.shared.createLibraryRadioSonic()
+            case .hitsRadio:
+                tracks = await PlexManager.shared.createHitsRadio()
+            case .hitsRadioSonic:
+                tracks = await PlexManager.shared.createHitsRadioSonic()
+            case .deepCutsRadio:
+                tracks = await PlexManager.shared.createDeepCutsRadio()
+            case .deepCutsRadioSonic:
+                tracks = await PlexManager.shared.createDeepCutsRadioSonic()
+            case .genreRadio(let genre):
+                tracks = await PlexManager.shared.createGenreRadio(genre: genre)
+            case .genreRadioSonic(let genre):
+                tracks = await PlexManager.shared.createGenreRadioSonic(genre: genre)
+            case .decadeRadio(let start, let end, _):
+                tracks = await PlexManager.shared.createDecadeRadio(startYear: start, endYear: end)
+            case .decadeRadioSonic(let start, let end, _):
+                tracks = await PlexManager.shared.createDecadeRadioSonic(startYear: start, endYear: end)
+            case .ratingRadio(let minRating, _):
+                tracks = await PlexManager.shared.createRatingRadio(minRating: minRating)
+            case .ratingRadioSonic(let minRating, _):
+                tracks = await PlexManager.shared.createRatingRadioSonic(minRating: minRating)
+            }
+            
+            if !tracks.isEmpty {
+                let audioEngine = WindowManager.shared.audioEngine
+                audioEngine.clearPlaylist()
+                audioEngine.loadTracks(tracks)
+                audioEngine.play()
+                NSLog("%@ started with %d tracks", radioType.displayName, tracks.count)
+            } else {
+                NSLog("%@: No tracks found", radioType.displayName)
+            }
         }
     }
     
@@ -10343,6 +10832,64 @@ private struct PlexDisplayItem {
         case subsonicPlaylist(SubsonicPlaylist)
         // Plex playlist type
         case plexPlaylist(PlexPlaylist)
+        // Radio station type (Internet Radio - Shoutcast/Icecast)
+        case radioStation(RadioStation)
+        // Plex Radio station type (dynamic playlists from Plex library)
+        case plexRadioStation(PlexRadioType)
+    }
+}
+
+/// Types of Plex Radio stations
+enum PlexRadioType: Equatable, Hashable {
+    case libraryRadio
+    case libraryRadioSonic
+    case hitsRadio
+    case hitsRadioSonic
+    case deepCutsRadio
+    case deepCutsRadioSonic
+    case genreRadio(String)
+    case genreRadioSonic(String)
+    case decadeRadio(start: Int, end: Int, name: String)
+    case decadeRadioSonic(start: Int, end: Int, name: String)
+    case ratingRadio(minRating: Double, name: String)
+    case ratingRadioSonic(minRating: Double, name: String)
+    
+    var displayName: String {
+        switch self {
+        case .libraryRadio: return "Library Radio"
+        case .libraryRadioSonic: return "Library Radio (Sonic)"
+        case .hitsRadio: return "Only the Hits"
+        case .hitsRadioSonic: return "Only the Hits (Sonic)"
+        case .deepCutsRadio: return "Deep Cuts"
+        case .deepCutsRadioSonic: return "Deep Cuts (Sonic)"
+        case .genreRadio(let genre): return "\(genre) Radio"
+        case .genreRadioSonic(let genre): return "\(genre) Radio (Sonic)"
+        case .decadeRadio(_, _, let name): return "\(name) Radio"
+        case .decadeRadioSonic(_, _, let name): return "\(name) Radio (Sonic)"
+        case .ratingRadio(_, let name): return "\(name) Radio"
+        case .ratingRadioSonic(_, let name): return "\(name) Radio (Sonic)"
+        }
+    }
+    
+    var category: String {
+        switch self {
+        case .libraryRadio, .libraryRadioSonic: return "Library"
+        case .hitsRadio, .hitsRadioSonic: return "Popularity"
+        case .deepCutsRadio, .deepCutsRadioSonic: return "Popularity"
+        case .genreRadio, .genreRadioSonic: return "Genre"
+        case .decadeRadio, .decadeRadioSonic: return "Decade"
+        case .ratingRadio, .ratingRadioSonic: return "My Ratings"
+        }
+    }
+    
+    var isSonic: Bool {
+        switch self {
+        case .libraryRadioSonic, .hitsRadioSonic, .deepCutsRadioSonic, 
+             .genreRadioSonic, .decadeRadioSonic, .ratingRadioSonic:
+            return true
+        default:
+            return false
+        }
     }
 }
 

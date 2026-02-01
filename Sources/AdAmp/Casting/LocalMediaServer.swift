@@ -24,9 +24,21 @@ class LocalMediaServer {
     private var server: HTTPServer?
     private var serverTask: Task<Void, Never>?
     private var registeredFiles: [String: URL] = [:]  // token -> file URL
+    private var registeredStreams: [String: URL] = [:]  // token -> stream URL (for Subsonic proxy)
     private let port: UInt16 = 8765
     private(set) var isRunning: Bool = false
-    private(set) var localIPAddress: String?
+    private var _localIPAddress: String?
+    
+    /// Get the local network IP address (cached or freshly discovered)
+    /// This can be called even when the server isn't running
+    var localIPAddress: String? {
+        if let ip = _localIPAddress {
+            return ip
+        }
+        // Discover and cache the IP
+        _localIPAddress = discoverLocalIPAddress()
+        return _localIPAddress
+    }
     
     private let queue = DispatchQueue(label: "com.adamp.localmediaserver", attributes: .concurrent)
     
@@ -44,10 +56,10 @@ class LocalMediaServer {
         }
         
         // Get local IP address
-        guard let ip = getLocalIPAddress() else {
+        guard let ip = discoverLocalIPAddress() else {
             throw LocalServerError.noNetworkInterface
         }
-        localIPAddress = ip
+        _localIPAddress = ip
         NSLog("LocalMediaServer: Local IP address: %@", ip)
         
         // Create server bound to all interfaces (0.0.0.0) so network devices can reach it
@@ -55,12 +67,20 @@ class LocalMediaServer {
         let server = HTTPServer(address: address)
         self.server = server
         
-        // Add route handler for media files
+        // Add route handler for media files (local files)
         await server.appendRoute("GET /media/*") { [weak self] request in
             guard let self = self else {
                 return HTTPResponse(statusCode: .internalServerError)
             }
-            return await self.handleRequest(request)
+            return await self.handleMediaRequest(request)
+        }
+        
+        // Add route handler for stream proxy (Subsonic/remote URLs)
+        await server.appendRoute("GET /stream/*") { [weak self] request in
+            guard let self = self else {
+                return HTTPResponse(statusCode: .internalServerError)
+            }
+            return await self.handleStreamRequest(request)
         }
         
         // Start server in background task
@@ -98,6 +118,7 @@ class LocalMediaServer {
     
     /// Register a local file for serving.
     /// Returns the HTTP URL that cast devices can use.
+    /// Note: Prefer calling start() explicitly before this method in async contexts.
     func registerFile(_ url: URL) -> URL? {
         guard url.isFileURL else {
             NSLog("LocalMediaServer: Cannot register non-file URL: %@", url.absoluteString)
@@ -106,15 +127,26 @@ class LocalMediaServer {
         
         // Ensure server is running
         if !isRunning {
+            let semaphore = DispatchSemaphore(value: 0)
             Task {
                 do {
                     try await start()
                 } catch {
                     NSLog("LocalMediaServer: Failed to start server: %@", error.localizedDescription)
                 }
+                semaphore.signal()
             }
-            // Wait a bit for server to start
-            Thread.sleep(forTimeInterval: 0.2)
+            // Wait for server startup with timeout
+            let result = semaphore.wait(timeout: .now() + 2.0)
+            if result == .timedOut {
+                NSLog("LocalMediaServer: Server startup timed out")
+            }
+            
+            // Verify server actually started
+            if !isRunning {
+                NSLog("LocalMediaServer: Server failed to start, cannot register file")
+                return nil
+            }
         }
         
         guard let ip = localIPAddress else {
@@ -155,14 +187,78 @@ class LocalMediaServer {
     func unregisterAll() {
         queue.async(flags: .barrier) { [weak self] in
             self?.registeredFiles.removeAll()
-            NSLog("LocalMediaServer: Unregistered all files")
+            self?.registeredStreams.removeAll()
+            NSLog("LocalMediaServer: Unregistered all files and streams")
+        }
+    }
+    
+    /// Register a remote stream URL for proxying (e.g., Subsonic streams).
+    /// Returns an HTTP URL that cast devices can use.
+    /// The proxy fetches from the original URL and serves to the cast device.
+    /// Note: Prefer calling start() explicitly before this method in async contexts.
+    func registerStreamURL(_ url: URL) -> URL? {
+        // Ensure server is running
+        if !isRunning {
+            let semaphore = DispatchSemaphore(value: 0)
+            Task {
+                do {
+                    try await start()
+                } catch {
+                    NSLog("LocalMediaServer: Failed to start server: %@", error.localizedDescription)
+                }
+                semaphore.signal()
+            }
+            // Wait for server startup with timeout
+            let result = semaphore.wait(timeout: .now() + 2.0)
+            if result == .timedOut {
+                NSLog("LocalMediaServer: Server startup timed out")
+            }
+            
+            // Verify server actually started
+            if !isRunning {
+                NSLog("LocalMediaServer: Server failed to start, cannot register stream")
+                return nil
+            }
+        }
+        
+        guard let ip = localIPAddress else {
+            NSLog("LocalMediaServer: No local IP address available")
+            return nil
+        }
+        
+        // Generate unique token for this stream
+        let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16)
+        let tokenString = String(token)
+        
+        queue.async(flags: .barrier) { [weak self] in
+            self?.registeredStreams[tokenString] = url
+        }
+        
+        // Return simple HTTP URL without query strings: http://192.168.x.x:8765/stream/token
+        // Don't use file extension - let Content-Type header indicate format
+        let httpURL = URL(string: "http://\(ip):\(port)/stream/\(tokenString)")
+        
+        NSLog("LocalMediaServer: Registered stream proxy '%@' as %@", url.host ?? "unknown", httpURL?.absoluteString ?? "nil")
+        
+        return httpURL
+    }
+    
+    /// Unregister a stream URL
+    func unregisterStreamURL(_ url: URL) {
+        queue.async(flags: .barrier) { [weak self] in
+            guard let self = self else { return }
+            let tokenToRemove = self.registeredStreams.first { $0.value == url }?.key
+            if let token = tokenToRemove {
+                self.registeredStreams.removeValue(forKey: token)
+                NSLog("LocalMediaServer: Unregistered stream '%@'", url.host ?? "unknown")
+            }
         }
     }
     
     // MARK: - Private Methods
     
-    /// Get the local network IP address
-    private func getLocalIPAddress() -> String? {
+    /// Discover the local network IP address from network interfaces
+    private func discoverLocalIPAddress() -> String? {
         var address: String?
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
         
@@ -192,10 +288,10 @@ class LocalMediaServer {
         return address
     }
     
-    /// Handle incoming HTTP requests
-    private func handleRequest(_ request: HTTPRequest) async -> HTTPResponse {
+    /// Handle incoming HTTP requests for local media files
+    private func handleMediaRequest(_ request: HTTPRequest) async -> HTTPResponse {
         let path = request.path
-        NSLog("LocalMediaServer: Received request for %@", path)
+        NSLog("LocalMediaServer: Received media request for %@", path)
         
         // Parse path: /media/{token}.{ext}
         guard path.hasPrefix("/media/") else {
@@ -309,6 +405,99 @@ class LocalMediaServer {
             ],
             body: data
         )
+    }
+    
+    /// Handle incoming HTTP requests for proxied streams (Subsonic, etc.)
+    private func handleStreamRequest(_ request: HTTPRequest) async -> HTTPResponse {
+        let path = request.path
+        NSLog("LocalMediaServer: Received stream proxy request for %@", path)
+        
+        // Parse path: /stream/{token}.{ext}
+        guard path.hasPrefix("/stream/") else {
+            NSLog("LocalMediaServer: Invalid path - not /stream/")
+            return HTTPResponse(statusCode: .notFound)
+        }
+        
+        // Token is the path after /stream/ (may or may not have extension)
+        let filename = String(path.dropFirst(8)) // Remove "/stream/"
+        // Handle both /stream/TOKEN and /stream/TOKEN.ext
+        let token = filename.components(separatedBy: ".").first ?? filename
+        
+        // Thread-safe lookup
+        var streamURL: URL?
+        queue.sync {
+            streamURL = registeredStreams[token]
+        }
+        
+        guard let originalURL = streamURL else {
+            NSLog("LocalMediaServer: Stream token not found: %@", token)
+            return HTTPResponse(statusCode: .notFound)
+        }
+        
+        NSLog("LocalMediaServer: Proxying stream from %@", originalURL.host ?? "unknown")
+        
+        // Build the request to the original server
+        var urlRequest = URLRequest(url: originalURL)
+        urlRequest.httpMethod = "GET"
+        urlRequest.timeoutInterval = 30
+        
+        // Pass through Range header if present (for seeking)
+        if let rangeHeader = request.headers[HTTPHeader("Range")] {
+            urlRequest.setValue(rangeHeader, forHTTPHeaderField: "Range")
+            NSLog("LocalMediaServer: Passing through Range header: %@", rangeHeader)
+        }
+        
+        // Fetch from the original server
+        do {
+            let (data, response) = try await URLSession.shared.data(for: urlRequest)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                NSLog("LocalMediaServer: Invalid response from upstream server")
+                return HTTPResponse(statusCode: .badGateway)
+            }
+            
+            let upstreamContentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "audio/mpeg"
+            let upstreamContentLength = httpResponse.value(forHTTPHeaderField: "Content-Length")
+            NSLog("LocalMediaServer: Upstream returned status %d, %d bytes, type=%@, length=%@", 
+                  httpResponse.statusCode, data.count, upstreamContentType, upstreamContentLength ?? "nil")
+            
+            // Build response headers
+            var headers: [HTTPHeader: String] = [:]
+            
+            // Pass through actual content type - Sonos supports FLAC, MP3, etc. natively
+            headers[HTTPHeader("Content-Type")] = upstreamContentType
+            
+            // Always set Content-Length from actual data size (critical for Sonos)
+            headers[HTTPHeader("Content-Length")] = String(data.count)
+            
+            if let contentRange = httpResponse.value(forHTTPHeaderField: "Content-Range") {
+                headers[HTTPHeader("Content-Range")] = contentRange
+            }
+            
+            // Always advertise range support
+            headers[HTTPHeader("Accept-Ranges")] = "bytes"
+            
+            // Map HTTP status code
+            let statusCode: HTTPStatusCode
+            switch httpResponse.statusCode {
+            case 200:
+                statusCode = .ok
+            case 206:
+                statusCode = .partialContent
+            case 404:
+                statusCode = .notFound
+            case 401, 403:
+                statusCode = .forbidden
+            default:
+                statusCode = httpResponse.statusCode >= 400 ? .badGateway : .ok
+            }
+            
+            return HTTPResponse(statusCode: statusCode, headers: headers, body: data)
+            
+        } catch {
+            NSLog("LocalMediaServer: Failed to fetch from upstream: %@", error.localizedDescription)
+            return HTTPResponse(statusCode: .badGateway)
+        }
     }
     
     /// Detect content type from file extension

@@ -1270,20 +1270,21 @@ class UPnPManager {
         
         // Generate DIDL-Lite metadata
         let didlMetadata = metadata.toDIDLLite(streamURL: url)
+        NSLog("UPnPManager: DIDL metadata length: %d chars", didlMetadata.count)
         
         // Send SetAVTransportURI
-        try await sendSOAPAction(
+        // Use CDATA for the DIDL metadata to avoid double-escaping issues
+        NSLog("UPnPManager: Sending SetAVTransportURI to %@", controlURL.absoluteString)
+        let setURIResponse = try await sendSetAVTransportURI(
             controlURL: controlURL,
-            action: "SetAVTransportURI",
-            arguments: [
-                ("InstanceID", "0"),
-                ("CurrentURI", url.absoluteString),
-                ("CurrentURIMetaData", didlMetadata)
-            ]
+            uri: url.absoluteString,
+            metadata: didlMetadata
         )
+        NSLog("UPnPManager: SetAVTransportURI succeeded, response length: %d", setURIResponse.count)
         
         // Send Play
-        try await sendSOAPAction(
+        NSLog("UPnPManager: Sending Play command")
+        let playResponse = try await sendSOAPAction(
             controlURL: controlURL,
             action: "Play",
             arguments: [
@@ -1291,6 +1292,7 @@ class UPnPManager {
                 ("Speed", "1")
             ]
         )
+        NSLog("UPnPManager: Play succeeded, response length: %d", playResponse.count)
         
         session.state = .casting
         session.currentURL = url
@@ -1500,6 +1502,54 @@ class UPnPManager {
         )
         
         return extractXMLValue(response, tag: "CurrentTransportState")
+    }
+    
+    /// Send SetAVTransportURI with proper escaping for URI and DIDL metadata
+    /// Uses raw DIDL in the SOAP body (no double-escaping)
+    @discardableResult
+    private func sendSetAVTransportURI(controlURL: URL, uri: String, metadata: String) async throws -> String {
+        let serviceType = "urn:schemas-upnp-org:service:AVTransport:1"
+        
+        // Escape the URI for XML (& -> &amp;, etc.)
+        let escapedURI = uri.xmlEscapedForSOAP
+        // Escape the DIDL metadata for embedding in XML
+        let escapedMetadata = metadata.xmlEscapedForSOAP
+        
+        let soapBody = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+        <s:Body>
+        <u:SetAVTransportURI xmlns:u="\(serviceType)">
+        <InstanceID>0</InstanceID>
+        <CurrentURI>\(escapedURI)</CurrentURI>
+        <CurrentURIMetaData>\(escapedMetadata)</CurrentURIMetaData>
+        </u:SetAVTransportURI>
+        </s:Body>
+        </s:Envelope>
+        """
+        
+        NSLog("UPnPManager: SetAVTransportURI - URI length: %d, metadata length: %d", escapedURI.count, escapedMetadata.count)
+        
+        var request = URLRequest(url: controlURL)
+        request.httpMethod = "POST"
+        request.setValue("text/xml; charset=\"utf-8\"", forHTTPHeaderField: "Content-Type")
+        request.setValue("\"\(serviceType)#SetAVTransportURI\"", forHTTPHeaderField: "SOAPACTION")
+        request.httpBody = soapBody.data(using: .utf8)
+        request.timeoutInterval = 10
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CastError.networkError(NSError(domain: "UPnP", code: -1))
+        }
+        
+        if httpResponse.statusCode >= 400 {
+            let errorBody = String(data: data, encoding: .utf8) ?? ""
+            NSLog("UPnPManager: SetAVTransportURI SOAP error %d: %@", httpResponse.statusCode, errorBody)
+            throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
+        }
+        
+        return String(data: data, encoding: .utf8) ?? ""
     }
     
     /// Send SOAP action without retries (for quick checks)
@@ -1910,6 +1960,10 @@ class UPnPManager {
                     } else if let upnpError = extractXMLValue(errorBody, tag: "errorDescription") {
                         errorDetail = upnpError
                     }
+                    // Also try to get UPnP error code
+                    if let errorCode = extractXMLValue(errorBody, tag: "errorCode") {
+                        errorDetail += " (code: \(errorCode))"
+                    }
                     
                     // Check if this is a transient error worth retrying
                     if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
@@ -1918,7 +1972,9 @@ class UPnPManager {
                         continue
                     }
                     
-                    NSLog("UPnPManager: SOAP error %d for %@: %@", httpResponse.statusCode, action, errorBody)
+                    // Always log SOAP errors with full detail for debugging
+                    NSLog("UPnPManager: SOAP ERROR for %@ - Status: %d, Detail: %@", action, httpResponse.statusCode, errorDetail)
+                    NSLog("UPnPManager: SOAP ERROR body: %@", errorBody)
                     throw CastError.playbackFailed(errorDetail)
                 }
                 

@@ -11,6 +11,7 @@ protocol StreamingAudioPlayerDelegate: AnyObject {
     func streamingPlayerDidUpdatePCM(_ samples: [Float])
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int)
     func streamingPlayerDidEncounterError(_ error: AudioPlayerError)
+    func streamingPlayerDidReceiveMetadata(_ metadata: [String: String])
 }
 
 /// Wrapper around AudioStreaming's AudioPlayer that provides EQ and spectrum analysis
@@ -475,5 +476,10 @@ extension StreamingAudioPlayer: AudioPlayerDelegate {
     
     func audioPlayerDidReadMetadata(player: AudioPlayer, metadata: [String: String]) {
         NSLog("StreamingAudioPlayer: Read metadata: %@", metadata.description)
+        
+        // Forward metadata to delegate (for ICY stream info like current song)
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.streamingPlayerDidReceiveMetadata(metadata)
+        }
     }
 }

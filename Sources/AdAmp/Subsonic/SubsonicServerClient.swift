@@ -66,6 +66,23 @@ class SubsonicServerClient {
         ]
     }
     
+    /// Generate authentication parameters for streaming/binary endpoints (no f=json)
+    /// The f=json parameter would cause Navidrome to return JSON instead of audio data
+    /// which breaks casting to Sonos and other devices that fetch the URL directly
+    private func streamAuthParams() -> [URLQueryItem] {
+        let salt = UUID().uuidString.prefix(16).lowercased()
+        let token = md5Hash(password + salt)
+        
+        return [
+            URLQueryItem(name: "u", value: server.username),
+            URLQueryItem(name: "t", value: token),
+            URLQueryItem(name: "s", value: String(salt)),
+            URLQueryItem(name: "v", value: apiVersion),
+            URLQueryItem(name: "c", value: clientName)
+            // Note: f=json omitted - stream endpoints return binary data
+        ]
+    }
+    
     /// Calculate MD5 hash of a string
     private func md5Hash(_ string: String) -> String {
         let data = Data(string.utf8)
@@ -537,7 +554,8 @@ class SubsonicServerClient {
     func streamURL(songId: String) -> URL? {
         var components = URLComponents(url: baseURL.appendingPathComponent("/rest/stream"), resolvingAgainstBaseURL: false)
         
-        var params = authParams()
+        // Use streamAuthParams (no f=json) so Navidrome returns audio data
+        var params = streamAuthParams()
         params.append(URLQueryItem(name: "id", value: songId))
         components?.queryItems = params
         
@@ -553,7 +571,8 @@ class SubsonicServerClient {
         
         var components = URLComponents(url: baseURL.appendingPathComponent("/rest/getCoverArt"), resolvingAgainstBaseURL: false)
         
-        var params = authParams()
+        // Use streamAuthParams (no f=json) so Navidrome returns image data
+        var params = streamAuthParams()
         params.append(URLQueryItem(name: "id", value: coverArtId))
         if let size = size {
             params.append(URLQueryItem(name: "size", value: String(size)))

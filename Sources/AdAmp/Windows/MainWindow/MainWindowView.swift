@@ -129,6 +129,12 @@ class MainWindowView: NSView {
         // Observe track load failures to show error in marquee
         NotificationCenter.default.addObserver(self, selector: #selector(trackDidFailToLoad(_:)),
                                                name: .audioTrackDidFailToLoad, object: nil)
+        
+        // Observe radio stream metadata changes
+        NotificationCenter.default.addObserver(self, selector: #selector(radioMetadataDidChange),
+                                               name: RadioManager.streamMetadataDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(radioConnectionStateDidChange),
+                                               name: RadioManager.connectionStateDidChangeNotification, object: nil)
     }
     
     // MARK: - Accessibility
@@ -357,6 +363,38 @@ class MainWindowView: NSView {
         needsDisplay = true
     }
     
+    @objc private func radioMetadataDidChange() {
+        // Update marquee when radio stream metadata changes
+        marqueeOffset = 0  // Reset scroll to show new title from start
+        needsDisplay = true
+    }
+    
+    @objc private func radioConnectionStateDidChange() {
+        // Update marquee when radio connection state changes
+        needsDisplay = true
+    }
+    
+    /// Get the current display text for the marquee
+    private func getMarqueeDisplayText() -> String {
+        // Priority 1: Error message
+        if let error = errorMessage {
+            return error
+        }
+        
+        // Priority 2: Video title (when video is playing)
+        if WindowManager.shared.isVideoActivePlayback, let videoTitle = currentVideoTitle {
+            return videoTitle
+        }
+        
+        // Priority 3: Radio status/stream title (when radio is active)
+        if RadioManager.shared.isActive {
+            return RadioManager.shared.statusText ?? "Radio"
+        }
+        
+        // Priority 4: Track title
+        return currentTrack?.displayTitle ?? "AdAmp"
+    }
+    
     // MARK: - Drawing
     
     /// Calculate scale factor based on current bounds vs original (base) size
@@ -427,7 +465,7 @@ class MainWindowView: NSView {
         
         if isShadeMode {
             // Draw shade mode (compact view)
-            let marqueeText = currentTrack?.displayTitle ?? "AdAmp"
+            let marqueeText = getMarqueeDisplayText()
             renderer.drawMainWindowShade(
                 in: context,
                 bounds: drawBounds,
@@ -523,15 +561,8 @@ class MainWindowView: NSView {
         let seconds = Int(absTime) % 60
         renderer.drawTimeDisplay(minutes: minutes, seconds: seconds, isNegative: isNegative, in: context)
         
-        // Draw song title marquee - show error, video title, or track title
-        let marqueeText: String
-        if let error = errorMessage {
-            marqueeText = error
-        } else if WindowManager.shared.isVideoActivePlayback, let videoTitle = currentVideoTitle {
-            marqueeText = videoTitle
-        } else {
-            marqueeText = currentTrack?.displayTitle ?? "AdAmp"
-        }
+        // Draw song title marquee - show error, video title, radio status, or track title
+        let marqueeText = getMarqueeDisplayText()
         renderer.drawMarquee(text: marqueeText, offset: marqueeOffset, in: context)
         
         // Draw playback status indicator - show video state if video is active
@@ -649,15 +680,13 @@ class MainWindowView: NSView {
         marqueeTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
-            // Use video title if video session is active, otherwise track title
+            // Use video title if video session is active, radio status if radio active, otherwise track title
             // Show "Loading..." when casting a local file (prevents UI jumping during rapid clicks)
             let title: String
             if self.isCastingLocalFile {
                 title = "Loading..."
-            } else if WindowManager.shared.isVideoActivePlayback, let videoTitle = WindowManager.shared.currentVideoTitle {
-                title = videoTitle
             } else {
-                title = self.currentTrack?.displayTitle ?? "AdAmp"
+                title = self.getMarqueeDisplayText()
             }
             
             let charWidth = SkinElements.TextFont.charWidth

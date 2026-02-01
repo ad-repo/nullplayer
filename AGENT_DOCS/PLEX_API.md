@@ -320,9 +320,10 @@ http://192.168.0.102:32400/library/parts/653835/1723508508/file.flac?X-Plex-Toke
 
 ### Seed Selection
 
-**Radio Selector UI** (menu-based radio selection):
-- Uses the **currently playing track** as the seed
-- If no track is playing, select a **random track** from the library and start playback
+**RADIO Tab** (list-based radio selection in Library Browser):
+- Access Plex Radio stations from the RADIO tab when connected to a Plex music library
+- For Sonic variants, uses the **currently playing track** as the seed
+- If no track is playing, selects a **random track** from the library as the seed
 
 **Right-click Context Menu**:
 - Track Radio uses the **clicked track** as the seed (unchanged)

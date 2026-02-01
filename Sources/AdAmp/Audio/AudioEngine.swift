@@ -872,6 +872,11 @@ class AudioEngine {
         // Cancel any in-progress crossfade
         cancelCrossfade()
         
+        // If playing radio, notify RadioManager of manual stop (prevents auto-reconnect)
+        if RadioManager.shared.isActive {
+            RadioManager.shared.stop()
+        }
+        
         // If casting is active, handle stop based on device type
         if isCastingActive {
             Task {
@@ -924,6 +929,37 @@ class AudioEngine {
                 }
             }
         }
+    }
+    
+    /// Stop local playback when casting starts
+    /// Fully stops streaming connections (important for Subsonic/Navidrome concurrent stream limits)
+    /// but preserves track metadata and position for casting to use
+    func stopLocalForCasting() {
+        NSLog("AudioEngine: stopLocalForCasting - releasing streaming connection for cast")
+        
+        // Save current position before stopping
+        let currentPosition = currentTime
+        if let startDate = playbackStartDate {
+            _currentTime += Date().timeIntervalSince(startDate)
+        }
+        playbackStartDate = nil
+        
+        // Fully stop streaming player to release the connection
+        // This is critical for Subsonic/Navidrome which limits concurrent streams per user
+        if isStreamingPlayback {
+            streamingPlayer?.stop()
+            NSLog("AudioEngine: Stopped streaming player - connection released")
+        } else {
+            playerNode.stop()
+        }
+        
+        state = .stopped
+        stopTimeUpdates()
+        
+        // Don't report to Plex/Subsonic as "stopped" - casting is taking over playback
+        // Don't clear spectrum or reset track metadata - casting needs it
+        
+        NSLog("AudioEngine: Local playback stopped for casting, position preserved: %.1fs", currentPosition)
     }
     
     func previous() {
@@ -1683,12 +1719,34 @@ class AudioEngine {
         
         NSLog("loadTracks: %d valid tracks (%d skipped)", validTracks.count, missingCount)
         
+        // Stop RadioManager if we're loading non-radio content
+        // Radio content is identified by matching the current station's URL
+        let isRadioContent: Bool
+        if RadioManager.shared.isActive {
+            isRadioContent = validTracks.first.map { track in
+                RadioManager.shared.currentStation?.url == track.url
+            } ?? false
+            
+            if !isRadioContent {
+                NSLog("loadTracks: stopping RadioManager (loading non-radio content)")
+                RadioManager.shared.stop()
+            }
+        } else {
+            isRadioContent = false
+        }
+        
         // Check if we're currently casting - we want to keep the cast session active
         let wasCasting = isCastingActive
         
         // Stop current local playback (but don't disconnect from cast device if casting)
         if wasCasting {
             // Just stop local playback, keep cast session
+            stopLocalOnly()
+            stopStreamingPlayer()
+            isStreamingPlayback = false
+        } else if isRadioContent {
+            // For radio content, stop local playback but don't call stop()
+            // which would call RadioManager.stop() and break radio tracking
             stopLocalOnly()
             stopStreamingPlayer()
             isStreamingPlayback = false
@@ -3003,6 +3061,11 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             self.state = .playing
             playbackStartDate = Date()
             isSeekingStreaming = false  // Clear seeking flag on successful playback
+            
+            // Notify RadioManager that stream connected successfully
+            if RadioManager.shared.isActive {
+                RadioManager.shared.streamDidConnect()
+            }
         case .paused:
             self.state = .paused
         case .stopped:
@@ -3039,6 +3102,14 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             NSLog("AudioEngine: Ignoring EOF during track switch")
             return
         }
+        
+        // For radio streams, don't advance - let RadioManager handle reconnection
+        if RadioManager.shared.isActive {
+            NSLog("AudioEngine: Radio stream ended - delegating to RadioManager for reconnect")
+            RadioManager.shared.streamDidDisconnect(error: nil)
+            return
+        }
+        
         NSLog("AudioEngine: Streaming track finished, advancing playlist")
         trackDidFinish()
     }
@@ -3121,6 +3192,13 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // so we handle recovery here
         NSLog("AudioEngine: Streaming error - %@", String(describing: error))
         
+        // Check if this is a radio stream - let RadioManager handle reconnection
+        if RadioManager.shared.isActive {
+            NSLog("AudioEngine: Radio stream error - delegating to RadioManager for reconnect")
+            RadioManager.shared.streamDidDisconnect(error: error)
+            return
+        }
+        
         // Check if this is the M4A packet table error (non-optimized M4A file)
         let errorDescription = String(describing: error)
         let isPacketTableError = errorDescription.contains("packet table") || 
@@ -3148,6 +3226,13 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                     self.next()
                 }
             }
+        }
+    }
+    
+    func streamingPlayerDidReceiveMetadata(_ metadata: [String: String]) {
+        // Forward ICY metadata to RadioManager for radio streams
+        if RadioManager.shared.isActive {
+            RadioManager.shared.streamDidReceiveMetadata(metadata)
         }
     }
 }

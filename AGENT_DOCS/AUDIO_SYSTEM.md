@@ -707,8 +707,21 @@ struct Track {
 
 Stream URLs include authentication parameters:
 ```
-http://server/rest/stream?id=SONG_ID&u=USERNAME&t=TOKEN&s=SALT&v=1.16.1&c=AdAmp&f=json
+http://server/rest/stream?id=SONG_ID&u=USERNAME&t=TOKEN&s=SALT&v=1.16.1&c=AdAmp
 ```
+
+**Note:** The `f=json` parameter is intentionally omitted from stream URLs. It should only be used for REST API calls that return JSON - stream endpoints return binary audio data.
+
+### Casting to Sonos
+
+When casting Subsonic content to Sonos speakers, streams are proxied through LocalMediaServer:
+
+1. Sonos has issues with URLs containing query parameters (authentication tokens)
+2. Navidrome may be bound to localhost, unreachable by Sonos speakers
+3. The proxy provides a clean URL: `http://{mac-ip}:8765/stream/{token}`
+4. LocalMediaServer fetches from Navidrome and streams to Sonos (no transcoding)
+
+See [SONOS.md](SONOS.md) for full casting documentation.
 
 ### API Endpoints
 
