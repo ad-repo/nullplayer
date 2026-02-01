@@ -551,6 +551,14 @@ class RadioManager {
     /// Updates the connection state since local playback won't trigger streamDidConnect
     func castDidConnect() {
         guard currentStation != nil else { return }
+        
+        // Cancel any pending reconnect timer - casting has taken over playback
+        // Without this, a timer scheduled before casting could fire and set
+        // connectionState to .connecting, but since play() is skipped during casting,
+        // streamDidConnect() never fires, leaving state stuck at .connecting
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
+        
         connectionState = .connected
         reconnectAttempts = 0
         NSLog("RadioManager: Cast connected")
