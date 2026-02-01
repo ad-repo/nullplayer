@@ -5999,7 +5999,9 @@ class PlexBrowserView: NSView {
         
         // Check server bar
         if hitTestServerBar(at: winampPoint) {
-            if !PlexManager.shared.isLinked {
+            // For local files, radio, or subsonic - always handle the click
+            // For Plex - check if linked first
+            if case .plex = currentSource, !PlexManager.shared.isLinked {
                 controller?.showLinkSheet()
             } else {
                 handleServerBarClick(at: winampPoint, event: event)
