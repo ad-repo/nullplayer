@@ -99,6 +99,22 @@ class RadioManager {
     // MARK: - UserDefaults Keys
     
     private let stationsKey = "RadioStations"
+    private let deletedDefaultsKey = "RadioDeletedDefaults"
+    
+    /// URLs of default stations the user has intentionally deleted (won't be re-added)
+    private var deletedDefaultURLs: Set<String> {
+        get {
+            Set(UserDefaults.standard.stringArray(forKey: deletedDefaultsKey) ?? [])
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: deletedDefaultsKey)
+        }
+    }
+    
+    /// Check if a URL is a default station URL
+    private func isDefaultStationURL(_ url: URL) -> Bool {
+        Self.defaultStations.contains { $0.url == url }
+    }
     
     // MARK: - Initialization
     
@@ -126,20 +142,186 @@ class RadioManager {
     
     /// Default stations to show for new users
     private static let defaultStations: [RadioStation] = [
+        // MARK: - Ambient/Chill (Original defaults)
         RadioStation(
             name: "SomaFM Groove Salad",
-            url: URL(string: "https://ice2.somafm.com/groovesalad-128-mp3")!,
+            url: URL(string: "https://ice5.somafm.com/groovesalad-128-mp3")!,
             genre: "Ambient/Chill"
         ),
         RadioStation(
             name: "SomaFM DEF CON Radio",
-            url: URL(string: "https://ice2.somafm.com/defcon-128-mp3")!,
+            url: URL(string: "https://ice5.somafm.com/defcon-128-mp3")!,
             genre: "Electronic"
         ),
         RadioStation(
             name: "SomaFM Drone Zone",
-            url: URL(string: "https://ice2.somafm.com/dronezone-128-mp3")!,
+            url: URL(string: "https://ice5.somafm.com/dronezone-128-mp3")!,
             genre: "Ambient"
+        ),
+        
+        // MARK: - Metal
+        RadioStation(
+            name: "SomaFM Metal Detector",
+            url: URL(string: "https://ice5.somafm.com/metal-128-mp3")!,
+            genre: "Metal"
+        ),
+        RadioStation(
+            name: "Nightride FM Darksynth",
+            url: URL(string: "https://stream.nightride.fm/darksynth.mp3")!,
+            genre: "Metal"
+        ),
+        RadioStation(
+            name: "SomaFM Doomed",
+            url: URL(string: "https://ice5.somafm.com/doomed-128-mp3")!,
+            genre: "Metal"
+        ),
+        
+        // MARK: - Rock
+        RadioStation(
+            name: "Radio Paradise Rock",
+            url: URL(string: "http://stream.radioparadise.com/rock-128")!,
+            genre: "Rock"
+        ),
+        RadioStation(
+            name: "SomaFM Indie Pop Rocks",
+            url: URL(string: "https://ice5.somafm.com/indiepop-128-mp3")!,
+            genre: "Rock"
+        ),
+        RadioStation(
+            name: "Nightride FM",
+            url: URL(string: "https://stream.nightride.fm/nightride.mp3")!,
+            genre: "Rock"
+        ),
+        
+        // MARK: - Classic Rock
+        RadioStation(
+            name: "SomaFM Left Coast 70s",
+            url: URL(string: "https://ice5.somafm.com/seventies-128-mp3")!,
+            genre: "Classic Rock"
+        ),
+        RadioStation(
+            name: "Radio Paradise",
+            url: URL(string: "http://stream.radioparadise.com/aac-128")!,
+            genre: "Classic Rock"
+        ),
+        RadioStation(
+            name: "SomaFM Underground 80s",
+            url: URL(string: "https://ice5.somafm.com/u80s-128-mp3")!,
+            genre: "Classic Rock"
+        ),
+        
+        // MARK: - Hip Hop
+        RadioStation(
+            name: "SomaFM Fluid",
+            url: URL(string: "https://ice5.somafm.com/fluid-128-mp3")!,
+            genre: "Hip Hop"
+        ),
+        RadioStation(
+            name: "SomaFM Seven Inch Soul",
+            url: URL(string: "https://ice5.somafm.com/7soul-128-mp3")!,
+            genre: "Hip Hop"
+        ),
+        RadioStation(
+            name: "SomaFM Beat Blender",
+            url: URL(string: "https://ice5.somafm.com/beatblender-128-mp3")!,
+            genre: "Hip Hop"
+        ),
+        
+        // MARK: - Rap
+        RadioStation(
+            name: "SomaFM PopTron",
+            url: URL(string: "https://ice5.somafm.com/poptron-128-mp3")!,
+            genre: "Rap"
+        ),
+        RadioStation(
+            name: "Nightride FM EBSM",
+            url: URL(string: "https://stream.nightride.fm/ebsm.mp3")!,
+            genre: "Rap"
+        ),
+        RadioStation(
+            name: "SomaFM Black Rock FM",
+            url: URL(string: "https://ice5.somafm.com/brfm-128-mp3")!,
+            genre: "Rap"
+        ),
+        
+        // MARK: - Jazz
+        RadioStation(
+            name: "SomaFM Sonic Universe",
+            url: URL(string: "https://ice5.somafm.com/sonicuniverse-128-mp3")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "SomaFM Secret Agent",
+            url: URL(string: "https://ice5.somafm.com/secretagent-128-mp3")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "SomaFM Illinois Street Lounge",
+            url: URL(string: "https://ice5.somafm.com/illstreet-128-mp3")!,
+            genre: "Jazz"
+        ),
+        
+        // MARK: - Classical
+        RadioStation(
+            name: "SomaFM Bossa Beyond",
+            url: URL(string: "https://ice5.somafm.com/bossa-128-mp3")!,
+            genre: "Classical"
+        ),
+        RadioStation(
+            name: "Classical KING FM",
+            url: URL(string: "https://classicalking.streamguys1.com/king-fm-aac")!,
+            genre: "Classical"
+        ),
+        RadioStation(
+            name: "SomaFM ThistleRadio",
+            url: URL(string: "https://ice5.somafm.com/thistle-128-mp3")!,
+            genre: "Classical"
+        ),
+        
+        // MARK: - EDM
+        RadioStation(
+            name: "SomaFM The Trip",
+            url: URL(string: "https://ice5.somafm.com/thetrip-128-mp3")!,
+            genre: "EDM"
+        ),
+        RadioStation(
+            name: "SomaFM Dub Step Beyond",
+            url: URL(string: "https://ice5.somafm.com/dubstep-128-mp3")!,
+            genre: "EDM"
+        ),
+        RadioStation(
+            name: "Nightride FM Chillsynth",
+            url: URL(string: "https://stream.nightride.fm/chillsynth.mp3")!,
+            genre: "EDM"
+        ),
+        
+        // MARK: - NPR
+        RadioStation(
+            name: "NPR Program Stream",
+            url: URL(string: "http://npr-ice.streamguys1.com/live.mp3")!,
+            genre: "NPR"
+        ),
+        RadioStation(
+            name: "WNYC 93.9 FM",
+            url: URL(string: "https://fm939.wnyc.org/wnycfm")!,
+            genre: "NPR"
+        ),
+        RadioStation(
+            name: "WBUR Boston 90.9",
+            url: URL(string: "http://wbur-sc.streamguys.com/wbur")!,
+            genre: "NPR"
+        ),
+        RadioStation(
+            name: "GBH Boston 89.7",
+            url: URL(string: "https://wgbh-live.streamguys1.com/wgbh")!,
+            genre: "NPR"
+        ),
+        
+        // MARK: - News
+        RadioStation(
+            name: "BBC World Service",
+            url: URL(string: "http://stream.live.vc.bbcmedia.co.uk/bbc_world_service")!,
+            genre: "News"
         )
     ]
     
@@ -161,6 +343,13 @@ class RadioManager {
     
     /// Remove a station
     func removeStation(_ station: RadioStation) {
+        // If this is a default station, track it so it won't be re-added
+        if isDefaultStationURL(station.url) {
+            var deleted = deletedDefaultURLs
+            deleted.insert(station.url.absoluteString)
+            deletedDefaultURLs = deleted
+            NSLog("RadioManager: Tracking deleted default station '%@'", station.name)
+        }
         stations.removeAll { $0.id == station.id }
         NSLog("RadioManager: Removed station '%@'", station.name)
     }
@@ -175,6 +364,34 @@ class RadioManager {
     /// Move station in the list
     func moveStation(from source: IndexSet, to destination: Int) {
         stations.move(fromOffsets: source, toOffset: destination)
+    }
+    
+    /// Reset stations to defaults (removes all user stations and clears deleted tracking)
+    func resetToDefaults() {
+        // Clear the deleted defaults tracking so all defaults come back
+        deletedDefaultURLs = []
+        stations = Self.defaultStations
+        NSLog("RadioManager: Reset to %d default stations", stations.count)
+    }
+    
+    /// Add any default stations that aren't already in the user's list
+    /// (skips stations the user has previously deleted)
+    func addMissingDefaults() {
+        let deleted = deletedDefaultURLs
+        var added = 0
+        for defaultStation in Self.defaultStations {
+            // Skip if user previously deleted this default
+            if deleted.contains(defaultStation.url.absoluteString) {
+                continue
+            }
+            // Check if station with same URL already exists
+            let exists = stations.contains { $0.url == defaultStation.url }
+            if !exists {
+                stations.append(defaultStation)
+                added += 1
+            }
+        }
+        NSLog("RadioManager: Added %d missing default stations (skipped %d deleted)", added, deleted.count)
     }
     
     // MARK: - Playback

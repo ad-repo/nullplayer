@@ -6317,6 +6317,16 @@ class PlexBrowserView: NSView {
         importFileItem.target = self
         menu.addItem(importFileItem)
         
+        menu.addItem(NSMenuItem.separator())
+        
+        let addDefaultsItem = NSMenuItem(title: "Add Missing Defaults", action: #selector(addMissingRadioDefaults), keyEquivalent: "")
+        addDefaultsItem.target = self
+        menu.addItem(addDefaultsItem)
+        
+        let resetDefaultsItem = NSMenuItem(title: "Reset to Defaults", action: #selector(resetRadioToDefaults), keyEquivalent: "")
+        resetDefaultsItem.target = self
+        menu.addItem(resetDefaultsItem)
+        
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
     }
@@ -6542,6 +6552,30 @@ class PlexBrowserView: NSView {
                 } else {
                     self?.currentSource = .radio
                 }
+            }
+        }
+    }
+    
+    @objc private func addMissingRadioDefaults() {
+        RadioManager.shared.addMissingDefaults()
+        if case .radio = currentSource {
+            loadRadioStations()
+        }
+    }
+    
+    @objc private func resetRadioToDefaults() {
+        // Show confirmation dialog
+        let alert = NSAlert()
+        alert.messageText = "Reset to Defaults"
+        alert.informativeText = "This will remove all your saved radio stations and replace them with the default stations. Are you sure?"
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            RadioManager.shared.resetToDefaults()
+            if case .radio = currentSource {
+                loadRadioStations()
             }
         }
     }
@@ -9444,8 +9478,18 @@ class PlexBrowserView: NSView {
             displayItems.append(item)
         }
         
-        // Sort by name
-        displayItems.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        // Sort by genre first, then by name within each genre
+        displayItems.sort { a, b in
+            let genreA = a.info ?? ""
+            let genreB = b.info ?? ""
+            if genreA != genreB {
+                // Empty genre goes last
+                if genreA.isEmpty { return false }
+                if genreB.isEmpty { return true }
+                return genreA.localizedCaseInsensitiveCompare(genreB) == .orderedAscending
+            }
+            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+        }
     }
     
     @objc private func radioStationsDidChange() {
