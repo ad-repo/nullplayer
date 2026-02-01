@@ -531,7 +531,7 @@ To fix problematic M4A files, re-encode with `ffmpeg -i input.m4a -movflags +fas
 
 ## Platform Requirements
 
-- **macOS 13.0+** (required by AudioStreaming library)
+- **macOS 14.0+** (required by Swift 6.0 toolchain)
 
 ## Plex Play Statistics
 

@@ -268,7 +268,8 @@ class ProjectMWrapper: VisualizationEngine {
     var hasValidPreset: Bool {
         renderLock.lock()
         defer { renderLock.unlock() }
-        return presetCount > 0 && _currentPresetIndex >= 0 && _presetLoaded && !_presetLoadInProgress && _framesAfterLoad >= framesRequiredAfterLoad
+        let timeSinceChange = CFAbsoluteTimeGetCurrent() - _lastPresetChangeTime
+        return presetCount > 0 && _currentPresetIndex >= 0 && _presetLoaded && !_presetLoadInProgress && _framesAfterLoad >= framesRequiredAfterLoad && timeSinceChange >= minTimeAfterPresetChange
     }
     
     /// Flag indicating a preset has been successfully loaded
@@ -283,7 +284,18 @@ class ProjectMWrapper: VisualizationEngine {
     
     /// Number of frames to wait after preset load before rendering
     /// This gives projectM time to fully initialize textures and shaders
-    private let framesRequiredAfterLoad: Int = 3
+    private let framesRequiredAfterLoad: Int = 10
+    
+    /// Timestamp of last preset change (for time-based delay)
+    private var _lastPresetChangeTime: CFAbsoluteTime = 0
+    
+    /// Minimum time (seconds) to wait after preset change before rendering
+    /// This ensures textures are fully initialized even if frame timing is inconsistent
+    private let minTimeAfterPresetChange: CFAbsoluteTime = 0.25
+    
+    /// Minimum time (seconds) between preset changes (rate limiting)
+    /// Prevents crashes from rapid clicking by ignoring requests that are too close together
+    private let minTimeBetweenPresetChanges: CFAbsoluteTime = 0.35
     
     /// Flag indicating we're currently inside renderFrame
     /// Used to detect and prevent re-entry
@@ -309,9 +321,11 @@ class ProjectMWrapper: VisualizationEngine {
         // Also skip if a preset load is in progress
         guard _presetLoaded && !_presetLoadInProgress else { return }
         
-        // Wait a few frames after preset load before rendering
+        // Wait for BOTH frame count AND time delay after preset load
         // This gives projectM time to fully initialize shaders and textures
-        if _framesAfterLoad < framesRequiredAfterLoad {
+        // Time-based delay handles cases where frame timing is inconsistent
+        let timeSinceChange = CFAbsoluteTimeGetCurrent() - _lastPresetChangeTime
+        if _framesAfterLoad < framesRequiredAfterLoad || timeSinceChange < minTimeAfterPresetChange {
             _framesAfterLoad += 1
             // Clear to black while waiting
             glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
@@ -418,6 +432,14 @@ class ProjectMWrapper: VisualizationEngine {
             return
         }
         
+        // Rate limiting: ignore preset changes that are too close together
+        // This prevents crashes from rapid clicking by giving projectM time to stabilize
+        let timeSinceLastChange = CFAbsoluteTimeGetCurrent() - _lastPresetChangeTime
+        if timeSinceLastChange < minTimeBetweenPresetChanges && _presetLoaded {
+            // Too soon since last change - ignore this request
+            return
+        }
+        
         let path = presetFiles[index]
         let name = presetName(at: index)
         
@@ -426,10 +448,18 @@ class ProjectMWrapper: VisualizationEngine {
         // Lock to prevent concurrent rendering during preset switch
         renderLock.lock()
         
+        // Double-check rate limiting inside the lock (in case of concurrent calls)
+        let timeSinceLastChangeLocked = CFAbsoluteTimeGetCurrent() - _lastPresetChangeTime
+        if timeSinceLastChangeLocked < minTimeBetweenPresetChanges && _presetLoaded {
+            renderLock.unlock()
+            return
+        }
+        
         // Mark that we're loading - this prevents rendering during the load
         _presetLoadInProgress = true
         _presetLoaded = false
         _framesAfterLoad = 0  // Reset frame counter for new preset
+        _lastPresetChangeTime = CFAbsoluteTimeGetCurrent()  // Record timestamp
         
         // Load the preset file (use hard cut to avoid blend race conditions)
         // Soft transitions can cause crashes when accessing textures from both presets

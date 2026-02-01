@@ -64,6 +64,8 @@ class MilkdropWindowController: NSWindowController {
         super.showWindow(sender)
         // Position after window is shown to ensure correct frame dimensions
         positionWindow()
+        // Restart rendering (may have been stopped by windowWillClose)
+        milkdropView.startRendering()
     }
     
     /// Position the window to the LEFT of the main window

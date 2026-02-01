@@ -390,8 +390,13 @@ class MilkdropView: NSView {
             return
         }
         
-        // Click in visualization content area - advance to next preset
-        visualizationGLView?.nextPreset(hardCut: false)
+        // Content area - allow window dragging (removed click-to-advance preset to prevent crashes from rapid clicking)
+        // Use arrow keys, context menu, or auto-cycle to change presets instead
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
+        if let window = window {
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: false)
+        }
     }
     
     /// Handle mouse down in shade mode
