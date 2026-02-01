@@ -94,6 +94,7 @@ pgrep -l AdAmp  # Shows PID if running
 | [AGENT_DOCS/USER_GUIDE.md](AGENT_DOCS/USER_GUIDE.md) | Features, menus, keyboard shortcuts |
 | [AGENT_DOCS/UI_GUIDE.md](AGENT_DOCS/UI_GUIDE.md) | Coordinate systems, scaling, skin sprites |
 | [AGENT_DOCS/AUDIO_SYSTEM.md](AGENT_DOCS/AUDIO_SYSTEM.md) | Audio engine, EQ, spectrum, Plex/Subsonic streaming |
+| [AGENT_DOCS/RADIO.md](AGENT_DOCS/RADIO.md) | Internet radio, auto-reconnect, ICY metadata, casting |
 | [AGENT_DOCS/VISUALIZATIONS.md](AGENT_DOCS/VISUALIZATIONS.md) | Album art and ProjectM visualizers |
 | [AGENT_DOCS/TESTING.md](AGENT_DOCS/TESTING.md) | UI testing mode, accessibility identifiers |
 | [AGENT_DOCS/SONOS.md](AGENT_DOCS/SONOS.md) | Sonos discovery, multi-room casting, custom checkbox UI |
@@ -168,6 +169,8 @@ Sources/AdAmp/
 - **Sonos menu**: Uses custom `SonosRoomCheckboxView` to keep menu open during multi-select
 - **Sonos room IDs**: `sonosRooms` returns room UDNs, `sonosDevices` only has group coordinators - match carefully
 - **Subsonic→Sonos casting**: Uses LocalMediaServer proxy because Sonos can't handle URLs with query params (auth tokens). The proxy also handles localhost-bound Navidrome servers. Stream URLs omit `f=json` (only for API responses, not binary streams)
+- **Internet radio state management**: `loadTracks()` must use `stopLocalOnly()` instead of `stop()` when loading radio content - calling `stop()` triggers `RadioManager.stop()` which clears state and breaks auto-reconnect/metadata. The `isRadioContent` check detects radio by matching track URL with `currentStation.url`
+- **Radio playlist URL resolution**: When resolving `.pls`/`.m3u` URLs, check `CastManager.shared.isCasting` fresh inside the async callback, not captured before the network request (up to 10s timeout). User may start casting during resolution
 - **Video casting has TWO paths** - handle both in control logic:
   - **Player path**: Cast button in video player → `VideoPlayerWindowController.isCastingVideo`
   - **Menu path**: Right-click → Cast to... → `CastManager.shared.isVideoCasting` (no video player window!)
@@ -208,10 +211,12 @@ Manual QA for UI/playback changes:
 - Local file playback
 - Plex streaming
 - Subsonic/Navidrome streaming
+- Internet radio (playback, auto-reconnect, ICY metadata display)
 - Multiple skins
 - Window snapping/docking
 - Visualizations
 - Sonos casting (multi-room selection, join/leave while casting)
+- Radio casting to Sonos (verify stream plays, time resets to 0:00)
 - Video casting (Plex movies/episodes to Chromecast/DLNA TVs)
 
 ## Troubleshooting Integrations
