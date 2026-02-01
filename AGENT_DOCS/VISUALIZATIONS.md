@@ -264,3 +264,8 @@ ProjectM adjusts its visuals based on detected beats. AdAmp uses two sensitivity
 - Some presets reference textures that may cause issues
 - If crashes persist, try different presets or stick to Manual Only mode
 - Check Console.app for "projectM" errors to identify problematic presets
+
+**Null texture pointer crash (Texture::Empty):**
+- This was caused by an OpenGL context race condition between the main thread (reshape/resize) and the CVDisplayLink render thread
+- Fixed by removing direct OpenGL calls from the `reshape()` method - the render thread now handles all viewport updates safely
+- The render thread already updates viewport dimensions every frame via `setViewportSize()` with proper locking

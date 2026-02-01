@@ -420,16 +420,11 @@ class VisualizationGLView: NSOpenGLView {
     
     override func reshape() {
         super.reshape()
-
-        // Update viewport on resize
-        openGLContext?.makeCurrentContext()
-        openGLContext?.update()
-
-        let backingBounds = convertToBacking(bounds)
-        glViewport(0, 0, GLsizei(backingBounds.width), GLsizei(backingBounds.height))
-
-        // Update engine viewport
-        engine?.setViewportSize(width: Int(backingBounds.width), height: Int(backingBounds.height))
+        // Don't make OpenGL calls here - the render thread handles viewport updates
+        // via renderEngine() calling setViewportSize() every frame.
+        // Making GL calls from the main thread while CVDisplayLink is rendering
+        // can corrupt OpenGL state and cause projectM crashes (null texture pointer
+        // in libprojectM::Renderer::Texture::Empty()).
     }
     
     // MARK: - Hit Testing

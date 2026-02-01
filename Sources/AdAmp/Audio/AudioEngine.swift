@@ -1559,9 +1559,33 @@ class AudioEngine {
             }
         } else if !playlist.isEmpty {
             if shuffleEnabled {
-                // Shuffle without repeat: stop after current track
+                // Shuffle without repeat: pick random track and continue
+                currentIndex = Int.random(in: 0..<playlist.count)
+                let track = playlist[currentIndex]
+                let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+                
+                // For local files, defer UI update until cast completes
+                if !isLocalFile {
+                    currentTrack = track
+                }
+                
                 Task {
-                    await CastManager.shared.stopCasting()
+                    do {
+                        try await CastManager.shared.castNewTrack(track)
+                        if isLocalFile {
+                            await MainActor.run {
+                                self.currentTrack = track
+                            }
+                        }
+                    } catch {
+                        NSLog("castTrackDidFinish: failed to cast shuffle: %@", error.localizedDescription)
+                        // Restore index on failure to keep playlist navigation consistent
+                        if isLocalFile {
+                            await MainActor.run {
+                                self.currentIndex = previousIndex
+                            }
+                        }
+                    }
                 }
             } else if currentIndex < playlist.count - 1 {
                 // More tracks to play - advance
