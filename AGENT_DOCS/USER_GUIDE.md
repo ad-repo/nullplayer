@@ -28,7 +28,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex Media Server integration
 
 ## System Requirements
 
-- **macOS 13.0 (Ventura)** or later
+- **macOS 14.0 (Sonoma)** or later
 - Internet connection (for Plex streaming and skin downloads)
 
 ---

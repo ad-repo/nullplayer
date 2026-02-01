@@ -57,7 +57,7 @@ After either option, AdAmp will open normally.
 
 ## Requirements
 
-- macOS 13.0 (Ventura) or later
+- macOS 14.0 (Sonoma) or later
 
 ## Building from Source
 
