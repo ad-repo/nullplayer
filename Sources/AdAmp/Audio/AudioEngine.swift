@@ -1721,8 +1721,9 @@ class AudioEngine {
         
         // Stop RadioManager if we're loading non-radio content
         // Radio content is identified by matching the current station's URL
+        let isRadioContent: Bool
         if RadioManager.shared.isActive {
-            let isRadioContent = validTracks.first.map { track in
+            isRadioContent = validTracks.first.map { track in
                 RadioManager.shared.currentStation?.url == track.url
             } ?? false
             
@@ -1730,6 +1731,8 @@ class AudioEngine {
                 NSLog("loadTracks: stopping RadioManager (loading non-radio content)")
                 RadioManager.shared.stop()
             }
+        } else {
+            isRadioContent = false
         }
         
         // Check if we're currently casting - we want to keep the cast session active
@@ -1738,6 +1741,12 @@ class AudioEngine {
         // Stop current local playback (but don't disconnect from cast device if casting)
         if wasCasting {
             // Just stop local playback, keep cast session
+            stopLocalOnly()
+            stopStreamingPlayer()
+            isStreamingPlayback = false
+        } else if isRadioContent {
+            // For radio content, stop local playback but don't call stop()
+            // which would call RadioManager.stop() and break radio tracking
             stopLocalOnly()
             stopStreamingPlayer()
             isStreamingPlayback = false
