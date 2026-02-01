@@ -105,6 +105,7 @@ enum PlexBrowseMode: Int, CaseIterable {
     case movies = 4
     case shows = 5
     case search = 6
+    case radio = 7
     
     var title: String {
         switch self {
@@ -115,6 +116,7 @@ enum PlexBrowseMode: Int, CaseIterable {
         case .movies: return "Movies"
         case .shows: return "Shows"
         case .search: return "Search"
+        case .radio: return "Radio"
         }
     }
     
@@ -124,6 +126,10 @@ enum PlexBrowseMode: Int, CaseIterable {
     
     var isMusicMode: Bool {
         self == .artists || self == .albums || self == .tracks || self == .plists
+    }
+    
+    var isRadioMode: Bool {
+        self == .radio
     }
 }
 
@@ -1151,6 +1157,15 @@ class PlexBrowserView: NSView {
         isLoading = false
         stopLoadingAnimation()
         
+        // Sync browse mode with radio source
+        if case .radio = currentSource {
+            // When switching to radio source, automatically switch to radio tab
+            browseMode = .radio
+        } else if browseMode == .radio {
+            // When switching away from radio source, switch to artists tab
+            browseMode = .artists
+        }
+        
         // Reload data for new source
         reloadData()
     }
@@ -1165,12 +1180,14 @@ class PlexBrowserView: NSView {
     }
     
     @objc private func mediaLibraryDidChange() {
-        // Only reload if we're showing local content
+        // Only reload if we're showing local content (not on radio tab)
         guard case .local = currentSource else { return }
+        guard browseMode != .radio else { return }
         
         DispatchQueue.main.async { [weak self] in
-            self?.loadLocalData()
-            self?.needsDisplay = true
+            guard let self = self, self.browseMode != .radio else { return }
+            self.loadLocalData()
+            self.needsDisplay = true
         }
     }
     
@@ -1869,7 +1886,7 @@ class PlexBrowserView: NSView {
         let shouldRound = backingScale < 1.5
         
         // Calculate sort indicator width (on the right)
-        let sortText = "Sort:\(currentSort.shortName)"
+        let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
         
         // Draw tabs (leave room for sort indicator)
@@ -2077,6 +2094,8 @@ class PlexBrowserView: NSView {
             message = "No playlists found"
         case .search:
             message = searchQuery.isEmpty ? "Type to search" : "No results found"
+        case .radio:
+            message = "No radio stations found"
         }
         
         // Draw using green skin text, centered
@@ -4363,16 +4382,27 @@ class PlexBrowserView: NSView {
     // MARK: - Public Methods
     
     func reloadData() {
-        // For local source, we don't need Plex to be linked
-        if case .local = currentSource {
-            loadLocalData()
+        // Radio source - only radio tab has content
+        if case .radio = currentSource {
+            if browseMode == .radio {
+                loadRadioStations()
+            } else {
+                displayItems = []
+            }
             needsDisplay = true
             return
         }
         
-        // For radio source
-        if case .radio = currentSource {
-            loadRadioStations()
+        // Non-radio sources: radio tab shows empty
+        if browseMode == .radio {
+            displayItems = []
+            needsDisplay = true
+            return
+        }
+        
+        // For local source, we don't need Plex to be linked
+        if case .local = currentSource {
+            loadLocalData()
             needsDisplay = true
             return
         }
@@ -5409,7 +5439,7 @@ class PlexBrowserView: NSView {
         let charWidth = SkinElements.TextFont.charWidth
         let textScale: CGFloat = 1.5
         let scaledCharWidth = charWidth * textScale
-        let sortText = "Sort:\(currentSort.shortName)"
+        let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
         
         // Tabs area excludes sort indicator
@@ -6194,6 +6224,20 @@ class PlexBrowserView: NSView {
     
     /// Handle refresh button click based on current source
     private func handleRefreshClick() {
+        // Radio source - only radio tab has content to refresh
+        if case .radio = currentSource {
+            if browseMode == .radio {
+                loadRadioStations()
+            }
+            // Non-radio tabs on radio source - nothing to refresh
+            return
+        }
+        
+        // Non-radio sources: radio tab has nothing to refresh
+        if browseMode == .radio {
+            return
+        }
+        
         switch currentSource {
         case .local:
             // Rescan watch folders
@@ -6212,8 +6256,8 @@ class PlexBrowserView: NSView {
                 }
             }
         case .radio:
-            // Reload radio stations
-            loadRadioStations()
+            // Already handled above
+            break
         }
     }
     
@@ -8780,6 +8824,31 @@ class PlexBrowserView: NSView {
     // MARK: - Data Management
     
     private func loadDataForCurrentMode() {
+        // Radio source - only radio tab has content
+        if case .radio = currentSource {
+            if browseMode == .radio {
+                loadRadioStations()
+            } else {
+                // Non-radio tabs show empty for radio source
+                isLoading = false
+                errorMessage = nil
+                stopLoadingAnimation()
+                displayItems = []
+                needsDisplay = true
+            }
+            return
+        }
+        
+        // Non-radio sources: radio tab shows empty
+        if browseMode == .radio {
+            isLoading = false
+            errorMessage = nil
+            stopLoadingAnimation()
+            displayItems = []
+            needsDisplay = true
+            return
+        }
+        
         // Check source first - local files don't need async loading
         if case .local = currentSource {
             loadLocalData()
@@ -8892,6 +8961,11 @@ class PlexBrowserView: NSView {
                     } else {
                         displayItems = []
                     }
+                    
+                case .radio:
+                    // Radio is handled at the start of loadDataForCurrentMode()
+                    // This case should never be reached but is here for exhaustive switch
+                    loadRadioStations()
                 }
                 
                 isLoading = false
@@ -9439,6 +9513,9 @@ class PlexBrowserView: NSView {
         case .movies, .shows:
             // Video modes not supported for local content - show empty
             displayItems = []
+        case .radio:
+            // Radio is handled by loadRadioStations() in loadDataForCurrentMode()
+            break
         }
         
         // Load artwork from browsed content
@@ -9605,6 +9682,10 @@ class PlexBrowserView: NSView {
                 case .movies, .shows:
                     // Video modes not supported for Subsonic
                     displayItems = []
+                    
+                case .radio:
+                    // Radio is handled by loadRadioStations() in loadDataForCurrentMode()
+                    break
                 }
                 
                 isLoading = false
@@ -10065,6 +10146,24 @@ class PlexBrowserView: NSView {
         // Reset horizontal scroll when items change
         horizontalScrollOffset = 0
         
+        // Radio source - only radio tab has content
+        if case .radio = currentSource {
+            if browseMode == .radio {
+                buildRadioStationItems()
+            } else {
+                displayItems = []
+            }
+            needsDisplay = true
+            return
+        }
+        
+        // Non-radio sources: radio tab shows empty
+        if browseMode == .radio {
+            displayItems = []
+            needsDisplay = true
+            return
+        }
+        
         // Check source type
         if case .local = currentSource {
             switch browseMode {
@@ -10081,6 +10180,9 @@ class PlexBrowserView: NSView {
                 displayItems = []
             case .movies, .shows:
                 displayItems = []
+            case .radio:
+                // Handled above
+                break
             }
         } else if case .subsonic = currentSource {
             switch browseMode {
@@ -10096,6 +10198,9 @@ class PlexBrowserView: NSView {
                 buildSubsonicPlaylistItems()
             case .movies, .shows:
                 displayItems = []
+            case .radio:
+                // Handled above
+                break
             }
         } else {
             switch browseMode {
@@ -10113,6 +10218,9 @@ class PlexBrowserView: NSView {
                 buildPlexPlaylistItems()
             case .search:
                 buildSearchItems()
+            case .radio:
+                // Handled above
+                break
             }
         }
         
