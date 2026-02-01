@@ -5682,7 +5682,17 @@ class PlexBrowserView: NSView {
         
         // Right-click on empty space in radio mode - show add menu
         if case .radio = currentSource, !isArtOnlyMode {
-            showAddRadioMenu(at: event)
+            let menu = NSMenu()
+            
+            let addStationItem = NSMenuItem(title: "Add Station...", action: #selector(showAddRadioStationDialog), keyEquivalent: "")
+            addStationItem.target = self
+            menu.addItem(addStationItem)
+            
+            let addPlaylistItem = NSMenuItem(title: "Add Playlist URL...", action: #selector(showAddRadioPlaylistDialog), keyEquivalent: "")
+            addPlaylistItem.target = self
+            menu.addItem(addPlaylistItem)
+            
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
             return
         }
         
@@ -6184,8 +6194,8 @@ class PlexBrowserView: NSView {
             let addZoneEnd = addZoneStart + 4 * charWidth + 8  // "+ADD" (4 chars)
             
             if relativeX >= addZoneStart && relativeX <= addZoneEnd {
-                // +ADD button click - show add radio menu
-                showAddRadioMenu(at: event)
+                // +ADD button click - directly show add station dialog
+                showAddRadioStationDialog()
             } else if relativeX < sourceZoneEnd {
                 // Source area = source dropdown
                 showSourceMenu(at: event)
@@ -6295,22 +6305,6 @@ class PlexBrowserView: NSView {
         let addFolderItem = NSMenuItem(title: "Add Folder...", action: #selector(addWatchFolder), keyEquivalent: "")
         addFolderItem.target = self
         menu.addItem(addFolderItem)
-        
-        let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
-        menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
-    }
-    
-    /// Show the add radio station/playlist menu
-    private func showAddRadioMenu(at event: NSEvent) {
-        let menu = NSMenu()
-        
-        let addStationItem = NSMenuItem(title: "Add Station...", action: #selector(showAddRadioStationDialog), keyEquivalent: "")
-        addStationItem.target = self
-        menu.addItem(addStationItem)
-        
-        let addPlaylistItem = NSMenuItem(title: "Add Playlist URL...", action: #selector(showAddRadioPlaylistDialog), keyEquivalent: "")
-        addPlaylistItem.target = self
-        menu.addItem(addPlaylistItem)
         
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
