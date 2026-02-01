@@ -188,10 +188,112 @@ class RadioManager {
         
         NSLog("RadioManager: Playing station '%@' at %@", station.name, station.url.absoluteString)
         
-        // Create a track and load it into AudioEngine
-        let track = station.toTrack()
-        WindowManager.shared.audioEngine.loadTracks([track])
-        WindowManager.shared.audioEngine.play()
+        startPlayback(station: station)
+    }
+    
+    /// Internal playback start (used by play and reconnect)
+    private func startPlayback(station: RadioStation) {
+        // Check if URL is a playlist file that needs resolving
+        let ext = station.url.pathExtension.lowercased()
+        if ext == "pls" || ext == "m3u" || ext == "m3u8" {
+            // Resolve playlist to get actual stream URL
+            resolvePlaylistURL(station.url) { [weak self] resolvedURL in
+                guard let self = self else { return }
+                guard self.currentStation?.id == station.id else {
+                    NSLog("RadioManager: Station changed during resolution, cancelling")
+                    return
+                }
+                
+                if let streamURL = resolvedURL {
+                    NSLog("RadioManager: Resolved playlist to stream URL: %@", streamURL.absoluteString)
+                    // Create a modified station with the resolved URL
+                    let resolvedStation = RadioStation(
+                        id: station.id,
+                        name: station.name,
+                        url: streamURL,
+                        genre: station.genre,
+                        iconURL: station.iconURL
+                    )
+                    let track = resolvedStation.toTrack()
+                    WindowManager.shared.audioEngine.loadTracks([track])
+                    WindowManager.shared.audioEngine.play()
+                } else {
+                    NSLog("RadioManager: Failed to resolve playlist URL")
+                    self.connectionState = .failed(message: "Could not resolve playlist URL")
+                }
+            }
+        } else {
+            // Direct stream URL - play immediately
+            let track = station.toTrack()
+            WindowManager.shared.audioEngine.loadTracks([track])
+            WindowManager.shared.audioEngine.play()
+        }
+    }
+    
+    /// Resolve a playlist URL (.pls, .m3u) to get the actual stream URL
+    private func resolvePlaylistURL(_ url: URL, completion: @escaping (URL?) -> Void) {
+        NSLog("RadioManager: Resolving playlist URL: %@", url.absoluteString)
+        
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                guard let data = data, error == nil else {
+                    NSLog("RadioManager: Failed to fetch playlist: %@", error?.localizedDescription ?? "unknown")
+                    completion(nil)
+                    return
+                }
+                
+                guard let content = String(data: data, encoding: .utf8) else {
+                    NSLog("RadioManager: Could not decode playlist content")
+                    completion(nil)
+                    return
+                }
+                
+                // Parse the playlist content
+                let streamURL = self.parsePlaylistForStreamURL(content, sourceURL: url)
+                completion(streamURL)
+            }
+        }.resume()
+    }
+    
+    /// Parse playlist content to extract the first stream URL
+    private func parsePlaylistForStreamURL(_ content: String, sourceURL: URL) -> URL? {
+        let lines = content.components(separatedBy: .newlines)
+        let ext = sourceURL.pathExtension.lowercased()
+        
+        // PLS format
+        if ext == "pls" || content.lowercased().contains("[playlist]") {
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.lowercased().hasPrefix("file") {
+                    if let equalIndex = trimmed.firstIndex(of: "=") {
+                        let urlString = String(trimmed[trimmed.index(after: equalIndex)...])
+                        if let url = URL(string: urlString) {
+                            return url
+                        }
+                    }
+                }
+            }
+        }
+        
+        // M3U format or plain URLs
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Skip comments and metadata
+            if trimmed.isEmpty || trimmed.hasPrefix("#") {
+                continue
+            }
+            // Check if it's a valid URL
+            if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+                if let url = URL(string: trimmed) {
+                    return url
+                }
+            }
+        }
+        
+        return nil
     }
     
     /// Stop radio playback
@@ -272,10 +374,8 @@ class RadioManager {
         NSLog("RadioManager: Attempting reconnect to '%@'", station.name)
         connectionState = .connecting
         
-        // Reload the track
-        let track = station.toTrack()
-        WindowManager.shared.audioEngine.loadTracks([track])
-        WindowManager.shared.audioEngine.play()
+        // Use startPlayback to handle playlist URL resolution if needed
+        startPlayback(station: station)
     }
     
     /// Cancel any pending reconnect
