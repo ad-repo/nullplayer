@@ -1218,6 +1218,11 @@ class PlexBrowserView: NSView {
     // MARK: - Drawing
     
     override func draw(_ dirtyRect: NSRect) {
+        // Capture artwork reference to prevent release during draw cycle.
+        // An async Task may replace currentArtwork mid-draw, causing the old
+        // image to be deallocated while Core Animation still references it.
+        let capturedArtwork = currentArtwork
+        
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
         let originalSize = originalWindowSize
@@ -1276,7 +1281,7 @@ class PlexBrowserView: NSView {
             
             if isArtOnlyMode {
                 // Art-only mode: skip tabs and list, draw album art large
-                drawArtOnlyArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                drawArtOnlyArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
             } else {
                 // Normal mode: draw tabs, search, and list
                 
@@ -1298,7 +1303,7 @@ class PlexBrowserView: NSView {
                 } else if let error = errorMessage {
                     drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors, renderer: renderer)
                 } else {
-                    drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                    drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
                 }
                 
                 // Draw status bar text
@@ -2038,7 +2043,7 @@ class PlexBrowserView: NSView {
         drawScaledSkinText(message, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
     }
     
-    private func drawListArea(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
+    private func drawListArea(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer, artwork: NSImage?) {
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
         if browseMode == .search {
             listY += Layout.searchBarHeight
@@ -2111,8 +2116,8 @@ class PlexBrowserView: NSView {
         }
         
         // Draw album art background if enabled and available
-        if WindowManager.shared.showBrowserArtworkBackground, let artwork = currentArtwork,
-           let cgImage = artwork.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+        if WindowManager.shared.showBrowserArtworkBackground, let artworkImage = artwork,
+           let cgImage = artworkImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             context.saveGState()
             
             // Calculate centered fill rect (scale to fill, center, maintain aspect ratio)
@@ -2164,7 +2169,7 @@ class PlexBrowserView: NSView {
             // On non-Retina displays, fill item background to prevent gaps/lines
             // BUT skip this when artwork background is showing (it already provides a continuous background)
             // On Retina, only fill background for selected items
-            let hasArtworkBackground = WindowManager.shared.showBrowserArtworkBackground && currentArtwork != nil
+            let hasArtworkBackground = WindowManager.shared.showBrowserArtworkBackground && artwork != nil
             if backingScale < 1.5 && !hasArtworkBackground {
                 // Fill with normal or selected background (only when no artwork)
                 let bgColor = isSelected ? colors.selectedBackground : colors.normalBackground
@@ -2387,7 +2392,7 @@ class PlexBrowserView: NSView {
     }
     
     /// Draw art-only mode: full album art without tabs and list
-    private func drawArtOnlyArea(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
+    private func drawArtOnlyArea(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer, artwork: NSImage?) {
         // Content area starts below server bar
         let contentY = Layout.titleBarHeight + Layout.serverBarHeight
         let contentHeight = drawBounds.height - contentY - Layout.statusBarHeight
@@ -2404,8 +2409,8 @@ class PlexBrowserView: NSView {
         context.fill(contentRect)
         
         // Draw album art if available
-        if let artwork = currentArtwork,
-           let cgImage = artwork.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+        if let artworkImage = artwork,
+           let cgImage = artworkImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             context.saveGState()
             context.clip(to: contentRect)
             
