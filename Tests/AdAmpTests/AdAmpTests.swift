@@ -226,28 +226,29 @@ final class AdAmpTests: XCTestCase {
     func testEQPresetImOld() {
         let preset = EQPreset.imOld
         
-        XCTAssertEqual(preset.name, "i'm old")
+        XCTAssertEqual(preset.name, "I'm Old")
         XCTAssertEqual(preset.bands.count, 10)
-        XCTAssertEqual(preset.bands[9], 6) // 16kHz boosted
+        XCTAssertEqual(preset.bands[9], 8) // 16kHz boosted
         XCTAssertEqual(preset.preamp, 0)
     }
     
     func testEQPresetImYoung() {
         let preset = EQPreset.imYoung
         
-        XCTAssertEqual(preset.name, "i'm young")
+        XCTAssertEqual(preset.name, "I'm Young")
         XCTAssertEqual(preset.bands.count, 10)
-        XCTAssertEqual(preset.bands[0], 6) // 60Hz boosted
-        XCTAssertEqual(preset.preamp, 0)
+        XCTAssertEqual(preset.bands[0], 8) // 60Hz boosted
+        XCTAssertEqual(preset.preamp, -2)
     }
     
     func testEQPresetAllPresets() {
         let allPresets = EQPreset.allPresets
         
-        XCTAssertEqual(allPresets.count, 3)
+        // 9 presets: flat, imOld, imYoung, rock, pop, electronic, hipHop, jazz, classical
+        XCTAssertEqual(allPresets.count, 9)
         XCTAssertTrue(allPresets.contains { $0.name == "Flat" })
-        XCTAssertTrue(allPresets.contains { $0.name == "i'm old" })
-        XCTAssertTrue(allPresets.contains { $0.name == "i'm young" })
+        XCTAssertTrue(allPresets.contains { $0.name == "I'm Old" })
+        XCTAssertTrue(allPresets.contains { $0.name == "I'm Young" })
     }
     
     func testEQPresetCustom() {
