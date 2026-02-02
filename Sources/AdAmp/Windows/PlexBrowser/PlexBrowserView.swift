@@ -901,6 +901,14 @@ class PlexBrowserView: NSView {
         
         // Set up accessibility identifiers for UI testing
         setupAccessibility()
+        
+        // Observe window visibility changes to pause/resume visualizer timer for CPU efficiency
+        NotificationCenter.default.addObserver(self, selector: #selector(plexWindowDidMiniaturize),
+                                               name: NSWindow.didMiniaturizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(plexWindowDidDeminiaturize),
+                                               name: NSWindow.didDeminiaturizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(plexWindowDidChangeOcclusionState),
+                                               name: NSWindow.didChangeOcclusionStateNotification, object: nil)
     }
     
     // MARK: - Accessibility
@@ -914,55 +922,18 @@ class PlexBrowserView: NSView {
     
     // MARK: - Visualizer Animation
     
+    /// Track if visualizer was active before window was hidden (to restore on unhide)
+    private var visualizerWasActiveBeforeHide: Bool = false
+    
     /// Start the visualizer animation timer
     private func startVisualizerTimer() {
         visualizerTime = 0
         silenceFrames = 0
         visualizerTimer?.invalidate()
-        // 60fps for smooth trippy effects
+        // 30fps for smooth effects (reduced from 60fps for CPU efficiency - still looks great)
         // Use .common run loop mode so timer continues during context menu display
-        let timer = Timer(timeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            self.visualizerTime += 1.0/60.0
-            
-            // Check audio level - only animate when music is playing
-            let spectrumData = WindowManager.shared.audioEngine.spectrumData
-            let currentLevel = spectrumData.reduce(0, +) / Float(spectrumData.count)
-            
-            // Detect silence (very low audio level)
-            if currentLevel < 0.001 {
-                self.silenceFrames += 1
-                // After ~0.5 seconds of silence, stop animating
-                if self.silenceFrames > 30 {
-                    return // Don't redraw during silence
-                }
-            } else {
-                self.silenceFrames = 0
-                
-                // Handle random mode - change on beats
-                if self.visMode == .random {
-                    let bass = spectrumData.prefix(10).reduce(0, +) / 10.0
-                    if bass > 0.5 && self.visualizerTime - self.lastBeatTime > 0.3 {
-                        self.lastBeatTime = self.visualizerTime
-                        // Random chance to change effect on beat
-                        if Double.random(in: 0...1) < 0.3 {
-                            let effects = VisEffect.allCases
-                            self.currentVisEffect = effects.randomElement() ?? .psychedelic
-                        }
-                    }
-                }
-            }
-            
-            self.lastAudioLevel = currentLevel
-            
-            // Only redraw the visualization content area, not the entire view
-            // This prevents menu items (title bar, server bar) from shimmering on non-Retina displays
-            let contentY = self.Layout.titleBarHeight + self.Layout.serverBarHeight
-            let contentHeight = self.bounds.height - contentY - self.Layout.statusBarHeight
-            // Convert from Winamp top-down coordinates to macOS bottom-up coordinates
-            let nativeY = self.Layout.statusBarHeight
-            let contentRect = NSRect(x: 0, y: nativeY, width: self.bounds.width, height: contentHeight)
-            self.setNeedsDisplay(contentRect)
+        let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
+            self?.handleVisualizerTimerTick()
         }
         RunLoop.main.add(timer, forMode: .common)
         visualizerTimer = timer
@@ -970,6 +941,98 @@ class PlexBrowserView: NSView {
         // Start cycle timer if in cycle mode
         if visMode == .cycle {
             startCycleTimer()
+        }
+    }
+    
+    /// Handle visualizer timer tick - with visibility checks
+    private func handleVisualizerTimerTick() {
+        // Skip updates if window is not visible or occluded
+        guard let window = window,
+              window.isVisible,
+              window.occlusionState.contains(.visible) else {
+            return
+        }
+        
+        visualizerTime += 1.0/30.0
+        
+        // Check audio level - only animate when music is playing
+        let spectrumData = WindowManager.shared.audioEngine.spectrumData
+        let currentLevel = spectrumData.reduce(0, +) / Float(spectrumData.count)
+        
+        // Detect silence (very low audio level)
+        if currentLevel < 0.001 {
+            silenceFrames += 1
+            // After ~0.5 seconds of silence, stop animating
+            if silenceFrames > 15 { // Adjusted for 30fps
+                return // Don't redraw during silence
+            }
+        } else {
+            silenceFrames = 0
+            
+            // Handle random mode - change on beats
+            if visMode == .random {
+                let bass = spectrumData.prefix(10).reduce(0, +) / 10.0
+                if bass > 0.5 && visualizerTime - lastBeatTime > 0.3 {
+                    lastBeatTime = visualizerTime
+                    // Random chance to change effect on beat
+                    if Double.random(in: 0...1) < 0.3 {
+                        let effects = VisEffect.allCases
+                        currentVisEffect = effects.randomElement() ?? .psychedelic
+                    }
+                }
+            }
+        }
+        
+        lastAudioLevel = currentLevel
+        
+        // Only redraw the visualization content area, not the entire view
+        // This prevents menu items (title bar, server bar) from shimmering on non-Retina displays
+        let contentY = Layout.titleBarHeight + Layout.serverBarHeight
+        let contentHeight = bounds.height - contentY - Layout.statusBarHeight
+        // Convert from Winamp top-down coordinates to macOS bottom-up coordinates
+        let nativeY = Layout.statusBarHeight
+        let contentRect = NSRect(x: 0, y: nativeY, width: bounds.width, height: contentHeight)
+        setNeedsDisplay(contentRect)
+    }
+    
+    /// Stop timers when Plex browser window is minimized to save CPU
+    @objc private func plexWindowDidMiniaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        // Stop timers when minimized to save CPU
+        stopServerNameScroll()
+        if isVisualizingArt {
+            visualizerWasActiveBeforeHide = true
+            stopVisualizerTimer()
+        }
+    }
+    
+    /// Restart timers when Plex browser window is restored from minimized state
+    @objc private func plexWindowDidDeminiaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        // Restart timers when restored
+        startServerNameScroll()
+        if visualizerWasActiveBeforeHide && isVisualizingArt {
+            startVisualizerTimer()
+        }
+        visualizerWasActiveBeforeHide = false
+    }
+    
+    /// Handle window occlusion state changes to pause/resume timers for CPU efficiency
+    @objc private func plexWindowDidChangeOcclusionState(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        if window?.occlusionState.contains(.visible) == true {
+            // Window became visible - restart timers
+            startServerNameScroll()
+            if isVisualizingArt && visualizerTimer == nil {
+                startVisualizerTimer()
+            }
+        } else {
+            // Window became occluded - stop timers to save CPU
+            stopServerNameScroll()
+            if visualizerTimer != nil {
+                visualizerWasActiveBeforeHide = isVisualizingArt
+                stopVisualizerTimer()
+            }
         }
     }
     
@@ -1167,6 +1230,7 @@ class PlexBrowserView: NSView {
         NotificationCenter.default.removeObserver(self)
         stopLoadingAnimation()
         stopServerNameScroll()
+        stopVisualizerTimer()
     }
     
     // MARK: - Scaling Support
@@ -4220,9 +4284,9 @@ class PlexBrowserView: NSView {
     
     private func startServerNameScroll() {
         guard serverScrollTimer == nil else { return }
-        serverScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            self.updateServerNameScroll()
+        // Reduced from 20Hz (0.05s) to 15Hz (0.067s) for CPU efficiency
+        serverScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.067, repeats: true) { [weak self] _ in
+            self?.handleServerNameScrollTick()
         }
     }
     
@@ -4231,6 +4295,18 @@ class PlexBrowserView: NSView {
         serverScrollTimer = nil
         serverNameScrollOffset = 0
         libraryNameScrollOffset = 0
+    }
+    
+    /// Handle server name scroll tick with visibility check
+    private func handleServerNameScrollTick() {
+        // Skip updates if window is not visible or occluded
+        guard let window = window,
+              window.isVisible,
+              window.occlusionState.contains(.visible) else {
+            return
+        }
+        
+        updateServerNameScroll()
     }
     
     private func updateServerNameScroll() {
@@ -4270,10 +4346,26 @@ class PlexBrowserView: NSView {
         let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
         let libraryTextWidth = CGFloat(libraryName.count) * scaledCharWidth
         
+        // Only scroll if text actually overflows - otherwise skip entirely
+        let serverNeedsScroll = serverTextWidth > maxServerWidth
+        let libraryNeedsScroll = libraryTextWidth > maxLibraryWidth
+        
+        // Early exit if nothing needs scrolling
+        if !serverNeedsScroll && !libraryNeedsScroll {
+            if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
+                serverNameScrollOffset = 0
+                libraryNameScrollOffset = 0
+                let serverBarArea = NSRect(x: 0, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
+                                           width: bounds.width, height: Layout.serverBarHeight)
+                setNeedsDisplay(serverBarArea)
+            }
+            return
+        }
+        
         var needsRedraw = false
         
         // Handle server name scrolling
-        if serverTextWidth > maxServerWidth {
+        if serverNeedsScroll {
             let separator = "   "
             let separatorWidth = CGFloat(separator.count) * scaledCharWidth
             let totalCycleWidth = serverTextWidth + separatorWidth
@@ -4289,7 +4381,7 @@ class PlexBrowserView: NSView {
         }
         
         // Handle library name scrolling
-        if libraryTextWidth > maxLibraryWidth {
+        if libraryNeedsScroll {
             let separator = "   "
             let separatorWidth = CGFloat(separator.count) * scaledCharWidth
             let totalCycleWidth = libraryTextWidth + separatorWidth

@@ -135,6 +135,14 @@ class MainWindowView: NSView {
                                                name: RadioManager.streamMetadataDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(radioConnectionStateDidChange),
                                                name: RadioManager.connectionStateDidChangeNotification, object: nil)
+        
+        // Observe window visibility changes to pause/resume timers for CPU efficiency
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidMiniaturize),
+                                               name: NSWindow.didMiniaturizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidDeminiaturize),
+                                               name: NSWindow.didDeminiaturizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeOcclusionState),
+                                               name: NSWindow.didChangeOcclusionStateNotification, object: nil)
     }
     
     // MARK: - Accessibility
@@ -334,16 +342,9 @@ class MainWindowView: NSView {
         isCastingLocalFile = isLoading
         
         if isLoading {
-            // Start loading animation
-            loadingAnimationPhase = 0
-            loadingAnimationTimer?.invalidate()
-            loadingAnimationTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
-                self.loadingAnimationPhase += 0.1
-                if self.loadingAnimationPhase > 2 * .pi {
-                    self.loadingAnimationPhase = 0
-                }
-                self.needsDisplay = true
+            // Start loading animation (only if window is visible)
+            if window?.occlusionState.contains(.visible) == true {
+                startLoadingAnimation()
             }
         } else {
             // Stop loading animation
@@ -676,60 +677,128 @@ class MainWindowView: NSView {
     
     // MARK: - Marquee Animation
     
+    // MARK: - Marquee Timer Management
+    
+    /// Start the marquee timer for text scrolling (15Hz - reduced from 20Hz for CPU efficiency)
     private func startMarquee() {
-        marqueeTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+        guard marqueeTimer == nil else { return }
+        // Reduced from 20Hz (0.05s) to 15Hz (0.067s) for CPU efficiency
+        marqueeTimer = Timer.scheduledTimer(withTimeInterval: 0.067, repeats: true) { [weak self] _ in
+            self?.handleMarqueeTimerTick()
+        }
+    }
+    
+    /// Stop the marquee timer to save CPU when window is not visible
+    private func stopMarquee() {
+        marqueeTimer?.invalidate()
+        marqueeTimer = nil
+    }
+    
+    /// Handle marquee timer tick - only update when window is visible and text overflows
+    private func handleMarqueeTimerTick() {
+        // Skip updates if window is not visible or occluded
+        guard let window = window,
+              window.isVisible,
+              window.occlusionState.contains(.visible) else {
+            return
+        }
+        
+        // Use video title if video session is active, radio status if radio active, otherwise track title
+        // Show "Loading..." when casting a local file (prevents UI jumping during rapid clicks)
+        let title: String
+        if isCastingLocalFile {
+            title = "Loading..."
+        } else {
+            title = getMarqueeDisplayText()
+        }
+        
+        let charWidth = SkinElements.TextFont.charWidth
+        let textWidth = CGFloat(title.count) * charWidth
+        let marqueeWidth = SkinElements.TextFont.Positions.marqueeArea.width
+        
+        if textWidth > marqueeWidth {
+            // Circular scroll: separator is "  -  " (5 chars)
+            let separatorWidth = charWidth * 5
+            let totalCycleWidth = textWidth + separatorWidth
             
-            // Use video title if video session is active, radio status if radio active, otherwise track title
-            // Show "Loading..." when casting a local file (prevents UI jumping during rapid clicks)
-            let title: String
-            if self.isCastingLocalFile {
-                title = "Loading..."
-            } else {
-                title = self.getMarqueeDisplayText()
+            marqueeOffset += 1
+            // Reset when one full cycle completes (seamless wrap)
+            if marqueeOffset >= totalCycleWidth {
+                marqueeOffset = 0
             }
-            
-            let charWidth = SkinElements.TextFont.charWidth
-            let textWidth = CGFloat(title.count) * charWidth
-            let marqueeWidth = SkinElements.TextFont.Positions.marqueeArea.width
-            
-            if textWidth > marqueeWidth {
-                // Circular scroll: separator is "  -  " (5 chars)
-                let separatorWidth = charWidth * 5
-                let totalCycleWidth = textWidth + separatorWidth
+            setNeedsDisplay(SkinElements.TextFont.Positions.marqueeArea)
+        } else {
+            // Text fits - no scrolling needed, reset offset
+            if marqueeOffset != 0 {
+                marqueeOffset = 0
+                setNeedsDisplay(SkinElements.TextFont.Positions.marqueeArea)
+            }
+        }
+        
+        // Scroll bitrate if > 3 digits (circular scroll)
+        if let bitrate = currentTrack?.bitrate {
+            let kbps = bitrate > 10000 ? bitrate / 1000 : bitrate
+            let bitrateText = "\(kbps)"
+            if bitrateText.count > 3 {
+                let bitrateTextWidth = CGFloat(bitrateText.count) * charWidth
+                let spacing = charWidth * 2  // Gap between repeated text
+                let totalWidth = bitrateTextWidth + spacing
                 
-                self.marqueeOffset += 1
-                // Reset when one full cycle completes (seamless wrap)
-                if self.marqueeOffset >= totalCycleWidth {
-                    self.marqueeOffset = 0
+                bitrateScrollOffset += 0.1  // Very slow smooth scroll
+                if bitrateScrollOffset >= totalWidth {
+                    bitrateScrollOffset = 0  // Wrap around seamlessly
                 }
-                self.setNeedsDisplay(SkinElements.TextFont.Positions.marqueeArea)
-            } else {
-                // Text fits - no scrolling needed, reset offset
-                if self.marqueeOffset != 0 {
-                    self.marqueeOffset = 0
-                    self.setNeedsDisplay(SkinElements.TextFont.Positions.marqueeArea)
-                }
+                setNeedsDisplay(SkinElements.InfoDisplay.Positions.bitrate)
             }
-            
-            // Scroll bitrate if > 3 digits (circular scroll)
-            if let bitrate = self.currentTrack?.bitrate {
-                let kbps = bitrate > 10000 ? bitrate / 1000 : bitrate
-                let bitrateText = "\(kbps)"
-                if bitrateText.count > 3 {
-                    let bitrateTextWidth = CGFloat(bitrateText.count) * charWidth
-                    let spacing = charWidth * 2  // Gap between repeated text
-                    let totalWidth = bitrateTextWidth + spacing
-                    
-                    self.bitrateScrollOffset += 0.1  // Very slow smooth scroll
-                    if self.bitrateScrollOffset >= totalWidth {
-                        self.bitrateScrollOffset = 0  // Wrap around seamlessly
-                    }
-                    self.setNeedsDisplay(SkinElements.InfoDisplay.Positions.bitrate)
-                }
-            } else {
-                self.bitrateScrollOffset = 0
+        } else {
+            bitrateScrollOffset = 0
+        }
+    }
+    
+    @objc private func windowDidMiniaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        stopMarquee()
+        loadingAnimationTimer?.invalidate()
+        loadingAnimationTimer = nil
+    }
+    
+    /// Restart timers when window is restored from minimized state
+    @objc private func windowDidDeminiaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        startMarquee()
+        // Restart loading animation if needed
+        if isCastingLocalFile {
+            startLoadingAnimation()
+        }
+    }
+    
+    /// Handle window occlusion state changes to pause/resume timers for CPU efficiency
+    @objc private func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        if window?.occlusionState.contains(.visible) == true {
+            startMarquee()
+            if isCastingLocalFile {
+                startLoadingAnimation()
             }
+        } else {
+            stopMarquee()
+            loadingAnimationTimer?.invalidate()
+            loadingAnimationTimer = nil
+        }
+    }
+    
+    /// Start the loading animation for cast loading state (10Hz)
+    private func startLoadingAnimation() {
+        guard loadingAnimationTimer == nil else { return }
+        loadingAnimationPhase = 0
+        // Reduced from 20Hz (0.05s) to 10Hz (0.1s) - still smooth enough for loading animation
+        loadingAnimationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.loadingAnimationPhase += 0.1
+            if self.loadingAnimationPhase > 2 * .pi {
+                self.loadingAnimationPhase = 0
+            }
+            self.needsDisplay = true
         }
     }
     
