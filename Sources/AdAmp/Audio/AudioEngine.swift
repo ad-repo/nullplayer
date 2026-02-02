@@ -800,6 +800,11 @@ class AudioEngine {
                 if !engine.isRunning {
                     try engine.start()
                 }
+                
+                // Reinstall spectrum tap if it was removed during pause
+                // The tap is removed on pause to save CPU from FFT processing
+                installSpectrumTap(format: nil)
+                
                 playerNode.play()
                 playbackStartDate = Date()  // Start tracking time
                 state = .playing
@@ -857,6 +862,9 @@ class AudioEngine {
             streamingPlayer?.pause()
         } else {
             playerNode.pause()
+            // Remove spectrum tap when paused to save CPU (FFT is expensive)
+            // Tap will be reinstalled when playback resumes
+            playerNode.removeTap(onBus: 0)
         }
         state = .paused
         stopTimeUpdates()

@@ -675,6 +675,16 @@ class MilkdropView: NSView {
         menu.addItem(engineMenuItem)
 
         menu.addItem(NSMenuItem.separator())
+        
+        // Performance mode toggle
+        let isLowPower = visualizationGLView?.isLowPowerMode ?? true
+        let perfModeItem = NSMenuItem(
+            title: isLowPower ? "Quality: Optimized (30fps)" : "Quality: Full (60fps)",
+            action: #selector(togglePerformanceMode(_:)),
+            keyEquivalent: "p"
+        )
+        perfModeItem.target = self
+        menu.addItem(perfModeItem)
 
         // Fullscreen option
         let fullscreenItem = NSMenuItem(title: "Fullscreen", action: #selector(toggleFullscreenAction(_:)), keyEquivalent: "f")
@@ -716,6 +726,10 @@ class MilkdropView: NSView {
     
     @objc private func toggleFullscreenAction(_ sender: Any?) {
         controller?.toggleFullscreen()
+    }
+    
+    @objc private func togglePerformanceMode(_ sender: Any?) {
+        visualizationGLView?.toggleLowPowerMode()
     }
     
     @objc private func closeWindow(_ sender: Any?) {

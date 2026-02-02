@@ -56,6 +56,17 @@ class VisualizationGLView: NSOpenGLView {
 
     private let dataLock = OSAllocatedUnfairLock()  // Faster than NSLock for short critical sections
     
+    /// Frame counter for frame skipping (renders at 30fps instead of 60fps to save CPU)
+    private var frameCounter: UInt64 = 0
+    
+    /// Performance mode: when true, renders at 30fps; when false, renders at 60fps
+    /// Saved to UserDefaults for persistence
+    private(set) var isLowPowerMode: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isLowPowerMode, forKey: "milkdropLowPowerMode")
+        }
+    }
+    
     // MARK: - Initialization
     
     override init?(frame frameRect: NSRect, pixelFormat format: NSOpenGLPixelFormat?) {
@@ -86,6 +97,11 @@ class VisualizationGLView: NSOpenGLView {
         if let savedType = UserDefaults.standard.string(forKey: "visualizationEngineType"),
            let type = VisualizationType(rawValue: savedType) {
             currentEngineType = type
+        }
+        
+        // Load saved performance mode preference (defaults to low power / 30fps)
+        if UserDefaults.standard.object(forKey: "milkdropLowPowerMode") != nil {
+            isLowPowerMode = UserDefaults.standard.bool(forKey: "milkdropLowPowerMode")
         }
 
         // Set up OpenGL context
@@ -290,6 +306,18 @@ class VisualizationGLView: NSOpenGLView {
         NSLog("VisualizationGLView: Stopped rendering")
     }
     
+    /// Toggle between low power mode (30fps) and full quality mode (60fps)
+    func toggleLowPowerMode() {
+        isLowPowerMode.toggle()
+        NSLog("VisualizationGLView: Low power mode = %@", isLowPowerMode ? "ON (30fps)" : "OFF (60fps)")
+    }
+    
+    /// Set low power mode directly
+    func setLowPowerMode(_ enabled: Bool) {
+        isLowPowerMode = enabled
+        NSLog("VisualizationGLView: Low power mode = %@", isLowPowerMode ? "ON (30fps)" : "OFF (60fps)")
+    }
+    
     // MARK: - Data Update
     
     /// Update PCM data (called from audio thread for low latency)
@@ -334,6 +362,13 @@ class VisualizationGLView: NSOpenGLView {
     // MARK: - Frame Rendering
     
     private func renderFrame() {
+        // Frame skipping in low power mode: render every other frame (30fps instead of 60fps)
+        // This halves CPU usage while still providing smooth visualization
+        if isLowPowerMode {
+            frameCounter += 1
+            guard frameCounter % 2 == 0 else { return }
+        }
+        
         guard let context = openGLContext else { return }
         
         // Try to acquire engine lock - if we can't (engine being destroyed), skip this frame

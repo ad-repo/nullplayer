@@ -81,14 +81,92 @@ class PlaylistView: NSView {
         registerForDraggedTypes([.fileURL])
         
         // Start display timer for playback time updates and marquee scrolling
-        // Use 30fps (0.033s) with 1px increments for smooth scrolling
-        displayTimer = Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { [weak self] _ in
-            self?.marqueeOffset += 1
-            self?.needsDisplay = true
-        }
+        startDisplayTimer()
         
         // Set up accessibility identifiers for UI testing
         setupAccessibility()
+        
+        // Observe window visibility changes to pause/resume timer
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidMiniaturize),
+                                               name: NSWindow.didMiniaturizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidDeminiaturize),
+                                               name: NSWindow.didDeminiaturizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeOcclusionState),
+                                               name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+    }
+    
+    // MARK: - Display Timer Management
+    
+    /// Start the display timer for marquee scrolling (15Hz - reduced from 30Hz for CPU efficiency)
+    private func startDisplayTimer() {
+        guard displayTimer == nil else { return }
+        displayTimer = Timer.scheduledTimer(withTimeInterval: 0.067, repeats: true) { [weak self] _ in
+            self?.handleDisplayTimerTick()
+        }
+    }
+    
+    /// Stop the display timer to save CPU when window is not visible
+    private func stopDisplayTimer() {
+        displayTimer?.invalidate()
+        displayTimer = nil
+    }
+    
+    /// Handle display timer tick - only update when needed
+    private func handleDisplayTimerTick() {
+        // Skip updates if window is not visible or occluded
+        guard let window = window,
+              window.isVisible,
+              window.occlusionState.contains(.visible) else {
+            return
+        }
+        
+        // Only scroll and redraw if marquee is needed (current track text overflows)
+        let engine = WindowManager.shared.audioEngine
+        let currentIndex = engine.currentIndex
+        guard currentIndex >= 0 && currentIndex < engine.playlist.count else {
+            // No current track - just redraw for time updates if playing
+            if engine.state == .playing {
+                needsDisplay = true
+            }
+            return
+        }
+        
+        let track = engine.playlist[currentIndex]
+        let titleText = "\(currentIndex + 1). \(track.displayTitle)"
+        
+        // Calculate if text overflows (rough estimate)
+        let effectiveSize = effectiveWindowSize
+        let listWidth = effectiveSize.width - Layout.leftBorder - Layout.rightBorder - 60 // Approx duration width
+        let charWidth: CGFloat = 6 // Approximate character width
+        let textWidth = CGFloat(titleText.count) * charWidth
+        
+        if textWidth > listWidth {
+            // Text overflows - scroll marquee
+            marqueeOffset += 1
+            needsDisplay = true
+        } else if engine.state == .playing {
+            // No overflow but playing - redraw for time updates (at lower frequency)
+            needsDisplay = true
+        }
+    }
+    
+    @objc private func windowDidMiniaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        stopDisplayTimer()
+    }
+    
+    @objc private func windowDidDeminiaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        startDisplayTimer()
+    }
+    
+    @objc private func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        if window?.occlusionState.contains(.visible) == true {
+            startDisplayTimer()
+        } else {
+            stopDisplayTimer()
+        }
     }
     
     // MARK: - Accessibility
@@ -102,6 +180,7 @@ class PlaylistView: NSView {
     
     deinit {
         displayTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
     }
     
     // MARK: - Scaling Support

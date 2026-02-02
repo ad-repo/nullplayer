@@ -289,6 +289,10 @@ class StreamingAudioPlayer {
     // MARK: - Spectrum Analysis
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        // Skip FFT processing when paused or stopped to save CPU
+        // The frame filter still receives buffers but we don't need to process them
+        guard state == .playing else { return }
+        
         guard let channelData = buffer.floatChannelData,
               let fftSetup = fftSetup else { return }
         
