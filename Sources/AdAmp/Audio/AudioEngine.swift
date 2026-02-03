@@ -689,11 +689,11 @@ class AudioEngine {
             guard regionPeak > 0 else { continue }
             
             // Update adaptive peak for this region
-            // Fast rise, moderate decay for responsiveness
+            // Slow rise and slow decay for stable reference level (avoids pumping)
             if regionPeak > spectrumRegionPeaks[regionIndex] {
-                spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.4 + regionPeak * 0.6
+                spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.92 + regionPeak * 0.08
             } else {
-                spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.97 + regionPeak * 0.03
+                spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.995 + regionPeak * 0.005
             }
             
             // Reference level for this region
