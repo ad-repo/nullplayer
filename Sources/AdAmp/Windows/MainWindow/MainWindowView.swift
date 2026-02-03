@@ -177,6 +177,8 @@ class MainWindowView: NSView {
         
         marqueeLayer = MarqueeLayer()
         marqueeLayer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        // Set anchorPoint to (0, 0) so position corresponds to top-left corner
+        marqueeLayer?.anchorPoint = CGPoint(x: 0, y: 0)
         updateMarqueeLayerFrame()
         updateMarqueeContent()
         layer?.addSublayer(marqueeLayer!)
@@ -224,23 +226,30 @@ class MainWindowView: NSView {
         let winampBottom = marqueeArea.origin.y + marqueeArea.height
         let layerY = bounds.height - offsetY - winampBottom * scale
         
-        marqueeLayer?.frame = CGRect(
-            x: offsetX + marqueeArea.origin.x * scale,
-            y: layerY,
-            width: marqueeArea.width * scale,
-            height: marqueeArea.height * scale
-        )
+        // IMPORTANT: Use position/bounds/transform instead of frame/bounds
+        // Setting bounds after frame causes frame to recalculate with bounds size.
+        // Instead: set bounds (unscaled), position (center), and transform (scale)
         
-        // CRITICAL: Set bounds to unscaled dimensions so MarqueeLayer works in base coordinates
-        // The frame controls position/size in the superlayer (scaled), but bounds controls
-        // the internal coordinate system (unscaled). The layer automatically scales content to fit.
+        // Set bounds to unscaled dimensions - this is the internal coordinate system
         marqueeLayer?.bounds = CGRect(x: 0, y: 0, width: marqueeArea.width, height: marqueeArea.height)
+        
+        // With anchorPoint at (0,0), position is the top-left corner
+        // But anchorPoint defaults to (0.5, 0.5), so position is center
+        // Let's use anchorPoint (0, 0) for easier positioning
+        marqueeLayer?.anchorPoint = CGPoint(x: 0, y: 0)
+        marqueeLayer?.position = CGPoint(x: offsetX + marqueeArea.origin.x * scale, y: layerY)
+        
+        // Apply scale transform so the layer renders at scaled size on screen
+        marqueeLayer?.transform = CATransform3DMakeScale(scale, scale, 1)
+        
+        NSLog("MainWindowView: marqueeArea=\(marqueeArea), scale=\(scale), position=\(marqueeLayer?.position ?? .zero), bounds=\(marqueeLayer?.bounds ?? .zero), frame=\(marqueeLayer?.frame ?? .zero)")
     }
     
     private func updateMarqueeContent() {
         guard !isShadeMode else { return }  // Shade mode uses timer-based rendering
         
         let text = getMarqueeDisplayText()
+        NSLog("MainWindowView.updateMarqueeContent: text='\(text.prefix(30))...', marqueeLayer.frame=\(marqueeLayer?.frame ?? .zero), marqueeLayer.bounds=\(marqueeLayer?.bounds ?? .zero)")
         marqueeLayer?.text = text
         marqueeLayer?.skinTextImage = WindowManager.shared.currentSkin?.text
     }

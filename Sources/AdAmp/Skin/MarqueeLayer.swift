@@ -118,6 +118,9 @@ class MarqueeLayer: CALayer {
         // Available scroll width = full marquee width minus small edge padding
         let availableWidth = bounds.width - (edgePadding * 2)
         
+        // Debug output
+        NSLog("MarqueeLayer: text='\(text.prefix(30))...', bounds=\(bounds), textWidth=\(textWidth), availableWidth=\(availableWidth), needsScroll=\(textWidth > availableWidth)")
+        
         // Capture values for async rendering
         let currentText = text
         let currentSeparator = separator
@@ -129,26 +132,29 @@ class MarqueeLayer: CALayer {
         let currentEdgePadding = edgePadding
         
         if textWidth <= availableWidth {
-            // Text fits - render once, no scrolling, left-aligned with small padding
+            // Text fits - render once, no scrolling, left-aligned
             needsScrolling = false
             cycleWidth = textWidth
             
             // Render on background queue to avoid NSGraphicsContext interference
             Self.renderQueue.async { [weak self] in
+                // Render at full bounds height so text is centered and not stretched
                 let image = self?.renderTextToImageSync(currentText, width: textWidth, 
                                                         skinImage: currentSkinImage, scale: currentScale,
-                                                        charWidth: currentCharWidth, charHeight: currentCharHeight)
+                                                        charWidth: currentCharWidth, charHeight: currentCharHeight,
+                                                        boundsHeight: currentBoundsHeight)
                 DispatchQueue.main.async {
                     guard let self = self else { return }
                     // Use explicit CATransaction to prevent interference from other view updates
                     CATransaction.begin()
                     CATransaction.setDisableActions(true)
                     self.contentLayer?.contents = image
-                    // Left-align with small padding, centered vertically
-                    let yOffset = (currentBoundsHeight - currentCharHeight) / 2
-                    self.contentLayer?.frame = CGRect(x: currentEdgePadding, y: yOffset,
-                                                      width: textWidth, height: currentCharHeight)
+                    // Frame fills full bounds height - text is centered within the rendered image
+                    let contentFrame = CGRect(x: currentEdgePadding, y: 0,
+                                              width: textWidth, height: currentBoundsHeight)
+                    self.contentLayer?.frame = contentFrame
                     CATransaction.commit()
+                    NSLog("MarqueeLayer: static text contentFrame=\(contentFrame), layerBounds=\(self.bounds)")
                     self.stopScrollAnimation()
                 }
             }
@@ -165,20 +171,23 @@ class MarqueeLayer: CALayer {
             
             // Render on background queue to avoid NSGraphicsContext interference
             Self.renderQueue.async { [weak self] in
+                // Render at full bounds height so text is centered and not stretched
                 let image = self?.renderTextToImageSync(fullText, width: totalWidth,
                                                         skinImage: currentSkinImage, scale: currentScale,
-                                                        charWidth: currentCharWidth, charHeight: currentCharHeight)
+                                                        charWidth: currentCharWidth, charHeight: currentCharHeight,
+                                                        boundsHeight: currentBoundsHeight)
                 DispatchQueue.main.async {
                     guard let self = self else { return }
                     // Use explicit CATransaction to prevent interference from other view updates
                     CATransaction.begin()
                     CATransaction.setDisableActions(true)
                     self.contentLayer?.contents = image
-                    // Start at left edge (with padding), centered vertically
-                    let yOffset = (currentBoundsHeight - currentCharHeight) / 2
-                    self.contentLayer?.frame = CGRect(x: currentEdgePadding, y: yOffset,
-                                                      width: totalWidth, height: currentCharHeight)
+                    // Frame fills full bounds height - text is centered within the rendered image
+                    let contentFrame = CGRect(x: currentEdgePadding, y: 0,
+                                              width: totalWidth, height: currentBoundsHeight)
+                    self.contentLayer?.frame = contentFrame
                     CATransaction.commit()
+                    NSLog("MarqueeLayer: scrolling text contentFrame=\(contentFrame), layerBounds=\(self.bounds), cycleWidth=\(finalCycleWidth)")
                     // Start scroll animation
                     self.startScrollAnimationWithCycleWidth(finalCycleWidth)
                 }
@@ -188,21 +197,24 @@ class MarqueeLayer: CALayer {
     
     /// Render text string to a CGImage using bitmap font sprites (thread-safe version)
     private func renderTextToImageSync(_ string: String, width: CGFloat, skinImage: NSImage?, 
-                                       scale: CGFloat, charWidth: CGFloat, charHeight: CGFloat) -> CGImage? {
+                                       scale: CGFloat, charWidth: CGFloat, charHeight: CGFloat,
+                                       boundsHeight: CGFloat) -> CGImage? {
         // Check for system font fallback (non-Latin characters)
         if skinImage == nil || containsNonLatinCharacters(string) {
-            return renderSystemFontToImageSync(string, width: width, scale: scale, charHeight: charHeight)
+            return renderSystemFontToImageSync(string, width: width, scale: scale, charHeight: charHeight, boundsHeight: boundsHeight)
         }
         
         return renderBitmapFontToImageSync(string, width: width, skinImage: skinImage!, 
-                                           scale: scale, charWidth: charWidth, charHeight: charHeight)
+                                           scale: scale, charWidth: charWidth, charHeight: charHeight, boundsHeight: boundsHeight)
     }
     
     /// Render using Winamp bitmap font (TEXT.BMP) - thread-safe version
     /// Uses NSBitmapImageRep for reliable rendering with proper scale handling
     private func renderBitmapFontToImageSync(_ string: String, width: CGFloat, skinImage: NSImage,
-                                             scale: CGFloat, charWidth: CGFloat, charHeight: CGFloat) -> CGImage? {
-        let height = charHeight
+                                             scale: CGFloat, charWidth: CGFloat, charHeight: CGFloat,
+                                             boundsHeight: CGFloat) -> CGImage? {
+        // Render at full bounds height so text is vertically centered without stretching
+        let height = boundsHeight
         let pixelWidth = Int(ceil(width * scale))
         let pixelHeight = Int(ceil(height * scale))
         
@@ -235,6 +247,9 @@ class MarqueeLayer: CALayer {
         
         let skinImageHeight = skinImage.size.height
         
+        // Center text vertically within the bounds height
+        let yOffset = (boundsHeight - charHeight) / 2
+        
         var xPos: CGFloat = 0
         for char in string.uppercased() {
             // Get source rect in Winamp coordinates (Y=0 at top)
@@ -248,7 +263,7 @@ class MarqueeLayer: CALayer {
                 height: charRect.height
             )
             
-            let destRect = NSRect(x: xPos, y: 0, width: charWidth, height: charHeight)
+            let destRect = NSRect(x: xPos, y: yOffset, width: charWidth, height: charHeight)
             
             skinImage.draw(in: destRect,
                           from: sourceRect,
@@ -266,8 +281,9 @@ class MarqueeLayer: CALayer {
     }
     
     /// Render using system font (for Unicode characters) - thread-safe version
-    private func renderSystemFontToImageSync(_ string: String, width: CGFloat, scale: CGFloat, charHeight: CGFloat) -> CGImage? {
-        let height = charHeight * 2  // System font needs more height
+    private func renderSystemFontToImageSync(_ string: String, width: CGFloat, scale: CGFloat, charHeight: CGFloat, boundsHeight: CGFloat) -> CGImage? {
+        // Render at full bounds height
+        let height = boundsHeight
         let pixelWidth = Int(ceil(width * scale))
         let pixelHeight = Int(ceil(height * scale))
         
@@ -299,7 +315,9 @@ class MarqueeLayer: CALayer {
             .font: NSFont.systemFont(ofSize: 8, weight: .regular)
         ]
         
-        string.draw(at: NSPoint(x: 0, y: 2), withAttributes: attrs)
+        // Center vertically
+        let yOffset = (boundsHeight - charHeight) / 2
+        string.draw(at: NSPoint(x: 0, y: yOffset), withAttributes: attrs)
         
         NSGraphicsContext.restoreGraphicsState()
         
