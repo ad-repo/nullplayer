@@ -869,6 +869,7 @@ class WindowManager {
         
         spectrumWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(spectrumWindowController?.window)
+        notifyMainWindowVisibilityChanged()
     }
     
     var isSpectrumVisible: Bool {
@@ -886,6 +887,7 @@ class WindowManager {
         } else {
             showSpectrum()
         }
+        notifyMainWindowVisibilityChanged()
     }
     
     // MARK: - Debug Window
