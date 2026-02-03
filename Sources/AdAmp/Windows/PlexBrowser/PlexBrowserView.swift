@@ -4709,7 +4709,8 @@ class PlexBrowserView: NSView {
             
             if let plexRatingKey = track.plexRatingKey {
                 // Plex track - load from server
-                image = await self.loadPlexArtwork(ratingKey: plexRatingKey, albumName: track.album)
+                // Pass track.artworkThumb directly - it's more reliable than searching caches
+                image = await self.loadPlexArtwork(ratingKey: plexRatingKey, albumName: track.album, thumbPath: track.artworkThumb)
                 
                 // Fallback to TMDb for video tracks when Plex artwork fails
                 if image == nil && track.mediaType == .video {
@@ -4812,19 +4813,26 @@ class PlexBrowserView: NSView {
     }
     
     /// Load artwork for a Plex track using its rating key
-    private func loadPlexArtwork(ratingKey: String, albumName: String? = nil) async -> NSImage? {
+    /// - Parameters:
+    ///   - ratingKey: The track's Plex rating key
+    ///   - albumName: Optional album name for fallback lookup
+    ///   - thumbPath: Optional thumb path from the track itself (most reliable source)
+    private func loadPlexArtwork(ratingKey: String, albumName: String? = nil, thumbPath providedThumb: String? = nil) async -> NSImage? {
         // Check cache first
         let cacheKey = NSString(string: "plex:\(ratingKey)")
         if let cached = Self.artworkCache.object(forKey: cacheKey) {
             return cached
         }
         
-        // Find the thumb path from cached data
-        var thumbPath: String?
+        // Use provided thumb path first (from track.artworkThumb) - this is the most reliable
+        // because it's the exact path the Plex API returned for this track
+        var thumbPath: String? = providedThumb
         
-        // Check cached tracks
-        if let plexTrack = cachedTracks.first(where: { $0.id == ratingKey }) {
-            thumbPath = plexTrack.thumb
+        // Check cached tracks if no thumb provided
+        if thumbPath == nil {
+            if let plexTrack = cachedTracks.first(where: { $0.id == ratingKey }) {
+                thumbPath = plexTrack.thumb
+            }
         }
         
         // Check album tracks cache
@@ -5127,7 +5135,8 @@ class PlexBrowserView: NSView {
                 images = await self.loadAllLocalArtwork(url: currentTrack.url)
             } else if let plexRatingKey = currentTrack.plexRatingKey {
                 // Plex track - load track artwork using existing method
-                if let image = await self.loadPlexArtwork(ratingKey: plexRatingKey, albumName: currentTrack.album) {
+                // Pass artworkThumb directly for reliability (especially for Plex Radio tracks not in cache)
+                if let image = await self.loadPlexArtwork(ratingKey: plexRatingKey, albumName: currentTrack.album, thumbPath: currentTrack.artworkThumb) {
                     images.append(image)
                 }
             } else if let subsonicId = currentTrack.subsonicId {
