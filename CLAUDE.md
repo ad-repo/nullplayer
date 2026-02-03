@@ -113,7 +113,7 @@ Sources/AdAmp/
 ├── Windows/          # All window views (MainWindow, Playlist, EQ, etc.)
 ├── Plex/             # Plex server integration
 ├── Subsonic/         # Navidrome/Subsonic server integration
-├── Visualization/    # ProjectM wrapper
+├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer
 └── Models/           # Track, Playlist, MediaLibrary
 ```
 
@@ -124,7 +124,7 @@ Sources/AdAmp/
 | Skin | `Skin/SkinElements.swift`, `Skin/SkinRenderer.swift`, `Skin/SkinLoader.swift` |
 | Audio | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift` |
 | Windows | `Windows/MainWindow/`, `Windows/Playlist/`, `Windows/Equalizer/` |
-| Visualization | `Windows/Milkdrop/`, `Windows/PlexBrowser/PlexBrowserView.swift`, `Visualization/ProjectMWrapper.swift` |
+| Visualization | `Windows/Milkdrop/`, `Windows/Spectrum/`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/ProjectMWrapper.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
 | Radio | `Radio/RadioManager.swift`, `Data/Models/RadioStation.swift`, `Windows/Radio/AddRadioStationSheet.swift` |

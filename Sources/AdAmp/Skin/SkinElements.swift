@@ -991,6 +991,50 @@ struct SkinElements {
         }
     }
     
+    // MARK: - Spectrum Analyzer Window
+    // Standalone spectrum analyzer visualization window
+    // Uses same chrome style as Milkdrop window
+    
+    struct SpectrumWindow {
+        /// Window size matches main window dimensions (scaled by Skin.scaleFactor for consistency)
+        static let windowSize = NSSize(width: 275 * Skin.scaleFactor, height: 116 * Skin.scaleFactor)
+        
+        /// Minimum window size (scaled)
+        static let minSize = NSSize(width: 275 * Skin.scaleFactor, height: 116 * Skin.scaleFactor)
+        
+        /// Title bar height (same as playlist/Milkdrop, scaled)
+        static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
+        
+        /// Shade mode height (title bar only, scaled)
+        static let shadeHeight: CGFloat = 14 * Skin.scaleFactor
+        
+        /// Content area (after title bar and borders, scaled)
+        static let contentArea = NSRect(
+            x: 3 * Skin.scaleFactor,
+            y: 3 * Skin.scaleFactor,
+            width: 269 * Skin.scaleFactor,
+            height: 93 * Skin.scaleFactor
+        )
+        
+        /// Bar count for standalone window (more bars than main window, sized for clear visibility)
+        static let barCount = 42
+        
+        /// Layout constants (scaled)
+        struct Layout {
+            static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
+            static let leftBorder: CGFloat = 3 * Skin.scaleFactor
+            static let rightBorder: CGFloat = 3 * Skin.scaleFactor
+            static let bottomBorder: CGFloat = 3 * Skin.scaleFactor
+        }
+        
+        /// Window control button positions in title bar (scaled)
+        struct TitleBarButtons {
+            // Relative to right edge of window (same as Milkdrop)
+            static let closeOffset: CGFloat = 11 * Skin.scaleFactor
+            static let shadeOffset: CGFloat = 20
+        }
+    }
+    
     // MARK: - GEN.BMP (Generic/AVS/Milkdrop window)
     
     /// Sprites from GEN.BMP - used for AVS/Milkdrop window chrome

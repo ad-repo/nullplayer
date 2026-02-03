@@ -370,6 +370,53 @@ The visualizer uses the existing 75-band spectrum data from `AudioEngine`:
 
 Beat detection triggers on bass energy spikes above threshold.
 
+## Spectrum Analyzer Window
+
+A standalone Metal-based spectrum analyzer visualization window that provides a larger, more detailed view of the audio spectrum than the main window's built-in analyzer.
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `Visualization/SpectrumAnalyzerView.swift` | Metal-based spectrum view component |
+| `Visualization/SpectrumShaders.metal` | GPU shaders for bar rendering |
+| `Windows/Spectrum/SpectrumWindowController.swift` | Window controller |
+| `Windows/Spectrum/SpectrumView.swift` | Container view with skin chrome |
+
+### Quality Modes
+
+| Mode | Description |
+|------|-------------|
+| **Winamp** | Discrete color palette from skin's `viscolor.txt`, authentic pixel-art look |
+| **Enhanced** | Smooth gradient interpolation with subtle glow effect on bar tops |
+
+### Decay/Responsiveness Modes
+
+Controls how quickly spectrum bars fall after peaks:
+
+| Mode | Retention | Feel |
+|------|-----------|------|
+| Instant | 0% | No smoothing, immediate response |
+| Snappy | 25% | Fast and punchy (default) |
+| Balanced | 40% | Good middle ground |
+| Smooth | 55% | Original Winamp feel |
+
+### Window Specifications
+
+- **Size**: 275x116 (same as main window for docking)
+- **Bar count**: 55 bars (vs 19 in main window)
+- **Refresh**: 60Hz via CVDisplayLink
+- **Skin colors**: Uses skin's `viscolor.txt` (24 colors)
+
+### Context Menu
+
+Right-click on the spectrum window for:
+- **Quality** submenu - Switch between Winamp/Enhanced modes
+- **Responsiveness** submenu - Adjust decay behavior
+- **Close** - Close the window
+
+Settings are persisted across app restarts.
+
 ## Related Documentation
 
 - [NON_RETINA_DISPLAY_FIXES.md](NON_RETINA_DISPLAY_FIXES.md) - Fixes for rendering artifacts on 1x displays (blue lines, tile seams, text shimmering)

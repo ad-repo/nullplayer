@@ -1,12 +1,13 @@
 # AdAmp Visualization Systems
 
-AdAmp features two distinct visualization systems for audio-reactive visual effects.
+AdAmp features three distinct visualization systems for audio-reactive visual effects.
 
 ## Table of Contents
 
 1. [Album Art Visualizer](#album-art-visualizer)
 2. [ProjectM/Milkdrop Visualizer](#projectmmilkdrop-visualizer)
-3. [Comparison](#comparison)
+3. [Spectrum Analyzer Window](#spectrum-analyzer-window)
+4. [Comparison](#comparison)
 
 ---
 
@@ -203,16 +204,68 @@ ProjectM adjusts its visuals based on detected beats. AdAmp uses two sensitivity
 
 ---
 
+## Spectrum Analyzer Window
+
+A dedicated Metal-based spectrum analyzer visualization that provides a larger, more detailed view of the audio spectrum than the main window's built-in 19-bar analyzer.
+
+### Accessing the Visualizer
+
+1. **Context Menu** → Spectrum Analyzer
+2. Or via the Window menu
+
+### Features
+
+| Feature | Value |
+|---------|-------|
+| **Bar Count** | 55 bars (vs 19 in main window) |
+| **Rendering** | Metal GPU shaders at 60Hz |
+| **Window Size** | 275x116 pixels (matches main window) |
+| **Color Source** | Skin's `viscolor.txt` (24-color palette) |
+
+### Quality Modes
+
+| Mode | Description |
+|------|-------------|
+| **Winamp** | Discrete color palette, pixel-art aesthetic (default) |
+| **Enhanced** | Smooth gradient interpolation with subtle glow effect |
+
+### Responsiveness Modes
+
+Controls how quickly spectrum bars fall after peaks:
+
+| Mode | Behavior |
+|------|----------|
+| **Instant** | No smoothing - bars respond immediately |
+| **Snappy** | Fast response with 25% retention (default) |
+| **Balanced** | Middle ground with 40% retention |
+| **Smooth** | Classic Winamp feel with 55% retention |
+
+### Context Menu
+
+Right-click on the window for:
+- **Quality** - Switch between Winamp/Enhanced rendering
+- **Responsiveness** - Adjust decay behavior
+- **Close** - Close the window
+
+### Technical Details
+
+- **Rendering**: Metal shaders via CAMetalLayer
+- **Frame Rate**: 60 FPS via CVDisplayLink
+- **Audio Input**: 75-band spectrum data from AudioEngine
+- **Thread Safety**: OSAllocatedUnfairLock for spectrum data updates
+
+---
+
 ## Comparison
 
-| Feature | Album Art Visualizer | ProjectM/Milkdrop |
-|---------|---------------------|-------------------|
-| **Visual Style** | Transformed album artwork | Procedural graphics |
-| **Effect Count** | 30 built-in effects | 100s of presets available |
-| **Customization** | Intensity adjustment | Full preset ecosystem |
-| **GPU Tech** | Core Image (Metal) | OpenGL shaders |
-| **Audio Response** | Spectrum bands (bass/mid/treble) | PCM waveform + beat detection |
-| **Best For** | Album art appreciation | Immersive light shows |
+| Feature | Album Art Visualizer | ProjectM/Milkdrop | Spectrum Analyzer |
+|---------|---------------------|-------------------|-------------------|
+| **Visual Style** | Transformed album artwork | Procedural graphics | Classic frequency bars |
+| **Effect Count** | 30 built-in effects | 100s of presets available | 2 quality modes |
+| **Customization** | Intensity adjustment | Full preset ecosystem | Quality + decay modes |
+| **GPU Tech** | Core Image (Metal) | OpenGL shaders | Metal shaders |
+| **Audio Response** | Spectrum bands (bass/mid/treble) | PCM waveform + beat detection | 75-band spectrum |
+| **Best For** | Album art appreciation | Immersive light shows | Detailed frequency analysis |
 
 ### When to Use Each
 
@@ -226,6 +279,12 @@ ProjectM adjusts its visuals based on detected beats. AdAmp uses two sensitivity
 - Classic Winamp nostalgia
 - Parties and ambient displays
 - When you want maximum visual variety
+
+**Spectrum Analyzer**
+- When you want detailed frequency visualization
+- For monitoring audio levels
+- Classic Winamp spectrum aesthetic
+- Complements the main window's smaller analyzer
 
 ---
 

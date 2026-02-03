@@ -81,6 +81,9 @@ class WindowManager {
     /// Milkdrop visualization window controller
     private var milkdropWindowController: MilkdropWindowController?
     
+    /// Spectrum analyzer window controller
+    private var spectrumWindowController: SpectrumWindowController?
+    
     /// Debug console window controller
     private var debugWindowController: DebugWindowController?
     
@@ -816,6 +819,52 @@ class WindowManager {
         }
     }
     
+    // MARK: - Spectrum Analyzer Window
+    
+    func showSpectrum(at restoredFrame: NSRect? = nil) {
+        let isNewWindow = spectrumWindowController == nil
+        if isNewWindow {
+            spectrumWindowController = SpectrumWindowController()
+        }
+        spectrumWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(spectrumWindowController?.window)
+        
+        // Position newly created windows
+        if isNewWindow, let window = spectrumWindowController?.window {
+            if let frame = restoredFrame, frame != .zero {
+                // Use restored frame from state restoration
+                window.setFrame(frame, display: true)
+            } else if let mainWindow = mainWindowController?.window {
+                // Position below main window
+                let mainFrame = mainWindow.frame
+                let newFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: mainFrame.minY - window.frame.height,
+                    width: window.frame.width,
+                    height: window.frame.height
+                )
+                window.setFrame(newFrame, display: true)
+            }
+        }
+    }
+    
+    var isSpectrumVisible: Bool {
+        spectrumWindowController?.window?.isVisible == true
+    }
+    
+    /// Get the Spectrum window frame (for state saving)
+    var spectrumWindowFrame: NSRect? {
+        return spectrumWindowController?.window?.frame
+    }
+    
+    func toggleSpectrum() {
+        if let controller = spectrumWindowController, controller.window?.isVisible == true {
+            controller.window?.orderOut(nil)
+        } else {
+            showSpectrum()
+        }
+    }
+    
     // MARK: - Debug Window
     
     /// Show the debug console window
@@ -956,6 +1005,7 @@ class WindowManager {
         equalizerWindowController?.skinDidChange()
         plexBrowserWindowController?.skinDidChange()
         milkdropWindowController?.skinDidChange()
+        spectrumWindowController?.skinDidChange()
     }
     
     // MARK: - Skin Discovery
@@ -1070,6 +1120,7 @@ class WindowManager {
         plexBrowserWindowController?.window?.level = level
         videoPlayerWindowController?.window?.level = level
         milkdropWindowController?.window?.level = level
+        spectrumWindowController?.window?.level = level
     }
     
     /// Apply always on top level to a single window (used when showing windows)
@@ -1087,7 +1138,8 @@ class WindowManager {
             playlistWindowController?.window,
             plexBrowserWindowController?.window,
             videoPlayerWindowController?.window,
-            milkdropWindowController?.window
+            milkdropWindowController?.window,
+            spectrumWindowController?.window
         ]
         
         for window in windows {
@@ -1613,6 +1665,7 @@ class WindowManager {
         if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
         if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = milkdropWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
     
@@ -1660,6 +1713,9 @@ class WindowManager {
         if let frame = milkdropWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: "MilkdropWindowFrame")
         }
+        if let frame = spectrumWindowController?.window?.frame {
+            defaults.set(NSStringFromRect(frame), forKey: "SpectrumWindowFrame")
+        }
     }
     
     func restoreWindowPositions() {
@@ -1692,6 +1748,11 @@ class WindowManager {
         }
         if let frameString = defaults.string(forKey: "MilkdropWindowFrame"),
            let window = milkdropWindowController?.window {
+            let frame = NSRectFromString(frameString)
+            window.setFrame(frame, display: true)
+        }
+        if let frameString = defaults.string(forKey: "SpectrumWindowFrame"),
+           let window = spectrumWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }

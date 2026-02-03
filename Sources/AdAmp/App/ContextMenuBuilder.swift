@@ -26,6 +26,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         menu.addItem(buildWindowItem("Milkdrop", visible: wm.isMilkdropVisible, action: #selector(MenuActions.toggleMilkdrop)))
+        menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum)))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
         
         menu.addItem(NSMenuItem.separator())
@@ -952,6 +953,10 @@ class MenuActions: NSObject {
     
     @objc func toggleMilkdrop() {
         WindowManager.shared.toggleMilkdrop()
+    }
+    
+    @objc func toggleSpectrum() {
+        WindowManager.shared.toggleSpectrum()
     }
     
     @objc func toggleDebugConsole() {
