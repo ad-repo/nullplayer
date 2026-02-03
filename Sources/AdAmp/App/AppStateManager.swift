@@ -93,6 +93,7 @@ class AppStateManager {
         var isEqualizerVisible: Bool
         var isPlexBrowserVisible: Bool
         var isMilkdropVisible: Bool
+        var isSpectrumVisible: Bool = false
         
         // Window frames (as strings for NSRect compatibility)
         var mainWindowFrame: String?
@@ -100,6 +101,7 @@ class AppStateManager {
         var equalizerWindowFrame: String?
         var plexBrowserWindowFrame: String?
         var milkdropWindowFrame: String?
+        var spectrumWindowFrame: String?
         var isMilkdropFullscreen: Bool = false
         
         // Audio settings
@@ -145,8 +147,8 @@ class AppStateManager {
         // MARK: - Custom Decoding for Backward Compatibility
         
         enum CodingKeys: String, CodingKey {
-            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isMilkdropVisible
-            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, milkdropWindowFrame, isMilkdropFullscreen
+            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isMilkdropVisible, isSpectrumVisible
+            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, milkdropWindowFrame, spectrumWindowFrame, isMilkdropFullscreen
             case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
             case sweetFadeEnabled, sweetFadeDuration
             case eqEnabled, eqAutoEnabled, eqPreamp, eqBands
@@ -165,6 +167,7 @@ class AppStateManager {
             isEqualizerVisible = try container.decode(Bool.self, forKey: .isEqualizerVisible)
             isPlexBrowserVisible = try container.decode(Bool.self, forKey: .isPlexBrowserVisible)
             isMilkdropVisible = try container.decode(Bool.self, forKey: .isMilkdropVisible)
+            isSpectrumVisible = try container.decodeIfPresent(Bool.self, forKey: .isSpectrumVisible) ?? false
             
             // Window frames
             mainWindowFrame = try container.decodeIfPresent(String.self, forKey: .mainWindowFrame)
@@ -172,6 +175,7 @@ class AppStateManager {
             equalizerWindowFrame = try container.decodeIfPresent(String.self, forKey: .equalizerWindowFrame)
             plexBrowserWindowFrame = try container.decodeIfPresent(String.self, forKey: .plexBrowserWindowFrame)
             milkdropWindowFrame = try container.decodeIfPresent(String.self, forKey: .milkdropWindowFrame)
+            spectrumWindowFrame = try container.decodeIfPresent(String.self, forKey: .spectrumWindowFrame)
             isMilkdropFullscreen = try container.decodeIfPresent(Bool.self, forKey: .isMilkdropFullscreen) ?? false
             
             // Audio settings
@@ -229,11 +233,13 @@ class AppStateManager {
             isEqualizerVisible: Bool,
             isPlexBrowserVisible: Bool,
             isMilkdropVisible: Bool,
+            isSpectrumVisible: Bool = false,
             mainWindowFrame: String?,
             playlistWindowFrame: String?,
             equalizerWindowFrame: String?,
             plexBrowserWindowFrame: String?,
             milkdropWindowFrame: String?,
+            spectrumWindowFrame: String? = nil,
             isMilkdropFullscreen: Bool = false,
             volume: Float,
             balance: Float,
@@ -262,11 +268,13 @@ class AppStateManager {
             self.isEqualizerVisible = isEqualizerVisible
             self.isPlexBrowserVisible = isPlexBrowserVisible
             self.isMilkdropVisible = isMilkdropVisible
+            self.isSpectrumVisible = isSpectrumVisible
             self.mainWindowFrame = mainWindowFrame
             self.playlistWindowFrame = playlistWindowFrame
             self.equalizerWindowFrame = equalizerWindowFrame
             self.plexBrowserWindowFrame = plexBrowserWindowFrame
             self.milkdropWindowFrame = milkdropWindowFrame
+            self.spectrumWindowFrame = spectrumWindowFrame
             self.isMilkdropFullscreen = isMilkdropFullscreen
             self.volume = volume
             self.balance = balance
@@ -335,6 +343,7 @@ class AppStateManager {
             isEqualizerVisible: wm.isEqualizerVisible,
             isPlexBrowserVisible: wm.isPlexBrowserVisible,
             isMilkdropVisible: wm.isMilkdropVisible,
+            isSpectrumVisible: wm.isSpectrumVisible,
             
             // Window frames
             mainWindowFrame: wm.mainWindowController?.window.map { NSStringFromRect($0.frame) },
@@ -343,6 +352,7 @@ class AppStateManager {
             plexBrowserWindowFrame: wm.plexBrowserWindowFrame.map { NSStringFromRect($0) },
             // Don't save frame when fullscreen (it would be screen bounds)
             milkdropWindowFrame: wm.isMilkdropVisible && !wm.isMilkdropFullscreen ? wm.milkdropWindowFrame.map { NSStringFromRect($0) } : nil,
+            spectrumWindowFrame: wm.spectrumWindowFrame.map { NSStringFromRect($0) },
             isMilkdropFullscreen: wm.isMilkdropFullscreen,
             
             // Audio settings
@@ -525,6 +535,7 @@ class AppStateManager {
         let equalizerFrame = state.equalizerWindowFrame.flatMap { NSRectFromString($0) }
         let browserFrame = state.plexBrowserWindowFrame.flatMap { NSRectFromString($0) }
         let milkdropFrame = state.milkdropWindowFrame.flatMap { NSRectFromString($0) }
+        let spectrumFrame = state.spectrumWindowFrame.flatMap { NSRectFromString($0) }
         let milkdropPresetIndex = state.milkdropPresetIndex
         let milkdropFullscreen = state.isMilkdropFullscreen
         
@@ -534,6 +545,9 @@ class AppStateManager {
             }
             if state.isPlaylistVisible {
                 wm.showPlaylist(at: playlistFrame)
+            }
+            if state.isSpectrumVisible {
+                wm.showSpectrum(at: spectrumFrame)
             }
             if state.isPlexBrowserVisible {
                 wm.showPlexBrowser(at: browserFrame)
@@ -718,6 +732,7 @@ class AppStateManager {
         let equalizerFrame = state.equalizerWindowFrame.flatMap { NSRectFromString($0) }
         let browserFrame = state.plexBrowserWindowFrame.flatMap { NSRectFromString($0) }
         let milkdropFrame = state.milkdropWindowFrame.flatMap { NSRectFromString($0) }
+        let spectrumFrame = state.spectrumWindowFrame.flatMap { NSRectFromString($0) }
         let milkdropPresetIndex = state.milkdropPresetIndex
         let milkdropFullscreen = state.isMilkdropFullscreen
         
@@ -727,6 +742,9 @@ class AppStateManager {
             }
             if state.isPlaylistVisible {
                 wm.showPlaylist(at: playlistFrame)
+            }
+            if state.isSpectrumVisible {
+                wm.showSpectrum(at: spectrumFrame)
             }
             if state.isPlexBrowserVisible {
                 wm.showPlexBrowser(at: browserFrame)

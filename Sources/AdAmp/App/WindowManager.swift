@@ -203,14 +203,12 @@ class WindowManager {
             playlistWindowController = PlaylistWindowController()
         }
         
-        // Position newly created windows
-        if isNewWindow, let playlistWindow = playlistWindowController?.window {
+        // Position BEFORE showing (unless restoring from saved state)
+        if let playlistWindow = playlistWindowController?.window {
             if let frame = restoredFrame, frame != .zero {
-                // Use restored frame from state restoration
                 playlistWindow.setFrame(frame, display: true)
             } else {
-                // Position relative to main window
-                positionSubWindow(playlistWindow, preferBelowEQ: false)
+                positionSubWindow(playlistWindow)
             }
             NSLog("showPlaylist: window frame = \(playlistWindow.frame)")
         }
@@ -240,14 +238,12 @@ class WindowManager {
             equalizerWindowController = EQWindowController()
         }
         
-        // Position newly created windows
-        if isNewWindow, let eqWindow = equalizerWindowController?.window {
+        // Position BEFORE showing (unless restoring from saved state)
+        if let eqWindow = equalizerWindowController?.window {
             if let frame = restoredFrame, frame != .zero {
-                // Use restored frame from state restoration
                 eqWindow.setFrame(frame, display: true)
             } else {
-                // Position relative to main window
-                positionSubWindow(eqWindow, preferBelowEQ: true)
+                positionSubWindow(eqWindow)
             }
         }
         
@@ -269,46 +265,53 @@ class WindowManager {
         notifyMainWindowVisibilityChanged()
     }
     
-    /// Position a sub-window (EQ or Playlist) snapped below the main window stack
-    /// - Parameters:
-    ///   - window: The window to position
-    ///   - preferBelowEQ: If true and EQ is visible, position below EQ. If false and Playlist is visible, position below Playlist.
-    private func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool) {
+    /// Position a sub-window (EQ, Playlist, or Spectrum) snapped below the main window stack
+    /// Always positions below the lowest visible window in the vertical stack.
+    private func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
         guard let mainWindow = mainWindowController?.window else { return }
         
         let mainFrame = mainWindow.frame
+        let currentSize = window.frame.size
         
-        // Match the main window's width
-        let targetWidth = mainFrame.width
-        let currentHeight = window.frame.height
-        
-        // Determine the anchor window (the window we'll position below)
+        // Find the bottom-most window in the stack (lowest Y position)
+        // Start with main window as the anchor
         var anchorFrame = mainFrame
+        var anchorName = "Main"
         
-        // Check if the other sub-window is already visible
-        if preferBelowEQ {
-            // We're showing EQ - check if Playlist is visible
-            if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible {
-                anchorFrame = playlistWindow.frame
-            }
-        } else {
-            // We're showing Playlist - check if EQ is visible
-            if let eqWindow = equalizerWindowController?.window, eqWindow.isVisible {
+        // Check EQ - use if visible AND positioned lower (smaller minY)
+        if let eqWindow = equalizerWindowController?.window, eqWindow.isVisible, eqWindow !== window {
+            if eqWindow.frame.minY < anchorFrame.minY {
                 anchorFrame = eqWindow.frame
+                anchorName = "EQ"
             }
         }
         
-        // Position directly below the anchor window, left-aligned
-        let newOrigin = NSPoint(
-            x: anchorFrame.minX,
-            y: anchorFrame.minY - currentHeight  // Below the anchor
+        // Check Playlist - use if visible AND positioned lower
+        if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible, playlistWindow !== window {
+            if playlistWindow.frame.minY < anchorFrame.minY {
+                anchorFrame = playlistWindow.frame
+                anchorName = "Playlist"
+            }
+        }
+        
+        // Check Spectrum - use if visible AND positioned lower
+        if let spectrumWindow = spectrumWindowController?.window, spectrumWindow.isVisible, spectrumWindow !== window {
+            if spectrumWindow.frame.minY < anchorFrame.minY {
+                anchorFrame = spectrumWindow.frame
+                anchorName = "Spectrum"
+            }
+        }
+        
+        // Position directly below the anchor window, left-aligned with main
+        let newFrame = NSRect(
+            x: mainFrame.minX,  // Always align with main window
+            y: anchorFrame.minY - currentSize.height,  // Below the anchor
+            width: currentSize.width,  // Keep original width
+            height: currentSize.height
         )
         
-        // Set the frame with matched width
-        let newFrame = NSRect(
-            origin: newOrigin,
-            size: NSSize(width: targetWidth, height: currentHeight)
-        )
+        NSLog("positionSubWindow: Positioning below %@ (anchorMinY=%.0f), newFrame=%@", 
+              anchorName, anchorFrame.minY, NSStringFromRect(newFrame))
         
         window.setFrame(newFrame, display: true)
     }
@@ -344,16 +347,28 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 // Use restored frame from state restoration
                 window.setFrame(frame, display: true)
-            } else if let mainWindow = mainWindowController?.window {
-                // Position relative to main window
-                let mainFrame = mainWindow.frame
-                let newFrame = NSRect(
-                    x: mainFrame.maxX,
-                    y: mainFrame.maxY - window.frame.height,
-                    width: window.frame.width,
-                    height: window.frame.height
-                )
-                window.setFrame(newFrame, display: true)
+            } else {
+                // Position to the right of the vertical stack, matching its height
+                let stackBounds = verticalStackBounds()
+                if stackBounds != .zero {
+                    let newFrame = NSRect(
+                        x: stackBounds.maxX,
+                        y: stackBounds.minY,
+                        width: window.frame.width,
+                        height: stackBounds.height
+                    )
+                    window.setFrame(newFrame, display: true)
+                } else if let mainWindow = mainWindowController?.window {
+                    // Fallback: position relative to main window
+                    let mainFrame = mainWindow.frame
+                    let newFrame = NSRect(
+                        x: mainFrame.maxX,
+                        y: mainFrame.maxY - window.frame.height,
+                        width: window.frame.width,
+                        height: window.frame.height
+                    )
+                    window.setFrame(newFrame, display: true)
+                }
             }
         }
     }
@@ -778,16 +793,28 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 // Use restored frame from state restoration
                 window.setFrame(frame, display: true)
-            } else if let mainWindow = mainWindowController?.window {
-                // Position relative to main window
-                let mainFrame = mainWindow.frame
-                let newFrame = NSRect(
-                    x: mainFrame.minX - window.frame.width,
-                    y: mainFrame.maxY - window.frame.height,
-                    width: window.frame.width,
-                    height: window.frame.height
-                )
-                window.setFrame(newFrame, display: true)
+            } else {
+                // Position to the left of the vertical stack, matching its height
+                let stackBounds = verticalStackBounds()
+                if stackBounds != .zero {
+                    let newFrame = NSRect(
+                        x: stackBounds.minX - window.frame.width,
+                        y: stackBounds.minY,
+                        width: window.frame.width,
+                        height: stackBounds.height
+                    )
+                    window.setFrame(newFrame, display: true)
+                } else if let mainWindow = mainWindowController?.window {
+                    // Fallback: position relative to main window
+                    let mainFrame = mainWindow.frame
+                    let newFrame = NSRect(
+                        x: mainFrame.minX - window.frame.width,
+                        y: mainFrame.maxY - window.frame.height,
+                        width: window.frame.width,
+                        height: window.frame.height
+                    )
+                    window.setFrame(newFrame, display: true)
+                }
             }
         }
     }
@@ -826,26 +853,18 @@ class WindowManager {
         if isNewWindow {
             spectrumWindowController = SpectrumWindowController()
         }
-        spectrumWindowController?.showWindow(nil)
-        applyAlwaysOnTopToWindow(spectrumWindowController?.window)
         
-        // Position newly created windows
-        if isNewWindow, let window = spectrumWindowController?.window {
+        // Position BEFORE showing (unless restoring from saved state)
+        if let window = spectrumWindowController?.window {
             if let frame = restoredFrame, frame != .zero {
-                // Use restored frame from state restoration
                 window.setFrame(frame, display: true)
-            } else if let mainWindow = mainWindowController?.window {
-                // Position below main window
-                let mainFrame = mainWindow.frame
-                let newFrame = NSRect(
-                    x: mainFrame.minX,
-                    y: mainFrame.minY - window.frame.height,
-                    width: window.frame.width,
-                    height: window.frame.height
-                )
-                window.setFrame(newFrame, display: true)
+            } else {
+                positionSubWindow(window)
             }
         }
+        
+        spectrumWindowController?.showWindow(nil)
+        applyAlwaysOnTopToWindow(spectrumWindowController?.window)
     }
     
     var isSpectrumVisible: Bool {
@@ -1149,6 +1168,30 @@ class WindowManager {
         }
     }
     
+    /// Calculate the bounding box of the vertical window stack (main + EQ + playlist + spectrum)
+    /// Returns the combined bounds of all visible windows in the vertical stack
+    private func verticalStackBounds() -> NSRect {
+        guard let mainFrame = mainWindowController?.window?.frame else { return .zero }
+        
+        let topY = mainFrame.maxY
+        var bottomY = mainFrame.minY
+        let x = mainFrame.minX
+        let width = mainFrame.width
+        
+        // Check each window in the stack and expand bounds
+        if let eqWindow = equalizerWindowController?.window, eqWindow.isVisible {
+            bottomY = min(bottomY, eqWindow.frame.minY)
+        }
+        if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible {
+            bottomY = min(bottomY, playlistWindow.frame.minY)
+        }
+        if let spectrumWindow = spectrumWindowController?.window, spectrumWindow.isVisible {
+            bottomY = min(bottomY, spectrumWindow.frame.minY)
+        }
+        
+        return NSRect(x: x, y: bottomY, width: width, height: topY - bottomY)
+    }
+    
     /// Reset all windows to their default positions
     func snapToDefaultPositions() {
         let defaults = UserDefaults.standard
@@ -1185,22 +1228,46 @@ class WindowManager {
             height: playlistCurrentHeight
         )
         
-        // Browser goes to the right of main, top-aligned
-        let browserSize = plexBrowserWindowController?.window?.frame.size ?? NSSize(width: 550, height: mainSize.height * 3)
-        let browserFrame = NSRect(
-            x: mainFrame.maxX,
-            y: mainFrame.maxY - browserSize.height,
-            width: browserSize.width,
-            height: browserSize.height
+        // Spectrum goes below playlist
+        let spectrumCurrentSize = spectrumWindowController?.window?.frame.size ?? SkinElements.SpectrumWindow.windowSize
+        let spectrumFrame = NSRect(
+            x: mainFrame.minX,
+            y: playlistFrame.minY - spectrumCurrentSize.height,
+            width: spectrumCurrentSize.width,
+            height: spectrumCurrentSize.height
         )
         
-        // Milkdrop goes to the left of main, top-aligned
-        let milkdropSize = milkdropWindowController?.window?.frame.size ?? SkinElements.Milkdrop.defaultSize
+        // Calculate total stack height for side windows
+        // Stack: main -> EQ -> playlist -> spectrum (if visible)
+        let stackTopY = mainFrame.maxY
+        var stackBottomY = mainFrame.minY
+        if equalizerWindowController?.window?.isVisible == true {
+            stackBottomY = eqFrame.minY
+        }
+        if playlistWindowController?.window?.isVisible == true {
+            stackBottomY = playlistFrame.minY
+        }
+        if spectrumWindowController?.window?.isVisible == true {
+            stackBottomY = spectrumFrame.minY
+        }
+        let stackHeight = stackTopY - stackBottomY
+        
+        // Browser goes to the right of main, matching stack height
+        let browserWidth = plexBrowserWindowController?.window?.frame.width ?? 550
+        let browserFrame = NSRect(
+            x: mainFrame.maxX,
+            y: stackBottomY,
+            width: browserWidth,
+            height: stackHeight
+        )
+        
+        // Milkdrop goes to the left of main, matching stack height
+        let milkdropWidth = milkdropWindowController?.window?.frame.width ?? SkinElements.Milkdrop.defaultSize.width
         let milkdropFrame = NSRect(
-            x: mainFrame.minX - milkdropSize.width,
-            y: mainFrame.maxY - milkdropSize.height,
-            width: milkdropSize.width,
-            height: milkdropSize.height
+            x: mainFrame.minX - milkdropWidth,
+            y: stackBottomY,
+            width: milkdropWidth,
+            height: stackHeight
         )
         
         // Clear any saved positions (windows will be positioned relative to main on open)
@@ -1211,6 +1278,7 @@ class WindowManager {
         defaults.removeObject(forKey: "MilkdropWindowFrame")
         defaults.removeObject(forKey: "VideoPlayerWindowFrame")
         defaults.removeObject(forKey: "ArtVisualizerWindowFrame")
+        defaults.removeObject(forKey: "SpectrumWindowFrame")
         
         // Apply positions to visible windows WITHOUT animation first to avoid race conditions
         // when windows are on different screens. Then animate to final positions.
@@ -1224,6 +1292,9 @@ class WindowManager {
         }
         if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible {
             playlistWindow.setFrame(playlistFrame, display: true, animate: false)
+        }
+        if let spectrumWindow = spectrumWindowController?.window, spectrumWindow.isVisible {
+            spectrumWindow.setFrame(spectrumFrame, display: true, animate: false)
         }
         if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
             plexWindow.setFrame(browserFrame, display: true, animate: false)
@@ -1675,6 +1746,7 @@ class WindowManager {
         if let w = mainWindowController?.window, w.isVisible { windows.append(w) }
         if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
     
@@ -1682,7 +1754,8 @@ class WindowManager {
     private func isDockableWindow(_ window: NSWindow) -> Bool {
         return window === mainWindowController?.window ||
                window === playlistWindowController?.window ||
-               window === equalizerWindowController?.window
+               window === equalizerWindowController?.window ||
+               window === spectrumWindowController?.window
     }
     
     /// Get all visible windows

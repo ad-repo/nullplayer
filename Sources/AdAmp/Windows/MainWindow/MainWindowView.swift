@@ -839,10 +839,23 @@ class MainWindowView: NSView {
         let point = convertToOriginalCoordinates(viewPoint)
         let hitTestSize = originalWindowSize
         
-        // Check for double-click on title bar to toggle shade mode
+        // Check for double-click actions
         if event.clickCount == 2 {
+            // Double-click on title bar to toggle shade mode
             if isShadeMode || regionManager.shouldToggleShade(at: point, windowType: .main, windowSize: hitTestSize) {
                 toggleShadeMode()
+                return
+            }
+            
+            // Double-click on spectrum analyzer display to open Spectrum window
+            // Convert to Winamp coordinates (top-down Y axis) for comparison
+            let winampY = originalWindowSize.height - point.y
+            let spectrumArea = SkinElements.Visualization.displayArea  // x: 24, y: 43, width: 76, height: 16
+            let spectrumRect = NSRect(x: spectrumArea.origin.x, y: spectrumArea.origin.y, 
+                                       width: spectrumArea.width, height: spectrumArea.height)
+            let winampPoint = NSPoint(x: point.x, y: winampY)
+            if spectrumRect.contains(winampPoint) {
+                WindowManager.shared.toggleSpectrum()
                 return
             }
         }
@@ -942,6 +955,8 @@ class MainWindowView: NSView {
             
         case .openMainMenu:
             pressedButton = .menu
+            
+        // Note: toggleSpectrum is handled via double-click in mouseDown()
             
         // Slider interactions
         case .seekPosition(let value):

@@ -59,6 +59,9 @@ enum PlayerAction: Equatable {
     
     // Plex
     case openPlexBrowser
+    
+    // Spectrum
+    case toggleSpectrum
 }
 
 // MARK: - Clickable Region
@@ -183,6 +186,8 @@ class RegionManager {
             action: .togglePlaylist,
             cursor: .pointer
         ))
+        
+        // Note: Spectrum analyzer area uses double-click to open (handled in MainWindowView)
         
         // Position slider (seek bar)
         regions.append(ClickableRegion(
