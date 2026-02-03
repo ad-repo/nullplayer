@@ -147,9 +147,9 @@ class SpectrumView: NSView {
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
         
-        // Draw window chrome using Milkdrop style (same as MilkdropView)
-        renderer.drawMilkdropWindow(in: context, bounds: bounds, isActive: isActive,
-                                    pressedButton: pressedButton, isShadeMode: isShadeMode)
+        // Draw window chrome with "SPECTRUM ANALYZER" title
+        renderer.drawSpectrumAnalyzerWindow(in: context, bounds: bounds, isActive: isActive,
+                                            pressedButton: pressedButton, isShadeMode: isShadeMode)
         
         context.restoreGState()
     }

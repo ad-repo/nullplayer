@@ -1589,6 +1589,246 @@ class SkinRenderer {
         }
     }
     
+    // MARK: - Spectrum Analyzer Window
+    
+    /// Draw spectrum analyzer window chrome
+    /// Uses same style as Milkdrop window but with "SPECTRUM ANALYZER" title
+    func drawSpectrumAnalyzerWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                    pressedButton: MilkdropButtonType?, isShadeMode: Bool) {
+        if isShadeMode {
+            drawSpectrumAnalyzerShade(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        } else {
+            drawSpectrumAnalyzerNormal(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+        }
+    }
+    
+    /// Draw normal mode spectrum analyzer window chrome
+    private func drawSpectrumAnalyzerNormal(in context: CGContext, bounds: NSRect, isActive: Bool,
+                                            pressedButton: MilkdropButtonType?) {
+        // Fill background with black for visualization area
+        NSColor.black.setFill()
+        context.fill(bounds)
+        
+        let titleHeight = SkinElements.Playlist.titleHeight  // 20px like playlist
+        let borderWidth = SkinElements.Milkdrop.Layout.leftBorder
+        let bottomHeight = SkinElements.Milkdrop.Layout.bottomBorder
+        
+        // Draw dark borders
+        let borderColor = NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0)
+        borderColor.setFill()
+        
+        // Left border
+        context.fill(NSRect(x: 0, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
+        
+        // Right border  
+        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
+        
+        // Bottom bar
+        context.fill(NSRect(x: 0, y: bounds.height - bottomHeight, width: bounds.width, height: bottomHeight))
+        
+        // Draw title bar using PLEDIT.BMP sprites
+        drawSpectrumAnalyzerTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
+    }
+    
+    /// Draw spectrum analyzer title bar using PLEDIT.BMP sprites with "SPECTRUM ANALYZER" text
+    private func drawSpectrumAnalyzerTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: MilkdropButtonType?) {
+        guard let pleditImage = skin.pledit else {
+            drawFallbackMilkdropTitleBar(in: context, bounds: bounds, isActive: isActive)
+            return
+        }
+        
+        let titleHeight = SkinElements.Playlist.titleHeight
+        let leftCornerWidth: CGFloat = 25
+        let rightCornerWidth: CGFloat = 25
+        let tileWidth: CGFloat = 25
+        
+        // Get the correct sprite set for active/inactive state (same as playlist)
+        let leftCorner = isActive ? SkinElements.Playlist.TitleBarActive.leftCorner : SkinElements.Playlist.TitleBarInactive.leftCorner
+        let tileSprite = isActive ? SkinElements.Playlist.TitleBarActive.tile : SkinElements.Playlist.TitleBarInactive.tile
+        let rightCorner = isActive ? SkinElements.Playlist.TitleBarActive.rightCorner : SkinElements.Playlist.TitleBarInactive.rightCorner
+        
+        // Draw left corner
+        drawSprite(from: pleditImage, sourceRect: leftCorner,
+                  to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
+        
+        // Draw right corner (contains window buttons)
+        drawSprite(from: pleditImage, sourceRect: rightCorner,
+                  to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
+        
+        // Fill the middle section with tiles
+        let middleStart = leftCornerWidth
+        let middleEnd = bounds.width - rightCornerWidth
+        var x: CGFloat = middleStart
+        while x < middleEnd {
+            let w = min(tileWidth, middleEnd - x)
+            drawSprite(from: pleditImage, sourceRect: tileSprite,
+                      to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
+            x += tileWidth
+        }
+        
+        // Draw "SPECTRUM ANALYZER" text using GenFont
+        drawSpectrumAnalyzerTitleText(in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive)
+        
+        // Draw close button pressed state if needed
+        if pressedButton == .close {
+            let closeRect = NSRect(x: bounds.width - SkinElements.Playlist.TitleBarButtons.closeOffset, 
+                                   y: 3, width: 9, height: 9)
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+            context.fill(closeRect)
+        }
+    }
+    
+    /// Draw "SPECTRUM ANALYZER" text using GenFont from gen.png
+    private func drawSpectrumAnalyzerTitleText(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true) {
+        // Load gen.png from skin or bundle
+        let genImage = skin.gen ?? Skin.genWindowImage
+        guard let genImage = genImage,
+              let cgImage = genImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return  // GenFont required - no fallback
+        }
+        
+        let text = "SPECTRUM ANALYZER"
+        let scale = Skin.scaleFactor  // 1.25 - match other windows
+        let charHeight = SkinElements.GenFont.charHeight * scale  // 6px * 1.25 = 7.5px
+        let charSpacing: CGFloat = 0  // No extra spacing between letters
+        
+        // Calculate total text width (scaled width, tight spacing)
+        var totalWidth: CGFloat = 0
+        for (i, char) in text.enumerated() {
+            if let charInfo = SkinElements.GenFont.character(char, active: true) {
+                totalWidth += charInfo.width * scale
+                if i < text.count - 1 {
+                    totalWidth += charSpacing
+                }
+            } else if char == " " {
+                totalWidth += 4 * scale  // Space width
+                if i < text.count - 1 {
+                    totalWidth += charSpacing
+                }
+            }
+        }
+        
+        // Add padding around text for the background gap
+        let padding: CGFloat = 10
+        let capWidth: CGFloat = 4  // Width of rounded end caps
+        let gapWidth = totalWidth + padding * 2 + capWidth * 2
+        let gapHeight: CGFloat = 14
+        
+        // Center the gap in the title bar
+        let gapX = (bounds.width - gapWidth) / 2
+        let gapY = (titleHeight - gapHeight) / 2
+        
+        // Draw solid dark background (the "gap" in decorative lines)
+        let gapColor = isActive 
+            ? NSColor(calibratedRed: 0.10, green: 0.10, blue: 0.18, alpha: 1.0)
+            : NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0)
+        gapColor.setFill()
+        context.fill(NSRect(x: gapX + capWidth, y: gapY, width: gapWidth - capWidth * 2, height: gapHeight))
+        
+        // Draw rounded end caps (tapered edges like library window)
+        let capColor = isActive
+            ? NSColor(calibratedRed: 0.16, green: 0.16, blue: 0.24, alpha: 1.0)
+            : NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0)
+        
+        // Left cap - tapered inward
+        for i in 0..<Int(capWidth) {
+            let inset = CGFloat(Int(capWidth) - 1 - i)
+            let capX = gapX + CGFloat(i)
+            capColor.withAlphaComponent(CGFloat(i + 1) / capWidth).setFill()
+            context.fill(NSRect(x: capX, y: gapY + inset, width: 1, height: gapHeight - inset * 2))
+        }
+        
+        // Right cap - tapered inward
+        for i in 0..<Int(capWidth) {
+            let inset = CGFloat(i)
+            let capX = gapX + gapWidth - capWidth + CGFloat(i)
+            capColor.withAlphaComponent(CGFloat(Int(capWidth) - i) / capWidth).setFill()
+            context.fill(NSRect(x: capX, y: gapY + inset, width: 1, height: gapHeight - inset * 2))
+        }
+        
+        // Draw text centered in the gap (account for caps)
+        var xPos = gapX + capWidth + padding
+        let textY = gapY + (gapHeight - charHeight) / 2
+        
+        let chars = Array(text)
+        for (i, char) in chars.enumerated() {
+            if char == " " {
+                // Handle space character
+                xPos += 4 * scale
+                if i < chars.count - 1 {
+                    xPos += charSpacing
+                }
+            } else if let charInfo = SkinElements.GenFont.character(char, active: isActive) {
+                let sourceRect = charInfo.rect
+                let scaledWidth = charInfo.width * scale
+                
+                // CGImage uses top-left origin - use source coordinates directly (no flip needed)
+                let cropRect = CGRect(x: sourceRect.origin.x, y: sourceRect.origin.y,
+                                     width: sourceRect.width, height: sourceRect.height)
+                
+                if let croppedChar = cgImage.cropping(to: cropRect) {
+                    // Draw scaled with vertical flip for NSView (bottom-left origin)
+                    context.saveGState()
+                    context.translateBy(x: xPos, y: textY + charHeight)
+                    context.scaleBy(x: 1, y: -1)
+                    context.interpolationQuality = .none  // Keep pixel-perfect look
+                    context.draw(croppedChar, in: CGRect(x: 0, y: 0, width: scaledWidth, height: charHeight))
+                    context.restoreGState()
+                }
+                
+                xPos += scaledWidth
+                if i < chars.count - 1 {
+                    xPos += charSpacing
+                }
+            }
+        }
+    }
+    
+    /// Draw spectrum analyzer shade mode
+    private func drawSpectrumAnalyzerShade(in context: CGContext, bounds: NSRect, isActive: Bool, pressedButton: MilkdropButtonType?) {
+        guard let pleditImage = skin.pledit else {
+            // Simple fallback
+            NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.22, alpha: 1.0).setFill()
+            context.fill(bounds)
+            return
+        }
+        
+        let shadeHeight = SkinElements.PlaylistShade.height  // 14px
+        
+        // Draw shade background using playlist shade sprites
+        let leftCorner = SkinElements.PlaylistShade.leftCorner
+        let rightCorner = SkinElements.PlaylistShade.rightCorner
+        let tile = SkinElements.PlaylistShade.tile
+        
+        // Draw left corner
+        drawSprite(from: pleditImage, sourceRect: leftCorner,
+                  to: NSRect(x: 0, y: 0, width: leftCorner.width, height: shadeHeight), in: context)
+        
+        // Draw right corner
+        drawSprite(from: pleditImage, sourceRect: rightCorner,
+                  to: NSRect(x: bounds.width - rightCorner.width, y: 0, width: rightCorner.width, height: shadeHeight), in: context)
+        
+        // Fill middle with tiles
+        var x = leftCorner.width
+        let endX = bounds.width - rightCorner.width
+        while x < endX {
+            let w = min(tile.width, endX - x)
+            drawSprite(from: pleditImage, sourceRect: tile,
+                      to: NSRect(x: x, y: 0, width: w, height: shadeHeight), in: context)
+            x += tile.width
+        }
+        
+        // Draw "SPECTRUM ANALYZER" text (smaller for shade mode)
+        drawSpectrumAnalyzerTitleText(in: context, bounds: bounds, titleHeight: shadeHeight, isActive: isActive)
+        
+        // Close button pressed state
+        if pressedButton == .close {
+            let closeRect = NSRect(x: bounds.width - 11, y: 3, width: 9, height: 9)
+            NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
+            context.fill(closeRect)
+        }
+    }
+    
     /// Draw "WINAMP LIBRARY" text using GenFont from gen.png
     /// Creates a solid background gap in the title bar decorations for the text
     private func drawLibraryTitleText(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true) {
