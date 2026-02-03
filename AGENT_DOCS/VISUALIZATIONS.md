@@ -210,8 +210,16 @@ A dedicated Metal-based spectrum analyzer visualization that provides a larger, 
 
 ### Accessing the Visualizer
 
-1. **Context Menu** → Spectrum Analyzer
-2. Or via the Window menu
+1. **Double-click** the spectrum analyzer display in the main window
+2. **Context Menu** → Spectrum Analyzer
+3. Or via the Window menu
+
+### Window Behavior
+
+The Spectrum Analyzer window participates in the docking system:
+- Docks with Main, EQ, and Playlist windows (moves together when dragged)
+- Opens below the current vertical stack
+- Position and visibility saved with "Remember State on Quit"
 
 ### Features
 

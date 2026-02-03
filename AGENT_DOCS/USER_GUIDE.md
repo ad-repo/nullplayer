@@ -55,6 +55,7 @@ AdAmp consists of several windows that can be shown/hidden:
 | **Main Window** | Primary player with transport controls | Always visible |
 | **Playlist Editor** | Track list and playlist management | PL button or context menu |
 | **Equalizer** | 10-band graphic EQ with presets | EQ button or context menu |
+| **Spectrum Analyzer** | Large spectrum visualization | Double-click spectrum display or context menu |
 | **Library Browser** | Browse Plex and local media | Logo button or context menu |
 | **Milkdrop** | Real-time audio visualizations | Menu button or context menu |
 
@@ -63,9 +64,10 @@ AdAmp consists of several windows that can be shown/hidden:
 Windows automatically snap together when dragged near each other:
 - **Edge-to-edge snapping**: Windows dock when edges touch
 - **Screen edge snapping**: Windows snap to screen borders
-- **Group movement**: Docked windows (Main, Playlist, EQ) move together when dragged
+- **Group movement**: Docked windows (Main, Playlist, EQ, Spectrum) move together when dragged
+- **Vertical stacking**: Opening EQ, Playlist, or Spectrum places them below the existing stack
 
-**Snap to Default** (context menu) resets all windows to their default positions.
+**Snap to Default** (context menu) resets all windows to their default positions. Side windows (Milkdrop, Library Browser) resize to match the vertical stack height.
 
 ---
 
@@ -1097,13 +1099,16 @@ The main window displays real-time frequency analysis:
 - 75 frequency bands (20Hz - 20kHz, logarithmic)
 - 512-point FFT (~11.6ms latency at 44.1kHz)
 - Fast attack, slow decay smoothing
+- **Double-click** the spectrum display to open the full Spectrum Analyzer window
+
+The standalone Spectrum Analyzer window provides a larger, more detailed view with configurable quality modes (Winamp classic or Enhanced LED matrix) and decay speeds.
 
 ### Remember State on Quit
 
 **Playback Options > Remember State on Quit** saves and restores the complete app state:
 
 When enabled, the following is saved on quit and restored on launch:
-- **Window positions and visibility** (Main, EQ, Playlist, Browser, Milkdrop)
+- **Window positions and visibility** (Main, EQ, Playlist, Spectrum, Browser, Milkdrop)
 - **Milkdrop fullscreen state** (restores to fullscreen if it was fullscreen)
 - **Audio settings** (volume, balance, shuffle, repeat, gapless, normalization, Sweet Fades)
 - **Equalizer settings** (enabled state, preamp, all band values)

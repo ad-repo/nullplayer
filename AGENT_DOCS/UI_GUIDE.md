@@ -374,6 +374,19 @@ Beat detection triggers on bass energy spikes above threshold.
 
 A standalone Metal-based spectrum analyzer visualization window that provides a larger, more detailed view of the audio spectrum than the main window's built-in analyzer.
 
+### Opening the Window
+
+- **Double-click** the spectrum analyzer display in the main window
+- Context Menu → Spectrum Analyzer
+- Window menu → Spectrum Analyzer
+
+### Window Docking
+
+The Spectrum Analyzer participates in the docking system alongside Main, EQ, and Playlist:
+- Docks and moves with the window group when dragged
+- Opens below the current vertical stack (Main → EQ → Playlist → Spectrum)
+- State (visibility and position) saved with "Remember State on Quit"
+
 ### Key Files
 
 | File | Purpose |
