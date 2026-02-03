@@ -125,6 +125,12 @@ else
     log_warning "No resources found at $BUNDLE_RESOURCES"
 fi
 
+# Copy Metal shader files from bundle root (SPM places .copy() files there)
+if [[ -f "$BUILD_DIR/AdAmp_AdAmp.bundle/SpectrumShaders.metal" ]]; then
+    cp "$BUILD_DIR/AdAmp_AdAmp.bundle/SpectrumShaders.metal" "$RESOURCES_DIR/"
+    log_success "Metal shaders copied"
+fi
+
 # Also copy Info.plist from source
 cp "$REPO_ROOT/Sources/AdAmp/Resources/Info.plist" "$CONTENTS_DIR/"
 
