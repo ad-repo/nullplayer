@@ -40,8 +40,11 @@ class MainWindowView: NSView {
     /// Temporary error message to display in marquee (persists until new track loads)
     private var errorMessage: String?
     
-    /// Marquee timer
+    /// Marquee timer (for bitrate scrolling and shade mode)
     private var marqueeTimer: Timer?
+    
+    /// Layer-based marquee for GPU-accelerated scrolling (normal mode only)
+    private var marqueeLayer: MarqueeLayer?
     
     /// Mouse tracking area
     private var trackingArea: NSTrackingArea?
@@ -107,7 +110,10 @@ class MainWindowView: NSView {
         // Register for drag and drop
         registerForDraggedTypes([.fileURL])
         
-        // Start marquee scrolling
+        // Setup layer-based marquee for normal mode
+        setupMarqueeLayer()
+        
+        // Start timer for bitrate scrolling (and shade mode marquee)
         startMarquee()
         
         // Set up tracking area for mouse events
@@ -162,6 +168,81 @@ class MainWindowView: NSView {
         // we expose accessibility elements via accessibilityChildren override
         // rather than creating separate subviews. This allows XCUITest to
         // find and interact with the custom-drawn controls.
+    }
+    
+    // MARK: - Marquee Layer (GPU-accelerated scrolling for normal mode)
+    
+    private func setupMarqueeLayer() {
+        wantsLayer = true  // Ensure view is layer-backed (already set in setupView)
+        
+        marqueeLayer = MarqueeLayer()
+        marqueeLayer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        updateMarqueeLayerFrame()
+        updateMarqueeContent()
+        layer?.addSublayer(marqueeLayer!)
+        
+        // Observe display/backing scale changes
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeBackingProperties(_:)),
+                                               name: NSWindow.didChangeBackingPropertiesNotification, object: nil)
+    }
+    
+    /// Called when the skin changes (via MainWindowController.skinDidChange)
+    func skinDidChange() {
+        updateMarqueeContent()
+    }
+    
+    @objc private func windowDidChangeBackingProperties(_ notification: Notification) {
+        if let scale = window?.backingScaleFactor {
+            marqueeLayer?.updateContentsScale(scale)
+        }
+    }
+    
+    private func updateMarqueeLayerFrame() {
+        guard !isShadeMode else {
+            // Hide layer in shade mode - shade mode uses timer-based marquee
+            marqueeLayer?.isHidden = true
+            return
+        }
+        
+        marqueeLayer?.isHidden = false
+        
+        let scale = scaleFactor
+        let originalSize = Skin.baseMainSize
+        let marqueeArea = SkinElements.TextFont.Positions.marqueeArea
+        
+        // Calculate centering offset (same as in draw())
+        let scaledWidth = originalSize.width * scale
+        let scaledHeight = originalSize.height * scale
+        let offsetX = (bounds.width - scaledWidth) / 2
+        let offsetY = (bounds.height - scaledHeight) / 2
+        
+        // In draw(), after Y-flip and centering, Winamp coords (x, y) appear at:
+        //   viewX (from left) = offsetX + x * scale
+        //   viewY (from top) = offsetY + y * scale
+        // For CALayer (Y from bottom), we need:
+        //   layerY = bounds.height - (offsetY + (winampY + height) * scale)
+        let winampBottom = marqueeArea.origin.y + marqueeArea.height
+        let layerY = bounds.height - offsetY - winampBottom * scale
+        
+        marqueeLayer?.frame = CGRect(
+            x: offsetX + marqueeArea.origin.x * scale,
+            y: layerY,
+            width: marqueeArea.width * scale,
+            height: marqueeArea.height * scale
+        )
+        
+        // CRITICAL: Set bounds to unscaled dimensions so MarqueeLayer works in base coordinates
+        // The frame controls position/size in the superlayer (scaled), but bounds controls
+        // the internal coordinate system (unscaled). The layer automatically scales content to fit.
+        marqueeLayer?.bounds = CGRect(x: 0, y: 0, width: marqueeArea.width, height: marqueeArea.height)
+    }
+    
+    private func updateMarqueeContent() {
+        guard !isShadeMode else { return }  // Shade mode uses timer-based rendering
+        
+        let text = getMarqueeDisplayText()
+        marqueeLayer?.text = text
+        marqueeLayer?.skinTextImage = WindowManager.shared.currentSkin?.text
     }
     
     // MARK: - Accessibility Children (for custom drawn controls)
@@ -327,6 +408,7 @@ class MainWindowView: NSView {
     deinit {
         marqueeTimer?.invalidate()
         loadingAnimationTimer?.invalidate()
+        marqueeLayer?.removeFromSuperlayer()
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -364,21 +446,22 @@ class MainWindowView: NSView {
         
         // Show error message in marquee - persists until user loads something else
         errorMessage = "[Error] \(message)"
-        marqueeOffset = 0  // Reset scroll to show error from start
-        startMarquee()  // Restart marquee in case error message needs scrolling
+        updateMarqueeContent()  // Update layer-based marquee
+        if isShadeMode { marqueeOffset = 0; startMarquee() }  // Shade mode uses timer
         needsDisplay = true
     }
     
     @objc private func radioMetadataDidChange() {
         // Update marquee when radio stream metadata changes
-        marqueeOffset = 0  // Reset scroll to show new title from start
-        startMarquee()  // Restart marquee in case new title needs scrolling
+        updateMarqueeContent()  // Update layer-based marquee
+        if isShadeMode { marqueeOffset = 0; startMarquee() }  // Shade mode uses timer
         needsDisplay = true
     }
     
     @objc private func radioConnectionStateDidChange() {
         // Update marquee when radio connection state changes
-        startMarquee()  // Restart marquee in case new status needs scrolling
+        updateMarqueeContent()  // Update layer-based marquee
+        if isShadeMode { startMarquee() }  // Shade mode uses timer
         needsDisplay = true
     }
     
@@ -569,9 +652,8 @@ class MainWindowView: NSView {
         let seconds = Int(absTime) % 60
         renderer.drawTimeDisplay(minutes: minutes, seconds: seconds, isNegative: isNegative, in: context)
         
-        // Draw song title marquee - show error, video title, radio status, or track title
-        let marqueeText = getMarqueeDisplayText()
-        renderer.drawMarquee(text: marqueeText, offset: marqueeOffset, in: context)
+        // Note: Song title marquee is rendered by MarqueeLayer (GPU-accelerated)
+        // for better performance. The layer is positioned over the marquee area.
         
         // Draw playback status indicator - show video state if video is active
         let playbackState: PlaybackState
@@ -658,16 +740,16 @@ class MainWindowView: NSView {
         self.currentTrack = track
         self.currentVideoTitle = nil  // Clear video title when audio track changes
         self.errorMessage = nil  // Clear any error message when track loads successfully
-        marqueeOffset = 0  // Reset scroll position
-        startMarquee()  // Restart marquee in case new title needs scrolling
         bitrateScrollOffset = 0  // Reset bitrate scroll
+        updateMarqueeContent()  // Update layer-based marquee
+        if isShadeMode { marqueeOffset = 0; startMarquee() }  // Shade mode uses timer
         needsDisplay = true
     }
     
     func updateVideoTrackInfo(title: String) {
         self.currentVideoTitle = title
-        marqueeOffset = 0  // Reset scroll position
-        startMarquee()  // Restart marquee in case new title needs scrolling
+        updateMarqueeContent()  // Update layer-based marquee
+        if isShadeMode { marqueeOffset = 0; startMarquee() }  // Shade mode uses timer
         needsDisplay = true
     }
     
@@ -704,7 +786,8 @@ class MainWindowView: NSView {
         marqueeTimer = nil
     }
     
-    /// Handle marquee timer tick - only update when window is visible and text overflows
+    /// Handle marquee timer tick - only for bitrate scrolling and shade mode marquee
+    /// (Normal mode marquee is handled by MarqueeLayer for GPU-accelerated performance)
     private func handleMarqueeTimerTick() {
         // Skip updates if window is not visible or occluded
         guard let window = window,
@@ -713,54 +796,44 @@ class MainWindowView: NSView {
             return
         }
         
-        // Use video title if video session is active, radio status if radio active, otherwise track title
-        // Show "Loading..." when casting a local file (prevents UI jumping during rapid clicks)
-        let title: String
-        if isCastingLocalFile {
-            title = "Loading..."
-        } else {
-            title = getMarqueeDisplayText()
-        }
-        
-        let charWidth = SkinElements.TextFont.charWidth
-        let textWidth = CGFloat(title.count) * charWidth
-        let marqueeWidth = SkinElements.TextFont.Positions.marqueeArea.width
-        
         var needsScrolling = false
+        let charWidth = SkinElements.TextFont.charWidth
         
-        if textWidth > marqueeWidth {
-            // Circular scroll: separator is "  -  " (5 chars)
-            let separatorWidth = charWidth * 5
-            let totalCycleWidth = textWidth + separatorWidth
+        // Shade mode marquee scrolling (layer-based marquee is hidden in shade mode)
+        if isShadeMode {
+            let title = isCastingLocalFile ? "Loading..." : getMarqueeDisplayText()
+            let textWidth = CGFloat(title.count) * charWidth
+            let marqueeWidth = SkinElements.MainShade.textArea.width
             
-            // Scroll 3 pixels per tick (adjusted for 8Hz timer)
-            marqueeOffset += 3
-            // Reset when one full cycle completes (seamless wrap)
-            if marqueeOffset >= totalCycleWidth {
+            if textWidth > marqueeWidth {
+                let separatorWidth = charWidth * 5
+                let totalCycleWidth = textWidth + separatorWidth
+                marqueeOffset += 3
+                if marqueeOffset >= totalCycleWidth {
+                    marqueeOffset = 0
+                }
+                needsScrolling = true
+            } else if marqueeOffset != 0 {
                 marqueeOffset = 0
             }
-            setNeedsDisplay(SkinElements.TextFont.Positions.marqueeArea)
-            needsScrolling = true
-        } else {
-            // Text fits - no scrolling needed, reset offset
-            if marqueeOffset != 0 {
-                marqueeOffset = 0
-                setNeedsDisplay(SkinElements.TextFont.Positions.marqueeArea)
+            
+            if needsScrolling {
+                needsDisplay = true
             }
         }
         
-        // Scroll bitrate if > 3 digits (circular scroll)
+        // Scroll bitrate if > 3 digits (circular scroll) - both modes
         if let bitrate = currentTrack?.bitrate {
             let kbps = bitrate > 10000 ? bitrate / 1000 : bitrate
             let bitrateText = "\(kbps)"
             if bitrateText.count > 3 {
                 let bitrateTextWidth = CGFloat(bitrateText.count) * charWidth
-                let spacing = charWidth * 2  // Gap between repeated text
+                let spacing = charWidth * 2
                 let totalWidth = bitrateTextWidth + spacing
                 
-                bitrateScrollOffset += 0.1  // Very slow smooth scroll
+                bitrateScrollOffset += 0.1
                 if bitrateScrollOffset >= totalWidth {
-                    bitrateScrollOffset = 0  // Wrap around seamlessly
+                    bitrateScrollOffset = 0
                 }
                 setNeedsDisplay(SkinElements.InfoDisplay.Positions.bitrate)
                 needsScrolling = true
@@ -771,7 +844,7 @@ class MainWindowView: NSView {
         
         // CPU optimization: Stop the timer when nothing needs scrolling
         // It will restart when track changes or new content arrives
-        if !needsScrolling {
+        if !needsScrolling && !isShadeMode {
             stopMarquee()
         }
     }
@@ -779,6 +852,7 @@ class MainWindowView: NSView {
     @objc private func windowDidMiniaturize(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
         stopMarquee()
+        marqueeLayer?.pauseAnimation()
         loadingAnimationTimer?.invalidate()
         loadingAnimationTimer = nil
     }
@@ -787,6 +861,7 @@ class MainWindowView: NSView {
     @objc private func windowDidDeminiaturize(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
         startMarquee()
+        marqueeLayer?.resumeAnimation()
         // Restart loading animation if needed
         if isCastingLocalFile {
             startLoadingAnimation()
@@ -798,11 +873,13 @@ class MainWindowView: NSView {
         guard notification.object as? NSWindow == window else { return }
         if window?.occlusionState.contains(.visible) == true {
             startMarquee()
+            marqueeLayer?.resumeAnimation()
             if isCastingLocalFile {
                 startLoadingAnimation()
             }
         } else {
             stopMarquee()
+            marqueeLayer?.pauseAnimation()
             loadingAnimationTimer?.invalidate()
             loadingAnimationTimer = nil
         }
@@ -1274,6 +1351,11 @@ class MainWindowView: NSView {
     /// Set shade mode externally (e.g., from controller)
     func setShadeMode(_ enabled: Bool) {
         isShadeMode = enabled
+        updateMarqueeLayerFrame()  // Hide/show layer based on mode
+        if enabled {
+            marqueeOffset = 0  // Reset shade mode marquee
+            startMarquee()     // Start timer for shade mode
+        }
         needsDisplay = true
     }
     
