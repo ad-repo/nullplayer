@@ -1283,6 +1283,10 @@ class WindowManager {
         // Apply positions to visible windows WITHOUT animation first to avoid race conditions
         // when windows are on different screens. Then animate to final positions.
         
+        // Disable snapping during programmatic frame changes to prevent interference
+        isSnappingWindow = true
+        defer { isSnappingWindow = false }
+        
         // First pass: Move all windows to target screen instantly (no animation)
         if let mainWindow = mainWindowController?.window {
             mainWindow.setFrame(mainFrame, display: true, animate: false)
