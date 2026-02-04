@@ -17,7 +17,8 @@ import os.lock
 /// Quality mode for spectrum analyzer rendering
 enum SpectrumQualityMode: String, CaseIterable {
     case winamp = "Winamp"       // Discrete colors, pixel-art aesthetic
-    case enhanced = "Enhanced"   // Smooth gradients with glow
+    case enhanced = "Enhanced"   // LED matrix with rainbow
+    case ultra = "Ultra"         // Maximum visual quality with effects
     
     var displayName: String { rawValue }
 }
@@ -58,6 +59,23 @@ struct LEDParams {
     var padding: Float = 0          // 4 bytes (offset 36) - alignment to 40
 }
 
+/// Parameters for Ultra mode shader (must match Metal UltraParams exactly)
+/// Total size: 56 bytes
+struct UltraParams {
+    var viewportSize: SIMD2<Float>  // 8 bytes (offset 0)
+    var columnCount: Int32          // 4 bytes (offset 8)
+    var rowCount: Int32             // 4 bytes (offset 12)
+    var cellWidth: Float            // 4 bytes (offset 16)
+    var cellHeight: Float           // 4 bytes (offset 20)
+    var cellSpacing: Float          // 4 bytes (offset 24)
+    var glowRadius: Float           // 4 bytes (offset 28)
+    var glowIntensity: Float        // 4 bytes (offset 32)
+    var reflectionHeight: Float     // 4 bytes (offset 36)
+    var reflectionAlpha: Float      // 4 bytes (offset 40)
+    var time: Float                 // 4 bytes (offset 44)
+    var padding: SIMD2<Float> = SIMD2<Float>(0, 0)  // 8 bytes (offset 48) - alignment to 56
+}
+
 // MARK: - Spectrum Analyzer View
 
 /// Metal-based spectrum analyzer visualization view
@@ -65,7 +83,7 @@ class SpectrumAnalyzerView: NSView {
     
     // MARK: - Configuration
     
-    /// Quality mode (Winamp discrete vs Enhanced smooth)
+    /// Quality mode (Winamp discrete vs Enhanced smooth vs Ultra high-quality)
     var qualityMode: SpectrumQualityMode = .winamp {
         didSet {
             UserDefaults.standard.set(qualityMode.rawValue, forKey: "spectrumQualityMode")
@@ -73,7 +91,17 @@ class SpectrumAnalyzerView: NSView {
             dataLock.withLock {
                 renderQualityMode = mode
             }
+            // Note: Don't change semaphore at runtime - it causes crashes when GPU work is in-flight
         }
+    }
+    
+    /// Get the display refresh rate from the current display link
+    private func getDisplayRefreshRate() -> Double {
+        guard let displayLink = displayLink else { return 60.0 }
+        let time = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(displayLink)
+        // Ensure we have valid values to avoid division issues
+        guard time.timeValue > 0 && time.timeScale > 0 else { return 60.0 }
+        return Double(time.timeScale) / Double(time.timeValue)
     }
     
     /// Decay/responsiveness mode
@@ -120,9 +148,10 @@ class SpectrumAnalyzerView: NSView {
     private var commandQueue: MTLCommandQueue!
     private var pipelineState: MTLRenderPipelineState?
     
-    // Pipeline states for both modes
+    // Pipeline states for all modes
     private var ledPipelineState: MTLRenderPipelineState?
     private var barPipelineState: MTLRenderPipelineState?
+    private var ultraPipelineState: MTLRenderPipelineState?
     
     // Buffers
     private var vertexBuffer: MTLBuffer?
@@ -134,13 +163,18 @@ class SpectrumAnalyzerView: NSView {
     private var cellBrightnessBuffer: MTLBuffer?
     private var peakPositionsBuffer: MTLBuffer?
     
+    // Ultra mode buffers
+    private var ultraCellBrightnessBuffer: MTLBuffer?
+    private var ultraParamsBuffer: MTLBuffer?
+    
     // MARK: - Display Sync
     
     private var displayLink: CVDisplayLink?
     private var isRendering = false
     
     // Frame pacing semaphore - limits in-flight command buffers to prevent memory buildup
-    private let inFlightSemaphore = DispatchSemaphore(value: 2)
+    // Use triple buffering (3) for all modes - simpler and avoids crashes when switching modes
+    private let inFlightSemaphore = DispatchSemaphore(value: 3)
     
     // MARK: - Thread-Safe Spectrum Data
     // Note: These properties are accessed from both the main thread and the CVDisplayLink callback thread.
@@ -148,17 +182,26 @@ class SpectrumAnalyzerView: NSView {
     
     private let dataLock = OSAllocatedUnfairLock()
     nonisolated(unsafe) private var rawSpectrum: [Float] = []       // From audio engine (75 bands)
-    nonisolated(unsafe) private var displaySpectrum: [Float] = []   // After decay smoothing
+    nonisolated(unsafe) private var displaySpectrum: [Float] = []   // After decay smoothing (Enhanced/Winamp)
+    nonisolated(unsafe) private var ultraDisplaySpectrum: [Float] = []  // After decay smoothing (Ultra mode - 96 bars)
     nonisolated(unsafe) private var renderBarCount: Int = 19        // Bar count for rendering
     nonisolated(unsafe) private var renderDecayFactor: Float = 0.25 // Decay factor for rendering
     nonisolated(unsafe) private var renderColorPalette: [SIMD4<Float>] = [] // Colors for rendering
     nonisolated(unsafe) private var renderBarWidth: CGFloat = 3.0   // Bar width for rendering
     nonisolated(unsafe) private var renderQualityMode: SpectrumQualityMode = .winamp // Quality mode for rendering
     
-    // LED Matrix state tracking (for Enhanced mode)
-    nonisolated(unsafe) private var peakHoldPositions: [Float] = []  // Peak hold position per column (0-1)
+    // LED Matrix state tracking (for Enhanced and Ultra modes)
+    nonisolated(unsafe) private var peakHoldPositions: [Float] = []  // Peak hold position per column (0-1) - Enhanced mode
+    nonisolated(unsafe) private var ultraPeakPositions: [Float] = []  // Peak positions for Ultra mode (separate to avoid resize conflicts)
     nonisolated(unsafe) private var cellBrightness: [[Float]] = []   // Brightness per cell [column][row]
-    private let ledRowCount = 16  // Number of LED rows in matrix
+    private let ledRowCount = 16  // Number of LED rows in matrix (Enhanced mode)
+    private let ultraLedRowCount = 64  // Ultra high resolution
+    private let ultraBarCount = 512  // Maximum fidelity
+    
+    // Ultra mode state tracking
+    nonisolated(unsafe) private var ultraCellBrightness: [[Float]] = []  // Brightness per cell [column][row] for Ultra
+    nonisolated(unsafe) private var peakVelocities: [Float] = []  // Peak velocity for physics simulation
+    nonisolated(unsafe) private var animationTime: Float = 0  // For subtle animations
     
     // MARK: - Color Palette
     
@@ -192,7 +235,21 @@ class SpectrumAnalyzerView: NSView {
         }
         
         // Initialize display spectrum and sync to render-safe variables
-        displaySpectrum = Array(repeating: 0, count: barCount)
+        // Use max size to avoid any resizing during mode switches
+        let maxBars = max(barCount, ultraBarCount)
+        displaySpectrum = Array(repeating: 0, count: maxBars)
+        ultraDisplaySpectrum = Array(repeating: 0, count: maxBars)
+        
+        // Pre-initialize ALL arrays to maximum size to prevent crashes during mode switches
+        // Ultra mode arrays
+        ultraPeakPositions = Array(repeating: 0, count: maxBars)
+        peakVelocities = Array(repeating: 0, count: maxBars)
+        ultraCellBrightness = Array(repeating: Array(repeating: Float(0), count: ultraLedRowCount), count: maxBars)
+        
+        // Enhanced mode arrays - also max size
+        peakHoldPositions = Array(repeating: 0, count: maxBars)
+        cellBrightness = Array(repeating: Array(repeating: Float(0), count: ledRowCount), count: maxBars)
+        
         renderBarCount = barCount
         renderDecayFactor = decayMode.decayFactor
         renderBarWidth = barWidth
@@ -281,8 +338,34 @@ class SpectrumAnalyzerView: NSView {
                 barPipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
             }
             
+            // Create Ultra pipeline (Ultra mode with bloom and reflection)
+            if let vertexFunc = library.makeFunction(name: "ultra_matrix_vertex"),
+               let fragmentFunc = library.makeFunction(name: "ultra_matrix_fragment") {
+                let descriptor = MTLRenderPipelineDescriptor()
+                descriptor.label = "Ultra Matrix Pipeline"
+                descriptor.vertexFunction = vertexFunc
+                descriptor.fragmentFunction = fragmentFunc
+                descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+                // Enable blending for glow effects
+                descriptor.colorAttachments[0].isBlendingEnabled = true
+                descriptor.colorAttachments[0].rgbBlendOperation = .add
+                descriptor.colorAttachments[0].alphaBlendOperation = .add
+                descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+                descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+                descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+                descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
+                ultraPipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
+            }
+            
             // Keep pipelineState for backward compatibility (points to current mode)
-            pipelineState = qualityMode == .enhanced ? ledPipelineState : barPipelineState
+            switch qualityMode {
+            case .winamp:
+                pipelineState = barPipelineState
+            case .enhanced:
+                pipelineState = ledPipelineState
+            case .ultra:
+                pipelineState = ultraPipelineState
+            }
             
             NSLog("SpectrumAnalyzerView: Metal pipelines created successfully")
         } catch {
@@ -293,9 +376,13 @@ class SpectrumAnalyzerView: NSView {
     private func setupBuffers() {
         guard let device = device else { return }
         
-        let maxColumns = 64
+        let maxColumns = 512  // Enough for Ultra mode's 512 bars
         let maxRows = 16
         let maxCells = maxColumns * maxRows
+        
+        // Ultra mode has more rows (64) for ultra high resolution
+        let ultraMaxRows = 64
+        let ultraMaxCells = maxColumns * ultraMaxRows
         
         // Cell brightness buffer (one float per cell) - for LED matrix mode
         cellBrightnessBuffer = device.makeBuffer(
@@ -321,9 +408,20 @@ class SpectrumAnalyzerView: NSView {
             options: .storageModeShared
         )
         
-        // Params buffer (shared between both modes)
+        // Params buffer (shared between Winamp and Enhanced modes)
         paramsBuffer = device.makeBuffer(
             length: MemoryLayout<LEDParams>.stride,
+            options: .storageModeShared
+        )
+        
+        // Ultra mode buffers
+        ultraCellBrightnessBuffer = device.makeBuffer(
+            length: ultraMaxCells * MemoryLayout<Float>.stride,
+            options: .storageModeShared
+        )
+        
+        ultraParamsBuffer = device.makeBuffer(
+            length: MemoryLayout<UltraParams>.stride,
             options: .storageModeShared
         )
     }
@@ -443,7 +541,15 @@ class SpectrumAnalyzerView: NSView {
         dataLock.withLock {
             currentMode = renderQualityMode
         }
-        let activePipeline = currentMode == .enhanced ? ledPipelineState : barPipelineState
+        let activePipeline: MTLRenderPipelineState?
+        switch currentMode {
+        case .winamp:
+            activePipeline = barPipelineState
+        case .enhanced:
+            activePipeline = ledPipelineState
+        case .ultra:
+            activePipeline = ultraPipelineState
+        }
         
         guard let pipeline = activePipeline,
               let commandBuffer = commandQueue?.makeCommandBuffer() else {
@@ -475,7 +581,8 @@ class SpectrumAnalyzerView: NSView {
             localBarCount = renderBarCount
         }
         
-        if currentMode == .enhanced {
+        switch currentMode {
+        case .enhanced:
             // LED Matrix mode - bind LED buffers
             if let buffer = cellBrightnessBuffer {
                 encoder.setVertexBuffer(buffer, offset: 0, index: 0)
@@ -491,7 +598,25 @@ class SpectrumAnalyzerView: NSView {
             // Each cell is 6 vertices, total cells = columns * rows
             let vertexCount = localBarCount * ledRowCount * 6
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
-        } else {
+            
+        case .ultra:
+            // Ultra mode - bind Ultra buffers
+            if let buffer = ultraCellBrightnessBuffer {
+                encoder.setVertexBuffer(buffer, offset: 0, index: 0)
+            }
+            if let buffer = peakPositionsBuffer {
+                encoder.setVertexBuffer(buffer, offset: 0, index: 1)
+            }
+            if let buffer = ultraParamsBuffer {
+                encoder.setVertexBuffer(buffer, offset: 0, index: 2)
+                encoder.setFragmentBuffer(buffer, offset: 0, index: 1)
+            }
+            
+            // Ultra has 96 bars and 32 rows for high resolution
+            let vertexCount = ultraBarCount * ultraLedRowCount * 6
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
+            
+        case .winamp:
             // Winamp bar mode - bind bar buffers
             if let buffer = heightBuffer {
                 encoder.setVertexBuffer(buffer, offset: 0, index: 0)
@@ -531,6 +656,11 @@ class SpectrumAnalyzerView: NSView {
         dataLock.withLock {
             let decay = renderDecayFactor
             let outputCount = renderBarCount
+            let ultraOutputCount = ultraBarCount
+            
+            // Match main window's spectrum mapping exactly (simple averaging, no processing)
+            // Scale factor leaves visual headroom at top (0.95 = peaks show at 95% height)
+            let displayScale: Float = 0.95
             
             // Map raw spectrum to display bars
             if rawSpectrum.isEmpty {
@@ -543,21 +673,29 @@ class SpectrumAnalyzerView: NSView {
                         hasData = true
                     }
                 }
+                // Also decay Ultra spectrum
+                for i in 0..<ultraDisplaySpectrum.count {
+                    ultraDisplaySpectrum[i] *= decay
+                    if ultraDisplaySpectrum[i] < 0.01 {
+                        ultraDisplaySpectrum[i] = 0
+                    }
+                }
             } else {
                 // Map input bands to display bars
                 let inputCount = rawSpectrum.count
                 
-                // Ensure displaySpectrum has correct size
+                // Ensure displaySpectrum has correct size (for Enhanced/Winamp modes)
                 if displaySpectrum.count != outputCount {
                     displaySpectrum = Array(repeating: 0, count: outputCount)
                 }
                 
-                // Match main window's spectrum mapping exactly (simple averaging, no processing)
-                // Scale factor leaves visual headroom at top (0.95 = peaks show at 95% height)
-                let displayScale: Float = 0.95
+                // Ensure ultraDisplaySpectrum has correct size (96 bars for Ultra mode)
+                if ultraDisplaySpectrum.count != ultraOutputCount {
+                    ultraDisplaySpectrum = Array(repeating: 0, count: ultraOutputCount)
+                }
                 
+                // Update standard display spectrum (for Enhanced/Winamp)
                 if inputCount >= outputCount {
-                    // Average multiple input bands into each display bar
                     let bandsPerBar = inputCount / outputCount
                     for barIndex in 0..<outputCount {
                         let start = barIndex * bandsPerBar
@@ -568,9 +706,8 @@ class SpectrumAnalyzerView: NSView {
                         }
                         let newValue = (sum / Float(end - start)) * displayScale
                         
-                        // Apply decay
                         if newValue > displaySpectrum[barIndex] {
-                            displaySpectrum[barIndex] = newValue  // Fast attack
+                            displaySpectrum[barIndex] = newValue
                         } else {
                             displaySpectrum[barIndex] = displaySpectrum[barIndex] * decay + newValue * (1 - decay)
                         }
@@ -580,7 +717,6 @@ class SpectrumAnalyzerView: NSView {
                         }
                     }
                 } else {
-                    // Interpolate when fewer input bands than display bars
                     for barIndex in 0..<outputCount {
                         let sourceIndex = Float(barIndex) * Float(inputCount - 1) / Float(outputCount - 1)
                         let lowerIndex = Int(sourceIndex)
@@ -588,7 +724,6 @@ class SpectrumAnalyzerView: NSView {
                         let fraction = sourceIndex - Float(lowerIndex)
                         let newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
                         
-                        // Apply decay
                         if newValue > displaySpectrum[barIndex] {
                             displaySpectrum[barIndex] = newValue
                         } else {
@@ -600,11 +735,31 @@ class SpectrumAnalyzerView: NSView {
                         }
                     }
                 }
+                
+                // Update Ultra display spectrum (96 bars - interpolate from raw spectrum)
+                for barIndex in 0..<ultraOutputCount {
+                    let sourceIndex = Float(barIndex) * Float(inputCount - 1) / Float(ultraOutputCount - 1)
+                    let lowerIndex = Int(sourceIndex)
+                    let upperIndex = min(lowerIndex + 1, inputCount - 1)
+                    let fraction = sourceIndex - Float(lowerIndex)
+                    let newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+                    
+                    if newValue > ultraDisplaySpectrum[barIndex] {
+                        ultraDisplaySpectrum[barIndex] = newValue
+                    } else {
+                        ultraDisplaySpectrum[barIndex] = ultraDisplaySpectrum[barIndex] * decay + newValue * (1 - decay)
+                    }
+                }
             }
             
-            // Update LED matrix state only when in Enhanced mode
-            if renderQualityMode == .enhanced {
+            // Update LED matrix state based on mode
+            switch renderQualityMode {
+            case .enhanced:
                 updateLEDMatrixState()
+            case .ultra:
+                updateUltraMatrixState()
+            case .winamp:
+                break  // Winamp mode doesn't use LED matrix
             }
             
             hasVisibleData = hasData
@@ -618,13 +773,7 @@ class SpectrumAnalyzerView: NSView {
     private func updateLEDMatrixState() {
         let colCount = renderBarCount
         
-        // Initialize arrays if needed
-        if peakHoldPositions.count != colCount {
-            peakHoldPositions = Array(repeating: 0, count: colCount)
-        }
-        if cellBrightness.count != colCount {
-            cellBrightness = Array(repeating: Array(repeating: Float(0), count: ledRowCount), count: colCount)
-        }
+        // Arrays are pre-allocated in commonInit - no resizing needed
         
         let peakDecayRate: Float = 0.012      // How fast peak falls (per frame)
         let peakHoldFrames: Float = 0.985     // Slight delay before peak starts falling
@@ -656,6 +805,77 @@ class SpectrumAnalyzerView: NSView {
         }
     }
     
+    /// Updates state for Ultra mode with physics-based peaks and higher resolution
+    private func updateUltraMatrixState() {
+        let colCount = ultraBarCount
+        
+        // Arrays are pre-allocated in commonInit - no resizing needed
+        
+        // Physics constants for smooth, satisfying peak animation
+        let gravity: Float = 0.012           // Acceleration downward per frame (slightly faster)
+        let bounceCoeff: Float = 0.35        // How much velocity is retained on bounce
+        let minBounceVelocity: Float = 0.015 // Minimum velocity to trigger bounce
+        
+        // Fade rates for smooth trails
+        let cellFadeRate: Float = 0.04       // How fast unlit cells fade (faster = more responsive)
+        let trailFadeRate: Float = 0.025     // Slower fade for recently-lit cells (creates trail)
+        
+        // Floor cutoff for better dynamic range - values below this become 0
+        // This removes the always-lit bottom rows during normal playback
+        let floor: Float = 0.15
+        let ceiling: Float = 1.0
+        let range = ceiling - floor
+        
+        // Update animation time
+        animationTime += 1.0 / 60.0
+        
+        for col in 0..<min(colCount, ultraDisplaySpectrum.count) {
+            let rawLevel = ultraDisplaySpectrum[col]
+            // Apply floor: subtract floor and rescale to 0-1
+            let currentLevel = max(0, (rawLevel - floor) / range)
+            let currentRow = Int(currentLevel * Float(ultraLedRowCount))
+            
+            // Physics-based peak animation
+            if currentLevel > ultraPeakPositions[col] {
+                // New peak - jump to current level and reset velocity
+                ultraPeakPositions[col] = currentLevel
+                peakVelocities[col] = 0
+            } else {
+                // Apply gravity (acceleration)
+                peakVelocities[col] -= gravity
+                ultraPeakPositions[col] += peakVelocities[col]
+                
+                // Check for collision with current bar level (bounce)
+                if ultraPeakPositions[col] < currentLevel {
+                    ultraPeakPositions[col] = currentLevel
+                    // Bounce with energy loss, but only if moving fast enough
+                    if abs(peakVelocities[col]) > minBounceVelocity {
+                        peakVelocities[col] = -peakVelocities[col] * bounceCoeff
+                    } else {
+                        peakVelocities[col] = 0
+                    }
+                }
+                
+                // Clamp to valid range
+                ultraPeakPositions[col] = max(0, min(1.0, ultraPeakPositions[col]))
+            }
+            
+            // Update per-cell brightness with trails
+            for row in 0..<ultraLedRowCount {
+                if row < currentRow {
+                    // Cell is currently lit - set to full brightness
+                    ultraCellBrightness[col][row] = 1.0
+                } else if ultraCellBrightness[col][row] > 0.7 {
+                    // Recently lit cell - fade slower to create trail effect
+                    ultraCellBrightness[col][row] = max(0, ultraCellBrightness[col][row] - trailFadeRate)
+                } else {
+                    // Older unlit cell - fade faster
+                    ultraCellBrightness[col][row] = max(0, ultraCellBrightness[col][row] - cellFadeRate)
+                }
+            }
+        }
+    }
+    
     private func updateBuffers() {
         // Get render-safe values inside lock
         var localBarCount: Int = 0
@@ -664,44 +884,50 @@ class SpectrumAnalyzerView: NSView {
         var localSpectrum: [Float] = []
         var localPeakPositions: [Float] = []
         var localCellBrightness: [[Float]] = []
+        var localUltraCellBrightness: [[Float]] = []
         var localQualityMode: SpectrumQualityMode = .winamp
+        var localAnimationTime: Float = 0
         
         dataLock.withLock {
             localBarCount = renderBarCount
             localBarWidth = renderBarWidth
             localColors = renderColorPalette
             localSpectrum = displaySpectrum
-            localPeakPositions = peakHoldPositions
+            // Use appropriate peak positions based on mode
+            localPeakPositions = renderQualityMode == .ultra ? ultraPeakPositions : peakHoldPositions
             localCellBrightness = cellBrightness
+            localUltraCellBrightness = ultraCellBrightness
             localQualityMode = renderQualityMode
+            localAnimationTime = animationTime
         }
         
         let scale = metalLayer?.contentsScale ?? 1.0
         let scaledWidth = Float(bounds.width * scale)
         let scaledHeight = Float(bounds.height * scale)
         
-        // Calculate cell dimensions
-        let cellSpacing: Float = 2.0 * Float(scale)
-        let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
-        let cellWidth = Float(localBarWidth * scale) - 1.0
-        
-        // Update params buffer
-        if let buffer = paramsBuffer {
-            let ptr = buffer.contents().bindMemory(to: LEDParams.self, capacity: 1)
-            ptr.pointee = LEDParams(
-                viewportSize: SIMD2<Float>(scaledWidth, scaledHeight),
-                columnCount: Int32(localBarCount),
-                rowCount: Int32(ledRowCount),
-                cellWidth: cellWidth,
-                cellHeight: cellHeight,
-                cellSpacing: cellSpacing,
-                qualityMode: localQualityMode == .winamp ? 0 : 1,
-                maxHeight: scaledHeight
-            )
-        }
-        
-        if localQualityMode == .enhanced {
-            // Update cell brightness buffer (LED matrix mode)
+        switch localQualityMode {
+        case .enhanced:
+            // Calculate cell dimensions for Enhanced mode (16 rows)
+            let cellSpacing: Float = 2.0 * Float(scale)
+            let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
+            let cellWidth = Float(localBarWidth * scale) - 1.0
+            
+            // Update params buffer
+            if let buffer = paramsBuffer {
+                let ptr = buffer.contents().bindMemory(to: LEDParams.self, capacity: 1)
+                ptr.pointee = LEDParams(
+                    viewportSize: SIMD2<Float>(scaledWidth, scaledHeight),
+                    columnCount: Int32(localBarCount),
+                    rowCount: Int32(ledRowCount),
+                    cellWidth: cellWidth,
+                    cellHeight: cellHeight,
+                    cellSpacing: cellSpacing,
+                    qualityMode: 1,
+                    maxHeight: scaledHeight
+                )
+            }
+            
+            // Update cell brightness buffer
             if let buffer = cellBrightnessBuffer {
                 let ptr = buffer.contents().bindMemory(to: Float.self, capacity: localBarCount * ledRowCount)
                 for col in 0..<localBarCount {
@@ -723,8 +949,78 @@ class SpectrumAnalyzerView: NSView {
                     ptr[col] = col < localPeakPositions.count ? localPeakPositions[col] : 0
                 }
             }
-        } else {
-            // Update heights buffer (Winamp bar mode)
+            
+        case .ultra:
+            // Calculate cell dimensions for Ultra mode - ZERO gaps for seamless gradient
+            let ultraCols = ultraBarCount
+            let cellSpacing: Float = 0.0  // No gaps at all - completely seamless
+            let cellHeight = scaledHeight / Float(ultraLedRowCount)
+            let cellWidth = scaledWidth / Float(ultraCols)
+            
+            // Update Ultra params buffer
+            if let buffer = ultraParamsBuffer {
+                let ptr = buffer.contents().bindMemory(to: UltraParams.self, capacity: 1)
+                ptr.pointee = UltraParams(
+                    viewportSize: SIMD2<Float>(scaledWidth, scaledHeight),
+                    columnCount: Int32(ultraCols),
+                    rowCount: Int32(ultraLedRowCount),
+                    cellWidth: cellWidth,
+                    cellHeight: cellHeight,
+                    cellSpacing: cellSpacing,
+                    glowRadius: 4.0,            // Glow spread
+                    glowIntensity: 1.0,         // Maximum glow for flashy neon effect
+                    reflectionHeight: 0.0,      // No reflection
+                    reflectionAlpha: 0.0,
+                    time: localAnimationTime
+                )
+            }
+            
+            // Update Ultra cell brightness buffer
+            if let buffer = ultraCellBrightnessBuffer {
+                let ptr = buffer.contents().bindMemory(to: Float.self, capacity: ultraCols * ultraLedRowCount)
+                
+                for col in 0..<ultraCols {
+                    for row in 0..<ultraLedRowCount {
+                        let index = col * ultraLedRowCount + row
+                        if col < localUltraCellBrightness.count && row < localUltraCellBrightness[col].count {
+                            ptr[index] = localUltraCellBrightness[col][row]
+                        } else {
+                            ptr[index] = 0
+                        }
+                    }
+                }
+            }
+            
+            // Update peak positions buffer for Ultra mode (96 bars)
+            if let buffer = peakPositionsBuffer {
+                let ptr = buffer.contents().bindMemory(to: Float.self, capacity: ultraCols)
+                for col in 0..<ultraCols {
+                    ptr[col] = col < localPeakPositions.count ? localPeakPositions[col] : 0
+                }
+            }
+            
+        case .winamp:
+            // Calculate cell dimensions for Winamp mode
+            let cellSpacing: Float = 2.0 * Float(scale)
+            let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
+            let cellWidth = Float(localBarWidth * scale) - 1.0
+            
+            // Update params buffer for Winamp
+            if let buffer = paramsBuffer {
+                let ptr = buffer.contents().bindMemory(to: LEDParams.self, capacity: 1)
+                ptr.pointee = LEDParams(
+                    viewportSize: SIMD2<Float>(scaledWidth, scaledHeight),
+                    columnCount: Int32(localBarCount),
+                    rowCount: Int32(ledRowCount),
+                    cellWidth: cellWidth,
+                    cellHeight: cellHeight,
+                    cellSpacing: cellSpacing,
+                    qualityMode: 0,
+                    maxHeight: scaledHeight
+                )
+            }
+            
+            // Update heights buffer
             if let buffer = heightBuffer {
                 let ptr = buffer.contents().bindMemory(to: Float.self, capacity: localBarCount)
                 for i in 0..<min(localBarCount, localSpectrum.count) {

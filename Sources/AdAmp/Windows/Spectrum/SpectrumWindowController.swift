@@ -16,13 +16,16 @@ class SpectrumWindowController: NSWindowController {
     // MARK: - Initialization
     
     convenience init() {
-        // Create borderless window with manual resize handling
+        // Create borderless window with manual resize handling and fullscreen support
         let window = ResizableWindow(
             contentRect: NSRect(origin: .zero, size: SkinElements.SpectrumWindow.windowSize),
             styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
+        
+        // Enable fullscreen support
+        window.collectionBehavior = [.fullScreenPrimary, .managed]
         
         self.init(window: window)
         

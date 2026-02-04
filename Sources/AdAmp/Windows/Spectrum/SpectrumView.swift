@@ -356,8 +356,14 @@ class SpectrumView: NSView {
     
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 53: // Escape - close window
-            window?.close()
+        case 53: // Escape - close window or exit fullscreen
+            if window?.styleMask.contains(.fullScreen) == true {
+                window?.toggleFullScreen(nil)
+            } else {
+                window?.close()
+            }
+        case 3: // F key - toggle fullscreen
+            window?.toggleFullScreen(nil)
         default:
             super.keyDown(with: event)
         }
@@ -396,12 +402,28 @@ class SpectrumView: NSView {
         
         menu.addItem(NSMenuItem.separator())
         
+        // Fullscreen toggle
+        let isFullscreen = window?.styleMask.contains(.fullScreen) ?? false
+        let fullscreenItem = NSMenuItem(
+            title: isFullscreen ? "Exit Full Screen" : "Enter Full Screen",
+            action: #selector(toggleFullScreen(_:)),
+            keyEquivalent: "f"
+        )
+        fullscreenItem.target = self
+        menu.addItem(fullscreenItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
         // Close
         let closeItem = NSMenuItem(title: "Close", action: #selector(closeWindow(_:)), keyEquivalent: "")
         closeItem.target = self
         menu.addItem(closeItem)
         
         return menu
+    }
+    
+    @objc private func toggleFullScreen(_ sender: Any?) {
+        window?.toggleFullScreen(sender)
     }
     
     @objc private func setQualityMode(_ sender: NSMenuItem) {

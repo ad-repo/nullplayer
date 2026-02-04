@@ -427,13 +427,15 @@ NotificationCenter.default.post(
 
 A dedicated spectrum analyzer window is available (Visualizations menu → Spectrum Analyzer) with:
 
-- **Metal-based rendering** - GPU-accelerated visualization at 60Hz via CVDisplayLink
+- **Metal-based rendering** - GPU-accelerated visualization via CVDisplayLink
   - Uses runtime shader compilation for SPM compatibility (`device.makeLibrary(source:)`)
-  - Separate pipeline states for Winamp and Enhanced modes
+  - Separate pipeline states for each quality mode
+  - Display-native refresh rate support (up to 120Hz on ProMotion displays)
 - **55 bars** (vs 19 in main window) - Higher resolution frequency display
 - **Quality modes:**
   - **Winamp** - Discrete color palette from skin's `viscolor.txt`, pixel-art aesthetic
-  - **Enhanced** - Rainbow LED matrix with floating peaks and per-cell fade trails
+  - **Enhanced** - Rainbow LED matrix (16 rows) with floating peaks and per-cell fade trails
+  - **Ultra** - Maximum visual quality with advanced effects (see below)
 - **Decay modes** controlling bar responsiveness:
   - **Instant** - No smoothing, immediate response
   - **Snappy** - 25% retention, fast and punchy (default)
@@ -442,9 +444,26 @@ A dedicated spectrum analyzer window is available (Visualizations menu → Spect
 
 The window respects the current skin's visualization colors and docks with other Winamp-style windows.
 
+#### Ultra Quality Mode
+
+Ultra mode provides the smoothest and most visually impressive spectrum visualization:
+
+- **24 LED rows** (vs 16 in Enhanced) for higher vertical resolution
+- **Triple buffering** for smoother frame pacing and fewer dropped frames
+- **Frequency-based colors** - bass frequencies appear red/orange, treble appears blue/purple
+- **Physics-based peaks** - peaks fall with gravity acceleration and bounce when hitting rising bars
+- **Reflection effect** - mirror reflection below the bars with fade gradient
+- **Bloom/glow effect** - lit cells emit soft glow within their boundaries
+- **Anti-aliased cells** - smooth cell edges instead of hard corners
+
+**Performance:** Ultra mode uses more GPU resources but remains efficient:
+- Triple buffering (semaphore=3) adds ~16ms latency but eliminates frame drops
+- 24 rows is 50% more vertices than Enhanced but negligible for modern GPUs
+- Reflection uses the same brightness data, just mirrored and faded
+
 **Key files:**
 - `Visualization/SpectrumAnalyzerView.swift` - Metal-based spectrum view component
-- `Visualization/SpectrumShaders.metal` - GPU shaders (LED matrix + bar modes)
+- `Visualization/SpectrumShaders.metal` - GPU shaders (Winamp bar, LED matrix, Ultra modes)
 - `Windows/Spectrum/SpectrumWindowController.swift` - Window controller
 - `Windows/Spectrum/SpectrumView.swift` - Container view with skin chrome
 
