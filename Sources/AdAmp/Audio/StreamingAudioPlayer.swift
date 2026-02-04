@@ -39,6 +39,24 @@ class StreamingAudioPlayer {
     /// Index 0 = bass (bands 0-24), 1 = mid (bands 25-49), 2 = treble (bands 50-74)
     private var spectrumRegionPeaks: [Float] = [0.0, 0.0, 0.0]
     
+    /// Smoothed reference levels for each region (prevents pulsing from max() jumps)
+    private var spectrumRegionReferenceLevels: [Float] = [0.0, 0.0, 0.0]
+    
+    /// Global adaptive peak for adaptive normalization mode
+    private var spectrumGlobalPeak: Float = 0.0
+    
+    /// Smoothed global reference level (prevents pulsing from max() jumps)
+    private var spectrumGlobalReferenceLevel: Float = 0.0
+    
+    /// Current spectrum normalization mode (read from UserDefaults)
+    private var spectrumNormalizationMode: SpectrumNormalizationMode {
+        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
+           let mode = SpectrumNormalizationMode(rawValue: saved) {
+            return mode
+        }
+        return .accurate  // Default to accurate for flat pink noise
+    }
+    
     /// Whether we've reported format info for the current track
     private var hasReportedFormat: Bool = false
     
@@ -64,6 +82,24 @@ class StreamingAudioPlayer {
             } else {
                 return 1.0   // Everything else: full level
             }
+        }
+    }()
+    
+    /// Pre-computed bandwidth scale factors for flat pink noise display
+    private static let spectrumBandwidthScales: [Float] = {
+        let bandCount = 75
+        let minFreq: Float = 20
+        let maxFreq: Float = 20000
+        let ratio = pow(maxFreq / minFreq, 1.0 / Float(bandCount))
+        
+        // Reference bandwidth at 1000 Hz for normalization
+        let refBandwidth = 1000.0 * (ratio - 1.0)
+        
+        return (0..<bandCount).map { band in
+            let startFreq = minFreq * pow(maxFreq / minFreq, Float(band) / Float(bandCount))
+            let endFreq = minFreq * pow(maxFreq / minFreq, Float(band + 1) / Float(bandCount))
+            let bandwidth = endFreq - startFreq
+            return sqrt(bandwidth / refBandwidth)
         }
     }()
     
@@ -365,65 +401,121 @@ class StreamingAudioPlayer {
             magnitudes[i] = sqrt(realOut[i] * realOut[i] + imagOut[i] * imagOut[i])
         }
         
-        // Map to 75 bands (Winamp-style)
+        // Map to 75 bands (Winamp-style) using proper logarithmic band summing
         let bandCount = 75
         var newSpectrum = [Float](repeating: 0, count: bandCount)
         
-        // Logarithmic frequency mapping
+        // Logarithmic frequency mapping - sum all bins in each band's frequency range
+        // This ensures pink noise appears flat (equal energy per octave)
         let minFreq: Float = 20
         let maxFreq: Float = 20000
         let sampleRate = Float(buffer.format.sampleRate)
         let binWidth = sampleRate / Float(fftSize)
+        let normMode = spectrumNormalizationMode
         
         for band in 0..<bandCount {
-            let freqRatio = Float(band) / Float(bandCount - 1)
-            let freq = minFreq * pow(maxFreq / minFreq, freqRatio)
-            let bin = Int(freq / binWidth)
+            // Calculate center frequency for this band (geometric mean of band edges)
+            let startFreq = minFreq * pow(maxFreq / minFreq, Float(band) / Float(bandCount))
+            let endFreq = minFreq * pow(maxFreq / minFreq, Float(band + 1) / Float(bandCount))
+            let centerFreq = sqrt(startFreq * endFreq)
             
-            if bin < fftSize / 2 && bin >= 0 {
-                var sum: Float = 0
-                var count: Float = 0
-                let range = max(1, bin / 10)
-                
-                for j in max(0, bin - range)..<min(fftSize / 2, bin + range + 1) {
-                    sum += magnitudes[j]
-                    count += 1
-                }
-                
-                // Apply frequency weighting to compensate for bass dominance
-                newSpectrum[band] = (sum / count) * Self.spectrumFrequencyWeights[band]
+            // Interpolate FFT magnitude at center frequency
+            let exactBin = centerFreq / binWidth
+            let lowerBin = max(0, Int(exactBin))
+            let upperBin = min(lowerBin + 1, fftSize / 2 - 1)
+            let fraction = exactBin - Float(lowerBin)
+            
+            let interpMag = magnitudes[lowerBin] * (1.0 - fraction) + magnitudes[upperBin] * fraction
+            
+            // Apply pre-computed bandwidth scale for flat pink noise display
+            // (Pink noise magnitude ∝ 1/sqrt(f), bandwidth scale ∝ sqrt(f), product is flat)
+            let bandMagnitude = interpMag * Self.spectrumBandwidthScales[band]
+            
+            // Apply frequency weighting only in adaptive/dynamic modes for visual appeal
+            // In accurate mode, no weighting - bandwidth scaling alone gives flat pink noise
+            if normMode != .accurate {
+                newSpectrum[band] = bandMagnitude * Self.spectrumFrequencyWeights[band]
+            } else {
+                newSpectrum[band] = bandMagnitude
             }
         }
         
-        // Per-region normalization so bass doesn't drown out mids/treble
-        // Each frequency region (bass, mid, treble) normalizes independently
-        let regionRanges = [(0, 25), (25, 50), (50, 75)]  // bass, mid, treble
-        
-        for (regionIndex, (start, end)) in regionRanges.enumerated() {
-            // Find peak in this region
-            var regionPeak: Float = 0.0
-            for i in start..<end {
-                regionPeak = max(regionPeak, newSpectrum[i])
+        // Apply normalization based on selected mode
+        switch normMode {
+        case .accurate:
+            // No normalization - scale to reasonable display range
+            // This gives true levels and flat pink noise response
+            // With sqrt(bandwidth) scaling, pink noise is flat
+            // Streaming uses larger FFT (2048) which gives higher magnitude values
+            // Higher scale factor (0.02) to use full display range in Accurate mode
+            let scaleFactor: Float = 0.02  // Tuned for bandwidth-scaled values
+            for i in 0..<bandCount {
+                newSpectrum[i] = min(1.0, newSpectrum[i] * scaleFactor)
             }
             
-            guard regionPeak > 0 else { continue }
-            
-            // Update adaptive peak for this region
-            // Slow rise and slow decay for stable reference level (avoids pumping)
-            if regionPeak > spectrumRegionPeaks[regionIndex] {
-                spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.92 + regionPeak * 0.08
-            } else {
-                spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.995 + regionPeak * 0.005
+        case .adaptive:
+            // Global adaptive normalization - adapts to overall loudness
+            // Preserves relative levels between frequency regions
+            var globalPeak: Float = 0
+            for i in 0..<bandCount {
+                globalPeak = max(globalPeak, newSpectrum[i])
             }
             
-            // Reference level for this region
-            let referenceLevel = max(spectrumRegionPeaks[regionIndex] * 0.5, regionPeak * 0.3)
+            if globalPeak > 0 {
+                // Update global adaptive peak (slow rise, slower decay)
+                if globalPeak > spectrumGlobalPeak {
+                    spectrumGlobalPeak = spectrumGlobalPeak * 0.92 + globalPeak * 0.08
+                } else {
+                    spectrumGlobalPeak = spectrumGlobalPeak * 0.995 + globalPeak * 0.005
+                }
+                
+                // Target reference level based on adaptive peak
+                let targetReferenceLevel = max(spectrumGlobalPeak * 0.5, globalPeak * 0.3)
+                
+                // Smooth the reference level to prevent pulsing from max() jumps
+                spectrumGlobalReferenceLevel = spectrumGlobalReferenceLevel * 0.85 + targetReferenceLevel * 0.15
+                let referenceLevel = max(spectrumGlobalReferenceLevel, 0.001)
+                
+                // Normalize all bands using global reference
+                for i in 0..<bandCount {
+                    let normalized = min(1.0, newSpectrum[i] / referenceLevel)
+                    newSpectrum[i] = pow(normalized, 0.5)  // Square root curve for dynamics
+                }
+            }
             
-            // Normalize bands in this region
-            for i in start..<end {
-                let normalized = min(1.0, newSpectrum[i] / referenceLevel)
-                // Square root curve for good dynamic spread
-                newSpectrum[i] = pow(normalized, 0.5)
+        case .dynamic:
+            // Per-region normalization - best visual appeal for music
+            // Each frequency region (bass, mid, treble) normalizes independently
+            let regionRanges = [(0, 25), (25, 50), (50, 75)]  // bass, mid, treble
+            
+            for (regionIndex, (start, end)) in regionRanges.enumerated() {
+                // Find peak in this region
+                var regionPeak: Float = 0.0
+                for i in start..<end {
+                    regionPeak = max(regionPeak, newSpectrum[i])
+                }
+                
+                guard regionPeak > 0 else { continue }
+                
+                // Update adaptive peak for this region
+                if regionPeak > spectrumRegionPeaks[regionIndex] {
+                    spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.92 + regionPeak * 0.08
+                } else {
+                    spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.995 + regionPeak * 0.005
+                }
+                
+                // Target reference level for this region
+                let targetReferenceLevel = max(spectrumRegionPeaks[regionIndex] * 0.5, regionPeak * 0.3)
+                
+                // Smooth the reference level to prevent pulsing from max() jumps
+                spectrumRegionReferenceLevels[regionIndex] = spectrumRegionReferenceLevels[regionIndex] * 0.85 + targetReferenceLevel * 0.15
+                let referenceLevel = max(spectrumRegionReferenceLevels[regionIndex], 0.001)
+                
+                // Normalize bands in this region
+                for i in start..<end {
+                    let normalized = min(1.0, newSpectrum[i] / referenceLevel)
+                    newSpectrum[i] = pow(normalized, 0.5)  // Square root curve
+                }
             }
         }
         
@@ -448,6 +540,9 @@ class StreamingAudioPlayer {
             spectrumData[i] = 0
         }
         spectrumRegionPeaks = [0.0, 0.0, 0.0]  // Reset adaptive peaks for new track
+        spectrumRegionReferenceLevels = [0.0, 0.0, 0.0]
+        spectrumGlobalPeak = 0.0  // Reset global adaptive peak
+        spectrumGlobalReferenceLevel = 0.0
         delegate?.streamingPlayerDidUpdateSpectrum(spectrumData)
     }
 }

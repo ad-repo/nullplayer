@@ -43,6 +43,23 @@ enum SpectrumDecayMode: String, CaseIterable {
     }
 }
 
+/// Normalization mode controlling how spectrum levels are scaled
+enum SpectrumNormalizationMode: String, CaseIterable {
+    case accurate = "Accurate"   // No normalization - true levels, flat pink noise, max dynamic range
+    case adaptive = "Adaptive"   // Light global normalization that adapts to overall loudness
+    case dynamic = "Dynamic"     // Per-region normalization for best visual appeal with music
+    
+    var displayName: String { rawValue }
+    
+    var description: String {
+        switch self {
+        case .accurate: return "True levels (flat pink noise)"
+        case .adaptive: return "Adapts to loudness"
+        case .dynamic: return "Best for music"
+        }
+    }
+}
+
 // MARK: - LED Parameters (for Metal shader)
 
 /// Parameters passed to the Metal shader (must match Metal struct exactly)
@@ -270,6 +287,10 @@ class SpectrumAnalyzerView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(windowDidDeminiaturize),
                                                name: NSWindow.didDeminiaturizeNotification, object: nil)
         
+        // Observe spectrum settings changes from main menu
+        NotificationCenter.default.addObserver(self, selector: #selector(spectrumSettingsChanged),
+                                               name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+        
         // Start rendering
         startRendering()
     }
@@ -315,6 +336,19 @@ class SpectrumAnalyzerView: NSView {
         if stoppedDueToOcclusion {
             stoppedDueToOcclusion = false
             startRendering()
+        }
+    }
+    
+    @objc private func spectrumSettingsChanged(_ notification: Notification) {
+        // Reload settings from UserDefaults
+        if let savedQuality = UserDefaults.standard.string(forKey: "spectrumQualityMode"),
+           let mode = SpectrumQualityMode(rawValue: savedQuality) {
+            qualityMode = mode
+        }
+        
+        if let savedDecay = UserDefaults.standard.string(forKey: "spectrumDecayMode"),
+           let mode = SpectrumDecayMode(rawValue: savedDecay) {
+            decayMode = mode
         }
     }
     
@@ -735,9 +769,11 @@ class SpectrumAnalyzerView: NSView {
             let outputCount = renderBarCount
             let ultraOutputCount = ultraBarCount
             
-            // Match main window's spectrum mapping exactly (simple averaging, no processing)
-            // Scale factor leaves visual headroom at top (0.95 = peaks show at 95% height)
-            let displayScale: Float = 0.95
+            // Check normalization mode - Accurate uses full height for max dynamic range
+            let isAccurateMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode") == SpectrumNormalizationMode.accurate.rawValue
+            
+            // Scale factor: Accurate mode uses full height, others leave headroom for peaks
+            let displayScale: Float = isAccurateMode ? 1.0 : 0.95
             
             // Map raw spectrum to display bars
             if rawSpectrum.isEmpty {

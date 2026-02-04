@@ -301,8 +301,78 @@ class ContextMenuBuilder {
         artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
         optionsMenu.addItem(artworkBgItem)
         
+        optionsMenu.addItem(NSMenuItem.separator())
+        
+        // Spectrum Analyzer submenu
+        optionsMenu.addItem(buildSpectrumAnalyzerMenuItem())
+        
         optionsItem.submenu = optionsMenu
         return optionsItem
+    }
+    
+    // MARK: - Spectrum Analyzer Submenu
+    
+    private static func buildSpectrumAnalyzerMenuItem() -> NSMenuItem {
+        let spectrumItem = NSMenuItem(title: "Spectrum Analyzer", action: nil, keyEquivalent: "")
+        let spectrumMenu = NSMenu()
+        spectrumMenu.autoenablesItems = false
+        
+        // Quality submenu
+        let qualityItem = NSMenuItem(title: "Quality", action: nil, keyEquivalent: "")
+        let qualityMenu = NSMenu()
+        qualityMenu.autoenablesItems = false
+        
+        let currentQuality = UserDefaults.standard.string(forKey: "spectrumQualityMode")
+            .flatMap { SpectrumQualityMode(rawValue: $0) } ?? .winamp
+        
+        for mode in SpectrumQualityMode.allCases {
+            let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setSpectrumQuality(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = mode
+            item.state = (currentQuality == mode) ? .on : .off
+            qualityMenu.addItem(item)
+        }
+        qualityItem.submenu = qualityMenu
+        spectrumMenu.addItem(qualityItem)
+        
+        // Responsiveness submenu
+        let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
+        let responsivenessMenu = NSMenu()
+        responsivenessMenu.autoenablesItems = false
+        
+        let currentDecay = UserDefaults.standard.string(forKey: "spectrumDecayMode")
+            .flatMap { SpectrumDecayMode(rawValue: $0) } ?? .snappy
+        
+        for mode in SpectrumDecayMode.allCases {
+            let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setSpectrumResponsiveness(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = mode
+            item.state = (currentDecay == mode) ? .on : .off
+            responsivenessMenu.addItem(item)
+        }
+        responsivenessItem.submenu = responsivenessMenu
+        spectrumMenu.addItem(responsivenessItem)
+        
+        // Normalization submenu
+        let normItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
+        let normMenu = NSMenu()
+        normMenu.autoenablesItems = false
+        
+        let currentNorm = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
+            .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
+        
+        for mode in SpectrumNormalizationMode.allCases {
+            let item = NSMenuItem(title: "\(mode.displayName) - \(mode.description)", action: #selector(MenuActions.setSpectrumNormalization(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = mode
+            item.state = (currentNorm == mode) ? .on : .off
+            normMenu.addItem(item)
+        }
+        normItem.submenu = normMenu
+        spectrumMenu.addItem(normItem)
+        
+        spectrumItem.submenu = spectrumMenu
+        return spectrumItem
     }
     
     // MARK: - Local Library Submenu
@@ -1457,6 +1527,28 @@ class MenuActions: NSObject {
     
     @objc func toggleBrowserArtworkBackground() {
         WindowManager.shared.showBrowserArtworkBackground.toggle()
+    }
+    
+    // MARK: - Spectrum Analyzer Options
+    
+    @objc func setSpectrumQuality(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? SpectrumQualityMode else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: "spectrumQualityMode")
+        // Notify spectrum analyzer views to update
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+    }
+    
+    @objc func setSpectrumResponsiveness(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? SpectrumDecayMode else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: "spectrumDecayMode")
+        // Notify spectrum analyzer views to update
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+    }
+    
+    @objc func setSpectrumNormalization(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
+        // Normalization mode is read each frame, no notification needed
     }
     
     @objc func toggleRememberState() {

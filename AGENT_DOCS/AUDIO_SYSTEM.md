@@ -369,40 +369,67 @@ player.frameFiltering.add(entry: "spectrumAnalyzer") { [weak self] buffer, _ in
 2. **Windowing** - Apply Hann window to reduce spectral leakage
 3. **FFT** - 512-point DFT using Accelerate framework (vDSP) (~11.6ms at 44.1kHz)
 4. **Magnitude calculation** - Convert complex output to magnitudes
-5. **Frequency mapping** - Map FFT bins to 75 bands (logarithmic, 20Hz-20kHz)
-6. **Frequency weighting** - Apply compensation curve to reduce bass dominance
-7. **Adaptive normalization** - Normalize using slow-adapting reference level
+5. **Power integration** - Sum power (magnitude²) of FFT bins within each logarithmic band. For bands with few bins, interpolate and scale by bandwidth.
+6. **Frequency weighting** - Apply compensation curve in adaptive/dynamic modes (skipped in accurate mode)
+7. **Normalization** - Scale based on selected mode (accurate/adaptive/dynamic)
 8. **Smoothing** - Fast attack, slow decay for visual appeal
 
 **Note:** The FFT size was reduced from 2048 to 512 samples to decrease audio-to-visualization latency from ~46ms to ~11.6ms.
 
-### Frequency Weighting
+### Pink Noise and Power Integration
 
-Modern music tends to have heavy bass content that would otherwise dominate the spectrum display. A frequency-dependent weighting curve compensates for this:
+Pink noise has equal energy per octave (not per Hz). The spectrum analyzer displays pink noise as flat by using **power integration** across logarithmic frequency bands:
+
+1. For each band, sum the **power** (magnitude²) of all FFT bins within the band's frequency range
+2. Take the square root to convert back to magnitude (RMS)
+3. Since pink noise has equal power per octave and our bands are logarithmically spaced, the result is automatically flat
+
+**Why this works:**
+- Pink noise Power Spectral Density (PSD) ∝ 1/f
+- Logarithmic band bandwidth ∝ center frequency
+- Band power = PSD × bandwidth ∝ (1/f) × f = constant
+
+For bands with insufficient FFT bins (at low frequencies with the 512-point FFT), interpolation with bandwidth scaling approximates the power integration.
+
+### Frequency Weighting (Adaptive/Dynamic modes only)
+
+In **Adaptive** and **Dynamic** modes, an additional frequency weighting curve is applied on top of pink noise compensation to make music look more visually appealing:
 
 | Frequency Range | Weight | Reason |
 |-----------------|--------|--------|
-| < 60 Hz (sub-bass) | 0.15 | Heavy attenuation - sub-bass energy is usually felt, not seen |
-| 60-150 Hz (bass) | 0.25 | Strong attenuation - bass carries most musical energy |
-| 150-400 Hz (low-mid) | 0.45 | Moderate attenuation |
-| 400-1000 Hz (mid) | 0.70 | Slight attenuation |
-| 1-4 kHz (upper-mid) | 1.00 | Full level - ear is most sensitive here |
-| 4-8 kHz (presence) | 0.95 | Nearly full |
-| > 8 kHz (treble) | 0.85 | Slight rolloff |
+| < 40 Hz (sub-bass) | 0.70 | Light reduction - sub-bass energy is usually felt, not seen |
+| 40-100 Hz (bass) | 0.85 | Very light reduction - let bass punch through |
+| 100-300 Hz (low-mid) | 0.92 | Minimal reduction |
+| > 300 Hz | 1.00 | Full level |
 
-This approximates an equal-loudness contour, making the display more perceptually balanced.
+This weighting is **not applied** in Accurate mode to preserve true signal levels.
 
-### Adaptive Normalization
+### Normalization Modes
 
-Instead of normalizing each frame to its own peak (which makes everything look maxed-out with modern compressed music), the analyzer uses an adaptive reference level:
+The spectrum analyzer supports three normalization modes (configurable via right-click menu):
 
-1. **Peak tracking** - Track the current frame's peak magnitude
-2. **Slow-adapting average** - Maintain a running average that rises quickly (0.3 blend) but decays slowly (0.995 blend)
-3. **Reference level** - Use 80% of the adaptive average (or 50% of current peak if higher) as the normalization reference
-4. **Power curve** - Apply a 0.6 power curve for visual dynamics
+#### Accurate Mode
+- **Fixed scaling** - Uses a constant scale factor to convert magnitudes to 0-1 display range
+- **Pink noise compensation only** - No additional frequency weighting
+- **True dynamic range** - Quiet signals show as quiet, loud signals show as loud
+- **Flat pink noise** - Pink noise displays as a perfectly flat horizontal line
+- Best for: Audio analysis, testing, verifying frequency response
+
+#### Adaptive Mode
+- **Global adaptive normalization** - Tracks overall signal level and adjusts scaling
+- **Slow rise, slower decay** - Peak tracker rises quickly (0.08 blend) but decays slowly (0.995 blend)
+- **Square root curve** - Applied for better visual dynamics
+- **Preserves relative levels** - All frequency regions scale together
+- Best for: General listening, preserving frequency balance
+
+#### Dynamic Mode
+- **Per-region normalization** - Bass, mid, and treble regions each have independent adaptive scaling
+- **Best visual appeal** - Each frequency region fills its portion of the display
+- **Maximized activity** - Even frequency-sparse content looks engaging
+- Best for: Visual appeal with music, live performances
 
 This ensures:
-- Quiet passages show proportionally lower levels
+- Quiet passages show proportionally lower levels (except in Dynamic mode)
 - Loud passages don't instantly max out
 - The display adapts to different overall loudness levels over time
 - Dynamic range is preserved even with heavily compressed music
