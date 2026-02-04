@@ -5,12 +5,16 @@
 **If you enjoy AdAmp, please ⭐ star ⭐ the project on GitHub!**
 
 
+
+
+https://github.com/user-attachments/assets/1d05032c-d49b-482a-99e9-b3cfa56b2a0b
+
+
 https://github.com/user-attachments/assets/6c052a05-9d35-4302-ad01-c25b69922ae1
 
 
 
-<img width="1557" height="674" alt="Screenshot 2026-02-02 at 10 27 28 PM" src="https://github.com/user-attachments/assets/8b6f84f3-189b-4195-87d7-df13e1d8f21d" />
- <img width="1455" height="451" alt="Screenshot 2026-01-31 at 10 06 49 PM" src="https://github.com/user-attachments/assets/ff8a5762-b84e-4681-88c1-0283943f2cbf" />
+<img width="1455" height="451" alt="Screenshot 2026-01-31 at 10 06 49 PM" src="https://github.com/user-attachments/assets/ff8a5762-b84e-4681-88c1-0283943f2cbf" />
 <img width="1481" height="711" alt="Screenshot 2026-01-31 at 10 10 35 PM" src="https://github.com/user-attachments/assets/7758838c-7dc1-477f-b32f-3fd598c9debf" />
 
 
