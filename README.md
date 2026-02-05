@@ -56,7 +56,7 @@ Follow [r/AdAmp](https://www.reddit.com/r/AdAmp/) for release notifications. Rep
 
 ### Fixing "App is damaged" or "macOS cannot verify that this app is free from malware" Error
 
-Since the app is not code-signed, macOS Gatekeeper will block it. To fix this:
+Since the app is in beta testing and not code-signed (it costs $99 a year to sign the app and I am not sure yet I want to pay that yet) macOS Gatekeeper will block it. To fix this:
 
 **Option 1: Terminal (Recommended)**
 ```bash
