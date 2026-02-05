@@ -282,6 +282,29 @@ class AudioEngine {
     private var fftSetup: vDSP_DFT_Setup?
     private let fftSize: Int = 2048  // Match streaming FFT for consistent display
     
+    // MARK: - Spectrum Update Throttling (Memory Optimization)
+    
+    /// Last time spectrum notification was posted (throttle to 60Hz max)
+    private var lastSpectrumUpdateTime: CFAbsoluteTime = 0
+    private let spectrumUpdateInterval: CFAbsoluteTime = 1.0 / 60.0  // 60Hz max
+    
+    /// Flag to coalesce main queue PCM dispatches
+    private var pendingPcmUpdate = false
+    
+    // MARK: - Pre-allocated FFT Buffers (Memory Optimization)
+    
+    /// Pre-allocated buffers to avoid per-callback allocations
+    private var fftSamples = [Float](repeating: 0, count: 2048)
+    private var fftWindow = [Float](repeating: 0, count: 2048)
+    private var fftRealIn = [Float](repeating: 0, count: 2048)
+    private var fftImagIn = [Float](repeating: 0, count: 2048)
+    private var fftRealOut = [Float](repeating: 0, count: 2048)
+    private var fftImagOut = [Float](repeating: 0, count: 2048)
+    private var fftMagnitudes = [Float](repeating: 0, count: 1024)
+    private var fftLogMagnitudes = [Float](repeating: 0, count: 1024)
+    private var fftNewSpectrum = [Float](repeating: 0, count: 75)
+    private var fftPcmSamples = [Float](repeating: 0, count: 512)
+    
     /// Pre-computed frequency weights for spectrum analyzer (light compensation)
     private let spectrumFrequencyWeights: [Float] = {
         // Generate weights for 75 bands spanning 20Hz-20kHz logarithmically
@@ -624,73 +647,78 @@ class AudioEngine {
         let frameCount = Int(buffer.frameLength)
         guard frameCount >= fftSize else { return }
         
-        // Get audio samples (mono mix if stereo)
-        var samples = [Float](repeating: 0, count: fftSize)
+        // Throttle updates to 60Hz max to prevent memory buildup
+        let now = CFAbsoluteTimeGetCurrent()
+        let shouldUpdate = now - lastSpectrumUpdateTime >= spectrumUpdateInterval
+        guard shouldUpdate else { return }
+        lastSpectrumUpdateTime = now
+        
+        // Get audio samples (mono mix if stereo) - use pre-allocated buffer
         let channelCount = Int(buffer.format.channelCount)
         
         if channelCount == 1 {
-            memcpy(&samples, channelData[0], fftSize * MemoryLayout<Float>.size)
+            memcpy(&fftSamples, channelData[0], fftSize * MemoryLayout<Float>.size)
         } else {
             // Mix stereo to mono
             for i in 0..<fftSize {
-                samples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
+                fftSamples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
             }
         }
         
         // Store raw PCM data for waveform visualization (before windowing)
         // Downsample to 512 samples for efficient storage and lowest latency
-        let pcmSize = min(512, samples.count)
-        let pcmStride = samples.count / pcmSize
-        var pcmSamples = [Float](repeating: 0, count: pcmSize)
+        let pcmSize = 512
+        let pcmStride = fftSize / pcmSize
         for i in 0..<pcmSize {
-            pcmSamples[i] = samples[i * pcmStride]
+            fftPcmSamples[i] = fftSamples[i * pcmStride]
         }
         let bufferSampleRate = buffer.format.sampleRate
         
         // Post notification for low-latency visualization (direct from audio tap)
+        // Copy to avoid data races since we reuse the buffer
+        let pcmCopy = Array(fftPcmSamples)
         NotificationCenter.default.post(
             name: .audioPCMDataUpdated,
             object: self,
-            userInfo: ["pcm": pcmSamples, "sampleRate": bufferSampleRate]
+            userInfo: ["pcm": pcmCopy, "sampleRate": bufferSampleRate]
         )
         
-        // Also store in property for legacy access
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.pcmSampleRate = bufferSampleRate
-            self.pcmData = pcmSamples
+        // Also store in property for legacy access - coalesce dispatches
+        if !pendingPcmUpdate {
+            pendingPcmUpdate = true
+            let pcmForMain = pcmCopy
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.pendingPcmUpdate = false
+                self.pcmSampleRate = bufferSampleRate
+                self.pcmData = pcmForMain
+            }
         }
         
-        // Apply Hann window
-        var window = [Float](repeating: 0, count: fftSize)
-        vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
-        vDSP_vmul(samples, 1, window, 1, &samples, 1, vDSP_Length(fftSize))
+        // Apply Hann window - use pre-allocated buffers
+        vDSP_hann_window(&fftWindow, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
+        vDSP_vmul(fftSamples, 1, fftWindow, 1, &fftSamples, 1, vDSP_Length(fftSize))
         
-        // Perform FFT
-        var realIn = [Float](repeating: 0, count: fftSize)
-        var imagIn = [Float](repeating: 0, count: fftSize)
-        var realOut = [Float](repeating: 0, count: fftSize)
-        var imagOut = [Float](repeating: 0, count: fftSize)
+        // Perform FFT - use pre-allocated buffers
+        // Zero out imagIn (realIn gets samples)
+        memset(&fftImagIn, 0, fftSize * MemoryLayout<Float>.size)
+        memcpy(&fftRealIn, &fftSamples, fftSize * MemoryLayout<Float>.size)
         
-        realIn = samples
+        vDSP_DFT_Execute(fftSetup, &fftRealIn, &fftImagIn, &fftRealOut, &fftImagOut)
         
-        vDSP_DFT_Execute(fftSetup, &realIn, &imagIn, &realOut, &imagOut)
-        
-        // Calculate magnitudes
-        var magnitudes = [Float](repeating: 0, count: fftSize / 2)
-        
+        // Calculate magnitudes - use pre-allocated buffer
         for i in 0..<fftSize / 2 {
-            magnitudes[i] = sqrt(realOut[i] * realOut[i] + imagOut[i] * imagOut[i])
+            fftMagnitudes[i] = sqrt(fftRealOut[i] * fftRealOut[i] + fftImagOut[i] * fftImagOut[i])
         }
         
-        // Convert to dB and normalize
-        var logMagnitudes = [Float](repeating: 0, count: fftSize / 2)
+        // Convert to dB and normalize - use pre-allocated buffer
         var one: Float = 1.0
-        vDSP_vdbcon(magnitudes, 1, &one, &logMagnitudes, 1, vDSP_Length(fftSize / 2), 0)
+        vDSP_vdbcon(fftMagnitudes, 1, &one, &fftLogMagnitudes, 1, vDSP_Length(fftSize / 2), 0)
         
         // Map to 75 bands (Winamp-style) using logarithmic frequency mapping
+        // Zero out pre-allocated buffer
         let bandCount = 75
-        var newSpectrum = [Float](repeating: 0, count: bandCount)
+        memset(&fftNewSpectrum, 0, bandCount * MemoryLayout<Float>.size)
         
         let minFreq: Float = 20
         let maxFreq: Float = 20000
@@ -713,7 +741,7 @@ class AudioEngine {
                 var totalPower: Float = 0
                 let binCount = Float(endBin - startBin + 1)
                 for bin in startBin...endBin {
-                    totalPower += magnitudes[bin] * magnitudes[bin]  // Sum power (mag²)
+                    totalPower += fftMagnitudes[bin] * fftMagnitudes[bin]  // Sum power (mag²)
                 }
                 
                 // Use RMS (average power) to preserve detail in high frequencies
@@ -737,18 +765,18 @@ class AudioEngine {
                 let floor: Float = 0.0       // dB level that maps to 0%
                 let normalized = (dB - floor) / (ceiling - floor)
                 
-                newSpectrum[band] = max(0, min(1.0, normalized))
+                fftNewSpectrum[band] = max(0, min(1.0, normalized))
             } else {
                 // Adaptive/Dynamic modes - interpolate at center frequency
                 let exactBin = centerFreq / binWidth
                 let lowerBin = max(0, Int(exactBin))
                 let upperBin = min(lowerBin + 1, fftSize / 2 - 1)
                 let fraction = exactBin - Float(lowerBin)
-                let interpMag = magnitudes[lowerBin] * (1.0 - fraction) + magnitudes[upperBin] * fraction
+                let interpMag = fftMagnitudes[lowerBin] * (1.0 - fraction) + fftMagnitudes[upperBin] * fraction
                 
                 // Apply bandwidth scaling and frequency weighting
                 let bandMagnitude = interpMag * spectrumBandwidthScales[band]
-                newSpectrum[band] = bandMagnitude * spectrumFrequencyWeights[band]
+                fftNewSpectrum[band] = bandMagnitude * spectrumFrequencyWeights[band]
             }
         }
         
@@ -763,7 +791,7 @@ class AudioEngine {
             // Preserves relative levels between frequency regions
             var globalPeak: Float = 0
             for i in 0..<bandCount {
-                globalPeak = max(globalPeak, newSpectrum[i])
+                globalPeak = max(globalPeak, fftNewSpectrum[i])
             }
             
             if globalPeak > 0 {
@@ -783,8 +811,8 @@ class AudioEngine {
                 
                 // Normalize all bands using global reference
                 for i in 0..<bandCount {
-                    let normalized = min(1.0, newSpectrum[i] / referenceLevel)
-                    newSpectrum[i] = pow(normalized, 0.5)  // Square root curve for dynamics
+                    let normalized = min(1.0, fftNewSpectrum[i] / referenceLevel)
+                    fftNewSpectrum[i] = pow(normalized, 0.5)  // Square root curve for dynamics
                 }
             }
             
@@ -797,7 +825,7 @@ class AudioEngine {
                 // Find peak in this region
                 var regionPeak: Float = 0.0
                 for i in start..<end {
-                    regionPeak = max(regionPeak, newSpectrum[i])
+                    regionPeak = max(regionPeak, fftNewSpectrum[i])
                 }
                 
                 guard regionPeak > 0 else { continue }
@@ -818,21 +846,23 @@ class AudioEngine {
                 
                 // Normalize bands in this region
                 for i in start..<end {
-                    let normalized = min(1.0, newSpectrum[i] / referenceLevel)
-                    newSpectrum[i] = pow(normalized, 0.5)  // Square root curve
+                    let normalized = min(1.0, fftNewSpectrum[i] / referenceLevel)
+                    fftNewSpectrum[i] = pow(normalized, 0.5)  // Square root curve
                 }
             }
         }
         
-        // Smooth with previous values (decay)
+        // Smooth with previous values (decay) and update on main thread
+        // Copy spectrum data to avoid data races since we reuse the buffer
+        let spectrumCopy = Array(fftNewSpectrum)
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             for i in 0..<bandCount {
                 // Fast attack, smooth decay for all modes
-                if newSpectrum[i] > self.spectrumData[i] {
-                    self.spectrumData[i] = newSpectrum[i]
+                if spectrumCopy[i] > self.spectrumData[i] {
+                    self.spectrumData[i] = spectrumCopy[i]
                 } else {
-                    self.spectrumData[i] = self.spectrumData[i] * 0.90 + newSpectrum[i] * 0.10
+                    self.spectrumData[i] = self.spectrumData[i] * 0.90 + spectrumCopy[i] * 0.10
                 }
             }
             self.delegate?.audioEngineDidUpdateSpectrum(self.spectrumData)

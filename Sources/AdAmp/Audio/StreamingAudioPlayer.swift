@@ -103,6 +103,29 @@ class StreamingAudioPlayer {
         }
     }()
     
+    // MARK: - Spectrum Update Throttling (Memory Optimization)
+    
+    /// Last time spectrum update was dispatched (throttle to 60Hz max)
+    private var lastSpectrumUpdateTime: CFAbsoluteTime = 0
+    private let spectrumUpdateInterval: CFAbsoluteTime = 1.0 / 60.0  // 60Hz max
+    
+    /// Flags to coalesce main queue dispatches
+    private var pendingPcmUpdate = false
+    private var pendingSpectrumUpdate = false
+    
+    // MARK: - Pre-allocated FFT Buffers (Memory Optimization)
+    
+    /// Pre-allocated buffers to avoid per-callback allocations
+    private var fftSamples = [Float](repeating: 0, count: 2048)
+    private var fftWindow = [Float](repeating: 0, count: 2048)
+    private var fftRealIn = [Float](repeating: 0, count: 2048)
+    private var fftImagIn = [Float](repeating: 0, count: 2048)
+    private var fftRealOut = [Float](repeating: 0, count: 2048)
+    private var fftImagOut = [Float](repeating: 0, count: 2048)
+    private var fftMagnitudes = [Float](repeating: 0, count: 1024)
+    private var fftNewSpectrum = [Float](repeating: 0, count: 75)
+    private var fftPcmSamples = [Float](repeating: 0, count: 512)
+    
     /// Standard Winamp EQ frequencies
     static let eqFrequencies: [Float] = [
         60, 170, 310, 600, 1000,
@@ -342,19 +365,24 @@ class StreamingAudioPlayer {
             }
         }
         
+        // Throttle updates to 60Hz max to prevent memory buildup
+        let now = CFAbsoluteTimeGetCurrent()
+        let shouldUpdate = now - lastSpectrumUpdateTime >= spectrumUpdateInterval
+        guard shouldUpdate else { return }
+        lastSpectrumUpdateTime = now
+        
         let frameCount = Int(buffer.frameLength)
         guard frameCount >= fftSize else { return }
         
-        // Get audio samples (mono mix if stereo)
-        var samples = [Float](repeating: 0, count: fftSize)
+        // Get audio samples (mono mix if stereo) - use pre-allocated buffer
         let channelCount = Int(buffer.format.channelCount)
         
         if channelCount == 1 {
-            memcpy(&samples, channelData[0], fftSize * MemoryLayout<Float>.size)
+            memcpy(&fftSamples, channelData[0], fftSize * MemoryLayout<Float>.size)
         } else {
             // Mix stereo to mono
             for i in 0..<fftSize {
-                samples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
+                fftSamples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
             }
         }
         
@@ -366,44 +394,47 @@ class StreamingAudioPlayer {
         if volumeCompensation > 1.0 {
             // Apply compensation using Accelerate for efficiency
             var compensation = volumeCompensation
-            vDSP_vsmul(samples, 1, &compensation, &samples, 1, vDSP_Length(fftSize))
+            vDSP_vsmul(fftSamples, 1, &compensation, &fftSamples, 1, vDSP_Length(fftSize))
         }
         
         // Forward PCM data for projectM visualization
         // Downsample to 512 samples for efficient visualization and lowest latency
-        let pcmSize = min(512, samples.count)
-        let stride = max(1, samples.count / pcmSize)
-        var pcmSamples = [Float](repeating: 0, count: pcmSize)
+        let pcmSize = 512
+        let stride = fftSize / pcmSize
         for i in 0..<pcmSize {
-            pcmSamples[i] = samples[i * stride]
+            fftPcmSamples[i] = fftSamples[i * stride]
         }
         
-        DispatchQueue.main.async { [weak self] in
-            self?.delegate?.streamingPlayerDidUpdatePCM(pcmSamples)
+        // Coalesce PCM updates to prevent main queue buildup
+        if !pendingPcmUpdate {
+            pendingPcmUpdate = true
+            let pcmCopy = Array(fftPcmSamples)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.pendingPcmUpdate = false
+                self.delegate?.streamingPlayerDidUpdatePCM(pcmCopy)
+            }
         }
         
-        // Apply Hann window
-        var window = [Float](repeating: 0, count: fftSize)
-        vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
-        vDSP_vmul(samples, 1, window, 1, &samples, 1, vDSP_Length(fftSize))
+        // Apply Hann window - use pre-allocated buffers
+        vDSP_hann_window(&fftWindow, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
+        vDSP_vmul(fftSamples, 1, fftWindow, 1, &fftSamples, 1, vDSP_Length(fftSize))
         
-        // Perform FFT
-        var realIn = samples
-        var imagIn = [Float](repeating: 0, count: fftSize)
-        var realOut = [Float](repeating: 0, count: fftSize)
-        var imagOut = [Float](repeating: 0, count: fftSize)
+        // Perform FFT - use pre-allocated buffers
+        memset(&fftImagIn, 0, fftSize * MemoryLayout<Float>.size)
+        memcpy(&fftRealIn, &fftSamples, fftSize * MemoryLayout<Float>.size)
         
-        vDSP_DFT_Execute(fftSetup, &realIn, &imagIn, &realOut, &imagOut)
+        vDSP_DFT_Execute(fftSetup, &fftRealIn, &fftImagIn, &fftRealOut, &fftImagOut)
         
-        // Calculate magnitudes
-        var magnitudes = [Float](repeating: 0, count: fftSize / 2)
+        // Calculate magnitudes - use pre-allocated buffer
         for i in 0..<fftSize / 2 {
-            magnitudes[i] = sqrt(realOut[i] * realOut[i] + imagOut[i] * imagOut[i])
+            fftMagnitudes[i] = sqrt(fftRealOut[i] * fftRealOut[i] + fftImagOut[i] * fftImagOut[i])
         }
         
         // Map to 75 bands (Winamp-style) using logarithmic frequency mapping
+        // Zero out pre-allocated buffer
         let bandCount = 75
-        var newSpectrum = [Float](repeating: 0, count: bandCount)
+        memset(&fftNewSpectrum, 0, bandCount * MemoryLayout<Float>.size)
         
         let minFreq: Float = 20
         let maxFreq: Float = 20000
@@ -426,7 +457,7 @@ class StreamingAudioPlayer {
                 var totalPower: Float = 0
                 let binCount = Float(endBin - startBin + 1)
                 for bin in startBin...endBin {
-                    totalPower += magnitudes[bin] * magnitudes[bin]  // Sum power (mag²)
+                    totalPower += fftMagnitudes[bin] * fftMagnitudes[bin]  // Sum power (mag²)
                 }
                 
                 // Use RMS (average power) to preserve detail in high frequencies
@@ -448,18 +479,18 @@ class StreamingAudioPlayer {
                 let ceiling: Float = 40.0    // dB level that maps to 100%
                 let floor: Float = 0.0       // dB level that maps to 0%
                 let normalized = (dB - floor) / (ceiling - floor)
-                newSpectrum[band] = max(0, min(1.0, Float(normalized)))
+                fftNewSpectrum[band] = max(0, min(1.0, Float(normalized)))
             } else {
                 // Adaptive/Dynamic modes - interpolate at center frequency
                 let exactBin = centerFreq / binWidth
                 let lowerBin = max(0, Int(exactBin))
                 let upperBin = min(lowerBin + 1, fftSize / 2 - 1)
                 let fraction = exactBin - Float(lowerBin)
-                let interpMag = magnitudes[lowerBin] * (1.0 - fraction) + magnitudes[upperBin] * fraction
+                let interpMag = fftMagnitudes[lowerBin] * (1.0 - fraction) + fftMagnitudes[upperBin] * fraction
                 
                 // Apply bandwidth scaling and frequency weighting
                 let bandMagnitude = interpMag * Self.spectrumBandwidthScales[band]
-                newSpectrum[band] = bandMagnitude * Self.spectrumFrequencyWeights[band]
+                fftNewSpectrum[band] = bandMagnitude * Self.spectrumFrequencyWeights[band]
             }
         }
         
@@ -474,7 +505,7 @@ class StreamingAudioPlayer {
             // Preserves relative levels between frequency regions
             var globalPeak: Float = 0
             for i in 0..<bandCount {
-                globalPeak = max(globalPeak, newSpectrum[i])
+                globalPeak = max(globalPeak, fftNewSpectrum[i])
             }
             
             if globalPeak > 0 {
@@ -494,8 +525,8 @@ class StreamingAudioPlayer {
                 
                 // Normalize all bands using global reference
                 for i in 0..<bandCount {
-                    let normalized = min(1.0, newSpectrum[i] / referenceLevel)
-                    newSpectrum[i] = pow(normalized, 0.5)  // Square root curve for dynamics
+                    let normalized = min(1.0, fftNewSpectrum[i] / referenceLevel)
+                    fftNewSpectrum[i] = pow(normalized, 0.5)  // Square root curve for dynamics
                 }
             }
             
@@ -508,7 +539,7 @@ class StreamingAudioPlayer {
                 // Find peak in this region
                 var regionPeak: Float = 0.0
                 for i in start..<end {
-                    regionPeak = max(regionPeak, newSpectrum[i])
+                    regionPeak = max(regionPeak, fftNewSpectrum[i])
                 }
                 
                 guard regionPeak > 0 else { continue }
@@ -529,24 +560,29 @@ class StreamingAudioPlayer {
                 
                 // Normalize bands in this region
                 for i in start..<end {
-                    let normalized = min(1.0, newSpectrum[i] / referenceLevel)
-                    newSpectrum[i] = pow(normalized, 0.5)  // Square root curve
+                    let normalized = min(1.0, fftNewSpectrum[i] / referenceLevel)
+                    fftNewSpectrum[i] = pow(normalized, 0.5)  // Square root curve
                 }
             }
         }
         
-        // Update spectrum data on main thread
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            for i in 0..<bandCount {
-                // Fast attack, smooth decay for all modes
-                if newSpectrum[i] > self.spectrumData[i] {
-                    self.spectrumData[i] = newSpectrum[i]
-                } else {
-                    self.spectrumData[i] = self.spectrumData[i] * 0.90 + newSpectrum[i] * 0.10
+        // Update spectrum data on main thread - coalesce dispatches
+        if !pendingSpectrumUpdate {
+            pendingSpectrumUpdate = true
+            let spectrumCopy = Array(fftNewSpectrum)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.pendingSpectrumUpdate = false
+                for i in 0..<bandCount {
+                    // Fast attack, smooth decay for all modes
+                    if spectrumCopy[i] > self.spectrumData[i] {
+                        self.spectrumData[i] = spectrumCopy[i]
+                    } else {
+                        self.spectrumData[i] = self.spectrumData[i] * 0.90 + spectrumCopy[i] * 0.10
+                    }
                 }
+                self.delegate?.streamingPlayerDidUpdateSpectrum(self.spectrumData)
             }
-            self.delegate?.streamingPlayerDidUpdateSpectrum(self.spectrumData)
         }
     }
     

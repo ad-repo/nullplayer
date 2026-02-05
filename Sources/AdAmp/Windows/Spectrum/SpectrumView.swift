@@ -61,7 +61,7 @@ class SpectrumView: NSView {
         spectrumObserver = NotificationCenter.default.addObserver(
             forName: .audioSpectrumDataUpdated,
             object: nil,
-            queue: nil  // Receive on posting thread for lowest latency
+            queue: .main  // Process on main thread to prevent notification queue buildup
         ) { [weak self] notification in
             self?.handleSpectrumUpdate(notification)
         }
