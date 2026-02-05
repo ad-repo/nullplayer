@@ -604,31 +604,28 @@ class VideoPlayerView: NSView {
             newFrame.size.width = newWidth
             
         case .top:
-            let newHeight = max(minSize.height, initialFrame.height + deltaY)
-            let heightDelta = newHeight - initialFrame.height
-            newFrame.origin.y = initialFrame.origin.y - heightDelta
-            newFrame.size.height = newHeight
+            // Top edge resize: bottom edge (origin.y) stays fixed, only height changes
+            // Positive deltaY = dragging up = height increases
+            newFrame.size.height = max(minSize.height, initialFrame.height + deltaY)
             
         case .bottom:
+            // Bottom edge resize: top edge stays fixed, origin.y moves with height change
             newFrame.size.height = max(minSize.height, initialFrame.height - deltaY)
             newFrame.origin.y = initialFrame.origin.y + (initialFrame.height - newFrame.size.height)
             
         case .topRight:
+            // Top-right corner: bottom-left corner stays fixed
             newFrame.size.width = max(minSize.width, initialFrame.width + deltaX)
-            let newHeight = max(minSize.height, initialFrame.height + deltaY)
-            let heightDelta = newHeight - initialFrame.height
-            newFrame.origin.y = initialFrame.origin.y - heightDelta
-            newFrame.size.height = newHeight
+            newFrame.size.height = max(minSize.height, initialFrame.height + deltaY)
             
         case .topLeft:
+            // Top-left corner: bottom-right corner stays fixed
+            // Left edge moves, bottom edge stays fixed
             let newWidth = max(minSize.width, initialFrame.width - deltaX)
             let widthDelta = newWidth - initialFrame.width
             newFrame.origin.x = initialFrame.origin.x - widthDelta
             newFrame.size.width = newWidth
-            let newHeight = max(minSize.height, initialFrame.height + deltaY)
-            let heightDelta = newHeight - initialFrame.height
-            newFrame.origin.y = initialFrame.origin.y - heightDelta
-            newFrame.size.height = newHeight
+            newFrame.size.height = max(minSize.height, initialFrame.height + deltaY)
             
         case .bottomRight:
             newFrame.size.width = max(minSize.width, initialFrame.width + deltaX)

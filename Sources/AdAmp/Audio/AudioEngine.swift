@@ -1608,6 +1608,7 @@ class AudioEngine {
         }
         spectrumRegionPeaks = [0.0, 0.0, 0.0]  // Reset adaptive peaks for new track
         spectrumRegionReferenceLevels = [0.0, 0.0, 0.0]
+        spectrumGlobalPeak = 0.0  // Reset global adaptive peak
         spectrumGlobalReferenceLevel = 0.0
         delegate?.audioEngineDidUpdateSpectrum(spectrumData)
         NotificationCenter.default.post(
