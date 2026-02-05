@@ -87,6 +87,9 @@ class AudioEngine {
     private var isStreamingPlayback: Bool = false
     private var isLoadingNewStreamingTrack: Bool = false
     
+    /// Guard against concurrent loadTrack() calls which can cause both local and streaming players to be active
+    private var isLoadingTrack: Bool = false
+    
     /// Current playback state
     private(set) var state: PlaybackState = .stopped {
         didSet {
@@ -1216,15 +1219,27 @@ class AudioEngine {
     
     /// Skip multiple tracks forward or backward
     func skipTracks(count: Int) {
+        // Cancel any in-progress crossfade
+        cancelCrossfade()
+        
         guard !playlist.isEmpty else { return }
         
+        // When casting local files, block rapid clicks - only accept if not already casting
+        if isCastingActive && CastManager.shared.isLocalFileCastInProgress() {
+            NSLog("AudioEngine: skipTracks() blocked - local file cast in progress")
+            return
+        }
+        
         if shuffleEnabled {
-            // In shuffle mode, skip one at a time
+            // In shuffle mode, skip one at a time (next/previous handle casting)
             for _ in 0..<abs(count) {
                 if count > 0 { next() } else { previous() }
             }
             return
         }
+        
+        // Capture previous index before changing (for rollback on cast failure)
+        let previousIndex = currentIndex
         
         // Calculate new index with wraparound
         var newIndex = currentIndex + count
@@ -1232,6 +1247,40 @@ class AudioEngine {
         newIndex = newIndex % playlist.count
         
         currentIndex = newIndex
+        
+        // When casting, cast the new track instead of playing locally
+        if isCastingActive {
+            let track = playlist[currentIndex]
+            let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+            
+            // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
+            // For streaming, update immediately since there's no async delay
+            if !isLocalFile {
+                currentTrack = track
+            }
+            
+            Task {
+                do {
+                    try await CastManager.shared.castNewTrack(track)
+                    // For local files, update UI after successful cast
+                    if isLocalFile {
+                        await MainActor.run {
+                            self.currentTrack = track
+                        }
+                    }
+                } catch {
+                    NSLog("AudioEngine: skipTracks() cast failed: %@", error.localizedDescription)
+                    // Restore index on failure to keep playlist navigation consistent
+                    if isLocalFile {
+                        await MainActor.run {
+                            self.currentIndex = previousIndex
+                        }
+                    }
+                }
+            }
+            return
+        }
+        
         loadTrack(at: currentIndex)
         if state == .playing { play() }
     }
@@ -1345,6 +1394,7 @@ class AudioEngine {
             if wasPlaying {
                 playbackStartDate = Date()  // Start tracking from seek position
                 playerNode.play()
+                startTimeUpdates()  // Ensure timer is running for UI updates
             }
         }
     }
@@ -1619,6 +1669,9 @@ class AudioEngine {
     }
     
     private func startTimeUpdates() {
+        // Invalidate any existing timer before creating a new one to prevent duplicate timers
+        stopTimeUpdates()
+        
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
@@ -2007,6 +2060,14 @@ class AudioEngine {
     
     private func loadTrack(at index: Int) {
         guard index >= 0 && index < playlist.count else { return }
+        
+        // Prevent concurrent loads - skip if already loading to avoid dual playback
+        guard !isLoadingTrack else {
+            NSLog("loadTrack: Blocked - already loading a track")
+            return
+        }
+        isLoadingTrack = true
+        defer { isLoadingTrack = false }
         
         let track = playlist[index]
         
