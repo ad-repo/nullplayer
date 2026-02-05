@@ -401,12 +401,10 @@ class StreamingAudioPlayer {
             magnitudes[i] = sqrt(realOut[i] * realOut[i] + imagOut[i] * imagOut[i])
         }
         
-        // Map to 75 bands (Winamp-style) using proper logarithmic band summing
+        // Map to 75 bands (Winamp-style) using logarithmic frequency mapping
         let bandCount = 75
         var newSpectrum = [Float](repeating: 0, count: bandCount)
         
-        // Logarithmic frequency mapping - sum all bins in each band's frequency range
-        // This ensures pink noise appears flat (equal energy per octave)
         let minFreq: Float = 20
         let maxFreq: Float = 20000
         let sampleRate = Float(buffer.format.sampleRate)
@@ -414,44 +412,62 @@ class StreamingAudioPlayer {
         let normMode = spectrumNormalizationMode
         
         for band in 0..<bandCount {
-            // Calculate center frequency for this band (geometric mean of band edges)
+            // Calculate band edges and center frequency
             let startFreq = minFreq * pow(maxFreq / minFreq, Float(band) / Float(bandCount))
             let endFreq = minFreq * pow(maxFreq / minFreq, Float(band + 1) / Float(bandCount))
             let centerFreq = sqrt(startFreq * endFreq)
             
-            // Interpolate FFT magnitude at center frequency
-            let exactBin = centerFreq / binWidth
-            let lowerBin = max(0, Int(exactBin))
-            let upperBin = min(lowerBin + 1, fftSize / 2 - 1)
-            let fraction = exactBin - Float(lowerBin)
-            
-            let interpMag = magnitudes[lowerBin] * (1.0 - fraction) + magnitudes[upperBin] * fraction
-            
-            // Apply pre-computed bandwidth scale for flat pink noise display
-            // (Pink noise magnitude ∝ 1/sqrt(f), bandwidth scale ∝ sqrt(f), product is flat)
-            let bandMagnitude = interpMag * Self.spectrumBandwidthScales[band]
-            
-            // Apply frequency weighting only in adaptive/dynamic modes for visual appeal
-            // In accurate mode, no weighting - bandwidth scaling alone gives flat pink noise
-            if normMode != .accurate {
-                newSpectrum[band] = bandMagnitude * Self.spectrumFrequencyWeights[band]
+            if normMode == .accurate {
+                // Accurate mode - sum total power across all bins in band, then convert to dB
+                // High freq bands have more bins, so total power scales with bandwidth
+                let startBin = max(1, Int(startFreq / binWidth))
+                let endBin = max(startBin, min(fftSize / 2 - 1, Int(endFreq / binWidth)))
+                
+                var totalPower: Float = 0
+                let binCount = Float(endBin - startBin + 1)
+                for bin in startBin...endBin {
+                    totalPower += magnitudes[bin] * magnitudes[bin]  // Sum power (mag²)
+                }
+                
+                // Use RMS (average power) to preserve detail in high frequencies
+                // Then scale by sqrt(bandwidth) to compensate for pink noise
+                let avgPower = totalPower / max(binCount, 1)
+                let rmsMag = sqrt(avgPower)
+                
+                // Apply bandwidth compensation for pink noise flatness
+                let bandwidthHz = endFreq - startFreq
+                let refBandwidth: Float = 20.0   // Lower ref = more high freq boost
+                let bandwidthScale = pow(bandwidthHz / refBandwidth, 0.6)  // Steeper curve for highs
+                let scaledMag = rmsMag * bandwidthScale
+                
+                // Convert to dB (20 * log10 for magnitude)
+                let dB = 20.0 * log10(max(scaledMag, 1e-10))
+                
+                // Map dB range to 0-1 display range
+                // For 2048-pt FFT, ~12dB higher than 512-pt
+                let ceiling: Float = 40.0    // dB level that maps to 100%
+                let floor: Float = 0.0       // dB level that maps to 0%
+                let normalized = (dB - floor) / (ceiling - floor)
+                newSpectrum[band] = max(0, min(1.0, Float(normalized)))
             } else {
-                newSpectrum[band] = bandMagnitude
+                // Adaptive/Dynamic modes - interpolate at center frequency
+                let exactBin = centerFreq / binWidth
+                let lowerBin = max(0, Int(exactBin))
+                let upperBin = min(lowerBin + 1, fftSize / 2 - 1)
+                let fraction = exactBin - Float(lowerBin)
+                let interpMag = magnitudes[lowerBin] * (1.0 - fraction) + magnitudes[upperBin] * fraction
+                
+                // Apply bandwidth scaling and frequency weighting
+                let bandMagnitude = interpMag * Self.spectrumBandwidthScales[band]
+                newSpectrum[band] = bandMagnitude * Self.spectrumFrequencyWeights[band]
             }
         }
         
         // Apply normalization based on selected mode
         switch normMode {
         case .accurate:
-            // No normalization - scale to reasonable display range
-            // This gives true levels and flat pink noise response
-            // With sqrt(bandwidth) scaling, pink noise is flat
-            // Streaming uses larger FFT (2048) which gives higher magnitude values
-            // Higher scale factor (0.02) to use full display range in Accurate mode
-            let scaleFactor: Float = 0.02  // Tuned for bandwidth-scaled values
-            for i in 0..<bandCount {
-                newSpectrum[i] = min(1.0, newSpectrum[i] * scaleFactor)
-            }
+            // dB scaling already applied above - no additional processing needed
+            break
             
         case .adaptive:
             // Global adaptive normalization - adapts to overall loudness
@@ -523,7 +539,7 @@ class StreamingAudioPlayer {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             for i in 0..<bandCount {
-                // Fast attack, smooth decay for visual appeal
+                // Fast attack, smooth decay for all modes
                 if newSpectrum[i] > self.spectrumData[i] {
                     self.spectrumData[i] = newSpectrum[i]
                 } else {

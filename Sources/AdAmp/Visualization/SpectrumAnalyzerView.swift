@@ -350,6 +350,16 @@ class SpectrumAnalyzerView: NSView {
            let mode = SpectrumDecayMode(rawValue: savedDecay) {
             decayMode = mode
         }
+        
+        // Note: We no longer reset state arrays on mode switch since pre-allocated
+        // arrays handle all modes and the display naturally transitions. Resetting
+        // was causing frame drops due to long lock hold times.
+        
+        // Just reset idle tracking to ensure rendering continues smoothly
+        dataLock.withLock {
+            idleFrameCount = 0
+            hasClearedAfterIdle = false
+        }
     }
     
     // MARK: - Metal Setup
@@ -591,41 +601,42 @@ class SpectrumAnalyzerView: NSView {
     func render() {
         guard isRendering, let metalLayer = metalLayer else { return }
         
-        // Wait for an available slot in the frame queue (prevents memory buildup)
-        // Use timeout to avoid blocking forever if view is being deallocated
-        guard inFlightSemaphore.wait(timeout: .now() + .milliseconds(16)) == .success else {
-            return  // Skip frame if we're backed up
+        // Non-blocking check for semaphore slot - if GPU is backed up, skip frame immediately
+        // This prevents frame accumulation and keeps the display responsive
+        guard inFlightSemaphore.wait(timeout: .now()) == .success else {
+            return  // Skip frame if we're backed up - don't block
         }
         
-        // Update display spectrum with decay (thread-safe via dataLock)
-        let hadData = updateDisplaySpectrum()
+        // Update display spectrum and get render state in a single lock acquisition
+        // This minimizes lock contention between the render thread and main thread
+        var hadData = false
+        var shouldStopDueToIdle = false
+        var shouldSkipFrame = false
+        var currentMode: SpectrumQualityMode = .winamp
         
-        // Optimization: Skip full render when there's no visible data
-        // Only need to render once to clear the display, then skip until new data arrives
-        // All idle tracking state is protected by dataLock
-        let (shouldStopDueToIdle, shouldSkipFrame) = dataLock.withLock { () -> (Bool, Bool) in
+        dataLock.withLock {
+            // Update display spectrum with decay
+            hadData = updateDisplaySpectrumLocked()
+            
+            // Check idle state
             if !hadData {
                 idleFrameCount += 1
                 
-                // After threshold frames of idle, stop the display link entirely
-                // This saves significant CPU vs just skipping the GPU work
                 if idleFrameCount >= idleFrameThreshold {
                     stoppedDueToIdle = true
-                    return (true, false)  // Stop rendering
+                    shouldStopDueToIdle = true
+                } else if hasClearedAfterIdle {
+                    shouldSkipFrame = true
+                } else {
+                    hasClearedAfterIdle = true
                 }
-                
-                if hasClearedAfterIdle {
-                    // Already cleared, skip this frame entirely
-                    return (false, true)  // Skip frame
-                }
-                // First frame after data stopped - render once to clear, then mark as cleared
-                hasClearedAfterIdle = true
             } else {
-                // Have data - reset the idle tracking
                 idleFrameCount = 0
                 hasClearedAfterIdle = false
             }
-            return (false, false)  // Continue rendering
+            
+            // Get current mode for pipeline selection
+            currentMode = renderQualityMode
         }
         
         if shouldStopDueToIdle {
@@ -645,12 +656,6 @@ class SpectrumAnalyzerView: NSView {
         guard let drawable = metalLayer.nextDrawable() else {
             inFlightSemaphore.signal()  // Release slot since we won't use it
             return
-        }
-        
-        // Select pipeline based on quality mode (use render-safe copy)
-        var currentMode: SpectrumQualityMode = .winamp
-        dataLock.withLock {
-            currentMode = renderQualityMode
         }
         let activePipeline: MTLRenderPipelineState?
         switch currentMode {
@@ -759,59 +764,67 @@ class SpectrumAnalyzerView: NSView {
     }
     
     /// Update display spectrum with decay and return whether there's visible data
+    /// Thread-safe version that acquires the lock
     /// - Returns: true if any bar has visible data (> 0.01), false if all bars are essentially zero
     @discardableResult
     private func updateDisplaySpectrum() -> Bool {
+        return dataLock.withLock {
+            updateDisplaySpectrumLocked()
+        }
+    }
+    
+    /// Update display spectrum with decay - caller MUST hold dataLock
+    /// - Returns: true if any bar has visible data (> 0.01), false if all bars are essentially zero
+    private func updateDisplaySpectrumLocked() -> Bool {
         var hasData = false
         
-        dataLock.withLock {
-            let decay = renderDecayFactor
-            let outputCount = renderBarCount
-            let ultraOutputCount = ultraBarCount
+        let decay = renderDecayFactor
+        let outputCount = renderBarCount
+        let ultraOutputCount = ultraBarCount
+        
+        // Check normalization mode - Accurate uses full height for max dynamic range
+        let isAccurateMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode") == SpectrumNormalizationMode.accurate.rawValue
+        
+        // Scale factor: Accurate mode uses full height, others leave headroom for peaks
+        let displayScale: Float = isAccurateMode ? 1.0 : 0.95
+        
+        // Map raw spectrum to display bars
+        if rawSpectrum.isEmpty {
+            // Decay existing values when no input
+            for i in 0..<displaySpectrum.count {
+                displaySpectrum[i] *= decay
+                if displaySpectrum[i] < 0.01 {
+                    displaySpectrum[i] = 0
+                } else {
+                    hasData = true
+                }
+            }
+            // Also decay Ultra spectrum
+            for i in 0..<ultraDisplaySpectrum.count {
+                ultraDisplaySpectrum[i] *= decay
+                if ultraDisplaySpectrum[i] < 0.01 {
+                    ultraDisplaySpectrum[i] = 0
+                }
+            }
+        } else {
+            // Map input bands to display bars
+            let inputCount = rawSpectrum.count
             
-            // Check normalization mode - Accurate uses full height for max dynamic range
-            let isAccurateMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode") == SpectrumNormalizationMode.accurate.rawValue
+            // Ensure displaySpectrum has correct size (for Enhanced/Winamp modes)
+            if displaySpectrum.count != outputCount {
+                displaySpectrum = Array(repeating: 0, count: outputCount)
+            }
             
-            // Scale factor: Accurate mode uses full height, others leave headroom for peaks
-            let displayScale: Float = isAccurateMode ? 1.0 : 0.95
+            // Ensure ultraDisplaySpectrum has correct size (96 bars for Ultra mode)
+            if ultraDisplaySpectrum.count != ultraOutputCount {
+                ultraDisplaySpectrum = Array(repeating: 0, count: ultraOutputCount)
+            }
             
-            // Map raw spectrum to display bars
-            if rawSpectrum.isEmpty {
-                // Decay existing values when no input
-                for i in 0..<displaySpectrum.count {
-                    displaySpectrum[i] *= decay
-                    if displaySpectrum[i] < 0.01 {
-                        displaySpectrum[i] = 0
-                    } else {
-                        hasData = true
-                    }
-                }
-                // Also decay Ultra spectrum
-                for i in 0..<ultraDisplaySpectrum.count {
-                    ultraDisplaySpectrum[i] *= decay
-                    if ultraDisplaySpectrum[i] < 0.01 {
-                        ultraDisplaySpectrum[i] = 0
-                    }
-                }
-            } else {
-                // Map input bands to display bars
-                let inputCount = rawSpectrum.count
-                
-                // Ensure displaySpectrum has correct size (for Enhanced/Winamp modes)
-                if displaySpectrum.count != outputCount {
-                    displaySpectrum = Array(repeating: 0, count: outputCount)
-                }
-                
-                // Ensure ultraDisplaySpectrum has correct size (96 bars for Ultra mode)
-                if ultraDisplaySpectrum.count != ultraOutputCount {
-                    ultraDisplaySpectrum = Array(repeating: 0, count: ultraOutputCount)
-                }
-                
-                // Update standard display spectrum (for Enhanced/Winamp)
-                if inputCount >= outputCount {
-                    let bandsPerBar = inputCount / outputCount
-                    for barIndex in 0..<outputCount {
-                        let start = barIndex * bandsPerBar
+            // Update standard display spectrum (for Enhanced/Winamp)
+            if inputCount >= outputCount {
+                let bandsPerBar = inputCount / outputCount
+                for barIndex in 0..<outputCount {
+                    let start = barIndex * bandsPerBar
                         let end = min(start + bandsPerBar, inputCount)
                         var sum: Float = 0
                         for i in start..<end {
@@ -865,19 +878,17 @@ class SpectrumAnalyzerView: NSView {
                 }
             }
             
-            // Update LED matrix state based on mode
-            switch renderQualityMode {
-            case .enhanced:
-                updateLEDMatrixState()
-            case .ultra:
-                updateUltraMatrixState()
-            case .winamp:
-                break  // Winamp mode doesn't use LED matrix
-            }
-            
-            hasVisibleData = hasData
+        // Update LED matrix state based on mode
+        switch renderQualityMode {
+        case .enhanced:
+            updateLEDMatrixState()
+        case .ultra:
+            updateUltraMatrixState()
+        case .winamp:
+            break  // Winamp mode doesn't use LED matrix
         }
         
+        hasVisibleData = hasData
         return hasData
     }
     
@@ -890,7 +901,8 @@ class SpectrumAnalyzerView: NSView {
         
         let peakDecayRate: Float = 0.012      // How fast peak falls (per frame)
         let peakHoldFrames: Float = 0.985     // Slight delay before peak starts falling
-        let cellFadeRate: Float = 0.025       // How fast cells fade out (slower = longer trails)
+        let cellFadeRate: Float = 0.03        // How fast cells fade out
+        let cellAttackRate: Float = 0.4       // How fast cells brighten (smooth attack prevents sparkle)
         
         for col in 0..<min(colCount, displaySpectrum.count) {
             let currentLevel = displaySpectrum[col]
@@ -905,14 +917,17 @@ class SpectrumAnalyzerView: NSView {
                 peakHoldPositions[col] = max(0, peakHoldPositions[col] * peakHoldFrames - peakDecayRate)
             }
             
-            // Update per-cell brightness
+            // Update per-cell brightness with smooth transitions (prevents sparkle/shimmer)
             for row in 0..<ledRowCount {
-                if row < currentRow {
-                    // Cell is currently lit - set to full brightness
-                    cellBrightness[col][row] = 1.0
+                let targetBrightness: Float = row < currentRow ? 1.0 : 0.0
+                let currentBrightness = cellBrightness[col][row]
+                
+                if targetBrightness > currentBrightness {
+                    // Cell should be lit - smoothly increase brightness (prevents sparkle on threshold cells)
+                    cellBrightness[col][row] = min(1.0, currentBrightness + cellAttackRate)
                 } else {
-                    // Cell is not lit - fade out
-                    cellBrightness[col][row] = max(0, cellBrightness[col][row] - cellFadeRate)
+                    // Cell should be dark - fade out
+                    cellBrightness[col][row] = max(0, currentBrightness - cellFadeRate)
                 }
             }
         }

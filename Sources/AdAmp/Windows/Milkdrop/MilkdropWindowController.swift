@@ -48,6 +48,9 @@ class MilkdropWindowController: NSWindowController {
         window.minSize = SkinElements.Milkdrop.minSize
         window.title = "Milkdrop"
         
+        // Prevent window from being released when closed - we reuse the same controller
+        window.isReleasedWhenClosed = false
+        
         // Initial center position - will be repositioned in showWindow()
         window.center()
         
