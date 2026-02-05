@@ -44,6 +44,13 @@ class VideoPlayerView: NSView {
     private var controlsHideTimer: Timer?
     private var controlsVisible: Bool = true
     
+    /// Resize zone handling for borderless window
+    private var resizeZone: ResizeZone = .none
+    private var isResizing: Bool = false
+    private var initialMouseLocation: NSPoint?
+    private var initialWindowFrame: NSRect?
+    private let resizeMargin: CGFloat = 8  // Width of resize zones at edges
+    
     /// Center overlay for click-to-play/pause (large centered icons)
     private var centerOverlayView: VideoCenterOverlayView?
     private var centerOverlayHideTimer: Timer?
@@ -403,6 +410,18 @@ class VideoPlayerView: NSView {
     }
     
     override func mouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        
+        // Check if in resize zone
+        let zone = resizeZoneAt(location)
+        if zone != .none {
+            isResizing = true
+            resizeZone = zone
+            initialMouseLocation = NSEvent.mouseLocation
+            initialWindowFrame = window?.frame
+            return
+        }
+        
         showControls()
         // Make this view the first responder to capture keyboard events
         window?.makeFirstResponder(self)
@@ -417,6 +436,23 @@ class VideoPlayerView: NSView {
             } else {
                 togglePlayPause()
             }
+        }
+    }
+    
+    override func mouseDragged(with event: NSEvent) {
+        if isResizing {
+            performResize()
+            return
+        }
+    }
+    
+    override func mouseUp(with event: NSEvent) {
+        if isResizing {
+            isResizing = false
+            resizeZone = .none
+            initialMouseLocation = nil
+            initialWindowFrame = nil
+            return
         }
     }
     
@@ -457,14 +493,25 @@ class VideoPlayerView: NSView {
     
     override func mouseMoved(with event: NSEvent) {
         showControls()
+        
+        // Update cursor for resize zones
+        let location = convert(event.locationInWindow, from: nil)
+        let zone = resizeZoneAt(location)
+        updateCursor(for: zone)
     }
     
     override func mouseEntered(with event: NSEvent) {
         showControls()
+        
+        // Update cursor for resize zones
+        let location = convert(event.locationInWindow, from: nil)
+        let zone = resizeZoneAt(location)
+        updateCursor(for: zone)
     }
     
     override func mouseExited(with event: NSEvent) {
         resetControlsHideTimer()
+        NSCursor.arrow.set()
     }
     
     // MARK: - Layout
@@ -480,6 +527,121 @@ class VideoPlayerView: NSView {
         // Control bar at bottom
         controlBarView.frame = NSRect(x: 0, y: bounds.height - controlBarHeight, 
                                        width: bounds.width, height: controlBarHeight)
+    }
+    
+    // MARK: - Window Resize Handling
+    
+    /// Resize zones for borderless window
+    private enum ResizeZone {
+        case none
+        case left, right, top, bottom
+        case topLeft, topRight, bottomLeft, bottomRight
+    }
+    
+    /// Determine which resize zone the point is in
+    private func resizeZoneAt(_ point: NSPoint) -> ResizeZone {
+        let inLeft = point.x < resizeMargin
+        let inRight = point.x > bounds.width - resizeMargin
+        let inTop = point.y < resizeMargin  // Flipped coordinates
+        let inBottom = point.y > bounds.height - resizeMargin
+        
+        // Corners take priority
+        if inTop && inLeft { return .topLeft }
+        if inTop && inRight { return .topRight }
+        if inBottom && inLeft { return .bottomLeft }
+        if inBottom && inRight { return .bottomRight }
+        
+        // Edges
+        if inLeft { return .left }
+        if inRight { return .right }
+        if inTop { return .top }
+        if inBottom { return .bottom }
+        
+        return .none
+    }
+    
+    /// Update cursor based on resize zone
+    private func updateCursor(for zone: ResizeZone) {
+        switch zone {
+        case .none:
+            NSCursor.arrow.set()
+        case .left, .right:
+            NSCursor.resizeLeftRight.set()
+        case .top, .bottom:
+            NSCursor.resizeUpDown.set()
+        case .topLeft, .bottomRight:
+            // macOS doesn't have diagonal resize cursors built-in, use a workaround
+            NSCursor.crosshair.set()
+        case .topRight, .bottomLeft:
+            NSCursor.crosshair.set()
+        }
+    }
+    
+    /// Perform window resize based on current mouse position
+    private func performResize() {
+        guard let window = window,
+              let initialMouse = initialMouseLocation,
+              let initialFrame = initialWindowFrame else { return }
+        
+        let currentMouse = NSEvent.mouseLocation
+        let deltaX = currentMouse.x - initialMouse.x
+        let deltaY = currentMouse.y - initialMouse.y
+        
+        var newFrame = initialFrame
+        let minSize = window.minSize
+        
+        switch resizeZone {
+        case .none:
+            return
+            
+        case .right:
+            newFrame.size.width = max(minSize.width, initialFrame.width + deltaX)
+            
+        case .left:
+            let newWidth = max(minSize.width, initialFrame.width - deltaX)
+            let widthDelta = newWidth - initialFrame.width
+            newFrame.origin.x = initialFrame.origin.x - widthDelta
+            newFrame.size.width = newWidth
+            
+        case .top:
+            // Top edge resize: bottom edge (origin.y) stays fixed, only height changes
+            // Positive deltaY = dragging up = height increases
+            newFrame.size.height = max(minSize.height, initialFrame.height + deltaY)
+            
+        case .bottom:
+            // Bottom edge resize: top edge stays fixed, origin.y moves with height change
+            newFrame.size.height = max(minSize.height, initialFrame.height - deltaY)
+            newFrame.origin.y = initialFrame.origin.y + (initialFrame.height - newFrame.size.height)
+            
+        case .topRight:
+            // Top-right corner: bottom-left corner stays fixed
+            newFrame.size.width = max(minSize.width, initialFrame.width + deltaX)
+            newFrame.size.height = max(minSize.height, initialFrame.height + deltaY)
+            
+        case .topLeft:
+            // Top-left corner: bottom-right corner stays fixed
+            // Left edge moves, bottom edge stays fixed
+            let newWidth = max(minSize.width, initialFrame.width - deltaX)
+            let widthDelta = newWidth - initialFrame.width
+            newFrame.origin.x = initialFrame.origin.x - widthDelta
+            newFrame.size.width = newWidth
+            newFrame.size.height = max(minSize.height, initialFrame.height + deltaY)
+            
+        case .bottomRight:
+            newFrame.size.width = max(minSize.width, initialFrame.width + deltaX)
+            newFrame.size.height = max(minSize.height, initialFrame.height - deltaY)
+            newFrame.origin.y = initialFrame.origin.y + (initialFrame.height - newFrame.size.height)
+            
+        case .bottomLeft:
+            let newWidth = max(minSize.width, initialFrame.width - deltaX)
+            let widthDelta = newWidth - initialFrame.width
+            newFrame.origin.x = initialFrame.origin.x - widthDelta
+            newFrame.size.width = newWidth
+            newFrame.size.height = max(minSize.height, initialFrame.height - deltaY)
+            newFrame.origin.y = initialFrame.origin.y + (initialFrame.height - newFrame.size.height)
+        }
+        
+        window.setFrame(newFrame, display: true)
     }
     
     override var isFlipped: Bool { true }

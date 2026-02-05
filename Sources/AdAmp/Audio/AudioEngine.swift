@@ -87,6 +87,9 @@ class AudioEngine {
     private var isStreamingPlayback: Bool = false
     private var isLoadingNewStreamingTrack: Bool = false
     
+    /// Guard against concurrent loadTrack() calls which can cause both local and streaming players to be active
+    private var isLoadingTrack: Bool = false
+    
     /// Current playback state
     private(set) var state: PlaybackState = .stopped {
         didSet {
@@ -251,6 +254,24 @@ class AudioEngine {
     /// Index 0 = bass (bands 0-24), 1 = mid (bands 25-49), 2 = treble (bands 50-74)
     private var spectrumRegionPeaks: [Float] = [0.0, 0.0, 0.0]
     
+    /// Smoothed reference levels for each region (prevents pulsing from max() jumps)
+    private var spectrumRegionReferenceLevels: [Float] = [0.0, 0.0, 0.0]
+    
+    /// Global adaptive peak for adaptive normalization mode
+    private var spectrumGlobalPeak: Float = 0.0
+    
+    /// Smoothed global reference level (prevents pulsing from max() jumps)
+    private var spectrumGlobalReferenceLevel: Float = 0.0
+    
+    /// Current spectrum normalization mode (read from UserDefaults)
+    private var spectrumNormalizationMode: SpectrumNormalizationMode {
+        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
+           let mode = SpectrumNormalizationMode(rawValue: saved) {
+            return mode
+        }
+        return .accurate  // Default to accurate for flat pink noise
+    }
+    
     /// Raw PCM audio data for waveform visualization (mono, normalized -1 to 1)
     private(set) var pcmData: [Float] = Array(repeating: 0, count: 512)
     
@@ -259,7 +280,7 @@ class AudioEngine {
     
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
-    private let fftSize: Int = 512  // ~11.6ms at 44.1kHz (reduced from 2048 for lowest latency)
+    private let fftSize: Int = 2048  // Match streaming FFT for consistent display
     
     /// Pre-computed frequency weights for spectrum analyzer (light compensation)
     private let spectrumFrequencyWeights: [Float] = {
@@ -283,6 +304,26 @@ class AudioEngine {
             } else {
                 return 1.0   // Everything else: full level
             }
+        }
+    }()
+    
+    /// Pre-computed bandwidth scale factors for flat pink noise display
+    /// Pink noise has magnitude ∝ 1/sqrt(f), bandwidth ∝ f for log bands
+    /// Scaling by sqrt(bandwidth) gives: 1/sqrt(f) × sqrt(f) = constant (flat)
+    private let spectrumBandwidthScales: [Float] = {
+        let bandCount = 75
+        let minFreq: Float = 20
+        let maxFreq: Float = 20000
+        let ratio = pow(maxFreq / minFreq, 1.0 / Float(bandCount))
+        
+        // Reference bandwidth at 1000 Hz for normalization
+        let refBandwidth = 1000.0 * (ratio - 1.0)
+        
+        return (0..<bandCount).map { band in
+            let startFreq = minFreq * pow(maxFreq / minFreq, Float(band) / Float(bandCount))
+            let endFreq = minFreq * pow(maxFreq / minFreq, Float(band + 1) / Float(bandCount))
+            let bandwidth = endFreq - startFreq
+            return sqrt(bandwidth / refBandwidth)
         }
     }()
     
@@ -335,7 +376,7 @@ class AudioEngine {
     
     deinit {
         timeUpdateTimer?.invalidate()
-        playerNode.removeTap(onBus: 0)
+        mixerNode.removeTap(onBus: 0)  // Changed from playerNode - tap is now on mixerNode
         engine.stop()
         // FFT setup is automatically released when set to nil
         fftSetup = nil
@@ -370,9 +411,13 @@ class AudioEngine {
         // Configure limiter for transparent anti-clipping
         configureLimiter()
         
-        // Set initial volume (didSet doesn't fire for default value)
-        playerNode.volume = volume
-        crossfadePlayerNode.volume = 0  // Start silent
+        // Player nodes stay at unity gain (1.0) - volume applied at mainMixerNode
+        // This ensures the spectrum tap captures volume-independent audio
+        playerNode.volume = 1.0
+        crossfadePlayerNode.volume = 0  // Still starts silent for crossfade
+        
+        // Apply initial volume to mainMixerNode (after EQ/limiter, before output)
+        engine.mainMixerNode.outputVolume = volume
         
         // EQ is disabled (bypassed) by default - user must enable it
         eqNode.bypass = true
@@ -562,10 +607,12 @@ class AudioEngine {
     /// Install or reinstall the spectrum analyzer tap with the given format
     private func installSpectrumTap(format: AVAudioFormat?) {
         // Remove existing tap if any
-        playerNode.removeTap(onBus: 0)
+        // Tap on mixerNode (not playerNode) to capture BOTH players during crossfade
+        mixerNode.removeTap(onBus: 0)
         
-        // Install new tap - use nil format to let AVAudioEngine auto-detect the correct format
-        playerNode.installTap(onBus: 0, bufferSize: AVAudioFrameCount(fftSize), format: nil) { [weak self] buffer, _ in
+        // Install new tap on mixerNode - captures combined audio from both player nodes
+        // This ensures visualization works during crossfade and regardless of which player is active
+        mixerNode.installTap(onBus: 0, bufferSize: AVAudioFrameCount(fftSize), format: nil) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer)
         }
     }
@@ -641,69 +688,139 @@ class AudioEngine {
         var one: Float = 1.0
         vDSP_vdbcon(magnitudes, 1, &one, &logMagnitudes, 1, vDSP_Length(fftSize / 2), 0)
         
-        // Map to 75 bands (Winamp-style)
+        // Map to 75 bands (Winamp-style) using logarithmic frequency mapping
         let bandCount = 75
         var newSpectrum = [Float](repeating: 0, count: bandCount)
         
-        // Logarithmic frequency mapping
         let minFreq: Float = 20
         let maxFreq: Float = 20000
         let sampleRate = Float(buffer.format.sampleRate)
         let binWidth = sampleRate / Float(fftSize)
+        let normMode = spectrumNormalizationMode
         
         for band in 0..<bandCount {
-            // Calculate frequency range for this band (logarithmic)
-            let freqRatio = Float(band) / Float(bandCount - 1)
-            let freq = minFreq * pow(maxFreq / minFreq, freqRatio)
+            // Calculate band edges and center frequency
+            let startFreq = minFreq * pow(maxFreq / minFreq, Float(band) / Float(bandCount))
+            let endFreq = minFreq * pow(maxFreq / minFreq, Float(band + 1) / Float(bandCount))
+            let centerFreq = sqrt(startFreq * endFreq)
             
-            // Find corresponding FFT bin
-            let bin = Int(freq / binWidth)
-            
-            if bin < fftSize / 2 && bin >= 0 {
-                // Average nearby bins for smoother result
-                var sum: Float = 0
-                var count: Float = 0
-                let range = max(1, bin / 10)
+            if normMode == .accurate {
+                // Accurate mode - sum total power across all bins in band, then convert to dB
+                // High freq bands have more bins, so total power scales with bandwidth
+                let startBin = max(1, Int(startFreq / binWidth))
+                let endBin = max(startBin, min(fftSize / 2 - 1, Int(endFreq / binWidth)))
                 
-                for j in max(0, bin - range)..<min(fftSize / 2, bin + range + 1) {
-                    sum += magnitudes[j]  // Use linear magnitudes, not log
-                    count += 1
+                var totalPower: Float = 0
+                let binCount = Float(endBin - startBin + 1)
+                for bin in startBin...endBin {
+                    totalPower += magnitudes[bin] * magnitudes[bin]  // Sum power (mag²)
                 }
                 
-                // Apply frequency weighting to compensate for bass dominance
-                newSpectrum[band] = (sum / count) * spectrumFrequencyWeights[band]
+                // Use RMS (average power) to preserve detail in high frequencies
+                // Then scale by sqrt(bandwidth) to compensate for pink noise
+                let avgPower = totalPower / max(binCount, 1)
+                let rmsMag = sqrt(avgPower)
+                
+                // Apply bandwidth compensation for pink noise flatness
+                // Higher bands cover more Hz, so boost proportionally
+                let bandwidthHz = endFreq - startFreq
+                let refBandwidth: Float = 20.0   // Lower ref = more high freq boost
+                let bandwidthScale = pow(bandwidthHz / refBandwidth, 0.6)  // Steeper curve for highs
+                let scaledMag = rmsMag * bandwidthScale
+                
+                // Convert to dB (20 * log10 for magnitude)
+                let dB = 20.0 * log10(max(scaledMag, 1e-10))
+                
+                // Map dB range to 0-1 display range
+                // For 2048-pt FFT, ~12dB higher than 512-pt (matches streaming)
+                let ceiling: Float = 40.0    // dB level that maps to 100%
+                let floor: Float = 0.0       // dB level that maps to 0%
+                let normalized = (dB - floor) / (ceiling - floor)
+                
+                newSpectrum[band] = max(0, min(1.0, normalized))
+            } else {
+                // Adaptive/Dynamic modes - interpolate at center frequency
+                let exactBin = centerFreq / binWidth
+                let lowerBin = max(0, Int(exactBin))
+                let upperBin = min(lowerBin + 1, fftSize / 2 - 1)
+                let fraction = exactBin - Float(lowerBin)
+                let interpMag = magnitudes[lowerBin] * (1.0 - fraction) + magnitudes[upperBin] * fraction
+                
+                // Apply bandwidth scaling and frequency weighting
+                let bandMagnitude = interpMag * spectrumBandwidthScales[band]
+                newSpectrum[band] = bandMagnitude * spectrumFrequencyWeights[band]
             }
         }
         
-        // Per-region normalization so bass doesn't drown out mids/treble
-        // Each frequency region (bass, mid, treble) normalizes independently
-        let regionRanges = [(0, 25), (25, 50), (50, 75)]  // bass, mid, treble
-        
-        for (regionIndex, (start, end)) in regionRanges.enumerated() {
-            // Find peak in this region
-            var regionPeak: Float = 0.0
-            for i in start..<end {
-                regionPeak = max(regionPeak, newSpectrum[i])
+        // Apply normalization based on selected mode
+        switch normMode {
+        case .accurate:
+            // dB scaling already applied above - no additional processing needed
+            break
+            
+        case .adaptive:
+            // Global adaptive normalization - adapts to overall loudness
+            // Preserves relative levels between frequency regions
+            var globalPeak: Float = 0
+            for i in 0..<bandCount {
+                globalPeak = max(globalPeak, newSpectrum[i])
             }
             
-            guard regionPeak > 0 else { continue }
-            
-            // Update adaptive peak for this region
-            // Slow rise and slow decay for stable reference level (avoids pumping)
-            if regionPeak > spectrumRegionPeaks[regionIndex] {
-                spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.92 + regionPeak * 0.08
-            } else {
-                spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.995 + regionPeak * 0.005
+            if globalPeak > 0 {
+                // Update global adaptive peak (slow rise, slower decay)
+                if globalPeak > spectrumGlobalPeak {
+                    spectrumGlobalPeak = spectrumGlobalPeak * 0.92 + globalPeak * 0.08
+                } else {
+                    spectrumGlobalPeak = spectrumGlobalPeak * 0.995 + globalPeak * 0.005
+                }
+                
+                // Target reference level based on adaptive peak
+                let targetReferenceLevel = max(spectrumGlobalPeak * 0.5, globalPeak * 0.3)
+                
+                // Smooth the reference level to prevent pulsing from max() jumps
+                spectrumGlobalReferenceLevel = spectrumGlobalReferenceLevel * 0.85 + targetReferenceLevel * 0.15
+                let referenceLevel = max(spectrumGlobalReferenceLevel, 0.001)
+                
+                // Normalize all bands using global reference
+                for i in 0..<bandCount {
+                    let normalized = min(1.0, newSpectrum[i] / referenceLevel)
+                    newSpectrum[i] = pow(normalized, 0.5)  // Square root curve for dynamics
+                }
             }
             
-            // Reference level for this region
-            let referenceLevel = max(spectrumRegionPeaks[regionIndex] * 0.5, regionPeak * 0.3)
+        case .dynamic:
+            // Per-region normalization - best visual appeal for music
+            // Each frequency region (bass, mid, treble) normalizes independently
+            let regionRanges = [(0, 25), (25, 50), (50, 75)]  // bass, mid, treble
             
-            // Normalize bands in this region
-            for i in start..<end {
-                let normalized = min(1.0, newSpectrum[i] / referenceLevel)
-                // Square root curve for good dynamic spread
-                newSpectrum[i] = pow(normalized, 0.5)
+            for (regionIndex, (start, end)) in regionRanges.enumerated() {
+                // Find peak in this region
+                var regionPeak: Float = 0.0
+                for i in start..<end {
+                    regionPeak = max(regionPeak, newSpectrum[i])
+                }
+                
+                guard regionPeak > 0 else { continue }
+                
+                // Update adaptive peak for this region
+                if regionPeak > spectrumRegionPeaks[regionIndex] {
+                    spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.92 + regionPeak * 0.08
+                } else {
+                    spectrumRegionPeaks[regionIndex] = spectrumRegionPeaks[regionIndex] * 0.995 + regionPeak * 0.005
+                }
+                
+                // Target reference level for this region
+                let targetReferenceLevel = max(spectrumRegionPeaks[regionIndex] * 0.5, regionPeak * 0.3)
+                
+                // Smooth the reference level to prevent pulsing from max() jumps
+                spectrumRegionReferenceLevels[regionIndex] = spectrumRegionReferenceLevels[regionIndex] * 0.85 + targetReferenceLevel * 0.15
+                let referenceLevel = max(spectrumRegionReferenceLevels[regionIndex], 0.001)
+                
+                // Normalize bands in this region
+                for i in start..<end {
+                    let normalized = min(1.0, newSpectrum[i] / referenceLevel)
+                    newSpectrum[i] = pow(normalized, 0.5)  // Square root curve
+                }
             }
         }
         
@@ -711,7 +828,7 @@ class AudioEngine {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             for i in 0..<bandCount {
-                // Fast attack, smooth decay for visual appeal
+                // Fast attack, smooth decay for all modes
                 if newSpectrum[i] > self.spectrumData[i] {
                     self.spectrumData[i] = newSpectrum[i]
                 } else {
@@ -864,7 +981,7 @@ class AudioEngine {
             playerNode.pause()
             // Remove spectrum tap when paused to save CPU (FFT is expensive)
             // Tap will be reinstalled when playback resumes
-            playerNode.removeTap(onBus: 0)
+            mixerNode.removeTap(onBus: 0)  // Changed from playerNode - tap is now on mixerNode
         }
         state = .paused
         stopTimeUpdates()
@@ -1102,15 +1219,27 @@ class AudioEngine {
     
     /// Skip multiple tracks forward or backward
     func skipTracks(count: Int) {
+        // Cancel any in-progress crossfade
+        cancelCrossfade()
+        
         guard !playlist.isEmpty else { return }
         
+        // When casting local files, block rapid clicks - only accept if not already casting
+        if isCastingActive && CastManager.shared.isLocalFileCastInProgress() {
+            NSLog("AudioEngine: skipTracks() blocked - local file cast in progress")
+            return
+        }
+        
         if shuffleEnabled {
-            // In shuffle mode, skip one at a time
+            // In shuffle mode, skip one at a time (next/previous handle casting)
             for _ in 0..<abs(count) {
                 if count > 0 { next() } else { previous() }
             }
             return
         }
+        
+        // Capture previous index before changing (for rollback on cast failure)
+        let previousIndex = currentIndex
         
         // Calculate new index with wraparound
         var newIndex = currentIndex + count
@@ -1118,6 +1247,40 @@ class AudioEngine {
         newIndex = newIndex % playlist.count
         
         currentIndex = newIndex
+        
+        // When casting, cast the new track instead of playing locally
+        if isCastingActive {
+            let track = playlist[currentIndex]
+            let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+            
+            // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
+            // For streaming, update immediately since there's no async delay
+            if !isLocalFile {
+                currentTrack = track
+            }
+            
+            Task {
+                do {
+                    try await CastManager.shared.castNewTrack(track)
+                    // For local files, update UI after successful cast
+                    if isLocalFile {
+                        await MainActor.run {
+                            self.currentTrack = track
+                        }
+                    }
+                } catch {
+                    NSLog("AudioEngine: skipTracks() cast failed: %@", error.localizedDescription)
+                    // Restore index on failure to keep playlist navigation consistent
+                    if isLocalFile {
+                        await MainActor.run {
+                            self.currentIndex = previousIndex
+                        }
+                    }
+                }
+            }
+            return
+        }
+        
         loadTrack(at: currentIndex)
         if state == .playing { play() }
     }
@@ -1231,6 +1394,7 @@ class AudioEngine {
             if wasPlaying {
                 playbackStartDate = Date()  // Start tracking from seek position
                 playerNode.play()
+                startTimeUpdates()  // Ensure timer is running for UI updates
             }
         }
     }
@@ -1493,6 +1657,9 @@ class AudioEngine {
             spectrumData[i] = 0
         }
         spectrumRegionPeaks = [0.0, 0.0, 0.0]  // Reset adaptive peaks for new track
+        spectrumRegionReferenceLevels = [0.0, 0.0, 0.0]
+        spectrumGlobalPeak = 0.0  // Reset global adaptive peak
+        spectrumGlobalReferenceLevel = 0.0
         delegate?.audioEngineDidUpdateSpectrum(spectrumData)
         NotificationCenter.default.post(
             name: .audioSpectrumDataUpdated,
@@ -1502,6 +1669,9 @@ class AudioEngine {
     }
     
     private func startTimeUpdates() {
+        // Invalidate any existing timer before creating a new one to prevent duplicate timers
+        stopTimeUpdates()
+        
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
@@ -1891,6 +2061,14 @@ class AudioEngine {
     private func loadTrack(at index: Int) {
         guard index >= 0 && index < playlist.count else { return }
         
+        // Prevent concurrent loads - skip if already loading to avoid dual playback
+        guard !isLoadingTrack else {
+            NSLog("loadTrack: Blocked - already loading a track")
+            return
+        }
+        isLoadingTrack = true
+        defer { isLoadingTrack = false }
+        
         let track = playlist[index]
         
         // Route video tracks to the video player
@@ -1956,6 +2134,18 @@ class AudioEngine {
         // Stop any streaming playback
         stopStreamingPlayer()
         isStreamingPlayback = false
+        
+        // Reset AudioEngine's adaptive normalization peaks for clean start
+        // When streaming was active, AudioEngine just forwarded StreamingAudioPlayer's
+        // pre-normalized data without updating its own peaks. These stale peaks
+        // would cause erratic spectrum levels when switching back to local.
+        spectrumGlobalPeak = 0.0
+        spectrumGlobalReferenceLevel = 0.0
+        spectrumRegionPeaks = [0.0, 0.0, 0.0]
+        spectrumRegionReferenceLevels = [0.0, 0.0, 0.0]
+        
+        // Reset spectrum analyzer state when switching sources
+        NotificationCenter.default.post(name: NSNotification.Name("ResetSpectrumState"), object: nil)
         
         // Clear any pre-scheduled gapless track (we're loading a new track explicitly)
         nextScheduledFile = nil
@@ -2063,10 +2253,14 @@ class AudioEngine {
         NSLog("loadStreamingTrack: %@ - %@", track.artist ?? "Unknown", track.title)
         NSLog("  URL: %@", track.url.absoluteString)
         
-        // Stop local playback
+        // Stop local playback and REMOVE spectrum tap (streaming player has its own)
         playerNode.stop()
+        mixerNode.removeTap(onBus: 0)  // Critical: remove local spectrum tap
         audioFile = nil
         isStreamingPlayback = true
+        
+        // Reset spectrum analyzer state when switching sources
+        NotificationCenter.default.post(name: NSNotification.Name("ResetSpectrumState"), object: nil)
         
         // Set flag before starting new track - EOF callbacks from old track should be ignored
         isLoadingNewStreamingTrack = true
@@ -2453,13 +2647,16 @@ class AudioEngine {
         crossfadeStreamingPlayer?.volume = 0
         crossfadeStreamingPlayer?.play(url: nextTrack.url)
         
-        // Start volume ramp
+        // Start volume ramp - multiply crossfade values by master volume
+        // (unlike local playback where mainMixerNode handles master volume,
+        // streaming players need volume incorporated into the crossfade)
+        let masterVolume = volume
         startCrossfadeVolumeRamp(
             outgoingVolume: { [weak self] v in
-                self?.streamingPlayer?.volume = v
+                self?.streamingPlayer?.volume = masterVolume * v
             },
             incomingVolume: { [weak self] v in
-                self?.crossfadeStreamingPlayer?.volume = v
+                self?.crossfadeStreamingPlayer?.volume = masterVolume * v
             },
             completion: { [weak self] in
                 self?.completeStreamingCrossfade(nextIndex: nextIndex)
@@ -2476,7 +2673,8 @@ class AudioEngine {
         let startTime = Date()
         let fadeDuration = sweetFadeDuration
         let interval: TimeInterval = 0.05  // 50ms updates for smooth fading
-        let targetVolume = volume
+        // Note: Crossfade ramps between 0 and 1.0 (unity) for relative mixing
+        // Actual output volume is controlled by mainMixerNode.outputVolume
         
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] timer in
             guard let self = self else {
@@ -2487,11 +2685,16 @@ class AudioEngine {
             let elapsed = Date().timeIntervalSince(startTime)
             let progress = min(1.0, elapsed / fadeDuration)
             
-            // Equal-power crossfade curve for perceptually smooth transition
-            // outVol = cos(progress * π/2), inVol = sin(progress * π/2)
+            // Normalized equal-power crossfade to prevent volume peaks
+            // Standard equal-power: cos(angle) + sin(angle) peaks at 1.414 at midpoint
+            // We normalize so the sum is always 1.0, preventing clipping while
+            // maintaining the smooth perceptual balance of equal-power curves
             let angle = progress * .pi / 2
-            let outVol = Float(cos(angle)) * targetVolume
-            let inVol = Float(sin(angle)) * targetVolume
+            let rawOut = Float(cos(angle))
+            let rawIn = Float(sin(angle))
+            let sum = rawOut + rawIn  // Ranges from 1.0 to ~1.414 back to 1.0
+            let outVol = rawOut / sum  // Normalized: sum always = 1.0
+            let inVol = rawIn / sum
             
             outgoingVolume(outVol)
             incomingVolume(inVol)
@@ -2517,6 +2720,11 @@ class AudioEngine {
         
         // Swap which player is active
         crossfadePlayerIsActive.toggle()
+        
+        // Ensure the now-active player is at unity volume
+        // (mainMixerNode.outputVolume controls actual output level)
+        let activePlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+        activePlayer.volume = 1.0
         
         // Update state
         audioFile = nextFile
@@ -2571,6 +2779,9 @@ class AudioEngine {
         streamingPlayer?.delegate = self
         crossfadeStreamingPlayer?.delegate = nil
         
+        // Restore primary player to master volume (crossfade ended at masterVolume * 1.0)
+        streamingPlayer?.volume = volume
+        
         // Update state
         currentIndex = nextIndex
         currentTrack = playlist[nextIndex]
@@ -2618,9 +2829,9 @@ class AudioEngine {
             incomingPlayer.stop()
             incomingPlayer.volume = 0
             
-            // Restore outgoing player volume
+            // Restore outgoing player volume to unity (mainMixerNode controls actual volume)
             let outgoingPlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
-            outgoingPlayer.volume = volume
+            outgoingPlayer.volume = 1.0
         }
         
         isCrossfading = false
@@ -2722,18 +2933,12 @@ class AudioEngine {
     
     /// Apply the current normalization gain to the player
     private func applyNormalizationGain() {
-        // Apply normalization by adjusting the EQ's global gain
-        // This preserves the user's volume setting while normalizing
-        let baseVolume = volume
-        let normalizedVolume = baseVolume * normalizationGain
+        // Apply combined volume + normalization to mainMixerNode
+        // This is AFTER the visualization tap, so spectrum is volume-independent
+        let finalVolume = max(0, min(1, volume * normalizationGain))
+        engine.mainMixerNode.outputVolume = finalVolume
         
-        // Clamp to valid range
-        let finalVolume = max(0, min(1, normalizedVolume))
-        
-        // Apply to the currently active player (may be crossfade player after a crossfade)
-        let activePlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
-        activePlayer.volume = finalVolume
-        
+        // Note: playerNode stays at unity (1.0) for volume-independent visualization
         // Note: For streaming, normalization is not applied (would require re-analysis)
     }
     

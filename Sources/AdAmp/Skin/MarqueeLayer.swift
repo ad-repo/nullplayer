@@ -341,7 +341,7 @@ class MarqueeLayer: CALayer {
     
     /// Check if string contains non-Latin characters that need system font
     private func containsNonLatinCharacters(_ string: String) -> Bool {
-        let supportedChars = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 \"@:()-'!_+\\/[]^&%.=$#?*")
+        let supportedChars = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 \"@:()-'!_+\\/[]^&%.=$#?,*")
         let uppercased = string.uppercased()
         for scalar in uppercased.unicodeScalars {
             if !supportedChars.contains(scalar) {

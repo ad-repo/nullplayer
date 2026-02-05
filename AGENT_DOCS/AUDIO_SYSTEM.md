@@ -367,45 +367,304 @@ player.frameFiltering.add(entry: "spectrumAnalyzer") { [weak self] buffer, _ in
 
 1. **Sample extraction** - Get float samples from PCM buffer (mono-mix stereo)
 2. **Windowing** - Apply Hann window to reduce spectral leakage
-3. **FFT** - 512-point DFT using Accelerate framework (vDSP) (~11.6ms at 44.1kHz)
+3. **FFT** - 2048-point DFT using Accelerate framework (vDSP) (~46ms at 44.1kHz)
 4. **Magnitude calculation** - Convert complex output to magnitudes
-5. **Frequency mapping** - Map FFT bins to 75 bands (logarithmic, 20Hz-20kHz)
-6. **Frequency weighting** - Apply compensation curve to reduce bass dominance
-7. **Adaptive normalization** - Normalize using slow-adapting reference level
+5. **Power integration** - Sum power (magnitude²) of FFT bins within each logarithmic band. For bands with few bins, interpolate and scale by bandwidth.
+6. **Frequency weighting** - Apply compensation curve in adaptive/dynamic modes (skipped in accurate mode)
+7. **Normalization** - Scale based on selected mode (accurate/adaptive/dynamic)
 8. **Smoothing** - Fast attack, slow decay for visual appeal
 
-**Note:** The FFT size was reduced from 2048 to 512 samples to decrease audio-to-visualization latency from ~46ms to ~11.6ms.
+**Note:** Both local and streaming playback use identical 2048-pt FFT processing for consistent visualization across all audio sources.
 
-### Frequency Weighting
+### Pink Noise Handling
 
-Modern music tends to have heavy bass content that would otherwise dominate the spectrum display. A frequency-dependent weighting curve compensates for this:
+Pink noise has equal energy per octave (not per Hz). Different normalization modes handle this differently:
+
+**All modes apply bandwidth scaling** to compensate for pink noise's 1/f slope:
+- Formula: `pow(bandwidthHz / refBandwidth, exponent)` where exponent varies by mode
+- This makes pink noise appear relatively flat across all modes
+- Accurate mode uses `refBandwidth=20.0` and `exponent=0.6` for slightly steeper high-frequency boost
+- Adaptive/Dynamic modes use `refBandwidth=100.0` and `exponent=0.5` (square root)
+
+**Adaptive/Dynamic modes only:**
+- Apply additional frequency weighting to reduce sub-bass dominance
+
+### Frequency Weighting (Adaptive/Dynamic modes only)
+
+In **Adaptive** and **Dynamic** modes, an additional frequency weighting curve is applied on top of pink noise compensation to make music look more visually appealing:
 
 | Frequency Range | Weight | Reason |
 |-----------------|--------|--------|
-| < 60 Hz (sub-bass) | 0.15 | Heavy attenuation - sub-bass energy is usually felt, not seen |
-| 60-150 Hz (bass) | 0.25 | Strong attenuation - bass carries most musical energy |
-| 150-400 Hz (low-mid) | 0.45 | Moderate attenuation |
-| 400-1000 Hz (mid) | 0.70 | Slight attenuation |
-| 1-4 kHz (upper-mid) | 1.00 | Full level - ear is most sensitive here |
-| 4-8 kHz (presence) | 0.95 | Nearly full |
-| > 8 kHz (treble) | 0.85 | Slight rolloff |
+| < 40 Hz (sub-bass) | 0.70 | Light reduction - sub-bass energy is usually felt, not seen |
+| 40-100 Hz (bass) | 0.85 | Very light reduction - let bass punch through |
+| 100-300 Hz (low-mid) | 0.92 | Minimal reduction |
+| > 300 Hz | 1.00 | Full level |
 
-This approximates an equal-loudness contour, making the display more perceptually balanced.
+This weighting is **not applied** in Accurate mode to preserve true signal levels.
 
-### Adaptive Normalization
+### Normalization Modes
 
-Instead of normalizing each frame to its own peak (which makes everything look maxed-out with modern compressed music), the analyzer uses an adaptive reference level:
+The spectrum analyzer supports three normalization modes (configurable via right-click menu). Each mode processes FFT data differently to achieve different visualization goals.
 
-1. **Peak tracking** - Track the current frame's peak magnitude
-2. **Slow-adapting average** - Maintain a running average that rises quickly (0.3 blend) but decays slowly (0.995 blend)
-3. **Reference level** - Use 80% of the adaptive average (or 50% of current peak if higher) as the normalization reference
-4. **Power curve** - Apply a 0.6 power curve for visual dynamics
+---
 
-This ensures:
-- Quiet passages show proportionally lower levels
-- Loud passages don't instantly max out
-- The display adapts to different overall loudness levels over time
-- Dynamic range is preserved even with heavily compressed music
+#### Accurate Mode - Complete Algorithm
+
+**Goal:** Display true signal levels with a flat response for pink noise, suitable for technical analysis.
+
+**Step 1: FFT Bin Range Calculation**
+For each of the 75 logarithmic bands:
+```
+startFreq = 20 × (20000/20)^(band/75)      // Band's lower frequency edge
+endFreq = 20 × (20000/20)^((band+1)/75)    // Band's upper frequency edge
+binWidth = sampleRate / fftSize             // Hz per FFT bin (e.g., 44100/2048 = 21.5 Hz)
+startBin = max(1, floor(startFreq / binWidth))
+endBin = max(startBin, min(fftSize/2 - 1, floor(endFreq / binWidth)))
+```
+
+**Step 2: Power Integration (Sum of Squared Magnitudes)**
+Sum the squared magnitude of all FFT bins within the band:
+```
+totalPower = Σ (magnitude[bin]²)  for bin in startBin...endBin
+binCount = endBin - startBin + 1
+```
+
+**Step 3: RMS Magnitude Calculation**
+Calculate Root Mean Square (average energy density):
+```
+avgPower = totalPower / binCount
+rmsMag = sqrt(avgPower)
+```
+
+**Step 4: Bandwidth Compensation (Pink Noise Flattening)**
+Apply scaling to compensate for pink noise's 1/f energy distribution:
+```
+bandwidthHz = endFreq - startFreq
+refBandwidth = 20.0                           // Reference bandwidth (Hz)
+bandwidthScale = pow(bandwidthHz / refBandwidth, 0.6)
+scaledMag = rmsMag × bandwidthScale
+```
+- The `0.6` exponent provides steeper high-frequency boost than sqrt (0.5)
+- `refBandwidth = 20.0` is low, providing more boost to wide high-frequency bands
+- Result: Pink noise appears relatively flat across the display
+
+**Step 5: Decibel Conversion**
+Convert linear magnitude to decibels:
+```
+dB = 20.0 × log₁₀(max(scaledMag, 1e-10))
+```
+
+**Step 6: Dynamic Range Mapping**
+Map dB range to 0.0-1.0 display range:
+```
+// Both local and streaming use identical parameters (2048-pt FFT):
+ceiling = 40.0 dB    // Maps to 100% (top of display)
+floor = 0.0 dB       // Maps to 0% (bottom of display)
+
+normalized = (dB - floor) / (ceiling - floor)
+output = clamp(normalized, 0.0, 1.0)
+```
+
+**Step 7: Final Smoothing (All Modes)**
+Applied on main thread for visual continuity:
+```
+if newValue > currentValue:
+    spectrumData[band] = newValue              // Instant attack
+else:
+    spectrumData[band] = current × 0.90 + new × 0.10  // 90% decay smoothing
+```
+
+**Characteristics:**
+- No adaptive gain control - quiet signals appear quiet, loud appear loud
+- True representation of frequency content
+- 40dB dynamic range display (ceiling - floor)
+- Pink noise test signal appears flat
+- Best for: Technical analysis, checking frequency balance, mixing reference
+
+---
+
+#### Adaptive Mode - Complete Algorithm
+
+**Goal:** Automatically adjust gain based on overall signal level while preserving relative frequency balance.
+
+**Step 1: Center Frequency Interpolation**
+For each of the 75 logarithmic bands, sample a single interpolated FFT bin:
+```
+startFreq = 20 × (20000/20)^(band/75)
+endFreq = 20 × (20000/20)^((band+1)/75)
+centerFreq = sqrt(startFreq × endFreq)        // Geometric mean
+exactBin = centerFreq / binWidth
+lowerBin = floor(exactBin)
+upperBin = min(lowerBin + 1, fftSize/2 - 1)
+fraction = exactBin - lowerBin
+interpMag = magnitude[lowerBin] × (1 - fraction) + magnitude[upperBin] × fraction
+```
+
+**Step 2: Pre-computed Bandwidth Scaling**
+Apply pre-computed scale factors for pink noise compensation:
+```
+// Pre-computed at startup for each band:
+ratio = (20000/20)^(1/75)                     // ~1.096 frequency ratio per band
+refBandwidth = 1000.0 × (ratio - 1.0)         // Reference bandwidth at 1kHz
+bandwidth = endFreq - startFreq
+bandwidthScale[band] = sqrt(bandwidth / refBandwidth)
+
+// Applied per-frame:
+bandMagnitude = interpMag × bandwidthScale[band]
+```
+
+**Step 3: Pre-computed Frequency Weighting**
+Apply frequency-dependent weighting to reduce sub-bass dominance:
+```
+// Pre-computed weights by frequency:
+freq < 40 Hz:    weight = 0.70   // Sub-bass: 30% reduction
+freq < 100 Hz:   weight = 0.85   // Bass: 15% reduction
+freq < 300 Hz:   weight = 0.92   // Low-mid: 8% reduction
+freq >= 300 Hz:  weight = 1.00   // Full level
+
+newSpectrum[band] = bandMagnitude × frequencyWeight[band]
+```
+
+**Step 4: Global Peak Tracking**
+Find maximum value across all 75 bands:
+```
+globalPeak = max(newSpectrum[0..74])
+```
+
+**Step 5: Adaptive Peak Update (Slow Rise, Slower Decay)**
+Update the tracked peak level with asymmetric smoothing:
+```
+if globalPeak > spectrumGlobalPeak:
+    // Rising: 8% of new value (fast attack)
+    spectrumGlobalPeak = spectrumGlobalPeak × 0.92 + globalPeak × 0.08
+else:
+    // Falling: 0.5% of new value (very slow decay)
+    spectrumGlobalPeak = spectrumGlobalPeak × 0.995 + globalPeak × 0.005
+```
+
+**Step 6: Reference Level Calculation**
+Compute the normalization reference with anti-pulsing smoothing:
+```
+// Target: weighted average favoring tracked peak over current peak
+targetReferenceLevel = max(spectrumGlobalPeak × 0.5, globalPeak × 0.3)
+
+// Smooth reference to prevent jumpy normalization:
+spectrumGlobalReferenceLevel = spectrumGlobalReferenceLevel × 0.85 + targetReferenceLevel × 0.15
+referenceLevel = max(spectrumGlobalReferenceLevel, 0.001)  // Prevent divide-by-zero
+```
+
+**Step 7: Global Normalization with Square Root Curve**
+Normalize all bands using the global reference:
+```
+for band in 0..<75:
+    normalized = min(1.0, newSpectrum[band] / referenceLevel)
+    newSpectrum[band] = pow(normalized, 0.5)  // Square root for better dynamics
+```
+- Square root curve expands quiet signals, compresses loud signals
+- All bands scale together, preserving relative frequency balance
+
+**Step 8: Final Smoothing (Same as Accurate)**
+```
+if newValue > currentValue:
+    spectrumData[band] = newValue
+else:
+    spectrumData[band] = current × 0.90 + new × 0.10
+```
+
+**Characteristics:**
+- Single global gain control - all frequencies scale together
+- Automatic level adjustment over time
+- Preserves relative frequency balance (bass-heavy content stays bass-heavy)
+- Square root compression provides visual dynamics
+- Best for: General listening, music that varies in loudness
+
+---
+
+#### Dynamic Mode - Complete Algorithm
+
+**Goal:** Maximize visual activity by normalizing each frequency region independently.
+
+**Steps 1-3: Same as Adaptive Mode**
+- Center frequency interpolation
+- Bandwidth scaling
+- Frequency weighting
+
+**Step 4: Region Definition**
+Split the 75 bands into three independent regions:
+```
+Bass region:   bands 0-24   (~20 Hz to ~300 Hz)
+Mid region:    bands 25-49  (~300 Hz to ~3.4 kHz)
+Treble region: bands 50-74  (~3.4 kHz to ~20 kHz)
+```
+
+**Step 5: Per-Region Peak Tracking**
+For each of the 3 regions:
+```
+regionPeak = max(newSpectrum[start..end])  // Find peak in this region
+
+if regionPeak > spectrumRegionPeaks[regionIndex]:
+    // Rising: 8% blend (fast attack)
+    spectrumRegionPeaks[regionIndex] = old × 0.92 + regionPeak × 0.08
+else:
+    // Falling: 0.5% blend (slow decay)
+    spectrumRegionPeaks[regionIndex] = old × 0.995 + regionPeak × 0.005
+```
+
+**Step 6: Per-Region Reference Level**
+Calculate independent reference for each region:
+```
+targetReferenceLevel = max(spectrumRegionPeaks[regionIndex] × 0.5, regionPeak × 0.3)
+spectrumRegionReferenceLevels[regionIndex] = old × 0.85 + target × 0.15
+referenceLevel = max(spectrumRegionReferenceLevels[regionIndex], 0.001)
+```
+
+**Step 7: Per-Region Normalization**
+Normalize each region independently:
+```
+for band in regionStart..<regionEnd:
+    normalized = min(1.0, newSpectrum[band] / referenceLevel)
+    newSpectrum[band] = pow(normalized, 0.5)  // Square root curve
+```
+
+**Step 8: Final Smoothing (Same as other modes)**
+```
+if newValue > currentValue:
+    spectrumData[band] = newValue
+else:
+    spectrumData[band] = current × 0.90 + new × 0.10
+```
+
+**Characteristics:**
+- Three independent gain controls (bass, mid, treble)
+- Each region fills its display area regardless of actual energy
+- Does NOT preserve relative frequency balance
+- Maximum visual activity for all content
+- Best for: Visual appeal, live performances, content with sparse frequency content
+
+---
+
+### Algorithm Comparison Summary
+
+| Aspect | Accurate | Adaptive | Dynamic |
+|--------|----------|----------|---------|
+| **Magnitude source** | RMS of all bins in band | Single interpolated bin | Single interpolated bin |
+| **Bandwidth scaling** | `pow(bw/20, 0.6)` | `sqrt(bw/refBw)` | `sqrt(bw/refBw)` |
+| **Frequency weighting** | None | Sub-bass reduction | Sub-bass reduction |
+| **Gain control** | Fixed dB mapping | Global adaptive | Per-region adaptive |
+| **Peak tracking** | None | Single global peak | 3 regional peaks |
+| **Output curve** | Linear (dB-mapped) | Square root | Square root |
+| **Preserves balance** | Yes (true levels) | Yes (scaled together) | No (independent) |
+| **Pink noise response** | Flat | Flat | Flat per-region |
+
+### State Variables
+
+**Adaptive Mode:**
+- `spectrumGlobalPeak: Float` - Tracked global peak level
+- `spectrumGlobalReferenceLevel: Float` - Smoothed normalization reference
+
+**Dynamic Mode:**
+- `spectrumRegionPeaks: [Float]` - Array of 3 tracked peaks (bass, mid, treble)
+- `spectrumRegionReferenceLevels: [Float]` - Array of 3 smoothed references
 
 ### Output
 
@@ -421,6 +680,55 @@ NotificationCenter.default.post(
     object: self,
     userInfo: ["spectrum": spectrumData]
 )
+```
+
+### Unified Spectrum Processing
+
+Both local and streaming playback use **identical FFT processing** for consistent visualization:
+
+| Parameter | All Sources |
+|-----------|-------------|
+| FFT size | 2048 |
+| Bin width | ~21.5 Hz |
+| Latency | ~46ms |
+| dB ceiling | 40 |
+| dB floor | 0 |
+
+**Benefits of unified implementation:**
+- Consistent visualization when switching between local files, Plex, Navidrome, and radio
+- Good frequency resolution across the entire spectrum (including sub-bass)
+- No visual artifacts when changing audio sources
+
+**Source switching:**
+- When switching from local to streaming, the local spectrum tap on `mixerNode` is removed
+- When switching from streaming to local, the streaming player is stopped and its spectrum cleared
+- A `ResetSpectrumState` notification triggers the `SpectrumAnalyzerView` to clear all visualization state
+- This ensures clean transitions with no residual data from the previous source
+
+### Volume-Independent Visualizations
+
+Spectrum analyzer and MilkDrop visualizations display audio levels independently of the user's volume setting. This ensures visualizations show consistent audio levels whether volume is at 10% or 100%.
+
+**Local Playback Implementation:**
+- Audio tap installed on `mixerNode` at bus 0 (captures combined audio from both player nodes)
+- Both `playerNode` and `crossfadePlayerNode` stay at 1.0 (unity gain)
+- Output volume controlled via `engine.mainMixerNode.outputVolume`
+- The tap captures unity-gain audio regardless of volume setting
+- During crossfade, player volumes ramp between 0 and 1.0 for relative mixing
+- Tap on mixerNode ensures visualization works during crossfade and after player swap
+
+**Streaming Playback Implementation:**
+- AudioStreaming's `frameFiltering` captures audio after volume is applied
+- `processAudioBuffer()` compensates by dividing samples by current volume
+- Compensation capped at 20x (volume 5%) to avoid amplifying noise at very low volumes
+
+**Signal Flow (Local):**
+```
+playerNode (unity) ──────┐
+                         ├──► mixerNode ──► eqNode ──► limiterNode ──► mainMixerNode ──► output
+crossfadePlayer (unity) ─┘        │                                        (volume here)
+                                  │
+                                  └── tap captures COMBINED audio (volume-independent)
 ```
 
 ### Standalone Spectrum Analyzer Window

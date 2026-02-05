@@ -56,16 +56,30 @@ enum BundleHelper {
     
     // MARK: - Resources
     
+    /// Cached SPM resource bundle for release builds running from build directory
+    private static let spmResourceBundle: Bundle? = {
+        // When running release build directly from .build directory, resources are in
+        // AdAmp_AdAmp.bundle next to the executable
+        let executableURL = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+        let buildDir = executableURL.deletingLastPathComponent()
+        let spmBundleURL = buildDir.appendingPathComponent("AdAmp_AdAmp.bundle")
+        if FileManager.default.fileExists(atPath: spmBundleURL.path) {
+            return Bundle(url: spmBundleURL)
+        }
+        return nil
+    }()
+    
     /// Returns the bundle containing app resources
     /// - In SPM development: Uses Bundle.module
     /// - In standalone app: Uses Bundle.main's Resources folder
+    /// - In release from build dir: Uses AdAmp_AdAmp.bundle
     static var resourceBundle: Bundle {
         #if DEBUG
         // In debug builds, try module bundle first (SPM development)
         return Bundle.module
         #else
-        // In release builds, always use main bundle (installed app)
-        return Bundle.main
+        // In release builds, try SPM bundle first (running from build dir), then main bundle
+        return spmResourceBundle ?? Bundle.main
         #endif
     }
     
@@ -119,6 +133,25 @@ enum BundleHelper {
         if let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: subdirectory) {
             return url
         }
+        #else
+        // In release builds running from SPM build directory, check the AdAmp_AdAmp.bundle
+        if let spmBundle = spmResourceBundle {
+            // Try Resources subdirectory first (SPM puts resources there)
+            if let url = spmBundle.url(forResource: name, withExtension: ext, subdirectory: "Resources") {
+                return url
+            }
+            if let subdirectory = subdirectory {
+                if let url = spmBundle.url(forResource: name, withExtension: ext, subdirectory: "Resources/\(subdirectory)") {
+                    return url
+                }
+            }
+            if let url = spmBundle.url(forResource: name, withExtension: ext, subdirectory: subdirectory) {
+                return url
+            }
+            if let url = spmBundle.url(forResource: name, withExtension: ext) {
+                return url
+            }
+        }
         #endif
         
         return nil
@@ -155,6 +188,16 @@ enum BundleHelper {
         if let url = Bundle.module.url(forResource: "Presets", withExtension: nil) {
             return url
         }
+        #else
+        // In release builds running from SPM build directory
+        if let spmBundle = spmResourceBundle {
+            if let url = spmBundle.url(forResource: "Presets", withExtension: nil, subdirectory: "Resources") {
+                return url
+            }
+            if let url = spmBundle.url(forResource: "Presets", withExtension: nil) {
+                return url
+            }
+        }
         #endif
         
         return nil
@@ -185,6 +228,16 @@ enum BundleHelper {
         }
         if let url = Bundle.module.url(forResource: "Textures", withExtension: nil) {
             return url
+        }
+        #else
+        // In release builds running from SPM build directory
+        if let spmBundle = spmResourceBundle {
+            if let url = spmBundle.url(forResource: "Textures", withExtension: nil, subdirectory: "Resources") {
+                return url
+            }
+            if let url = spmBundle.url(forResource: "Textures", withExtension: nil) {
+                return url
+            }
         }
         #endif
         

@@ -48,8 +48,10 @@ The build script reads version from Info.plist automatically. The DMG is named `
 
 The `kill_build_run.sh` script:
 1. Kills any running AdAmp instances (`pkill -9 -x AdAmp`)
-2. Builds with `swift build`
-3. Launches the app in background (`.build/debug/AdAmp &`)
+2. Builds in release mode (`swift build -c release`)
+3. Launches the app in background (`.build/arm64-apple-macosx/release/AdAmp &`)
+
+**Note**: Release mode ensures you're testing the same binary configuration as the DMG distribution, catching optimization-related issues early.
 
 **Important**: The script exits immediately after launching the app. The app continues running independently.
 

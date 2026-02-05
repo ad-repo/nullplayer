@@ -259,11 +259,15 @@ Right-click on the window for:
 
 - **Rendering**: Metal shaders via CAMetalLayer with runtime shader compilation
 - **Shader Modes**: Separate pipeline states for Winamp (bar) and Enhanced (LED matrix) modes
-- **Frame Rate**: 60 FPS via CVDisplayLink (auto-stops when window closes)
+- **Frame Rate**: 60 FPS via CVDisplayLink (auto-stops when window closes or occluded)
 - **Audio Input**: 75-band spectrum data from AudioEngine
 - **Thread Safety**: OSAllocatedUnfairLock for spectrum data updates
 - **LED Matrix**: 55 columns × 16 rows = 880 cells in Enhanced mode
 - **Peak Hold**: Floating peak indicators with slow decay in Enhanced mode
+- **Memory Management**: 
+  - Drawable pool limited to 3 (prevents unbounded CAMetalDrawable accumulation)
+  - Rendering pauses when window is minimized or occluded (saves CPU/GPU)
+  - Display sync disabled to allow frame dropping under load
 
 ---
 

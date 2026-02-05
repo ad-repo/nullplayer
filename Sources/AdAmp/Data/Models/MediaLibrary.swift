@@ -474,7 +474,13 @@ class MediaLibrary {
                 name: firstTrack?.album ?? "Unknown Album",
                 artist: firstTrack?.albumArtist ?? firstTrack?.artist,
                 year: firstTrack?.year,
-                tracks: tracks.sorted { ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
+                tracks: tracks.sorted {
+                    // Sort by disc number first, then track number
+                    let disc0 = $0.discNumber ?? 1
+                    let disc1 = $1.discNumber ?? 1
+                    if disc0 != disc1 { return disc0 < disc1 }
+                    return ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0)
+                }
             )
         }.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
@@ -849,7 +855,13 @@ class MediaLibrary {
                 name: name,
                 artist: firstTrack?.albumArtist ?? firstTrack?.artist,
                 year: firstTrack?.year,
-                tracks: tracks.sorted { ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
+                tracks: tracks.sorted {
+                    // Sort by disc number first, then track number
+                    let disc0 = $0.discNumber ?? 1
+                    let disc1 = $1.discNumber ?? 1
+                    if disc0 != disc1 { return disc0 < disc1 }
+                    return ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0)
+                }
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }

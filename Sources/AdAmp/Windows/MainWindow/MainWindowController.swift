@@ -67,6 +67,7 @@ class MainWindowController: NSWindowController {
     // MARK: - Public Methods
     
     func skinDidChange() {
+        mainView.skinDidChange()  // Update marquee layer's skin image
         mainView.needsDisplay = true
     }
     

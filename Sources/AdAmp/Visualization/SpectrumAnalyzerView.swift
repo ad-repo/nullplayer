@@ -43,6 +43,23 @@ enum SpectrumDecayMode: String, CaseIterable {
     }
 }
 
+/// Normalization mode controlling how spectrum levels are scaled
+enum SpectrumNormalizationMode: String, CaseIterable {
+    case accurate = "Accurate"   // No normalization - true levels, flat pink noise, max dynamic range
+    case adaptive = "Adaptive"   // Light global normalization that adapts to overall loudness
+    case dynamic = "Dynamic"     // Per-region normalization for best visual appeal with music
+    
+    var displayName: String { rawValue }
+    
+    var description: String {
+        switch self {
+        case .accurate: return "True levels (flat pink noise)"
+        case .adaptive: return "Adapts to loudness"
+        case .dynamic: return "Best for music"
+        }
+    }
+}
+
 // MARK: - LED Parameters (for Metal shader)
 
 /// Parameters passed to the Metal shader (must match Metal struct exactly)
@@ -170,6 +187,8 @@ class SpectrumAnalyzerView: NSView {
     // MARK: - Display Sync
     
     private var displayLink: CVDisplayLink?
+    /// Retained context wrapper for safe display link callback - prevents use-after-free
+    private var displayLinkContextRef: Unmanaged<DisplayLinkContext>?
     private var isRendering = false
     
     // Frame pacing semaphore - limits in-flight command buffers to prevent memory buildup
@@ -261,12 +280,113 @@ class SpectrumAnalyzerView: NSView {
         // Load colors from current skin
         updateColorsFromSkin()
         
+        // Observe window occlusion state to stop rendering when not visible
+        // This prevents drawable accumulation when the window is minimized or occluded
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeOcclusionState),
+                                               name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidMiniaturize),
+                                               name: NSWindow.didMiniaturizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidDeminiaturize),
+                                               name: NSWindow.didDeminiaturizeNotification, object: nil)
+        
+        // Observe spectrum settings changes from main menu
+        NotificationCenter.default.addObserver(self, selector: #selector(spectrumSettingsChanged),
+                                               name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+        
+        // Observe audio source changes to reset state
+        NotificationCenter.default.addObserver(self, selector: #selector(handleSourceChange),
+                                               name: NSNotification.Name("ResetSpectrumState"), object: nil)
+        
+        // Observe playback state changes to ensure display link restarts when playback begins
+        NotificationCenter.default.addObserver(self, selector: #selector(handlePlaybackStateChange),
+                                               name: .audioPlaybackStateChanged, object: nil)
+        
         // Start rendering
         startRendering()
     }
     
     deinit {
+        NotificationCenter.default.removeObserver(self)
         stopRendering()
+    }
+    
+    // MARK: - Window Occlusion Handling
+    
+    /// Track if rendering was stopped due to window occlusion (vs idle)
+    private var stoppedDueToOcclusion: Bool = false
+    
+    @objc private func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        
+        if window?.occlusionState.contains(.visible) == true {
+            // Window became visible - restart rendering if we stopped due to occlusion
+            if stoppedDueToOcclusion {
+                stoppedDueToOcclusion = false
+                startRendering()
+            }
+        } else {
+            // Window no longer visible - stop rendering to save resources and prevent drawable accumulation
+            if isRendering {
+                stoppedDueToOcclusion = true
+                stopRendering()
+            }
+        }
+    }
+    
+    @objc private func windowDidMiniaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        if isRendering {
+            stoppedDueToOcclusion = true
+            stopRendering()
+        }
+    }
+    
+    @objc private func windowDidDeminiaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        if stoppedDueToOcclusion {
+            stoppedDueToOcclusion = false
+            startRendering()
+        }
+    }
+    
+    @objc private func spectrumSettingsChanged(_ notification: Notification) {
+        // Reload settings from UserDefaults
+        if let savedQuality = UserDefaults.standard.string(forKey: "spectrumQualityMode"),
+           let mode = SpectrumQualityMode(rawValue: savedQuality) {
+            qualityMode = mode
+        }
+        
+        if let savedDecay = UserDefaults.standard.string(forKey: "spectrumDecayMode"),
+           let mode = SpectrumDecayMode(rawValue: savedDecay) {
+            decayMode = mode
+        }
+        
+        // Note: We no longer reset state arrays on mode switch since pre-allocated
+        // arrays handle all modes and the display naturally transitions. Resetting
+        // was causing frame drops due to long lock hold times.
+        
+        // Just reset idle tracking to ensure rendering continues smoothly
+        dataLock.withLock {
+            idleFrameCount = 0
+            hasClearedAfterIdle = false
+        }
+    }
+    
+    @objc private func handleSourceChange(_ notification: Notification) {
+        // Called when switching between local/streaming sources
+        // Reset all state to ensure clean transition
+        resetState()
+    }
+    
+    @objc private func handlePlaybackStateChange(_ notification: Notification) {
+        // When playback starts, ensure the display link is running
+        // This handles race conditions where the display link stopped but playback resumed
+        guard let userInfo = notification.userInfo,
+              let state = userInfo["state"] as? PlaybackState else { return }
+        
+        if state == .playing && !isRendering {
+            startRendering()
+        }
     }
     
     // MARK: - Metal Setup
@@ -293,6 +413,12 @@ class SpectrumAnalyzerView: NSView {
         metalLayer.framebufferOnly = true
         metalLayer.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
         metalLayer.frame = bounds
+        // CRITICAL: Limit drawable pool size to prevent unbounded memory growth
+        // Without this, CAMetalLayer can create unlimited drawables during continuous rendering
+        metalLayer.maximumDrawableCount = 3
+        // Disable display sync to allow dropping frames when GPU falls behind
+        // This prevents drawable accumulation when rendering can't keep up
+        metalLayer.displaySyncEnabled = false
         layer?.addSublayer(metalLayer)
         
         // Load shaders and create pipeline
@@ -450,8 +576,15 @@ class SpectrumAnalyzerView: NSView {
         
         self.displayLink = displayLink
         
-        // Set output callback
-        let callbackPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        // Create a retained context wrapper with weak view reference
+        // This prevents use-after-free crashes when the view is deallocated
+        // while the display link callback is still running on a background thread
+        let context = DisplayLinkContext(view: self)
+        let retainedContext = Unmanaged.passRetained(context)
+        self.displayLinkContextRef = retainedContext
+        let callbackPointer = retainedContext.toOpaque()
+        
+        // Set output callback with safe context
         CVDisplayLinkSetOutputCallback(displayLink, displayLinkCallback, callbackPointer)
         
         // Start the display link
@@ -465,6 +598,13 @@ class SpectrumAnalyzerView: NSView {
         if let displayLink = displayLink {
             CVDisplayLinkStop(displayLink)
             self.displayLink = nil
+        }
+        
+        // Release the retained context wrapper
+        // The weak reference inside will safely return nil if accessed after this
+        if let contextRef = displayLinkContextRef {
+            contextRef.release()
+            displayLinkContextRef = nil
         }
         
         // Note: In-flight command buffers will complete asynchronously and signal
@@ -502,41 +642,42 @@ class SpectrumAnalyzerView: NSView {
     func render() {
         guard isRendering, let metalLayer = metalLayer else { return }
         
-        // Wait for an available slot in the frame queue (prevents memory buildup)
-        // Use timeout to avoid blocking forever if view is being deallocated
-        guard inFlightSemaphore.wait(timeout: .now() + .milliseconds(16)) == .success else {
-            return  // Skip frame if we're backed up
+        // Non-blocking check for semaphore slot - if GPU is backed up, skip frame immediately
+        // This prevents frame accumulation and keeps the display responsive
+        guard inFlightSemaphore.wait(timeout: .now()) == .success else {
+            return  // Skip frame if we're backed up - don't block
         }
         
-        // Update display spectrum with decay (thread-safe via dataLock)
-        let hadData = updateDisplaySpectrum()
+        // Update display spectrum and get render state in a single lock acquisition
+        // This minimizes lock contention between the render thread and main thread
+        var hadData = false
+        var shouldStopDueToIdle = false
+        var shouldSkipFrame = false
+        var currentMode: SpectrumQualityMode = .winamp
         
-        // Optimization: Skip full render when there's no visible data
-        // Only need to render once to clear the display, then skip until new data arrives
-        // All idle tracking state is protected by dataLock
-        let (shouldStopDueToIdle, shouldSkipFrame) = dataLock.withLock { () -> (Bool, Bool) in
+        dataLock.withLock {
+            // Update display spectrum with decay
+            hadData = updateDisplaySpectrumLocked()
+            
+            // Check idle state
             if !hadData {
                 idleFrameCount += 1
                 
-                // After threshold frames of idle, stop the display link entirely
-                // This saves significant CPU vs just skipping the GPU work
                 if idleFrameCount >= idleFrameThreshold {
                     stoppedDueToIdle = true
-                    return (true, false)  // Stop rendering
+                    shouldStopDueToIdle = true
+                } else if hasClearedAfterIdle {
+                    shouldSkipFrame = true
+                } else {
+                    hasClearedAfterIdle = true
                 }
-                
-                if hasClearedAfterIdle {
-                    // Already cleared, skip this frame entirely
-                    return (false, true)  // Skip frame
-                }
-                // First frame after data stopped - render once to clear, then mark as cleared
-                hasClearedAfterIdle = true
             } else {
-                // Have data - reset the idle tracking
                 idleFrameCount = 0
                 hasClearedAfterIdle = false
             }
-            return (false, false)  // Continue rendering
+            
+            // Get current mode for pipeline selection
+            currentMode = renderQualityMode
         }
         
         if shouldStopDueToIdle {
@@ -556,12 +697,6 @@ class SpectrumAnalyzerView: NSView {
         guard let drawable = metalLayer.nextDrawable() else {
             inFlightSemaphore.signal()  // Release slot since we won't use it
             return
-        }
-        
-        // Select pipeline based on quality mode (use render-safe copy)
-        var currentMode: SpectrumQualityMode = .winamp
-        dataLock.withLock {
-            currentMode = renderQualityMode
         }
         let activePipeline: MTLRenderPipelineState?
         switch currentMode {
@@ -670,57 +805,67 @@ class SpectrumAnalyzerView: NSView {
     }
     
     /// Update display spectrum with decay and return whether there's visible data
+    /// Thread-safe version that acquires the lock
     /// - Returns: true if any bar has visible data (> 0.01), false if all bars are essentially zero
     @discardableResult
     private func updateDisplaySpectrum() -> Bool {
+        return dataLock.withLock {
+            updateDisplaySpectrumLocked()
+        }
+    }
+    
+    /// Update display spectrum with decay - caller MUST hold dataLock
+    /// - Returns: true if any bar has visible data (> 0.01), false if all bars are essentially zero
+    private func updateDisplaySpectrumLocked() -> Bool {
         var hasData = false
         
-        dataLock.withLock {
-            let decay = renderDecayFactor
-            let outputCount = renderBarCount
-            let ultraOutputCount = ultraBarCount
+        let decay = renderDecayFactor
+        let outputCount = renderBarCount
+        let ultraOutputCount = ultraBarCount
+        
+        // Check normalization mode - Accurate uses full height for max dynamic range
+        let isAccurateMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode") == SpectrumNormalizationMode.accurate.rawValue
+        
+        // Scale factor: Accurate mode uses full height, others leave headroom for peaks
+        let displayScale: Float = isAccurateMode ? 1.0 : 0.95
+        
+        // Map raw spectrum to display bars
+        if rawSpectrum.isEmpty {
+            // Decay existing values when no input
+            for i in 0..<displaySpectrum.count {
+                displaySpectrum[i] *= decay
+                if displaySpectrum[i] < 0.01 {
+                    displaySpectrum[i] = 0
+                } else {
+                    hasData = true
+                }
+            }
+            // Also decay Ultra spectrum
+            for i in 0..<ultraDisplaySpectrum.count {
+                ultraDisplaySpectrum[i] *= decay
+                if ultraDisplaySpectrum[i] < 0.01 {
+                    ultraDisplaySpectrum[i] = 0
+                }
+            }
+        } else {
+            // Map input bands to display bars
+            let inputCount = rawSpectrum.count
             
-            // Match main window's spectrum mapping exactly (simple averaging, no processing)
-            // Scale factor leaves visual headroom at top (0.95 = peaks show at 95% height)
-            let displayScale: Float = 0.95
+            // Ensure displaySpectrum has correct size (for Enhanced/Winamp modes)
+            if displaySpectrum.count != outputCount {
+                displaySpectrum = Array(repeating: 0, count: outputCount)
+            }
             
-            // Map raw spectrum to display bars
-            if rawSpectrum.isEmpty {
-                // Decay existing values when no input
-                for i in 0..<displaySpectrum.count {
-                    displaySpectrum[i] *= decay
-                    if displaySpectrum[i] < 0.01 {
-                        displaySpectrum[i] = 0
-                    } else {
-                        hasData = true
-                    }
-                }
-                // Also decay Ultra spectrum
-                for i in 0..<ultraDisplaySpectrum.count {
-                    ultraDisplaySpectrum[i] *= decay
-                    if ultraDisplaySpectrum[i] < 0.01 {
-                        ultraDisplaySpectrum[i] = 0
-                    }
-                }
-            } else {
-                // Map input bands to display bars
-                let inputCount = rawSpectrum.count
-                
-                // Ensure displaySpectrum has correct size (for Enhanced/Winamp modes)
-                if displaySpectrum.count != outputCount {
-                    displaySpectrum = Array(repeating: 0, count: outputCount)
-                }
-                
-                // Ensure ultraDisplaySpectrum has correct size (96 bars for Ultra mode)
-                if ultraDisplaySpectrum.count != ultraOutputCount {
-                    ultraDisplaySpectrum = Array(repeating: 0, count: ultraOutputCount)
-                }
-                
-                // Update standard display spectrum (for Enhanced/Winamp)
-                if inputCount >= outputCount {
-                    let bandsPerBar = inputCount / outputCount
-                    for barIndex in 0..<outputCount {
-                        let start = barIndex * bandsPerBar
+            // Ensure ultraDisplaySpectrum has correct size (96 bars for Ultra mode)
+            if ultraDisplaySpectrum.count != ultraOutputCount {
+                ultraDisplaySpectrum = Array(repeating: 0, count: ultraOutputCount)
+            }
+            
+            // Update standard display spectrum (for Enhanced/Winamp)
+            if inputCount >= outputCount {
+                let bandsPerBar = inputCount / outputCount
+                for barIndex in 0..<outputCount {
+                    let start = barIndex * bandsPerBar
                         let end = min(start + bandsPerBar, inputCount)
                         var sum: Float = 0
                         for i in start..<end {
@@ -774,19 +919,17 @@ class SpectrumAnalyzerView: NSView {
                 }
             }
             
-            // Update LED matrix state based on mode
-            switch renderQualityMode {
-            case .enhanced:
-                updateLEDMatrixState()
-            case .ultra:
-                updateUltraMatrixState()
-            case .winamp:
-                break  // Winamp mode doesn't use LED matrix
-            }
-            
-            hasVisibleData = hasData
+        // Update LED matrix state based on mode
+        switch renderQualityMode {
+        case .enhanced:
+            updateLEDMatrixState()
+        case .ultra:
+            updateUltraMatrixState()
+        case .winamp:
+            break  // Winamp mode doesn't use LED matrix
         }
         
+        hasVisibleData = hasData
         return hasData
     }
     
@@ -799,7 +942,8 @@ class SpectrumAnalyzerView: NSView {
         
         let peakDecayRate: Float = 0.012      // How fast peak falls (per frame)
         let peakHoldFrames: Float = 0.985     // Slight delay before peak starts falling
-        let cellFadeRate: Float = 0.025       // How fast cells fade out (slower = longer trails)
+        let cellFadeRate: Float = 0.03        // How fast cells fade out
+        let cellAttackRate: Float = 0.4       // How fast cells brighten (smooth attack prevents sparkle)
         
         for col in 0..<min(colCount, displaySpectrum.count) {
             let currentLevel = displaySpectrum[col]
@@ -814,14 +958,17 @@ class SpectrumAnalyzerView: NSView {
                 peakHoldPositions[col] = max(0, peakHoldPositions[col] * peakHoldFrames - peakDecayRate)
             }
             
-            // Update per-cell brightness
+            // Update per-cell brightness with smooth transitions (prevents sparkle/shimmer)
             for row in 0..<ledRowCount {
-                if row < currentRow {
-                    // Cell is currently lit - set to full brightness
-                    cellBrightness[col][row] = 1.0
+                let targetBrightness: Float = row < currentRow ? 1.0 : 0.0
+                let currentBrightness = cellBrightness[col][row]
+                
+                if targetBrightness > currentBrightness {
+                    // Cell should be lit - smoothly increase brightness (prevents sparkle on threshold cells)
+                    cellBrightness[col][row] = min(1.0, currentBrightness + cellAttackRate)
                 } else {
-                    // Cell is not lit - fade out
-                    cellBrightness[col][row] = max(0, cellBrightness[col][row] - cellFadeRate)
+                    // Cell should be dark - fade out
+                    cellBrightness[col][row] = max(0, currentBrightness - cellFadeRate)
                 }
             }
         }
@@ -1062,26 +1209,75 @@ class SpectrumAnalyzerView: NSView {
     
     // MARK: - Public API
     
+    /// Reset all spectrum state - call when switching audio sources
+    func resetState() {
+        dataLock.withLock {
+            // Clear raw spectrum
+            rawSpectrum = []
+            
+            // Clear display spectrums
+            for i in 0..<displaySpectrum.count {
+                displaySpectrum[i] = 0
+            }
+            for i in 0..<ultraDisplaySpectrum.count {
+                ultraDisplaySpectrum[i] = 0
+            }
+            
+            // Reset peak positions
+            for i in 0..<peakHoldPositions.count {
+                peakHoldPositions[i] = 0
+            }
+            for i in 0..<ultraPeakPositions.count {
+                ultraPeakPositions[i] = 0
+            }
+            
+            // Reset cell brightness
+            for col in 0..<cellBrightness.count {
+                for row in 0..<cellBrightness[col].count {
+                    cellBrightness[col][row] = 0
+                }
+            }
+            for col in 0..<ultraCellBrightness.count {
+                for row in 0..<ultraCellBrightness[col].count {
+                    ultraCellBrightness[col][row] = 0
+                }
+            }
+            
+            // Reset peak velocities
+            for i in 0..<peakVelocities.count {
+                peakVelocities[i] = 0
+            }
+            
+            // Reset idle tracking
+            idleFrameCount = 0
+            hasClearedAfterIdle = false
+            stoppedDueToIdle = false
+        }
+        NSLog("SpectrumAnalyzerView: State reset")
+    }
+    
     /// Update spectrum data from audio engine (called from audio thread)
     func updateSpectrum(_ levels: [Float]) {
         // Check if we have any non-zero data
         let hasData = levels.contains { $0 > 0.01 }
         
         // Update raw spectrum and check/reset idle state atomically
-        let shouldRestart = dataLock.withLock { () -> Bool in
+        dataLock.withLock {
             rawSpectrum = levels
             
-            // If display link was stopped due to idle and we now have data, restart it
-            if hasData && stoppedDueToIdle {
+            // Reset idle tracking if we have data
+            if hasData {
                 stoppedDueToIdle = false
                 idleFrameCount = 0
                 hasClearedAfterIdle = false
-                return true
             }
-            return false
         }
         
-        if shouldRestart {
+        // Check if we need to restart rendering (must check isRendering outside lock
+        // to avoid race conditions with async stopRendering calls)
+        // This handles: idle timeout, window occlusion recovery, and any other case
+        // where the display link stopped but we now have data to display
+        if hasData && !isRendering {
             DispatchQueue.main.async { [weak self] in
                 self?.startRendering()
             }
@@ -1152,6 +1348,17 @@ class SpectrumAnalyzerView: NSView {
 
 // MARK: - Display Link Callback
 
+/// Weak wrapper for safe display link callback - prevents use-after-free crashes
+/// when the view is deallocated while the display link callback is still running.
+/// The display link callback runs on a background thread and CVDisplayLinkStop()
+/// is not synchronous, creating a race condition with deallocation.
+private class DisplayLinkContext {
+    weak var view: SpectrumAnalyzerView?
+    init(view: SpectrumAnalyzerView) {
+        self.view = view
+    }
+}
+
 private func displayLinkCallback(
     displayLink: CVDisplayLink,
     inNow: UnsafePointer<CVTimeStamp>,
@@ -1162,7 +1369,15 @@ private func displayLinkCallback(
 ) -> CVReturn {
     guard let context = displayLinkContext else { return kCVReturnError }
     
-    let view = Unmanaged<SpectrumAnalyzerView>.fromOpaque(context).takeUnretainedValue()
+    // Use retained wrapper with weak view reference to prevent use-after-free
+    let wrapper = Unmanaged<DisplayLinkContext>.fromOpaque(context).takeUnretainedValue()
+    
+    // Safely check if view still exists before rendering
+    guard let view = wrapper.view else {
+        // View was deallocated - this is expected during shutdown
+        return kCVReturnSuccess
+    }
+    
     view.render()
     
     return kCVReturnSuccess

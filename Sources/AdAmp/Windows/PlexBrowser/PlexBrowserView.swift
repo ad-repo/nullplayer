@@ -8829,8 +8829,13 @@ class PlexBrowserView: NSView {
                     ))
                     
                     if expandedAlbums.contains(album.id), let tracks = albumTracks[album.id] {
-                        // Tracks sorted by track number (Plex uses 'index' for track number)
-                        let sortedTracks = tracks.sorted { ($0.index ?? 0) < ($1.index ?? 0) }
+                        // Tracks sorted by disc number then track number (Plex uses 'parentIndex' for disc, 'index' for track)
+                        let sortedTracks = tracks.sorted {
+                            let disc0 = $0.parentIndex ?? 1
+                            let disc1 = $1.parentIndex ?? 1
+                            if disc0 != disc1 { return disc0 < disc1 }
+                            return ($0.index ?? 0) < ($1.index ?? 0)
+                        }
                         for track in sortedTracks {
                             displayItems.append(PlexDisplayItem(
                                 id: track.id,
@@ -9049,7 +9054,14 @@ class PlexBrowserView: NSView {
                         
                         // Show tracks if album is expanded
                         if albumExpanded, let tracks = albumTracks[album.id] {
-                            for track in tracks {
+                            // Sort by disc number then track number
+                            let sortedTracks = tracks.sorted {
+                                let disc0 = $0.parentIndex ?? 1
+                                let disc1 = $1.parentIndex ?? 1
+                                if disc0 != disc1 { return disc0 < disc1 }
+                                return ($0.index ?? 0) < ($1.index ?? 0)
+                            }
+                            for track in sortedTracks {
                                 displayItems.append(PlexDisplayItem(
                                     id: track.id,
                                     title: track.title,
@@ -9097,7 +9109,14 @@ class PlexBrowserView: NSView {
                 
                 // Show tracks if album is expanded
                 if isExpanded, let tracks = albumTracks[album.id] {
-                    for track in tracks {
+                    // Sort by disc number then track number
+                    let sortedTracks = tracks.sorted {
+                        let disc0 = $0.parentIndex ?? 1
+                        let disc1 = $1.parentIndex ?? 1
+                        if disc0 != disc1 { return disc0 < disc1 }
+                        return ($0.index ?? 0) < ($1.index ?? 0)
+                    }
+                    for track in sortedTracks {
                         displayItems.append(PlexDisplayItem(
                             id: track.id,
                             title: track.title,
@@ -9660,7 +9679,14 @@ class PlexBrowserView: NSView {
                         ))
                         
                         if albumExpanded, let songs = subsonicAlbumSongs[album.id] {
-                            for song in songs {
+                            // Sort by disc number then track number
+                            let sortedSongs = songs.sorted {
+                                let disc0 = $0.discNumber ?? 1
+                                let disc1 = $1.discNumber ?? 1
+                                if disc0 != disc1 { return disc0 < disc1 }
+                                return ($0.track ?? 0) < ($1.track ?? 0)
+                            }
+                            for song in sortedSongs {
                                 displayItems.append(PlexDisplayItem(
                                     id: song.id,
                                     title: song.title,
@@ -9836,8 +9862,13 @@ class PlexBrowserView: NSView {
                     ))
                     
                     if albumExpanded {
-                        // Tracks within album sorted by track number
-                        let sortedTracks = album.tracks.sorted { ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
+                        // Tracks within album sorted by disc number then track number
+                        let sortedTracks = album.tracks.sorted {
+                            let disc0 = $0.discNumber ?? 1
+                            let disc1 = $1.discNumber ?? 1
+                            if disc0 != disc1 { return disc0 < disc1 }
+                            return ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0)
+                        }
                         for track in sortedTracks {
                             displayItems.append(PlexDisplayItem(
                                 id: track.id.uuidString,

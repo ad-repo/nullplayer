@@ -399,6 +399,21 @@ class SpectrumView: NSView {
         decayMenuItem.submenu = decayMenu
         menu.addItem(decayMenuItem)
         
+        // Normalization Mode submenu
+        let normMenu = NSMenu()
+        let currentNormMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
+            .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
+        for mode in SpectrumNormalizationMode.allCases {
+            let item = NSMenuItem(title: "\(mode.displayName) - \(mode.description)", action: #selector(setNormalizationMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode
+            item.state = (currentNormMode == mode) ? .on : .off
+            normMenu.addItem(item)
+        }
+        let normMenuItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
+        normMenuItem.submenu = normMenu
+        menu.addItem(normMenuItem)
+        
         menu.addItem(NSMenuItem.separator())
         
         // Fullscreen toggle
@@ -433,6 +448,11 @@ class SpectrumView: NSView {
     @objc private func setDecayMode(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumDecayMode else { return }
         spectrumAnalyzerView?.decayMode = mode
+    }
+    
+    @objc private func setNormalizationMode(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
     }
     
     @objc private func closeWindow(_ sender: Any?) {

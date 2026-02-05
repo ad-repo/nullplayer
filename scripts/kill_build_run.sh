@@ -24,23 +24,24 @@ while pgrep -x AdAmp > /dev/null 2>&1; do
     sleep 0.5
 done
 
-echo "🔨 Building AdAmp..."
-swift build
+echo "🔨 Building AdAmp (release mode)..."
+swift build -c release
+
+# Determine build directory based on architecture
+BUILD_ARCH=$(uname -m)
+if [[ "$BUILD_ARCH" == "x86_64" ]]; then
+    BUILD_DIR=".build/x86_64-apple-macosx/release"
+else
+    BUILD_DIR=".build/arm64-apple-macosx/release"
+fi
 
 # Copy projectM library to build frameworks directory
 echo "📦 Copying projectM libraries..."
-BUILD_ARCH=$(uname -m)
-if [[ "$BUILD_ARCH" == "x86_64" ]]; then
-    BUILD_DIR=".build/x86_64-apple-macosx"
-else
-    BUILD_DIR=".build/arm64-apple-macosx"
-fi
-
-mkdir -p "$BUILD_DIR/Frameworks"
-cp -f Frameworks/libprojectM-4.dylib "$BUILD_DIR/Frameworks/" 2>/dev/null || true
-cp -f Frameworks/libprojectM-4.4.dylib "$BUILD_DIR/Frameworks/" 2>/dev/null || true
+mkdir -p "${BUILD_DIR%/release}/Frameworks"
+cp -f Frameworks/libprojectM-4.dylib "${BUILD_DIR%/release}/Frameworks/" 2>/dev/null || true
+cp -f Frameworks/libprojectM-4.4.dylib "${BUILD_DIR%/release}/Frameworks/" 2>/dev/null || true
 
 echo "🚀 Launching AdAmp..."
-.build/debug/AdAmp &
+"$BUILD_DIR/AdAmp" &
 
 echo "✅ AdAmp is running!"

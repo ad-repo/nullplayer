@@ -7,6 +7,15 @@ import os
 // Silence OpenGL deprecation warnings (macOS still supports OpenGL 4.1)
 // We use OpenGL for visualization as Metal doesn't have the same ecosystem of presets
 
+/// Weak wrapper for safe display link callback - prevents use-after-free crashes
+/// when the view is deallocated while the display link callback is still running.
+private class VisualizationDisplayLinkContext {
+    weak var view: VisualizationGLView?
+    init(view: VisualizationGLView) {
+        self.view = view
+    }
+}
+
 /// OpenGL view for real-time audio visualization
 /// Uses CVDisplayLink for 60fps updates
 /// Supports projectM for Milkdrop preset rendering with fallback to built-in visualizations
@@ -16,6 +25,9 @@ class VisualizationGLView: NSOpenGLView {
 
     /// CVDisplayLink for vsync'd rendering
     private var displayLink: CVDisplayLink?
+    
+    /// Retained context wrapper for safe display link callback - prevents use-after-free
+    private var displayLinkContextRef: Unmanaged<VisualizationDisplayLinkContext>?
 
     /// Whether rendering is currently active
     private(set) var isRendering = false
@@ -272,14 +284,29 @@ class VisualizationGLView: NSOpenGLView {
             return
         }
         
-        // Set the callback
+        // Create a retained context wrapper with weak view reference
+        // This prevents use-after-free crashes when the view is deallocated
+        // while the display link callback is still running on a background thread
+        let context = VisualizationDisplayLinkContext(view: self)
+        let retainedContext = Unmanaged.passRetained(context)
+        self.displayLinkContextRef = retainedContext
+        
+        // Set the callback with safe context
         let callback: CVDisplayLinkOutputCallback = { displayLink, inNow, inOutputTime, flagsIn, flagsOut, context in
-            let view = Unmanaged<VisualizationGLView>.fromOpaque(context!).takeUnretainedValue()
+            guard let context = context else { return kCVReturnError }
+            let wrapper = Unmanaged<VisualizationDisplayLinkContext>.fromOpaque(context).takeUnretainedValue()
+            
+            // Safely check if view still exists before rendering
+            guard let view = wrapper.view else {
+                // View was deallocated - this is expected during shutdown
+                return kCVReturnSuccess
+            }
+            
             view.renderFrame()
             return kCVReturnSuccess
         }
         
-        CVDisplayLinkSetOutputCallback(displayLink, callback, Unmanaged.passUnretained(self).toOpaque())
+        CVDisplayLinkSetOutputCallback(displayLink, callback, retainedContext.toOpaque())
         
         // Set the display link to the display of the OpenGL context
         if let cglContext = openGLContext?.cglContextObj,
@@ -304,9 +331,17 @@ class VisualizationGLView: NSOpenGLView {
         CVDisplayLinkStop(displayLink)
         isRendering = false
         
-        // Wait briefly to ensure any in-flight render callback completes
-        // CVDisplayLinkStop doesn't block - callback may still be running
-        Thread.sleep(forTimeInterval: 0.05)
+        // Release the retained context wrapper
+        // The weak reference inside will safely return nil if accessed after this
+        if let contextRef = displayLinkContextRef {
+            contextRef.release()
+            displayLinkContextRef = nil
+        }
+        
+        // Brief wait to let any in-flight callback complete (for OpenGL context safety)
+        // The weak reference pattern handles the crash safety, but we still want to
+        // avoid accessing OpenGL context from callback after we've cleaned up
+        Thread.sleep(forTimeInterval: 0.02)
         
         NSLog("VisualizationGLView: Stopped rendering")
     }

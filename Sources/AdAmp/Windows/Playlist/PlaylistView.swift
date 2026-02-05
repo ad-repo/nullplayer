@@ -114,6 +114,10 @@ class PlaylistView: NSView {
         // Observe playback state changes to restart timer when needed
         NotificationCenter.default.addObserver(self, selector: #selector(playbackStateDidChange),
                                                name: .audioPlaybackStateChanged, object: nil)
+        
+        // Observe track changes to update selection highlight
+        NotificationCenter.default.addObserver(self, selector: #selector(handleTrackDidChange),
+                                               name: .audioTrackDidChange, object: nil)
     }
     
     override func viewDidMoveToWindow() {
@@ -138,6 +142,23 @@ class PlaylistView: NSView {
             updateCurrentTrackTextWidth()
             needsDisplay = true
         }
+    }
+    
+    /// Update selection to follow the currently playing track
+    @objc private func handleTrackDidChange(_ notification: Notification) {
+        let engine = WindowManager.shared.audioEngine
+        let currentIndex = engine.currentIndex
+        
+        // Update selection to highlight the current playing track
+        guard currentIndex >= 0 && currentIndex < engine.playlist.count else { return }
+        
+        selectedIndices = [currentIndex]
+        selectionAnchor = currentIndex
+        
+        // Scroll to keep the current track visible
+        scrollToSelection()
+        
+        needsDisplay = true
     }
     
     // MARK: - Display Timer Management
@@ -412,12 +433,6 @@ class PlaylistView: NSView {
             }
             
             let itemRect = NSRect(x: listRect.minX, y: y, width: listRect.width, height: itemHeight)
-            
-            // Draw selection background
-            if selectedIndices.contains(index) {
-                colors.selectedBackground.setFill()
-                context.fill(itemRect)
-            }
             
             // Draw track info
             let track = tracks[index]
