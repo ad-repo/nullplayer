@@ -187,6 +187,8 @@ class SpectrumAnalyzerView: NSView {
     // MARK: - Display Sync
     
     private var displayLink: CVDisplayLink?
+    /// Retained context wrapper for safe display link callback - prevents use-after-free
+    private var displayLinkContextRef: Unmanaged<DisplayLinkContext>?
     private var isRendering = false
     
     // Frame pacing semaphore - limits in-flight command buffers to prevent memory buildup
@@ -295,6 +297,10 @@ class SpectrumAnalyzerView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(handleSourceChange),
                                                name: NSNotification.Name("ResetSpectrumState"), object: nil)
         
+        // Observe playback state changes to ensure display link restarts when playback begins
+        NotificationCenter.default.addObserver(self, selector: #selector(handlePlaybackStateChange),
+                                               name: .audioPlaybackStateChanged, object: nil)
+        
         // Start rendering
         startRendering()
     }
@@ -370,6 +376,17 @@ class SpectrumAnalyzerView: NSView {
         // Called when switching between local/streaming sources
         // Reset all state to ensure clean transition
         resetState()
+    }
+    
+    @objc private func handlePlaybackStateChange(_ notification: Notification) {
+        // When playback starts, ensure the display link is running
+        // This handles race conditions where the display link stopped but playback resumed
+        guard let userInfo = notification.userInfo,
+              let state = userInfo["state"] as? PlaybackState else { return }
+        
+        if state == .playing && !isRendering {
+            startRendering()
+        }
     }
     
     // MARK: - Metal Setup
@@ -559,8 +576,15 @@ class SpectrumAnalyzerView: NSView {
         
         self.displayLink = displayLink
         
-        // Set output callback
-        let callbackPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        // Create a retained context wrapper with weak view reference
+        // This prevents use-after-free crashes when the view is deallocated
+        // while the display link callback is still running on a background thread
+        let context = DisplayLinkContext(view: self)
+        let retainedContext = Unmanaged.passRetained(context)
+        self.displayLinkContextRef = retainedContext
+        let callbackPointer = retainedContext.toOpaque()
+        
+        // Set output callback with safe context
         CVDisplayLinkSetOutputCallback(displayLink, displayLinkCallback, callbackPointer)
         
         // Start the display link
@@ -574,6 +598,13 @@ class SpectrumAnalyzerView: NSView {
         if let displayLink = displayLink {
             CVDisplayLinkStop(displayLink)
             self.displayLink = nil
+        }
+        
+        // Release the retained context wrapper
+        // The weak reference inside will safely return nil if accessed after this
+        if let contextRef = displayLinkContextRef {
+            contextRef.release()
+            displayLinkContextRef = nil
         }
         
         // Note: In-flight command buffers will complete asynchronously and signal
@@ -1231,20 +1262,22 @@ class SpectrumAnalyzerView: NSView {
         let hasData = levels.contains { $0 > 0.01 }
         
         // Update raw spectrum and check/reset idle state atomically
-        let shouldRestart = dataLock.withLock { () -> Bool in
+        dataLock.withLock {
             rawSpectrum = levels
             
-            // If display link was stopped due to idle and we now have data, restart it
-            if hasData && stoppedDueToIdle {
+            // Reset idle tracking if we have data
+            if hasData {
                 stoppedDueToIdle = false
                 idleFrameCount = 0
                 hasClearedAfterIdle = false
-                return true
             }
-            return false
         }
         
-        if shouldRestart {
+        // Check if we need to restart rendering (must check isRendering outside lock
+        // to avoid race conditions with async stopRendering calls)
+        // This handles: idle timeout, window occlusion recovery, and any other case
+        // where the display link stopped but we now have data to display
+        if hasData && !isRendering {
             DispatchQueue.main.async { [weak self] in
                 self?.startRendering()
             }
@@ -1315,6 +1348,17 @@ class SpectrumAnalyzerView: NSView {
 
 // MARK: - Display Link Callback
 
+/// Weak wrapper for safe display link callback - prevents use-after-free crashes
+/// when the view is deallocated while the display link callback is still running.
+/// The display link callback runs on a background thread and CVDisplayLinkStop()
+/// is not synchronous, creating a race condition with deallocation.
+private class DisplayLinkContext {
+    weak var view: SpectrumAnalyzerView?
+    init(view: SpectrumAnalyzerView) {
+        self.view = view
+    }
+}
+
 private func displayLinkCallback(
     displayLink: CVDisplayLink,
     inNow: UnsafePointer<CVTimeStamp>,
@@ -1325,7 +1369,15 @@ private func displayLinkCallback(
 ) -> CVReturn {
     guard let context = displayLinkContext else { return kCVReturnError }
     
-    let view = Unmanaged<SpectrumAnalyzerView>.fromOpaque(context).takeUnretainedValue()
+    // Use retained wrapper with weak view reference to prevent use-after-free
+    let wrapper = Unmanaged<DisplayLinkContext>.fromOpaque(context).takeUnretainedValue()
+    
+    // Safely check if view still exists before rendering
+    guard let view = wrapper.view else {
+        // View was deallocated - this is expected during shutdown
+        return kCVReturnSuccess
+    }
+    
     view.render()
     
     return kCVReturnSuccess
