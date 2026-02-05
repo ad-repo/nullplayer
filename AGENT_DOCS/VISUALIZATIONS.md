@@ -235,7 +235,7 @@ The Spectrum Analyzer window participates in the docking system:
 | Mode | Description |
 |------|-------------|
 | **Winamp** | Discrete color bands from skin's 24-color palette with floating peak indicators, 3D bar shading, and band gaps for an authentic segmented LED look (default) |
-| **Enhanced** | Rainbow LED matrix with floating peaks, per-cell fade trails, and rounded corners |
+| **Enhanced** | Rainbow LED matrix with gravity-bouncing peaks, warm amber fade trails, 3D inner glow cells, and anti-aliased rounded corners |
 | **Flame** | GPU fire simulation with audio-reactive flame tongues (see below) |
 
 ### Winamp Mode Details

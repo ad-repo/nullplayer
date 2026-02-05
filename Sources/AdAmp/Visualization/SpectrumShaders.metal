@@ -22,7 +22,7 @@ struct LEDParams {
     float cellSpacing;      // Gap between cells (offset 24)
     int qualityMode;        // 0 = winamp, 1 = enhanced (offset 28)
     float maxHeight;        // Maximum bar height for winamp mode (offset 32)
-    float padding;          // Alignment padding (offset 36)
+    float time;             // Animation time in seconds (offset 36)
 };
 
 /// Vertex shader output for LED matrix mode
@@ -33,6 +33,8 @@ struct LEDVertexOut {
     int row;                // Row index
     float brightness;       // Cell brightness (0-1)
     float isPeak;           // 1.0 if this is the peak cell
+    float normalizedColumn; // Column position 0-1 for color gradient
+    float normalizedRow;    // Row position 0-1 for height effects
 };
 
 /// Vertex shader output for Winamp bar mode
@@ -134,6 +136,8 @@ vertex LEDVertexOut led_matrix_vertex(
     out.row = row;
     out.brightness = brightness;
     out.isPeak = isPeak;
+    out.normalizedColumn = float(column) / float(max(params.columnCount - 1, 1));
+    out.normalizedRow = float(row) / float(max(params.rowCount - 1, 1));
     
     return out;
 }
@@ -147,33 +151,68 @@ fragment float4 led_matrix_fragment(
         discard_fragment();
     }
     
-    // Rainbow color based on column position
-    float hue = float(in.column) / float(params.columnCount);
-    float3 baseColor = hsv2rgb(hue, 1.0, 1.0);
-    
-    // Apply brightness
-    float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
-    float3 color = baseColor * displayBrightness;
-    
-    // Peak cells get white tint for extra visibility
-    if (in.isPeak > 0.5) {
-        color = min(float3(1.0), baseColor + 0.4);
-    }
-    
-    // 3D highlight effect on upper portion of cell
-    float highlight = smoothstep(0.5, 1.0, in.uv.y) * 0.3 * displayBrightness;
-    color += highlight;
-    
-    // Rounded corner effect using UV distance from center
+    // === ROUNDED RECTANGLE with anti-aliased edges ===
     float2 centered = in.uv * 2.0 - 1.0;  // -1 to 1
-    float cornerRadius = 0.3;
+    float cornerRadius = 0.32;
     float2 q = abs(centered) - (1.0 - cornerRadius);
-    float dist = length(max(q, 0.0));
-    if (dist > cornerRadius * 0.5) {
-        discard_fragment();  // Outside rounded corner
+    float sdfDist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+    float edgeSmooth = 0.06;
+    float shape = 1.0 - smoothstep(cornerRadius - edgeSmooth, cornerRadius + edgeSmooth, sdfDist);
+    if (shape < 0.01) {
+        discard_fragment();
     }
     
-    return float4(color, 1.0);
+    // === BASE COLOR - rainbow hue from column position ===
+    float hue = in.normalizedColumn;
+    float3 baseColor = hsv2rgb(hue, 1.0, 1.0);
+    float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
+    
+    // === WARM FADE TRAIL ===
+    // As cells dim, they shift toward warm amber before going dark
+    // Creates gorgeous "cooling ember" heat trails on decay
+    float3 warmTint = float3(1.0, 0.35, 0.05);  // Deep amber
+    float warmBlend = pow(1.0 - displayBrightness, 1.5) * 0.7;  // Stronger shift as it dims
+    float3 fadedColor = mix(baseColor, warmTint, warmBlend);
+    float3 color = fadedColor * displayBrightness;
+    
+    // === INNER LED GLOW (3D depth) ===
+    // Brighter in center, softer toward edges - each cell looks like a real LED
+    float radialDist = length(centered);
+    float innerGlow = 1.0 - smoothstep(0.0, 0.9, radialDist) * 0.35;
+    color *= innerGlow;
+    
+    // === SPECULAR HIGHLIGHT ===
+    // Small bright reflection spot in upper portion of each cell
+    float2 specPos = in.uv - float2(0.35, 0.72);
+    float specular = exp(-dot(specPos, specPos) * 16.0) * 0.4 * displayBrightness;
+    color += float3(specular);
+    
+    // === HEIGHT-BASED INTENSITY ===
+    // Higher rows glow slightly brighter for visual depth
+    float heightBoost = mix(0.82, 1.12, in.normalizedRow);
+    color *= heightBoost;
+    
+    // === PEAK CELL RENDERING ===
+    if (in.isPeak > 0.5) {
+        // Peaks: white-tinted, extra bright, with glow
+        float3 peakColor = mix(baseColor, float3(1.0), 0.55);
+        peakColor *= innerGlow;
+        peakColor += float3(specular * 1.8);
+        // Subtle pulse on peaks
+        float pulse = 1.0 + sin(params.time * 8.0) * 0.08;
+        color = peakColor * 1.25 * pulse;
+    }
+    
+    // === DIM CELL AMBIENT ===
+    // Very dim cells still show a faint hint of their color
+    // Prevents harsh on/off transitions
+    if (displayBrightness > 0.01 && displayBrightness < 0.15) {
+        color = max(color, baseColor * 0.04);
+    }
+    
+    color = min(color, float3(1.0));
+    
+    return float4(color, shape);
 }
 
 // MARK: - Winamp Bar Shaders (Classic Mode)

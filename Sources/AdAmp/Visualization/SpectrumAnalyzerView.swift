@@ -124,7 +124,7 @@ struct LEDParams {
     var cellSpacing: Float          // 4 bytes (offset 24)
     var qualityMode: Int32          // 4 bytes (offset 28)
     var maxHeight: Float            // 4 bytes (offset 32)
-    var padding: Float = 0          // 4 bytes (offset 36) - alignment to 40
+    var time: Float = 0             // 4 bytes (offset 36) - animation time in seconds
 }
 
 /// Parameters for Ultra mode shader (must match Metal UltraParams exactly)
@@ -534,6 +534,14 @@ class SpectrumAnalyzerView: NSView {
                 descriptor.vertexFunction = vertexFunc
                 descriptor.fragmentFunction = fragmentFunc
                 descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+                // Enable blending for anti-aliased rounded corners and glow effects
+                descriptor.colorAttachments[0].isBlendingEnabled = true
+                descriptor.colorAttachments[0].rgbBlendOperation = .add
+                descriptor.colorAttachments[0].alphaBlendOperation = .add
+                descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+                descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+                descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+                descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
                 ledPipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
             }
             
@@ -545,6 +553,14 @@ class SpectrumAnalyzerView: NSView {
                 descriptor.vertexFunction = vertexFunc
                 descriptor.fragmentFunction = fragmentFunc
                 descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+                // Enable blending for anti-aliased peak indicators
+                descriptor.colorAttachments[0].isBlendingEnabled = true
+                descriptor.colorAttachments[0].rgbBlendOperation = .add
+                descriptor.colorAttachments[0].alphaBlendOperation = .add
+                descriptor.colorAttachments[0].sourceRGBBlendFactor = .sourceAlpha
+                descriptor.colorAttachments[0].destinationRGBBlendFactor = .oneMinusSourceAlpha
+                descriptor.colorAttachments[0].sourceAlphaBlendFactor = .one
+                descriptor.colorAttachments[0].destinationAlphaBlendFactor = .oneMinusSourceAlpha
                 barPipelineState = try device.makeRenderPipelineState(descriptor: descriptor)
             }
             
@@ -1153,40 +1169,70 @@ class SpectrumAnalyzerView: NSView {
     
     /// Updates peak hold positions and per-cell brightness for LED matrix mode
     /// Note: Only called when qualityMode == .enhanced
+    /// Features: gravity-based bouncing peaks, two-phase warm-glow fade trails
     private func updateLEDMatrixState() {
         let colCount = renderBarCount
         
+        // Increment animation time for shader effects
+        animationTime += 1.0 / 60.0
+        
         // Arrays are pre-allocated in commonInit - no resizing needed
         
-        let peakDecayRate: Float = 0.012      // How fast peak falls (per frame)
-        let peakHoldFrames: Float = 0.985     // Slight delay before peak starts falling
-        let cellFadeRate: Float = 0.03        // How fast cells fade out
-        let cellAttackRate: Float = 0.4       // How fast cells brighten (smooth attack prevents sparkle)
+        // Physics constants for gravity-based peak animation
+        let gravity: Float = 0.005            // Acceleration downward per frame
+        let bounceCoeff: Float = 0.25         // Energy retained on bounce
+        let minBounceVelocity: Float = 0.008  // Minimum velocity to trigger bounce
+        
+        // Two-phase cell brightness transition for warm glow trail effect
+        let cellAttackRate: Float = 0.5       // Fast attack for punchy response
+        let cellFadeRateSlow: Float = 0.018   // Phase 1: slow fade (warm glow lingers)
+        let cellFadeRateFast: Float = 0.055   // Phase 2: faster fade to dark
+        let warmGlowThreshold: Float = 0.45   // Below this brightness, fade faster
         
         for col in 0..<min(colCount, displaySpectrum.count) {
             let currentLevel = displaySpectrum[col]
             let currentRow = Int(currentLevel * Float(ledRowCount))
             
-            // Update peak hold position
+            // Physics-based peak animation (gravity + bounce)
             if currentLevel > peakHoldPositions[col] {
-                // New peak - jump to current level
+                // New peak - jump to current level and reset velocity
                 peakHoldPositions[col] = currentLevel
+                peakVelocities[col] = 0
             } else {
-                // Decay peak slowly
-                peakHoldPositions[col] = max(0, peakHoldPositions[col] * peakHoldFrames - peakDecayRate)
+                // Apply gravity (acceleration downward)
+                peakVelocities[col] -= gravity
+                peakHoldPositions[col] += peakVelocities[col]
+                
+                // Bounce off bar level
+                if peakHoldPositions[col] < currentLevel {
+                    peakHoldPositions[col] = currentLevel
+                    if abs(peakVelocities[col]) > minBounceVelocity {
+                        peakVelocities[col] = -peakVelocities[col] * bounceCoeff
+                    } else {
+                        peakVelocities[col] = 0
+                    }
+                }
+                
+                // Clamp to valid range
+                peakHoldPositions[col] = max(0, min(1.0, peakHoldPositions[col]))
             }
             
-            // Update per-cell brightness with smooth transitions (prevents sparkle/shimmer)
+            // Two-phase cell fade for warm glow trail effect
+            // Phase 1 (bright → warmGlowThreshold): slow fade, cells linger with warm glow
+            // Phase 2 (warmGlowThreshold → 0): faster fade, cells quickly go dark
             for row in 0..<ledRowCount {
                 let targetBrightness: Float = row < currentRow ? 1.0 : 0.0
-                let currentBrightness = cellBrightness[col][row]
+                let current = cellBrightness[col][row]
                 
-                if targetBrightness > currentBrightness {
-                    // Cell should be lit - smoothly increase brightness (prevents sparkle on threshold cells)
-                    cellBrightness[col][row] = min(1.0, currentBrightness + cellAttackRate)
+                if targetBrightness > current {
+                    // Fast attack - cells light up quickly for punchy response
+                    cellBrightness[col][row] = min(1.0, current + cellAttackRate)
+                } else if current > warmGlowThreshold {
+                    // Phase 1: slow fade - warm glow lingers beautifully
+                    cellBrightness[col][row] = max(0, current - cellFadeRateSlow)
                 } else {
-                    // Cell should be dark - fade out
-                    cellBrightness[col][row] = max(0, currentBrightness - cellFadeRate)
+                    // Phase 2: faster fade to dark
+                    cellBrightness[col][row] = max(0, current - cellFadeRateFast)
                 }
             }
         }
@@ -1348,7 +1394,8 @@ class SpectrumAnalyzerView: NSView {
                     cellHeight: cellHeight,
                     cellSpacing: cellSpacing,
                     qualityMode: 1,
-                    maxHeight: scaledHeight
+                    maxHeight: scaledHeight,
+                    time: localAnimationTime
                 )
             }
             
