@@ -54,7 +54,7 @@ Download the latest DMG from [Releases](https://github.com/ad-repo/adamp/release
 Follow [r/AdAmp](https://www.reddit.com/r/AdAmp/) for release notifications. Report bugs on [GitHub Issues](https://github.com/ad-repo/adamp/issues) or the subreddit.
 
 
-### Fixing "App is damaged" Error
+### Fixing "App is damaged" or "macOS cannot verify that this app is free from malware" Error
 
 Since the app is not code-signed, macOS Gatekeeper will block it. To fix this:
 
