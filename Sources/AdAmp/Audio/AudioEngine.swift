@@ -263,14 +263,8 @@ class AudioEngine {
     /// Smoothed global reference level (prevents pulsing from max() jumps)
     private var spectrumGlobalReferenceLevel: Float = 0.0
     
-    /// Current spectrum normalization mode (read from UserDefaults)
-    private var spectrumNormalizationMode: SpectrumNormalizationMode {
-        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
-           let mode = SpectrumNormalizationMode(rawValue: saved) {
-            return mode
-        }
-        return .accurate  // Default to accurate for flat pink noise
-    }
+    /// Current spectrum normalization mode (cached from UserDefaults, updated via notification)
+    private var spectrumNormalizationMode: SpectrumNormalizationMode = .accurate
     
     /// Raw PCM audio data for waveform visualization (mono, normalized -1 to 1)
     private(set) var pcmData: [Float] = Array(repeating: 0, count: 512)
@@ -380,6 +374,12 @@ class AudioEngine {
     // MARK: - Initialization
     
     init() {
+        // Initialize cached normalization mode from UserDefaults
+        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
+           let mode = SpectrumNormalizationMode(rawValue: saved) {
+            spectrumNormalizationMode = mode
+        }
+        
         // Observe audio device configuration changes FIRST
         // This handles format mismatches when output device changes
         NotificationCenter.default.addObserver(
@@ -387,6 +387,14 @@ class AudioEngine {
             selector: #selector(handleAudioConfigChange),
             name: .AVAudioEngineConfigurationChange,
             object: engine
+        )
+        
+        // Observe spectrum settings changes to update cached normalization mode
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSpectrumSettingsChanged),
+            name: NSNotification.Name("SpectrumSettingsChanged"),
+            object: nil
         )
         
         setupAudioEngine()
@@ -398,11 +406,19 @@ class AudioEngine {
     }
     
     deinit {
+        NotificationCenter.default.removeObserver(self)
         timeUpdateTimer?.invalidate()
         mixerNode.removeTap(onBus: 0)  // Changed from playerNode - tap is now on mixerNode
         engine.stop()
         // FFT setup is automatically released when set to nil
         fftSetup = nil
+    }
+    
+    @objc private func handleSpectrumSettingsChanged() {
+        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
+           let mode = SpectrumNormalizationMode(rawValue: saved) {
+            spectrumNormalizationMode = mode
+        }
     }
     
     // MARK: - Setup

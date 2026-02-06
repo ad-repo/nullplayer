@@ -48,14 +48,8 @@ class StreamingAudioPlayer {
     /// Smoothed global reference level (prevents pulsing from max() jumps)
     private var spectrumGlobalReferenceLevel: Float = 0.0
     
-    /// Current spectrum normalization mode (read from UserDefaults)
-    private var spectrumNormalizationMode: SpectrumNormalizationMode {
-        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
-           let mode = SpectrumNormalizationMode(rawValue: saved) {
-            return mode
-        }
-        return .accurate  // Default to accurate for flat pink noise
-    }
+    /// Current spectrum normalization mode (cached from UserDefaults, updated via notification)
+    private var spectrumNormalizationMode: SpectrumNormalizationMode = .accurate
     
     /// Whether we've reported format info for the current track
     private var hasReportedFormat: Bool = false
@@ -162,6 +156,12 @@ class StreamingAudioPlayer {
     // MARK: - Initialization
     
     init() {
+        // Initialize cached normalization mode from UserDefaults
+        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
+           let mode = SpectrumNormalizationMode(rawValue: saved) {
+            spectrumNormalizationMode = mode
+        }
+        
         // Create the player
         player = AudioPlayer()
         
@@ -178,12 +178,28 @@ class StreamingAudioPlayer {
         // Set up player delegate
         player.delegate = self
         
+        // Observe spectrum settings changes to update cached normalization mode
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSpectrumSettingsChanged),
+            name: NSNotification.Name("SpectrumSettingsChanged"),
+            object: nil
+        )
+        
         NSLog("StreamingAudioPlayer: Initialized with EQ")
     }
     
     deinit {
+        NotificationCenter.default.removeObserver(self)
         fftSetup = nil
         player.stop()
+    }
+    
+    @objc private func handleSpectrumSettingsChanged() {
+        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
+           let mode = SpectrumNormalizationMode(rawValue: saved) {
+            spectrumNormalizationMode = mode
+        }
     }
     
     // MARK: - Setup

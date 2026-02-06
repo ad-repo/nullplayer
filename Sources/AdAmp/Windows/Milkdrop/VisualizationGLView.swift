@@ -385,23 +385,14 @@ class VisualizationGLView: NSOpenGLView {
     func stopRendering() {
         guard let displayLink = displayLink, isRendering else { return }
         
-        // IMPORTANT: Stop and cleanup must happen in this exact order to prevent
-        // use-after-free crashes from CVDisplayLink callbacks
-        
-        // 1. Stop the display link first
+        // Stop the display link
         CVDisplayLinkStop(displayLink)
         isRendering = false
         
-        // 2. Unset the callback BEFORE releasing the context
-        // This prevents any new callbacks from being scheduled that might try
-        // to access the context after we release it
-        CVDisplayLinkSetOutputCallback(displayLink, nil, nil)
-        
-        // 3. Brief wait for any in-flight callback to complete
-        // CVDisplayLinkStop is asynchronous - callbacks may still be executing
-        Thread.sleep(forTimeInterval: 0.05)
-        
-        // 4. NOW it's safe to release the context wrapper
+        // Release the retained context wrapper.
+        // The weak reference inside VisualizationDisplayLinkContext will safely return nil
+        // if the callback fires after this point (CVDisplayLinkStop is asynchronous),
+        // preventing use-after-free without needing Thread.sleep() or callback nulling.
         if let contextRef = displayLinkContextRef {
             contextRef.release()
             displayLinkContextRef = nil
