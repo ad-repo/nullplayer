@@ -58,7 +58,8 @@ let package = Package(
             resources: [
                 .copy("Resources"),
                 .copy("Visualization/SpectrumShaders.metal"),
-                .copy("Visualization/FlameShaders.metal")
+                .copy("Visualization/FlameShaders.metal"),
+                .copy("Visualization/CosmicShaders.metal")
             ],
             linkerSettings: [
                 .unsafeFlags(["-L", "Frameworks", "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),

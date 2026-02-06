@@ -20,6 +20,7 @@ enum SpectrumQualityMode: String, CaseIterable {
     case enhanced = "Enhanced"   // LED matrix with rainbow
     case ultra = "Ultra"         // Maximum visual quality with effects
     case flame = "Fire"          // GPU fire simulation driven by audio
+    case cosmic = "JWST"         // Procedural nebula inspired by JWST Pillars of Creation
     
     var displayName: String { rawValue }
 }
@@ -72,6 +73,19 @@ struct FlameParams {
     var intensity: Float
     var emberRate: Float
     var padding: Float = 0
+}
+
+/// Parameters for Cosmic Metal shaders (must match Metal CosmicParams struct)
+struct CosmicParams {
+    var viewportSize: SIMD2<Float>  // 8 bytes (offset 0)
+    var time: Float                  // 4 bytes (offset 8) - real clock time
+    var scrollOffset: Float          // 4 bytes (offset 12) - music-speed-integrated drift
+    var bassEnergy: Float            // 4 bytes (offset 16)
+    var midEnergy: Float             // 4 bytes (offset 20)
+    var trebleEnergy: Float          // 4 bytes (offset 24)
+    var totalEnergy: Float           // 4 bytes (offset 28)
+    var beatIntensity: Float         // 4 bytes (offset 32)
+    var flareIntensity: Float = 0    // 4 bytes (offset 36) - big JWST flare on rare peaks
 }
 
 /// Decay mode controlling how quickly bars fall
@@ -244,6 +258,10 @@ class SpectrumAnalyzerView: NSView {
     private var ultraCellBrightnessBuffer: MTLBuffer?
     private var ultraParamsBuffer: MTLBuffer?
     
+    // Cosmic mode resources
+    private var cosmicRenderPipeline: MTLRenderPipelineState?
+    private var cosmicParamsBuffer: MTLBuffer?
+    
     // Flame mode resources
     private var flamePropPipeline: MTLComputePipelineState?
     private var flameRenderPipeline: MTLRenderPipelineState?
@@ -292,6 +310,15 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var ultraCellBrightness: [[Float]] = []  // Brightness per cell [column][row] for Ultra
     nonisolated(unsafe) private var peakVelocities: [Float] = []  // Peak velocity for physics simulation
     nonisolated(unsafe) private var animationTime: Float = 0  // For subtle animations
+    
+    // Cosmic mode state
+    nonisolated(unsafe) private var cosmicSmoothBass: Float = 0
+    nonisolated(unsafe) private var cosmicSmoothMid: Float = 0
+    nonisolated(unsafe) private var cosmicSmoothTreble: Float = 0
+    nonisolated(unsafe) private var cosmicBeatIntensity: Float = 0
+    nonisolated(unsafe) private var cosmicScrollOffset: Float = 0
+    nonisolated(unsafe) private var cosmicFlareIntensity: Float = 0
+    nonisolated(unsafe) private var cosmicFlareCooldown: Int = 0  // Frames until next flare allowed
     
     // Flame mode state
     nonisolated(unsafe) private var renderFlameStyle: FlameStyle = .inferno
@@ -507,6 +534,7 @@ class SpectrumAnalyzerView: NSView {
         // Load shaders and create pipeline
         setupPipeline()
         setupFlamePipelines()
+        setupCosmicPipelines()
         
         // Create buffers
         setupBuffers()
@@ -593,6 +621,8 @@ class SpectrumAnalyzerView: NSView {
                 pipelineState = ultraPipelineState
             case .flame:
                 pipelineState = flameRenderPipeline
+            case .cosmic:
+                pipelineState = cosmicRenderPipeline
             }
 
             NSLog("SpectrumAnalyzerView: Metal pipelines created successfully")
@@ -656,6 +686,9 @@ class SpectrumAnalyzerView: NSView {
         // Flame mode buffers
         flameSpectrumBuffer = device.makeBuffer(length: 75 * MemoryLayout<Float>.stride, options: .storageModeShared)
         flameParamsBuffer = device.makeBuffer(length: MemoryLayout<FlameParams>.stride, options: .storageModeShared)
+        
+        // Cosmic mode buffers
+        cosmicParamsBuffer = device.makeBuffer(length: MemoryLayout<CosmicParams>.stride, options: .storageModeShared)
     }
     
     /// Set up flame compute and render pipelines
@@ -704,6 +737,29 @@ class SpectrumAnalyzerView: NSView {
                 be.copy(from: buf, sourceOffset: 0, sourceBytesPerRow: bpr, sourceBytesPerImage: zeros.count, sourceSize: size, to: flameSimTextureB!, destinationSlice: 0, destinationLevel: 0, destinationOrigin: origin)
             }
             be.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+        }
+    }
+    
+    /// Set up Cosmic mode render pipeline
+    private func setupCosmicPipelines() {
+        guard let device = device else { return }
+        guard let url = BundleHelper.url(forResource: "CosmicShaders", withExtension: "metal"),
+              let src = try? String(contentsOf: url, encoding: .utf8) else {
+            NSLog("SpectrumAnalyzerView: CosmicShaders.metal not found")
+            return
+        }
+        do {
+            let lib = try device.makeLibrary(source: src, options: nil)
+            if let vf = lib.makeFunction(name: "cosmic_vertex"),
+               let ff = lib.makeFunction(name: "cosmic_fragment") {
+                let d = MTLRenderPipelineDescriptor()
+                d.vertexFunction = vf; d.fragmentFunction = ff
+                d.colorAttachments[0].pixelFormat = .bgra8Unorm
+                cosmicRenderPipeline = try device.makeRenderPipelineState(descriptor: d)
+            }
+            NSLog("SpectrumAnalyzerView: Cosmic pipeline created")
+        } catch {
+            NSLog("SpectrumAnalyzerView: Cosmic shader error: \(error)")
         }
     }
 
@@ -854,9 +910,13 @@ class SpectrumAnalyzerView: NSView {
             return
         }
         
-        // Flame mode uses a completely different pipeline (compute + render)
+        // Flame and Cosmic modes use completely different pipelines
         if currentMode == .flame {
             renderFlame(drawable: drawable)
+            return
+        }
+        if currentMode == .cosmic {
+            renderCosmic(drawable: drawable)
             return
         }
         
@@ -870,6 +930,8 @@ class SpectrumAnalyzerView: NSView {
             activePipeline = ultraPipelineState
         case .flame:
             activePipeline = nil  // Handled by renderFlame() above
+        case .cosmic:
+            activePipeline = nil  // Handled by renderCosmic() above
         }
 
         guard let pipeline = activePipeline,
@@ -961,6 +1023,8 @@ class SpectrumAnalyzerView: NSView {
             
         case .flame:
             break  // Handled by renderFlame() above
+        case .cosmic:
+            break  // Handled by renderCosmic() above
         }
         
         encoder.endEncoding()
@@ -1032,6 +1096,94 @@ class SpectrumAnalyzerView: NSView {
             enc.setFragmentBuffer(flameParamsBuffer, offset: 0, index: 0)
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6); enc.endEncoding()
         }
+        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
+        cb.present(drawable); cb.commit()
+    }
+    
+    /// Render cosmic mode: procedural nebula flythrough driven by music intensity
+    /// Music drives the SPEED of drifting through the nebula, not shape.
+    private func renderCosmic(drawable: CAMetalDrawable) {
+        guard let cb = commandQueue?.makeCommandBuffer() else {
+            inFlightSemaphore.signal(); return
+        }
+        
+        var localTime: Float = 0
+        var localScroll: Float = 0
+        
+        dataLock.withLock {
+            animationTime += 1.0 / 60.0
+            localTime = animationTime
+            
+            // Compute band energies from raw spectrum
+            var bass: Float = 0; var mid: Float = 0; var treble: Float = 0
+            if !rawSpectrum.isEmpty {
+                for i in 0..<min(16, rawSpectrum.count) { bass += rawSpectrum[i] }; bass /= 16.0
+                for i in 16..<min(50, rawSpectrum.count) { mid += rawSpectrum[i] }; mid /= 34.0
+                for i in 50..<min(75, rawSpectrum.count) { treble += rawSpectrum[i] }; treble /= 25.0
+            }
+            
+            // Smooth audio values (fast attack, slower release)
+            cosmicSmoothBass += (bass - cosmicSmoothBass) * (bass > cosmicSmoothBass ? 0.3 : 0.08)
+            cosmicSmoothMid += (mid - cosmicSmoothMid) * (mid > cosmicSmoothMid ? 0.3 : 0.08)
+            cosmicSmoothTreble += (treble - cosmicSmoothTreble) * (treble > cosmicSmoothTreble ? 0.3 : 0.08)
+            
+            // Beat detection: bass spike above smoothed level
+            if bass > cosmicSmoothBass + 0.12 {
+                cosmicBeatIntensity = min(1.0, cosmicBeatIntensity + 0.5)
+            }
+            cosmicBeatIntensity *= 0.92
+            
+            // Rare big flare: only on strong peaks, with long cooldown
+            if cosmicFlareCooldown > 0 {
+                cosmicFlareCooldown -= 1
+            }
+            if bass > cosmicSmoothBass + 0.25 && cosmicFlareCooldown == 0 {
+                // Big peak detected — fire the flare
+                cosmicFlareIntensity = 1.0
+                cosmicFlareCooldown = 300  // ~5 seconds cooldown at 60fps
+            }
+            cosmicFlareIntensity *= 0.965  // Slow decay (~2 seconds visible)
+            
+            // Accumulate scroll distance based on music intensity
+            // Gentle drift always, slightly faster when loud — chill ride through space
+            let totalEnergy = (cosmicSmoothBass + cosmicSmoothMid + cosmicSmoothTreble) / 3.0
+            let speed: Float = 0.08 + totalEnergy * 0.5
+            cosmicScrollOffset += speed * (1.0 / 60.0)
+            localScroll = cosmicScrollOffset
+        }
+        
+        // Update cosmic params (no spectrum buffer — pure atmospheric mode)
+        let scale = metalLayer?.contentsScale ?? 2.0
+        let totalE = (cosmicSmoothBass + cosmicSmoothMid + cosmicSmoothTreble) / 3.0
+        if let buf = cosmicParamsBuffer {
+            let p = buf.contents().bindMemory(to: CosmicParams.self, capacity: 1)
+            p.pointee = CosmicParams(
+                viewportSize: SIMD2<Float>(Float(bounds.width * scale), Float(bounds.height * scale)),
+                time: localTime,
+                scrollOffset: localScroll,
+                bassEnergy: cosmicSmoothBass,
+                midEnergy: cosmicSmoothMid,
+                trebleEnergy: cosmicSmoothTreble,
+                totalEnergy: totalE,
+                beatIntensity: cosmicBeatIntensity,
+                flareIntensity: cosmicFlareIntensity
+            )
+        }
+        
+        // Render full-screen quad
+        let rpd = MTLRenderPassDescriptor()
+        rpd.colorAttachments[0].texture = drawable.texture
+        rpd.colorAttachments[0].loadAction = .clear
+        rpd.colorAttachments[0].storeAction = .store
+        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd), let pl = cosmicRenderPipeline {
+            enc.setRenderPipelineState(pl)
+            enc.setFragmentBuffer(cosmicParamsBuffer, offset: 0, index: 0)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+            enc.endEncoding()
+        }
+        
         cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
         cb.present(drawable); cb.commit()
     }
@@ -1161,6 +1313,8 @@ class SpectrumAnalyzerView: NSView {
             updateWinampPeakState()
         case .flame:
             break  // Flame handles its own state in renderFlame()
+        case .cosmic:
+            break  // Cosmic handles its own state in renderCosmic()
         }
 
         hasVisibleData = hasData
@@ -1528,6 +1682,8 @@ class SpectrumAnalyzerView: NSView {
             
         case .flame:
             break  // Flame updates its own buffers in renderFlame()
+        case .cosmic:
+            break  // Cosmic updates its own buffers in renderCosmic()
         }
     }
     

@@ -237,6 +237,7 @@ The Spectrum Analyzer window participates in the docking system:
 | **Winamp** | Discrete color bands from skin's 24-color palette with floating peak indicators, 3D bar shading, and band gaps for an authentic segmented LED look (default) |
 | **Enhanced** | Rainbow LED matrix with gravity-bouncing peaks, warm amber fade trails, 3D inner glow cells, and anti-aliased rounded corners |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues (see below) |
+| **Cosmic** | Procedural JWST-inspired nebula with star fields, gas pillars, and diffraction spikes (see below) |
 
 ### Winamp Mode Details
 
@@ -268,6 +269,29 @@ Flame mode replaces spectrum bars with a GPU-driven fire simulation. Narrow flam
 **Technical:** 128x96 simulation grid with per-column propagation and edge erosion. Rendered with an 11x11 Gaussian blur at 2-texel steps for silky smooth output. Single compute pass + render pass per frame at 60 FPS.
 
 **Key files:** `Visualization/FlameShaders.metal` (compute + render shaders), `Visualization/SpectrumAnalyzerView.swift` (pipeline integration)
+
+### Cosmic Mode
+
+Cosmic mode is a fully procedural visualization inspired by the James Webb Space Telescope's image of the Pillars of Creation. Everything is generated in a single GPU fragment shader pass -- no simulation textures or state needed.
+
+**Visual Elements:**
+- **Nebula gas pillars**: Rising columns of cosmic gas shaped by the audio spectrum, with FBM noise for cloud-like edges and internal structure
+- **Star field**: 3 depth layers of stars with JWST-style 6-point diffraction spikes, treble-reactive twinkling
+- **JWST color palette**: Deep navy, dusty amber, mauve, indigo -- colors sampled from the actual JWST Pillars of Creation image
+- **Rim lighting**: Bright golden edges on pillar boundaries (like starlight illuminating gas clouds)
+- **Embedded stars**: Stars visible through thin nebula gas
+- **Floating cosmic dust**: Tiny particles drifting upward
+- **Beat pressure waves**: Bass hits create visible ripples through the nebula
+
+**Audio Reactivity:**
+- Bass (bands 0-15): Drives pillar height, nebula density, rim lighting intensity
+- Mids (bands 16-49): Controls gas turbulence and flow speed
+- Treble (bands 50-74): Star brightness and twinkle rate
+- Beat detection: Brightness flash and pressure wave on strong bass hits
+
+**Technical:** Single render pass with procedural FBM noise (4 octaves), 3-layer star field with 3x3 cell neighborhood search, filmic tone mapping. 60 FPS.
+
+**Key files:** `Visualization/CosmicShaders.metal` (vertex + fragment shaders), `Visualization/SpectrumAnalyzerView.swift` (pipeline integration)
 
 ### Responsiveness Modes
 
