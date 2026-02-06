@@ -85,7 +85,7 @@ kernel void propagate_fire(
         // Combine: broad warmth + narrow hotspots for variety
         float hotspot = smoothstep(0.3, 0.5, broad) * 0.6 + smoothstep(0.45, 0.6, narrow) * 0.8;
 
-        float heat = rng * energy * hotspot * params.intensity * 4.0;
+        float heat = rng * energy * hotspot * params.intensity * 5.0;
         // Strong burst on bass peaks - creates the tall tongues
         if (bass > 0.15) {
             heat += rng * hotspot * (bass - 0.15) * 6.0;
@@ -133,11 +133,11 @@ kernel void propagate_fire(
     float blended = mix(below, hAvg, params.diffusion * 0.3);
 
     // Mainly use the value from directly below (preserves vertical columns)
-    float result = below * 0.92 + blended * 0.08;
+    float result = below * 0.95 + blended * 0.05;
 
     // Cooling
     float uv_y = float(y) / float(H);
-    float coolRate = params.cooling / float(H) * (0.5 + uv_y * 1.0);
+    float coolRate = params.cooling / float(H) * (0.4 + uv_y * 0.6);
     float coolRng = hash21(float2(float(x) + params.time * 11.0, float(y) + params.time * 7.0));
     coolRate *= (0.6 + 0.8 * coolRng);
 

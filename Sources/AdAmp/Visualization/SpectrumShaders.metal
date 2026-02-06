@@ -365,10 +365,10 @@ fragment float4 spectrum_fragment(
         return float4(min(float3(1.0), peakColor), peakAlpha);
     }
     
-    // === BAND GAPS (dark line at top of each band for segmented LED look) ===
-    float gapSize = max(1.0, bandHeight * 0.1);
-    if (withinBand > bandHeight - gapSize) {
-        return float4(bandColor.rgb * 0.06, 1.0);
+    // === BAND GAPS (fixed 1px line at top of each band for segmented LED look) ===
+    // Use exactly 1 pixel regardless of band size - authentic Winamp style
+    if (withinBand > bandHeight - 1.0) {
+        return float4(bandColor.rgb * 0.35, 1.0);
     }
     
     // === 3D BAR SHADING ===

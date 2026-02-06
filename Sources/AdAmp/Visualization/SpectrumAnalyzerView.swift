@@ -39,7 +39,7 @@ enum FlameStyle: String, CaseIterable {
         switch self { case .inferno: return 6.0; case .aurora: return 3.5; case .electric: return 8.0; case .ocean: return 4.0 }
     }
     var cooling: Float {
-        switch self { case .inferno: return 0.4; case .aurora: return 0.25; case .electric: return 0.55; case .ocean: return 0.2 }
+        switch self { case .inferno: return 0.28; case .aurora: return 0.17; case .electric: return 0.38; case .ocean: return 0.14 }
     }
     var turbulence: Float {
         switch self { case .inferno: return 2.0; case .aurora: return 1.2; case .electric: return 3.0; case .ocean: return 0.8 }
