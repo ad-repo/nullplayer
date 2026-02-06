@@ -444,6 +444,19 @@ class SpectrumView: NSView {
             let flameMenuItem = NSMenuItem(title: "Flame Style", action: nil, keyEquivalent: "")
             flameMenuItem.submenu = flameMenu
             menu.addItem(flameMenuItem)
+            
+            // Flame Intensity submenu
+            let intensityMenu = NSMenu()
+            let curIntensity = spectrumAnalyzerView?.flameIntensity ?? .mellow
+            for intensity in FlameIntensity.allCases {
+                let item = NSMenuItem(title: intensity.displayName, action: #selector(setFlameIntensity(_:)), keyEquivalent: "")
+                item.target = self; item.representedObject = intensity
+                item.state = (curIntensity == intensity) ? .on : .off
+                intensityMenu.addItem(item)
+            }
+            let intensityMenuItem = NSMenuItem(title: "Fire Intensity", action: nil, keyEquivalent: "")
+            intensityMenuItem.submenu = intensityMenu
+            menu.addItem(intensityMenuItem)
         }
         
         menu.addItem(NSMenuItem.separator())
@@ -490,6 +503,11 @@ class SpectrumView: NSView {
     @objc private func setFlameStyle(_ sender: NSMenuItem) {
         guard let style = sender.representedObject as? FlameStyle else { return }
         spectrumAnalyzerView?.flameStyle = style
+    }
+    
+    @objc private func setFlameIntensity(_ sender: NSMenuItem) {
+        guard let intensity = sender.representedObject as? FlameIntensity else { return }
+        spectrumAnalyzerView?.flameIntensity = intensity
     }
     
     @objc private func closeWindow(_ sender: Any?) {

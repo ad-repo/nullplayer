@@ -37,7 +37,8 @@ When Fire mode is active, a Metal-based `SpectrumAnalyzerView` overlay is positi
 - 11x11 Gaussian blur for smooth output
 - Audio-reactive: bass drives heat, mids drive sway, treble adds sparks
 - Supports all 4 flame styles: Inferno, Aurora, Electric, Ocean
-- Flame style is shared with the Spectrum Analyzer window (same UserDefaults key: `flameStyle`)
+- 2 intensity presets: Mellow (ambient) and Intense (beat-reactive)
+- Flame style and intensity are independent from the Spectrum Analyzer window (separate UserDefaults keys: `mainWindowFlameStyle`, `mainWindowFlameIntensity`)
 
 ### Technical Details
 
@@ -288,7 +289,7 @@ The Spectrum Analyzer window participates in the docking system:
 
 The Winamp mode aims to recreate the iconic Winamp 2.x spectrum analyzer aesthetic with modern enhancements:
 
-- **Discrete Color Bands**: Bars are divided into 16 horizontal segments with dark gaps between them, creating the classic LED matrix look
+- **Discrete Color Bands**: Bars are divided into 16 horizontal segments with subtle 1-pixel gaps between them, creating the classic LED matrix look without a screen door effect
 - **Floating Peak Indicators**: Bright lines hold at peak heights, then fall with gravity-based physics including subtle bouncing for satisfying visual feedback
 - **3D Cylindrical Shading**: Each bar has a specular highlight down the center for depth
 - **Skin Palette Colors**: All colors come from the loaded skin's `viscolor.txt` (24-color palette)
@@ -306,10 +307,23 @@ Flame mode replaces spectrum bars with a GPU-driven fire simulation. Narrow flam
 | **Electric** | Blue/white/purple plasma |
 | **Ocean** | Deep blue/teal/white |
 
+**Fire Intensity Presets** (right-click > Fire Intensity):
+
+| Intensity | Description |
+|-----------|-------------|
+| **Mellow** | Gentle ambient flame with smooth transitions. Lower burst threshold (0.15), moderate multiplier (6x), slow attack/release smoothing |
+| **Intense** | Punchy beat-reactive flame with sharp spikes. Lower burst threshold (0.1), high multiplier (10x), fast attack (0.5) and quicker release (0.12) |
+
 **Audio Reactivity:**
 - Bass (bands 0-15): Controls heat injection intensity. Strong bass = taller tongues
 - Mids (bands 16-49): Increases flame sway and lateral motion
 - Treble (bands 50-74): Adds ember sparks in the flame zone
+- Intensity preset controls how aggressively the flame tracks the beat
+
+**Playback State:**
+- **Stop**: Immediately clears flame textures and renders a black frame
+- **Pause**: Freezes the flame display in place (last frame stays visible)
+- **Play**: Resumes flame rendering
 
 **Technical:** 128x96 simulation grid with per-column propagation and edge erosion. Rendered with an 11x11 Gaussian blur at 2-texel steps for silky smooth output. Single compute pass + render pass per frame at 60 FPS.
 
@@ -358,7 +372,8 @@ Controls how quickly spectrum bars fall after peaks:
 Right-click on the window for:
 - **Mode** - Switch between Winamp/Enhanced/Fire/JWST rendering
 - **Responsiveness** - Adjust decay behavior (bar modes)
-- **Flame Style** - Choose flame preset (Flame mode only)
+- **Flame Style** - Choose flame color preset (Flame mode only)
+- **Fire Intensity** - Choose Mellow or Intense reactivity (Flame mode only)
 - **Close** - Close the window
 
 ### Technical Details

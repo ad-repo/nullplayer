@@ -453,8 +453,10 @@ Controls how quickly spectrum bars fall after peaks:
 ### Context Menu
 
 Right-click on the spectrum window for:
-- **Quality** submenu - Switch between Winamp/Enhanced modes
+- **Mode** submenu - Switch between Winamp/Enhanced/Fire/JWST modes
 - **Responsiveness** submenu - Adjust decay behavior
+- **Flame Style** - Choose flame color preset (Fire mode only)
+- **Fire Intensity** - Choose Mellow or Intense reactivity (Fire mode only)
 - **Close** - Close the window
 
 Settings are persisted across app restarts.

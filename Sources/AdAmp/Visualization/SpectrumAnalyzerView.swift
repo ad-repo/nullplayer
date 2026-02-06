@@ -55,6 +55,29 @@ enum FlameStyle: String, CaseIterable {
     }
 }
 
+/// Fire intensity presets controlling how aggressively the flame reacts to music
+enum FlameIntensity: String, CaseIterable {
+    case mellow = "Mellow"     // Gentle, ambient flame with smooth transitions
+    case intense = "Intense"   // Punchy, beat-reactive flame with sharp spikes
+    
+    var displayName: String { rawValue }
+    
+    /// Shader intensity value (used by FlameShaders.metal to select burst params)
+    var shaderValue: Float {
+        switch self { case .mellow: return 1.0; case .intense: return 2.0 }
+    }
+    
+    /// Smoothing attack speed (how fast flame jumps on beats)
+    var attackSpeed: Float {
+        switch self { case .mellow: return 0.3; case .intense: return 0.5 }
+    }
+    
+    /// Smoothing release speed (how fast flame drops between beats)
+    var releaseSpeed: Float {
+        switch self { case .mellow: return 0.05; case .intense: return 0.12 }
+    }
+}
+
 /// Parameters for Flame Metal shaders (must match Metal FlameParams struct)
 struct FlameParams {
     var gridSize: SIMD2<Float>
@@ -236,9 +259,22 @@ class SpectrumAnalyzerView: NSView {
     /// Current flame style preset (only used when qualityMode == .flame)
     var flameStyle: FlameStyle = .inferno {
         didSet {
-            UserDefaults.standard.set(flameStyle.rawValue, forKey: "flameStyle")
+            if !isEmbedded {
+                UserDefaults.standard.set(flameStyle.rawValue, forKey: "flameStyle")
+            }
             let style = flameStyle
             dataLock.withLock { renderFlameStyle = style }
+        }
+    }
+    
+    /// Current flame intensity preset (only used when qualityMode == .flame)
+    var flameIntensity: FlameIntensity = .mellow {
+        didSet {
+            if !isEmbedded {
+                UserDefaults.standard.set(flameIntensity.rawValue, forKey: "flameIntensity")
+            }
+            let intensity = flameIntensity
+            dataLock.withLock { renderFlameIntensity = intensity }
         }
     }
     
@@ -334,6 +370,7 @@ class SpectrumAnalyzerView: NSView {
     
     // Flame mode state
     nonisolated(unsafe) private var renderFlameStyle: FlameStyle = .inferno
+    nonisolated(unsafe) private var renderFlameIntensity: FlameIntensity = .mellow
     nonisolated(unsafe) private var flameSmoothBass: Float = 0
     nonisolated(unsafe) private var flameSmoothMid: Float = 0
     nonisolated(unsafe) private var flameSmoothTreble: Float = 0
@@ -373,7 +410,12 @@ class SpectrumAnalyzerView: NSView {
            let style = FlameStyle(rawValue: saved) {
             flameStyle = style
         }
+        if let saved = UserDefaults.standard.string(forKey: "flameIntensity"),
+           let intensity = FlameIntensity(rawValue: saved) {
+            flameIntensity = intensity
+        }
         renderFlameStyle = flameStyle
+        renderFlameIntensity = flameIntensity
         
         // Initialize display spectrum and sync to render-safe variables
         // Use max size to avoid any resizing during mode switches
@@ -487,10 +529,16 @@ class SpectrumAnalyzerView: NSView {
             }
         }
         
-        // Reload flame style (shared between spectrum window and main window overlay)
-        if let savedStyle = UserDefaults.standard.string(forKey: "flameStyle"),
-           let style = FlameStyle(rawValue: savedStyle) {
-            flameStyle = style
+        // Reload flame style and intensity (only for non-embedded views; embedded overlay uses its own key)
+        if !isEmbedded {
+            if let savedStyle = UserDefaults.standard.string(forKey: "flameStyle"),
+               let style = FlameStyle(rawValue: savedStyle) {
+                flameStyle = style
+            }
+            if let savedIntensity = UserDefaults.standard.string(forKey: "flameIntensity"),
+               let intensity = FlameIntensity(rawValue: savedIntensity) {
+                flameIntensity = intensity
+            }
         }
         
         // Note: We no longer reset state arrays on mode switch since pre-allocated
@@ -1078,18 +1126,22 @@ class SpectrumAnalyzerView: NSView {
             inFlightSemaphore.signal(); return
         }
         var localSpectrum: [Float] = []; var localStyle: FlameStyle = .inferno; var localTime: Float = 0
+        var localIntensity: FlameIntensity = .mellow
         dataLock.withLock {
             animationTime += 1.0 / 60.0; localTime = animationTime
             localStyle = renderFlameStyle; localSpectrum = rawSpectrum
+            localIntensity = renderFlameIntensity
             var bass: Float = 0; var mid: Float = 0; var treble: Float = 0
             if !rawSpectrum.isEmpty {
                 for i in 0..<min(16, rawSpectrum.count) { bass += rawSpectrum[i] }; bass /= 16.0
                 for i in 16..<min(50, rawSpectrum.count) { mid += rawSpectrum[i] }; mid /= 34.0
                 for i in 50..<min(75, rawSpectrum.count) { treble += rawSpectrum[i] }; treble /= 25.0
             }
-            flameSmoothBass += (bass - flameSmoothBass) * (bass > flameSmoothBass ? 0.3 : 0.05)
-            flameSmoothMid += (mid - flameSmoothMid) * (mid > flameSmoothMid ? 0.3 : 0.05)
-            flameSmoothTreble += (treble - flameSmoothTreble) * (treble > flameSmoothTreble ? 0.3 : 0.05)
+            let attack = localIntensity.attackSpeed
+            let release = localIntensity.releaseSpeed
+            flameSmoothBass += (bass - flameSmoothBass) * (bass > flameSmoothBass ? attack : release)
+            flameSmoothMid += (mid - flameSmoothMid) * (mid > flameSmoothMid ? attack * 0.8 : release * 0.67)
+            flameSmoothTreble += (treble - flameSmoothTreble) * (treble > flameSmoothTreble ? attack * 0.8 : release * 0.67)
         }
         if let buf = flameSpectrumBuffer {
             let p = buf.contents().bindMemory(to: Float.self, capacity: 75)
@@ -1105,7 +1157,7 @@ class SpectrumAnalyzerView: NSView {
                 bassEnergy: flameSmoothBass, midEnergy: flameSmoothMid, trebleEnergy: flameSmoothTreble,
                 buoyancy: localStyle.buoyancy, cooling: localStyle.cooling, turbulence: localStyle.turbulence,
                 diffusion: localStyle.diffusion, windStrength: localStyle.windStrength,
-                colorScheme: localStyle.colorScheme, intensity: 1.0, emberRate: localStyle.emberRate)
+                colorScheme: localStyle.colorScheme, intensity: localIntensity.shaderValue, emberRate: localStyle.emberRate)
         }
         let readTex = flameCurrentTex == 0 ? simA : simB
         let writeTex = flameCurrentTex == 0 ? simB : simA

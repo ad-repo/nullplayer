@@ -70,7 +70,7 @@ kernel void propagate_fire(
         float bass = 0.0;
         for (int i = 0; i < 16; i++) bass += spectrum[i];
         bass /= 16.0;
-        float energy = bass;
+        float energy = max(bass, 0.05);
 
         // Random per-pixel heat
         float rng = hash21(float2(float(x) * 0.37 + params.time * 41.0,
@@ -85,10 +85,15 @@ kernel void propagate_fire(
         // Combine: broad warmth + narrow hotspots for variety
         float hotspot = smoothstep(0.3, 0.5, broad) * 0.6 + smoothstep(0.45, 0.6, narrow) * 0.8;
 
-        float heat = rng * energy * hotspot * params.intensity * 5.0;
+        // Intensity controls reactivity: 1.0 = mellow, 2.0 = intense
+        float heatMult = params.intensity >= 1.5 ? 5.0 : 4.0;
+        float burstThreshold = params.intensity >= 1.5 ? 0.1 : 0.15;
+        float burstMult = params.intensity >= 1.5 ? 10.0 : 6.0;
+        
+        float heat = rng * energy * hotspot * heatMult;
         // Strong burst on bass peaks - creates the tall tongues
-        if (bass > 0.15) {
-            heat += rng * hotspot * (bass - 0.15) * 6.0;
+        if (bass > burstThreshold) {
+            heat += rng * hotspot * (bass - burstThreshold) * burstMult;
         }
 
         dst.write(float4(clamp(heat, 0.0, 1.0), 0, 0, 1), gid);

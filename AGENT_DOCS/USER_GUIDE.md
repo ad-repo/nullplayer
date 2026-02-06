@@ -1101,8 +1101,9 @@ The main window displays real-time frequency analysis:
 - Fast attack, slow decay smoothing
 - **Click** the visualization area to toggle the Spectrum Analyzer window
 - **Double-click** the visualization area to switch between Spectrum and Fire mode
-- **Fire mode** renders a GPU flame simulation in the vis area with 4 flame styles (Inferno, Aurora, Electric, Ocean)
-- Flame style can be changed via Right-click → Options → Main Visualization → Flame Style
+- **Fire mode** renders a GPU flame simulation in the vis area with 4 flame styles (Inferno, Aurora, Electric, Ocean) and 2 intensity levels (Mellow, Intense)
+- Flame style and intensity can be changed via Right-click → Options → Main Visualization → Flame Style / Fire Intensity
+- Main window and Spectrum Analyzer window have independent flame style and intensity settings
 
 The standalone Spectrum Analyzer window provides a larger, more detailed view with:
 - **Quality modes**: Winamp (skin colors with 3D shading), Enhanced (rainbow LED matrix), Ultra (maximum effects), Fire, JWST

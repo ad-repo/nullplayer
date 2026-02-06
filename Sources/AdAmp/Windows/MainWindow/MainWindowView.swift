@@ -303,10 +303,14 @@ class MainWindowView: NSView {
         // Mark as embedded BEFORE setting qualityMode to prevent UserDefaults contamination
         overlay.isEmbedded = true
         overlay.qualityMode = .flame
-        // Restore flame style from shared UserDefaults
-        if let savedStyle = UserDefaults.standard.string(forKey: "flameStyle"),
+        // Restore flame style and intensity from main window's own UserDefaults keys
+        if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
            let style = FlameStyle(rawValue: savedStyle) {
             overlay.flameStyle = style
+        }
+        if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+           let intensity = FlameIntensity(rawValue: savedIntensity) {
+            overlay.flameIntensity = intensity
         }
         overlay.isHidden = true
         addSubview(overlay)
@@ -390,11 +394,16 @@ class MainWindowView: NSView {
                 mainVisMode = mode
             }
         }
-        // Reload flame style if overlay exists
-        if let overlay = flameOverlay,
-           let savedStyle = UserDefaults.standard.string(forKey: "flameStyle"),
-           let style = FlameStyle(rawValue: savedStyle) {
-            overlay.flameStyle = style
+        // Reload flame style and intensity if overlay exists (uses main window's own keys)
+        if let overlay = flameOverlay {
+            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+               let style = FlameStyle(rawValue: savedStyle) {
+                overlay.flameStyle = style
+            }
+            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+               let intensity = FlameIntensity(rawValue: savedIntensity) {
+                overlay.flameIntensity = intensity
+            }
         }
     }
     
