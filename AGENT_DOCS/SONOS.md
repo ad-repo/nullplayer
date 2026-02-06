@@ -1,17 +1,17 @@
 # Sonos Integration
 
-This document covers Sonos speaker discovery, casting, and multi-room grouping in AdAmp.
+This document covers Sonos speaker discovery, casting, and multi-room grouping in NullPlayer.
 
 ## Quick Start
 
-1. Right-click anywhere in AdAmp → **Output Devices → Sonos**
+1. Right-click anywhere in NullPlayer → **Output Devices → Sonos**
 2. Check the rooms you want to cast to (checkboxes stay open for multi-select)
 3. Click **🟢 Start Casting** to begin playback
 4. Click **🔴 Stop Casting** to end the session
 
 ## Discovery Methods
 
-AdAmp uses two methods to discover Sonos devices:
+NullPlayer uses two methods to discover Sonos devices:
 
 ### 1. SSDP (Simple Service Discovery Protocol)
 - UDP multicast to `239.255.255.250:1900`
@@ -46,7 +46,7 @@ If UPnP is disabled:
 - **Room**: A named location that may contain one or more zones (e.g., "Living Room" with stereo pair)
 - **Group**: Multiple rooms playing in sync (e.g., "Living Room + Kitchen")
 
-When casting, AdAmp targets the **group coordinator** - the speaker that controls playback for the group.
+When casting, NullPlayer targets the **group coordinator** - the speaker that controls playback for the group.
 
 ### Discovery Flow
 1. SSDP/mDNS finds Sonos devices on network
@@ -68,7 +68,7 @@ Response contains all groups and their member zones.
 ## User Interface
 
 ### Accessing the Sonos Menu
-1. Right-click anywhere in AdAmp
+1. Right-click anywhere in NullPlayer
 2. Go to **Output Devices → Sonos**
 
 ### Menu Structure
@@ -339,13 +339,13 @@ Subsonic streams are proxied through LocalMediaServer for Sonos casting. This is
 2. Navidrome may be bound to localhost only, unreachable by Sonos speakers
 
 The proxy flow:
-1. AdAmp registers the Subsonic stream URL with LocalMediaServer
+1. NullPlayer registers the Subsonic stream URL with LocalMediaServer
 2. LocalMediaServer provides a simple URL: `http://{mac-ip}:8765/stream/{token}`
 3. When Sonos requests this URL, LocalMediaServer fetches from Navidrome and streams to Sonos
 4. Content-Type is passed through (e.g., `audio/flac`) - no transcoding occurs
 
 **Concurrent stream limitation:**
-Navidrome and most Subsonic servers limit concurrent streams per user (often to 1). When casting starts, AdAmp fully stops local streaming playback to release the connection, allowing the proxy to stream without conflict. This is handled automatically by `AudioEngine.stopLocalForCasting()`.
+Navidrome and most Subsonic servers limit concurrent streams per user (often to 1). When casting starts, NullPlayer fully stops local streaming playback to release the connection, allowing the proxy to stream without conflict. This is handled automatically by `AudioEngine.stopLocalForCasting()`.
 
 **Requirements for local file casting:**
 - Mac must be on the same network as Sonos speakers
@@ -354,7 +354,7 @@ Navidrome and most Subsonic servers limit concurrent streams per user (often to 
 
 ### Artwork Display
 
-AdAmp sends artwork URLs to Sonos via DIDL-Lite metadata so album art appears in the Sonos app during playback.
+NullPlayer sends artwork URLs to Sonos via DIDL-Lite metadata so album art appears in the Sonos app during playback.
 
 **How artwork URLs are determined:**
 

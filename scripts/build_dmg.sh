@@ -1,5 +1,5 @@
 #!/bin/bash
-# AdAmp DMG Build Script
+# NullPlayer DMG Build Script
 # Creates a distributable DMG from the Swift Package Manager build
 #
 # Usage: ./scripts/build_dmg.sh
@@ -24,9 +24,9 @@ cd "$(dirname "$0")/.."
 REPO_ROOT=$(pwd)
 
 # Configuration
-APP_NAME="AdAmp"
-BUNDLE_ID="com.adamp.player"
-INFO_PLIST="$REPO_ROOT/Sources/AdAmp/Resources/Info.plist"
+APP_NAME="NullPlayer"
+BUNDLE_ID="com.nullplayer.app"
+INFO_PLIST="$REPO_ROOT/Sources/NullPlayer/Resources/Info.plist"
 
 # Read version from Info.plist (single source of truth)
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$INFO_PLIST")
@@ -56,7 +56,7 @@ fi
 
 echo ""
 echo "======================================"
-echo "  AdAmp DMG Builder"
+echo "  NullPlayer DMG Builder"
 echo "======================================"
 echo ""
 
@@ -75,8 +75,8 @@ if [[ "$SKIP_BUILD" == false ]]; then
     log_success "Build complete"
 else
     log_info "Skipping build (--skip-build)"
-    if [[ ! -f "$BUILD_DIR/AdAmp" ]]; then
-        log_error "No release build found at $BUILD_DIR/AdAmp"
+    if [[ ! -f "$BUILD_DIR/NullPlayer" ]]; then
+        log_error "No release build found at $BUILD_DIR/NullPlayer"
         exit 1
     fi
 fi
@@ -90,7 +90,7 @@ mkdir -p "$RESOURCES_DIR"
 
 # Step 4: Copy executable
 log_info "Copying executable..."
-cp "$BUILD_DIR/AdAmp" "$MACOS_DIR/"
+cp "$BUILD_DIR/NullPlayer" "$MACOS_DIR/"
 
 # Step 5: Copy frameworks
 log_info "Copying frameworks..."
@@ -116,8 +116,8 @@ fi
 
 # Step 6: Copy resources from the build output
 log_info "Copying resources..."
-# The swift build puts resources in AdAmp_AdAmp.bundle/Resources
-BUNDLE_RESOURCES="$BUILD_DIR/AdAmp_AdAmp.bundle/Resources"
+# The swift build puts resources in NullPlayer_NullPlayer.bundle/Resources
+BUNDLE_RESOURCES="$BUILD_DIR/NullPlayer_NullPlayer.bundle/Resources"
 if [[ -d "$BUNDLE_RESOURCES" ]]; then
     cp -R "$BUNDLE_RESOURCES/"* "$RESOURCES_DIR/" 2>/dev/null || true
     log_success "Resources copied (Presets, Textures, etc.)"
@@ -126,16 +126,16 @@ else
 fi
 
 # Copy Metal shader files from bundle root (SPM places .copy() files there)
-if [[ -f "$BUILD_DIR/AdAmp_AdAmp.bundle/SpectrumShaders.metal" ]]; then
-    cp "$BUILD_DIR/AdAmp_AdAmp.bundle/SpectrumShaders.metal" "$RESOURCES_DIR/"
+if [[ -f "$BUILD_DIR/NullPlayer_NullPlayer.bundle/SpectrumShaders.metal" ]]; then
+    cp "$BUILD_DIR/NullPlayer_NullPlayer.bundle/SpectrumShaders.metal" "$RESOURCES_DIR/"
     log_success "Metal shaders copied"
 fi
 
 # Also copy Info.plist from source
-cp "$REPO_ROOT/Sources/AdAmp/Resources/Info.plist" "$CONTENTS_DIR/"
+cp "$REPO_ROOT/Sources/NullPlayer/Resources/Info.plist" "$CONTENTS_DIR/"
 
 # Step 7: Create app icon from AppIcon.png
-APP_ICON_PNG="$REPO_ROOT/Sources/AdAmp/Resources/AppIcon.png"
+APP_ICON_PNG="$REPO_ROOT/Sources/NullPlayer/Resources/AppIcon.png"
 if [[ -f "$APP_ICON_PNG" ]]; then
     log_info "Creating app icon..."
     ICONSET_DIR="$DIST_DIR/AppIcon.iconset"
@@ -166,10 +166,10 @@ fi
 log_info "Fixing library paths..."
 
 # Add rpath to executable if not already present
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/AdAmp" 2>/dev/null || true
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/NullPlayer" 2>/dev/null || true
 
 # Fix libprojectM reference in executable
-install_name_tool -change "@rpath/libprojectM-4.4.dylib" "@executable_path/../Frameworks/libprojectM-4.4.dylib" "$MACOS_DIR/AdAmp" 2>/dev/null || true
+install_name_tool -change "@rpath/libprojectM-4.4.dylib" "@executable_path/../Frameworks/libprojectM-4.4.dylib" "$MACOS_DIR/NullPlayer" 2>/dev/null || true
 
 # Update libprojectM's own install name
 install_name_tool -id "@executable_path/../Frameworks/libprojectM-4.dylib" "$FRAMEWORKS_DIR/libprojectM-4.dylib" 2>/dev/null || true

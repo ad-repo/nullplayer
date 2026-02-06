@@ -1,10 +1,10 @@
 # Audio System Architecture
 
-This document describes AdAmp's audio playback system, including local file playback, streaming audio, equalization, and spectrum analysis.
+This document describes NullPlayer's audio playback system, including local file playback, streaming audio, equalization, and spectrum analysis.
 
 ## Overview
 
-AdAmp uses two parallel audio pipelines to handle different content types:
+NullPlayer uses two parallel audio pipelines to handle different content types:
 
 | Content Type | Pipeline | EQ Support | Spectrum |
 |-------------|----------|------------|----------|
@@ -162,7 +162,7 @@ This prevents race conditions where clicking to play track N would result in tra
 
 ### Configuration
 
-Both EQ nodes use identical Winamp-style 10-band configuration:
+Both EQ nodes use identical classic skin-style 10-band configuration:
 
 | Band | Frequency | Filter Type | Bandwidth |
 |------|-----------|-------------|-----------|
@@ -741,16 +741,16 @@ A dedicated spectrum analyzer window is available (Visualizations menu → Spect
   - Display-native refresh rate support (up to 120Hz on ProMotion displays)
 - **84 bars** (vs 19 in main window) - Higher resolution frequency display
 - **Quality modes:**
-  - **Winamp** - Smooth gradient colors from skin's `viscolor.txt` with 3D cylindrical bar shading
+  - **classic skin** - Smooth gradient colors from skin's `viscolor.txt` with 3D cylindrical bar shading
   - **Enhanced** - Rainbow LED matrix (16 rows) with floating peaks and per-cell fade trails
   - **Ultra** - Maximum visual quality with advanced effects (see below)
 - **Decay modes** controlling bar responsiveness:
   - **Instant** - No smoothing, immediate response
   - **Snappy** - 25% retention, fast and punchy (default)
   - **Balanced** - 40% retention, good middle ground
-  - **Smooth** - 55% retention, original Winamp feel
+  - **Smooth** - 55% retention, original classic skin feel
 
-The window respects the current skin's visualization colors and docks with other Winamp-style windows.
+The window respects the current skin's visualization colors and docks with other classic skin-style windows.
 
 #### Ultra Quality Mode
 
@@ -771,13 +771,13 @@ Ultra mode provides the smoothest and most visually impressive spectrum visualiz
 
 **Key files:**
 - `Visualization/SpectrumAnalyzerView.swift` - Metal-based spectrum view component
-- `Visualization/SpectrumShaders.metal` - GPU shaders (Winamp bar, LED matrix, Ultra modes)
+- `Visualization/SpectrumShaders.metal` - GPU shaders (classic skin bar, LED matrix, Ultra modes)
 - `Windows/Spectrum/SpectrumWindowController.swift` - Window controller
 - `Windows/Spectrum/SpectrumView.swift` - Container view with skin chrome
 
 ## ProjectM Visualization
 
-AdAmp includes a ProjectM visualization window powered by projectM (libprojectM-4).
+NullPlayer includes a ProjectM visualization window powered by projectM (libprojectM-4).
 
 ### Low-Latency PCM Delivery
 
@@ -822,7 +822,7 @@ The ProjectM window supports fullscreen mode:
 - Menu bar and dock auto-hide in fullscreen
 - Window chrome is hidden for immersive viewing
 
-Note: The ProjectM window uses a custom fullscreen implementation (rather than macOS native fullscreen) because it's a borderless window for authentic Winamp styling.
+Note: The ProjectM window uses a custom fullscreen implementation (rather than macOS native fullscreen) because it's a borderless window for authentic classic skin styling.
 
 ### Keyboard Controls
 
@@ -877,7 +877,7 @@ Formats supported by AVAudioFile:
 - MP3, AAC, Ogg Vorbis streams
 - Shoutcast/Icecast with metadata
 
-**M4A Limitation:** Only "fast-start" optimized M4A files are supported for HTTP streaming. Non-optimized M4A files (where the `moov` atom is at the end of the file) will fail with a `streamParseBytesFailure` error. This is a limitation of Apple's AudioFileStream Services. When this error occurs, AdAmp automatically advances to the next track.
+**M4A Limitation:** Only "fast-start" optimized M4A files are supported for HTTP streaming. Non-optimized M4A files (where the `moov` atom is at the end of the file) will fail with a `streamParseBytesFailure` error. This is a limitation of Apple's AudioFileStream Services. When this error occurs, NullPlayer automatically advances to the next track.
 
 To fix problematic M4A files, re-encode with `ffmpeg -i input.m4a -movflags +faststart output.m4a`.
 
@@ -896,7 +896,7 @@ To fix problematic M4A files, re-encode with `ffmpeg -i input.m4a -movflags +fas
 
 ## Plex Play Statistics
 
-When playing Plex content, AdAmp reports playback activity back to the Plex server. This enables:
+When playing Plex content, NullPlayer reports playback activity back to the Plex server. This enables:
 
 - **Play count tracking** - Tracks are marked as "played" and count increments
 - **Last played date** - Server records when you last listened/watched
@@ -980,7 +980,7 @@ The `PlexVideoPlaybackReporter` singleton manages Plex reporting for **video con
 
 ## Plex Radio/Mix
 
-AdAmp supports Plex radio features, allowing you to generate dynamic playlists based on a seed track, album, or artist. This is similar to PlexAmp's "Track Radio", "Artist Radio", and "Album Radio" features.
+NullPlayer supports Plex radio features, allowing you to generate dynamic playlists based on a seed track, album, or artist. This is similar to PlexAmp's "Track Radio", "Artist Radio", and "Album Radio" features.
 
 ### Accessing Radio Features
 
@@ -1024,7 +1024,7 @@ By default, radio playlists include up to 100 tracks. The results use `sort=rand
 
 ## Subsonic/Navidrome Streaming
 
-AdAmp supports streaming music from Subsonic-compatible servers (including Navidrome). This uses the same HTTP streaming pipeline as Plex.
+NullPlayer supports streaming music from Subsonic-compatible servers (including Navidrome). This uses the same HTTP streaming pipeline as Plex.
 
 ### SubsonicManager
 
@@ -1068,7 +1068,7 @@ struct Track {
 
 Stream URLs include authentication parameters:
 ```
-http://server/rest/stream?id=SONG_ID&u=USERNAME&t=TOKEN&s=SALT&v=1.16.1&c=AdAmp
+http://server/rest/stream?id=SONG_ID&u=USERNAME&t=TOKEN&s=SALT&v=1.16.1&c=NullPlayer
 ```
 
 **Note:** The `f=json` parameter is intentionally omitted from stream URLs. It should only be used for REST API calls that return JSON - stream endpoints return binary audio data.
@@ -1103,13 +1103,13 @@ See [SONOS.md](SONOS.md) for full casting documentation.
 
 ## Now Playing Integration
 
-AdAmp reports playback information to macOS via `MPNowPlayingInfoCenter`, enabling:
+NullPlayer reports playback information to macOS via `MPNowPlayingInfoCenter`, enabling:
 - Discord Music Presence (https://github.com/ungive/discord-music-presence)
 - macOS Control Center media controls
 - Touch Bar controls
 - Bluetooth headphone controls (AirPods, etc.)
 
-The integration is managed by `NowPlayingManager` in `Sources/AdAmp/App/NowPlayingManager.swift`.
+The integration is managed by `NowPlayingManager` in `Sources/NullPlayer/App/NowPlayingManager.swift`.
 
 ### Reported Metadata
 - Title, Artist, Album

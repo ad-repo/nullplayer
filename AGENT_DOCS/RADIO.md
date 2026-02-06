@@ -1,11 +1,11 @@
 # Internet Radio
 
-AdAmp supports Shoutcast and Icecast internet radio streaming with automatic reconnection and live metadata display.
+NullPlayer supports Shoutcast and Icecast internet radio streaming with automatic reconnection and live metadata display.
 
 ## Architecture
 
 ```
-Sources/AdAmp/
+Sources/NullPlayer/
 ├── Radio/
 │   └── RadioManager.swift        # Singleton managing radio state
 ├── Data/Models/
@@ -191,7 +191,7 @@ func getMarqueeDisplayText() -> String {
     if let error = errorMessage { return error }
     if WindowManager.shared.isVideoActivePlayback { return videoTitle }
     if RadioManager.shared.isActive { return RadioManager.shared.statusText }
-    return currentTrack?.displayTitle ?? "AdAmp"
+    return currentTrack?.displayTitle ?? "NullPlayer"
 }
 ```
 

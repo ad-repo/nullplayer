@@ -8,7 +8,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in AdAmp, please report it responsibly:
+If you discover a security vulnerability in NullPlayer, please report it responsibly:
 
 1. **Do not** open a public GitHub issue for security vulnerabilities
 2. Email the maintainer directly or use GitHub's private vulnerability reporting
@@ -29,7 +29,7 @@ If you discover a security vulnerability in AdAmp, please report it responsibly:
 
 This security policy covers:
 
-- The AdAmp application code
+- The NullPlayer application code
 - Build and bootstrap scripts
 - Any bundled dependencies
 
@@ -41,9 +41,9 @@ This policy does **not** cover:
 
 ## Security Best Practices for Users
 
-- Download AdAmp only from official sources
+- Download NullPlayer only from official sources
 - Keep your macOS system updated
 - Be cautious with skins from untrusted sources
 - Use strong Plex account credentials
 
-Thank you for helping keep AdAmp secure!
+Thank you for helping keep NullPlayer secure!

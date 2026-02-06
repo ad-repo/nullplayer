@@ -1,5 +1,5 @@
 #!/bin/bash
-# AdAmp Bootstrap Script
+# NullPlayer Bootstrap Script
 # Downloads required binary frameworks from GitHub Releases
 #
 # Usage: ./scripts/bootstrap.sh
@@ -8,7 +8,7 @@
 set -eo pipefail
 
 # Configuration
-REPO="ad-repo/adamp"
+REPO="ad-repo/nullplayer"
 RELEASE_TAG="deps-v1"
 
 # Framework definitions
@@ -187,7 +187,7 @@ install_framework() {
 main() {
     echo ""
     echo "======================================"
-    echo "  AdAmp Framework Bootstrap"
+    echo "  NullPlayer Framework Bootstrap"
     echo "======================================"
     echo ""
     

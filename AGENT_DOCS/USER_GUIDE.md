@@ -1,6 +1,6 @@
-# AdAmp User Guide
+# NullPlayer User Guide
 
-A faithful recreation of Winamp 2.x for macOS with Plex Media Server integration, ProjectM visualizations, and casting support.
+A faithful recreation of classic skin 2.x for macOS with Plex Media Server integration, ProjectM visualizations, and casting support.
 
 ## Table of Contents
 
@@ -38,8 +38,8 @@ A faithful recreation of Winamp 2.x for macOS with Plex Media Server integration
 
 ### First Launch
 
-1. Launch AdAmp to see the classic Winamp 2.x main player window
-2. On first launch (or after an update), the classic Winamp intro sound plays
+1. Launch NullPlayer to see the classic classic skin 2.x main player window
+2. On first launch (or after an update), the classic classic skin intro sound plays
 3. Right-click anywhere on the player to access the context menu
 4. **Drag & drop** audio files onto the player, or use **Play > File...** / **Play > Folder...** to add music
 5. Or connect your **Plex** account to browse your media library
@@ -48,7 +48,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex Media Server integration
 
 ### Window Layout
 
-AdAmp consists of several windows that can be shown/hidden:
+NullPlayer consists of several windows that can be shown/hidden:
 
 | Window | Description | Toggle |
 |--------|-------------|--------|
@@ -124,7 +124,7 @@ The main window provides core playback controls and track information.
 | **Menu** | Open ProjectM visualizations |
 | **Minimize** | Minimize to dock |
 | **Shade** | Toggle compact "shade" mode |
-| **Close** | Quit AdAmp |
+| **Close** | Quit NullPlayer |
 
 ### Drag & Drop
 
@@ -316,7 +316,7 @@ When viewing album art, click the **VIS** button to open the Art Visualizer with
 
 ## ProjectM Visualizations
 
-AdAmp includes projectM-powered ProjectM visualizations with 100+ bundled presets.
+NullPlayer includes projectM-powered ProjectM visualizations with 100+ bundled presets.
 
 ### Opening ProjectM
 
@@ -391,7 +391,7 @@ The Art Visualizer transforms album artwork with audio-reactive shader effects.
 
 ## Video Player
 
-AdAmp supports video playback for Plex movies and TV shows with full audio/subtitle track selection.
+NullPlayer supports video playback for Plex movies and TV shows with full audio/subtitle track selection.
 
 ### Playing Video
 
@@ -477,7 +477,7 @@ While video plays:
 
 ## Plex Integration
 
-Connect AdAmp to your Plex Media Server for streaming access.
+Connect NullPlayer to your Plex Media Server for streaming access.
 
 ### Linking Your Account
 
@@ -494,11 +494,11 @@ Once linked:
 
 ### Unlinking
 
-**Plex > Unlink Account** removes your Plex credentials from AdAmp.
+**Plex > Unlink Account** removes your Plex credentials from NullPlayer.
 
 ### Play Statistics
 
-AdAmp reports playback to Plex:
+NullPlayer reports playback to Plex:
 - **Now Playing** - Appears in other Plex clients
 - **Play count** - Increments when track finishes
 - **Last played date** - Updated on completion
@@ -547,7 +547,7 @@ Access Plex Radio stations from the **RADIO** tab in the Library Browser when co
 
 ## Navidrome/Subsonic Integration
 
-AdAmp supports Navidrome, Subsonic, and other Subsonic-compatible music servers.
+NullPlayer supports Navidrome, Subsonic, and other Subsonic-compatible music servers.
 
 ### Adding a Server
 
@@ -579,7 +579,7 @@ Select **Subsonic: [Server Name]** from the source dropdown in the Library Brows
 
 ### Play Statistics
 
-AdAmp reports playback to Subsonic servers:
+NullPlayer reports playback to Subsonic servers:
 - **Now Playing** - Shows what's currently playing on the server
 - **Play count** - Increments when track is scrobbled
 
@@ -597,7 +597,7 @@ Right-click tracks, albums, or artists to add them to your favorites (starred it
 
 ## Internet Radio
 
-AdAmp supports Shoutcast and Icecast internet radio streaming with automatic reconnection and live metadata.
+NullPlayer supports Shoutcast and Icecast internet radio streaming with automatic reconnection and live metadata.
 
 ### Adding Radio Stations
 
@@ -650,7 +650,7 @@ New installations include a few sample stations from SomaFM to get started. You 
 ### Auto-Reconnect
 
 When a radio stream disconnects (network issues, server restart, etc.):
-- AdAmp automatically attempts to reconnect
+- NullPlayer automatically attempts to reconnect
 - The marquee shows "Reconnecting... (attempt X/5)"
 - Exponential backoff (2s, 4s, 8s, 16s, 32s between attempts)
 - After 5 failed attempts, shows "Connection failed"
@@ -756,7 +756,7 @@ The room checkboxes use a special view that **keeps the menu open** when clicked
 - **TVs (DLNA)** - DLNA-compatible televisions
 
 To cast audio:
-1. Start playing audio in AdAmp
+1. Start playing audio in NullPlayer
 2. Select a device from the menu
 3. **Stop Casting** to return to local playback
 
@@ -764,7 +764,7 @@ To cast audio:
 
 ### Video Casting
 
-AdAmp supports casting Plex movies and TV episodes to video-capable devices (Chromecast and DLNA TVs). Sonos is audio-only.
+NullPlayer supports casting Plex movies and TV episodes to video-capable devices (Chromecast and DLNA TVs). Sonos is audio-only.
 
 There are **two casting paths** with different control behaviors:
 
@@ -803,7 +803,7 @@ Right-click a movie or episode in the Library Browser:
 
 #### Known Limitations
 
-**Chromecast**: Fully supported for both audio and video casting using the Google Cast Protocol v2. Supports playback controls (play, pause, seek, volume) from AdAmp.
+**Chromecast**: Fully supported for both audio and video casting using the Google Cast Protocol v2. Supports playback controls (play, pause, seek, volume) from NullPlayer.
 
 **Samsung TVs**: Samsung TVs have limited DLNA control support. While video casting works for playback, remote control features (seek, volume, pause) may not be available. This is a Samsung firmware limitation - use the TV's remote to control playback. (Tested on Samsung QN90BA 75")
 
@@ -813,19 +813,19 @@ Right-click a movie or episode in the Library Browser:
 
 ## Skins
 
-AdAmp supports classic Winamp 2.x skins (.wsz files).
+NullPlayer supports classic classic skin 2.x skins (.wsz files).
 
 ### Loading Skins
 
 - **Skins > Load Skin...** - Select a .wsz file
-- **Skins > Get More Skins...** - Opens [Winamp Skin Museum](https://skins.webamp.org/)
+- **Skins > Get More Skins...** - Opens [classic skin Skin Museum](https://skins.webamp.org/)
 - **&lt;Base Skin 1/2/3&gt;** - Built-in default skins
 
 ### Managing Skins
 
 Downloaded skins appear in the Skins menu if placed in:
 ```
-~/Library/Application Support/AdAmp/Skins/
+~/Library/Application Support/NullPlayer/Skins/
 ```
 
 ### Lock Browser/ProjectM to Default
@@ -908,7 +908,7 @@ Enable this option to keep the Library Browser and ProjectM windows using the de
 
 ## Context Menu Reference
 
-Right-click anywhere on AdAmp windows to access:
+Right-click anywhere on NullPlayer windows to access:
 
 ### About Playing
 
@@ -1017,7 +1017,7 @@ Shows detailed metadata for the currently playing track or video. This option is
 - Snap to Default
 
 ### Exit
-- Quit AdAmp
+- Quit NullPlayer
 
 ---
 
@@ -1027,7 +1027,7 @@ Shows detailed metadata for the currently playing track or video. This option is
 
 Library data is stored at:
 ```
-~/Library/Application Support/AdAmp/library.json
+~/Library/Application Support/NullPlayer/library.json
 ```
 
 ### Backup & Restore
@@ -1040,7 +1040,7 @@ Library data is stored at:
 
 Backups are stored in:
 ```
-~/Library/Application Support/AdAmp/Backups/
+~/Library/Application Support/NullPlayer/Backups/
 ```
 
 A backup is automatically created before:
@@ -1106,7 +1106,7 @@ The main window displays real-time frequency analysis:
 - Main window and Spectrum Analyzer window have independent flame style and intensity settings
 
 The standalone Spectrum Analyzer window provides a larger, more detailed view with:
-- **Quality modes**: Winamp (skin colors with 3D shading), Enhanced (rainbow LED matrix), Ultra (maximum effects), Fire, JWST
+- **Quality modes**: classic skin (skin colors with 3D shading), Enhanced (rainbow LED matrix), Ultra (maximum effects), Fire, JWST
 - **Decay modes**: Instant, Snappy (default), Balanced, Smooth
 - **Fullscreen**: Press F or use context menu (Escape to exit)
 - **84 bars** for high-resolution frequency display
@@ -1166,7 +1166,7 @@ When enabled, the following is saved on quit and restored on launch:
 
 ### Skins
 
-- Winamp 2.x skins (.wsz) - ZIP archives
+- classic skin 2.x skins (.wsz) - ZIP archives
 
 ### Visualizations
 
@@ -1178,9 +1178,9 @@ When enabled, the following is saved on quit and restored on launch:
 
 | Data | Location |
 |------|----------|
-| Library database | `~/Library/Application Support/AdAmp/library.json` |
-| Library backups | `~/Library/Application Support/AdAmp/Backups/` |
-| Downloaded skins | `~/Library/Application Support/AdAmp/Skins/` |
+| Library database | `~/Library/Application Support/NullPlayer/library.json` |
+| Library backups | `~/Library/Application Support/NullPlayer/Backups/` |
+| Downloaded skins | `~/Library/Application Support/NullPlayer/Skins/` |
 | Plex credentials | macOS Keychain |
 | Window positions | UserDefaults |
 | EQ settings | UserDefaults |
@@ -1210,7 +1210,7 @@ When enabled, the following is saved on quit and restored on launch:
 ### Casting Issues
 
 - **Devices not found**: Use Refresh Devices, check network
-- **Casting fails**: Ensure device is on same network as AdAmp
+- **Casting fails**: Ensure device is on same network as NullPlayer
 
 ### Sonos Issues
 
@@ -1227,12 +1227,12 @@ When enabled, the following is saved on quit and restored on launch:
 ## Credits
 
 - [Webamp](https://github.com/captbaritone/webamp) - Skin parsing reference
-- [Winamp Skin Museum](https://skins.webamp.org/) - Skin archive
+- [classic skin Skin Museum](https://skins.webamp.org/) - Skin archive
 - [projectM](https://github.com/projectM-visualizer/projectm) - ProjectM visualizations
 - [KSPlayer](https://github.com/kingslay/KSPlayer) - Video playback
 - [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) - HTTP audio streaming
-- Original Winamp by Nullsoft
+- Original classic skin by Nullsoft
 
 ---
 
-*AdAmp is not affiliated with Winamp LLC or Radionomy Group.*
+*NullPlayer is not affiliated with classic skin LLC or Radionomy Group.*

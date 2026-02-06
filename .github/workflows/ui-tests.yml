@@ -45,10 +45,10 @@ jobs:
           ln -sf ../../../Frameworks/libprojectM-4.dylib .build/arm64-apple-macosx/debug/libprojectM-4.4.dylib
       
       - name: Run unit tests
-        run: swift test --filter AdAmpTests --parallel
+        run: swift test --filter NullPlayerTests --parallel
 
   # Note: UI tests are skipped in CI because SPM test targets are unit test bundles,
   # and XCUIApplication requires a UI test bundle configuration that SPM cannot provide.
   # UI tests must be run locally using Xcode:
   #   1. Open Package.swift in Xcode
-  #   2. Run AdAmpUITests target with Cmd+U
+  #   2. Run NullPlayerUITests target with Cmd+U

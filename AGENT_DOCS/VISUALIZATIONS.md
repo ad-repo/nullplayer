@@ -1,6 +1,6 @@
-# AdAmp Visualization Systems
+# NullPlayer Visualization Systems
 
-AdAmp features multiple visualization systems for audio-reactive visual effects.
+NullPlayer features multiple visualization systems for audio-reactive visual effects.
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@ AdAmp features multiple visualization systems for audio-reactive visual effects.
 
 ## Main Window Visualization
 
-The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports two rendering modes.
+The main window's built-in visualization area (76x16 pixels in classic coordinates) supports two rendering modes.
 
 ### Modes
 
@@ -43,7 +43,7 @@ When Fire mode is active, a Metal-based `SpectrumAnalyzerView` overlay is positi
 ### Technical Details
 
 - **Implementation**: Metal overlay (`SpectrumAnalyzerView`) added as subview of `MainWindowView`
-- **Positioning**: Converted from Winamp coordinates (top-left origin) to macOS view coordinates (bottom-left origin), accounting for window scaling
+- **Positioning**: Converted from classic coordinates (top-left origin) to macOS view coordinates (bottom-left origin), accounting for window scaling
 - **Lifecycle**: Overlay is created lazily on first Fire mode activation, display link starts/stops with mode changes and window visibility
 - **CPU Efficiency**: Display link pauses when window is minimized, occluded, or in Spectrum mode
 
@@ -166,7 +166,7 @@ All effects use Core Image filters for GPU acceleration and respond to audio lev
 
 ## ProjectM/ProjectM Visualizer
 
-The ProjectM visualizer renders classic ProjectM presets - the legendary visualization system from Winamp. It uses OpenGL for real-time procedural graphics synchronized to music.
+The ProjectM visualizer renders classic ProjectM presets - the legendary visualization system from classic. It uses OpenGL for real-time procedural graphics synchronized to music.
 
 ### Accessing the Visualizer
 
@@ -175,18 +175,18 @@ The ProjectM visualizer renders classic ProjectM presets - the legendary visuali
 
 ### What is ProjectM/ProjectM?
 
-- **ProjectM** was the iconic visualization plugin for Winamp, created by Ryan Geiss
+- **ProjectM** was the iconic visualization plugin for classic, created by Ryan Geiss
 - **ProjectM** is the open-source reimplementation that runs ProjectM presets
 - Presets are shader-based programs that create infinite visual variety
 - Each preset defines equations for motion, color, and waveform rendering
 
 ### Presets
 
-AdAmp includes bundled ProjectM presets. You can also add custom presets:
+NullPlayer includes bundled ProjectM presets. You can also add custom presets:
 
 **Custom Preset Location:**
 ```
-~/Library/Application Support/AdAmp/Presets/
+~/Library/Application Support/NullPlayer/Presets/
 ```
 
 Place `.milk` preset files in this folder and use "Reload Presets" from the context menu.
@@ -260,7 +260,7 @@ Setting is persisted across app restarts (UserDefaults key: `projectMPCMGain`).
 
 ### Beat Sensitivity
 
-ProjectM adjusts its visuals based on detected beats. AdAmp uses two sensitivity levels:
+ProjectM adjusts its visuals based on detected beats. NullPlayer uses two sensitivity levels:
 - **Idle**: Lower sensitivity (0.2) when audio is quiet/stopped
 - **Active**: User-configurable sensitivity during playback (default 1.0)
 
@@ -305,7 +305,7 @@ The Spectrum Analyzer window participates in the docking system:
 
 ### Switching Modes
 
-- **Double-click** the spectrum analyzer window to cycle through modes (Winamp → Enhanced → Ultra → Fire → JWST)
+- **Double-click** the spectrum analyzer window to cycle through modes (classic → Enhanced → Ultra → Fire → JWST)
 - **Right-click** → Mode to select a specific mode
 - **Left/Right arrow keys** cycle flame styles when in Fire mode
 
@@ -313,15 +313,15 @@ The Spectrum Analyzer window participates in the docking system:
 
 | Mode | Description |
 |------|-------------|
-| **Winamp** | Discrete color bands from skin's 24-color palette with floating peak indicators, 3D bar shading, and band gaps for an authentic segmented LED look (default) |
+| **classic** | Discrete color bands from skin's 24-color palette with floating peak indicators, 3D bar shading, and band gaps for an authentic segmented LED look (default) |
 | **Enhanced** | Rainbow LED matrix with gravity-bouncing peaks, warm amber fade trails, 3D inner glow cells, and anti-aliased rounded corners |
 | **Ultra** | Maximum fidelity seamless gradient with smooth exponential decay, perceptual gamma, warm color trails, physics-based bouncing peaks, and reflection effect |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues (see below) |
 | **JWST** | Deep space flythrough with 3D perspective star field, JWST diffraction flares as intensity indicators, and vivid celestial bodies (see below) |
 
-### Winamp Mode Details
+### classic Mode Details
 
-The Winamp mode aims to recreate the iconic Winamp 2.x spectrum analyzer aesthetic with modern enhancements:
+The classic mode aims to recreate the iconic classic 2.x spectrum analyzer aesthetic with modern enhancements:
 
 - **Discrete Color Bands**: Bars are divided into 16 horizontal segments with subtle 1-pixel gaps between them, creating the classic LED matrix look without a screen door effect
 - **Floating Peak Indicators**: Bright lines hold at peak heights, then fall with gravity-based physics including subtle bouncing for satisfying visual feedback
@@ -399,12 +399,12 @@ Controls how quickly spectrum bars fall after peaks:
 | **Instant** | No smoothing - bars respond immediately |
 | **Snappy** | Fast response with 25% retention (default) |
 | **Balanced** | Middle ground with 40% retention |
-| **Smooth** | Classic Winamp feel with 55% retention |
+| **Smooth** | Classic classic feel with 55% retention |
 
 ### Context Menu
 
 Right-click on the window for:
-- **Mode** - Switch between Winamp/Enhanced/Ultra/Fire/JWST rendering
+- **Mode** - Switch between classic/Enhanced/Ultra/Fire/JWST rendering
 - **Responsiveness** - Adjust decay behavior (bar modes)
 - **Flame Style** - Choose flame color preset (Flame mode only)
 - **Fire Intensity** - Choose Mellow or Intense reactivity (Flame mode only)
@@ -413,7 +413,7 @@ Right-click on the window for:
 ### Technical Details
 
 - **Rendering**: Metal shaders via CAMetalLayer with runtime shader compilation
-- **Shader Modes**: Separate pipeline states for Winamp (bar), Enhanced (LED matrix), Ultra (seamless gradient), Fire (compute simulation), and JWST (procedural space) modes
+- **Shader Modes**: Separate pipeline states for classic (bar), Enhanced (LED matrix), Ultra (seamless gradient), Fire (compute simulation), and JWST (procedural space) modes
 - **Frame Rate**: 60 FPS via CVDisplayLink (auto-stops when window closes or occluded)
 - **Audio Input**: 75-band spectrum data from AudioEngine
 - **Thread Safety**: OSAllocatedUnfairLock for spectrum data updates
@@ -431,7 +431,7 @@ Right-click on the window for:
 | Feature | Album Art Visualizer | ProjectM/ProjectM | Spectrum Analyzer |
 |---------|---------------------|-------------------|-------------------|
 | **Visual Style** | Transformed album artwork | Procedural graphics | Frequency bars / Fire / Deep space |
-| **Effect Count** | 30 built-in effects | 100s of presets available | 5 modes (Winamp, Enhanced, Ultra, Fire, JWST) |
+| **Effect Count** | 30 built-in effects | 100s of presets available | 5 modes (classic, Enhanced, Ultra, Fire, JWST) |
 | **Customization** | Intensity adjustment | Full preset ecosystem | Mode + decay + flame styles |
 | **GPU Tech** | Core Image (Metal) | OpenGL shaders | Metal shaders + Metal compute shaders |
 | **Audio Response** | Spectrum bands (bass/mid/treble) | PCM waveform + beat detection | 75-band spectrum / energy-driven |
@@ -446,7 +446,7 @@ Right-click on the window for:
 
 **ProjectM/ProjectM**
 - For full-screen immersive visualizations
-- Classic Winamp nostalgia
+- Classic classic nostalgia
 - Parties and ambient displays
 - When you want maximum visual variety
 
@@ -455,9 +455,9 @@ Right-click on the window for:
 - Click the vis area to toggle between spectrum bars and fire
 
 **Spectrum Analyzer**
-- When you want detailed frequency visualization (Winamp/Enhanced/Ultra modes)
+- When you want detailed frequency visualization (classic/Enhanced/Ultra modes)
 - For monitoring audio levels
-- Classic Winamp spectrum aesthetic
+- Classic classic spectrum aesthetic
 - Complements the main window's smaller analyzer
 - Fire mode for ambient flame visuals
 - JWST mode for a chill deep space drift with music-reactive diffraction flares

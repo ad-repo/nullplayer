@@ -3,7 +3,7 @@
 // test_plex_rate.swift
 // Standalone test for Plex track rating API
 //
-// This script validates the /:/rate endpoint before implementing it in AdAmp.
+// This script validates the /:/rate endpoint before implementing it in NullPlayer.
 //
 // Usage:
 //   PLEX_URL=http://192.168.1.x:32400 PLEX_TOKEN=xxx swift scripts/test_plex_rate.swift
@@ -57,7 +57,7 @@ func fetchJSON(urlString: String, method: String = "GET") -> [String: Any]? {
     var request = URLRequest(url: url)
     request.httpMethod = method
     request.setValue("application/json", forHTTPHeaderField: "Accept")
-    request.setValue("AdAmp", forHTTPHeaderField: "X-Plex-Product")
+    request.setValue("NullPlayer", forHTTPHeaderField: "X-Plex-Product")
     request.setValue("1.0", forHTTPHeaderField: "X-Plex-Version")
     request.setValue("macOS", forHTTPHeaderField: "X-Plex-Platform")
     request.setValue("test-plex-rate-script", forHTTPHeaderField: "X-Plex-Client-Identifier")
@@ -106,7 +106,7 @@ func putRequest(urlString: String) -> (success: Bool, statusCode: Int) {
     var request = URLRequest(url: url)
     request.httpMethod = "PUT"
     request.setValue("application/json", forHTTPHeaderField: "Accept")
-    request.setValue("AdAmp", forHTTPHeaderField: "X-Plex-Product")
+    request.setValue("NullPlayer", forHTTPHeaderField: "X-Plex-Product")
     request.setValue("1.0", forHTTPHeaderField: "X-Plex-Version")
     request.setValue("macOS", forHTTPHeaderField: "X-Plex-Platform")
     request.setValue("test-plex-rate-script", forHTTPHeaderField: "X-Plex-Client-Identifier")
