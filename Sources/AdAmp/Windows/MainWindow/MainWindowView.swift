@@ -1182,10 +1182,10 @@ class MainWindowView: NSView {
         let originalHeight = SkinElements.MainShade.windowSize.height
         let winampPoint = NSPoint(x: point.x, y: originalHeight - point.y)
         
-        // Check window control buttons
-        let closeRect = SkinElements.TitleBar.ShadePositions.closeButton
-        let minimizeRect = SkinElements.TitleBar.ShadePositions.minimizeButton
-        let unshadeRect = SkinElements.TitleBar.ShadePositions.unshadeButton
+        // Check window control buttons - close first for priority (enlarged hit areas)
+        let closeRect = SkinElements.TitleBar.ShadeHitPositions.closeButton
+        let unshadeRect = SkinElements.TitleBar.ShadeHitPositions.unshadeButton
+        let minimizeRect = SkinElements.TitleBar.ShadeHitPositions.minimizeButton
         
         if closeRect.contains(winampPoint) {
             pressedButton = .close
@@ -1193,14 +1193,14 @@ class MainWindowView: NSView {
             return
         }
         
-        if minimizeRect.contains(winampPoint) {
-            pressedButton = .minimize
+        if unshadeRect.contains(winampPoint) {
+            pressedButton = .unshade
             needsDisplay = true
             return
         }
         
-        if unshadeRect.contains(winampPoint) {
-            pressedButton = .unshade
+        if minimizeRect.contains(winampPoint) {
+            pressedButton = .minimize
             needsDisplay = true
             return
         }
@@ -1393,11 +1393,11 @@ class MainWindowView: NSView {
                 
                 switch pressed {
                 case .close:
-                    shouldPerform = SkinElements.TitleBar.ShadePositions.closeButton.contains(winampPoint)
+                    shouldPerform = SkinElements.TitleBar.ShadeHitPositions.closeButton.contains(winampPoint)
                 case .minimize:
-                    shouldPerform = SkinElements.TitleBar.ShadePositions.minimizeButton.contains(winampPoint)
+                    shouldPerform = SkinElements.TitleBar.ShadeHitPositions.minimizeButton.contains(winampPoint)
                 case .unshade:
-                    shouldPerform = SkinElements.TitleBar.ShadePositions.unshadeButton.contains(winampPoint)
+                    shouldPerform = SkinElements.TitleBar.ShadeHitPositions.unshadeButton.contains(winampPoint)
                 default:
                     break
                 }

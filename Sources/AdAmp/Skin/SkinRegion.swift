@@ -107,26 +107,27 @@ class RegionManager {
     lazy var mainWindowRegions: [ClickableRegion] = {
         var regions: [ClickableRegion] = []
         
-        // Window control buttons (top right)
+        // Window control buttons (top right) - close first for priority
+        // Enlarged hit areas extend to window edges for easier clicking
         regions.append(ClickableRegion(
-            rect: NSRect(x: 244, y: 3, width: 9, height: 9),
-            action: .minimize,
+            rect: SkinElements.TitleBar.HitPositions.closeButton,
+            action: .close,
             cursor: .pointer
         ))
         regions.append(ClickableRegion(
-            rect: NSRect(x: 254, y: 3, width: 9, height: 9),
+            rect: SkinElements.TitleBar.HitPositions.shadeButton,
             action: .shade,
             cursor: .pointer
         ))
         regions.append(ClickableRegion(
-            rect: NSRect(x: 264, y: 3, width: 9, height: 9),
-            action: .close,
+            rect: SkinElements.TitleBar.HitPositions.minimizeButton,
+            action: .minimize,
             cursor: .pointer
         ))
         
-        // Menu button (top left)
+        // Menu button (top left) - enlarged hit area
         regions.append(ClickableRegion(
-            rect: NSRect(x: 6, y: 3, width: 9, height: 9),
+            rect: SkinElements.TitleBar.HitPositions.menuButton,
             action: .openMainMenu,
             cursor: .pointer
         ))
