@@ -166,6 +166,7 @@ Sources/AdAmp/
 
 - **Skin coordinates**: Winamp skins use top-left origin, macOS uses bottom-left
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
+- **Local file completion handler**: Must use `scheduleFile(_:at:completionCallbackType:completionHandler:)` with `.dataPlayedBack` - NOT the deprecated 3-parameter `scheduleFile(_:at:completionHandler:)` which defaults to `.dataConsumed` and fires before audio finishes playing, causing premature track advancement and UI desync
 - **Window docking**: Complex snapping logic in `WindowManager` - test edge cases
   - Multi-monitor: Screen edge snapping is skipped if it would cause docked windows to end up on different screens
   - `Snap to Default` centers main window on its current screen (not always the primary display)

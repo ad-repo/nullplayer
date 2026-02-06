@@ -548,7 +548,8 @@ class AudioEngine {
                 playerNode.scheduleSegment(file,
                     startingFrame: framePosition,
                     frameCount: AVAudioFrameCount(remainingFrames),
-                    at: nil) { [weak self] in
+                    at: nil,
+                    completionCallbackType: .dataPlayedBack) { [weak self] _ in
                         DispatchQueue.main.async {
                             self?.handlePlaybackComplete(generation: currentGeneration)
                         }
@@ -1078,7 +1079,7 @@ class AudioEngine {
         
         // Reset to beginning (local files only)
         if !isStreamingPlayback, let file = audioFile {
-            playerNode.scheduleFile(file, at: nil) { [weak self] in
+            playerNode.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.handlePlaybackComplete(generation: currentGeneration)
                 }
@@ -2140,6 +2141,8 @@ class AudioEngine {
                 NSLog("loadTrack: Failed to load track at index %d, skipping to next", index)
                 if index + 1 < playlist.count {
                     currentIndex = index + 1
+                    // Must clear isLoadingTrack before recursive call (defer hasn't run yet)
+                    isLoadingTrack = false
                     loadTrack(at: currentIndex)
                 }
                 // If no more tracks, just stop (don't start playback)
@@ -2207,7 +2210,7 @@ class AudioEngine {
             
             NSLog("loadLocalTrack: Stopping playerNode and scheduling file...")
             playerNode.stop()
-            playerNode.scheduleFile(audioFile!, at: nil) { [weak self] in
+            playerNode.scheduleFile(audioFile!, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.handlePlaybackComplete(generation: currentGeneration)
                 }
