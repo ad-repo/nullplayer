@@ -110,6 +110,12 @@ struct Skin {
         return NSImage(contentsOf: url)
     }
     
+    /// NullPlayer logo icon loaded from bundle (replaces old skin logo in main window)
+    static var nullPlayerLogoImage: NSImage? {
+        guard let url = BundleHelper.url(forResource: "null_outline", withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
+    }
+    
     /// GEN.BMP sprite sheet loaded from bundle (for ProjectM/AVS window chrome)
     /// Layout: 194x109 - title bars, borders, corners, and pixel alphabet
     /// Provides authentic classic skin-style window chrome for visualization windows

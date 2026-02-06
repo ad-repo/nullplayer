@@ -51,6 +51,29 @@ class SkinRenderer {
         if let mainImage = skin.main {
             // Draw main background from skin
             drawImage(mainImage, in: bounds, context: context)
+            
+            // Replace the baked-in skin logo with the NullPlayer logo.
+            // The click region is preserved in SkinRegion.
+            let logoRect = NSRect(x: 242, y: 85, width: 28, height: 23)
+            
+            // Sample background color from a point just left of the logo area
+            if let bgColor = samplePixelColor(in: mainImage, at: NSPoint(x: 240, y: 100)) {
+                bgColor.setFill()
+                context.fill(logoRect)
+            }
+            
+            // Draw the NullPlayer logo icon as a square (not stretched to the wider fill rect)
+            if let logoImage = Skin.nullPlayerLogoImage,
+               let logoCG = logoImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                let iconSize: CGFloat = 19  // Square icon
+                let iconRect = NSRect(x: logoRect.minX + 2, y: logoRect.minY + 2, width: iconSize, height: iconSize)
+                context.saveGState()
+                context.translateBy(x: iconRect.minX, y: iconRect.minY + iconRect.height)
+                context.scaleBy(x: 1, y: -1)
+                context.interpolationQuality = .high
+                context.draw(logoCG, in: CGRect(x: 0, y: 0, width: iconRect.width, height: iconRect.height))
+                context.restoreGState()
+            }
         } else {
             // Draw fallback background
             drawFallbackMainBackground(in: context, bounds: bounds, isActive: isActive)
