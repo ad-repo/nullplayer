@@ -72,9 +72,13 @@ class EQView: NSView {
         // Frequency labels
         static let frequencies = ["60", "170", "310", "600", "1K", "3K", "6K", "12K", "14K", "16K"]
         
-        // Window control buttons (in title bar, from right to left)
+        // Window control buttons - draw positions (in title bar, from right to left)
         static let closeRect = NSRect(x: 264, y: 3, width: 9, height: 9)
         static let shadeRect = NSRect(x: 254, y: 3, width: 9, height: 9)  // Toggle shade mode
+        
+        // Enlarged hit-test areas for easier clicking
+        static let closeHitRect = NSRect(x: 257, y: 0, width: 18, height: 14)
+        static let shadeHitRect = NSRect(x: 248, y: 0, width: 9, height: 14)
     }
     
     // MARK: - Initialization
@@ -507,15 +511,15 @@ class EQView: NSView {
         
         // Window dragging is handled by macOS via isMovableByWindowBackground
         
-        // Close button
-        if Layout.closeRect.contains(winampPoint) {
+        // Close button (checked first for priority, enlarged hit area)
+        if Layout.closeHitRect.contains(winampPoint) {
             pressedButton = .close
             needsDisplay = true
             return
         }
         
-        // Shade button (toggle compact mode)
-        if Layout.shadeRect.contains(winampPoint) {
+        // Shade button (toggle compact mode, enlarged hit area)
+        if Layout.shadeHitRect.contains(winampPoint) {
             pressedButton = .shade
             needsDisplay = true
             return
@@ -571,9 +575,9 @@ class EQView: NSView {
     
     /// Handle mouse down in shade mode
     private func handleShadeMouseDown(at winampPoint: NSPoint, event: NSEvent) {
-        // Check window control buttons
-        let closeRect = SkinElements.EQShade.Positions.closeButton
-        let shadeRect = SkinElements.EQShade.Positions.shadeButton
+        // Check window control buttons - close first for priority (enlarged hit areas)
+        let closeRect = SkinElements.EQShade.HitPositions.closeButton
+        let shadeRect = SkinElements.EQShade.HitPositions.shadeButton
         
         if closeRect.contains(winampPoint) {
             pressedButton = .close
@@ -628,12 +632,12 @@ class EQView: NSView {
                 
                 switch pressed {
                 case .close:
-                    shouldPerform = SkinElements.EQShade.Positions.closeButton.contains(winampPoint)
+                    shouldPerform = SkinElements.EQShade.HitPositions.closeButton.contains(winampPoint)
                     if shouldPerform {
                         window?.close()
                     }
                 case .unshade:
-                    shouldPerform = SkinElements.EQShade.Positions.shadeButton.contains(winampPoint)
+                    shouldPerform = SkinElements.EQShade.HitPositions.shadeButton.contains(winampPoint)
                     if shouldPerform {
                         toggleShadeMode()
                     }
@@ -651,11 +655,11 @@ class EQView: NSView {
         if let pressed = pressedButton {
             switch pressed {
             case .close:
-                if Layout.closeRect.contains(winampPoint) {
+                if Layout.closeHitRect.contains(winampPoint) {
                     window?.close()
                 }
             case .shade:
-                if Layout.shadeRect.contains(winampPoint) {
+                if Layout.shadeHitRect.contains(winampPoint) {
                     toggleShadeMode()
                 }
             case .eqPresets:

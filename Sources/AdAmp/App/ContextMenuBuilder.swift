@@ -303,11 +303,83 @@ class ContextMenuBuilder {
         
         optionsMenu.addItem(NSMenuItem.separator())
         
+        // Main Window Visualization submenu
+        optionsMenu.addItem(buildMainVisualizationMenuItem())
+        
         // Spectrum Analyzer submenu
         optionsMenu.addItem(buildSpectrumAnalyzerMenuItem())
         
         optionsItem.submenu = optionsMenu
         return optionsItem
+    }
+    
+    // MARK: - Main Window Visualization Submenu
+    
+    private static func buildMainVisualizationMenuItem() -> NSMenuItem {
+        let visItem = NSMenuItem(title: "Main Visualization", action: nil, keyEquivalent: "")
+        let visMenu = NSMenu()
+        visMenu.autoenablesItems = false
+        
+        let currentMode = UserDefaults.standard.string(forKey: "mainWindowVisMode")
+            .flatMap { MainWindowVisMode(rawValue: $0) } ?? .spectrum
+        
+        // Mode options
+        let spectrumItem = NSMenuItem(title: "Spectrum", action: #selector(MenuActions.setMainVisMode(_:)), keyEquivalent: "")
+        spectrumItem.target = MenuActions.shared
+        spectrumItem.representedObject = MainWindowVisMode.spectrum
+        spectrumItem.state = (currentMode == .spectrum) ? .on : .off
+        visMenu.addItem(spectrumItem)
+        
+        let fireItem = NSMenuItem(title: "Fire", action: #selector(MenuActions.setMainVisMode(_:)), keyEquivalent: "")
+        fireItem.target = MenuActions.shared
+        fireItem.representedObject = MainWindowVisMode.fire
+        fireItem.state = (currentMode == .fire) ? .on : .off
+        visMenu.addItem(fireItem)
+        
+        // Flame Style submenu (only when Fire mode active)
+        if currentMode == .fire {
+            visMenu.addItem(NSMenuItem.separator())
+            
+            let flameStyleItem = NSMenuItem(title: "Flame Style", action: nil, keyEquivalent: "")
+            let flameStyleMenu = NSMenu()
+            flameStyleMenu.autoenablesItems = false
+            
+            let currentStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle")
+                .flatMap { FlameStyle(rawValue: $0) } ?? .inferno
+            
+            for style in FlameStyle.allCases {
+                let item = NSMenuItem(title: style.displayName, action: #selector(MenuActions.setMainVisFlameStyle(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = style
+                item.state = (currentStyle == style) ? .on : .off
+                flameStyleMenu.addItem(item)
+            }
+            
+            flameStyleItem.submenu = flameStyleMenu
+            visMenu.addItem(flameStyleItem)
+            
+            // Flame Intensity submenu
+            let flameIntensityItem = NSMenuItem(title: "Fire Intensity", action: nil, keyEquivalent: "")
+            let flameIntensityMenu = NSMenu()
+            flameIntensityMenu.autoenablesItems = false
+            
+            let currentIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity")
+                .flatMap { FlameIntensity(rawValue: $0) } ?? .mellow
+            
+            for intensity in FlameIntensity.allCases {
+                let item = NSMenuItem(title: intensity.displayName, action: #selector(MenuActions.setMainVisFlameIntensity(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = intensity
+                item.state = (currentIntensity == intensity) ? .on : .off
+                flameIntensityMenu.addItem(item)
+            }
+            
+            flameIntensityItem.submenu = flameIntensityMenu
+            visMenu.addItem(flameIntensityItem)
+        }
+        
+        visItem.submenu = visMenu
+        return visItem
     }
     
     // MARK: - Spectrum Analyzer Submenu
@@ -317,10 +389,10 @@ class ContextMenuBuilder {
         let spectrumMenu = NSMenu()
         spectrumMenu.autoenablesItems = false
         
-        // Quality submenu
-        let qualityItem = NSMenuItem(title: "Quality", action: nil, keyEquivalent: "")
-        let qualityMenu = NSMenu()
-        qualityMenu.autoenablesItems = false
+        // Mode submenu
+        let modeItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
+        let modeMenu = NSMenu()
+        modeMenu.autoenablesItems = false
         
         let currentQuality = UserDefaults.standard.string(forKey: "spectrumQualityMode")
             .flatMap { SpectrumQualityMode(rawValue: $0) } ?? .winamp
@@ -330,10 +402,10 @@ class ContextMenuBuilder {
             item.target = MenuActions.shared
             item.representedObject = mode
             item.state = (currentQuality == mode) ? .on : .off
-            qualityMenu.addItem(item)
+            modeMenu.addItem(item)
         }
-        qualityItem.submenu = qualityMenu
-        spectrumMenu.addItem(qualityItem)
+        modeItem.submenu = modeMenu
+        spectrumMenu.addItem(modeItem)
         
         // Responsiveness submenu
         let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
@@ -370,6 +442,46 @@ class ContextMenuBuilder {
         }
         normItem.submenu = normMenu
         spectrumMenu.addItem(normItem)
+        
+        // Flame Style submenu (only when Fire mode active)
+        if currentQuality == .flame {
+            let flameStyleItem = NSMenuItem(title: "Flame Style", action: nil, keyEquivalent: "")
+            let flameStyleMenu = NSMenu()
+            flameStyleMenu.autoenablesItems = false
+            
+            let currentStyle = UserDefaults.standard.string(forKey: "flameStyle")
+                .flatMap { FlameStyle(rawValue: $0) } ?? .inferno
+            
+            for style in FlameStyle.allCases {
+                let item = NSMenuItem(title: style.displayName, action: #selector(MenuActions.setSpectrumFlameStyle(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = style
+                item.state = (currentStyle == style) ? .on : .off
+                flameStyleMenu.addItem(item)
+            }
+            
+            flameStyleItem.submenu = flameStyleMenu
+            spectrumMenu.addItem(flameStyleItem)
+            
+            // Flame Intensity submenu
+            let flameIntensityItem = NSMenuItem(title: "Fire Intensity", action: nil, keyEquivalent: "")
+            let flameIntensityMenu = NSMenu()
+            flameIntensityMenu.autoenablesItems = false
+            
+            let currentIntensity = UserDefaults.standard.string(forKey: "flameIntensity")
+                .flatMap { FlameIntensity(rawValue: $0) } ?? .mellow
+            
+            for intensity in FlameIntensity.allCases {
+                let item = NSMenuItem(title: intensity.displayName, action: #selector(MenuActions.setSpectrumFlameIntensity(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = intensity
+                item.state = (currentIntensity == intensity) ? .on : .off
+                flameIntensityMenu.addItem(item)
+            }
+            
+            flameIntensityItem.submenu = flameIntensityMenu
+            spectrumMenu.addItem(flameIntensityItem)
+        }
         
         spectrumItem.submenu = spectrumMenu
         return spectrumItem
@@ -1527,6 +1639,40 @@ class MenuActions: NSObject {
     
     @objc func toggleBrowserArtworkBackground() {
         WindowManager.shared.showBrowserArtworkBackground.toggle()
+    }
+    
+    // MARK: - Main Window Visualization Options
+    
+    @objc func setMainVisMode(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? MainWindowVisMode else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: "mainWindowVisMode")
+        // Notify main window to update visualization mode
+        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+    }
+    
+    @objc func setMainVisFlameStyle(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? FlameStyle else { return }
+        UserDefaults.standard.set(style.rawValue, forKey: "mainWindowFlameStyle")
+        // Notify main window only (independent from spectrum window flame style)
+        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+    }
+    
+    @objc func setSpectrumFlameStyle(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? FlameStyle else { return }
+        UserDefaults.standard.set(style.rawValue, forKey: "flameStyle")
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+    }
+    
+    @objc func setSpectrumFlameIntensity(_ sender: NSMenuItem) {
+        guard let intensity = sender.representedObject as? FlameIntensity else { return }
+        UserDefaults.standard.set(intensity.rawValue, forKey: "flameIntensity")
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+    }
+    
+    @objc func setMainVisFlameIntensity(_ sender: NSMenuItem) {
+        guard let intensity = sender.representedObject as? FlameIntensity else { return }
+        UserDefaults.standard.set(intensity.rawValue, forKey: "mainWindowFlameIntensity")
+        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     
     // MARK: - Spectrum Analyzer Options

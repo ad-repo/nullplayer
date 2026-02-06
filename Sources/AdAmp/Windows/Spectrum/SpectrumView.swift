@@ -61,7 +61,7 @@ class SpectrumView: NSView {
         spectrumObserver = NotificationCenter.default.addObserver(
             forName: .audioSpectrumDataUpdated,
             object: nil,
-            queue: nil  // Receive on posting thread for lowest latency
+            queue: .main  // Process on main thread to prevent notification queue buildup
         ) { [weak self] notification in
             self?.handleSpectrumUpdate(notification)
         }
@@ -257,7 +257,13 @@ class SpectrumView: NSView {
             return
         }
         
-        // Content area - allow window dragging
+        // Content area - double-click cycles visualization mode
+        if event.clickCount == 2 {
+            cycleQualityMode()
+            return
+        }
+        
+        // Content area - single click allows window dragging
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {
@@ -363,9 +369,34 @@ class SpectrumView: NSView {
             }
         case 3: // F key - toggle fullscreen
             window?.toggleFullScreen(nil)
+        case 123: // Left arrow - previous flame style (flame mode only)
+            if spectrumAnalyzerView?.qualityMode == .flame {
+                cycleFlameStyle(forward: false)
+            } else { super.keyDown(with: event) }
+        case 124: // Right arrow - next flame style (flame mode only)
+            if spectrumAnalyzerView?.qualityMode == .flame {
+                cycleFlameStyle(forward: true)
+            } else { super.keyDown(with: event) }
         default:
             super.keyDown(with: event)
         }
+    }
+    
+    private func cycleQualityMode() {
+        guard let view = spectrumAnalyzerView else { return }
+        let modes = SpectrumQualityMode.allCases
+        guard let idx = modes.firstIndex(of: view.qualityMode) else { return }
+        let newIdx = (idx + 1) % modes.count
+        let newMode = modes[newIdx]
+        view.qualityMode = newMode
+        UserDefaults.standard.set(newMode.rawValue, forKey: "spectrumQualityMode")
+    }
+    
+    private func cycleFlameStyle(forward: Bool) {
+        let styles = FlameStyle.allCases
+        guard let idx = styles.firstIndex(of: spectrumAnalyzerView?.flameStyle ?? .inferno) else { return }
+        let newIdx = forward ? (idx + 1) % styles.count : (idx - 1 + styles.count) % styles.count
+        spectrumAnalyzerView?.flameStyle = styles[newIdx]
     }
     
     // MARK: - Context Menu
@@ -382,7 +413,7 @@ class SpectrumView: NSView {
             item.state = (spectrumAnalyzerView?.qualityMode == mode) ? .on : .off
             qualityMenu.addItem(item)
         }
-        let qualityMenuItem = NSMenuItem(title: "Quality", action: nil, keyEquivalent: "")
+        let qualityMenuItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
         qualityMenuItem.submenu = qualityMenu
         menu.addItem(qualityMenuItem)
         
@@ -399,20 +430,50 @@ class SpectrumView: NSView {
         decayMenuItem.submenu = decayMenu
         menu.addItem(decayMenuItem)
         
-        // Normalization Mode submenu
-        let normMenu = NSMenu()
-        let currentNormMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
-            .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
-        for mode in SpectrumNormalizationMode.allCases {
-            let item = NSMenuItem(title: "\(mode.displayName) - \(mode.description)", action: #selector(setNormalizationMode(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mode
-            item.state = (currentNormMode == mode) ? .on : .off
-            normMenu.addItem(item)
+        // Normalization Mode submenu (not shown for Flame mode)
+        if spectrumAnalyzerView?.qualityMode != .flame {
+            let normMenu = NSMenu()
+            let currentNormMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
+                .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
+            for mode in SpectrumNormalizationMode.allCases {
+                let item = NSMenuItem(title: "\(mode.displayName) - \(mode.description)", action: #selector(setNormalizationMode(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = mode
+                item.state = (currentNormMode == mode) ? .on : .off
+                normMenu.addItem(item)
+            }
+            let normMenuItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
+            normMenuItem.submenu = normMenu
+            menu.addItem(normMenuItem)
         }
-        let normMenuItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
-        normMenuItem.submenu = normMenu
-        menu.addItem(normMenuItem)
+        
+        // Flame Style submenu (only when Flame mode active)
+        if spectrumAnalyzerView?.qualityMode == .flame {
+            let flameMenu = NSMenu()
+            let curStyle = spectrumAnalyzerView?.flameStyle ?? .inferno
+            for style in FlameStyle.allCases {
+                let item = NSMenuItem(title: style.displayName, action: #selector(setFlameStyle(_:)), keyEquivalent: "")
+                item.target = self; item.representedObject = style
+                item.state = (curStyle == style) ? .on : .off
+                flameMenu.addItem(item)
+            }
+            let flameMenuItem = NSMenuItem(title: "Flame Style", action: nil, keyEquivalent: "")
+            flameMenuItem.submenu = flameMenu
+            menu.addItem(flameMenuItem)
+            
+            // Flame Intensity submenu
+            let intensityMenu = NSMenu()
+            let curIntensity = spectrumAnalyzerView?.flameIntensity ?? .mellow
+            for intensity in FlameIntensity.allCases {
+                let item = NSMenuItem(title: intensity.displayName, action: #selector(setFlameIntensity(_:)), keyEquivalent: "")
+                item.target = self; item.representedObject = intensity
+                item.state = (curIntensity == intensity) ? .on : .off
+                intensityMenu.addItem(item)
+            }
+            let intensityMenuItem = NSMenuItem(title: "Fire Intensity", action: nil, keyEquivalent: "")
+            intensityMenuItem.submenu = intensityMenu
+            menu.addItem(intensityMenuItem)
+        }
         
         menu.addItem(NSMenuItem.separator())
         
@@ -453,6 +514,16 @@ class SpectrumView: NSView {
     @objc private func setNormalizationMode(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
+    }
+    
+    @objc private func setFlameStyle(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? FlameStyle else { return }
+        spectrumAnalyzerView?.flameStyle = style
+    }
+    
+    @objc private func setFlameIntensity(_ sender: NSMenuItem) {
+        guard let intensity = sender.representedObject as? FlameIntensity else { return }
+        spectrumAnalyzerView?.flameIntensity = intensity
     }
     
     @objc private func closeWindow(_ sender: Any?) {

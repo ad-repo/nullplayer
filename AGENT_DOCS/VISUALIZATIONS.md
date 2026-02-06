@@ -1,13 +1,59 @@
 # AdAmp Visualization Systems
 
-AdAmp features three distinct visualization systems for audio-reactive visual effects.
+AdAmp features multiple visualization systems for audio-reactive visual effects.
 
 ## Table of Contents
 
-1. [Album Art Visualizer](#album-art-visualizer)
-2. [ProjectM/Milkdrop Visualizer](#projectmmilkdrop-visualizer)
-3. [Spectrum Analyzer Window](#spectrum-analyzer-window)
-4. [Comparison](#comparison)
+1. [Main Window Visualization](#main-window-visualization)
+2. [Album Art Visualizer](#album-art-visualizer)
+3. [ProjectM/Milkdrop Visualizer](#projectmmilkdrop-visualizer)
+4. [Spectrum Analyzer Window](#spectrum-analyzer-window)
+5. [Comparison](#comparison)
+
+---
+
+## Main Window Visualization
+
+The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports two rendering modes.
+
+### Modes
+
+| Mode | Description |
+|------|-------------|
+| **Spectrum** | Classic 19-bar spectrum analyzer drawn with skin colors (default) |
+| **Fire** | GPU flame simulation using Metal compute shaders, same engine as the Spectrum Analyzer window's Fire mode |
+
+### Switching Modes
+
+- **Double-click** the visualization area in the main window to cycle between Spectrum and Fire (single-click toggles the Spectrum Analyzer window)
+- **Right-click** → Options → Main Visualization to select mode and flame style
+- Setting is persisted across app restarts (UserDefaults key: `mainWindowVisMode`)
+
+### Fire Mode Details
+
+When Fire mode is active, a Metal-based `SpectrumAnalyzerView` overlay is positioned precisely over the visualization area. It uses the same flame simulation engine as the standalone Spectrum Analyzer window:
+
+- 128x96 simulation grid with per-column propagation
+- 11x11 Gaussian blur for smooth output
+- Audio-reactive: bass drives heat, mids drive sway, treble adds sparks
+- Supports all 4 flame styles: Inferno, Aurora, Electric, Ocean
+- 2 intensity presets: Mellow (ambient) and Intense (beat-reactive)
+- Flame style and intensity are independent from the Spectrum Analyzer window (separate UserDefaults keys: `mainWindowFlameStyle`, `mainWindowFlameIntensity`)
+
+### Technical Details
+
+- **Implementation**: Metal overlay (`SpectrumAnalyzerView`) added as subview of `MainWindowView`
+- **Positioning**: Converted from Winamp coordinates (top-left origin) to macOS view coordinates (bottom-left origin), accounting for window scaling
+- **Lifecycle**: Overlay is created lazily on first Fire mode activation, display link starts/stops with mode changes and window visibility
+- **CPU Efficiency**: Display link pauses when window is minimized, occluded, or in Spectrum mode
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `Windows/MainWindow/MainWindowView.swift` | Mode switching, overlay management, click cycling |
+| `Visualization/SpectrumAnalyzerView.swift` | Metal flame rendering (shared with Spectrum window) |
+| `Visualization/FlameShaders.metal` | GPU compute + render shaders |
 
 ---
 
@@ -170,6 +216,8 @@ Place `.milk` preset files in this folder and use "Reload Presets" from the cont
 - **Auto-Random** - Random preset on timer
 - **Cycle Interval** - 5s, 10s, 20s, 30s, 60s, 2min
 - **Presets** - Submenu listing all available presets
+- **Audio Sensitivity** - PCM gain multiplier: Low (0.5x), Normal (1.0x), High (1.5x), Intense (2.0x), Max (3.0x)
+- **Beat Sensitivity** - ProjectM beat detection: Low (0.5), Normal (1.0), High (1.5), Max (2.0)
 - **Fullscreen** - Enter/exit fullscreen mode
 
 ### Modes
@@ -196,11 +244,36 @@ Place `.milk` preset files in this folder and use "Reload Presets" from the cont
 - **Beat Detection**: Built-in projectM beat sensitivity (adjustable)
 - **Resolution**: Renders at window/screen resolution
 
+### Audio Sensitivity (PCM Gain)
+
+Controls the amplitude of audio samples fed to the visualization engine. Higher values make visuals more reactive to audio; lower values produce calmer visuals. The gain is applied as a multiplier on PCM samples before they reach projectM, clamped to the [-1.0, 1.0] range to prevent distortion.
+
+| Preset | Gain | Effect |
+|--------|------|--------|
+| **Low** | 0.5x | Subdued visuals, good for loud/busy tracks |
+| **Normal** | 1.0x | Unity gain, original signal strength (default) |
+| **High** | 1.5x | More reactive, good for quieter tracks |
+| **Intense** | 2.0x | Very reactive, strong waveform motion |
+| **Max** | 3.0x | Maximum reactivity, dramatic visual response |
+
+Setting is persisted across app restarts (UserDefaults key: `milkdropPCMGain`).
+
 ### Beat Sensitivity
 
 ProjectM adjusts its visuals based on detected beats. AdAmp uses two sensitivity levels:
-- **Idle**: Lower sensitivity when audio is quiet/stopped
-- **Active**: Higher sensitivity during playback
+- **Idle**: Lower sensitivity (0.2) when audio is quiet/stopped
+- **Active**: User-configurable sensitivity during playback (default 1.0)
+
+The active beat sensitivity is configurable via the context menu:
+
+| Preset | Value | Effect |
+|--------|-------|--------|
+| **Low** | 0.5 | Fewer beat-triggered effects |
+| **Normal** | 1.0 | Default projectM behavior |
+| **High** | 1.5 | More frequent beat-triggered effects |
+| **Max** | 2.0 | Maximum beat reactivity |
+
+Setting is persisted across app restarts (UserDefaults key: `milkdropBeatSensitivity`).
 
 ---
 
@@ -230,12 +303,92 @@ The Spectrum Analyzer window participates in the docking system:
 | **Window Size** | 275x116 pixels (matches main window) |
 | **Color Source** | Skin's `viscolor.txt` (24-color palette) |
 
+### Switching Modes
+
+- **Double-click** the spectrum analyzer window to cycle through modes (Winamp → Enhanced → Ultra → Fire → JWST)
+- **Right-click** → Mode to select a specific mode
+- **Left/Right arrow keys** cycle flame styles when in Fire mode
+
 ### Quality Modes
 
 | Mode | Description |
 |------|-------------|
-| **Winamp** | Discrete color bands from skin's 24-color palette, classic pixel-art aesthetic (default) |
-| **Enhanced** | Rainbow LED matrix with floating peaks, per-cell fade trails, and rounded corners |
+| **Winamp** | Discrete color bands from skin's 24-color palette with floating peak indicators, 3D bar shading, and band gaps for an authentic segmented LED look (default) |
+| **Enhanced** | Rainbow LED matrix with gravity-bouncing peaks, warm amber fade trails, 3D inner glow cells, and anti-aliased rounded corners |
+| **Ultra** | Maximum fidelity seamless gradient with smooth exponential decay, perceptual gamma, warm color trails, physics-based bouncing peaks, and reflection effect |
+| **Fire** | GPU fire simulation with audio-reactive flame tongues (see below) |
+| **JWST** | Deep space flythrough with 3D perspective star field, JWST diffraction flares as intensity indicators, and vivid celestial bodies (see below) |
+
+### Winamp Mode Details
+
+The Winamp mode aims to recreate the iconic Winamp 2.x spectrum analyzer aesthetic with modern enhancements:
+
+- **Discrete Color Bands**: Bars are divided into 16 horizontal segments with subtle 1-pixel gaps between them, creating the classic LED matrix look without a screen door effect
+- **Floating Peak Indicators**: Bright lines hold at peak heights, then fall with gravity-based physics including subtle bouncing for satisfying visual feedback
+- **3D Cylindrical Shading**: Each bar has a specular highlight down the center for depth
+- **Skin Palette Colors**: All colors come from the loaded skin's `viscolor.txt` (24-color palette)
+
+### Flame Quality Mode
+
+Flame mode replaces spectrum bars with a GPU-driven fire simulation. Narrow flame tongues rise from the bottom, dance independently, thin to points, and react to music in real-time.
+
+**Flame Style Presets** (right-click > Flame Style, or left/right arrow keys):
+
+| Style | Description |
+|-------|-------------|
+| **Inferno** | Classic orange/red fire |
+| **Aurora** | Green/cyan/purple northern lights |
+| **Electric** | Blue/white/purple plasma |
+| **Ocean** | Deep blue/teal/white |
+
+**Fire Intensity Presets** (right-click > Fire Intensity):
+
+| Intensity | Description |
+|-----------|-------------|
+| **Mellow** | Gentle ambient flame with smooth transitions. Lower burst threshold (0.15), moderate multiplier (6x), slow attack/release smoothing |
+| **Intense** | Punchy beat-reactive flame with sharp spikes. Lower burst threshold (0.1), high multiplier (10x), fast attack (0.5) and quicker release (0.12) |
+
+**Audio Reactivity:**
+- Bass (bands 0-15): Controls heat injection intensity. Strong bass = taller tongues
+- Mids (bands 16-49): Increases flame sway and lateral motion
+- Treble (bands 50-74): Adds ember sparks in the flame zone
+- Intensity preset controls how aggressively the flame tracks the beat
+
+**Playback State:**
+- **Stop**: Immediately clears flame textures and renders a black frame
+- **Pause**: Freezes the flame display in place (last frame stays visible)
+- **Play**: Resumes flame rendering
+
+**Technical:** 128x96 simulation grid with per-column propagation and edge erosion. Rendered with an 11x11 Gaussian blur at 2-texel steps for silky smooth output. Single compute pass + render pass per frame at 60 FPS.
+
+**Key files:** `Visualization/FlameShaders.metal` (compute + render shaders), `Visualization/SpectrumAnalyzerView.swift` (pipeline integration)
+
+### JWST Mode
+
+JWST mode is a 3D deep space flythrough inspired by the James Webb Space Telescope's Pillars of Creation image. You drift through space while vivid JWST-style diffraction flares visualize the music. Everything is generated in a single GPU fragment shader pass.
+
+**Visual Elements:**
+- **3D perspective star field**: 5 depth layers of stars emanating outward from a central vanishing point, creating a forward-flight effect. Stars subtly streak radially when music is intense
+- **JWST 6-axis diffraction flares**: Authentic spike pattern (strong vertical, 4 diagonal at ±60°, short horizontal strut) with chromatic color fringing — blue extends further than red along each spike, like real JWST optics
+- **Vivid celestial bodies**: Rare, richly colored objects (galaxies, nebula patches) with saturated JWST palette colors and prominent diffraction spikes
+- **Giant flare events**: On major peaks, a massive screen-filling diffraction flare fires and slowly decays over ~5.5 seconds while suppressing all other flares — the giant owns the screen until it dissipates, position locked at trigger
+- **JWST color palette**: 10-stop gradient cycling through deep navy, indigo, violet, mauve, dusty rose, chocolate, amber, gold, cream, and warm white
+- **Bold star colors**: Electric blue, vivid red, pure gold, neon pink, hot crimson, cyan, royal blue — at full saturation with chromatic fringing
+- **Gossamer nebula wisps**: Very sparse, transparent gas layers with vertical stretch for abstract pillar-like forms
+- **Floating cosmic dust**: Tiny particles drifting through space
+
+**Audio Reactivity (not a spectrum analyzer — pure atmospheric):**
+- Music intensity drives flight speed (scroll accumulation: gentle drift when quiet, faster when loud)
+- Flare frequency tied to overall dB: dynamic threshold `max(0.12, 0.40 - energy * 0.9)` — quiet = very sparse flares, loud = more frequent
+- Flare horizontal position aligned to frequency peaks (bass on left, treble on right), vertical position random
+- Uses normalized `displaySpectrum` (AudioEngine's per-region normalization) so highs compete fairly with lows
+- Giant flare on strong bass peaks (>0.25 above smoothed average), 6-second cooldown, 5.5-second slow decay
+- Stars twinkle with treble energy, overall saturation lifts with energy
+- Beat detection creates gentle zoom nudges and brightness pulses
+
+**Technical:** Single render pass with procedural FBM noise, 5-layer perspective star field, parametric JWST flare function with rotation and chromatic aberration, filmic tone mapping. 60 FPS. CosmicParams struct (48 bytes) passes time, scroll offset, energy bands, beat/flare intensity, and frozen flare scroll snapshot.
+
+**Key files:** `Visualization/CosmicShaders.metal` (vertex + fragment shaders), `Visualization/SpectrumAnalyzerView.swift` (pipeline integration, flare state management)
 
 ### Responsiveness Modes
 
@@ -251,14 +404,16 @@ Controls how quickly spectrum bars fall after peaks:
 ### Context Menu
 
 Right-click on the window for:
-- **Quality** - Switch between Winamp/Enhanced rendering
-- **Responsiveness** - Adjust decay behavior
+- **Mode** - Switch between Winamp/Enhanced/Ultra/Fire/JWST rendering
+- **Responsiveness** - Adjust decay behavior (bar modes)
+- **Flame Style** - Choose flame color preset (Flame mode only)
+- **Fire Intensity** - Choose Mellow or Intense reactivity (Flame mode only)
 - **Close** - Close the window
 
 ### Technical Details
 
 - **Rendering**: Metal shaders via CAMetalLayer with runtime shader compilation
-- **Shader Modes**: Separate pipeline states for Winamp (bar) and Enhanced (LED matrix) modes
+- **Shader Modes**: Separate pipeline states for Winamp (bar), Enhanced (LED matrix), Ultra (seamless gradient), Fire (compute simulation), and JWST (procedural space) modes
 - **Frame Rate**: 60 FPS via CVDisplayLink (auto-stops when window closes or occluded)
 - **Audio Input**: 75-band spectrum data from AudioEngine
 - **Thread Safety**: OSAllocatedUnfairLock for spectrum data updates
@@ -275,12 +430,12 @@ Right-click on the window for:
 
 | Feature | Album Art Visualizer | ProjectM/Milkdrop | Spectrum Analyzer |
 |---------|---------------------|-------------------|-------------------|
-| **Visual Style** | Transformed album artwork | Procedural graphics | Classic frequency bars |
-| **Effect Count** | 30 built-in effects | 100s of presets available | 2 quality modes |
-| **Customization** | Intensity adjustment | Full preset ecosystem | Quality + decay modes |
-| **GPU Tech** | Core Image (Metal) | OpenGL shaders | Metal shaders |
-| **Audio Response** | Spectrum bands (bass/mid/treble) | PCM waveform + beat detection | 75-band spectrum |
-| **Best For** | Album art appreciation | Immersive light shows | Detailed frequency analysis |
+| **Visual Style** | Transformed album artwork | Procedural graphics | Frequency bars / Fire / Deep space |
+| **Effect Count** | 30 built-in effects | 100s of presets available | 5 modes (Winamp, Enhanced, Ultra, Fire, JWST) |
+| **Customization** | Intensity adjustment | Full preset ecosystem | Mode + decay + flame styles |
+| **GPU Tech** | Core Image (Metal) | OpenGL shaders | Metal shaders + Metal compute shaders |
+| **Audio Response** | Spectrum bands (bass/mid/treble) | PCM waveform + beat detection | 75-band spectrum / energy-driven |
+| **Best For** | Album art appreciation | Immersive light shows | Frequency analysis / Ambient visuals / Deep space drift |
 
 ### When to Use Each
 
@@ -295,11 +450,17 @@ Right-click on the window for:
 - Parties and ambient displays
 - When you want maximum visual variety
 
+**Main Window Fire Mode**
+- Quick ambient flame visuals without opening a separate window
+- Click the vis area to toggle between spectrum bars and fire
+
 **Spectrum Analyzer**
-- When you want detailed frequency visualization
+- When you want detailed frequency visualization (Winamp/Enhanced/Ultra modes)
 - For monitoring audio levels
 - Classic Winamp spectrum aesthetic
 - Complements the main window's smaller analyzer
+- Fire mode for ambient flame visuals
+- JWST mode for a chill deep space drift with music-reactive diffraction flares
 
 ---
 

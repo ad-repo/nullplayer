@@ -22,7 +22,7 @@ struct LEDParams {
     float cellSpacing;      // Gap between cells (offset 24)
     int qualityMode;        // 0 = winamp, 1 = enhanced (offset 28)
     float maxHeight;        // Maximum bar height for winamp mode (offset 32)
-    float padding;          // Alignment padding (offset 36)
+    float time;             // Animation time in seconds (offset 36)
 };
 
 /// Vertex shader output for LED matrix mode
@@ -33,14 +33,18 @@ struct LEDVertexOut {
     int row;                // Row index
     float brightness;       // Cell brightness (0-1)
     float isPeak;           // 1.0 if this is the peak cell
+    float normalizedColumn; // Column position 0-1 for color gradient
+    float normalizedRow;    // Row position 0-1 for height effects
 };
 
 /// Vertex shader output for Winamp bar mode
 struct BarVertexOut {
     float4 position [[position]];
-    float2 uv;              // UV coordinates within the bar
+    float2 uv;              // UV coordinates within the bar (x: 0-1 across width)
     float barIndex;         // Which bar this vertex belongs to
     float normalizedHeight; // Bar height as 0-1 value
+    float peakPosition;     // Peak indicator position 0-1
+    float2 pixelPos;        // Pre-NDC pixel position for band calculations
 };
 
 // MARK: - Helper Functions
@@ -132,6 +136,8 @@ vertex LEDVertexOut led_matrix_vertex(
     out.row = row;
     out.brightness = brightness;
     out.isPeak = isPeak;
+    out.normalizedColumn = float(column) / float(max(params.columnCount - 1, 1));
+    out.normalizedRow = float(row) / float(max(params.rowCount - 1, 1));
     
     return out;
 }
@@ -145,33 +151,68 @@ fragment float4 led_matrix_fragment(
         discard_fragment();
     }
     
-    // Rainbow color based on column position
-    float hue = float(in.column) / float(params.columnCount);
-    float3 baseColor = hsv2rgb(hue, 1.0, 1.0);
-    
-    // Apply brightness
-    float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
-    float3 color = baseColor * displayBrightness;
-    
-    // Peak cells get white tint for extra visibility
-    if (in.isPeak > 0.5) {
-        color = min(float3(1.0), baseColor + 0.4);
-    }
-    
-    // 3D highlight effect on upper portion of cell
-    float highlight = smoothstep(0.5, 1.0, in.uv.y) * 0.3 * displayBrightness;
-    color += highlight;
-    
-    // Rounded corner effect using UV distance from center
+    // === ROUNDED RECTANGLE with anti-aliased edges ===
     float2 centered = in.uv * 2.0 - 1.0;  // -1 to 1
-    float cornerRadius = 0.3;
+    float cornerRadius = 0.32;
     float2 q = abs(centered) - (1.0 - cornerRadius);
-    float dist = length(max(q, 0.0));
-    if (dist > cornerRadius * 0.5) {
-        discard_fragment();  // Outside rounded corner
+    float sdfDist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+    float edgeSmooth = 0.06;
+    float shape = 1.0 - smoothstep(cornerRadius - edgeSmooth, cornerRadius + edgeSmooth, sdfDist);
+    if (shape < 0.01) {
+        discard_fragment();
     }
     
-    return float4(color, 1.0);
+    // === BASE COLOR - rainbow hue from column position ===
+    float hue = in.normalizedColumn;
+    float3 baseColor = hsv2rgb(hue, 1.0, 1.0);
+    float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
+    
+    // === WARM FADE TRAIL ===
+    // As cells dim, they shift toward warm amber before going dark
+    // Creates gorgeous "cooling ember" heat trails on decay
+    float3 warmTint = float3(1.0, 0.35, 0.05);  // Deep amber
+    float warmBlend = pow(1.0 - displayBrightness, 1.5) * 0.7;  // Stronger shift as it dims
+    float3 fadedColor = mix(baseColor, warmTint, warmBlend);
+    float3 color = fadedColor * displayBrightness;
+    
+    // === INNER LED GLOW (3D depth) ===
+    // Brighter in center, softer toward edges - each cell looks like a real LED
+    float radialDist = length(centered);
+    float innerGlow = 1.0 - smoothstep(0.0, 0.9, radialDist) * 0.35;
+    color *= innerGlow;
+    
+    // === SPECULAR HIGHLIGHT ===
+    // Small bright reflection spot in upper portion of each cell
+    float2 specPos = in.uv - float2(0.35, 0.72);
+    float specular = exp(-dot(specPos, specPos) * 16.0) * 0.4 * displayBrightness;
+    color += float3(specular);
+    
+    // === HEIGHT-BASED INTENSITY ===
+    // Higher rows glow slightly brighter for visual depth
+    float heightBoost = mix(0.82, 1.12, in.normalizedRow);
+    color *= heightBoost;
+    
+    // === PEAK CELL RENDERING ===
+    if (in.isPeak > 0.5) {
+        // Peaks: white-tinted, extra bright, with glow
+        float3 peakColor = mix(baseColor, float3(1.0), 0.55);
+        peakColor *= innerGlow;
+        peakColor += float3(specular * 1.8);
+        // Subtle pulse on peaks
+        float pulse = 1.0 + sin(params.time * 8.0) * 0.08;
+        color = peakColor * 1.25 * pulse;
+    }
+    
+    // === DIM CELL AMBIENT ===
+    // Very dim cells still show a faint hint of their color
+    // Prevents harsh on/off transitions
+    if (displayBrightness > 0.01 && displayBrightness < 0.15) {
+        color = max(color, baseColor * 0.04);
+    }
+    
+    color = min(color, float3(1.0));
+    
+    return float4(color, shape);
 }
 
 // MARK: - Winamp Bar Shaders (Classic Mode)
@@ -179,6 +220,7 @@ fragment float4 led_matrix_fragment(
 vertex BarVertexOut spectrum_vertex(
     uint vertexID [[vertex_id]],
     constant float* heights [[buffer(0)]],
+    constant float* peakPositions [[buffer(1)]],
     constant LEDParams& params [[buffer(2)]]
 ) {
     BarVertexOut out;
@@ -191,25 +233,38 @@ vertex BarVertexOut spectrum_vertex(
     if (barIndex >= params.columnCount) {
         out.position = float4(0, 0, 0, 1);
         out.normalizedHeight = 0;
+        out.peakPosition = 0;
         return out;
     }
     
-    // Get bar height (0-1 normalized)
+    // Get bar height and peak position (0-1 normalized)
     float height = heights[barIndex];
+    float peak = peakPositions[barIndex];
     
     // Calculate bar position
     float totalBarWidth = params.cellWidth + params.cellSpacing;
     float barX = float(barIndex) * totalBarWidth;
-    float barHeight = height * params.maxHeight;
+    
+    // Extend quad to cover both bar body and peak indicator
+    float peakLineMargin = 4.0;  // Extra pixels above peak for line thickness
+    float barPixelHeight = height * params.maxHeight;
+    float peakPixelHeight = peak * params.maxHeight + peakLineMargin;
+    float quadHeight = max(barPixelHeight, peakPixelHeight);
+    quadHeight = min(quadHeight, params.maxHeight);  // Clamp to viewport
+    
+    // Collapse quad if nothing to draw
+    if (height <= 0.001 && peak <= 0.01) {
+        quadHeight = 0;
+    }
     
     // Vertex positions within the bar (2 triangles forming a quad)
     float2 positions[6] = {
         float2(0, 0),                           // Bottom-left (0)
         float2(params.cellWidth, 0),            // Bottom-right (1)
-        float2(0, barHeight),                   // Top-left (2)
-        float2(0, barHeight),                   // Top-left (2)
+        float2(0, quadHeight),                  // Top-left (2)
+        float2(0, quadHeight),                  // Top-left (2)
         float2(params.cellWidth, 0),            // Bottom-right (1)
-        float2(params.cellWidth, barHeight)     // Top-right (3)
+        float2(params.cellWidth, quadHeight)    // Top-right (3)
     };
     
     float2 uvs[6] = {
@@ -225,6 +280,9 @@ vertex BarVertexOut spectrum_vertex(
     float2 pos = positions[vertexInBar];
     pos.x += barX;
     
+    // Store pre-NDC pixel position for precise band calculations in fragment shader
+    out.pixelPos = pos;
+    
     // Convert to normalized device coordinates (-1 to 1)
     float2 ndc;
     ndc.x = (pos.x / params.viewportSize.x) * 2.0 - 1.0;
@@ -234,6 +292,7 @@ vertex BarVertexOut spectrum_vertex(
     out.uv = uvs[vertexInBar];
     out.barIndex = float(barIndex);
     out.normalizedHeight = height;
+    out.peakPosition = peak;
     
     return out;
 }
@@ -243,45 +302,99 @@ fragment float4 spectrum_fragment(
     constant float4* colors [[buffer(0)]],
     constant LEDParams& params [[buffer(1)]]
 ) {
-    // Skip fragments for bars with zero height
-    if (in.normalizedHeight <= 0.0) {
+    float pixelY = in.pixelPos.y;
+    float barHeight = in.normalizedHeight * params.maxHeight;
+    float peakHeight = in.peakPosition * params.maxHeight;
+    
+    // === PEAK INDICATOR - bright floating line above bars ===
+    float peakThickness = 3.0;
+    bool isPeakPixel = false;
+    if (in.peakPosition > 0.015) {
+        float peakDist = abs(pixelY - peakHeight);
+        isPeakPixel = peakDist < peakThickness;
+    }
+    
+    // === BAR BODY ===
+    bool isBarPixel = pixelY <= barHeight && in.normalizedHeight > 0.001;
+    
+    // Discard empty space (not bar, not peak)
+    if (!isBarPixel && !isPeakPixel) {
         discard_fragment();
     }
     
-    // Y position determines color (0 = bottom/dark, 1 = top/bright)
-    float yPos = in.uv.y;
+    // === DISCRETE COLOR BANDS ===
+    // Quantize to rowCount bands for authentic Winamp LED look
+    float bandCount = float(params.rowCount);
+    float bandHeight = params.maxHeight / bandCount;
+    float bandIndex = floor(pixelY / bandHeight);
+    float withinBand = fmod(pixelY, bandHeight);
     
-    // Number of colors in palette (Winamp uses 24)
+    // Map band position to 24-color skin palette
+    float yNorm = clamp((bandIndex + 0.5) / bandCount, 0.0, 1.0);
     const int colorCount = 24;
-    
-    // Smooth color interpolation between palette colors
-    float indexFloat = yPos * float(colorCount - 1);
-    int index0 = clamp(int(indexFloat), 0, colorCount - 2);
-    int index1 = index0 + 1;
+    float indexFloat = yNorm * float(colorCount - 1);
+    int idx0 = clamp(int(indexFloat), 0, colorCount - 2);
+    int idx1 = idx0 + 1;
     float blend = fract(indexFloat);
+    float4 bandColor = mix(colors[idx0], colors[idx1], blend);
     
-    // Interpolate between adjacent colors for smooth gradient
-    float4 color0 = colors[index0];
-    float4 color1 = colors[index1];
-    float4 baseColor = mix(color0, color1, blend);
+    // === PEAK RENDERING ===
+    if (isPeakPixel) {
+        // Color at peak height from palette, heavily brightened
+        float peakBandIndex = floor(peakHeight / bandHeight);
+        float peakYNorm = clamp((peakBandIndex + 0.5) / bandCount, 0.0, 1.0);
+        float peakIdxFloat = peakYNorm * float(colorCount - 1);
+        int peakIdx0 = clamp(int(peakIdxFloat), 0, colorCount - 2);
+        int peakIdx1 = peakIdx0 + 1;
+        float peakBlend = fract(peakIdxFloat);
+        float4 peakBaseColor = mix(colors[peakIdx0], colors[peakIdx1], peakBlend);
+        
+        // Brighten significantly + white tint for visibility
+        float3 peakColor = peakBaseColor.rgb * 1.5 + 0.25;
+        
+        // 3D cylindrical highlight on peak line
+        float cx = in.uv.x * 2.0 - 1.0;
+        float peakCylinder = 1.0 - pow(abs(cx), 2.0) * 0.2;
+        float peakSpec = exp(-cx * cx * 4.0) * 0.3;
+        peakColor = peakColor * peakCylinder + peakSpec;
+        
+        // Soften peak edges (anti-alias)
+        float peakDist = abs(pixelY - peakHeight);
+        float peakAlpha = 1.0 - smoothstep(peakThickness * 0.5, peakThickness, peakDist);
+        
+        return float4(min(float3(1.0), peakColor), peakAlpha);
+    }
     
-    // === 3D BAR EFFECT ===
-    float2 centered = in.uv * 2.0 - 1.0;
+    // === BAND GAPS (fixed 1px line at top of each band for segmented LED look) ===
+    // Use exactly 1 pixel regardless of band size - authentic Winamp style
+    if (withinBand > bandHeight - 1.0) {
+        return float4(bandColor.rgb * 0.35, 1.0);
+    }
     
-    // Cylindrical shading - brighter in center
-    float cylinder = 1.0 - pow(abs(centered.x), 2.0) * 0.35;
+    // === 3D BAR SHADING ===
+    float cx = in.uv.x * 2.0 - 1.0;
     
-    // Specular highlight down the center
-    float specular = exp(-centered.x * centered.x * 6.0) * 0.25;
+    // Cylindrical shading - bright center, darker edges
+    float cylinder = 1.0 - pow(abs(cx), 2.0) * 0.4;
     
-    // Vertical gradient boost at top
-    float topBoost = pow(yPos, 2.0) * 0.15;
+    // Specular highlight running down center of each bar
+    float specular = exp(-cx * cx * 5.0) * 0.2;
     
-    // Combine lighting
-    float3 litColor = baseColor.rgb * cylinder + specular + baseColor.rgb * topBoost;
+    // Subtle brightness boost toward top of bar for depth
+    float vertBoost = pow(clamp(pixelY / max(barHeight, 1.0), 0.0, 1.0), 1.5) * 0.12;
     
-    // Ensure colors stay vibrant
-    litColor = max(litColor, baseColor.rgb * 0.8);
+    // === TOP BAND GLOW ===
+    // The highest lit band gets an extra brightness kick
+    float topBandStart = floor(barHeight / bandHeight) * bandHeight;
+    float isTopBand = (bandIndex * bandHeight >= topBandStart - bandHeight && bandIndex * bandHeight < topBandStart) ? 1.0 : 0.0;
+    float topGlow = isTopBand * 0.15;
+    
+    // === COMBINE ===
+    float3 litColor = bandColor.rgb * cylinder + specular + bandColor.rgb * (vertBoost + topGlow);
+    
+    // Ensure colors stay vibrant (minimum brightness floor)
+    litColor = max(litColor, bandColor.rgb * 0.75);
+    litColor = min(litColor, float3(1.0));
     
     return float4(litColor, 1.0);
 }
@@ -415,46 +528,51 @@ fragment float4 ultra_matrix_fragment(
     UltraVertexOut in [[stage_in]],
     constant UltraParams& params [[buffer(1)]]
 ) {
-    // Skip unlit cells
-    if (in.brightness < 0.01 && in.isPeak < 0.5) {
+    // Skip unlit cells (low threshold for smooth trail tails)
+    if (in.brightness < 0.003 && in.isPeak < 0.5) {
         discard_fragment();
     }
     
-    // === VIVID RAINBOW ===
+    float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
+    
+    // === SMOOTH RAINBOW COLOR ===
     float hue = in.normalizedColumn * 0.85;
     float3 baseColor = hsv2rgb(hue, 1.0, 1.0);
     
-    // === 3D CYLINDER EFFECT ===
-    // Each bar looks like a 3D glowing cylinder
-    float2 centered = in.uv * 2.0 - 1.0;
+    // === WARM TRAIL COLOR SHIFT ===
+    // As brightness fades, color shifts toward warm amber for a fluid heat-trail look
+    // Only kicks in at lower brightness to avoid color flashing in dense interior areas
+    float warmth = pow(max(0.0, 1.0 - displayBrightness * 1.5), 2.0);
+    float3 warmTint = float3(1.0, 0.35, 0.06);  // Warm amber
+    float3 trailColor = mix(baseColor, warmTint, warmth * 0.5);
     
-    // Cylindrical falloff - bright center, darker edges
-    float cylinderFalloff = 1.0 - pow(abs(centered.x), 2.0) * 0.4;
+    // === PERCEPTUAL GAMMA ===
+    // Apply gamma curve so brightness fades look smooth to human eyes
+    // Without this, linear fade looks like it "snaps" off at the end
+    float percBrightness = pow(displayBrightness, 0.75);
     
-    // Specular highlight running down center
-    float specular = exp(-centered.x * centered.x * 8.0) * 0.3;
+    float3 color = trailColor * percBrightness;
     
-    // === VERTICAL GRADIENT - brighter at top ===
-    float verticalGradient = mix(0.7, 1.1, in.normalizedRow);
+    // === SMOOTH VERTICAL GRADIENT ===
+    // Higher rows subtly brighter for visual depth (smooth interpolation)
+    float heightBoost = mix(0.8, 1.15, smoothstep(0.0, 1.0, in.normalizedRow));
+    color *= heightBoost;
     
-    // === COMBINE LIGHTING ===
-    float lighting = cylinderFalloff * verticalGradient;
-    
-    // Add specular highlight
-    float3 litColor = baseColor * lighting + float3(specular);
-    
-    // === PEAKS - bright white tint ===
+    // === SOFT PEAK GLOW ===
     if (in.isPeak > 0.5) {
-        float3 peakColor = mix(baseColor, float3(1.0, 1.0, 1.0), 0.5);
-        litColor = peakColor * 1.3;
+        // Peak: bright white-tinted color with soft pulse
+        float3 peakColor = mix(baseColor, float3(1.0), 0.45);
+        float pulse = 1.0 + sin(params.time * 6.0) * 0.05;
+        color = peakColor * pulse;
     }
     
-    // === TOP BLOOM - extra glow at bar tops ===
-    float topGlow = pow(in.normalizedRow, 3.0) * in.brightness * 0.4;
-    litColor += baseColor * topGlow;
+    // === HIGH-BRIGHTNESS BLOOM ===
+    // Cells at near-full brightness get a subtle extra glow boost
+    if (displayBrightness > 0.85) {
+        float bloom = (displayBrightness - 0.85) * 3.0;  // 0 to 0.45
+        color += baseColor * bloom * 0.2;
+    }
     
-    // === ENSURE VIBRANT MINIMUM ===
-    litColor = max(litColor, baseColor * 0.7);
-    
-    return float4(litColor, 1.0);
+    color = min(color, float3(1.0));
+    return float4(color, 1.0);
 }

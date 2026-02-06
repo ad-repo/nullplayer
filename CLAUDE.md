@@ -115,7 +115,7 @@ Sources/AdAmp/
 ├── Windows/          # All window views (MainWindow, Playlist, EQ, etc.)
 ├── Plex/             # Plex server integration
 ├── Subsonic/         # Navidrome/Subsonic server integration
-├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer
+├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer + flame mode
 └── Models/           # Track, Playlist, MediaLibrary
 ```
 
@@ -126,7 +126,7 @@ Sources/AdAmp/
 | Skin | `Skin/SkinElements.swift`, `Skin/SkinRenderer.swift`, `Skin/SkinLoader.swift` |
 | Audio | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift` |
 | Windows | `Windows/MainWindow/`, `Windows/Playlist/`, `Windows/Equalizer/` |
-| Visualization | `Windows/Milkdrop/`, `Windows/Spectrum/`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/ProjectMWrapper.swift` |
+| Visualization | `Windows/Milkdrop/`, `Windows/Spectrum/`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/SpectrumShaders.metal`, `Visualization/FlameShaders.metal`, `Visualization/CosmicShaders.metal`, `Visualization/ProjectMWrapper.swift` |
 | Marquee | `Skin/MarqueeLayer.swift`, `Windows/Playlist/PlaylistView.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
@@ -166,6 +166,7 @@ Sources/AdAmp/
 
 - **Skin coordinates**: Winamp skins use top-left origin, macOS uses bottom-left
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
+- **Local file completion handler**: Must use `scheduleFile(_:at:completionCallbackType:completionHandler:)` with `.dataPlayedBack` - NOT the deprecated 3-parameter `scheduleFile(_:at:completionHandler:)` which defaults to `.dataConsumed` and fires before audio finishes playing, causing premature track advancement and UI desync
 - **Window docking**: Complex snapping logic in `WindowManager` - test edge cases
   - Multi-monitor: Screen edge snapping is skipped if it would cause docked windows to end up on different screens
   - `Snap to Default` centers main window on its current screen (not always the primary display)

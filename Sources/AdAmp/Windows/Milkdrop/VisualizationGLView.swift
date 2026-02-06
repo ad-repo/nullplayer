@@ -53,7 +53,12 @@ class VisualizationGLView: NSOpenGLView {
     private var isAudioActive = false
     
     /// Normal beat sensitivity (restored when audio starts)
-    private let normalBeatSensitivity: Float = 1.0
+    /// User-configurable via context menu, persisted in UserDefaults
+    private(set) var normalBeatSensitivity: Float = 1.0 {
+        didSet {
+            UserDefaults.standard.set(normalBeatSensitivity, forKey: "milkdropBeatSensitivity")
+        }
+    }
     
     /// Idle beat sensitivity (used when audio is not playing for calmer visualization)
     private let idleBeatSensitivity: Float = 0.2
@@ -76,6 +81,15 @@ class VisualizationGLView: NSOpenGLView {
     private(set) var isLowPowerMode: Bool = true {
         didSet {
             UserDefaults.standard.set(isLowPowerMode, forKey: "milkdropLowPowerMode")
+        }
+    }
+    
+    /// PCM gain multiplier applied to audio samples before feeding to the visualization engine.
+    /// Higher values make visuals more reactive to audio; lower values make them calmer.
+    /// Range: 0.5 to 3.0, default 1.0 (unity gain)
+    private(set) var pcmGain: Float = 1.0 {
+        didSet {
+            UserDefaults.standard.set(pcmGain, forKey: "milkdropPCMGain")
         }
     }
     
@@ -115,6 +129,16 @@ class VisualizationGLView: NSOpenGLView {
         if UserDefaults.standard.object(forKey: "milkdropLowPowerMode") != nil {
             isLowPowerMode = UserDefaults.standard.bool(forKey: "milkdropLowPowerMode")
         }
+        
+        // Load saved PCM gain preference (defaults to 1.0 / unity gain)
+        if UserDefaults.standard.object(forKey: "milkdropPCMGain") != nil {
+            pcmGain = UserDefaults.standard.float(forKey: "milkdropPCMGain")
+        }
+        
+        // Load saved beat sensitivity preference (defaults to 1.0 / normal)
+        if UserDefaults.standard.object(forKey: "milkdropBeatSensitivity") != nil {
+            normalBeatSensitivity = UserDefaults.standard.float(forKey: "milkdropBeatSensitivity")
+        }
 
         // Set up OpenGL context
         openGLContext?.makeCurrentContext()
@@ -135,6 +159,16 @@ class VisualizationGLView: NSOpenGLView {
         // Load saved performance mode preference (defaults to low power / 30fps)
         if UserDefaults.standard.object(forKey: "milkdropLowPowerMode") != nil {
             isLowPowerMode = UserDefaults.standard.bool(forKey: "milkdropLowPowerMode")
+        }
+        
+        // Load saved PCM gain preference (defaults to 1.0 / unity gain)
+        if UserDefaults.standard.object(forKey: "milkdropPCMGain") != nil {
+            pcmGain = UserDefaults.standard.float(forKey: "milkdropPCMGain")
+        }
+        
+        // Load saved beat sensitivity preference (defaults to 1.0 / normal)
+        if UserDefaults.standard.object(forKey: "milkdropBeatSensitivity") != nil {
+            normalBeatSensitivity = UserDefaults.standard.float(forKey: "milkdropBeatSensitivity")
         }
 
         setupOpenGL()
@@ -320,6 +354,29 @@ class VisualizationGLView: NSOpenGLView {
     func startRendering() {
         guard let displayLink = displayLink, !isRendering else { return }
         
+        // Re-register callback if it was previously cleared by stopRendering()
+        if displayLinkContextRef == nil {
+            let context = VisualizationDisplayLinkContext(view: self)
+            let retainedContext = Unmanaged.passRetained(context)
+            self.displayLinkContextRef = retainedContext
+            
+            let callback: CVDisplayLinkOutputCallback = { displayLink, inNow, inOutputTime, flagsIn, flagsOut, context in
+                guard let context = context else { return kCVReturnError }
+                let wrapper = Unmanaged<VisualizationDisplayLinkContext>.fromOpaque(context).takeUnretainedValue()
+                
+                // Safely check if view still exists before rendering
+                guard let view = wrapper.view else {
+                    // View was deallocated - this is expected during shutdown
+                    return kCVReturnSuccess
+                }
+                
+                view.renderFrame()
+                return kCVReturnSuccess
+            }
+            
+            CVDisplayLinkSetOutputCallback(displayLink, callback, retainedContext.toOpaque())
+        }
+        
         CVDisplayLinkStart(displayLink)
         isRendering = true
         NSLog("VisualizationGLView: Started rendering")
@@ -328,20 +385,18 @@ class VisualizationGLView: NSOpenGLView {
     func stopRendering() {
         guard let displayLink = displayLink, isRendering else { return }
         
+        // Stop the display link
         CVDisplayLinkStop(displayLink)
         isRendering = false
         
-        // Release the retained context wrapper
-        // The weak reference inside will safely return nil if accessed after this
+        // Release the retained context wrapper.
+        // The weak reference inside VisualizationDisplayLinkContext will safely return nil
+        // if the callback fires after this point (CVDisplayLinkStop is asynchronous),
+        // preventing use-after-free without needing Thread.sleep() or callback nulling.
         if let contextRef = displayLinkContextRef {
             contextRef.release()
             displayLinkContextRef = nil
         }
-        
-        // Brief wait to let any in-flight callback complete (for OpenGL context safety)
-        // The weak reference pattern handles the crash safety, but we still want to
-        // avoid accessing OpenGL context from callback after we've cleaned up
-        Thread.sleep(forTimeInterval: 0.02)
         
         NSLog("VisualizationGLView: Stopped rendering")
     }
@@ -356,6 +411,24 @@ class VisualizationGLView: NSOpenGLView {
     func setLowPowerMode(_ enabled: Bool) {
         isLowPowerMode = enabled
         NSLog("VisualizationGLView: Low power mode = %@", isLowPowerMode ? "ON (30fps)" : "OFF (60fps)")
+    }
+    
+    /// Set PCM gain multiplier (0.5 to 3.0)
+    /// Controls how reactive the visualization is to audio amplitude
+    func setPCMGain(_ gain: Float) {
+        pcmGain = max(0.5, min(3.0, gain))
+        NSLog("VisualizationGLView: PCM gain = %.1fx", pcmGain)
+    }
+    
+    /// Set the normal (active playback) beat sensitivity (0.0 to 2.0)
+    /// Controls how aggressively projectM triggers beat-driven effects
+    func setNormalBeatSensitivity(_ sensitivity: Float) {
+        normalBeatSensitivity = max(0.0, min(2.0, sensitivity))
+        // Apply immediately if audio is active
+        if isAudioActive, let pm = engine as? ProjectMWrapper {
+            pm.beatSensitivity = normalBeatSensitivity
+        }
+        NSLog("VisualizationGLView: Normal beat sensitivity = %.1f", normalBeatSensitivity)
     }
     
     // MARK: - Data Update
@@ -454,8 +527,17 @@ class VisualizationGLView: NSOpenGLView {
         // Update viewport size if changed
         engine.setViewportSize(width: width, height: height)
 
-        // Feed PCM data to engine
-        engine.addPCMMono(pcm)
+        // Apply PCM gain multiplier for audio sensitivity control
+        if pcmGain != 1.0 {
+            var amplified = pcm
+            let gain = pcmGain
+            for i in 0..<amplified.count {
+                amplified[i] = max(-1.0, min(1.0, amplified[i] * gain))
+            }
+            engine.addPCMMono(amplified)
+        } else {
+            engine.addPCMMono(pcm)
+        }
 
         // Render the frame
         engine.renderFrame()

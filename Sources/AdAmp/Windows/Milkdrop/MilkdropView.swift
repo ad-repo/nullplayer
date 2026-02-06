@@ -679,6 +679,38 @@ class MilkdropView: NSView {
 
         menu.addItem(NSMenuItem.separator())
         
+        // Audio Sensitivity submenu (PCM gain multiplier)
+        let audioSensMenu = NSMenu()
+        let currentPCMGain = visualizationGLView?.pcmGain ?? 1.0
+        for (name, value) in [("Low (0.5x)", 5), ("Normal (1.0x)", 10), ("High (1.5x)", 15), ("Intense (2.0x)", 20), ("Max (3.0x)", 30)] {
+            let item = NSMenuItem(title: name, action: #selector(setAudioSensitivity(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = value
+            item.state = abs(currentPCMGain - Float(value) / 10.0) < 0.05 ? .on : .off
+            audioSensMenu.addItem(item)
+        }
+        let audioSensMenuItem = NSMenuItem(title: "Audio Sensitivity", action: nil, keyEquivalent: "")
+        audioSensMenuItem.submenu = audioSensMenu
+        menu.addItem(audioSensMenuItem)
+        
+        // Beat Sensitivity submenu (projectM beat detection threshold) - only for ProjectM
+        if isProjectMAvailable {
+            let beatSensMenu = NSMenu()
+            let currentBeatSens = visualizationGLView?.normalBeatSensitivity ?? 1.0
+            for (name, value) in [("Low (0.5)", 5), ("Normal (1.0)", 10), ("High (1.5)", 15), ("Max (2.0)", 20)] {
+                let item = NSMenuItem(title: name, action: #selector(setBeatSensitivityAction(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = value
+                item.state = abs(currentBeatSens - Float(value) / 10.0) < 0.05 ? .on : .off
+                beatSensMenu.addItem(item)
+            }
+            let beatSensMenuItem = NSMenuItem(title: "Beat Sensitivity", action: nil, keyEquivalent: "")
+            beatSensMenuItem.submenu = beatSensMenu
+            menu.addItem(beatSensMenuItem)
+        }
+        
+        menu.addItem(NSMenuItem.separator())
+        
         // Performance mode toggle
         let isLowPower = visualizationGLView?.isLowPowerMode ?? true
         let perfModeItem = NSMenuItem(
@@ -737,6 +769,16 @@ class MilkdropView: NSView {
     
     @objc private func closeWindow(_ sender: Any?) {
         window?.close()
+    }
+    
+    @objc private func setAudioSensitivity(_ sender: NSMenuItem) {
+        let gain = Float(sender.tag) / 10.0
+        visualizationGLView?.setPCMGain(gain)
+    }
+    
+    @objc private func setBeatSensitivityAction(_ sender: NSMenuItem) {
+        let sensitivity = Float(sender.tag) / 10.0
+        visualizationGLView?.setNormalBeatSensitivity(sensitivity)
     }
     
     // MARK: - Preset Cycle Mode

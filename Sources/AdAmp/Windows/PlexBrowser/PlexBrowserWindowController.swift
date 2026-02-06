@@ -74,21 +74,14 @@ class PlexBrowserWindowController: NSWindowController {
     }
     
     /// Position the window to the RIGHT of the main window
+    /// Always positions on the right side, even if partially offscreen
     private func positionWindow() {
         guard let window = window,
               let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
         
         let mainFrame = mainWindow.frame
-        var newX = mainFrame.maxX  // RIGHT of main
+        let newX = mainFrame.maxX  // Always RIGHT of main
         let newY = mainFrame.maxY - window.frame.height  // Top-aligned
-        
-        // Screen bounds check - don't go off right edge
-        if let screen = mainWindow.screen ?? NSScreen.main {
-            if newX + window.frame.width > screen.visibleFrame.maxX {
-                // Fall back to left side if no room on right
-                newX = mainFrame.minX - window.frame.width
-            }
-        }
         
         window.setFrameOrigin(NSPoint(x: newX, y: newY))
     }

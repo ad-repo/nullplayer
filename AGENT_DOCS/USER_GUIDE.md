@@ -55,7 +55,7 @@ AdAmp consists of several windows that can be shown/hidden:
 | **Main Window** | Primary player with transport controls | Always visible |
 | **Playlist Editor** | Track list and playlist management | PL button or context menu |
 | **Equalizer** | 10-band graphic EQ with presets | EQ button or context menu |
-| **Spectrum Analyzer** | Large spectrum visualization | Click spectrum display or context menu |
+| **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
 | **Library Browser** | Browse Plex and local media | Logo button or context menu |
 | **Milkdrop** | Real-time audio visualizations | Menu button or context menu |
 
@@ -85,7 +85,7 @@ The main window provides core playback controls and track information.
 | **Sample Rate** | Audio sample rate in kHz |
 | **Stereo Indicator** | Shows mono/stereo status |
 | **Cast Indicator** | Shows when casting to external device |
-| **Spectrum Analyzer** | Real-time frequency visualization |
+| **Spectrum Analyzer** | Real-time frequency visualization (click to toggle Spectrum window, double-click to cycle Spectrum/Fire mode) |
 | **Playback Status** | Play/Pause/Stop indicator |
 
 ### Sliders
@@ -1099,10 +1099,14 @@ The main window displays real-time frequency analysis:
 - 75 frequency bands (20Hz - 20kHz, logarithmic)
 - 512-point FFT (~11.6ms latency at 44.1kHz)
 - Fast attack, slow decay smoothing
-- **Click** the spectrum display to open the full Spectrum Analyzer window
+- **Click** the visualization area to toggle the Spectrum Analyzer window
+- **Double-click** the visualization area to switch between Spectrum and Fire mode
+- **Fire mode** renders a GPU flame simulation in the vis area with 4 flame styles (Inferno, Aurora, Electric, Ocean) and 2 intensity levels (Mellow, Intense)
+- Flame style and intensity can be changed via Right-click → Options → Main Visualization → Flame Style / Fire Intensity
+- Main window and Spectrum Analyzer window have independent flame style and intensity settings
 
 The standalone Spectrum Analyzer window provides a larger, more detailed view with:
-- **Quality modes**: Winamp (skin colors with 3D shading), Enhanced (rainbow LED matrix), Ultra (maximum effects)
+- **Quality modes**: Winamp (skin colors with 3D shading), Enhanced (rainbow LED matrix), Ultra (maximum effects), Fire, JWST
 - **Decay modes**: Instant, Snappy (default), Balanced, Smooth
 - **Fullscreen**: Press F or use context menu (Escape to exit)
 - **84 bars** for high-resolution frequency display

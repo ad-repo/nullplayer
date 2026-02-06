@@ -66,16 +66,18 @@ class ResizableWindow: NSWindow {
         
         // Exclude title bar area from top edge resize detection
         // Title bar is used for window dragging, not resizing
-        let titleBarHeight: CGFloat = 20  // Generous area for title bar dragging
+        // Scale-aware: at 2x scale, a 14px Winamp title bar = 28 window pixels
+        let titleBarHeight = max(20, size.height * 0.12)
         let isInTitleBar = windowPoint.y > size.height - titleBarHeight
         
         // Exclude top-right corner where window control buttons are (close, shade, minimize)
-        // Buttons occupy roughly the rightmost 35 pixels in the title bar
-        let buttonAreaWidth: CGFloat = 35
+        // Scale-aware: buttons span ~38 Winamp pixels from right edge, which scales with window
+        let buttonAreaWidth = max(40, size.width * 0.14)
         let isInButtonArea = isInTitleBar && windowPoint.x > size.width - buttonAreaWidth
         
         // Also exclude top-left corner where menu button is
-        let menuButtonWidth: CGFloat = 20
+        // Scale-aware for menu button area
+        let menuButtonWidth = max(20, size.width * 0.06)
         let isInMenuArea = isInTitleBar && windowPoint.x < menuButtonWidth
         
         if isInButtonArea || isInMenuArea {

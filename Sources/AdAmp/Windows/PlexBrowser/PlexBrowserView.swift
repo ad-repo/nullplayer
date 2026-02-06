@@ -5442,21 +5442,17 @@ class PlexBrowserView: NSView {
                winampPoint.x < originalSize.width - 30  // Leave room for window buttons
     }
     
-    /// Check if point hits close button
-    /// Uses LibraryWindow offsets to match where SkinRenderer draws the buttons
+    /// Check if point hits close button (enlarged hit area extends to right edge and top)
     private func hitTestCloseButton(at winampPoint: NSPoint) -> Bool {
         let originalSize = originalWindowSize
-        let closeRect = NSRect(x: originalSize.width - SkinElements.LibraryWindow.TitleBarButtons.closeOffset - 9,
-                               y: 4, width: 9, height: 9)
+        let closeRect = NSRect(x: originalSize.width - 20, y: 0, width: 20, height: 14)
         return closeRect.contains(winampPoint)
     }
     
-    /// Check if point hits shade button
-    /// Uses LibraryWindow offsets to match where SkinRenderer draws the buttons
+    /// Check if point hits shade button (enlarged hit area, full title bar height)
     private func hitTestShadeButton(at winampPoint: NSPoint) -> Bool {
         let originalSize = originalWindowSize
-        let shadeRect = NSRect(x: originalSize.width - SkinElements.LibraryWindow.TitleBarButtons.shadeOffset - 9,
-                               y: 4, width: 9, height: 9)
+        let shadeRect = NSRect(x: originalSize.width - 31, y: 0, width: 11, height: 14)
         return shadeRect.contains(winampPoint)
     }
     
@@ -6111,13 +6107,15 @@ class PlexBrowserView: NSView {
     private func handleShadeMouseDown(at winampPoint: NSPoint, event: NSEvent) {
         let originalSize = originalWindowSize
         
-        // Check window control buttons (relative to right edge)
-        let closeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
-                               y: SkinElements.PlaylistShade.Positions.closeButton.minY,
-                               width: 9, height: 9)
-        let shadeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
-                               y: SkinElements.PlaylistShade.Positions.shadeButton.minY,
-                               width: 9, height: 9)
+        // Check window control buttons - close first for priority (enlarged hit areas)
+        let closeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.HitPositions.closeButton.minX,
+                               y: SkinElements.PlaylistShade.HitPositions.closeButton.minY,
+                               width: SkinElements.PlaylistShade.HitPositions.closeButton.width,
+                               height: SkinElements.PlaylistShade.HitPositions.closeButton.height)
+        let shadeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.HitPositions.shadeButton.minX,
+                               y: SkinElements.PlaylistShade.HitPositions.shadeButton.minY,
+                               width: SkinElements.PlaylistShade.HitPositions.shadeButton.width,
+                               height: SkinElements.PlaylistShade.HitPositions.shadeButton.height)
         
         if closeRect.contains(winampPoint) {
             pressedButton = .close
@@ -6963,12 +6961,14 @@ class PlexBrowserView: NSView {
     private func handleShadeMouseUp(at winampPoint: NSPoint) {
         let originalSize = originalWindowSize
         if let pressed = pressedButton {
-            let closeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.Positions.closeButton.minX,
-                                   y: SkinElements.PlaylistShade.Positions.closeButton.minY,
-                                   width: 9, height: 9)
-            let shadeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.Positions.shadeButton.minX,
-                                   y: SkinElements.PlaylistShade.Positions.shadeButton.minY,
-                                   width: 9, height: 9)
+            let closeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.HitPositions.closeButton.minX,
+                                   y: SkinElements.PlaylistShade.HitPositions.closeButton.minY,
+                                   width: SkinElements.PlaylistShade.HitPositions.closeButton.width,
+                                   height: SkinElements.PlaylistShade.HitPositions.closeButton.height)
+            let shadeRect = NSRect(x: originalSize.width + SkinElements.PlaylistShade.HitPositions.shadeButton.minX,
+                                   y: SkinElements.PlaylistShade.HitPositions.shadeButton.minY,
+                                   width: SkinElements.PlaylistShade.HitPositions.shadeButton.width,
+                                   height: SkinElements.PlaylistShade.HitPositions.shadeButton.height)
             
             switch pressed {
             case .close:

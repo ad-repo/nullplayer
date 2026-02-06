@@ -404,6 +404,8 @@ A standalone Metal-based spectrum analyzer visualization window that provides a 
 - Context Menu → Spectrum Analyzer
 - Window menu → Spectrum Analyzer
 
+**Note:** Double-clicking the visualization area cycles the main window vis mode (Spectrum → Fire) instead of opening this window.
+
 ### Window Docking
 
 The Spectrum Analyzer participates in the docking system alongside Main, EQ, and Playlist:
@@ -424,8 +426,11 @@ The Spectrum Analyzer participates in the docking system alongside Main, EQ, and
 
 | Mode | Description |
 |------|-------------|
-| **Winamp** | Discrete color palette from skin's `viscolor.txt`, authentic pixel-art look |
-| **Enhanced** | Smooth gradient interpolation with subtle glow effect on bar tops |
+| **Winamp** | Discrete color bands from skin's `viscolor.txt` with floating peak indicators, 3D bar shading, and segmented LED gaps |
+| **Enhanced** | Rainbow LED matrix with gravity-bouncing peaks, warm amber fade trails, 3D inner glow cells, and anti-aliased rounded corners |
+| **Ultra** | Maximum fidelity seamless gradient with smooth exponential decay, perceptual gamma, and warm color trails |
+| **Fire** | GPU fire simulation with audio-reactive flame tongues in 4 color styles |
+| **JWST** | Deep space flythrough with 3D star field, vivid JWST diffraction flares as intensity indicators, and rare giant flare events |
 
 ### Decay/Responsiveness Modes
 
@@ -448,8 +453,10 @@ Controls how quickly spectrum bars fall after peaks:
 ### Context Menu
 
 Right-click on the spectrum window for:
-- **Quality** submenu - Switch between Winamp/Enhanced modes
+- **Mode** submenu - Switch between Winamp/Enhanced/Fire/JWST modes
 - **Responsiveness** submenu - Adjust decay behavior
+- **Flame Style** - Choose flame color preset (Fire mode only)
+- **Fire Intensity** - Choose Mellow or Intense reactivity (Fire mode only)
 - **Close** - Close the window
 
 Settings are persisted across app restarts.

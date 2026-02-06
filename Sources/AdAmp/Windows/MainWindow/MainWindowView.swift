@@ -1,5 +1,13 @@
 import AppKit
 
+/// Visualization mode for the main window's built-in visualization area
+enum MainWindowVisMode: String {
+    case spectrum = "Spectrum"  // Classic 19-bar spectrum analyzer (CGContext)
+    case fire = "Fire"         // GPU flame simulation (Metal overlay)
+    
+    var displayName: String { rawValue }
+}
+
 /// Main window view - renders the Winamp main player interface using skin sprites
 class MainWindowView: NSView {
     
@@ -31,6 +39,17 @@ class MainWindowView: NSView {
     /// Spectrum analyzer levels
     private var spectrumLevels: [Float] = []
     
+    /// Main window visualization mode (spectrum bars vs fire)
+    private var mainVisMode: MainWindowVisMode = .spectrum {
+        didSet {
+            UserDefaults.standard.set(mainVisMode.rawValue, forKey: "mainWindowVisMode")
+            updateFlameOverlayVisibility()
+        }
+    }
+    
+    /// Metal-based flame visualization overlay (created lazily on first use)
+    private var flameOverlay: SpectrumAnalyzerView?
+    
     /// Marquee scroll offset
     private var marqueeOffset: CGFloat = 0
     
@@ -45,6 +64,9 @@ class MainWindowView: NSView {
     
     /// Layer-based marquee for GPU-accelerated scrolling (normal mode only)
     private var marqueeLayer: MarqueeLayer?
+    
+    /// Timer for delayed single-click on vis area (to distinguish from double-click)
+    private var visClickTimer: Timer?
     
     /// Mouse tracking area
     private var trackingArea: NSTrackingArea?
@@ -110,8 +132,19 @@ class MainWindowView: NSView {
         // Register for drag and drop
         registerForDraggedTypes([.fileURL])
         
+        // Restore saved visualization mode
+        if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
+           let mode = MainWindowVisMode(rawValue: savedMode) {
+            mainVisMode = mode
+        }
+        
         // Setup layer-based marquee for normal mode
         setupMarqueeLayer()
+        
+        // Setup flame overlay if fire mode is active
+        if mainVisMode == .fire {
+            setupFlameOverlay()
+        }
         
         // Start timer for bitrate scrolling (and shade mode marquee)
         startMarquee()
@@ -153,6 +186,14 @@ class MainWindowView: NSView {
                                                name: NSWindow.didDeminiaturizeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeOcclusionState),
                                                name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        
+        // Observe main window visualization settings changes
+        NotificationCenter.default.addObserver(self, selector: #selector(mainVisSettingsChanged),
+                                               name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+        
+        // Observe playback state changes to clear/freeze spectrum on stop/pause
+        NotificationCenter.default.addObserver(self, selector: #selector(playbackStateDidChange),
+                                               name: .audioPlaybackStateChanged, object: nil)
     }
     
     // MARK: - Accessibility
@@ -191,6 +232,7 @@ class MainWindowView: NSView {
     /// Called when the skin changes (via MainWindowController.skinDidChange)
     func skinDidChange() {
         updateMarqueeContent()
+        flameOverlay?.skinDidChange()
     }
     
     @objc private func windowDidChangeBackingProperties(_ notification: Notification) {
@@ -249,6 +291,120 @@ class MainWindowView: NSView {
         let text = getMarqueeDisplayText()
         marqueeLayer?.text = text
         marqueeLayer?.skinTextImage = WindowManager.shared.currentSkin?.text
+    }
+    
+    // MARK: - Flame Overlay (Metal-based fire visualization in main window vis area)
+    
+    /// Create the Metal flame overlay view (lazy initialization)
+    private func setupFlameOverlay() {
+        guard flameOverlay == nil else { return }
+        
+        let overlay = SpectrumAnalyzerView(frame: .zero)
+        // Mark as embedded BEFORE setting qualityMode to prevent UserDefaults contamination
+        overlay.isEmbedded = true
+        overlay.qualityMode = .flame
+        // Restore flame style and intensity from main window's own UserDefaults keys
+        if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+           let style = FlameStyle(rawValue: savedStyle) {
+            overlay.flameStyle = style
+        }
+        if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+           let intensity = FlameIntensity(rawValue: savedIntensity) {
+            overlay.flameIntensity = intensity
+        }
+        overlay.isHidden = true
+        addSubview(overlay)
+        flameOverlay = overlay
+        
+        updateFlameOverlayFrame()
+    }
+    
+    /// Update flame overlay position to match the visualization area in scaled Winamp coordinates
+    private func updateFlameOverlayFrame() {
+        guard let overlay = flameOverlay, !isShadeMode else {
+            flameOverlay?.isHidden = true
+            return
+        }
+        
+        // Don't update if bounds are zero (view not yet laid out)
+        guard bounds.width > 0 && bounds.height > 0 else { return }
+        
+        let scale = scaleFactor
+        let originalSize = Skin.baseMainSize
+        let visArea = SkinElements.Visualization.displayArea  // x: 24, y: 43, width: 76, height: 16
+        
+        // Calculate centering offset (same as in draw())
+        let scaledWidth = originalSize.width * scale
+        let scaledHeight = originalSize.height * scale
+        let offsetX = (bounds.width - scaledWidth) / 2
+        let offsetY = (bounds.height - scaledHeight) / 2
+        
+        // Convert Winamp coordinates (top-left origin) to macOS view coordinates (bottom-left origin)
+        let macX = offsetX + visArea.origin.x * scale
+        let macY = bounds.height - offsetY - (visArea.origin.y + visArea.height) * scale
+        let width = visArea.width * scale
+        let height = visArea.height * scale
+        
+        overlay.frame = NSRect(x: macX, y: macY, width: width, height: height)
+    }
+    
+    /// Show/hide the flame overlay based on current vis mode
+    private func updateFlameOverlayVisibility() {
+        if mainVisMode == .fire && !isShadeMode {
+            // Create overlay if needed
+            if flameOverlay == nil {
+                setupFlameOverlay()
+            }
+            flameOverlay?.isHidden = false
+            flameOverlay?.startDisplayLink()
+            updateFlameOverlayFrame()
+            
+            // Force layout to ensure Metal layer gets sized properly
+            flameOverlay?.needsLayout = true
+            flameOverlay?.layoutSubtreeIfNeeded()
+            
+            // Feed current spectrum data
+            if !spectrumLevels.isEmpty {
+                flameOverlay?.updateSpectrum(spectrumLevels)
+            }
+            
+            
+        } else {
+            flameOverlay?.isHidden = true
+            flameOverlay?.stopDisplayLink()
+        }
+        needsDisplay = true
+    }
+    
+    /// Cycle the main window visualization mode
+    private func cycleMainVisMode() {
+        switch mainVisMode {
+        case .spectrum:
+            mainVisMode = .fire
+        case .fire:
+            mainVisMode = .spectrum
+        }
+    }
+    
+    @objc private func mainVisSettingsChanged() {
+        // Reload vis mode from UserDefaults
+        if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
+           let mode = MainWindowVisMode(rawValue: savedMode) {
+            if mode != mainVisMode {
+                mainVisMode = mode
+            }
+        }
+        // Reload flame style and intensity if overlay exists (uses main window's own keys)
+        if let overlay = flameOverlay {
+            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+               let style = FlameStyle(rawValue: savedStyle) {
+                overlay.flameStyle = style
+            }
+            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+               let intensity = FlameIntensity(rawValue: savedIntensity) {
+                overlay.flameIntensity = intensity
+            }
+        }
     }
     
     // MARK: - Accessibility Children (for custom drawn controls)
@@ -414,7 +570,10 @@ class MainWindowView: NSView {
     deinit {
         marqueeTimer?.invalidate()
         loadingAnimationTimer?.invalidate()
+        visClickTimer?.invalidate()
         marqueeLayer?.removeFromSuperlayer()
+        flameOverlay?.stopDisplayLink()
+        flameOverlay?.removeFromSuperview()
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -424,6 +583,23 @@ class MainWindowView: NSView {
     
     @objc private func castingStateDidChange() {
         needsDisplay = true
+    }
+    
+    @objc private func playbackStateDidChange(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let state = userInfo["state"] as? PlaybackState else { return }
+        
+        switch state {
+        case .stopped:
+            // Clear spectrum bars immediately
+            spectrumLevels = Array(repeating: Float(0), count: spectrumLevels.count)
+            needsDisplay = true
+        case .paused:
+            // Freeze - just stop updating (no more updateSpectrum calls will arrive)
+            break
+        case .playing:
+            break
+        }
     }
     
     @objc private func castLoadingStateDidChange(_ notification: Notification) {
@@ -527,6 +703,12 @@ class MainWindowView: NSView {
     /// Get the original window size for hit testing (base Winamp dimensions)
     private var originalWindowSize: NSSize {
         return isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
+    }
+    
+    override func layout() {
+        super.layout()
+        updateMarqueeLayerFrame()
+        updateFlameOverlayFrame()
     }
     
     override func draw(_ dirtyRect: NSRect) {
@@ -681,8 +863,11 @@ class MainWindowView: NSView {
         // Draw sample rate display (e.g., "44" kHz)
         renderer.drawSampleRate(currentTrack?.sampleRate, in: context)
         
-        // Draw spectrum analyzer
-        renderer.drawSpectrumAnalyzer(levels: spectrumLevels, in: context)
+        // Draw spectrum analyzer (only in spectrum mode; fire mode uses Metal overlay)
+        if mainVisMode == .spectrum {
+            renderer.drawSpectrumAnalyzer(levels: spectrumLevels, in: context)
+        }
+        // Note: In fire mode, the Metal flame overlay renders on top of this area
         
         // Draw position slider (seek bar)
         let positionValue: CGFloat
@@ -774,8 +959,16 @@ class MainWindowView: NSView {
     
     func updateSpectrum(_ levels: [Float]) {
         self.spectrumLevels = levels
-        // Only redraw the visualization area for performance
-        setNeedsDisplay(SkinElements.Visualization.displayArea)
+        
+        // Feed flame overlay when in fire mode
+        if mainVisMode == .fire {
+            flameOverlay?.updateSpectrum(levels)
+        }
+        
+        // Only redraw the visualization area for performance (spectrum mode)
+        if mainVisMode == .spectrum {
+            setNeedsDisplay(SkinElements.Visualization.displayArea)
+        }
     }
     
     // MARK: - Marquee Animation
@@ -867,6 +1060,8 @@ class MainWindowView: NSView {
         marqueeLayer?.pauseAnimation()
         loadingAnimationTimer?.invalidate()
         loadingAnimationTimer = nil
+        // Pause flame overlay rendering
+        if mainVisMode == .fire { flameOverlay?.stopDisplayLink() }
     }
     
     /// Restart timers when window is restored from minimized state
@@ -878,6 +1073,8 @@ class MainWindowView: NSView {
         if isCastingLocalFile {
             startLoadingAnimation()
         }
+        // Resume flame overlay rendering
+        if mainVisMode == .fire { flameOverlay?.startDisplayLink() }
     }
     
     /// Handle window occlusion state changes to pause/resume timers for CPU efficiency
@@ -889,11 +1086,15 @@ class MainWindowView: NSView {
             if isCastingLocalFile {
                 startLoadingAnimation()
             }
+            // Resume flame overlay rendering
+            if mainVisMode == .fire { flameOverlay?.startDisplayLink() }
         } else {
             stopMarquee()
             marqueeLayer?.pauseAnimation()
             loadingAnimationTimer?.invalidate()
             loadingAnimationTimer = nil
+            // Pause flame overlay rendering
+            if mainVisMode == .fire { flameOverlay?.stopDisplayLink() }
         }
     }
     
@@ -949,7 +1150,7 @@ class MainWindowView: NSView {
         let point = convertToOriginalCoordinates(viewPoint)
         let hitTestSize = originalWindowSize
         
-        // Single-click on spectrum analyzer display to open Spectrum window
+        // Click on visualization display area
         // Convert to Winamp coordinates (top-down Y axis) for comparison
         let winampY = originalWindowSize.height - point.y
         let spectrumArea = SkinElements.Visualization.displayArea  // x: 24, y: 43, width: 76, height: 16
@@ -957,7 +1158,19 @@ class MainWindowView: NSView {
                                    width: spectrumArea.width, height: spectrumArea.height)
         let winampPoint = NSPoint(x: point.x, y: winampY)
         if spectrumRect.contains(winampPoint) {
-            WindowManager.shared.toggleSpectrum()
+            if event.clickCount == 2 {
+                // Double-click: cancel pending single-click and cycle vis mode
+                visClickTimer?.invalidate()
+                visClickTimer = nil
+                cycleMainVisMode()
+            } else if event.clickCount == 1 {
+                // Single-click: delay to check if double-click follows
+                visClickTimer?.invalidate()
+                visClickTimer = Timer.scheduledTimer(withTimeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
+                    self?.visClickTimer = nil
+                    WindowManager.shared.toggleSpectrum()
+                }
+            }
             return
         }
         
@@ -999,10 +1212,10 @@ class MainWindowView: NSView {
         let originalHeight = SkinElements.MainShade.windowSize.height
         let winampPoint = NSPoint(x: point.x, y: originalHeight - point.y)
         
-        // Check window control buttons
-        let closeRect = SkinElements.TitleBar.ShadePositions.closeButton
-        let minimizeRect = SkinElements.TitleBar.ShadePositions.minimizeButton
-        let unshadeRect = SkinElements.TitleBar.ShadePositions.unshadeButton
+        // Check window control buttons - close first for priority (enlarged hit areas)
+        let closeRect = SkinElements.TitleBar.ShadeHitPositions.closeButton
+        let unshadeRect = SkinElements.TitleBar.ShadeHitPositions.unshadeButton
+        let minimizeRect = SkinElements.TitleBar.ShadeHitPositions.minimizeButton
         
         if closeRect.contains(winampPoint) {
             pressedButton = .close
@@ -1010,14 +1223,14 @@ class MainWindowView: NSView {
             return
         }
         
-        if minimizeRect.contains(winampPoint) {
-            pressedButton = .minimize
+        if unshadeRect.contains(winampPoint) {
+            pressedButton = .unshade
             needsDisplay = true
             return
         }
         
-        if unshadeRect.contains(winampPoint) {
-            pressedButton = .unshade
+        if minimizeRect.contains(winampPoint) {
+            pressedButton = .minimize
             needsDisplay = true
             return
         }
@@ -1066,7 +1279,7 @@ class MainWindowView: NSView {
         case .openMainMenu:
             pressedButton = .menu
             
-        // Note: toggleSpectrum is handled via single-click in mouseDown()
+        // Note: cycleMainVisMode is handled via single-click in mouseDown()
             
         // Slider interactions
         case .seekPosition(let value):
@@ -1210,11 +1423,11 @@ class MainWindowView: NSView {
                 
                 switch pressed {
                 case .close:
-                    shouldPerform = SkinElements.TitleBar.ShadePositions.closeButton.contains(winampPoint)
+                    shouldPerform = SkinElements.TitleBar.ShadeHitPositions.closeButton.contains(winampPoint)
                 case .minimize:
-                    shouldPerform = SkinElements.TitleBar.ShadePositions.minimizeButton.contains(winampPoint)
+                    shouldPerform = SkinElements.TitleBar.ShadeHitPositions.minimizeButton.contains(winampPoint)
                 case .unshade:
-                    shouldPerform = SkinElements.TitleBar.ShadePositions.unshadeButton.contains(winampPoint)
+                    shouldPerform = SkinElements.TitleBar.ShadeHitPositions.unshadeButton.contains(winampPoint)
                 default:
                     break
                 }
@@ -1364,6 +1577,7 @@ class MainWindowView: NSView {
     func setShadeMode(_ enabled: Bool) {
         isShadeMode = enabled
         updateMarqueeLayerFrame()  // Hide/show layer based on mode
+        updateFlameOverlayVisibility()  // Hide/show flame overlay based on mode
         if enabled {
             marqueeOffset = 0  // Reset shade mode marquee
             startMarquee()     // Start timer for shade mode
