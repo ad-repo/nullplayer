@@ -1,12 +1,12 @@
-# AdAmp Visualization Systems
+# NullPlayer Visualization Systems
 
-AdAmp features multiple visualization systems for audio-reactive visual effects.
+NullPlayer features multiple visualization systems for audio-reactive visual effects.
 
 ## Table of Contents
 
 1. [Main Window Visualization](#main-window-visualization)
 2. [Album Art Visualizer](#album-art-visualizer)
-3. [ProjectM/Milkdrop Visualizer](#projectmmilkdrop-visualizer)
+3. [ProjectM/ProjectM Visualizer](#projectmprojectM-visualizer)
 4. [Spectrum Analyzer Window](#spectrum-analyzer-window)
 5. [Comparison](#comparison)
 
@@ -14,46 +14,58 @@ AdAmp features multiple visualization systems for audio-reactive visual effects.
 
 ## Main Window Visualization
 
-The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports two rendering modes.
+The main window's built-in visualization area (76x16 pixels in classic coordinates) supports seven rendering modes — the same GPU modes available in the Spectrum Analyzer window (except Classic, which is replaced by Spectrum).
 
 ### Modes
 
 | Mode | Description |
 |------|-------------|
-| **Spectrum** | Classic 19-bar spectrum analyzer drawn with skin colors (default) |
-| **Fire** | GPU flame simulation using Metal compute shaders, same engine as the Spectrum Analyzer window's Fire mode |
+| **Spectrum** | Classic 19-bar spectrum analyzer drawn with skin colors via CGContext (default) |
+| **Fire** | GPU flame simulation using Metal compute shaders |
+| **Enhanced** | LED matrix with rainbow gradient, gravity-bouncing peaks, and amber fade trails |
+| **Ultra** | Maximum fidelity seamless gradient with smooth decay, physics-based peaks, and reflections |
+| **JWST** | Deep space flythrough with 3D star field and JWST diffraction flares |
+| **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks |
+| **Matrix** | Falling digital rain with procedural glyphs mapped to spectrum bands |
 
 ### Switching Modes
 
-- **Double-click** the visualization area in the main window to cycle between Spectrum and Fire (single-click toggles the Spectrum Analyzer window)
-- **Right-click** → Options → Main Visualization to select mode and flame style
+- **Double-click** the visualization area in the main window to cycle through all modes (single-click toggles the Spectrum Analyzer window)
+- **Right-click** → Spectrum Analyzer → Main Window → Mode to select a specific mode
 - Setting is persisted across app restarts (UserDefaults key: `mainWindowVisMode`)
 
-### Fire Mode Details
+### Settings
 
-When Fire mode is active, a Metal-based `SpectrumAnalyzerView` overlay is positioned precisely over the visualization area. It uses the same flame simulation engine as the standalone Spectrum Analyzer window:
+All GPU modes share:
+- **Responsiveness**: Controls bar decay speed (Instant, Snappy, Balanced, Smooth) — UserDefaults key: `mainWindowDecayMode`
+- **Normalization**: Controls level scaling (Accurate, Adaptive, Dynamic) — UserDefaults key: `mainWindowNormalizationMode` (hidden for Fire mode)
 
-- 128x96 simulation grid with per-column propagation
-- 11x11 Gaussian blur for smooth output
-- Audio-reactive: bass drives heat, mids drive sway, treble adds sparks
-- Supports all 4 flame styles: Inferno, Aurora, Electric, Ocean
-- 2 intensity presets: Mellow (ambient) and Intense (beat-reactive)
-- Flame style and intensity are independent from the Spectrum Analyzer window (separate UserDefaults keys: `mainWindowFlameStyle`, `mainWindowFlameIntensity`)
+Mode-specific settings:
+- **Fire**: Flame Style (Inferno, Aurora, Electric, Ocean) and Fire Intensity (Mellow, Intense) — keys: `mainWindowFlameStyle`, `mainWindowFlameIntensity`
+- **Lightning**: Lightning Style (Classic, Plasma, Matrix, Ember, Arctic, Rainbow, Neon, Aurora) — key: `mainWindowLightningStyle`
+- **Matrix**: Matrix Color (Classic, Amber, Blue Pill, Bloodshot, Neon) and Matrix Intensity (Subtle, Intense) — keys: `mainWindowMatrixColorScheme`, `mainWindowMatrixIntensity`
+
+All main window settings are independent from the Spectrum Analyzer window (separate UserDefaults keys with `mainWindow` prefix).
 
 ### Technical Details
 
-- **Implementation**: Metal overlay (`SpectrumAnalyzerView`) added as subview of `MainWindowView`
-- **Positioning**: Converted from Winamp coordinates (top-left origin) to macOS view coordinates (bottom-left origin), accounting for window scaling
-- **Lifecycle**: Overlay is created lazily on first Fire mode activation, display link starts/stops with mode changes and window visibility
+- **Implementation**: Metal overlay (`SpectrumAnalyzerView` with `isEmbedded = true`) added as subview of `MainWindowView`
+- **Positioning**: Converted from classic coordinates (top-left origin) to macOS view coordinates (bottom-left origin), accounting for window scaling
+- **Lifecycle**: Overlay is created lazily on first GPU mode activation, display link starts/stops with mode changes and window visibility
 - **CPU Efficiency**: Display link pauses when window is minimized, occluded, or in Spectrum mode
+- **Isolation**: Embedded overlay uses its own `normalizationUserDefaultsKey` and does not write to spectrum window UserDefaults keys
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
 | `Windows/MainWindow/MainWindowView.swift` | Mode switching, overlay management, click cycling |
-| `Visualization/SpectrumAnalyzerView.swift` | Metal flame rendering (shared with Spectrum window) |
-| `Visualization/FlameShaders.metal` | GPU compute + render shaders |
+| `Visualization/SpectrumAnalyzerView.swift` | Metal rendering for all GPU modes (shared with Spectrum window) |
+| `Visualization/FlameShaders.metal` | Fire mode GPU compute + render shaders |
+| `Visualization/CosmicShaders.metal` | JWST mode fragment shaders |
+| `Visualization/ElectricityShaders.metal` | Lightning mode fragment shaders |
+| `Visualization/MatrixShaders.metal` | Matrix mode fragment shaders |
+| `Visualization/SpectrumShaders.metal` | Enhanced/Ultra mode shaders |
 
 ---
 
@@ -164,29 +176,29 @@ All effects use Core Image filters for GPU acceleration and respond to audio lev
 
 ---
 
-## ProjectM/Milkdrop Visualizer
+## ProjectM/ProjectM Visualizer
 
-The ProjectM visualizer renders classic Milkdrop presets - the legendary visualization system from Winamp. It uses OpenGL for real-time procedural graphics synchronized to music.
+The ProjectM visualizer renders classic ProjectM presets - the legendary visualization system from classic. It uses OpenGL for real-time procedural graphics synchronized to music.
 
 ### Accessing the Visualizer
 
-1. **Context Menu** → Visualizations → Milkdrop Window
-2. Or use the main menu: Window → Milkdrop
+1. **Context Menu** → Visualizations → ProjectM Window
+2. Or use the main menu: Window → ProjectM
 
-### What is Milkdrop/ProjectM?
+### What is ProjectM/ProjectM?
 
-- **Milkdrop** was the iconic visualization plugin for Winamp, created by Ryan Geiss
-- **ProjectM** is the open-source reimplementation that runs Milkdrop presets
+- **ProjectM** was the iconic visualization plugin for classic, created by Ryan Geiss
+- **ProjectM** is the open-source reimplementation that runs ProjectM presets
 - Presets are shader-based programs that create infinite visual variety
 - Each preset defines equations for motion, color, and waveform rendering
 
 ### Presets
 
-AdAmp includes bundled Milkdrop presets. You can also add custom presets:
+NullPlayer includes bundled ProjectM presets. You can also add custom presets:
 
 **Custom Preset Location:**
 ```
-~/Library/Application Support/AdAmp/Presets/
+~/Library/Application Support/NullPlayer/Presets/
 ```
 
 Place `.milk` preset files in this folder and use "Reload Presets" from the context menu.
@@ -256,11 +268,11 @@ Controls the amplitude of audio samples fed to the visualization engine. Higher 
 | **Intense** | 2.0x | Very reactive, strong waveform motion |
 | **Max** | 3.0x | Maximum reactivity, dramatic visual response |
 
-Setting is persisted across app restarts (UserDefaults key: `milkdropPCMGain`).
+Setting is persisted across app restarts (UserDefaults key: `projectMPCMGain`).
 
 ### Beat Sensitivity
 
-ProjectM adjusts its visuals based on detected beats. AdAmp uses two sensitivity levels:
+ProjectM adjusts its visuals based on detected beats. NullPlayer uses two sensitivity levels:
 - **Idle**: Lower sensitivity (0.2) when audio is quiet/stopped
 - **Active**: User-configurable sensitivity during playback (default 1.0)
 
@@ -273,7 +285,7 @@ The active beat sensitivity is configurable via the context menu:
 | **High** | 1.5 | More frequent beat-triggered effects |
 | **Max** | 2.0 | Maximum beat reactivity |
 
-Setting is persisted across app restarts (UserDefaults key: `milkdropBeatSensitivity`).
+Setting is persisted across app restarts (UserDefaults key: `projectMBeatSensitivity`).
 
 ---
 
@@ -305,23 +317,25 @@ The Spectrum Analyzer window participates in the docking system:
 
 ### Switching Modes
 
-- **Double-click** the spectrum analyzer window to cycle through modes (Winamp → Enhanced → Ultra → Fire → JWST)
+- **Double-click** the spectrum analyzer window to cycle through modes (classic → Enhanced → Ultra → Fire → JWST → Lightning → Matrix)
 - **Right-click** → Mode to select a specific mode
-- **Left/Right arrow keys** cycle flame styles when in Fire mode
+- **Left/Right arrow keys** cycle flame styles (Fire), lightning styles (Lightning), or matrix color schemes (Matrix)
 
 ### Quality Modes
 
 | Mode | Description |
 |------|-------------|
-| **Winamp** | Discrete color bands from skin's 24-color palette with floating peak indicators, 3D bar shading, and band gaps for an authentic segmented LED look (default) |
+| **classic** | Discrete color bands from skin's 24-color palette with floating peak indicators, 3D bar shading, and band gaps for an authentic segmented LED look (default) |
 | **Enhanced** | Rainbow LED matrix with gravity-bouncing peaks, warm amber fade trails, 3D inner glow cells, and anti-aliased rounded corners |
 | **Ultra** | Maximum fidelity seamless gradient with smooth exponential decay, perceptual gamma, warm color trails, physics-based bouncing peaks, and reflection effect |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues (see below) |
 | **JWST** | Deep space flythrough with 3D perspective star field, JWST diffraction flares as intensity indicators, and vivid celestial bodies (see below) |
+| **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks, multiple color schemes (see below) |
+| **Matrix** | Falling digital rain with procedural glyphs mapped to spectrum bands, multiple color schemes and intensity presets (see below) |
 
-### Winamp Mode Details
+### classic Mode Details
 
-The Winamp mode aims to recreate the iconic Winamp 2.x spectrum analyzer aesthetic with modern enhancements:
+The classic mode aims to recreate the iconic classic 2.x spectrum analyzer aesthetic with modern enhancements:
 
 - **Discrete Color Bands**: Bars are divided into 16 horizontal segments with subtle 1-pixel gaps between them, creating the classic LED matrix look without a screen door effect
 - **Floating Peak Indicators**: Bright lines hold at peak heights, then fall with gravity-based physics including subtle bouncing for satisfying visual feedback
@@ -390,6 +404,51 @@ JWST mode is a 3D deep space flythrough inspired by the James Webb Space Telesco
 
 **Key files:** `Visualization/CosmicShaders.metal` (vertex + fragment shaders), `Visualization/SpectrumAnalyzerView.swift` (pipeline integration, flare state management)
 
+### Matrix Mode
+
+Matrix mode recreates the iconic falling digital rain from The Matrix, driven by the audio spectrum. Each column of falling characters maps to a frequency band, with brightness, speed, and trail length scaling with the audio energy.
+
+**Visual Elements:**
+- **Digital rain columns**: 75 columns of procedural glyph-like shapes (katakana-inspired geometric patterns), each mapped to a spectrum band
+- **Spectrum-driven intensity**: Column speed, trail length, and brightness scale with the corresponding frequency band's energy
+- **Glyph mutation**: Characters scramble periodically — brighter cells mutate faster for an "active" look
+- **Multiple rain streams**: 2-4 overlapping rain streams per column for density
+- **Phosphor glow**: Bright characters bleed a colored glow into neighboring cells
+- **CRT scanlines**: Subtle horizontal line overlay for an authentic monitor feel
+- **Reflection pool**: Bottom 18% of the screen shows a mirrored, ripple-distorted reflection of the rain above
+- **Beat pulse**: Bass hits flash columns brighter with a white wash
+- **Dramatic awakening**: On major peaks, a horizontal scan line sweeps down the screen while all glyphs momentarily reveal (JWST-style LPF detection, ~7s cooldown)
+- **Background code grid**: Faint, slowly-scrolling layer of dim characters for depth
+- **CRT vignette**: Dark edges for a cinematic monitor feel
+
+**Matrix Color Schemes** (right-click > Matrix Color, or left/right arrow keys):
+
+| Color | Description |
+|-------|-------------|
+| **Classic** | Iconic green: white-hot head, bright green trail, dark green fade |
+| **Amber** | Retro terminal: warm white head, amber/orange trail, dark brown fade |
+| **Blue Pill** | Cool blue: white head, cyan/electric blue trail, deep navy fade |
+| **Bloodshot** | Red alert: pink-white head, crimson trail, dark maroon fade |
+| **Neon** | Cyberpunk: magenta-white head, hot magenta trail, deep purple fade |
+
+**Matrix Intensity Presets** (right-click > Matrix Intensity):
+
+| Intensity | Description |
+|-----------|-------------|
+| **Subtle** | Sparse rain, gentle glow, smooth transitions, zen-like ambient feel |
+| **Intense** | Dense rain, strong glow, punchy beat reactions, high density |
+
+**Audio Reactivity:**
+- Each of the 75 spectrum bands drives its corresponding rain column
+- Bass bands produce thicker glow effects
+- Scroll speed integrates total energy (quiet = gentle drift, loud = fast cascade)
+- Beat intensity (fast attack/slow release) modulates overall brightness
+- Dramatic awakening fires on energy spikes above a slow-moving baseline, with ~7s cooldown
+
+**Technical:** Single render pass with procedural glyph grid (75 columns x ~40 rows), hash-based segment patterns for character shapes, multi-stream rain simulation, and per-scheme color palette functions. 60 FPS. MatrixParams struct passes time, scroll offset, energy bands, beat/dramatic intensity, color scheme, and intensity preset value. Reuses `flameSpectrumBuffer` for spectrum data.
+
+**Key files:** `Visualization/MatrixShaders.metal` (vertex + fragment shaders), `Visualization/SpectrumAnalyzerView.swift` (pipeline integration, state management)
+
 ### Responsiveness Modes
 
 Controls how quickly spectrum bars fall after peaks:
@@ -399,21 +458,24 @@ Controls how quickly spectrum bars fall after peaks:
 | **Instant** | No smoothing - bars respond immediately |
 | **Snappy** | Fast response with 25% retention (default) |
 | **Balanced** | Middle ground with 40% retention |
-| **Smooth** | Classic Winamp feel with 55% retention |
+| **Smooth** | Classic classic feel with 55% retention |
 
 ### Context Menu
 
 Right-click on the window for:
-- **Mode** - Switch between Winamp/Enhanced/Ultra/Fire/JWST rendering
+- **Mode** - Switch between classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix rendering
 - **Responsiveness** - Adjust decay behavior (bar modes)
 - **Flame Style** - Choose flame color preset (Flame mode only)
 - **Fire Intensity** - Choose Mellow or Intense reactivity (Flame mode only)
+- **Lightning Style** - Choose lightning color preset (Lightning mode only)
+- **Matrix Color** - Choose color scheme (Matrix mode only)
+- **Matrix Intensity** - Choose Subtle or Intense reactivity (Matrix mode only)
 - **Close** - Close the window
 
 ### Technical Details
 
 - **Rendering**: Metal shaders via CAMetalLayer with runtime shader compilation
-- **Shader Modes**: Separate pipeline states for Winamp (bar), Enhanced (LED matrix), Ultra (seamless gradient), Fire (compute simulation), and JWST (procedural space) modes
+- **Shader Modes**: Separate pipeline states for classic (bar), Enhanced (LED matrix), Ultra (seamless gradient), Fire (compute simulation), JWST (procedural space), Lightning (procedural storm), and Matrix (digital rain) modes
 - **Frame Rate**: 60 FPS via CVDisplayLink (auto-stops when window closes or occluded)
 - **Audio Input**: 75-band spectrum data from AudioEngine
 - **Thread Safety**: OSAllocatedUnfairLock for spectrum data updates
@@ -428,14 +490,14 @@ Right-click on the window for:
 
 ## Comparison
 
-| Feature | Album Art Visualizer | ProjectM/Milkdrop | Spectrum Analyzer |
+| Feature | Album Art Visualizer | ProjectM/ProjectM | Spectrum Analyzer |
 |---------|---------------------|-------------------|-------------------|
-| **Visual Style** | Transformed album artwork | Procedural graphics | Frequency bars / Fire / Deep space |
-| **Effect Count** | 30 built-in effects | 100s of presets available | 5 modes (Winamp, Enhanced, Ultra, Fire, JWST) |
-| **Customization** | Intensity adjustment | Full preset ecosystem | Mode + decay + flame styles |
+| **Visual Style** | Transformed album artwork | Procedural graphics | Frequency bars / Fire / Deep space / Lightning / Matrix |
+| **Effect Count** | 30 built-in effects | 100s of presets available | 7 modes (classic, Enhanced, Ultra, Fire, JWST, Lightning, Matrix) |
+| **Customization** | Intensity adjustment | Full preset ecosystem | Mode + decay + flame/lightning/matrix styles |
 | **GPU Tech** | Core Image (Metal) | OpenGL shaders | Metal shaders + Metal compute shaders |
 | **Audio Response** | Spectrum bands (bass/mid/treble) | PCM waveform + beat detection | 75-band spectrum / energy-driven |
-| **Best For** | Album art appreciation | Immersive light shows | Frequency analysis / Ambient visuals / Deep space drift |
+| **Best For** | Album art appreciation | Immersive light shows | Frequency analysis / Ambient visuals / Deep space / Lightning / Matrix rain |
 
 ### When to Use Each
 
@@ -444,23 +506,26 @@ Right-click on the window for:
 - For a more subtle, integrated experience
 - When browsing your music library
 
-**ProjectM/Milkdrop**
+**ProjectM/ProjectM**
 - For full-screen immersive visualizations
-- Classic Winamp nostalgia
+- Classic classic nostalgia
 - Parties and ambient displays
 - When you want maximum visual variety
 
-**Main Window Fire Mode**
-- Quick ambient flame visuals without opening a separate window
-- Click the vis area to toggle between spectrum bars and fire
+**Main Window Visualization Modes**
+- Quick access to all GPU visualization modes without opening a separate window
+- Double-click the vis area to cycle through all modes (Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix)
+- Each mode has its own settings independent from the Spectrum Analyzer window
 
-**Spectrum Analyzer**
-- When you want detailed frequency visualization (Winamp/Enhanced/Ultra modes)
+**Spectrum Analyzer Window**
+- When you want detailed frequency visualization (Classic/Enhanced/Ultra modes)
 - For monitoring audio levels
-- Classic Winamp spectrum aesthetic
-- Complements the main window's smaller analyzer
+- Classic classic spectrum aesthetic
+- Larger display area (275x116 pixels, 55 bars) complements the main window's smaller analyzer
 - Fire mode for ambient flame visuals
 - JWST mode for a chill deep space drift with music-reactive diffraction flares
+- Lightning mode for dramatic storm visuals mapped to spectrum peaks
+- Matrix mode for iconic falling digital rain synced to frequency bands
 
 ---
 
@@ -478,7 +543,7 @@ Right-click on the window for:
 - Some effects (like Feedback) are more demanding
 - Ensure your Mac supports Metal
 
-### ProjectM/Milkdrop
+### ProjectM/ProjectM
 
 **Black screen:**
 - ProjectM requires OpenGL 4.1 support

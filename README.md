@@ -1,9 +1,10 @@
-# nullPlayer
+# NullPlayer
 
-### A free, open-source music player for macOS, featuring modern Plex and Sonos integration
+### A free, open-source music player for macOS, featuring modern Plex and Sonos integration.
 
-**This is an independent, clean-room implementation built solely from publicly available specifications and APIs.
-It does not incorporate, reference, or derive from proprietary source code or confidential materials from VLC, Winamp, Plex, Sonos, Navidrome, ProjectM, Radionomy Group, or any related entities, and is not affiliated with or endorsed by them.**
+###  This is a clean room project is not affiliated with classic skin, classic skin LLC, Radionomy Group or anyone else.
+
+**If you enjoy NullPlayer, please ⭐ star ⭐ the project on GitHub!**
 
 
 ## Features
@@ -14,7 +15,7 @@ It does not incorporate, reference, or derive from proprietary source code or co
 - ProjectM visualizations with 100 included. Users can download more
 - Just like PlexAmp, sonic similarity supportuing radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
-- Winamp 2 skin support (.wsz files)
+- classic skin 2 skin support (.wsz files)
 - Main player, Playlist editor, and 10-band Equalizer windows
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
@@ -34,13 +35,11 @@ It does not incorporate, reference, or derive from proprietary source code or co
 - macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
 - [Discord Music Presence](https://github.com/ungive/discord-music-presence) support
 
-**If you enjoy nullPlayer, please ⭐ star ⭐ the project on GitHub!**
-
 ## Installation
 
-Download the latest DMG from [Releases](https://github.com/ad-repo/adamp/releases).
+Download the latest DMG from [Releases](https://github.com/ad-repo/nullplayer/releases).
 
-Follow [r/AdAmp](https://www.reddit.com/r/AdAmp/) for release notifications. Report bugs on [GitHub Issues](https://github.com/ad-repo/adamp/issues) or the subreddit.
+Follow [r/NullPlayer](https://www.reddit.com/r/NullPlayer/) for release notifications. Report bugs on [GitHub Issues](https://github.com/ad-repo/nullplayer/issues) or the subreddit.
 
 
 ### Fixing "App is damaged" or "macOS cannot verify that this app is free from malware" Error
@@ -49,16 +48,16 @@ Since the app is in beta testing and not code-signed (it costs $99 a year to sig
 
 **Option 1: Terminal (Recommended)**
 ```bash
-xattr -cr /Applications/nullPlayer.app
+xattr -cr /Applications/NullPlayer.app
 ```
 
 **Option 2: System Settings**
-1. Try to open AdAmp (it will be blocked)
+1. Try to open NullPlayer (it will be blocked)
 2. Go to **System Settings → Privacy & Security**
-3. Scroll down and click **Open Anyway** next to the nullPlayer message
+3. Scroll down and click **Open Anyway** next to the NullPlayer message
 4. Click **Open** in the confirmation dialog
 
-After either option, nullPlayer will open normally.
+After either option, NullPlayer will open normally.
 
 ## Requirements
 
@@ -70,8 +69,8 @@ Requires Xcode 15.0+ with Command Line Tools and Swift 5.9+.
 
 ```bash
 # Clone the repository
-git clone https://github.com/ad-repo/nullPlayer.git
-cd adamp
+git clone https://github.com/ad-repo/nullplayer.git
+cd nullplayer
 
 # Download required frameworks
 ./scripts/bootstrap.sh
@@ -92,15 +91,16 @@ open Package.swift
 
 | Library | Purpose |
 |---------|---------|
+| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | .wsz skin file extraction |
 | [SQLite.swift](https://github.com/stephencelis/SQLite.swift) | Media library storage |
 | [KSPlayer](https://github.com/kingslay/KSPlayer) | Video playback with FFmpeg backend |
 | [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) | HTTP audio streaming for Plex |
 | [FlyingFox](https://github.com/swhitty/FlyingFox) | Embedded HTTP server for local file casting |
-| [libprojectM](https://github.com/projectM-visualizer/projectm) | visualizations |
+| [libprojectM](https://github.com/projectM-visualizer/projectm) | ProjectM visualizations |
 
 ## Media Library
 
-Library data is stored as JSON at `~/Library/Application Support/nullPlayer/library.json`.
+Library data is stored as JSON at `~/Library/Application Support/NullPlayer/library.json`.
 
 **Backup & Restore API** (`MediaLibrary.swift`):
 
@@ -111,7 +111,7 @@ Library data is stored as JSON at `~/Library/Application Support/nullPlayer/libr
 | `listBackups()` | Returns backup URLs sorted newest first |
 | `deleteBackup(at:)` | Deletes a backup file |
 
-Backups are stored in `~/Library/Application Support/nullPlayer/Backups/`.
+Backups are stored in `~/Library/Application Support/NullPlayer/Backups/`.
 
 ## Development
 
@@ -121,7 +121,7 @@ See [AGENTS.md](AGENTS.md) for documentation links and key source files.
 
 ## Skins
 
-AdAmp supports classic Winamp 2.x skins (.wsz files)
+NullPlayer supports classic classic skin 2.x skins (.wsz files)
 
 
 ## License
@@ -129,7 +129,7 @@ AdAmp supports classic Winamp 2.x skins (.wsz files)
 This project is open source and uses the following licensed components:
 
 - **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
-- **libprojectM** (LGPL-2.1) - Milkdrop visualizations
+- **libprojectM** (LGPL-2.1) - ProjectM visualizations
 
 
 

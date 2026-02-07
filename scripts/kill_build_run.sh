@@ -1,5 +1,5 @@
 #!/bin/bash
-# AdAmp Build and Run Script
+# NullPlayer Build and Run Script
 # Kills any running instance, builds, and runs the app
 
 set -e
@@ -13,18 +13,18 @@ if [[ ! -d "Frameworks/VLCKit.framework" ]] || [[ ! -f "Frameworks/libprojectM-4
     echo ""
 fi
 
-echo "🔄 Stopping any running AdAmp instances..."
-# Kill only the AdAmp binary, not processes with adamp in path
-pkill -9 -x AdAmp 2>/dev/null || true
+echo "🔄 Stopping any running NullPlayer instances..."
+# Kill only the NullPlayer binary, not processes with nullplayer in path
+pkill -9 -x NullPlayer 2>/dev/null || true
 sleep 1
 
 # Wait for any lingering processes to fully terminate
-while pgrep -x AdAmp > /dev/null 2>&1; do
+while pgrep -x NullPlayer > /dev/null 2>&1; do
     echo "⏳ Waiting for previous instance to terminate..."
     sleep 0.5
 done
 
-echo "🔨 Building AdAmp (release mode)..."
+echo "🔨 Building NullPlayer (release mode)..."
 swift build -c release
 
 # Determine build directory based on architecture
@@ -41,7 +41,7 @@ mkdir -p "${BUILD_DIR%/release}/Frameworks"
 cp -f Frameworks/libprojectM-4.dylib "${BUILD_DIR%/release}/Frameworks/" 2>/dev/null || true
 cp -f Frameworks/libprojectM-4.4.dylib "${BUILD_DIR%/release}/Frameworks/" 2>/dev/null || true
 
-echo "🚀 Launching AdAmp..."
-"$BUILD_DIR/AdAmp" &
+echo "🚀 Launching NullPlayer..."
+"$BUILD_DIR/NullPlayer" &
 
-echo "✅ AdAmp is running!"
+echo "✅ NullPlayer is running!"

@@ -1,6 +1,6 @@
 # Chromecast Implementation
 
-AdAmp implements Google Cast Protocol v2 for casting audio and video to Chromecast devices.
+NullPlayer implements Google Cast Protocol v2 for casting audio and video to Chromecast devices.
 
 ## Architecture
 

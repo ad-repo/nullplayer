@@ -1,6 +1,6 @@
 # Testing Guide
 
-This document defines the testing philosophy, standards, and practices for AdAmp.
+This document defines the testing philosophy, standards, and practices for NullPlayer.
 
 ## Quick Start
 
@@ -25,13 +25,13 @@ swift test list
 ```bash
 # Copy library to DerivedData (required after clean builds)
 cp .build/arm64-apple-macosx/Frameworks/libprojectM-4.4.dylib \
-   ~/Library/Developer/Xcode/DerivedData/adamp-*/Build/Products/Debug/
+   ~/Library/Developer/Xcode/DerivedData/nullplayer-*/Build/Products/Debug/
 
 # Run all tests
-xcodebuild test -scheme AdAmp -destination 'platform=macOS'
+xcodebuild test -scheme NullPlayer -destination 'platform=macOS'
 
 # Run with coverage
-xcodebuild test -scheme AdAmp -enableCodeCoverage YES
+xcodebuild test -scheme NullPlayer -enableCodeCoverage YES
 ```
 
 **Note:** The `libprojectM-4.4.dylib` library must be in the build directory for tests to run. The library is built by the bootstrap script and located at `.build/arm64-apple-macosx/Frameworks/`.
@@ -40,10 +40,10 @@ xcodebuild test -scheme AdAmp -enableCodeCoverage YES
 
 ```
 Tests/
-├── AdAmpTests/           # Unit tests (218 tests) - run with swift test
-│   └── AdAmpTests.swift  # All unit tests in single file
-└── AdAmpUITests/         # UI tests - run with xcodebuild
-    ├── AdAmpUITestCase.swift      # Base test class
+├── NullPlayerTests/           # Unit tests (218 tests) - run with swift test
+│   └── NullPlayerTests.swift  # All unit tests in single file
+└── NullPlayerUITests/         # UI tests - run with xcodebuild
+    ├── NullPlayerUITestCase.swift      # Base test class
     ├── Helpers/
     │   ├── AccessibilityIdentifiers.swift
     │   └── TestHelpers.swift
@@ -135,7 +135,7 @@ E2E tests should simulate real user behavior as closely as possible:
 
 ### Unit Tests
 
-Location: `Tests/AdAmpTests/`
+Location: `Tests/NullPlayerTests/`
 
 Test individual components in isolation:
 - Models (Track, Playlist, EQPreset)
@@ -152,7 +152,7 @@ func testTrackDisplayTitle() {
 
 ### UI Tests
 
-Location: `Tests/AdAmpUITests/`
+Location: `Tests/NullPlayerUITests/`
 
 UI tests use Apple's XCUITest framework to test the application through its user interface.
 
@@ -182,18 +182,18 @@ func testPlayPauseToggle() {
 **Accessibility Identifiers:**
 
 UI tests locate elements using accessibility identifiers. These are defined in:
-- `Tests/AdAmpUITests/Helpers/AccessibilityIdentifiers.swift`
+- `Tests/NullPlayerUITests/Helpers/AccessibilityIdentifiers.swift`
 
 And set in the source views:
-- `Sources/AdAmp/Windows/MainWindow/MainWindowView.swift`
-- `Sources/AdAmp/Windows/Playlist/PlaylistView.swift`
-- `Sources/AdAmp/Windows/Equalizer/EQView.swift`
-- `Sources/AdAmp/Windows/PlexBrowser/PlexBrowserView.swift`
-- `Sources/AdAmp/Windows/Milkdrop/MilkdropView.swift`
+- `Sources/NullPlayer/Windows/MainWindow/MainWindowView.swift`
+- `Sources/NullPlayer/Windows/Playlist/PlaylistView.swift`
+- `Sources/NullPlayer/Windows/Equalizer/EQView.swift`
+- `Sources/NullPlayer/Windows/PlexBrowser/PlexBrowserView.swift`
+- `Sources/NullPlayer/Windows/ProjectM/ProjectMView.swift`
 
 **Custom Drawn UI:**
 
-Since AdAmp uses Winamp skins with custom drawing, accessibility elements are exposed via `accessibilityChildren()` override rather than standard AppKit controls. This allows XCUITest to find and interact with custom-drawn buttons and sliders.
+Since NullPlayer uses classic skin skins with custom drawing, accessibility elements are exposed via `accessibilityChildren()` override rather than standard AppKit controls. This allows XCUITest to find and interact with custom-drawn buttons and sliders.
 
 ### Integration Tests
 
@@ -218,28 +218,28 @@ Test complete user workflows:
 ```bash
 # Ensure projectM library is in DerivedData (required once after clean)
 cp .build/arm64-apple-macosx/Frameworks/libprojectM-4.4.dylib \
-   ~/Library/Developer/Xcode/DerivedData/adamp-*/Build/Products/Debug/
+   ~/Library/Developer/Xcode/DerivedData/nullplayer-*/Build/Products/Debug/
 
 # Run all tests
-xcodebuild test -scheme AdAmp -destination 'platform=macOS'
+xcodebuild test -scheme NullPlayer -destination 'platform=macOS'
 
 # Run unit tests only
-xcodebuild test -scheme AdAmp -destination 'platform=macOS' -only-testing:AdAmpTests
+xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerTests
 
 # Run UI tests only
-xcodebuild test -scheme AdAmp -destination 'platform=macOS' -only-testing:AdAmpUITests
+xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerUITests
 
 # Run specific test class
-xcodebuild test -scheme AdAmp -destination 'platform=macOS' -only-testing:AdAmpTests/AdAmpTests
+xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerTests/NullPlayerTests
 
 # Run specific test method
-xcodebuild test -scheme AdAmp -destination 'platform=macOS' -only-testing:AdAmpTests/AdAmpTests/testTrackCreation
+xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerTests/NullPlayerTests/testTrackCreation
 
 # Run with coverage
-xcodebuild test -scheme AdAmp -enableCodeCoverage YES
+xcodebuild test -scheme NullPlayer -enableCodeCoverage YES
 
 # View coverage report
-xcrun xccov view --report ~/Library/Developer/Xcode/DerivedData/adamp-*/Logs/Test/*.xcresult
+xcrun xccov view --report ~/Library/Developer/Xcode/DerivedData/nullplayer-*/Logs/Test/*.xcresult
 ```
 
 **Note:** `swift test` is not recommended for this project because it doesn't properly handle the AppKit dependencies and external frameworks. Use `xcodebuild test` instead.
@@ -272,7 +272,7 @@ See `.github/workflows/ui-tests.yml` for configuration.
 **Important: UI tests do not run in CI.** SPM test targets are unit test bundles, and `XCUIApplication` requires a UI test bundle configuration that SPM cannot provide. UI tests must be run locally using Xcode:
 
 1. Open `Package.swift` in Xcode
-2. Select the `AdAmpUITests` target
+2. Select the `NullPlayerUITests` target
 3. Run with Cmd+U
 
 **CI Features:**
@@ -413,6 +413,6 @@ func testFeatureThatIsBroken() throws {
 Generate coverage reports:
 
 ```bash
-xcodebuild test -scheme AdAmp -enableCodeCoverage YES
-xcrun xccov view --report ~/Library/Developer/Xcode/DerivedData/adamp-*/Logs/Test/*.xcresult
+xcodebuild test -scheme NullPlayer -enableCodeCoverage YES
+xcrun xccov view --report ~/Library/Developer/Xcode/DerivedData/nullplayer-*/Logs/Test/*.xcresult
 ```

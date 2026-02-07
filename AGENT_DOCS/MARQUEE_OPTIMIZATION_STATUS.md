@@ -10,8 +10,8 @@ This document describes the text rendering approach for the main window marquee 
 
 The main window uses a CALayer-based marquee for GPU-accelerated scrolling:
 
-- **File**: `Sources/AdAmp/Skin/MarqueeLayer.swift`
-- **Font**: Bitmap font from `TEXT.BMP` (Winamp skin)
+- **File**: `Sources/NullPlayer/Skin/MarqueeLayer.swift`
+- **Font**: Bitmap font from `TEXT.BMP` (skin skin)
 - **Rendering**: Pre-renders text to CGImage, uses CABasicAnimation for smooth scrolling
 - **Key technique**: Caches `CGImage` from `TEXT.BMP` outside of render cycle to prevent NSGraphicsContext interference
 
@@ -19,7 +19,7 @@ The main window uses a CALayer-based marquee for GPU-accelerated scrolling:
 
 The playlist renders all text directly using the same bitmap font as the main window:
 
-- **File**: `Sources/AdAmp/Windows/Playlist/PlaylistView.swift`
+- **File**: `Sources/NullPlayer/Windows/Playlist/PlaylistView.swift`
 - **Font**: Bitmap font from `TEXT.BMP` (same as main window)
 - **Rendering**: Direct CGContext drawing in the view's `draw()` method
 - **Marquee**: Timer-based offset for current track (8Hz update)
@@ -56,7 +56,7 @@ private func cacheTextBitmapCGImage() {
 
 ### Coordinate System Handling
 
-Winamp skins use top-left origin (Y=0 at top), while macOS uses bottom-left (Y=0 at bottom). Different approaches are used:
+skin skins use top-left origin (Y=0 at top), while macOS uses bottom-left (Y=0 at bottom). Different approaches are used:
 
 **MarqueeLayer** (rendering to NSBitmapImageRep):
 - Converts `cachedSkinCGImage` back to `NSImage` temporarily
@@ -64,7 +64,7 @@ Winamp skins use top-left origin (Y=0 at top), while macOS uses bottom-left (Y=0
 - Source rect Y is flipped: `skinImageHeight - charRect.origin.y - charRect.height`
 
 **PlaylistView** (rendering to CGContext):
-- Uses `CGImage.cropping()` directly (no Y-flip needed - CGImage uses same coords as Winamp)
+- Uses `CGImage.cropping()` directly (no Y-flip needed - CGImage uses same coords as skin)
 - Applies per-character transform to flip for CGContext drawing:
   ```swift
   context.translateBy(x: xPos, y: position.y + CGFloat(charHeight))
@@ -107,10 +107,10 @@ override func viewDidMoveToWindow() {
 
 | File | Purpose |
 |------|---------|
-| `Sources/AdAmp/Skin/MarqueeLayer.swift` | CALayer-based GPU-accelerated marquee for main window |
-| `Sources/AdAmp/Windows/Playlist/PlaylistView.swift` | Playlist view with bitmap font rendering and marquee |
-| `Sources/AdAmp/Skin/SkinElements.swift` | Character sprite coordinates from TEXT.BMP |
-| `Sources/AdAmp/Skin/SkinRenderer.swift` | Utility methods including `drawSkinTextWhite()` |
+| `Sources/NullPlayer/Skin/MarqueeLayer.swift` | CALayer-based GPU-accelerated marquee for main window |
+| `Sources/NullPlayer/Windows/Playlist/PlaylistView.swift` | Playlist view with bitmap font rendering and marquee |
+| `Sources/NullPlayer/Skin/SkinElements.swift` | Character sprite coordinates from TEXT.BMP |
+| `Sources/NullPlayer/Skin/SkinRenderer.swift` | Utility methods including `drawSkinTextWhite()` |
 
 ## Issues Resolved
 

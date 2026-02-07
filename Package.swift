@@ -4,13 +4,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "AdAmp",
+    name: "NullPlayer",
     defaultLocalization: "en",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "AdAmp", targets: ["AdAmp"])
+        .executable(name: "NullPlayer", targets: ["NullPlayer"])
     ],
     dependencies: [
         // ZIP extraction for .wsz skin files
@@ -28,15 +28,15 @@ let package = Package(
         // Lightweight core library containing model types
         // Unit tests depend only on this target for fast compilation
         .target(
-            name: "AdAmpCore",
+            name: "NullPlayerCore",
             dependencies: [],
-            path: "Sources/AdAmpCore"
+            path: "Sources/NullPlayerCore"
         ),
-        // System library target for libprojectM (Milkdrop visualization)
+        // System library target for libprojectM (ProjectM visualization)
         // To enable projectM support:
         // 1. Build libprojectM v4.1.6+ as a universal binary
         // 2. Place libprojectM-4.dylib in Frameworks/
-        // 3. Uncomment the CProjectM dependency in the AdAmp target
+        // 3. Uncomment the CProjectM dependency in the NullPlayer target
         .systemLibrary(
             name: "CProjectM",
             path: "Frameworks/libprojectm-4",
@@ -44,9 +44,9 @@ let package = Package(
             providers: []
         ),
         .executableTarget(
-            name: "AdAmp",
+            name: "NullPlayer",
             dependencies: [
-                "AdAmpCore",
+                "NullPlayerCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "KSPlayer",
@@ -54,26 +54,28 @@ let package = Package(
                 "CProjectM",
                 "FlyingFox",
             ],
-            path: "Sources/AdAmp",
+            path: "Sources/NullPlayer",
             resources: [
                 .copy("Resources"),
                 .copy("Visualization/SpectrumShaders.metal"),
                 .copy("Visualization/FlameShaders.metal"),
-                .copy("Visualization/CosmicShaders.metal")
+                .copy("Visualization/CosmicShaders.metal"),
+                .copy("Visualization/ElectricityShaders.metal"),
+                .copy("Visualization/MatrixShaders.metal")
             ],
             linkerSettings: [
                 .unsafeFlags(["-L", "Frameworks", "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
             ]
         ),
         .testTarget(
-            name: "AdAmpTests",
-            dependencies: ["AdAmp"],
-            path: "Tests/AdAmpTests"
+            name: "NullPlayerTests",
+            dependencies: ["NullPlayer"],
+            path: "Tests/NullPlayerTests"
         ),
         .testTarget(
-            name: "AdAmpUITests",
-            dependencies: ["AdAmp"],
-            path: "Tests/AdAmpUITests"
+            name: "NullPlayerUITests",
+            dependencies: ["NullPlayer"],
+            path: "Tests/NullPlayerUITests"
         )
     ],
     // Use Swift 5 language mode to keep concurrency warnings as warnings, not errors

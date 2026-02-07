@@ -1,6 +1,6 @@
 # Plex API for Music Radio & Playlists
 
-This document describes the Plex API endpoints used for querying tracks and building radio/playlist features in AdAmp.
+This document describes the Plex API endpoints used for querying tracks and building radio/playlist features in NullPlayer.
 
 ## Authentication
 
@@ -9,7 +9,7 @@ All requests require authentication headers:
 ```
 X-Plex-Token: {token}
 X-Plex-Client-Identifier: {unique-client-id}
-X-Plex-Product: AdAmp
+X-Plex-Product: NullPlayer
 X-Plex-Version: 1.0
 X-Plex-Platform: macOS
 X-Plex-Device: Mac
@@ -527,7 +527,7 @@ Movies may contain multiple media versions (different qualities, bonus content, 
 }
 ```
 
-**Important**: The top-level `duration` field may point to bonus content, not the main movie. AdAmp uses the **longest duration** from the `Media` array to identify the primary content.
+**Important**: The top-level `duration` field may point to bonus content, not the main movie. NullPlayer uses the **longest duration** from the `Media` array to identify the primary content.
 
 ### Bonus Content Filtering
 
@@ -535,7 +535,7 @@ Plex may misclassify bonus content (trailers, extras) as separate entries:
 - Bonus files in movie folders may appear as short movies
 - Numbered bonus files may appear as TV show episodes
 
-AdAmp filters these by:
+NullPlayer filters these by:
 - Using the longest media entry for movie duration/playback
 - Filtering TV shows with ≤1 season AND ≤2 episodes (likely bonus content)
 
@@ -561,7 +561,7 @@ Movies, TV shows, and episodes include external service IDs in the `Guid` array:
 | TMDB | `https://www.themoviedb.org/tv/{id}` | TV Shows |
 | TVDB | `https://www.thetvdb.com/series/{id}` | TV Shows |
 
-AdAmp uses these IDs to provide "View Online" context menu links for IMDB, TMDB, and Rotten Tomatoes (search).
+NullPlayer uses these IDs to provide "View Online" context menu links for IMDB, TMDB, and Rotten Tomatoes (search).
 
 ## Setting User Ratings
 

@@ -1,19 +1,19 @@
 # Non-Retina Display Fixes
 
-This document details the work done to fix rendering artifacts on non-Retina (1x) displays, specifically with the default Winamp skin.
+This document details the work done to fix rendering artifacts on non-Retina (1x) displays, specifically with the default classic skin skin.
 
 ## Overview
 
 Three main issues were identified on non-Retina displays:
 1. **Blue line artifacts** - Blue-tinted pixels in the skin became visible as harsh lines/artifacts
-2. **Lines under titles** - Horizontal lines appearing below window titles (Library Browser, Milkdrop)
+2. **Lines under titles** - Horizontal lines appearing below window titles (Library Browser, ProjectM)
 3. **Tile seam artifacts** - Visible vertical and horizontal lines at sprite tile boundaries (Playlist window title bar, side borders, scrollbar)
 
 ## Root Causes
 
 ### Blue Line Artifacts
 
-The default Winamp skin (`base-2.91.wsz`) contains many subtle blue-tinted pixels throughout its BMP sprite sheets. On Retina (2x) displays, these blend smoothly due to higher pixel density and anti-aliasing. On non-Retina displays, these blue pixels become visible as distinct colored lines/artifacts due to:
+The default classic skin skin (`base-2.91.wsz`) contains many subtle blue-tinted pixels throughout its BMP sprite sheets. On Retina (2x) displays, these blend smoothly due to higher pixel density and anti-aliasing. On non-Retina displays, these blue pixels become visible as distinct colored lines/artifacts due to:
 - Lower pixel density (1x vs 2x)
 - Less effective anti-aliasing at 1x scale
 - Sub-pixel rendering differences
@@ -188,18 +188,18 @@ if backingScale >= 1.5 {
 
 **Approach**: Use NSImage-based sprite drawing instead of CGImage with `interpolationQuality = .none` for title bars.
 
-**Problem**: The Library Browser title bar had visible horizontal lines while Milkdrop's title bar looked clean. The difference was:
+**Problem**: The Library Browser title bar had visible horizontal lines while ProjectM's title bar looked clean. The difference was:
 - Library Browser used `CGImage`-based `drawSprite` with `context.interpolationQuality = .none`
-- Milkdrop used `NSImage`-based `drawSprite` without forcing interpolation off
+- ProjectM used `NSImage`-based `drawSprite` without forcing interpolation off
 
-**Solution**: Changed `drawPlexBrowserTitleBarFromPledit` to use the same NSImage-based rendering approach as Milkdrop:
+**Solution**: Changed `drawPlexBrowserTitleBarFromPledit` to use the same NSImage-based rendering approach as ProjectM:
 
 ```swift
 // Before (caused horizontal lines):
 drawSprite(from: cgImage, sourceRect: leftCorner,
           destRect: NSRect(...), in: context)
 
-// After (matches Milkdrop - no lines):
+// After (matches ProjectM - no lines):
 drawSprite(from: pleditImage, sourceRect: leftCorner,
           to: NSRect(...), in: context)
 ```
@@ -295,7 +295,7 @@ while y >= contentTop - tileHeight {
 // This prevents menu items (title bar, server bar) from shimmering on non-Retina displays
 let contentY = self.Layout.titleBarHeight + self.Layout.serverBarHeight
 let contentHeight = self.bounds.height - contentY - self.Layout.statusBarHeight
-// Convert from Winamp top-down coordinates to macOS bottom-up coordinates
+// Convert from classic skin top-down coordinates to macOS bottom-up coordinates
 let nativeY = self.Layout.statusBarHeight
 let contentRect = NSRect(x: 0, y: nativeY, width: self.bounds.width, height: contentHeight)
 self.setNeedsDisplay(contentRect)
@@ -325,7 +325,7 @@ if self.browseMode == .search {
     listY += self.Layout.searchBarHeight
 }
 let listHeight = self.bounds.height - listY - self.Layout.statusBarHeight
-// Convert from Winamp top-down coordinates to macOS bottom-up coordinates
+// Convert from classic skin top-down coordinates to macOS bottom-up coordinates
 let nativeY = self.Layout.statusBarHeight
 let listRect = NSRect(x: 0, y: nativeY, width: self.bounds.width, height: listHeight)
 self.setNeedsDisplay(listRect)
@@ -335,19 +335,19 @@ self.setNeedsDisplay(listRect)
 
 ### Files Changed from `main`
 
-1. **`Sources/AdAmp/Skin/SkinLoader.swift`**
+1. **`Sources/NullPlayer/Skin/SkinLoader.swift`**
    - Added `processForNonRetina()` function for blue-to-grayscale conversion
    - Applied processing to loaded images on non-Retina displays
    - Skips green-dominant pixels to preserve stereo/mono indicators
 
-2. **`Sources/AdAmp/Skin/SkinRenderer.swift`**
+2. **`Sources/NullPlayer/Skin/SkinRenderer.swift`**
    - Skip certain highlight lines on non-Retina displays
-   - Use NSImage-based rendering for Library Browser title bar (matches Milkdrop)
+   - Use NSImage-based rendering for Library Browser title bar (matches ProjectM)
    - Playlist title bar: background fill + tile overlap + corners drawn on top (wider)
    - Playlist side borders: background fill + bottom-to-top tiling
    - Playlist scrollbar track: background fill + bottom-to-top tiling
 
-3. **`Sources/AdAmp/Windows/PlexBrowser/PlexBrowserView.swift`**
+3. **`Sources/NullPlayer/Windows/PlexBrowser/PlexBrowserView.swift`**
    - Rounded coordinates for text positioning
    - Rounded scroll offset
    - Opaque backgrounds on non-Retina
@@ -355,10 +355,10 @@ self.setNeedsDisplay(listRect)
    - Optimized scroll redraw
    - Targeted redraw for visualization animation (only content area, not menu items)
 
-4. **`Sources/AdAmp/Windows/PlexBrowser/PlexBrowserWindowController.swift`**
+4. **`Sources/NullPlayer/Windows/PlexBrowser/PlexBrowserWindowController.swift`**
    - Opaque window on non-Retina displays
 
-5. **`Sources/AdAmp/Windows/Playlist/PlaylistView.swift`**
+5. **`Sources/NullPlayer/Windows/Playlist/PlaylistView.swift`**
    - Rounded scroll offset on non-Retina
 
 ## Remaining Considerations
@@ -377,7 +377,7 @@ self.setNeedsDisplay(listRect)
 
 **Symptoms**:
 - Window content disappears from the original monitor before fully appearing on the new monitor
-- Affects all windows (main, EQ, playlist, browser, milkdrop)
+- Affects all windows (main, EQ, playlist, browser, projectM)
 - More noticeable when crossing between Retina and non-Retina displays
 
 **Likely Causes**:

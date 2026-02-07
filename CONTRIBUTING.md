@@ -1,11 +1,11 @@
-# Contributing to AdAmp
+# Contributing to NullPlayer
 
-Thanks for your interest in contributing to AdAmp!
+Thanks for your interest in contributing to NullPlayer!
 
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/adamp.git`
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/nullplayer.git`
 3. Run `./scripts/bootstrap.sh` to download required frameworks
 4. Build with `./scripts/kill_build_run.sh` or open `Package.swift` in Xcode
 
@@ -28,7 +28,7 @@ These services have restrictive APIs and licensing terms that are incompatible w
 ### Reporting Bugs
 
 - Check existing issues first to avoid duplicates
-- Include macOS version and AdAmp version
+- Include macOS version and NullPlayer version
 - Provide steps to reproduce
 - Include relevant logs from Console.app if applicable
 

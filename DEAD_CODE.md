@@ -6,7 +6,7 @@ This document lists potentially unused code identified for review and possible r
 
 ## 1. Unused Debug Function
 
-**File:** `Sources/AdAmp/Audio/AudioOutputManager.swift`  
+**File:** `Sources/NullPlayer/Audio/AudioOutputManager.swift`  
 **Lines:** 387-446
 
 ```swift
@@ -25,7 +25,7 @@ func printDeviceDebugInfo() {
 
 ## 2. Debug Print Statements
 
-**File:** `Sources/AdAmp/Windows/Playlist/PlaylistView.swift`  
+**File:** `Sources/NullPlayer/Windows/Playlist/PlaylistView.swift`  
 **Lines:** 948-953
 
 ```swift
@@ -41,7 +41,7 @@ print(">>> Calling engine.stop() <<<")
 
 ## 3. Unused `SliderDragTracker` Class
 
-**File:** `Sources/AdAmp/Skin/SkinRegion.swift`  
+**File:** `Sources/NullPlayer/Skin/SkinRegion.swift`  
 **Lines:** 508-553
 
 ```swift
@@ -64,7 +64,7 @@ class SliderDragTracker {
 
 ## 4. Unused `VideoTitleBarView` Class
 
-**File:** `Sources/AdAmp/Windows/VideoPlayer/VideoPlayerView.swift`  
+**File:** `Sources/NullPlayer/Windows/VideoPlayer/VideoPlayerView.swift`  
 **Lines:** 1020-1183
 
 ```swift
@@ -84,7 +84,7 @@ class VideoTitleBarView: NSView {
 
 ## 5. Unused `LibraryFilter` Struct and `filteredTracks` Function
 
-**File:** `Sources/AdAmp/Data/Models/MediaLibrary.swift`
+**File:** `Sources/NullPlayer/Data/Models/MediaLibrary.swift`
 
 ### LibraryFilter (Lines 169-179)
 ```swift
@@ -113,7 +113,7 @@ func filteredTracks(filter: LibraryFilter, sortBy: LibrarySortOption, ascending:
 
 ## 6. Unused `hexString` Property
 
-**File:** `Sources/AdAmp/Skin/Skin.swift`  
+**File:** `Sources/NullPlayer/Skin/Skin.swift`  
 **Lines:** 176-182
 
 ```swift
@@ -128,14 +128,14 @@ extension NSColor {
 }
 ```
 
-**Status:** Only used in unit tests (`AdAmpTests.swift`), not in production code.  
+**Status:** Only used in unit tests (`NullPlayerTests.swift`), not in production code.  
 **Recommendation:** Keep if useful for debugging/testing, otherwise remove.
 
 ---
 
 ## 7. Unused `FlexibleDouble` Struct
 
-**File:** `Sources/AdAmp/Data/Models/PlexModels.swift`  
+**File:** `Sources/NullPlayer/Data/Models/PlexModels.swift`  
 **Lines:** 29-48
 
 ```swift

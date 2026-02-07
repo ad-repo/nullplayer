@@ -18,8 +18,8 @@ The `build_dmg.sh` script creates a distributable DMG:
 ```
 
 Output:
-- `dist/AdAmp.app` - The application bundle
-- `dist/AdAmp-X.Y.dmg` - The distributable DMG with Applications symlink
+- `dist/NullPlayer.app` - The application bundle
+- `dist/NullPlayer-X.Y.dmg` - The distributable DMG with Applications symlink
 
 The script:
 1. Builds a release binary (`swift build -c release`)
@@ -30,7 +30,7 @@ The script:
 
 ## Versioning
 
-**Single source of truth:** `Sources/AdAmp/Resources/Info.plist`
+**Single source of truth:** `Sources/NullPlayer/Resources/Info.plist`
 
 To release a new version:
 1. Edit `Info.plist`:
@@ -38,7 +38,7 @@ To release a new version:
    - `CFBundleVersion` - Build number (e.g., `1`, `2`, `3`)
 2. Run `./scripts/build_dmg.sh`
 
-The build script reads version from Info.plist automatically. The DMG is named `AdAmp-{version}.dmg`.
+The build script reads version from Info.plist automatically. The DMG is named `NullPlayer-{version}.dmg`.
 
 **Version in code:** Use `BundleHelper.appVersion`, `BundleHelper.buildNumber`, or `BundleHelper.fullVersion` to access version info in Swift.
 
@@ -47,9 +47,9 @@ The build script reads version from Info.plist automatically. The DMG is named `
 ### Running the App
 
 The `kill_build_run.sh` script:
-1. Kills any running AdAmp instances (`pkill -9 -x AdAmp`)
+1. Kills any running NullPlayer instances (`pkill -9 -x NullPlayer`)
 2. Builds in release mode (`swift build -c release`)
-3. Launches the app in background (`.build/arm64-apple-macosx/release/AdAmp &`)
+3. Launches the app in background (`.build/arm64-apple-macosx/release/NullPlayer &`)
 
 **Note**: Release mode ensures you're testing the same binary configuration as the DMG distribution, catching optimization-related issues early.
 
@@ -69,7 +69,7 @@ When running the build script via the Shell tool with `is_background: true`, log
    ls -lt /Users/ad/.cursor/projects/Users-ad-Projects-adamp/terminals/*.txt | head -5
    ```
 
-2. **Find the terminal with AdAmp output** - look for the one that ran kill_build_run.sh
+2. **Find the terminal with NullPlayer output** - look for the one that ran kill_build_run.sh
 
 3. **Monitor logs continuously**:
    ```bash
@@ -86,7 +86,7 @@ When running the build script via the Shell tool with `is_background: true`, log
 ### Checking if App is Running
 
 ```bash
-pgrep -l AdAmp  # Shows PID if running
+pgrep -l NullPlayer  # Shows PID if running
 ```
 
 ## Documentation
@@ -106,12 +106,12 @@ pgrep -l AdAmp  # Shows PID if running
 ## Architecture
 
 ```
-Sources/AdAmp/
+Sources/NullPlayer/
 ├── App/              # AppDelegate, WindowManager, menus
 ├── Audio/            # AudioEngine, StreamingAudioPlayer, EQ
 ├── Casting/          # Chromecast, Sonos, DLNA casting
 ├── Radio/            # Internet radio (Shoutcast/Icecast) support
-├── Skin/             # Winamp skin loading and rendering
+├── Skin/             # skin skin loading and rendering
 ├── Windows/          # All window views (MainWindow, Playlist, EQ, etc.)
 ├── Plex/             # Plex server integration
 ├── Subsonic/         # Navidrome/Subsonic server integration
@@ -126,7 +126,7 @@ Sources/AdAmp/
 | Skin | `Skin/SkinElements.swift`, `Skin/SkinRenderer.swift`, `Skin/SkinLoader.swift` |
 | Audio | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift` |
 | Windows | `Windows/MainWindow/`, `Windows/Playlist/`, `Windows/Equalizer/` |
-| Visualization | `Windows/Milkdrop/`, `Windows/Spectrum/`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/SpectrumShaders.metal`, `Visualization/FlameShaders.metal`, `Visualization/CosmicShaders.metal`, `Visualization/ProjectMWrapper.swift` |
+| Visualization | `Windows/ProjectM/`, `Windows/Spectrum/`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/SpectrumShaders.metal`, `Visualization/FlameShaders.metal`, `Visualization/CosmicShaders.metal`, `Visualization/ElectricityShaders.metal`, `Visualization/MatrixShaders.metal`, `Visualization/ProjectMWrapper.swift` |
 | Marquee | `Skin/MarqueeLayer.swift`, `Windows/Playlist/PlaylistView.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
@@ -164,7 +164,7 @@ Sources/AdAmp/
 
 ## Gotchas
 
-- **Skin coordinates**: Winamp skins use top-left origin, macOS uses bottom-left
+- **Skin coordinates**: skin skins use top-left origin, macOS uses bottom-left
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
 - **Local file completion handler**: Must use `scheduleFile(_:at:completionCallbackType:completionHandler:)` with `.dataPlayedBack` - NOT the deprecated 3-parameter `scheduleFile(_:at:completionHandler:)` which defaults to `.dataConsumed` and fires before audio finishes playing, causing premature track advancement and UI desync
 - **Window docking**: Complex snapping logic in `WindowManager` - test edge cases
