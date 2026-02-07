@@ -1,0 +1,162 @@
+import AppKit
+
+/// A fully loaded modern skin with config, resolved images, and fallback rendering data.
+/// This is the runtime representation of a skin, ready for rendering.
+class ModernSkin {
+    
+    /// The parsed skin configuration
+    let config: ModernSkinConfig
+    
+    /// Cached images for elements, keyed by "{elementId}_{state}"
+    /// e.g., "btn_play_normal", "btn_play_pressed", "seek_thumb_normal"
+    private(set) var images: [String: NSImage] = [:]
+    
+    /// The skin bundle directory (for resolving relative paths)
+    let bundlePath: URL?
+    
+    /// Resolved primary font
+    private(set) var primaryFont: NSFont?
+    
+    /// Resolved time display font
+    private(set) var timeFont: NSFont?
+    
+    /// Resolved small label font
+    private(set) var smallFont: NSFont?
+    
+    /// Background image (if specified in config)
+    private(set) var backgroundImage: NSImage?
+    
+    // MARK: - Resolved Palette Colors (cached)
+    
+    let primaryColor: NSColor
+    let secondaryColor: NSColor
+    let accentColor: NSColor
+    let highlightColor: NSColor
+    let backgroundColor: NSColor
+    let surfaceColor: NSColor
+    let textColor: NSColor
+    let textDimColor: NSColor
+    let positiveColor: NSColor
+    let negativeColor: NSColor
+    let warningColor: NSColor
+    let borderColor: NSColor
+    
+    // MARK: - Initialization
+    
+    init(config: ModernSkinConfig, bundlePath: URL?) {
+        self.config = config
+        self.bundlePath = bundlePath
+        
+        // Pre-resolve all palette colors
+        self.primaryColor = config.palette.resolvedPrimary()
+        self.secondaryColor = config.palette.resolvedSecondary()
+        self.accentColor = config.palette.resolvedAccent()
+        self.highlightColor = config.palette.resolvedHighlight()
+        self.backgroundColor = config.palette.resolvedBackground()
+        self.surfaceColor = config.palette.resolvedSurface()
+        self.textColor = config.palette.resolvedText()
+        self.textDimColor = config.palette.resolvedTextDim()
+        self.positiveColor = config.palette.resolvedPositive()
+        self.negativeColor = config.palette.resolvedNegative()
+        self.warningColor = config.palette.resolvedWarning()
+        self.borderColor = config.palette.resolvedBorder()
+    }
+    
+    // MARK: - Image Access
+    
+    /// Get the image for an element in a specific state.
+    /// Returns nil if no image is available (renderer should use programmatic fallback).
+    func image(for elementId: String, state: String = "normal") -> NSImage? {
+        // Try element_state first
+        if let img = images["\(elementId)_\(state)"] {
+            return img
+        }
+        // Fall back to element without state (single image for all states)
+        if let img = images[elementId] {
+            return img
+        }
+        return nil
+    }
+    
+    /// Store an image for an element+state combination
+    func setImage(_ image: NSImage, for elementId: String, state: String? = nil) {
+        if let state = state {
+            images["\(elementId)_\(state)"] = image
+        } else {
+            images[elementId] = image
+        }
+    }
+    
+    /// Set the resolved fonts
+    func setFonts(primary: NSFont?, time: NSFont?, small: NSFont?) {
+        self.primaryFont = primary
+        self.timeFont = time
+        self.smallFont = small
+    }
+    
+    /// Set the background image
+    func setBackgroundImage(_ image: NSImage?) {
+        self.backgroundImage = image
+    }
+    
+    // MARK: - Element Config Helpers
+    
+    /// Get element-specific config override (if any)
+    func elementConfig(for elementId: String) -> ElementConfig? {
+        config.elements?[elementId]
+    }
+    
+    /// Get the resolved color for an element (element override > palette text)
+    func elementColor(for elementId: String) -> NSColor {
+        if let colorHex = config.elements?[elementId]?.color {
+            return NSColor.from(hex: colorHex)
+        }
+        return textColor
+    }
+    
+    /// Get resolved rect for an element, applying any config overrides
+    func resolvedRect(for element: ModernSkinElements.Element) -> NSRect {
+        guard let override = config.elements?[element.id] else {
+            return element.defaultRect
+        }
+        return NSRect(
+            x: override.x ?? element.defaultRect.origin.x,
+            y: override.y ?? element.defaultRect.origin.y,
+            width: override.width ?? element.defaultRect.size.width,
+            height: override.height ?? element.defaultRect.size.height
+        )
+    }
+    
+    // MARK: - Spectrum Colors
+    
+    /// Generate spectrum visualization colors from the skin palette.
+    /// Returns an array of NSColors suitable for the SpectrumAnalyzerView.
+    func spectrumColors() -> [NSColor] {
+        var colors: [NSColor] = []
+        // Generate a 24-color gradient from accent (bottom) to primary (top)
+        for i in 0..<24 {
+            let t = CGFloat(i) / 23.0
+            colors.append(interpolateColor(from: accentColor, to: primaryColor, t: t))
+        }
+        return colors
+    }
+    
+    /// Linear color interpolation
+    private func interpolateColor(from: NSColor, to: NSColor, t: CGFloat) -> NSColor {
+        let fromComponents = from.usingColorSpace(.sRGB) ?? from
+        let toComponents = to.usingColorSpace(.sRGB) ?? to
+        
+        var fr: CGFloat = 0, fg: CGFloat = 0, fb: CGFloat = 0, fa: CGFloat = 0
+        var tr: CGFloat = 0, tg: CGFloat = 0, tb: CGFloat = 0, ta: CGFloat = 0
+        
+        fromComponents.getRed(&fr, green: &fg, blue: &fb, alpha: &fa)
+        toComponents.getRed(&tr, green: &tg, blue: &tb, alpha: &ta)
+        
+        return NSColor(
+            red: fr + (tr - fr) * t,
+            green: fg + (tg - fg) * t,
+            blue: fb + (tb - fb) * t,
+            alpha: fa + (ta - fa) * t
+        )
+    }
+}

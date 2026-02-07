@@ -1,11 +1,15 @@
 import AppKit
 
-/// Controller for the main player window
-class MainWindowController: NSWindowController, MainWindowProviding {
+/// Controller for the modern main player window.
+/// Conforms to `MainWindowProviding` so WindowManager can use it interchangeably
+/// with the classic `MainWindowController`.
+///
+/// This controller has ZERO dependencies on the classic skin system.
+class ModernMainWindowController: NSWindowController, MainWindowProviding {
     
     // MARK: - Properties
     
-    private var mainView: MainWindowView!
+    private var modernView: ModernMainWindowView!
     
     /// Whether the window is in shade mode
     private(set) var isShadeMode = false
@@ -16,10 +20,11 @@ class MainWindowController: NSWindowController, MainWindowProviding {
     // MARK: - Initialization
     
     convenience init() {
-        // Create borderless window with manual resize handling
+        let windowSize = ModernSkinElements.mainWindowSize
+        
         let window = ResizableWindow(
-            contentRect: NSRect(origin: .zero, size: Skin.mainWindowSize),
-            styleMask: [.borderless, .resizable],
+            contentRect: NSRect(origin: .zero, size: windowSize),
+            styleMask: [.borderless, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -35,8 +40,6 @@ class MainWindowController: NSWindowController, MainWindowProviding {
     private func setupWindow() {
         guard let window = window else { return }
         
-        // Disable automatic window dragging - we handle it manually in the view
-        // to support moving docked windows together
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
@@ -44,67 +47,62 @@ class MainWindowController: NSWindowController, MainWindowProviding {
         window.level = .normal
         window.title = "NullPlayer"
         
-        // Set minimum size for main window
-        window.minSize = Skin.mainWindowSize
-        
-        // Center on screen initially
+        window.minSize = ModernSkinElements.mainWindowSize
         window.center()
         
-        // Set up window delegate
         window.delegate = self
         
-        // Set accessibility identifier for UI testing
-        window.setAccessibilityIdentifier("MainWindow")
+        window.setAccessibilityIdentifier("ModernMainWindow")
         window.setAccessibilityLabel("Main Window")
     }
     
     private func setupView() {
-        mainView = MainWindowView(frame: NSRect(origin: .zero, size: Skin.mainWindowSize))
-        mainView.controller = self
-        window?.contentView = mainView
+        modernView = ModernMainWindowView(frame: NSRect(origin: .zero, size: ModernSkinElements.mainWindowSize))
+        modernView.controller = self
+        window?.contentView = modernView
     }
     
-    // MARK: - Public Methods
-    
-    func skinDidChange() {
-        mainView.skinDidChange()  // Update marquee layer's skin image
-        mainView.needsDisplay = true
-    }
-    
-    func updatePlaybackState() {
-        mainView.needsDisplay = true
-    }
-    
-    func updateTime(current: TimeInterval, duration: TimeInterval) {
-        mainView.updateTime(current: current, duration: duration)
-    }
-    
-    func updateTrackInfo(_ track: Track?) {
-        mainView.updateTrackInfo(track)
-    }
-    
-    func updateVideoTrackInfo(title: String) {
-        mainView.updateVideoTrackInfo(title: title)
-    }
-    
-    func clearVideoTrackInfo() {
-        mainView.clearVideoTrackInfo()
-    }
-    
-    func updateSpectrum(_ levels: [Float]) {
-        mainView.updateSpectrum(levels)
-    }
-
-    func windowVisibilityDidChange() {
-        mainView.needsDisplay = true
-    }
-    
-    func setNeedsDisplay() {
-        mainView.needsDisplay = true
-    }
+    // MARK: - MainWindowProviding
     
     var isWindowVisible: Bool {
         window?.isVisible == true
+    }
+    
+    func updatePlaybackState() {
+        modernView.needsDisplay = true
+    }
+    
+    func updateTime(current: TimeInterval, duration: TimeInterval) {
+        modernView.updateTime(current: current, duration: duration)
+    }
+    
+    func updateTrackInfo(_ track: Track?) {
+        modernView.updateTrackInfo(track)
+    }
+    
+    func updateVideoTrackInfo(title: String) {
+        modernView.updateVideoTrackInfo(title: title)
+    }
+    
+    func clearVideoTrackInfo() {
+        modernView.clearVideoTrackInfo()
+    }
+    
+    func updateSpectrum(_ levels: [Float]) {
+        modernView.updateSpectrum(levels)
+    }
+    
+    func skinDidChange() {
+        modernView.skinDidChange()
+        modernView.needsDisplay = true
+    }
+    
+    func windowVisibilityDidChange() {
+        modernView.needsDisplay = true
+    }
+    
+    func setNeedsDisplay() {
+        modernView.needsDisplay = true
     }
     
     func toggleShadeMode() {
@@ -113,18 +111,19 @@ class MainWindowController: NSWindowController, MainWindowProviding {
     
     // MARK: - Shade Mode
     
-    /// Toggle shade mode on/off
+    /// Shade mode height: title bar (14) + seek (6) + transport row (28) + padding = ~18px base * scale
+    static let shadeHeight: CGFloat = 18 * ModernSkinElements.scaleFactor
+    
     func setShadeMode(_ enabled: Bool) {
         guard let window = window else { return }
         
         isShadeMode = enabled
         
         if enabled {
-            // Store current frame for restoration
             normalModeFrame = window.frame
             
-            // Calculate new shade mode frame (same origin, shorter height)
-            let shadeSize = SkinElements.MainShade.windowSize
+            let shadeSize = NSSize(width: ModernSkinElements.mainWindowSize.width,
+                                   height: Self.shadeHeight)
             let newFrame = NSRect(
                 x: window.frame.origin.x,
                 y: window.frame.origin.y + window.frame.height - shadeSize.height,
@@ -132,18 +131,15 @@ class MainWindowController: NSWindowController, MainWindowProviding {
                 height: shadeSize.height
             )
             
-            // Resize window
             window.setFrame(newFrame, display: true, animate: true)
-            mainView.frame = NSRect(origin: .zero, size: shadeSize)
+            modernView.frame = NSRect(origin: .zero, size: shadeSize)
         } else {
-            // Restore normal mode frame
-            let normalSize = Skin.mainWindowSize
+            let normalSize = ModernSkinElements.mainWindowSize
             let newFrame: NSRect
             
             if let storedFrame = normalModeFrame {
                 newFrame = storedFrame
             } else {
-                // Calculate frame from current position
                 newFrame = NSRect(
                     x: window.frame.origin.x,
                     y: window.frame.origin.y + window.frame.height - normalSize.height,
@@ -152,21 +148,20 @@ class MainWindowController: NSWindowController, MainWindowProviding {
                 )
             }
             
-            // Resize window
             window.setFrame(newFrame, display: true, animate: true)
-            mainView.frame = NSRect(origin: .zero, size: normalSize)
+            modernView.frame = NSRect(origin: .zero, size: normalSize)
             normalModeFrame = nil
         }
         
-        mainView.setShadeMode(enabled)
+        modernView.isShadeMode = isShadeMode
+        modernView.needsDisplay = true
     }
 }
 
 // MARK: - NSWindowDelegate
 
-extension MainWindowController: NSWindowDelegate {
+extension ModernMainWindowController: NSWindowDelegate {
     func windowWillMove(_ notification: Notification) {
-        // Handle window snapping via WindowManager
     }
     
     func windowDidMove(_ notification: Notification) {
@@ -176,7 +171,6 @@ extension MainWindowController: NSWindowDelegate {
     }
     
     func windowDidBecomeKey(_ notification: Notification) {
-        // Bring all app windows to front when main window gets focus
         WindowManager.shared.bringAllWindowsToFront()
     }
 }

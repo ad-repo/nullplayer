@@ -102,17 +102,19 @@ pgrep -l NullPlayer  # Shows PID if running
 | [AGENT_DOCS/SONOS.md](AGENT_DOCS/SONOS.md) | Sonos discovery, multi-room casting, custom checkbox UI |
 | [AGENT_DOCS/CHROMECAST.md](AGENT_DOCS/CHROMECAST.md) | Google Cast protocol, debugging, test scripts |
 | [AGENT_DOCS/NON_RETINA_DISPLAY_FIXES.md](AGENT_DOCS/NON_RETINA_DISPLAY_FIXES.md) | Non-Retina display artifacts, blue line fixes, tile seam fixes |
+| [AGENT_DOCS/MODERN_SKIN_GUIDE.md](AGENT_DOCS/MODERN_SKIN_GUIDE.md) | Modern skin engine, skin.json schema, element catalog, custom skin creation |
 
 ## Architecture
 
 ```
 Sources/NullPlayer/
-├── App/              # AppDelegate, WindowManager, menus
+├── App/              # AppDelegate, WindowManager, menus, MainWindowProviding protocol
 ├── Audio/            # AudioEngine, StreamingAudioPlayer, EQ
 ├── Casting/          # Chromecast, Sonos, DLNA casting
 ├── Radio/            # Internet radio (Shoutcast/Icecast) support
-├── Skin/             # skin skin loading and rendering
-├── Windows/          # All window views (MainWindow, Playlist, EQ, etc.)
+├── Skin/             # Classic Winamp skin loading and rendering
+├── ModernSkin/       # Modern skin engine (independent of classic system)
+├── Windows/          # All window views (MainWindow, ModernMainWindow, Playlist, EQ, etc.)
 ├── Plex/             # Plex server integration
 ├── Subsonic/         # Navidrome/Subsonic server integration
 ├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer + flame mode
@@ -123,16 +125,17 @@ Sources/NullPlayer/
 
 | Area | Files |
 |------|-------|
-| Skin | `Skin/SkinElements.swift`, `Skin/SkinRenderer.swift`, `Skin/SkinLoader.swift` |
+| Skin (Classic) | `Skin/SkinElements.swift`, `Skin/SkinRenderer.swift`, `Skin/SkinLoader.swift` |
+| Skin (Modern) | `ModernSkin/ModernSkinEngine.swift`, `ModernSkin/ModernSkinConfig.swift`, `ModernSkin/ModernSkinRenderer.swift`, `ModernSkin/ModernSkinLoader.swift`, `ModernSkin/ModernSkinElements.swift` |
 | Audio | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift` |
-| Windows | `Windows/MainWindow/`, `Windows/Playlist/`, `Windows/Equalizer/` |
+| Windows | `Windows/MainWindow/`, `Windows/ModernMainWindow/`, `Windows/Playlist/`, `Windows/Equalizer/` |
 | Visualization | `Windows/ProjectM/`, `Windows/Spectrum/`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/SpectrumShaders.metal`, `Visualization/FlameShaders.metal`, `Visualization/CosmicShaders.metal`, `Visualization/ElectricityShaders.metal`, `Visualization/MatrixShaders.metal`, `Visualization/ProjectMWrapper.swift` |
-| Marquee | `Skin/MarqueeLayer.swift`, `Windows/Playlist/PlaylistView.swift` |
+| Marquee | `Skin/MarqueeLayer.swift` (classic), `ModernSkin/ModernMarqueeLayer.swift` (modern), `Windows/Playlist/PlaylistView.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
 | Radio | `Radio/RadioManager.swift`, `Data/Models/RadioStation.swift`, `Windows/Radio/AddRadioStationSheet.swift` |
 | Casting | `Casting/CastManager.swift`, `Casting/CastProtocol.swift`, `Casting/ChromecastManager.swift`, `Casting/UPnPManager.swift`, `Casting/LocalMediaServer.swift` |
-| App | `App/WindowManager.swift`, `App/ContextMenuBuilder.swift` |
+| App | `App/WindowManager.swift`, `App/ContextMenuBuilder.swift`, `App/MainWindowProviding.swift` |
 
 ## Common Tasks
 
@@ -149,10 +152,16 @@ Sources/NullPlayer/
 2. Add WindowController + View
 3. Register in `WindowManager.swift`
 
-### Modifying skin rendering
+### Modifying skin rendering (classic)
 1. Check sprite coordinates in `SkinElements.swift`
 2. Rendering logic in `SkinRenderer.swift`
 3. Test with multiple skins (they vary in implementation)
+
+### Modifying modern skin rendering
+1. Element definitions in `ModernSkin/ModernSkinElements.swift`
+2. Rendering logic in `ModernSkin/ModernSkinRenderer.swift`
+3. Skin config schema in `ModernSkin/ModernSkinConfig.swift`
+4. See [AGENT_DOCS/MODERN_SKIN_GUIDE.md](AGENT_DOCS/MODERN_SKIN_GUIDE.md) for full docs
 
 ## Before Making UI Changes
 
@@ -164,6 +173,8 @@ Sources/NullPlayer/
 
 ## Gotchas
 
+- **Modern skin system is completely independent**: Files in `ModernSkin/` and `Windows/ModernMainWindow/` must NEVER import or reference anything from `Skin/` or `Windows/MainWindow/`. The coupling points are only: `AppDelegate` (mode selection), `WindowManager` (via `MainWindowProviding` protocol), and shared infrastructure (`AudioEngine`, `Track`, `PlaybackState`)
+- **UI mode switching requires restart**: The `modernUIEnabled` UserDefaults preference selects which `MainWindowProviding` implementation `WindowManager` creates. Changing it at runtime shows a "restart required" alert
 - **Skin coordinates**: skin skins use top-left origin, macOS uses bottom-left
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
 - **Local file completion handler**: Must use `scheduleFile(_:at:completionCallbackType:completionHandler:)` with `.dataPlayedBack` - NOT the deprecated 3-parameter `scheduleFile(_:at:completionHandler:)` which defaults to `.dataConsumed` and fires before audio finishes playing, causing premature track advancement and UI desync

@@ -52,6 +52,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, AVAudioPlayerDelegate {
             windowManager.loadSkin(from: skinURL)
         }
         
+        // Initialize modern skin engine if modern mode is enabled
+        if windowManager.isModernUIEnabled {
+            ModernSkinEngine.shared.loadPreferredSkin()
+        }
+        
         // Show the main player window
         windowManager.showMainWindow()
         

@@ -63,8 +63,14 @@ class WindowManager {
         }
     }
     
-    /// Main player window controller
-    private(set) var mainWindowController: MainWindowController?
+    /// Main player window controller (classic or modern, accessed via protocol)
+    private(set) var mainWindowController: MainWindowProviding?
+    
+    /// Whether the modern UI is enabled (requires restart to take effect)
+    var isModernUIEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "modernUIEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "modernUIEnabled") }
+    }
     
     /// Playlist window controller
     private(set) var playlistWindowController: PlaylistWindowController?
@@ -183,7 +189,12 @@ class WindowManager {
     
     func showMainWindow() {
         if mainWindowController == nil {
-            mainWindowController = MainWindowController()
+            if isModernUIEnabled {
+                let modern = ModernMainWindowController()
+                mainWindowController = modern
+            } else {
+                mainWindowController = MainWindowController()
+            }
         }
         mainWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(mainWindowController?.window)

@@ -545,6 +545,18 @@ class SpectrumAnalyzerView: NSView {
     /// Current skin's visualization colors (24 colors, updated on skin change)
     private var colorPalette: [SIMD4<Float>] = []
     
+    /// Optional color override for the modern skin system.
+    /// When set, these colors are used instead of the classic skin's visColors.
+    var spectrumColors: [NSColor]? {
+        didSet {
+            if spectrumColors != nil {
+                applySpectrumColorOverride()
+            } else {
+                updateColorsFromSkin()
+            }
+        }
+    }
+    
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -2424,6 +2436,12 @@ class SpectrumAnalyzerView: NSView {
     
     /// Update colors from current skin
     func updateColorsFromSkin() {
+        // If modern skin override is set, use that instead
+        if spectrumColors != nil {
+            applySpectrumColorOverride()
+            return
+        }
+        
         let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
         let nsColors = skin.visColors
         
@@ -2442,6 +2460,29 @@ class SpectrumAnalyzerView: NSView {
         }
         
         // Sync to render-safe variable
+        let colors = colorPalette
+        dataLock.withLock {
+            renderColorPalette = colors
+        }
+    }
+    
+    /// Apply the spectrumColors override from the modern skin system
+    private func applySpectrumColorOverride() {
+        guard let overrideColors = spectrumColors else { return }
+        
+        colorPalette = overrideColors.map { color in
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            let rgbColor = color.usingColorSpace(.deviceRGB) ?? color
+            rgbColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+            return SIMD4<Float>(Float(r), Float(g), Float(b), Float(a))
+        }
+        
+        // Ensure we have at least 24 colors
+        while colorPalette.count < 24 {
+            let brightness = Float(colorPalette.count) / 23.0
+            colorPalette.append(SIMD4<Float>(0, brightness, 0, 1))
+        }
+        
         let colors = colorPalette
         dataLock.withLock {
             renderColorPalette = colors

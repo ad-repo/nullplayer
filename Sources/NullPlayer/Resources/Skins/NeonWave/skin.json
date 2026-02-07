@@ -1,0 +1,75 @@
+{
+    "meta": {
+        "name": "NeonWave",
+        "author": "NullPlayer",
+        "version": "1.0",
+        "description": "Default neon cyberpunk skin with Tron-style grid, cyan/magenta palette, and bloom glow effects"
+    },
+    "palette": {
+        "primary": "#00ffcc",
+        "secondary": "#00ccff",
+        "accent": "#ff00aa",
+        "highlight": "#00ffe0",
+        "background": "#080810",
+        "surface": "#0c1018",
+        "text": "#00ffcc",
+        "textDim": "#009977",
+        "positive": "#00ff88",
+        "negative": "#ff3366",
+        "warning": "#ffaa00",
+        "border": "#00ffcc"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 10,
+        "bodySize": 11,
+        "smallSize": 7,
+        "timeSize": 24
+    },
+    "background": {
+        "grid": {
+            "color": "#00ffcc",
+            "spacing": 18,
+            "angle": 75,
+            "opacity": 0.06,
+            "perspective": true
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 6,
+        "intensity": 0.7,
+        "threshold": 0.5
+    },
+    "window": {
+        "borderWidth": 1.5,
+        "borderColor": "#00ffcc",
+        "cornerRadius": 0
+    },
+    "elements": {
+        "titlebar": {
+            "color": "#0c1018"
+        },
+        "marquee_bg": {
+            "color": "#080c10"
+        },
+        "info_cast": {
+            "color": "#ff00aa"
+        },
+        "spectrum_area": {
+            "color": "#ff00aa"
+        },
+        "seek_fill": {
+            "color": "#ff00aa"
+        }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 3.0,
+            "minValue": 0.4,
+            "maxValue": 1.0
+        }
+    }
+}

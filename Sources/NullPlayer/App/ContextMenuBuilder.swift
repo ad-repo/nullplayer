@@ -33,6 +33,9 @@ class ContextMenuBuilder {
         // Skins submenu
         menu.addItem(buildSkinsMenuItem())
         
+        // Modern Skin submenu
+        menu.addItem(buildModernSkinMenuItem())
+        
         // Visualizations submenu
         menu.addItem(buildVisualizationsMenuItem())
         
@@ -152,6 +155,38 @@ class ContextMenuBuilder {
         }
         
         return menu
+    }
+    
+    // MARK: - Modern Skin Submenu
+    
+    private static func buildModernSkinMenuItem() -> NSMenuItem {
+        let modernItem = NSMenuItem(title: "Modern UI", action: nil, keyEquivalent: "")
+        let modernMenu = NSMenu()
+        
+        // UI Mode toggle
+        let isModern = WindowManager.shared.isModernUIEnabled
+        
+        let classicItem = NSMenuItem(title: "Classic Mode", action: #selector(MenuActions.setClassicMode), keyEquivalent: "")
+        classicItem.target = MenuActions.shared
+        classicItem.state = isModern ? .off : .on
+        modernMenu.addItem(classicItem)
+        
+        let modernModeItem = NSMenuItem(title: "Modern Mode", action: #selector(MenuActions.setModernMode), keyEquivalent: "")
+        modernModeItem.target = MenuActions.shared
+        modernModeItem.state = isModern ? .on : .off
+        modernMenu.addItem(modernModeItem)
+        
+        modernMenu.addItem(NSMenuItem.separator())
+        
+        // Modern skin selection (only relevant when in modern mode)
+        let skinMenu = ModernSkinEngine.shared.buildSkinMenu()
+        let skinItem = NSMenuItem(title: "Select Skin", action: nil, keyEquivalent: "")
+        skinItem.submenu = skinMenu
+        skinItem.isEnabled = isModern
+        modernMenu.addItem(skinItem)
+        
+        modernItem.submenu = modernMenu
+        return modernItem
     }
     
     // MARK: - Visualizations Submenu
@@ -924,8 +959,13 @@ class ContextMenuBuilder {
         return subsonicItem
     }
     
-    // MARK: - Playback Submenu
     // MARK: - Output Devices Submenu (Unified)
+    
+    /// Public access to the output devices menu (used by modern skin CAST button)
+    static func buildOutputDevicesMenu() -> NSMenu {
+        let item = buildOutputDevicesMenuItem()
+        return item.submenu ?? NSMenu()
+    }
     
     private static func buildOutputDevicesMenuItem() -> NSMenuItem {
         let outputItem = NSMenuItem(title: "Output Devices", action: nil, keyEquivalent: "")
@@ -1781,6 +1821,27 @@ class MenuActions: NSObject {
         if let url = URL(string: "https://skins.webamp.org/") {
             NSWorkspace.shared.open(url)
         }
+    }
+    
+    // MARK: - Modern UI Mode
+    
+    @objc func setClassicMode() {
+        WindowManager.shared.isModernUIEnabled = false
+        showRestartAlert()
+    }
+    
+    @objc func setModernMode() {
+        WindowManager.shared.isModernUIEnabled = true
+        showRestartAlert()
+    }
+    
+    private func showRestartAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Restart Required"
+        alert.informativeText = "The UI mode change will take effect after restarting NullPlayer."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
     
     // MARK: - Options
