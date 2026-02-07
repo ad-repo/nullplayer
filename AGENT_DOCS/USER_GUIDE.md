@@ -116,7 +116,7 @@ The main window provides core playback controls and track information.
 | **EQ** | Show/hide Equalizer window |
 | **PL** | Show/hide Playlist Editor |
 
-In modern UI mode, the toggle buttons appear in this order: **pM** (ProjectM), **EQ** (Equalizer), **PL** (Playlist), **SP** (Spectrum), **LB** (Library).
+In modern UI mode, the toggle buttons appear in a single row: **SH** (Shuffle), **RP** (Repeat), **CA** (Cast), **pM** (ProjectM), **EQ** (Equalizer), **PL** (Playlist), **SP** (Spectrum), **LB** (Library). A volume slider replaces the bottom-right area, styled to match the seek bar.
 
 ### Title Bar Buttons
 

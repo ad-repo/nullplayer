@@ -49,6 +49,7 @@ class ModernMainWindowView: NSView {
     /// Mouse tracking state
     private var pressedElement: String?
     private var isDraggingSeek = false
+    private var isDraggingVolume = false
     private var isDraggingWindow = false
     private var dragStartPoint: NSPoint = .zero
     
@@ -180,7 +181,7 @@ class ModernMainWindowView: NSView {
             switch element {
             case _ where element.hasPrefix("btn_"), "time_display", "spectrum_area", "logo":
                 NSCursor.pointingHand.set()
-            case "seek_track":
+            case "seek_track", "volume_track":
                 NSCursor.resizeLeftRight.set()
             default:
                 NSCursor.arrow.set()
@@ -252,8 +253,8 @@ class ModernMainWindowView: NSView {
         // 12. Transport buttons
         drawTransportButtons(context: context)
         
-        // 13. Toggle buttons (shuffle, repeat)
-        drawToggleButtons(context: context)
+        // 13. Volume slider (bottom-right)
+        drawVolumeSlider(context: context)
     }
     
     // MARK: - Shade Mode Drawing
@@ -427,6 +428,19 @@ class ModernMainWindowView: NSView {
                             gradient: (seekColor, seekColor))
     }
     
+    private func drawVolumeSlider(context: CGContext) {
+        let trackRect = ModernSkinElements.volumeTrack.defaultRect
+        let volume = CGFloat(WindowManager.shared.audioEngine.volume)
+        
+        // Use same color as seek bar fill for visual consistency
+        let volColor = renderer.skin.elementColor(for: "seek_fill")
+        renderer.drawSlider(trackId: "volume_track", fillId: "volume_fill", thumbId: "volume_thumb",
+                            trackRect: trackRect, fillFraction: volume,
+                            thumbState: isDraggingVolume ? "pressed" : "normal",
+                            context: context,
+                            gradient: (volColor, volColor))
+    }
+    
     private func drawTransportButtons(context: CGContext) {
         let buttons: [(ModernSkinElements.Element, String)] = [
             (ModernSkinElements.btnPrev, "btn_prev"),
@@ -443,67 +457,35 @@ class ModernMainWindowView: NSView {
         }
     }
     
-    private func drawToggleButtons(context: CGContext) {
+    private func drawEQPlaylistButtons(context: CGContext) {
         let audioEngine = WindowManager.shared.audioEngine
         
-        renderer.drawToggleButton("btn_shuffle",
-                                  isOn: audioEngine.shuffleEnabled,
-                                  isPressed: pressedElement == "btn_shuffle",
-                                  label: "SHUFFLE",
-                                  in: ModernSkinElements.btnShuffle.defaultRect,
-                                  context: context)
+        // 8 toggle buttons right-aligned: SH, RP, CA, pM, EQ, PL, SP, LB
+        let y: CGFloat = 42
+        let h: CGFloat = 14
+        let w: CGFloat = 18
+        let spacing: CGFloat = 2
+        let rightPad: CGFloat = 8  // Attractive padding from right edge
+        let totalWidth = CGFloat(8) * w + CGFloat(7) * spacing
+        let startX: CGFloat = 275 - rightPad - totalWidth
         
-        renderer.drawToggleButton("btn_repeat",
-                                  isOn: audioEngine.repeatEnabled,
-                                  isPressed: pressedElement == "btn_repeat",
-                                  label: "REPEAT",
-                                  in: ModernSkinElements.btnRepeat.defaultRect,
-                                  context: context)
+        let buttonDefs: [(String, String, Bool)] = [
+            ("btn_shuffle", "SH", audioEngine.shuffleEnabled),
+            ("btn_repeat", "RP", audioEngine.repeatEnabled),
+            ("btn_cast", "CA", CastManager.shared.isCasting),
+            ("btn_projectm", "pM", WindowManager.shared.isProjectMVisible),
+            ("btn_eq", "EQ", WindowManager.shared.isEqualizerVisible),
+            ("btn_playlist", "PL", WindowManager.shared.isPlaylistVisible),
+            ("btn_spectrum", "SP", WindowManager.shared.isSpectrumVisible),
+            ("btn_library", "LB", WindowManager.shared.isPlexBrowserVisible),
+        ]
         
-        renderer.drawToggleButton("btn_cast",
-                                  isOn: false,
-                                  isPressed: pressedElement == "btn_cast",
-                                  label: "CAST",
-                                  in: ModernSkinElements.btnCast.defaultRect,
-                                  context: context)
-    }
-    
-    private func drawEQPlaylistButtons(context: CGContext) {
-        // Order: pM, EQ, PL, SP, LB (left to right)
-        renderer.drawToggleButton("btn_projectm",
-                                  isOn: WindowManager.shared.isProjectMVisible,
-                                  isPressed: pressedElement == "btn_projectm",
-                                  label: "pM",
-                                  in: ModernSkinElements.btnEQ.defaultRect,
-                                  context: context)
-        
-        renderer.drawToggleButton("btn_eq",
-                                  isOn: WindowManager.shared.isEqualizerVisible,
-                                  isPressed: pressedElement == "btn_eq",
-                                  label: "EQ",
-                                  in: ModernSkinElements.btnPlaylist.defaultRect,
-                                  context: context)
-        
-        renderer.drawToggleButton("btn_playlist",
-                                  isOn: WindowManager.shared.isPlaylistVisible,
-                                  isPressed: pressedElement == "btn_playlist",
-                                  label: "PL",
-                                  in: ModernSkinElements.btnLibrary.defaultRect,
-                                  context: context)
-        
-        renderer.drawToggleButton("btn_spectrum",
-                                  isOn: WindowManager.shared.isSpectrumVisible,
-                                  isPressed: pressedElement == "btn_spectrum",
-                                  label: "SP",
-                                  in: ModernSkinElements.btnProjectM.defaultRect,
-                                  context: context)
-        
-        renderer.drawToggleButton("btn_library",
-                                  isOn: WindowManager.shared.isPlexBrowserVisible,
-                                  isPressed: pressedElement == "btn_library",
-                                  label: "LB",
-                                  in: ModernSkinElements.btnSpectrum.defaultRect,
-                                  context: context)
+        for (i, (id, label, isOn)) in buttonDefs.enumerated() {
+            let x = startX + CGFloat(i) * (w + spacing)
+            let rect = NSRect(x: x, y: y, width: w, height: h)
+            renderer.drawToggleButton(id, isOn: isOn, isPressed: pressedElement == id,
+                                      label: label, in: rect, context: context)
+        }
     }
     
     // MARK: - State Helpers
@@ -728,17 +710,18 @@ class ModernMainWindowView: NSView {
             ("btn_stop", ModernSkinElements.btnStop.defaultRect),
             ("btn_next", ModernSkinElements.btnNext.defaultRect),
             ("btn_eject", ModernSkinElements.btnEject.defaultRect),
-            // Toggles
-            ("btn_shuffle", ModernSkinElements.btnShuffle.defaultRect),
-            ("btn_repeat", ModernSkinElements.btnRepeat.defaultRect),
-            ("btn_cast", ModernSkinElements.btnCast.defaultRect),
-            ("btn_projectm", ModernSkinElements.btnEQ.defaultRect),
-            ("btn_eq", ModernSkinElements.btnPlaylist.defaultRect),
-            ("btn_playlist", ModernSkinElements.btnLibrary.defaultRect),
-            ("btn_spectrum", ModernSkinElements.btnProjectM.defaultRect),
-            ("btn_library", ModernSkinElements.btnSpectrum.defaultRect),
+            // Toggle button row (8 buttons right-aligned: SH, RP, CA, pM, EQ, PL, SP, LB)
+            ("btn_shuffle", NSRect(x: 107, y: 42, width: 18, height: 14)),
+            ("btn_repeat", NSRect(x: 127, y: 42, width: 18, height: 14)),
+            ("btn_cast", NSRect(x: 147, y: 42, width: 18, height: 14)),
+            ("btn_projectm", NSRect(x: 167, y: 42, width: 18, height: 14)),
+            ("btn_eq", NSRect(x: 187, y: 42, width: 18, height: 14)),
+            ("btn_playlist", NSRect(x: 207, y: 42, width: 18, height: 14)),
+            ("btn_spectrum", NSRect(x: 227, y: 42, width: 18, height: 14)),
+            ("btn_library", NSRect(x: 247, y: 42, width: 18, height: 14)),
             // Sliders
             ("seek_track", ModernSkinElements.seekTrack.defaultRect.insetBy(dx: 0, dy: -4)),  // expand vertical hit area
+            ("volume_track", ModernSkinElements.volumeTrack.defaultRect.insetBy(dx: 0, dy: -4)),  // expand vertical hit area
             // Time display (click to toggle elapsed/remaining)
             ("time_display", ModernSkinElements.timeDisplay.defaultRect),
             // Spectrum area (click to toggle spectrum window, double-click to cycle vis mode)
@@ -780,6 +763,9 @@ class ModernMainWindowView: NSView {
             if element == "seek_track" {
                 isDraggingSeek = true
                 updateSeekPosition(from: point)
+            } else if element == "volume_track" {
+                isDraggingVolume = true
+                updateVolumePosition(from: point)
             } else if element == "time_display" {
                 // Toggle time display mode
                 let mode = WindowManager.shared.timeDisplayMode
@@ -821,6 +807,10 @@ class ModernMainWindowView: NSView {
             let point = convert(event.locationInWindow, from: nil)
             updateSeekPosition(from: point)
             needsDisplay = true
+        } else if isDraggingVolume {
+            let point = convert(event.locationInWindow, from: nil)
+            updateVolumePosition(from: point)
+            needsDisplay = true
         } else if isDraggingWindow, let window = window {
             // Delta-based dragging: apply mouse delta to current window origin each frame
             let currentPoint = event.locationInWindow
@@ -837,7 +827,10 @@ class ModernMainWindowView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
-        if isDraggingSeek {
+        if isDraggingVolume {
+            isDraggingVolume = false
+            needsDisplay = true
+        } else if isDraggingSeek {
             isDraggingSeek = false
             if let pos = seekDragPosition {
                 let seekTime = Double(pos) * duration
@@ -870,6 +863,13 @@ class ModernMainWindowView: NSView {
         let trackRect = scaledRect(ModernSkinElements.seekTrack.defaultRect)
         let fraction = (viewPoint.x - trackRect.minX) / trackRect.width
         seekDragPosition = min(max(fraction, 0), 1)
+    }
+    
+    private func updateVolumePosition(from viewPoint: NSPoint) {
+        let trackRect = scaledRect(ModernSkinElements.volumeTrack.defaultRect)
+        let fraction = (viewPoint.x - trackRect.minX) / trackRect.width
+        let volume = Float(min(max(fraction, 0), 1))
+        WindowManager.shared.audioEngine.volume = volume
     }
     
     // MARK: - Button Actions
@@ -961,7 +961,7 @@ class ModernMainWindowView: NSView {
     
     private func showCastMenu() {
         let menu = ContextMenuBuilder.buildOutputDevicesMenu()
-        let btnRect = scaledRect(ModernSkinElements.btnCast.defaultRect)
+        let btnRect = scaledRect(NSRect(x: 147, y: 42, width: 18, height: 14))
         let menuPoint = NSPoint(x: btnRect.minX, y: btnRect.maxY)
         menu.popUp(positioning: nil, at: menuPoint, in: self)
     }
