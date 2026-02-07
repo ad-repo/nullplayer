@@ -265,53 +265,53 @@ class WindowManager {
         notifyMainWindowVisibilityChanged()
     }
     
-    /// Position a sub-window (EQ, Playlist, or Spectrum) snapped below the main window stack
-    /// Always positions below the lowest visible window in the vertical stack.
+    /// Position a sub-window (EQ, Playlist, or Spectrum) in the vertical stack.
+    /// Fills the first gap between visible stack windows if one exists,
+    /// otherwise positions below the lowest visible window in the stack.
     private func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
         guard let mainWindow = mainWindowController?.window else { return }
         
         let mainFrame = mainWindow.frame
-        let currentSize = window.frame.size
+        let newHeight = window.frame.size.height
+        let newWidth = window.frame.size.width
         
-        // Find the bottom-most window in the stack (lowest Y position)
-        // Start with main window as the anchor
-        var anchorFrame = mainFrame
-        var anchorName = "Main"
+        // Collect all visible stack windows except the one being positioned
+        var visibleWindows: [NSWindow] = [mainWindow]
+        if let w = equalizerWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
+        if let w = playlistWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
+        if let w = spectrumWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         
-        // Check EQ - use if visible AND positioned lower (smaller minY)
-        if let eqWindow = equalizerWindowController?.window, eqWindow.isVisible, eqWindow !== window {
-            if eqWindow.frame.minY < anchorFrame.minY {
-                anchorFrame = eqWindow.frame
-                anchorName = "EQ"
+        // Sort top-to-bottom (highest minY first, since macOS Y increases upward)
+        visibleWindows.sort { $0.frame.minY > $1.frame.minY }
+        
+        // Scan for gaps between adjacent windows (first gap from top wins)
+        var targetY: CGFloat? = nil
+        for i in 0..<(visibleWindows.count - 1) {
+            let upper = visibleWindows[i]
+            let lower = visibleWindows[i + 1]
+            let gap = upper.frame.minY - lower.frame.maxY
+            if gap >= newHeight {
+                targetY = upper.frame.minY - newHeight
+                NSLog("positionSubWindow: Found gap (%.0f px) between windows at minY=%.0f and maxY=%.0f, placing at y=%.0f",
+                      gap, upper.frame.minY, lower.frame.maxY, targetY!)
+                break
             }
         }
         
-        // Check Playlist - use if visible AND positioned lower
-        if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible, playlistWindow !== window {
-            if playlistWindow.frame.minY < anchorFrame.minY {
-                anchorFrame = playlistWindow.frame
-                anchorName = "Playlist"
-            }
+        // No gap found: position below the lowest visible window
+        if targetY == nil {
+            let lowest = visibleWindows.last!
+            targetY = lowest.frame.minY - newHeight
+            NSLog("positionSubWindow: No gap found, positioning below lowest window (minY=%.0f), placing at y=%.0f",
+                  lowest.frame.minY, targetY!)
         }
         
-        // Check Spectrum - use if visible AND positioned lower
-        if let spectrumWindow = spectrumWindowController?.window, spectrumWindow.isVisible, spectrumWindow !== window {
-            if spectrumWindow.frame.minY < anchorFrame.minY {
-                anchorFrame = spectrumWindow.frame
-                anchorName = "Spectrum"
-            }
-        }
-        
-        // Position directly below the anchor window, left-aligned with main
         let newFrame = NSRect(
             x: mainFrame.minX,  // Always align with main window
-            y: anchorFrame.minY - currentSize.height,  // Below the anchor
-            width: currentSize.width,  // Keep original width
-            height: currentSize.height
+            y: targetY!,
+            width: newWidth,
+            height: newHeight
         )
-        
-        NSLog("positionSubWindow: Positioning below %@ (anchorMinY=%.0f), newFrame=%@", 
-              anchorName, anchorFrame.minY, NSStringFromRect(newFrame))
         
         // Disable snapping during programmatic frame changes to prevent docking logic
         // from moving the entire window stack
