@@ -59,7 +59,8 @@ All main window settings are independent from the Spectrum Analyzer window (sepa
 
 | File | Purpose |
 |------|---------|
-| `Windows/MainWindow/MainWindowView.swift` | Mode switching, overlay management, click cycling |
+| `Windows/MainWindow/MainWindowView.swift` | Mode switching, overlay management, click cycling (classic UI) |
+| `Windows/ModernMainWindow/ModernMainWindowView.swift` | Mode switching, overlay management, click cycling (modern UI) |
 | `Visualization/SpectrumAnalyzerView.swift` | Metal rendering for all GPU modes (shared with Spectrum window) |
 | `Visualization/FlameShaders.metal` | Fire mode GPU compute + render shaders |
 | `Visualization/CosmicShaders.metal` | JWST mode fragment shaders |
@@ -293,6 +294,12 @@ Setting is persisted across app restarts (UserDefaults key: `projectMBeatSensiti
 
 A dedicated Metal-based spectrum analyzer visualization that provides a larger, more detailed view of the audio spectrum than the main window's built-in 19-bar analyzer.
 
+The window has two implementations selected by the UI mode:
+- **Classic UI**: `SpectrumWindowController` + `SpectrumView` (uses classic `SkinRenderer` for chrome)
+- **Modern UI**: `ModernSpectrumWindowController` + `ModernSpectrumView` (uses `ModernSkinRenderer` for chrome with palette colors, glow, and grid background)
+
+Both embed the same `SpectrumAnalyzerView` (Metal) for visualization rendering.
+
 ### Accessing the Visualizer
 
 1. **Click** the spectrum analyzer display in the main window
@@ -485,6 +492,17 @@ Right-click on the window for:
   - Drawable pool limited to 3 (prevents unbounded CAMetalDrawable accumulation)
   - Rendering pauses when window is minimized or occluded (saves CPU/GPU)
   - Display sync disabled to allow frame dropping under load
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `Windows/Spectrum/SpectrumWindowController.swift` | Window controller (classic skin) |
+| `Windows/Spectrum/SpectrumView.swift` | Container view with classic skin chrome |
+| `Windows/ModernSpectrum/ModernSpectrumWindowController.swift` | Window controller (modern skin) |
+| `Windows/ModernSpectrum/ModernSpectrumView.swift` | Container view with modern skin chrome |
+| `Visualization/SpectrumAnalyzerView.swift` | Metal rendering (shared, all 7 modes) |
+| `App/SpectrumWindowProviding.swift` | Protocol abstracting classic/modern controllers |
 
 ---
 

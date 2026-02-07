@@ -469,38 +469,39 @@ class ModernMainWindowView: NSView {
     }
     
     private func drawEQPlaylistButtons(context: CGContext) {
+        // Order: pM, EQ, PL, SP, LB (left to right)
+        renderer.drawToggleButton("btn_projectm",
+                                  isOn: WindowManager.shared.isProjectMVisible,
+                                  isPressed: pressedElement == "btn_projectm",
+                                  label: "pM",
+                                  in: ModernSkinElements.btnEQ.defaultRect,
+                                  context: context)
+        
         renderer.drawToggleButton("btn_eq",
                                   isOn: WindowManager.shared.isEqualizerVisible,
                                   isPressed: pressedElement == "btn_eq",
                                   label: "EQ",
-                                  in: ModernSkinElements.btnEQ.defaultRect,
+                                  in: ModernSkinElements.btnPlaylist.defaultRect,
                                   context: context)
         
         renderer.drawToggleButton("btn_playlist",
                                   isOn: WindowManager.shared.isPlaylistVisible,
                                   isPressed: pressedElement == "btn_playlist",
                                   label: "PL",
-                                  in: ModernSkinElements.btnPlaylist.defaultRect,
-                                  context: context)
-        
-        renderer.drawToggleButton("btn_library",
-                                  isOn: WindowManager.shared.isPlexBrowserVisible,
-                                  isPressed: pressedElement == "btn_library",
-                                  label: "LB",
                                   in: ModernSkinElements.btnLibrary.defaultRect,
-                                  context: context)
-        
-        renderer.drawToggleButton("btn_projectm",
-                                  isOn: WindowManager.shared.isProjectMVisible,
-                                  isPressed: pressedElement == "btn_projectm",
-                                  label: "PM",
-                                  in: ModernSkinElements.btnProjectM.defaultRect,
                                   context: context)
         
         renderer.drawToggleButton("btn_spectrum",
                                   isOn: WindowManager.shared.isSpectrumVisible,
                                   isPressed: pressedElement == "btn_spectrum",
                                   label: "SP",
+                                  in: ModernSkinElements.btnProjectM.defaultRect,
+                                  context: context)
+        
+        renderer.drawToggleButton("btn_library",
+                                  isOn: WindowManager.shared.isPlexBrowserVisible,
+                                  isPressed: pressedElement == "btn_library",
+                                  label: "LB",
                                   in: ModernSkinElements.btnSpectrum.defaultRect,
                                   context: context)
     }
@@ -731,11 +732,11 @@ class ModernMainWindowView: NSView {
             ("btn_shuffle", ModernSkinElements.btnShuffle.defaultRect),
             ("btn_repeat", ModernSkinElements.btnRepeat.defaultRect),
             ("btn_cast", ModernSkinElements.btnCast.defaultRect),
-            ("btn_eq", ModernSkinElements.btnEQ.defaultRect),
-            ("btn_playlist", ModernSkinElements.btnPlaylist.defaultRect),
-            ("btn_library", ModernSkinElements.btnLibrary.defaultRect),
-            ("btn_projectm", ModernSkinElements.btnProjectM.defaultRect),
-            ("btn_spectrum", ModernSkinElements.btnSpectrum.defaultRect),
+            ("btn_projectm", ModernSkinElements.btnEQ.defaultRect),
+            ("btn_eq", ModernSkinElements.btnPlaylist.defaultRect),
+            ("btn_playlist", ModernSkinElements.btnLibrary.defaultRect),
+            ("btn_spectrum", ModernSkinElements.btnProjectM.defaultRect),
+            ("btn_library", ModernSkinElements.btnSpectrum.defaultRect),
             // Sliders
             ("seek_track", ModernSkinElements.seekTrack.defaultRect.insetBy(dx: 0, dy: -4)),  // expand vertical hit area
             // Time display (click to toggle elapsed/remaining)

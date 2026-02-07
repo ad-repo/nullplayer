@@ -1,11 +1,15 @@
 import AppKit
 
-/// Controller for the standalone Spectrum Analyzer visualization window (classic skin)
-class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
+/// Controller for the standalone Spectrum Analyzer visualization window (modern skin).
+/// Conforms to `SpectrumWindowProviding` so WindowManager can use it interchangeably
+/// with the classic `SpectrumWindowController`.
+///
+/// This controller has ZERO dependencies on the classic skin system.
+class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProviding {
     
     // MARK: - Properties
     
-    private var spectrumView: SpectrumView!
+    private var spectrumView: ModernSpectrumView!
     
     /// Whether the window is in shade mode
     private(set) var isShadeMode = false
@@ -16,10 +20,11 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
     // MARK: - Initialization
     
     convenience init() {
-        // Create borderless window with manual resize handling and fullscreen support
-        let window = ResizableWindow(
-            contentRect: NSRect(origin: .zero, size: SkinElements.SpectrumWindow.windowSize),
-            styleMask: [.borderless, .resizable],
+        let windowSize = ModernSkinElements.spectrumWindowSize
+        
+        let window = BorderlessWindow(
+            contentRect: NSRect(origin: .zero, size: windowSize),
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
@@ -43,7 +48,7 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.minSize = SkinElements.SpectrumWindow.minSize
+        window.minSize = ModernSkinElements.spectrumMinSize
         window.title = "NullPlayer Analyzer"
         
         // Prevent window from being released when closed - we reuse the same controller
@@ -55,12 +60,12 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
         window.delegate = self
         
         // Set accessibility identifier for UI testing
-        window.setAccessibilityIdentifier("SpectrumWindow")
+        window.setAccessibilityIdentifier("ModernSpectrumWindow")
         window.setAccessibilityLabel("NullPlayer Analyzer Window")
     }
     
     private func setupView() {
-        spectrumView = SpectrumView(frame: NSRect(origin: .zero, size: SkinElements.SpectrumWindow.windowSize))
+        spectrumView = ModernSpectrumView(frame: NSRect(origin: .zero, size: ModernSkinElements.spectrumWindowSize))
         spectrumView.controller = self
         spectrumView.autoresizingMask = [.width, .height]
         window?.contentView = spectrumView
@@ -88,7 +93,6 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
     
     // MARK: - Shade Mode
     
-    /// Toggle shade mode on/off
     func setShadeMode(_ enabled: Bool) {
         guard let window = window else { return }
         
@@ -99,7 +103,7 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
             normalModeFrame = window.frame
             
             // Calculate new shade mode frame (keep width, reduce height)
-            let shadeHeight = SkinElements.SpectrumWindow.shadeHeight
+            let shadeHeight = ModernSkinElements.spectrumShadeHeight
             let newFrame = NSRect(
                 x: window.frame.origin.x,
                 y: window.frame.origin.y + window.frame.height - shadeHeight,
@@ -117,11 +121,11 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
             if let storedFrame = normalModeFrame {
                 newFrame = storedFrame
             } else {
-                let normalSize = SkinElements.SpectrumWindow.windowSize
+                let normalSize = ModernSkinElements.spectrumWindowSize
                 newFrame = NSRect(
                     x: window.frame.origin.x,
                     y: window.frame.origin.y + window.frame.height - normalSize.height,
-                    width: window.frame.width,
+                    width: normalSize.width,
                     height: normalSize.height
                 )
             }
@@ -138,7 +142,7 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
 
 // MARK: - NSWindowDelegate
 
-extension SpectrumWindowController: NSWindowDelegate {
+extension ModernSpectrumWindowController: NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         guard let window = window else { return }
         let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)

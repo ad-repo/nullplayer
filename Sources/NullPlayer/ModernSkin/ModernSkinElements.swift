@@ -138,6 +138,73 @@ enum ModernSkinElements {
     static let btnCast = Element("btn_cast", NSRect(x: 240, y: 8, width: 28, height: 16),
                                  states: ["off", "on", "off_pressed", "on_pressed"])
     
+    // MARK: - Playlist Window
+    
+    /// Playlist window size (same width as main window for docking; height expandable)
+    static let playlistWindowSize = NSSize(
+        width: baseMainSize.width * scaleFactor,
+        height: baseMainSize.height * scaleFactor
+    )
+    
+    /// Playlist window minimum size (width locked, height expandable)
+    static let playlistMinSize = playlistWindowSize
+    
+    /// Playlist window shade mode height
+    static let playlistShadeHeight: CGFloat = 18 * scaleFactor
+    
+    /// Playlist window title bar height
+    static let playlistTitleBarHeight: CGFloat = 14 * scaleFactor
+    
+    /// Playlist window bottom bar height (ADD/REM/SEL/MISC/LIST buttons)
+    static let playlistBottomBarHeight: CGFloat = 20 * scaleFactor
+    
+    /// Playlist window border width
+    static let playlistBorderWidth: CGFloat = 3 * scaleFactor
+    
+    /// Playlist track row height
+    static let playlistItemHeight: CGFloat = 15 * scaleFactor
+    
+    /// Playlist title bar element (per-window skinning)
+    static let playlistTitleBar = Element("playlist_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
+    
+    /// Playlist close button
+    static let playlistBtnClose = Element("playlist_btn_close", NSRect(x: 256, y: 104, width: 10, height: 10),
+                                          states: ["normal", "pressed"])
+    
+    /// Playlist shade button
+    static let playlistBtnShade = Element("playlist_btn_shade", NSRect(x: 244, y: 104, width: 10, height: 10),
+                                          states: ["normal", "pressed"])
+    
+    // MARK: - Spectrum Window
+    
+    /// Spectrum analyzer window size (same base as main window for docking compatibility)
+    static let spectrumWindowSize = NSSize(
+        width: baseMainSize.width * scaleFactor,
+        height: baseMainSize.height * scaleFactor
+    )
+    
+    /// Spectrum window minimum size
+    static let spectrumMinSize = spectrumWindowSize
+    
+    /// Spectrum window shade mode height
+    static let spectrumShadeHeight: CGFloat = 18 * scaleFactor
+    
+    /// Spectrum window title bar height
+    static let spectrumTitleBarHeight: CGFloat = 14 * scaleFactor
+    
+    /// Spectrum window border width
+    static let spectrumBorderWidth: CGFloat = 3 * scaleFactor
+    
+    /// Number of bars in the standalone spectrum window
+    static let spectrumBarCount = 84
+    
+    /// Spectrum window title bar (same base geometry as main title bar, allows per-window skinning)
+    static let spectrumTitleBar = Element("spectrum_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
+    
+    /// Spectrum window close button (allows per-window skinning)
+    static let spectrumBtnClose = Element("spectrum_btn_close", NSRect(x: 256, y: 104, width: 10, height: 10),
+                                          states: ["normal", "pressed"])
+    
     // MARK: - All Elements
     
     static let allElements: [Element] = [
@@ -151,7 +218,9 @@ enum ModernSkinElements {
         btnEQ, btnPlaylist, btnLibrary, btnProjectM, btnSpectrum,
         seekTrack, seekFill, seekThumb,
         btnPrev, btnPlay, btnPause, btnStop, btnNext, btnEject,
-        btnShuffle, btnRepeat, btnCast
+        btnShuffle, btnRepeat, btnCast,
+        playlistTitleBar, playlistBtnClose, playlistBtnShade,
+        spectrumTitleBar, spectrumBtnClose
     ]
     
     /// Look up element by ID

@@ -1,0 +1,1137 @@
+import AppKit
+
+// =============================================================================
+// MODERN PLAYLIST VIEW - Playlist editor with modern skin chrome
+// =============================================================================
+// Renders track list with NSFont, modern skin window chrome, popup menus,
+// selection, scrolling, marquee, keyboard navigation, and drag-and-drop.
+//
+// Has ZERO dependencies on the classic skin system (Skin/, SkinElements, SkinRenderer, etc.).
+// =============================================================================
+
+/// Modern playlist view with full modern skin support
+class ModernPlaylistView: NSView {
+    
+    // MARK: - Properties
+    
+    weak var controller: ModernPlaylistWindowController?
+    
+    /// The skin renderer
+    private var renderer: ModernSkinRenderer!
+    
+    /// Grid background layer
+    private var gridLayer: GridBackgroundLayer?
+    
+    /// Selected track indices
+    private var selectedIndices: Set<Int> = []
+    
+    /// The anchor index for shift-selection
+    private var selectionAnchor: Int?
+    
+    /// Scroll offset (in pixels)
+    private var scrollOffset: CGFloat = 0
+    
+    /// Shade mode state
+    private(set) var isShadeMode = false
+    
+    /// Button being pressed (for visual feedback)
+    private var pressedButton: String?
+    
+    /// Window dragging state
+    private var isDraggingWindow = false
+    private var windowDragStartPoint: NSPoint = .zero
+    
+    /// Display update timer for marquee scrolling and playback time updates
+    private var displayTimer: Timer?
+    
+    /// Marquee offset for scrolling current track title
+    private var marqueeOffset: CGFloat = 0
+    
+    /// Width of current track title text (for marquee wrapping)
+    private var currentTrackTextWidth: CGFloat = 0
+    
+    /// Last known current track index (for detecting track changes)
+    private var lastCurrentIndex: Int = -1
+    
+    // MARK: - Layout Constants
+    
+    private var titleBarHeight: CGFloat { ModernSkinElements.playlistTitleBarHeight }
+    private var bottomBarHeight: CGFloat { ModernSkinElements.playlistBottomBarHeight }
+    private var borderWidth: CGFloat { ModernSkinElements.playlistBorderWidth }
+    private var itemHeight: CGFloat { ModernSkinElements.playlistItemHeight }
+    
+    // MARK: - Initialization
+    
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        commonInit()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        commonInit()
+    }
+    
+    private func commonInit() {
+        wantsLayer = true
+        layer?.isOpaque = false
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        
+        // Initialize with current skin
+        let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
+        renderer = ModernSkinRenderer(skin: skin)
+        
+        // Set up grid background
+        setupGridBackground(skin: skin)
+        
+        // Register for drag and drop
+        registerForDraggedTypes([.fileURL])
+        
+        // Start display timer
+        startDisplayTimer()
+        
+        // Observe skin changes
+        NotificationCenter.default.addObserver(self, selector: #selector(modernSkinDidChange),
+                                                name: ModernSkinEngine.skinDidChangeNotification, object: nil)
+        
+        // Observe window visibility for timer management
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidMiniaturize),
+                                               name: NSWindow.didMiniaturizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidDeminiaturize),
+                                               name: NSWindow.didDeminiaturizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeOcclusionState),
+                                               name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        
+        // Observe playback state and track changes
+        NotificationCenter.default.addObserver(self, selector: #selector(playbackStateDidChange),
+                                               name: .audioPlaybackStateChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleTrackDidChange),
+                                               name: .audioTrackDidChange, object: nil)
+        
+        // Set accessibility
+        setAccessibilityIdentifier("modernPlaylistView")
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Playlist")
+    }
+    
+    deinit {
+        displayTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    // MARK: - Setup
+    
+    private func setupGridBackground(skin: ModernSkin) {
+        gridLayer?.removeFromSuperlayer()
+        
+        if let gridConfig = skin.config.background.grid {
+            let grid = GridBackgroundLayer()
+            grid.configure(with: gridConfig)
+            grid.frame = bounds
+            grid.zPosition = 1
+            layer?.addSublayer(grid)
+            gridLayer = grid
+        }
+    }
+    
+    // MARK: - Display Timer
+    
+    private func startDisplayTimer() {
+        displayTimer?.invalidate()
+        // 30Hz for smooth marquee scrolling (matching main window smoothness)
+        displayTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            self?.timerTick()
+        }
+    }
+    
+    private func stopDisplayTimer() {
+        displayTimer?.invalidate()
+        displayTimer = nil
+    }
+    
+    private func timerTick() {
+        let engine = WindowManager.shared.audioEngine
+        let currentIndex = engine.currentIndex
+        
+        // Check for track change
+        if currentIndex != lastCurrentIndex {
+            lastCurrentIndex = currentIndex
+            marqueeOffset = 0
+            updateCurrentTrackTextWidth()
+            // Auto-select and scroll to current track
+            if currentIndex >= 0 {
+                selectedIndices = [currentIndex]
+                selectionAnchor = currentIndex
+                scrollToSelection()
+            }
+        }
+        
+        // Advance marquee for current track
+        let separatorWidth: CGFloat = 30
+        if currentTrackTextWidth > 0 {
+            let listWidth = bounds.width - borderWidth * 2 - 8
+            if currentTrackTextWidth > listWidth * 0.7 {
+                marqueeOffset += 0.8  // ~24px/sec at 30Hz -- smooth sub-pixel scrolling
+                let cycleWidth = currentTrackTextWidth + separatorWidth
+                if marqueeOffset >= cycleWidth {
+                    marqueeOffset -= cycleWidth
+                }
+            }
+        }
+        
+        // Redraw for time display updates and marquee
+        if engine.state == .playing || marqueeOffset > 0 {
+            needsDisplay = true
+        }
+    }
+    
+    private func updateCurrentTrackTextWidth() {
+        let engine = WindowManager.shared.audioEngine
+        guard engine.currentIndex >= 0 && engine.currentIndex < engine.playlist.count else {
+            currentTrackTextWidth = 0
+            return
+        }
+        let track = engine.playlist[engine.currentIndex]
+        let videoPrefix = track.mediaType == .video ? "[V] " : ""
+        let titleText = "\(engine.currentIndex + 1). \(videoPrefix)\(track.displayTitle)"
+        
+        let font = renderer.skin.smallFont ?? NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let size = NSAttributedString(string: titleText, attributes: attrs).size()
+        currentTrackTextWidth = size.width
+    }
+    
+    // MARK: - Notification Handlers
+    
+    @objc private func modernSkinDidChange() {
+        skinDidChange()
+    }
+    
+    @objc private func windowDidMiniaturize(_ note: Notification) {
+        stopDisplayTimer()
+    }
+    
+    @objc private func windowDidDeminiaturize(_ note: Notification) {
+        startDisplayTimer()
+    }
+    
+    @objc private func windowDidChangeOcclusionState(_ note: Notification) {
+        guard let window = window else { return }
+        if window.occlusionState.contains(.visible) {
+            if displayTimer == nil { startDisplayTimer() }
+        } else {
+            stopDisplayTimer()
+        }
+    }
+    
+    @objc private func playbackStateDidChange(_ note: Notification) {
+        if WindowManager.shared.audioEngine.state == .playing {
+            if displayTimer == nil { startDisplayTimer() }
+        }
+        needsDisplay = true
+    }
+    
+    @objc private func handleTrackDidChange(_ note: Notification) {
+        needsDisplay = true
+    }
+    
+    // MARK: - Drawing
+    
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        // Draw window background
+        renderer.drawWindowBackground(in: bounds, context: context)
+        
+        // Draw window border with glow
+        renderer.drawWindowBorder(in: bounds, context: context)
+        
+        // Draw title bar
+        renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER PLAYLIST", context: context)
+        
+        // Draw close button
+        let closeState = (pressedButton == "playlist_btn_close") ? "pressed" : "normal"
+        renderer.drawWindowControlButton("playlist_btn_close", state: closeState,
+                                         in: closeBtnBaseRect, context: context)
+        
+        // Draw shade button
+        let shadeState = (pressedButton == "playlist_btn_shade") ? "pressed" : "normal"
+        renderer.drawWindowControlButton("playlist_btn_shade", state: shadeState,
+                                         in: shadeBtnBaseRect, context: context)
+        
+        if isShadeMode {
+            return
+        }
+        
+        // Draw track list
+        drawTrackList(in: context)
+    }
+    
+    /// Base rects in the 275x116 coordinate space (renderer scales them)
+    private var titleBarBaseRect: NSRect {
+        // Title bar is at top; we calculate in unscaled base space
+        let scale = ModernSkinElements.scaleFactor
+        return NSRect(x: 0, y: (bounds.height / scale) - 14, width: 275, height: 14)
+    }
+    
+    private var closeBtnBaseRect: NSRect {
+        let scale = ModernSkinElements.scaleFactor
+        return NSRect(x: 256, y: (bounds.height / scale) - 12, width: 10, height: 10)
+    }
+    
+    private var shadeBtnBaseRect: NSRect {
+        let scale = ModernSkinElements.scaleFactor
+        return NSRect(x: 244, y: (bounds.height / scale) - 12, width: 10, height: 10)
+    }
+    
+    // MARK: - Track List Drawing
+    
+    private func drawTrackList(in context: CGContext) {
+        let listRect = calculateListArea()
+        
+        context.saveGState()
+        context.clip(to: listRect)
+        
+        let engine = WindowManager.shared.audioEngine
+        let tracks = engine.playlist
+        let currentIndex = engine.currentIndex
+        let skin = renderer.skin
+        
+        let scale = ModernSkinElements.scaleFactor
+        let fontSize: CGFloat = 8 * scale
+        let font = skin.smallFont?.withSize(fontSize) ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        
+        guard !tracks.isEmpty else {
+            // Draw empty playlist message
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: skin.textDimColor.withAlphaComponent(0.5)
+            ]
+            let msg = NSAttributedString(string: "Drop files here", attributes: attrs)
+            let size = msg.size()
+            msg.draw(at: NSPoint(x: listRect.midX - size.width / 2,
+                                  y: listRect.midY - size.height / 2))
+            context.restoreGState()
+            return
+        }
+        
+        // Calculate visible range
+        let visibleStart = max(0, Int(scrollOffset / itemHeight))
+        let visibleEnd = min(tracks.count, visibleStart + Int(listRect.height / itemHeight) + 2)
+        
+        for index in visibleStart..<visibleEnd {
+            let y = listRect.maxY - CGFloat(index + 1) * itemHeight + scrollOffset
+            
+            // Skip if outside visible area
+            if y + itemHeight < listRect.minY || y > listRect.maxY { continue }
+            
+            let itemRect = NSRect(x: listRect.minX, y: y, width: listRect.width, height: itemHeight)
+            
+            let track = tracks[index]
+            let isCurrent = index == currentIndex
+            let isSelected = selectedIndices.contains(index)
+            
+            // Text color -- current track uses accent (magenta), selected uses primary text
+            let textColor: NSColor
+            if isCurrent {
+                textColor = skin.accentColor
+            } else if isSelected {
+                textColor = skin.textColor
+            } else {
+                textColor = skin.textDimColor
+            }
+            
+            // Build track text
+            let videoPrefix = track.mediaType == .video ? "[V] " : ""
+            let titleText = "\(index + 1). \(videoPrefix)\(track.displayTitle)"
+            let duration = track.duration ?? 0
+            let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
+            
+            let textAttrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: textColor
+            ]
+            
+            // Draw duration right-aligned
+            let durationAttr = NSAttributedString(string: durationStr, attributes: textAttrs)
+            let durationSize = durationAttr.size()
+            let durationX = itemRect.maxX - durationSize.width - 6
+            let textY = itemRect.minY + (itemRect.height - durationSize.height) / 2
+            durationAttr.draw(at: NSPoint(x: durationX, y: textY))
+            
+            // Draw title with clipping (and marquee for current track)
+            let titleX = itemRect.minX + 4
+            let titleMaxWidth = durationX - titleX - 8
+            
+            context.saveGState()
+            context.clip(to: NSRect(x: titleX, y: itemRect.minY, width: titleMaxWidth, height: itemRect.height))
+            
+            let titleAttr = NSAttributedString(string: titleText, attributes: textAttrs)
+            let titleSize = titleAttr.size()
+            
+            if isCurrent && titleSize.width > titleMaxWidth {
+                // Marquee scrolling for current track
+                let separatorWidth: CGFloat = 30
+                let separator = NSAttributedString(string: "     ", attributes: textAttrs)
+                
+                // Draw two copies for seamless wrapping
+                let drawX1 = titleX - marqueeOffset
+                let drawX2 = drawX1 + titleSize.width + separatorWidth
+                
+                titleAttr.draw(at: NSPoint(x: drawX1, y: textY))
+                separator.draw(at: NSPoint(x: drawX1 + titleSize.width, y: textY))
+                titleAttr.draw(at: NSPoint(x: drawX2, y: textY))
+            } else {
+                titleAttr.draw(at: NSPoint(x: titleX, y: textY))
+            }
+            
+            context.restoreGState()
+        }
+        
+        context.restoreGState()
+    }
+    
+    /// Draw info bar showing track count and remaining time
+    private func drawInfoBar(in context: CGContext) {
+        let engine = WindowManager.shared.audioEngine
+        let tracks = engine.playlist
+        guard !tracks.isEmpty else { return }
+        
+        let font = renderer.skin.smallFont ?? NSFont.monospacedSystemFont(ofSize: 7 * ModernSkinElements.scaleFactor, weight: .regular)
+        let color = renderer.skin.textDimColor
+        
+        // Calculate remaining tracks and time
+        let currentIndex = max(0, engine.currentIndex)
+        let remainingTracks = max(0, tracks.count - currentIndex)
+        
+        var remainingSeconds = 0
+        if engine.state == .playing || engine.currentTime > 0 {
+            remainingSeconds += max(0, Int(engine.duration - engine.currentTime))
+        } else if currentIndex < tracks.count {
+            remainingSeconds += Int(tracks[currentIndex].duration ?? 0)
+        }
+        for i in (currentIndex + 1)..<tracks.count {
+            remainingSeconds += Int(tracks[i].duration ?? 0)
+        }
+        
+        let mins = remainingSeconds / 60
+        let hrs = mins / 60
+        let timeStr = hrs > 0
+            ? String(format: "%d:%02d:%02d", hrs, mins % 60, remainingSeconds % 60)
+            : String(format: "%d:%02d", mins, remainingSeconds % 60)
+        
+        let infoStr = "\(remainingTracks)/\(timeStr)"
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let attrStr = NSAttributedString(string: infoStr, attributes: attrs)
+        let size = attrStr.size()
+        
+        // Position centered at bottom of window
+        let y: CGFloat = 2
+        let x = bounds.midX - size.width / 2
+        attrStr.draw(at: NSPoint(x: x, y: y))
+    }
+    
+    private func calculateListArea() -> NSRect {
+        // Track list area between title bar and bottom border
+        return NSRect(
+            x: borderWidth,
+            y: borderWidth,
+            width: bounds.width - borderWidth * 2,
+            height: bounds.height - titleBarHeight - borderWidth
+        )
+    }
+    
+    // MARK: - Skin Change
+    
+    func skinDidChange() {
+        let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
+        renderer = ModernSkinRenderer(skin: skin)
+        setupGridBackground(skin: skin)
+        updateCurrentTrackTextWidth()
+        needsDisplay = true
+    }
+    
+    // MARK: - Public Methods
+    
+    func reloadData() {
+        selectedIndices.removeAll()
+        selectionAnchor = nil
+        scrollOffset = 0
+        marqueeOffset = 0
+        lastCurrentIndex = -1
+        updateCurrentTrackTextWidth()
+        needsDisplay = true
+    }
+    
+    func setShadeMode(_ enabled: Bool) {
+        isShadeMode = enabled
+        gridLayer?.isHidden = enabled
+        needsDisplay = true
+    }
+    
+    // MARK: - Hit Testing
+    
+    private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        let closeWidth: CGFloat = 30 * ModernSkinElements.scaleFactor
+        return point.y >= bounds.height - titleBarHeight &&
+               point.x < bounds.width - closeWidth
+    }
+    
+    private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        let scale = ModernSkinElements.scaleFactor
+        let closeRect = NSRect(x: bounds.width - 18 * scale, y: bounds.height - titleBarHeight + 2 * scale,
+                               width: 14 * scale, height: 12 * scale)
+        return closeRect.contains(point)
+    }
+    
+    private func hitTestShadeButton(at point: NSPoint) -> Bool {
+        let scale = ModernSkinElements.scaleFactor
+        let shadeRect = NSRect(x: bounds.width - 32 * scale, y: bounds.height - titleBarHeight + 2 * scale,
+                               width: 12 * scale, height: 12 * scale)
+        return shadeRect.contains(point)
+    }
+    
+    private func hitTestBottomBar(at point: NSPoint) -> String? {
+        guard point.y < bottomBarHeight else { return nil }
+        let scale = ModernSkinElements.scaleFactor
+        
+        // Match button layout from drawPlaylistBottomBar
+        let buttons: [(String, CGFloat, CGFloat)] = [
+            ("playlist_btn_add", 4 * scale, 30 * scale),
+            ("playlist_btn_rem", 36 * scale, 30 * scale),
+            ("playlist_btn_sel", 68 * scale, 30 * scale),
+            ("playlist_btn_misc", bounds.width - 64 * scale, 30 * scale),
+            ("playlist_btn_list", bounds.width - 32 * scale, 30 * scale),
+        ]
+        
+        for (id, x, width) in buttons {
+            let buttonRect = NSRect(x: x, y: 2 * scale, width: width, height: bottomBarHeight - 4 * scale)
+            if buttonRect.contains(point) {
+                return id
+            }
+        }
+        
+        return nil
+    }
+    
+    private func hitTestTrackList(at point: NSPoint) -> Int? {
+        let listRect = calculateListArea()
+        guard listRect.contains(point) else { return nil }
+        
+        // Convert from macOS coords (bottom-up) to track index (top-down)
+        let relativeY = listRect.maxY - point.y + scrollOffset
+        let clickedIndex = Int(relativeY / itemHeight)
+        
+        let tracks = WindowManager.shared.audioEngine.playlist
+        if clickedIndex >= 0 && clickedIndex < tracks.count {
+            return clickedIndex
+        }
+        
+        return nil
+    }
+    
+    // MARK: - Mouse Events
+    
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        
+        // Double-click title bar → shade mode
+        if event.clickCount == 2 && hitTestTitleBar(at: point) {
+            toggleShadeMode()
+            return
+        }
+        
+        if isShadeMode {
+            handleShadeMouseDown(at: point, event: event)
+            return
+        }
+        
+        // Close button
+        if hitTestCloseButton(at: point) {
+            pressedButton = "playlist_btn_close"
+            needsDisplay = true
+            return
+        }
+        
+        // Shade button
+        if hitTestShadeButton(at: point) {
+            pressedButton = "playlist_btn_shade"
+            needsDisplay = true
+            return
+        }
+        
+        // Track list
+        if let trackIndex = hitTestTrackList(at: point) {
+            handleTrackClick(index: trackIndex, event: event)
+            return
+        }
+        
+        // Title bar → window drag
+        if hitTestTitleBar(at: point) {
+            isDraggingWindow = true
+            windowDragStartPoint = event.locationInWindow
+            if let window = window {
+                WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+            }
+        }
+    }
+    
+    private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
+        if hitTestCloseButton(at: point) {
+            pressedButton = "playlist_btn_close"
+            needsDisplay = true
+            return
+        }
+        if hitTestShadeButton(at: point) {
+            pressedButton = "playlist_btn_shade"
+            needsDisplay = true
+            return
+        }
+        
+        isDraggingWindow = true
+        windowDragStartPoint = event.locationInWindow
+        if let window = window {
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+        }
+    }
+    
+    private func handleTrackClick(index: Int, event: NSEvent) {
+        if event.modifierFlags.contains(.shift) {
+            let anchor = selectionAnchor ?? selectedIndices.min() ?? index
+            let start = min(anchor, index)
+            let end = max(anchor, index)
+            selectedIndices = Set(start...end)
+        } else if event.modifierFlags.contains(.command) {
+            if selectedIndices.contains(index) {
+                selectedIndices.remove(index)
+            } else {
+                selectedIndices.insert(index)
+            }
+            selectionAnchor = index
+        } else {
+            selectedIndices = [index]
+            selectionAnchor = index
+        }
+        
+        // Double-click plays track
+        if event.clickCount == 2 {
+            WindowManager.shared.audioEngine.playTrack(at: index)
+        }
+        
+        needsDisplay = true
+    }
+    
+    override func mouseDragged(with event: NSEvent) {
+        if isDraggingWindow, let window = window {
+            let currentPoint = event.locationInWindow
+            let deltaX = currentPoint.x - windowDragStartPoint.x
+            let deltaY = currentPoint.y - windowDragStartPoint.y
+            
+            var newOrigin = window.frame.origin
+            newOrigin.x += deltaX
+            newOrigin.y += deltaY
+            
+            newOrigin = WindowManager.shared.windowWillMove(window, to: newOrigin)
+            window.setFrameOrigin(newOrigin)
+        }
+    }
+    
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        
+        if isDraggingWindow {
+            isDraggingWindow = false
+            if let window = window {
+                WindowManager.shared.windowDidFinishDragging(window)
+            }
+        }
+        
+        if isShadeMode {
+            handleShadeMouseUp(at: point)
+            return
+        }
+        
+        if let pressed = pressedButton {
+            switch pressed {
+            case "playlist_btn_close":
+                if hitTestCloseButton(at: point) { window?.close() }
+            case "playlist_btn_shade":
+                if hitTestShadeButton(at: point) { toggleShadeMode() }
+            default:
+                break
+            }
+            
+            pressedButton = nil
+            needsDisplay = true
+        }
+    }
+    
+    private func handleShadeMouseUp(at point: NSPoint) {
+        if let pressed = pressedButton {
+            switch pressed {
+            case "playlist_btn_close":
+                if hitTestCloseButton(at: point) { window?.close() }
+            case "playlist_btn_shade":
+                if hitTestShadeButton(at: point) { toggleShadeMode() }
+            default:
+                break
+            }
+            pressedButton = nil
+            needsDisplay = true
+        }
+    }
+    
+    private func toggleShadeMode() {
+        isShadeMode.toggle()
+        controller?.setShadeMode(isShadeMode)
+    }
+    
+    override func scrollWheel(with event: NSEvent) {
+        let tracks = WindowManager.shared.audioEngine.playlist
+        let listRect = calculateListArea()
+        let totalHeight = CGFloat(tracks.count) * itemHeight
+        
+        if totalHeight > listRect.height {
+            scrollOffset = max(0, min(totalHeight - listRect.height, scrollOffset - event.deltaY * 3))
+            needsDisplay = true
+        }
+    }
+    
+    // MARK: - Keyboard Events
+    
+    override var acceptsFirstResponder: Bool { true }
+    
+    override func keyDown(with event: NSEvent) {
+        let engine = WindowManager.shared.audioEngine
+        let tracks = engine.playlist
+        let hasShift = event.modifierFlags.contains(.shift)
+        
+        switch event.keyCode {
+        case 51: // Delete
+            removeSelected(nil)
+        case 36: // Enter
+            if let index = selectedIndices.first {
+                engine.playTrack(at: index)
+            }
+        case 0: // A + Cmd
+            if event.modifierFlags.contains(.command) {
+                selectAll(nil)
+            }
+        case 126: // Up arrow
+            guard !tracks.isEmpty else { return }
+            navigateSelection(direction: -1, extend: hasShift)
+        case 125: // Down arrow
+            guard !tracks.isEmpty else { return }
+            navigateSelection(direction: 1, extend: hasShift)
+        case 115: // Home
+            guard !tracks.isEmpty else { return }
+            if hasShift { extendSelectionTo(0) }
+            else { selectedIndices = [0]; selectionAnchor = 0 }
+            scrollToSelection(); needsDisplay = true
+        case 119: // End
+            guard !tracks.isEmpty else { return }
+            let last = tracks.count - 1
+            if hasShift { extendSelectionTo(last) }
+            else { selectedIndices = [last]; selectionAnchor = last }
+            scrollToSelection(); needsDisplay = true
+        case 116: // Page Up
+            guard !tracks.isEmpty else { return }
+            navigateSelection(direction: -visibleTrackCount, extend: hasShift)
+        case 121: // Page Down
+            guard !tracks.isEmpty else { return }
+            navigateSelection(direction: visibleTrackCount, extend: hasShift)
+        default:
+            super.keyDown(with: event)
+        }
+    }
+    
+    private var visibleTrackCount: Int {
+        let listRect = calculateListArea()
+        return max(1, Int(listRect.height / itemHeight))
+    }
+    
+    private func navigateSelection(direction: Int, extend: Bool) {
+        let tracks = WindowManager.shared.audioEngine.playlist
+        guard !tracks.isEmpty else { return }
+        
+        let currentFocus: Int
+        if let anchor = selectionAnchor, selectedIndices.contains(anchor) {
+            currentFocus = anchor
+        } else if direction < 0 {
+            currentFocus = selectedIndices.min() ?? 0
+        } else {
+            currentFocus = selectedIndices.max() ?? 0
+        }
+        
+        let newIndex = max(0, min(tracks.count - 1, currentFocus + direction))
+        
+        if extend {
+            extendSelectionTo(newIndex)
+        } else {
+            selectedIndices = [newIndex]
+            selectionAnchor = newIndex
+        }
+        
+        scrollToSelection()
+        needsDisplay = true
+    }
+    
+    private func extendSelectionTo(_ targetIndex: Int) {
+        let anchor = selectionAnchor ?? selectedIndices.min() ?? 0
+        let start = min(anchor, targetIndex)
+        let end = max(anchor, targetIndex)
+        selectedIndices = Set(start...end)
+    }
+    
+    private func scrollToSelection() {
+        guard let focusIndex = selectionAnchor ?? selectedIndices.min() else { return }
+        
+        let listRect = calculateListArea()
+        let tracks = WindowManager.shared.audioEngine.playlist
+        
+        let itemTop = CGFloat(focusIndex) * itemHeight
+        let itemBottom = itemTop + itemHeight
+        let visibleTop = scrollOffset
+        let visibleBottom = scrollOffset + listRect.height
+        
+        if itemTop < visibleTop {
+            scrollOffset = itemTop
+        } else if itemBottom > visibleBottom {
+            scrollOffset = itemBottom - listRect.height
+        }
+        
+        let totalContentHeight = CGFloat(tracks.count) * itemHeight
+        let maxScroll = max(0, totalContentHeight - listRect.height)
+        scrollOffset = max(0, min(maxScroll, scrollOffset))
+    }
+    
+    // MARK: - Button Popup Menus
+    
+    private func showAddMenu(at point: NSPoint) {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Add URL...", action: #selector(addURL(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Add Directory...", action: #selector(addDirectory(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Add Files...", action: #selector(addFiles(_:)), keyEquivalent: "")
+        for item in menu.items { item.target = self }
+        menu.popUp(positioning: nil, at: point, in: self)
+    }
+    
+    private func showRemoveMenu(at point: NSPoint) {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Remove All", action: #selector(removeAll(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Crop Selection", action: #selector(cropSelection(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Remove Selected", action: #selector(removeSelected(_:)), keyEquivalent: "")
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(withTitle: "Remove Dead Files", action: #selector(removeDeadFiles(_:)), keyEquivalent: "")
+        for item in menu.items { item.target = self }
+        menu.popUp(positioning: nil, at: point, in: self)
+    }
+    
+    private func showSelectMenu(at point: NSPoint) {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Invert Selection", action: #selector(invertSelection(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Select None", action: #selector(selectNone(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "a")
+        for item in menu.items { item.target = self }
+        menu.popUp(positioning: nil, at: point, in: self)
+    }
+    
+    private func showMiscMenu(at point: NSPoint) {
+        let menu = NSMenu()
+        
+        let sortMenu = NSMenu()
+        sortMenu.addItem(withTitle: "Sort by Title", action: #selector(sortByTitle(_:)), keyEquivalent: "")
+        sortMenu.addItem(withTitle: "Sort by Filename", action: #selector(sortByFilename(_:)), keyEquivalent: "")
+        sortMenu.addItem(withTitle: "Sort by Path", action: #selector(sortByPath(_:)), keyEquivalent: "")
+        sortMenu.addItem(withTitle: "Randomize", action: #selector(randomize(_:)), keyEquivalent: "")
+        sortMenu.addItem(withTitle: "Reverse", action: #selector(reverse(_:)), keyEquivalent: "")
+        for item in sortMenu.items { item.target = self }
+        
+        let sortItem = NSMenuItem(title: "Sort", action: nil, keyEquivalent: "")
+        sortItem.submenu = sortMenu
+        menu.addItem(sortItem)
+        
+        menu.addItem(withTitle: "File Info...", action: #selector(showFileInfo(_:)), keyEquivalent: "")
+        for item in menu.items { if item.action != nil { item.target = self } }
+        menu.popUp(positioning: nil, at: point, in: self)
+    }
+    
+    private func showListMenu(at point: NSPoint) {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "New Playlist", action: #selector(newPlaylist(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Save Playlist...", action: #selector(savePlaylist(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: "Load Playlist...", action: #selector(loadPlaylist(_:)), keyEquivalent: "")
+        for item in menu.items { item.target = self }
+        menu.popUp(positioning: nil, at: point, in: self)
+    }
+    
+    // MARK: - Menu Actions
+    
+    @objc private func addURL(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "Add URL"
+        alert.informativeText = "Enter the URL of the media file:"
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        input.placeholderString = "https://example.com/audio.mp3"
+        alert.accessoryView = input
+        if alert.runModal() == .alertFirstButtonReturn {
+            let urlString = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let url = URL(string: urlString) {
+                WindowManager.shared.audioEngine.loadFiles([url])
+                needsDisplay = true
+            }
+        }
+    }
+    
+    @objc private func addDirectory(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
+            var audioURLs: [URL] = []
+            if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) {
+                for case let fileURL as URL in enumerator {
+                    if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
+                        audioURLs.append(fileURL)
+                    }
+                }
+            }
+            if !audioURLs.isEmpty {
+                WindowManager.shared.audioEngine.loadFiles(audioURLs)
+                needsDisplay = true
+            }
+        }
+    }
+    
+    @objc private func addFiles(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.audio, .movie]
+        if panel.runModal() == .OK {
+            WindowManager.shared.audioEngine.loadFiles(panel.urls)
+            needsDisplay = true
+        }
+    }
+    
+    @objc private func removeAll(_ sender: Any?) {
+        WindowManager.shared.audioEngine.clearPlaylist()
+        selectedIndices.removeAll()
+        selectionAnchor = nil
+        scrollOffset = 0
+        needsDisplay = true
+    }
+    
+    @objc private func cropSelection(_ sender: Any?) {
+        let engine = WindowManager.shared.audioEngine
+        let tracks = engine.playlist
+        let indicesToRemove = Set(0..<tracks.count).subtracting(selectedIndices)
+        for index in indicesToRemove.sorted(by: >) {
+            engine.removeTrack(at: index)
+        }
+        selectedIndices = Set(0..<engine.playlist.count)
+        selectionAnchor = 0
+        needsDisplay = true
+    }
+    
+    @objc private func removeSelected(_ sender: Any?) {
+        let engine = WindowManager.shared.audioEngine
+        for index in selectedIndices.sorted(by: >) {
+            engine.removeTrack(at: index)
+        }
+        selectedIndices.removeAll()
+        selectionAnchor = nil
+        needsDisplay = true
+    }
+    
+    @objc private func removeDeadFiles(_ sender: Any?) {
+        let engine = WindowManager.shared.audioEngine
+        var indicesToRemove: [Int] = []
+        for (index, track) in engine.playlist.enumerated() {
+            if !track.url.isFileURL || !FileManager.default.fileExists(atPath: track.url.path) {
+                indicesToRemove.append(index)
+            }
+        }
+        for index in indicesToRemove.reversed() {
+            engine.removeTrack(at: index)
+        }
+        selectedIndices.removeAll()
+        selectionAnchor = nil
+        needsDisplay = true
+    }
+    
+    @objc private func invertSelection(_ sender: Any?) {
+        let tracks = WindowManager.shared.audioEngine.playlist
+        selectedIndices = Set(0..<tracks.count).subtracting(selectedIndices)
+        selectionAnchor = selectedIndices.min()
+        needsDisplay = true
+    }
+    
+    @objc private func selectNone(_ sender: Any?) {
+        selectedIndices.removeAll()
+        selectionAnchor = nil
+        needsDisplay = true
+    }
+    
+    @objc override func selectAll(_ sender: Any?) {
+        let tracks = WindowManager.shared.audioEngine.playlist
+        selectedIndices = Set(0..<tracks.count)
+        selectionAnchor = 0
+        needsDisplay = true
+    }
+    
+    @objc private func sortByTitle(_ sender: Any?) {
+        WindowManager.shared.audioEngine.sortPlaylist(by: .title)
+        needsDisplay = true
+    }
+    
+    @objc private func sortByFilename(_ sender: Any?) {
+        WindowManager.shared.audioEngine.sortPlaylist(by: .filename)
+        needsDisplay = true
+    }
+    
+    @objc private func sortByPath(_ sender: Any?) {
+        WindowManager.shared.audioEngine.sortPlaylist(by: .path)
+        needsDisplay = true
+    }
+    
+    @objc private func randomize(_ sender: Any?) {
+        WindowManager.shared.audioEngine.shufflePlaylist()
+        needsDisplay = true
+    }
+    
+    @objc private func reverse(_ sender: Any?) {
+        WindowManager.shared.audioEngine.reversePlaylist()
+        needsDisplay = true
+    }
+    
+    @objc private func showFileInfo(_ sender: Any?) {
+        guard let index = selectedIndices.first else { return }
+        let tracks = WindowManager.shared.audioEngine.playlist
+        guard index < tracks.count else { return }
+        let track = tracks[index]
+        let alert = NSAlert()
+        alert.messageText = track.displayTitle
+        alert.informativeText = """
+        Artist: \(track.artist ?? "Unknown")
+        Album: \(track.album ?? "Unknown")
+        Duration: \(String(format: "%d:%02d", Int(track.duration ?? 0) / 60, Int(track.duration ?? 0) % 60))
+        Path: \(track.url.path)
+        """
+        alert.runModal()
+    }
+    
+    @objc private func newPlaylist(_ sender: Any?) {
+        removeAll(sender)
+    }
+    
+    @objc private func savePlaylist(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!]
+        panel.nameFieldStringValue = "playlist.m3u"
+        if panel.runModal() == .OK, let url = panel.url {
+            let tracks = WindowManager.shared.audioEngine.playlist
+            var content = "#EXTM3U\n"
+            for track in tracks {
+                let duration = Int(track.duration ?? 0)
+                content += "#EXTINF:\(duration),\(track.displayTitle)\n"
+                content += "\(track.url.path)\n"
+            }
+            try? content.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+    
+    @objc private func loadPlaylist(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!, .init(filenameExtension: "m3u8")!]
+        if panel.runModal() == .OK, let url = panel.url {
+            if let content = try? String(contentsOf: url, encoding: .utf8) {
+                var urls: [URL] = []
+                for line in content.components(separatedBy: .newlines) {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+                    if let fileURL = URL(string: trimmed) {
+                        urls.append(fileURL)
+                    } else {
+                        let fileURL = url.deletingLastPathComponent().appendingPathComponent(trimmed)
+                        urls.append(fileURL)
+                    }
+                }
+                if !urls.isEmpty {
+                    WindowManager.shared.audioEngine.clearPlaylist()
+                    WindowManager.shared.audioEngine.loadFiles(urls)
+                    needsDisplay = true
+                }
+            }
+        }
+    }
+    
+    // MARK: - Drag and Drop
+    
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        return .copy
+    }
+    
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
+            return false
+        }
+        
+        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac", "mp4", "mkv", "avi", "mov"]
+        var mediaURLs: [URL] = []
+        
+        for url in items {
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+                if isDirectory.boolValue {
+                    if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey]) {
+                        while let fileURL = enumerator.nextObject() as? URL {
+                            if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
+                                mediaURLs.append(fileURL)
+                            }
+                        }
+                    }
+                } else {
+                    if audioExtensions.contains(url.pathExtension.lowercased()) {
+                        mediaURLs.append(url)
+                    }
+                }
+            }
+        }
+        
+        mediaURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
+        
+        if !mediaURLs.isEmpty {
+            let audioEngine = WindowManager.shared.audioEngine
+            let firstNewIndex = audioEngine.playlist.count
+            audioEngine.appendFiles(mediaURLs)
+            audioEngine.playTrack(at: firstNewIndex)
+            needsDisplay = true
+            return true
+        }
+        
+        return false
+    }
+    
+    // MARK: - Context Menu
+    
+    override func menu(for event: NSEvent) -> NSMenu? {
+        return ContextMenuBuilder.buildMenu()
+    }
+    
+    // MARK: - Layout
+    
+    override func layout() {
+        super.layout()
+        gridLayer?.frame = bounds
+    }
+}

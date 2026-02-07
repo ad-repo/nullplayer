@@ -62,6 +62,12 @@
         },
         "seek_fill": {
             "color": "#ff00aa"
+        },
+        "spectrum_titlebar": {
+            "color": "#0c1018"
+        },
+        "playlist_titlebar": {
+            "color": "#0c1018"
         }
     },
     "animations": {

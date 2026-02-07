@@ -22,9 +22,9 @@ class ModernMainWindowController: NSWindowController, MainWindowProviding {
     convenience init() {
         let windowSize = ModernSkinElements.mainWindowSize
         
-        let window = ResizableWindow(
+        let window = BorderlessWindow(
             contentRect: NSRect(origin: .zero, size: windowSize),
-            styleMask: [.borderless, .miniaturizable, .resizable],
+            styleMask: [.borderless, .miniaturizable],
             backing: .buffered,
             defer: false
         )

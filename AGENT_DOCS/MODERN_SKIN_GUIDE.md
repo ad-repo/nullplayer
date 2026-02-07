@@ -205,6 +205,47 @@ Every skinnable element has an ID, default position/size, and valid states.
 | `volume_fill` | 240,8,*,6 | normal | Filled portion |
 | `volume_thumb` | *,6,8,10 | normal, pressed | Volume thumb |
 
+### Spectrum Window Chrome
+
+The standalone Spectrum Analyzer window uses the modern skin system for its chrome. By default it shares the main window's chrome elements (`window_background`, `window_border`). Skins can optionally provide spectrum-specific images for per-window customization:
+
+| Element ID | Default Rect | States | Description |
+|-----------|-------------|--------|-------------|
+| `spectrum_titlebar` | 0,102,275,14 | normal | Spectrum window title bar (falls back to `titlebar` rendering) |
+| `spectrum_btn_close` | 256,104,10,10 | normal, pressed | Spectrum window close button (falls back to `btn_close` rendering) |
+
+### Playlist Window Chrome
+
+| Element ID | Default Rect | States | Description |
+|-----------|-------------|--------|-------------|
+| `playlist_titlebar` | 0,102,275,14 | normal | Playlist window title bar (falls back to `titlebar` rendering) |
+| `playlist_btn_close` | 256,104,10,10 | normal, pressed | Playlist close button (falls back to `btn_close`) |
+| `playlist_btn_shade` | 244,104,10,10 | normal, pressed | Playlist shade button (falls back to `btn_shade`) |
+
+The modern playlist does not have bottom bar buttons -- all playlist operations (add, remove, sort, etc.) are available via the right-click context menu and keyboard shortcuts. The currently playing track is rendered in `accent` color (magenta in NeonWave).
+
+If a skin provides no window-specific images, the renderer falls back to the shared chrome elements, then to programmatic fallback using palette colors.
+
+## Multi-Window Support
+
+The modern skin system renders multiple windows:
+
+- **Main Window** -- transport controls, time display, marquee, mini spectrum
+- **Playlist Window** -- track list with selection, scrolling, marquee, accent-colored playing track
+- **Spectrum Analyzer Window** -- standalone visualization with skin chrome
+
+All windows share the same `window_background`, `window_border`, palette colors, glow, grid, and font settings from the active skin. To customize individual windows differently, prefix element IDs with the window name (e.g., `spectrum_titlebar` vs `titlebar`).
+
+## NeonWave Default Skin
+
+The bundled default skin ("NeonWave") is fully programmatic -- it contains zero PNG image assets and relies entirely on the palette colors and the renderer's programmatic fallback.
+
+**Windows covered**: Main window + Playlist window + Spectrum Analyzer window
+
+**Palette**: `#00ffcc` (cyan primary), `#ff00aa` (magenta accent), `#080810` (background)
+
+**Spectrum colors**: Auto-derived gradient from `palette.accent` (bottom, magenta) to `palette.primary` (top, cyan) via `ModernSkin.spectrumColors()`. These colors are applied to the Metal-based `SpectrumAnalyzerView`.
+
 ## Image Naming Convention
 
 Images go in the `images/` subdirectory with this naming:
@@ -397,3 +438,44 @@ Place skin folders or `.nps` files at:
 Right-click the player → **Modern UI** → **Select Skin** → choose from the list.
 
 Skin changes take effect immediately (no restart needed for skin change -- only for switching between Classic/Modern mode).
+
+## Adding a Modern Sub-Window (Developer Guide)
+
+This section documents the repeatable pattern for creating modern-skinned versions of sub-windows. Future agents creating Modern EQ, Modern Playlist, Modern ProjectM, etc. should follow this recipe.
+
+**Reference implementation**: `ModernSpectrumWindowController` + `ModernSpectrumView` (simplest sub-window -- just chrome + embedded content).
+
+### Layer-by-Layer Checklist
+
+1. **`ModernSkinElements.swift`** -- Add window layout constants (size, shade height, title bar height, border width) and optional per-window element IDs (e.g., `{window}_titlebar`, `{window}_btn_close`). Add new elements to `allElements` array.
+
+2. **`ModernSkinRenderer.swift`** -- Add any new element IDs to the fallback switch in `drawWindowControlButton` (e.g., `"spectrum_btn_close"` alongside `"btn_close"`).
+
+3. **Create `App/{Window}WindowProviding.swift`** -- Protocol matching `MainWindowProviding` / `SpectrumWindowProviding` pattern with `window`, `showWindow`, `skinDidChange`, etc.
+
+4. **Add conformance to existing classic controller** -- The classic controller already has the required methods; just add the protocol conformance declaration.
+
+5. **Create `Windows/Modern{Window}/Modern{Window}WindowController.swift`** -- Borderless window, shade mode, fullscreen, `NSWindowDelegate` for docking, conforms to the protocol. Zero classic skin imports.
+
+6. **Create `Windows/Modern{Window}/Modern{Window}View.swift`** -- Compose `ModernSkinRenderer` methods for chrome (`drawWindowBackground`, `drawWindowBorder`, `drawTitleBar`, `drawWindowControlButton`), `GridBackgroundLayer`, skin change observation via `ModernSkinDidChange` notification. Zero classic skin imports.
+
+7. **Update `WindowManager.swift`** -- Change the controller property type to the protocol. Conditionally create modern or classic controller in the show method based on `isModernUIEnabled`.
+
+8. **Update NeonWave `skin.json`** -- Add per-window element entries if needed (e.g., `"spectrum_titlebar": { "color": "#0c1018" }`).
+
+9. **Update docs** -- `MODERN_SKIN_GUIDE.md` (element catalog), `CLAUDE.md` (key files, architecture), relevant `AGENT_DOCS/` files.
+
+### Key Rules
+
+- **Zero classic imports**: Files in `ModernSkin/` and `Windows/Modern{Window}/` must NEVER import or reference anything from `Skin/` or `Windows/{ClassicWindow}/`
+- **Skin changes**: Observe `ModernSkinEngine.skinDidChangeNotification` to re-create renderer and grid background
+- **Scale factor**: Use `ModernSkinElements.scaleFactor` for all geometry
+- **Coordinates**: Standard macOS bottom-left origin (no flipping needed, unlike classic skin system)
+
+### Element Image Fallback Chain
+
+When the renderer looks up an image for a per-window element:
+
+1. `{window}_{element}_{state}.png` (e.g., `spectrum_btn_close_pressed.png`)
+2. `{window}_{element}.png` (e.g., `spectrum_btn_close.png`)
+3. Programmatic fallback using palette colors (e.g., X icon drawn with `textDimColor`)

@@ -522,7 +522,7 @@ class ModernSkinRenderer {
         let inset = scaledR.insetBy(dx: 2 * scaleFactor, dy: 2 * scaleFactor)
         
         switch id {
-        case "btn_close":
+        case "btn_close", "spectrum_btn_close", "playlist_btn_close":
             // X shape
             context.move(to: CGPoint(x: inset.minX, y: inset.minY))
             context.addLine(to: CGPoint(x: inset.maxX, y: inset.maxY))
@@ -536,7 +536,7 @@ class ModernSkinRenderer {
             context.addLine(to: CGPoint(x: inset.maxX, y: inset.midY))
             context.strokePath()
             
-        case "btn_shade":
+        case "btn_shade", "playlist_btn_shade":
             // Small square
             context.stroke(inset)
             
@@ -628,6 +628,71 @@ class ModernSkinRenderer {
         }
         
         context.restoreGState()
+    }
+    
+    /// Draw playlist bottom bar with ADD/REM/SEL/MISC/LIST buttons
+    func drawPlaylistBottomBar(in rect: NSRect, pressedButton: String?, context: CGContext) {
+        let barHeight = rect.height
+        let barY = rect.minY
+        
+        // Background fill
+        context.saveGState()
+        context.setFillColor(skin.surfaceColor.withAlphaComponent(0.6).cgColor)
+        context.fill(rect)
+        
+        // Separator line at top
+        if skin.config.glow.enabled {
+            context.setShadow(offset: .zero, blur: 4 * scaleFactor,
+                              color: skin.borderColor.withAlphaComponent(0.4).cgColor)
+        }
+        context.setStrokeColor(skin.borderColor.withAlphaComponent(0.3).cgColor)
+        context.setLineWidth(0.5 * scaleFactor)
+        context.move(to: CGPoint(x: rect.minX + 2, y: rect.maxY))
+        context.addLine(to: CGPoint(x: rect.maxX - 2, y: rect.maxY))
+        context.strokePath()
+        context.restoreGState()
+        
+        // Button layout: ADD REM SEL on left, MISC LIST on right
+        let font = skin.smallFont ?? NSFont.monospacedSystemFont(ofSize: 7 * scaleFactor, weight: .regular)
+        let buttons: [(String, CGFloat, CGFloat)] = [
+            ("ADD", rect.minX + 4 * scaleFactor, 30 * scaleFactor),
+            ("REM", rect.minX + 36 * scaleFactor, 30 * scaleFactor),
+            ("SEL", rect.minX + 68 * scaleFactor, 30 * scaleFactor),
+            ("MISC", rect.maxX - 64 * scaleFactor, 30 * scaleFactor),
+            ("LIST", rect.maxX - 32 * scaleFactor, 30 * scaleFactor),
+        ]
+        
+        for (label, x, width) in buttons {
+            let buttonId = "playlist_btn_\(label.lowercased())"
+            let isPressed = pressedButton == buttonId
+            let color = isPressed ? skin.primaryColor : skin.textDimColor
+            
+            let buttonRect = NSRect(x: x, y: barY + 2 * scaleFactor,
+                                    width: width, height: barHeight - 4 * scaleFactor)
+            
+            // Outlined box
+            context.saveGState()
+            context.setStrokeColor(color.withAlphaComponent(isPressed ? 0.8 : 0.4).cgColor)
+            context.setLineWidth(0.8 * scaleFactor)
+            let boxPath = CGPath(roundedRect: buttonRect,
+                                 cornerWidth: 2 * scaleFactor, cornerHeight: 2 * scaleFactor, transform: nil)
+            context.addPath(boxPath)
+            context.strokePath()
+            context.restoreGState()
+            
+            // Text label
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: color
+            ]
+            let str = NSAttributedString(string: label, attributes: attrs)
+            let size = str.size()
+            let textOrigin = NSPoint(
+                x: buttonRect.midX - size.width / 2,
+                y: buttonRect.midY - size.height / 2
+            )
+            str.draw(at: textOrigin)
+        }
     }
     
     // MARK: - Private Helpers

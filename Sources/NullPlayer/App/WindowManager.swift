@@ -72,8 +72,8 @@ class WindowManager {
         set { UserDefaults.standard.set(newValue, forKey: "modernUIEnabled") }
     }
     
-    /// Playlist window controller
-    private(set) var playlistWindowController: PlaylistWindowController?
+    /// Playlist window controller (classic or modern, accessed via protocol)
+    private(set) var playlistWindowController: PlaylistWindowProviding?
     
     /// Equalizer window controller
     private(set) var equalizerWindowController: EQWindowController?
@@ -87,8 +87,8 @@ class WindowManager {
     /// ProjectM visualization window controller
     private var projectMWindowController: ProjectMWindowController?
     
-    /// Spectrum analyzer window controller
-    private var spectrumWindowController: SpectrumWindowController?
+    /// Spectrum analyzer window controller (classic or modern, accessed via protocol)
+    private var spectrumWindowController: SpectrumWindowProviding?
     
     /// Debug console window controller
     private var debugWindowController: DebugWindowController?
@@ -211,7 +211,11 @@ class WindowManager {
     func showPlaylist(at restoredFrame: NSRect? = nil) {
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
-            playlistWindowController = PlaylistWindowController()
+            if isModernUIEnabled {
+                playlistWindowController = ModernPlaylistWindowController()
+            } else {
+                playlistWindowController = PlaylistWindowController()
+            }
         }
         
         // Position BEFORE showing (unless restoring from saved state)
@@ -874,7 +878,11 @@ class WindowManager {
     func showSpectrum(at restoredFrame: NSRect? = nil) {
         let isNewWindow = spectrumWindowController == nil
         if isNewWindow {
-            spectrumWindowController = SpectrumWindowController()
+            if isModernUIEnabled {
+                spectrumWindowController = ModernSpectrumWindowController()
+            } else {
+                spectrumWindowController = SpectrumWindowController()
+            }
         }
         
         // Position BEFORE showing (unless restoring from saved state)

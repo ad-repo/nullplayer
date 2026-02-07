@@ -116,6 +116,8 @@ The main window provides core playback controls and track information.
 | **EQ** | Show/hide Equalizer window |
 | **PL** | Show/hide Playlist Editor |
 
+In modern UI mode, the toggle buttons appear in this order: **pM** (ProjectM), **EQ** (Equalizer), **PL** (Playlist), **SP** (Spectrum), **LB** (Library).
+
 ### Title Bar Buttons
 
 | Button | Function |
@@ -158,19 +160,18 @@ The Playlist Editor manages your playback queue.
 - **Scroll wheel** to navigate long lists
 - **Drag & drop** files to add them
 - **Marquee scrolling** - Long track titles on the currently playing track automatically scroll horizontally
+- **Delete key** - Remove selected tracks
+- **Enter key** - Play selected track
+- **Cmd+A** - Select all tracks
 
-### Bottom Bar Information
+### Classic UI: Bottom Bar
 
-The bottom bar displays:
+The classic playlist includes a bottom bar with:
 - **Remaining tracks** and **countdown time** (updates during playback)
-- **Current playback position** (minutes:seconds)
+- **Mini transport controls**: Previous, Play, Pause, Stop, Next, Open
+- **Button menus**: ADD, REM, SEL, MISC, LIST (see below)
 
-### Mini Transport Controls
-
-Small transport buttons in the bottom bar:
-- Previous, Play, Pause, Stop, Next, Open
-
-### Button Menus
+### Classic UI: Button Menus
 
 **ADD Button:**
 - Add URL... - Stream from a URL
@@ -199,6 +200,14 @@ Small transport buttons in the bottom bar:
 - New Playlist - Clear and start fresh
 - Save Playlist... - Export as .m3u file
 - Load Playlist... - Import .m3u/.m3u8 file
+
+### Modern UI Playlist
+
+The modern playlist has a clean, minimal design:
+- Currently playing track is displayed in accent color (magenta in NeonWave)
+- No bottom bar controls -- all operations available via right-click context menu and keyboard shortcuts
+- Smooth marquee scrolling for long track titles
+- Bottom-edge drag to resize vertically (show more tracks)
 
 ### Shade Mode
 

@@ -114,7 +114,7 @@ Sources/NullPlayer/
 ├── Radio/            # Internet radio (Shoutcast/Icecast) support
 ├── Skin/             # Classic Winamp skin loading and rendering
 ├── ModernSkin/       # Modern skin engine (independent of classic system)
-├── Windows/          # All window views (MainWindow, ModernMainWindow, Playlist, EQ, etc.)
+├── Windows/          # All window views (MainWindow, ModernMainWindow, ModernSpectrum, ModernPlaylist, Playlist, EQ, etc.)
 ├── Plex/             # Plex server integration
 ├── Subsonic/         # Navidrome/Subsonic server integration
 ├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer + flame mode
@@ -128,14 +128,14 @@ Sources/NullPlayer/
 | Skin (Classic) | `Skin/SkinElements.swift`, `Skin/SkinRenderer.swift`, `Skin/SkinLoader.swift` |
 | Skin (Modern) | `ModernSkin/ModernSkinEngine.swift`, `ModernSkin/ModernSkinConfig.swift`, `ModernSkin/ModernSkinRenderer.swift`, `ModernSkin/ModernSkinLoader.swift`, `ModernSkin/ModernSkinElements.swift` |
 | Audio | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift` |
-| Windows | `Windows/MainWindow/`, `Windows/ModernMainWindow/`, `Windows/Playlist/`, `Windows/Equalizer/` |
+| Windows | `Windows/MainWindow/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/Playlist/`, `Windows/Equalizer/` |
 | Visualization | `Windows/ProjectM/`, `Windows/Spectrum/`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/SpectrumShaders.metal`, `Visualization/FlameShaders.metal`, `Visualization/CosmicShaders.metal`, `Visualization/ElectricityShaders.metal`, `Visualization/MatrixShaders.metal`, `Visualization/ProjectMWrapper.swift` |
 | Marquee | `Skin/MarqueeLayer.swift` (classic), `ModernSkin/ModernMarqueeLayer.swift` (modern), `Windows/Playlist/PlaylistView.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
 | Radio | `Radio/RadioManager.swift`, `Data/Models/RadioStation.swift`, `Windows/Radio/AddRadioStationSheet.swift` |
 | Casting | `Casting/CastManager.swift`, `Casting/CastProtocol.swift`, `Casting/ChromecastManager.swift`, `Casting/UPnPManager.swift`, `Casting/LocalMediaServer.swift` |
-| App | `App/WindowManager.swift`, `App/ContextMenuBuilder.swift`, `App/MainWindowProviding.swift` |
+| App | `App/WindowManager.swift`, `App/ContextMenuBuilder.swift`, `App/MainWindowProviding.swift`, `App/SpectrumWindowProviding.swift`, `App/PlaylistWindowProviding.swift` |
 
 ## Common Tasks
 
@@ -163,6 +163,10 @@ Sources/NullPlayer/
 3. Skin config schema in `ModernSkin/ModernSkinConfig.swift`
 4. See [AGENT_DOCS/MODERN_SKIN_GUIDE.md](AGENT_DOCS/MODERN_SKIN_GUIDE.md) for full docs
 
+### Adding a modern sub-window
+1. Follow the layer-by-layer checklist in [AGENT_DOCS/MODERN_SKIN_GUIDE.md](AGENT_DOCS/MODERN_SKIN_GUIDE.md) ("Adding a Modern Sub-Window" section)
+2. Reference implementation: `Windows/ModernSpectrum/` (simplest sub-window)
+
 ## Before Making UI Changes
 
 1. Read [AGENT_DOCS/UI_GUIDE.md](AGENT_DOCS/UI_GUIDE.md)
@@ -173,7 +177,7 @@ Sources/NullPlayer/
 
 ## Gotchas
 
-- **Modern skin system is completely independent**: Files in `ModernSkin/` and `Windows/ModernMainWindow/` must NEVER import or reference anything from `Skin/` or `Windows/MainWindow/`. The coupling points are only: `AppDelegate` (mode selection), `WindowManager` (via `MainWindowProviding` protocol), and shared infrastructure (`AudioEngine`, `Track`, `PlaybackState`)
+- **Modern skin system is completely independent**: Files in `ModernSkin/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, and `Windows/ModernPlaylist/` must NEVER import or reference anything from `Skin/` or `Windows/MainWindow/`. The coupling points are only: `AppDelegate` (mode selection), `WindowManager` (via `MainWindowProviding`, `SpectrumWindowProviding`, and `PlaylistWindowProviding` protocols), and shared infrastructure (`AudioEngine`, `Track`, `PlaybackState`)
 - **UI mode switching requires restart**: The `modernUIEnabled` UserDefaults preference selects which `MainWindowProviding` implementation `WindowManager` creates. Changing it at runtime shows a "restart required" alert
 - **Skin coordinates**: skin skins use top-left origin, macOS uses bottom-left
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
