@@ -1001,6 +1001,18 @@ class SkinRenderer {
         drawSmallText(displayText, at: SkinElements.InfoDisplay.Positions.sampleRate, in: context)
     }
     
+    /// Draw BPM display (e.g., "120")
+    func drawBPM(_ bpm: Int?, in context: CGContext) {
+        let displayText: String
+        if let bpm = bpm, bpm > 0 {
+            displayText = "\(bpm)"
+        } else {
+            displayText = ""
+        }
+        
+        drawSmallText(displayText, at: SkinElements.InfoDisplay.Positions.bpm, in: context)
+    }
+    
     /// Draw small text using the skin font (for bitrate/sample rate displays)
     private func drawSmallText(_ text: String, at rect: NSRect, in context: CGContext) {
         guard !text.isEmpty else { return }

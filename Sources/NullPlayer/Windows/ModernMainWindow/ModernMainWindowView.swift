@@ -59,6 +59,9 @@ class ModernMainWindowView: NSView {
     /// Whether in shade (compact) mode
     var isShadeMode = false
     
+    /// Current detected BPM (nil = not yet detected, 0 = no confidence)
+    private var currentBPM: Int?
+    
     /// Scale factor for hit testing
     private let scale = ModernSkinElements.scaleFactor
     
@@ -100,6 +103,10 @@ class ModernMainWindowView: NSView {
         // Observe skin changes
         NotificationCenter.default.addObserver(self, selector: #selector(modernSkinDidChange),
                                                 name: ModernSkinEngine.skinDidChangeNotification, object: nil)
+        
+        // Observe BPM detection updates
+        NotificationCenter.default.addObserver(self, selector: #selector(bpmDidUpdate(_:)),
+                                                name: .bpmUpdated, object: nil)
         
         // Set accessibility
         setAccessibilityIdentifier("ModernMainWindowView")
@@ -388,6 +395,13 @@ class ModernMainWindowView: NSView {
                                font: smallFont, color: infoColor, context: context)
         }
         
+        // BPM
+        if let bpm = currentBPM, bpm > 0 {
+            renderer.drawLabel("\(bpm) bpm",
+                               in: ModernSkinElements.infoBPM.defaultRect,
+                               font: smallFont, color: infoColor, context: context)
+        }
+        
         // Stereo/Mono -- brighter, with glow
         let isStereo = currentTrack?.channels ?? 2 >= 2
         let stereoLabel = isStereo ? "STEREO" : "MONO"
@@ -508,6 +522,7 @@ class ModernMainWindowView: NSView {
     func updateTrackInfo(_ track: Track?) {
         self.currentTrack = track
         self.videoTitle = nil
+        self.currentBPM = nil  // Reset BPM for new track
         
         if let track = track {
             marqueeLayer.text = track.displayTitle.uppercased()
@@ -617,6 +632,12 @@ class ModernMainWindowView: NSView {
     
     @objc private func modernSkinDidChange() {
         skinDidChange()
+    }
+    
+    @objc private func bpmDidUpdate(_ notification: Notification) {
+        guard let bpm = notification.userInfo?["bpm"] as? Int else { return }
+        currentBPM = bpm > 0 ? bpm : nil
+        needsDisplay = true
     }
     
     // MARK: - Visualization Mode

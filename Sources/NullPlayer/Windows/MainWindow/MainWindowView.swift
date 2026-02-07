@@ -77,6 +77,9 @@ class MainWindowView: NSView {
     /// Bitrate scroll offset (for 4+ digit bitrates)
     private var bitrateScrollOffset: CGFloat = 0
     
+    /// Current detected BPM (nil = not yet detected, 0 = no confidence)
+    private var currentBPM: Int?
+    
     /// Temporary error message to display in marquee (persists until new track loads)
     private var errorMessage: String?
     
@@ -215,6 +218,10 @@ class MainWindowView: NSView {
         // Observe playback state changes to clear/freeze spectrum on stop/pause
         NotificationCenter.default.addObserver(self, selector: #selector(playbackStateDidChange),
                                                name: .audioPlaybackStateChanged, object: nil)
+        
+        // Observe BPM detection updates
+        NotificationCenter.default.addObserver(self, selector: #selector(bpmDidUpdate(_:)),
+                                               name: .bpmUpdated, object: nil)
     }
     
     // MARK: - Accessibility
@@ -659,6 +666,12 @@ class MainWindowView: NSView {
         needsDisplay = true
     }
     
+    @objc private func bpmDidUpdate(_ notification: Notification) {
+        guard let bpm = notification.userInfo?["bpm"] as? Int else { return }
+        currentBPM = bpm > 0 ? bpm : nil
+        setNeedsDisplay(SkinElements.InfoDisplay.Positions.bpm)
+    }
+    
     @objc private func playbackStateDidChange(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
               let state = userInfo["state"] as? PlaybackState else { return }
@@ -937,6 +950,9 @@ class MainWindowView: NSView {
         // Draw sample rate display (e.g., "44" kHz)
         renderer.drawSampleRate(currentTrack?.sampleRate, in: context)
         
+        // Draw BPM display (e.g., "120")
+        renderer.drawBPM(currentBPM, in: context)
+        
         // Draw spectrum analyzer (only in spectrum mode; other modes use Metal overlay)
         if mainVisMode == .spectrum {
             renderer.drawSpectrumAnalyzer(levels: spectrumLevels, in: context)
@@ -1006,6 +1022,7 @@ class MainWindowView: NSView {
         self.currentVideoTitle = nil  // Clear video title when audio track changes
         self.errorMessage = nil  // Clear any error message when track loads successfully
         bitrateScrollOffset = 0  // Reset bitrate scroll
+        currentBPM = nil  // Reset BPM for new track
         updateMarqueeContent()  // Update layer-based marquee
         if isShadeMode {
             marqueeOffset = 0

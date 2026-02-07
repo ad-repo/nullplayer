@@ -775,6 +775,42 @@ Ultra mode provides the smoothest and most visually impressive spectrum visualiz
 - `Windows/Spectrum/SpectrumWindowController.swift` - Window controller
 - `Windows/Spectrum/SpectrumView.swift` - Container view with skin chrome
 
+## BPM Detection
+
+Real-time BPM (beats per minute) detection runs on the audio tap alongside spectrum analysis.
+
+### Algorithm
+
+1. **Bass energy extraction** - Small 512-point FFT isolates 20-200 Hz energy per frame
+2. **Energy buffering** - Raw bass energy values stored in a rolling ~12-second buffer with timestamps
+3. **Autocorrelation** - Mean-normalized autocorrelation of the energy buffer finds dominant periodicity. The actual sample rate is computed from timestamps (not hardcoded)
+4. **Octave correction** - Raw BPM is doubled/halved to fit 60-200 BPM range
+5. **Smoothing** - Three-layer stabilization:
+   - Median filter (window of 7 estimates) removes outliers
+   - EMA (alpha 0.2) smooths transitions
+   - Lock-in: after 3 stable readings, resists change until 3+ consecutive readings deviate by >5 BPM
+
+### Data Flow
+
+- Both `AudioEngine` (local) and `StreamingAudioPlayer` (streaming) own a `BPMDetector` instance
+- Fed from the same mono-mixed PCM buffer used for spectrum analysis (before windowing)
+- Needs ~3 seconds of data (~150 frames) before first analysis attempt
+- Analysis runs every 0.5 seconds (not every frame)
+- Posts `.bpmUpdated` notification with `["bpm": Int]` (0 = no confidence)
+- Notifications throttled to 1/second to avoid UI spam
+
+### Display
+
+- **Classic skin**: Drawn via `SkinRenderer.drawBPM()` at `SkinElements.InfoDisplay.Positions.bpm` (right of kHz)
+- **Modern skin**: Drawn as a label in `ModernMainWindowView.drawInfoLabels()` using `ModernSkinElements.infoBPM`
+- Both views reset BPM to nil on track change; detector also resets its state
+
+### Key Files
+
+- `Audio/BPMDetector.swift` - Detection algorithm
+- `Audio/AudioEngine.swift` - Integration for local playback
+- `Audio/StreamingAudioPlayer.swift` - Integration for streaming
+
 ## ProjectM Visualization
 
 NullPlayer includes a ProjectM visualization window powered by projectM (libprojectM-4).

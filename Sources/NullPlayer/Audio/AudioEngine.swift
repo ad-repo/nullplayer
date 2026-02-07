@@ -27,6 +27,10 @@ extension Notification.Name {
     /// Posted when a track fails to load
     /// userInfo contains: "track" (Track), "error" (Error), "message" (String)
     static let audioTrackDidFailToLoad = Notification.Name("audioTrackDidFailToLoad")
+    
+    /// Posted when BPM detection updates
+    /// userInfo contains: "bpm" (Int) - 0 means no confident reading
+    static let bpmUpdated = Notification.Name("bpmUpdated")
 }
 
 /// Audio playback state
@@ -107,6 +111,8 @@ class AudioEngine {
     private(set) var currentTrack: Track? {
         didSet {
             delegate?.audioEngineDidChangeTrack(currentTrack)
+            // Reset BPM detector for new track
+            bpmDetector.reset()
             // Post notification for views that need to observe track changes
             NotificationCenter.default.post(
                 name: .audioTrackDidChange,
@@ -265,6 +271,9 @@ class AudioEngine {
     
     /// Current spectrum normalization mode (cached from UserDefaults, updated via notification)
     private var spectrumNormalizationMode: SpectrumNormalizationMode = .accurate
+    
+    /// Real-time BPM detector for tempo display
+    private let bpmDetector = BPMDetector()
     
     /// Raw PCM audio data for waveform visualization (mono, normalized -1 to 1)
     private(set) var pcmData: [Float] = Array(repeating: 0, count: 512)
@@ -679,6 +688,13 @@ class AudioEngine {
             // Mix stereo to mono
             for i in 0..<fftSize {
                 fftSamples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
+            }
+        }
+        
+        // Feed BPM detector with raw mono samples (before windowing)
+        fftSamples.withUnsafeBufferPointer { ptr in
+            if let base = ptr.baseAddress {
+                bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
             }
         }
         

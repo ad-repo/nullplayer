@@ -555,6 +555,8 @@ struct SkinElements {
             static let bitrate = NSRect(x: 111, y: 43, width: 15, height: 9)
             /// Sample rate display area (e.g., "44")  
             static let sampleRate = NSRect(x: 156, y: 43, width: 10, height: 9)
+            /// BPM display area (e.g., "120")
+            static let bpm = NSRect(x: 180, y: 43, width: 15, height: 9)
         }
     }
     
