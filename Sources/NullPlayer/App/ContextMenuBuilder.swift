@@ -483,6 +483,27 @@ class ContextMenuBuilder {
             spectrumMenu.addItem(flameIntensityItem)
         }
         
+        // Lightning Style submenu (only when Lightning mode active)
+        if currentQuality == .electricity {
+            let lightningStyleItem = NSMenuItem(title: "Lightning Style", action: nil, keyEquivalent: "")
+            let lightningStyleMenu = NSMenu()
+            lightningStyleMenu.autoenablesItems = false
+            
+            let currentStyle = UserDefaults.standard.string(forKey: "lightningStyle")
+                .flatMap { LightningStyle(rawValue: $0) } ?? .classic
+            
+            for style in LightningStyle.allCases {
+                let item = NSMenuItem(title: style.displayName, action: #selector(MenuActions.setSpectrumLightningStyle(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = style
+                item.state = (currentStyle == style) ? .on : .off
+                lightningStyleMenu.addItem(item)
+            }
+            
+            lightningStyleItem.submenu = lightningStyleMenu
+            spectrumMenu.addItem(lightningStyleItem)
+        }
+        
         spectrumItem.submenu = spectrumMenu
         return spectrumItem
     }
@@ -1660,6 +1681,12 @@ class MenuActions: NSObject {
     @objc func setSpectrumFlameStyle(_ sender: NSMenuItem) {
         guard let style = sender.representedObject as? FlameStyle else { return }
         UserDefaults.standard.set(style.rawValue, forKey: "flameStyle")
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+    }
+    
+    @objc func setSpectrumLightningStyle(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? LightningStyle else { return }
+        UserDefaults.standard.set(style.rawValue, forKey: "lightningStyle")
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     

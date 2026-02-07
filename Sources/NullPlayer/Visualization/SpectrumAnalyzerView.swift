@@ -21,6 +21,7 @@ enum SpectrumQualityMode: String, CaseIterable {
     case ultra = "Ultra"         // Maximum visual quality with effects
     case flame = "Fire"          // GPU fire simulation driven by audio
     case cosmic = "JWST"         // Procedural nebula inspired by JWST Pillars of Creation
+    case electricity = "Lightning" // GPU lightning storm driven by peak frequencies
     
     var displayName: String { rawValue }
 }
@@ -111,6 +112,40 @@ struct CosmicParams {
     var flareIntensity: Float = 0    // 4 bytes (offset 36) - big JWST flare on rare peaks
     var flareScroll: Float = 0       // 4 bytes (offset 40) - scroll snapshot when giant fired
     var padding: Float = 0           // 4 bytes (offset 44) → total 48
+}
+
+/// Visual style presets for Lightning mode
+enum LightningStyle: String, CaseIterable {
+    case classic = "Classic"       // White/blue/violet — classic lightning
+    case plasma = "Plasma"         // Hot pink/magenta/cyan
+    case matrix = "Matrix"         // Green/emerald digital
+    case ember = "Ember"           // Orange/red/gold — heat lightning
+    case arctic = "Arctic"         // Ice blue/white/pale cyan
+    case rainbow = "Rainbow"       // Each bolt a different vivid color
+    case neon = "Neon"             // Hot pink, cyan, yellow mix
+    case aurora = "Aurora"         // Green, purple, blue shifting
+    var displayName: String { rawValue }
+    var colorScheme: Int32 {
+        switch self {
+        case .classic: return 0; case .plasma: return 1; case .matrix: return 2
+        case .ember: return 3; case .arctic: return 4; case .rainbow: return 5
+        case .neon: return 6; case .aurora: return 7
+        }
+    }
+}
+
+/// Parameters for Electricity Metal shaders (must match Metal ElectricityParams struct)
+struct ElectricityParams {
+    var viewportSize: SIMD2<Float>  // 8 bytes (offset 0)
+    var time: Float                  // 4 bytes (offset 8)
+    var bassEnergy: Float            // 4 bytes (offset 12)
+    var midEnergy: Float             // 4 bytes (offset 16)
+    var trebleEnergy: Float          // 4 bytes (offset 20)
+    var totalEnergy: Float           // 4 bytes (offset 24)
+    var beatIntensity: Float         // 4 bytes (offset 28)
+    var dramaticIntensity: Float     // 4 bytes (offset 32) - rare dramatic strike
+    var colorScheme: Int32 = 0       // 4 bytes (offset 36) - lightning color palette
+    var padding: Float = 0           // 4 bytes (offset 40) → total 44
 }
 
 /// Decay mode controlling how quickly bars fall
@@ -256,6 +291,17 @@ class SpectrumAnalyzerView: NSView {
     /// Glow intensity for enhanced mode (0-1)
     var glowIntensity: Float = 0.5
     
+    /// Current lightning style preset (only used when qualityMode == .electricity)
+    var lightningStyle: LightningStyle = .classic {
+        didSet {
+            if !isEmbedded {
+                UserDefaults.standard.set(lightningStyle.rawValue, forKey: "lightningStyle")
+            }
+            let style = lightningStyle
+            dataLock.withLock { renderLightningStyle = style }
+        }
+    }
+    
     /// Current flame style preset (only used when qualityMode == .flame)
     var flameStyle: FlameStyle = .inferno {
         didSet {
@@ -307,6 +353,10 @@ class SpectrumAnalyzerView: NSView {
     // Cosmic mode resources
     private var cosmicRenderPipeline: MTLRenderPipelineState?
     private var cosmicParamsBuffer: MTLBuffer?
+    
+    // Electricity mode resources
+    private var electricityRenderPipeline: MTLRenderPipelineState?
+    private var electricityParamsBuffer: MTLBuffer?
     
     // Flame mode resources
     private var flamePropPipeline: MTLComputePipelineState?
@@ -368,6 +418,16 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var cosmicFlareScrollSnapshot: Float = 0  // Scroll position when giant fired
     nonisolated(unsafe) private var cosmicFlareLPF: Float = 0  // Low-pass filtered energy for giant detection
     
+    // Electricity mode state
+    nonisolated(unsafe) private var electricitySmoothBass: Float = 0
+    nonisolated(unsafe) private var electricitySmoothMid: Float = 0
+    nonisolated(unsafe) private var electricitySmoothTreble: Float = 0
+    nonisolated(unsafe) private var electricityBeatIntensity: Float = 0
+    nonisolated(unsafe) private var electricityDramaticIntensity: Float = 0  // Rare dramatic strike (like JWST giant flare)
+    nonisolated(unsafe) private var electricityDramaticLPF: Float = 0  // Slow-moving energy baseline for peak detection
+    nonisolated(unsafe) private var electricityDramaticCooldown: Int = 0  // Frames until next dramatic strike allowed
+    nonisolated(unsafe) private var renderLightningStyle: LightningStyle = .classic
+    
     // Flame mode state
     nonisolated(unsafe) private var renderFlameStyle: FlameStyle = .inferno
     nonisolated(unsafe) private var renderFlameIntensity: FlameIntensity = .mellow
@@ -416,6 +476,12 @@ class SpectrumAnalyzerView: NSView {
         }
         renderFlameStyle = flameStyle
         renderFlameIntensity = flameIntensity
+        
+        if let saved = UserDefaults.standard.string(forKey: "lightningStyle"),
+           let style = LightningStyle(rawValue: saved) {
+            lightningStyle = style
+        }
+        renderLightningStyle = lightningStyle
         
         // Initialize display spectrum and sync to render-safe variables
         // Use max size to avoid any resizing during mode switches
@@ -539,6 +605,10 @@ class SpectrumAnalyzerView: NSView {
                let intensity = FlameIntensity(rawValue: savedIntensity) {
                 flameIntensity = intensity
             }
+            if let savedStyle = UserDefaults.standard.string(forKey: "lightningStyle"),
+               let style = LightningStyle(rawValue: savedStyle) {
+                lightningStyle = style
+            }
         }
         
         // Note: We no longer reset state arrays on mode switch since pre-allocated
@@ -616,6 +686,7 @@ class SpectrumAnalyzerView: NSView {
         setupPipeline()
         setupFlamePipelines()
         setupCosmicPipelines()
+        setupElectricityPipelines()
         
         // Create buffers
         setupBuffers()
@@ -704,6 +775,8 @@ class SpectrumAnalyzerView: NSView {
                 pipelineState = flameRenderPipeline
             case .cosmic:
                 pipelineState = cosmicRenderPipeline
+            case .electricity:
+                pipelineState = electricityRenderPipeline
             }
 
             NSLog("SpectrumAnalyzerView: Metal pipelines created successfully")
@@ -770,6 +843,9 @@ class SpectrumAnalyzerView: NSView {
         
         // Cosmic mode buffers
         cosmicParamsBuffer = device.makeBuffer(length: MemoryLayout<CosmicParams>.stride, options: .storageModeShared)
+        
+        // Electricity mode buffers
+        electricityParamsBuffer = device.makeBuffer(length: MemoryLayout<ElectricityParams>.stride, options: .storageModeShared)
     }
     
     /// Set up flame compute and render pipelines
@@ -841,6 +917,29 @@ class SpectrumAnalyzerView: NSView {
             NSLog("SpectrumAnalyzerView: Cosmic pipeline created")
         } catch {
             NSLog("SpectrumAnalyzerView: Cosmic shader error: \(error)")
+        }
+    }
+    
+    /// Set up Electricity mode render pipeline
+    private func setupElectricityPipelines() {
+        guard let device = device else { return }
+        guard let url = BundleHelper.url(forResource: "ElectricityShaders", withExtension: "metal"),
+              let src = try? String(contentsOf: url, encoding: .utf8) else {
+            NSLog("SpectrumAnalyzerView: ElectricityShaders.metal not found")
+            return
+        }
+        do {
+            let lib = try device.makeLibrary(source: src, options: nil)
+            if let vf = lib.makeFunction(name: "electricity_vertex"),
+               let ff = lib.makeFunction(name: "electricity_fragment") {
+                let d = MTLRenderPipelineDescriptor()
+                d.vertexFunction = vf; d.fragmentFunction = ff
+                d.colorAttachments[0].pixelFormat = .bgra8Unorm
+                electricityRenderPipeline = try device.makeRenderPipelineState(descriptor: d)
+            }
+            NSLog("SpectrumAnalyzerView: Electricity pipeline created")
+        } catch {
+            NSLog("SpectrumAnalyzerView: Electricity shader error: \(error)")
         }
     }
 
@@ -991,13 +1090,17 @@ class SpectrumAnalyzerView: NSView {
             return
         }
         
-        // Flame and Cosmic modes use completely different pipelines
+        // Flame, Cosmic, and Electricity modes use completely different pipelines
         if currentMode == .flame {
             renderFlame(drawable: drawable)
             return
         }
         if currentMode == .cosmic {
             renderCosmic(drawable: drawable)
+            return
+        }
+        if currentMode == .electricity {
+            renderElectricity(drawable: drawable)
             return
         }
         
@@ -1013,6 +1116,8 @@ class SpectrumAnalyzerView: NSView {
             activePipeline = nil  // Handled by renderFlame() above
         case .cosmic:
             activePipeline = nil  // Handled by renderCosmic() above
+        case .electricity:
+            activePipeline = nil  // Handled by renderElectricity() above
         }
 
         guard let pipeline = activePipeline,
@@ -1106,6 +1211,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Handled by renderFlame() above
         case .cosmic:
             break  // Handled by renderCosmic() above
+        case .electricity:
+            break  // Handled by renderElectricity() above
         }
         
         encoder.endEncoding()
@@ -1297,6 +1404,103 @@ class SpectrumAnalyzerView: NSView {
         cb.present(drawable); cb.commit()
     }
     
+    /// Render electricity mode: procedural lightning storm driven by spectrum peaks
+    private func renderElectricity(drawable: CAMetalDrawable) {
+        guard let cb = commandQueue?.makeCommandBuffer() else {
+            inFlightSemaphore.signal(); return
+        }
+        
+        var localTime: Float = 0
+        
+        dataLock.withLock {
+            animationTime += 1.0 / 60.0
+            localTime = animationTime
+            
+            // Compute band energies from raw spectrum
+            var bass: Float = 0; var mid: Float = 0; var treble: Float = 0
+            if !rawSpectrum.isEmpty {
+                for i in 0..<min(16, rawSpectrum.count) { bass += rawSpectrum[i] }; bass /= 16.0
+                for i in 16..<min(50, rawSpectrum.count) { mid += rawSpectrum[i] }; mid /= 34.0
+                for i in 50..<min(75, rawSpectrum.count) { treble += rawSpectrum[i] }; treble /= 25.0
+            }
+            
+            // Smooth audio values — JWST-style gentle tracking
+            electricitySmoothBass += (bass - electricitySmoothBass) * (bass > electricitySmoothBass ? 0.25 : 0.06)
+            electricitySmoothMid += (mid - electricitySmoothMid) * (mid > electricitySmoothMid ? 0.2 : 0.06)
+            electricitySmoothTreble += (treble - electricitySmoothTreble) * (treble > electricitySmoothTreble ? 0.2 : 0.06)
+            
+            // Beat detection: gentle
+            if bass > electricitySmoothBass + 0.14 {
+                electricityBeatIntensity = min(0.6, electricityBeatIntensity + 0.25)
+            }
+            electricityBeatIntensity *= 0.94
+            
+            // Dramatic strike detection — JWST-style rare event with long cooldown
+            // LPF tracks slow-moving energy baseline, dramatic fires on spikes above it
+            if electricityDramaticCooldown > 0 {
+                electricityDramaticCooldown -= 1
+            }
+            let instantEnergy = (bass + mid + treble) / 3.0
+            electricityDramaticLPF += (instantEnergy - electricityDramaticLPF) * 0.02  // Very slow follower
+            let dramaticDelta = instantEnergy - electricityDramaticLPF
+            
+            if dramaticDelta > 0.10 && electricityDramaticCooldown == 0 && electricityDramaticIntensity < 0.05 {
+                // Energy spike above baseline — fire dramatic strike
+                electricityDramaticIntensity = 1.0
+                electricityDramaticCooldown = 480  // ~8 seconds cooldown at 60fps
+            }
+            // Very slow decay: ~5 seconds to fade (like JWST giant flare)
+            // 0.991^300 ≈ 0.05
+            electricityDramaticIntensity *= 0.991
+        }
+        
+        // Update spectrum buffer (reuse flameSpectrumBuffer like cosmic does)
+        var localSpectrum: [Float] = []
+        dataLock.withLock { localSpectrum = displaySpectrum }
+        if let buf = flameSpectrumBuffer {
+            let p = buf.contents().bindMemory(to: Float.self, capacity: 75)
+            for i in 0..<75 { p[i] = i < localSpectrum.count ? localSpectrum[i] : 0 }
+        }
+        
+        // Update electricity params
+        let scale = metalLayer?.contentsScale ?? 2.0
+        let totalE = (electricitySmoothBass + electricitySmoothMid + electricitySmoothTreble) / 3.0
+        if let buf = electricityParamsBuffer {
+            let p = buf.contents().bindMemory(to: ElectricityParams.self, capacity: 1)
+            var localColorScheme: Int32 = 0
+            dataLock.withLock { localColorScheme = renderLightningStyle.colorScheme }
+            p.pointee = ElectricityParams(
+                viewportSize: SIMD2<Float>(Float(bounds.width * scale), Float(bounds.height * scale)),
+                time: localTime,
+                bassEnergy: electricitySmoothBass,
+                midEnergy: electricitySmoothMid,
+                trebleEnergy: electricitySmoothTreble,
+                totalEnergy: totalE,
+                beatIntensity: electricityBeatIntensity,
+                dramaticIntensity: electricityDramaticIntensity,
+                colorScheme: localColorScheme
+            )
+        }
+        
+        // Render full-screen quad
+        let rpd = MTLRenderPassDescriptor()
+        rpd.colorAttachments[0].texture = drawable.texture
+        rpd.colorAttachments[0].loadAction = .clear
+        rpd.colorAttachments[0].storeAction = .store
+        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd), let pl = electricityRenderPipeline {
+            enc.setRenderPipelineState(pl)
+            enc.setFragmentBuffer(electricityParamsBuffer, offset: 0, index: 0)
+            enc.setFragmentBuffer(flameSpectrumBuffer, offset: 0, index: 1)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+            enc.endEncoding()
+        }
+        
+        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
+        cb.present(drawable); cb.commit()
+    }
+    
     /// Update display spectrum with decay and return whether there's visible data
     /// Thread-safe version that acquires the lock
     /// - Returns: true if any bar has visible data (> 0.01), false if all bars are essentially zero
@@ -1424,6 +1628,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Flame handles its own state in renderFlame()
         case .cosmic:
             break  // Cosmic handles its own state in renderCosmic()
+        case .electricity:
+            break  // Electricity handles its own state in renderElectricity()
         }
 
         hasVisibleData = hasData
@@ -1793,6 +1999,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Flame updates its own buffers in renderFlame()
         case .cosmic:
             break  // Cosmic updates its own buffers in renderCosmic()
+        case .electricity:
+            break  // Electricity updates its own buffers in renderElectricity()
         }
     }
     

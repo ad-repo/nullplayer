@@ -369,13 +369,17 @@ class SpectrumView: NSView {
             }
         case 3: // F key - toggle fullscreen
             window?.toggleFullScreen(nil)
-        case 123: // Left arrow - previous flame style (flame mode only)
+        case 123: // Left arrow - previous style (flame/lightning mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
                 cycleFlameStyle(forward: false)
+            } else if spectrumAnalyzerView?.qualityMode == .electricity {
+                cycleLightningStyle(forward: false)
             } else { super.keyDown(with: event) }
-        case 124: // Right arrow - next flame style (flame mode only)
+        case 124: // Right arrow - next style (flame/lightning mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
                 cycleFlameStyle(forward: true)
+            } else if spectrumAnalyzerView?.qualityMode == .electricity {
+                cycleLightningStyle(forward: true)
             } else { super.keyDown(with: event) }
         default:
             super.keyDown(with: event)
@@ -397,6 +401,13 @@ class SpectrumView: NSView {
         guard let idx = styles.firstIndex(of: spectrumAnalyzerView?.flameStyle ?? .inferno) else { return }
         let newIdx = forward ? (idx + 1) % styles.count : (idx - 1 + styles.count) % styles.count
         spectrumAnalyzerView?.flameStyle = styles[newIdx]
+    }
+    
+    private func cycleLightningStyle(forward: Bool) {
+        let styles = LightningStyle.allCases
+        guard let idx = styles.firstIndex(of: spectrumAnalyzerView?.lightningStyle ?? .classic) else { return }
+        let newIdx = forward ? (idx + 1) % styles.count : (idx - 1 + styles.count) % styles.count
+        spectrumAnalyzerView?.lightningStyle = styles[newIdx]
     }
     
     // MARK: - Context Menu
@@ -475,6 +486,21 @@ class SpectrumView: NSView {
             menu.addItem(intensityMenuItem)
         }
         
+        // Lightning Style submenu (only when Lightning mode active)
+        if spectrumAnalyzerView?.qualityMode == .electricity {
+            let lightningMenu = NSMenu()
+            let curStyle = spectrumAnalyzerView?.lightningStyle ?? .classic
+            for style in LightningStyle.allCases {
+                let item = NSMenuItem(title: style.displayName, action: #selector(setLightningStyle(_:)), keyEquivalent: "")
+                item.target = self; item.representedObject = style
+                item.state = (curStyle == style) ? .on : .off
+                lightningMenu.addItem(item)
+            }
+            let lightningMenuItem = NSMenuItem(title: "Lightning Style", action: nil, keyEquivalent: "")
+            lightningMenuItem.submenu = lightningMenu
+            menu.addItem(lightningMenuItem)
+        }
+        
         menu.addItem(NSMenuItem.separator())
         
         // Fullscreen toggle
@@ -519,6 +545,11 @@ class SpectrumView: NSView {
     @objc private func setFlameStyle(_ sender: NSMenuItem) {
         guard let style = sender.representedObject as? FlameStyle else { return }
         spectrumAnalyzerView?.flameStyle = style
+    }
+    
+    @objc private func setLightningStyle(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? LightningStyle else { return }
+        spectrumAnalyzerView?.lightningStyle = style
     }
     
     @objc private func setFlameIntensity(_ sender: NSMenuItem) {
