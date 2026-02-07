@@ -26,7 +26,6 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
-        menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum)))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
         
         menu.addItem(NSMenuItem.separator())
@@ -36,6 +35,9 @@ class ContextMenuBuilder {
         
         // Visualizations submenu
         menu.addItem(buildVisualizationsMenuItem())
+        
+        // Spectrum Analyzer submenu (top-level with window toggle + settings)
+        menu.addItem(buildSpectrumAnalyzerMenuItem())
         
         // Options submenu
         menu.addItem(buildOptionsMenuItem())
@@ -303,20 +305,14 @@ class ContextMenuBuilder {
         
         optionsMenu.addItem(NSMenuItem.separator())
         
-        // Main Window Visualization submenu
-        optionsMenu.addItem(buildMainVisualizationMenuItem())
-        
-        // Spectrum Analyzer submenu
-        optionsMenu.addItem(buildSpectrumAnalyzerMenuItem())
-        
         optionsItem.submenu = optionsMenu
         return optionsItem
     }
     
     // MARK: - Main Window Visualization Submenu
     
-    private static func buildMainVisualizationMenuItem() -> NSMenuItem {
-        let visItem = NSMenuItem(title: "Main Visualization", action: nil, keyEquivalent: "")
+    /// Returns the submenu content for Main Window visualization settings
+    private static func buildMainVisualizationSubmenu() -> NSMenu {
         let visMenu = NSMenu()
         visMenu.autoenablesItems = false
         
@@ -378,8 +374,7 @@ class ContextMenuBuilder {
             visMenu.addItem(flameIntensityItem)
         }
         
-        visItem.submenu = visMenu
-        return visItem
+        return visMenu
     }
     
     // MARK: - Spectrum Analyzer Submenu
@@ -388,6 +383,27 @@ class ContextMenuBuilder {
         let spectrumItem = NSMenuItem(title: "Spectrum Analyzer", action: nil, keyEquivalent: "")
         let spectrumMenu = NSMenu()
         spectrumMenu.autoenablesItems = false
+        
+        // ---- Main Window sub-section ----
+        let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
+        mainWindowItem.submenu = buildMainVisualizationSubmenu()
+        spectrumMenu.addItem(mainWindowItem)
+        
+        // ---- Spectrum Window sub-section ----
+        let spectrumWindowItem = NSMenuItem(title: "Spectrum Window", action: nil, keyEquivalent: "")
+        let spectrumWindowMenu = NSMenu()
+        spectrumWindowMenu.autoenablesItems = false
+        
+        // Window toggle (show/hide)
+        let wm = WindowManager.shared
+        let toggleItem = NSMenuItem(
+            title: wm.isSpectrumVisible ? "Hide Window" : "Show Window",
+            action: #selector(MenuActions.toggleSpectrum),
+            keyEquivalent: ""
+        )
+        toggleItem.target = MenuActions.shared
+        spectrumWindowMenu.addItem(toggleItem)
+        spectrumWindowMenu.addItem(NSMenuItem.separator())
         
         // Mode submenu
         let modeItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
@@ -405,7 +421,7 @@ class ContextMenuBuilder {
             modeMenu.addItem(item)
         }
         modeItem.submenu = modeMenu
-        spectrumMenu.addItem(modeItem)
+        spectrumWindowMenu.addItem(modeItem)
         
         // Responsiveness submenu
         let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
@@ -423,7 +439,7 @@ class ContextMenuBuilder {
             responsivenessMenu.addItem(item)
         }
         responsivenessItem.submenu = responsivenessMenu
-        spectrumMenu.addItem(responsivenessItem)
+        spectrumWindowMenu.addItem(responsivenessItem)
         
         // Normalization submenu
         let normItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
@@ -441,7 +457,7 @@ class ContextMenuBuilder {
             normMenu.addItem(item)
         }
         normItem.submenu = normMenu
-        spectrumMenu.addItem(normItem)
+        spectrumWindowMenu.addItem(normItem)
         
         // Flame Style submenu (only when Fire mode active)
         if currentQuality == .flame {
@@ -461,7 +477,7 @@ class ContextMenuBuilder {
             }
             
             flameStyleItem.submenu = flameStyleMenu
-            spectrumMenu.addItem(flameStyleItem)
+            spectrumWindowMenu.addItem(flameStyleItem)
             
             // Flame Intensity submenu
             let flameIntensityItem = NSMenuItem(title: "Fire Intensity", action: nil, keyEquivalent: "")
@@ -480,7 +496,7 @@ class ContextMenuBuilder {
             }
             
             flameIntensityItem.submenu = flameIntensityMenu
-            spectrumMenu.addItem(flameIntensityItem)
+            spectrumWindowMenu.addItem(flameIntensityItem)
         }
         
         // Lightning Style submenu (only when Lightning mode active)
@@ -501,7 +517,7 @@ class ContextMenuBuilder {
             }
             
             lightningStyleItem.submenu = lightningStyleMenu
-            spectrumMenu.addItem(lightningStyleItem)
+            spectrumWindowMenu.addItem(lightningStyleItem)
         }
         
         // Matrix sub-menus (only when Matrix mode active)
@@ -523,7 +539,7 @@ class ContextMenuBuilder {
             }
             
             matrixColorItem.submenu = matrixColorMenu
-            spectrumMenu.addItem(matrixColorItem)
+            spectrumWindowMenu.addItem(matrixColorItem)
             
             // Matrix Intensity submenu
             let matrixIntensityItem = NSMenuItem(title: "Matrix Intensity", action: nil, keyEquivalent: "")
@@ -542,8 +558,11 @@ class ContextMenuBuilder {
             }
             
             matrixIntensityItem.submenu = matrixIntensityMenu
-            spectrumMenu.addItem(matrixIntensityItem)
+            spectrumWindowMenu.addItem(matrixIntensityItem)
         }
+        
+        spectrumWindowItem.submenu = spectrumWindowMenu
+        spectrumMenu.addItem(spectrumWindowItem)
         
         spectrumItem.submenu = spectrumMenu
         return spectrumItem
