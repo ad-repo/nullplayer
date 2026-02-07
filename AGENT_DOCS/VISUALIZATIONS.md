@@ -305,9 +305,9 @@ The Spectrum Analyzer window participates in the docking system:
 
 ### Switching Modes
 
-- **Double-click** the spectrum analyzer window to cycle through modes (classic → Enhanced → Ultra → Fire → JWST)
+- **Double-click** the spectrum analyzer window to cycle through modes (classic → Enhanced → Ultra → Fire → JWST → Lightning → Matrix)
 - **Right-click** → Mode to select a specific mode
-- **Left/Right arrow keys** cycle flame styles when in Fire mode
+- **Left/Right arrow keys** cycle flame styles (Fire), lightning styles (Lightning), or matrix color schemes (Matrix)
 
 ### Quality Modes
 
@@ -318,6 +318,8 @@ The Spectrum Analyzer window participates in the docking system:
 | **Ultra** | Maximum fidelity seamless gradient with smooth exponential decay, perceptual gamma, warm color trails, physics-based bouncing peaks, and reflection effect |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues (see below) |
 | **JWST** | Deep space flythrough with 3D perspective star field, JWST diffraction flares as intensity indicators, and vivid celestial bodies (see below) |
+| **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks, multiple color schemes (see below) |
+| **Matrix** | Falling digital rain with procedural glyphs mapped to spectrum bands, multiple color schemes and intensity presets (see below) |
 
 ### classic Mode Details
 
@@ -390,6 +392,51 @@ JWST mode is a 3D deep space flythrough inspired by the James Webb Space Telesco
 
 **Key files:** `Visualization/CosmicShaders.metal` (vertex + fragment shaders), `Visualization/SpectrumAnalyzerView.swift` (pipeline integration, flare state management)
 
+### Matrix Mode
+
+Matrix mode recreates the iconic falling digital rain from The Matrix, driven by the audio spectrum. Each column of falling characters maps to a frequency band, with brightness, speed, and trail length scaling with the audio energy.
+
+**Visual Elements:**
+- **Digital rain columns**: 75 columns of procedural glyph-like shapes (katakana-inspired geometric patterns), each mapped to a spectrum band
+- **Spectrum-driven intensity**: Column speed, trail length, and brightness scale with the corresponding frequency band's energy
+- **Glyph mutation**: Characters scramble periodically — brighter cells mutate faster for an "active" look
+- **Multiple rain streams**: 2-4 overlapping rain streams per column for density
+- **Phosphor glow**: Bright characters bleed a colored glow into neighboring cells
+- **CRT scanlines**: Subtle horizontal line overlay for an authentic monitor feel
+- **Reflection pool**: Bottom 18% of the screen shows a mirrored, ripple-distorted reflection of the rain above
+- **Beat pulse**: Bass hits flash columns brighter with a white wash
+- **Dramatic awakening**: On major peaks, a horizontal scan line sweeps down the screen while all glyphs momentarily reveal (JWST-style LPF detection, ~7s cooldown)
+- **Background code grid**: Faint, slowly-scrolling layer of dim characters for depth
+- **CRT vignette**: Dark edges for a cinematic monitor feel
+
+**Matrix Color Schemes** (right-click > Matrix Color, or left/right arrow keys):
+
+| Color | Description |
+|-------|-------------|
+| **Classic** | Iconic green: white-hot head, bright green trail, dark green fade |
+| **Amber** | Retro terminal: warm white head, amber/orange trail, dark brown fade |
+| **Blue Pill** | Cool blue: white head, cyan/electric blue trail, deep navy fade |
+| **Bloodshot** | Red alert: pink-white head, crimson trail, dark maroon fade |
+| **Neon** | Cyberpunk: magenta-white head, hot magenta trail, deep purple fade |
+
+**Matrix Intensity Presets** (right-click > Matrix Intensity):
+
+| Intensity | Description |
+|-----------|-------------|
+| **Subtle** | Sparse rain, gentle glow, smooth transitions, zen-like ambient feel |
+| **Intense** | Dense rain, strong glow, punchy beat reactions, high density |
+
+**Audio Reactivity:**
+- Each of the 75 spectrum bands drives its corresponding rain column
+- Bass bands produce thicker glow effects
+- Scroll speed integrates total energy (quiet = gentle drift, loud = fast cascade)
+- Beat intensity (fast attack/slow release) modulates overall brightness
+- Dramatic awakening fires on energy spikes above a slow-moving baseline, with ~7s cooldown
+
+**Technical:** Single render pass with procedural glyph grid (75 columns x ~40 rows), hash-based segment patterns for character shapes, multi-stream rain simulation, and per-scheme color palette functions. 60 FPS. MatrixParams struct passes time, scroll offset, energy bands, beat/dramatic intensity, color scheme, and intensity preset value. Reuses `flameSpectrumBuffer` for spectrum data.
+
+**Key files:** `Visualization/MatrixShaders.metal` (vertex + fragment shaders), `Visualization/SpectrumAnalyzerView.swift` (pipeline integration, state management)
+
 ### Responsiveness Modes
 
 Controls how quickly spectrum bars fall after peaks:
@@ -404,16 +451,19 @@ Controls how quickly spectrum bars fall after peaks:
 ### Context Menu
 
 Right-click on the window for:
-- **Mode** - Switch between classic/Enhanced/Ultra/Fire/JWST rendering
+- **Mode** - Switch between classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix rendering
 - **Responsiveness** - Adjust decay behavior (bar modes)
 - **Flame Style** - Choose flame color preset (Flame mode only)
 - **Fire Intensity** - Choose Mellow or Intense reactivity (Flame mode only)
+- **Lightning Style** - Choose lightning color preset (Lightning mode only)
+- **Matrix Color** - Choose color scheme (Matrix mode only)
+- **Matrix Intensity** - Choose Subtle or Intense reactivity (Matrix mode only)
 - **Close** - Close the window
 
 ### Technical Details
 
 - **Rendering**: Metal shaders via CAMetalLayer with runtime shader compilation
-- **Shader Modes**: Separate pipeline states for classic (bar), Enhanced (LED matrix), Ultra (seamless gradient), Fire (compute simulation), and JWST (procedural space) modes
+- **Shader Modes**: Separate pipeline states for classic (bar), Enhanced (LED matrix), Ultra (seamless gradient), Fire (compute simulation), JWST (procedural space), Lightning (procedural storm), and Matrix (digital rain) modes
 - **Frame Rate**: 60 FPS via CVDisplayLink (auto-stops when window closes or occluded)
 - **Audio Input**: 75-band spectrum data from AudioEngine
 - **Thread Safety**: OSAllocatedUnfairLock for spectrum data updates
@@ -430,12 +480,12 @@ Right-click on the window for:
 
 | Feature | Album Art Visualizer | ProjectM/ProjectM | Spectrum Analyzer |
 |---------|---------------------|-------------------|-------------------|
-| **Visual Style** | Transformed album artwork | Procedural graphics | Frequency bars / Fire / Deep space |
-| **Effect Count** | 30 built-in effects | 100s of presets available | 5 modes (classic, Enhanced, Ultra, Fire, JWST) |
-| **Customization** | Intensity adjustment | Full preset ecosystem | Mode + decay + flame styles |
+| **Visual Style** | Transformed album artwork | Procedural graphics | Frequency bars / Fire / Deep space / Lightning / Matrix |
+| **Effect Count** | 30 built-in effects | 100s of presets available | 7 modes (classic, Enhanced, Ultra, Fire, JWST, Lightning, Matrix) |
+| **Customization** | Intensity adjustment | Full preset ecosystem | Mode + decay + flame/lightning/matrix styles |
 | **GPU Tech** | Core Image (Metal) | OpenGL shaders | Metal shaders + Metal compute shaders |
 | **Audio Response** | Spectrum bands (bass/mid/treble) | PCM waveform + beat detection | 75-band spectrum / energy-driven |
-| **Best For** | Album art appreciation | Immersive light shows | Frequency analysis / Ambient visuals / Deep space drift |
+| **Best For** | Album art appreciation | Immersive light shows | Frequency analysis / Ambient visuals / Deep space / Lightning / Matrix rain |
 
 ### When to Use Each
 
@@ -461,6 +511,8 @@ Right-click on the window for:
 - Complements the main window's smaller analyzer
 - Fire mode for ambient flame visuals
 - JWST mode for a chill deep space drift with music-reactive diffraction flares
+- Lightning mode for dramatic storm visuals mapped to spectrum peaks
+- Matrix mode for iconic falling digital rain synced to frequency bands
 
 ---
 

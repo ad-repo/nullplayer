@@ -369,17 +369,21 @@ class SpectrumView: NSView {
             }
         case 3: // F key - toggle fullscreen
             window?.toggleFullScreen(nil)
-        case 123: // Left arrow - previous style (flame/lightning mode)
+        case 123: // Left arrow - previous style (flame/lightning/matrix mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
                 cycleFlameStyle(forward: false)
             } else if spectrumAnalyzerView?.qualityMode == .electricity {
                 cycleLightningStyle(forward: false)
+            } else if spectrumAnalyzerView?.qualityMode == .matrix {
+                cycleMatrixColor(forward: false)
             } else { super.keyDown(with: event) }
-        case 124: // Right arrow - next style (flame/lightning mode)
+        case 124: // Right arrow - next style (flame/lightning/matrix mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
                 cycleFlameStyle(forward: true)
             } else if spectrumAnalyzerView?.qualityMode == .electricity {
                 cycleLightningStyle(forward: true)
+            } else if spectrumAnalyzerView?.qualityMode == .matrix {
+                cycleMatrixColor(forward: true)
             } else { super.keyDown(with: event) }
         default:
             super.keyDown(with: event)
@@ -408,6 +412,13 @@ class SpectrumView: NSView {
         guard let idx = styles.firstIndex(of: spectrumAnalyzerView?.lightningStyle ?? .classic) else { return }
         let newIdx = forward ? (idx + 1) % styles.count : (idx - 1 + styles.count) % styles.count
         spectrumAnalyzerView?.lightningStyle = styles[newIdx]
+    }
+    
+    private func cycleMatrixColor(forward: Bool) {
+        let schemes = MatrixColorScheme.allCases
+        guard let idx = schemes.firstIndex(of: spectrumAnalyzerView?.matrixColorScheme ?? .classic) else { return }
+        let newIdx = forward ? (idx + 1) % schemes.count : (idx - 1 + schemes.count) % schemes.count
+        spectrumAnalyzerView?.matrixColorScheme = schemes[newIdx]
     }
     
     // MARK: - Context Menu
@@ -501,6 +512,35 @@ class SpectrumView: NSView {
             menu.addItem(lightningMenuItem)
         }
         
+        // Matrix sub-menus (only when Matrix mode active)
+        if spectrumAnalyzerView?.qualityMode == .matrix {
+            // Matrix Color submenu
+            let matrixColorMenu = NSMenu()
+            let curMatrixColor = spectrumAnalyzerView?.matrixColorScheme ?? .classic
+            for scheme in MatrixColorScheme.allCases {
+                let item = NSMenuItem(title: scheme.displayName, action: #selector(setMatrixColor(_:)), keyEquivalent: "")
+                item.target = self; item.representedObject = scheme
+                item.state = (curMatrixColor == scheme) ? .on : .off
+                matrixColorMenu.addItem(item)
+            }
+            let matrixColorMenuItem = NSMenuItem(title: "Matrix Color", action: nil, keyEquivalent: "")
+            matrixColorMenuItem.submenu = matrixColorMenu
+            menu.addItem(matrixColorMenuItem)
+            
+            // Matrix Intensity submenu
+            let matrixIntensityMenu = NSMenu()
+            let curMatrixIntensity = spectrumAnalyzerView?.matrixIntensity ?? .subtle
+            for intensity in MatrixIntensity.allCases {
+                let item = NSMenuItem(title: intensity.displayName, action: #selector(setMatrixIntensity(_:)), keyEquivalent: "")
+                item.target = self; item.representedObject = intensity
+                item.state = (curMatrixIntensity == intensity) ? .on : .off
+                matrixIntensityMenu.addItem(item)
+            }
+            let matrixIntensityMenuItem = NSMenuItem(title: "Matrix Intensity", action: nil, keyEquivalent: "")
+            matrixIntensityMenuItem.submenu = matrixIntensityMenu
+            menu.addItem(matrixIntensityMenuItem)
+        }
+        
         menu.addItem(NSMenuItem.separator())
         
         // Fullscreen toggle
@@ -555,6 +595,16 @@ class SpectrumView: NSView {
     @objc private func setFlameIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? FlameIntensity else { return }
         spectrumAnalyzerView?.flameIntensity = intensity
+    }
+    
+    @objc private func setMatrixColor(_ sender: NSMenuItem) {
+        guard let scheme = sender.representedObject as? MatrixColorScheme else { return }
+        spectrumAnalyzerView?.matrixColorScheme = scheme
+    }
+    
+    @objc private func setMatrixIntensity(_ sender: NSMenuItem) {
+        guard let intensity = sender.representedObject as? MatrixIntensity else { return }
+        spectrumAnalyzerView?.matrixIntensity = intensity
     }
     
     @objc private func closeWindow(_ sender: Any?) {

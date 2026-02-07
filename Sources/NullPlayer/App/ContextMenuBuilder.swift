@@ -504,6 +504,47 @@ class ContextMenuBuilder {
             spectrumMenu.addItem(lightningStyleItem)
         }
         
+        // Matrix sub-menus (only when Matrix mode active)
+        if currentQuality == .matrix {
+            // Matrix Color submenu
+            let matrixColorItem = NSMenuItem(title: "Matrix Color", action: nil, keyEquivalent: "")
+            let matrixColorMenu = NSMenu()
+            matrixColorMenu.autoenablesItems = false
+            
+            let currentMatrixColor = UserDefaults.standard.string(forKey: "matrixColorScheme")
+                .flatMap { MatrixColorScheme(rawValue: $0) } ?? .classic
+            
+            for scheme in MatrixColorScheme.allCases {
+                let item = NSMenuItem(title: scheme.displayName, action: #selector(MenuActions.setSpectrumMatrixColor(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = scheme
+                item.state = (currentMatrixColor == scheme) ? .on : .off
+                matrixColorMenu.addItem(item)
+            }
+            
+            matrixColorItem.submenu = matrixColorMenu
+            spectrumMenu.addItem(matrixColorItem)
+            
+            // Matrix Intensity submenu
+            let matrixIntensityItem = NSMenuItem(title: "Matrix Intensity", action: nil, keyEquivalent: "")
+            let matrixIntensityMenu = NSMenu()
+            matrixIntensityMenu.autoenablesItems = false
+            
+            let currentMatrixIntensity = UserDefaults.standard.string(forKey: "matrixIntensity")
+                .flatMap { MatrixIntensity(rawValue: $0) } ?? .subtle
+            
+            for intensity in MatrixIntensity.allCases {
+                let item = NSMenuItem(title: intensity.displayName, action: #selector(MenuActions.setSpectrumMatrixIntensity(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = intensity
+                item.state = (currentMatrixIntensity == intensity) ? .on : .off
+                matrixIntensityMenu.addItem(item)
+            }
+            
+            matrixIntensityItem.submenu = matrixIntensityMenu
+            spectrumMenu.addItem(matrixIntensityItem)
+        }
+        
         spectrumItem.submenu = spectrumMenu
         return spectrumItem
     }
@@ -1693,6 +1734,18 @@ class MenuActions: NSObject {
     @objc func setSpectrumFlameIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? FlameIntensity else { return }
         UserDefaults.standard.set(intensity.rawValue, forKey: "flameIntensity")
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+    }
+    
+    @objc func setSpectrumMatrixColor(_ sender: NSMenuItem) {
+        guard let scheme = sender.representedObject as? MatrixColorScheme else { return }
+        UserDefaults.standard.set(scheme.rawValue, forKey: "matrixColorScheme")
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+    }
+    
+    @objc func setSpectrumMatrixIntensity(_ sender: NSMenuItem) {
+        guard let intensity = sender.representedObject as? MatrixIntensity else { return }
+        UserDefaults.standard.set(intensity.rawValue, forKey: "matrixIntensity")
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     
