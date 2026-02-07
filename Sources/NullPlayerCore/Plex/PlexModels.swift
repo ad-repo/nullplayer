@@ -516,6 +516,11 @@ public struct PlexMedia: Codable, Equatable {
     public let height: Int?
     public let container: String?
     public let parts: [PlexPart]
+    
+    /// Sample rate from the first audio stream (e.g., 44100, 96000)
+    public var audioSampleRate: Int? {
+        parts.first?.streams.first { $0.streamType == .audio }?.samplingRate
+    }
 }
 
 /// A media part (actual file) for streaming

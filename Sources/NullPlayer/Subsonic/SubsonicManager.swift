@@ -493,7 +493,7 @@ class SubsonicManager {
             album: song.album,
             duration: song.durationInSeconds,
             bitrate: song.bitRate,
-            sampleRate: nil,
+            sampleRate: song.samplingRate,
             channels: nil,
             plexRatingKey: nil,
             subsonicId: song.id,

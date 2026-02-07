@@ -2192,6 +2192,7 @@ final class NullPlayerTests: XCTestCase {
             suffix: "mp3",
             duration: 259,
             bitRate: 320,
+            samplingRate: 44100,
             path: "/music/Beatles/Abbey Road/01 - Come Together.mp3",
             discNumber: 1,
             created: Date(),
@@ -2226,6 +2227,7 @@ final class NullPlayerTests: XCTestCase {
             suffix: nil,
             duration: 185, // 3:05
             bitRate: nil,
+            samplingRate: nil,
             path: nil,
             discNumber: nil,
             created: nil,
@@ -2254,6 +2256,7 @@ final class NullPlayerTests: XCTestCase {
             suffix: nil,
             duration: 180,
             bitRate: nil,
+            samplingRate: nil,
             path: nil,
             discNumber: nil,
             created: nil,
@@ -2265,8 +2268,8 @@ final class NullPlayerTests: XCTestCase {
     }
     
     func testSubsonicSongEquality() {
-        let song1 = SubsonicSong(id: "1", parent: nil, title: "Song", album: nil, artist: nil, albumId: nil, artistId: nil, track: nil, year: nil, genre: nil, coverArt: nil, size: nil, contentType: nil, suffix: nil, duration: 100, bitRate: nil, path: nil, discNumber: nil, created: nil, starred: nil, playCount: nil)
-        let song2 = SubsonicSong(id: "1", parent: nil, title: "Song", album: nil, artist: nil, albumId: nil, artistId: nil, track: nil, year: nil, genre: nil, coverArt: nil, size: nil, contentType: nil, suffix: nil, duration: 100, bitRate: nil, path: nil, discNumber: nil, created: nil, starred: nil, playCount: nil)
+        let song1 = SubsonicSong(id: "1", parent: nil, title: "Song", album: nil, artist: nil, albumId: nil, artistId: nil, track: nil, year: nil, genre: nil, coverArt: nil, size: nil, contentType: nil, suffix: nil, duration: 100, bitRate: nil, samplingRate: nil, path: nil, discNumber: nil, created: nil, starred: nil, playCount: nil)
+        let song2 = SubsonicSong(id: "1", parent: nil, title: "Song", album: nil, artist: nil, albumId: nil, artistId: nil, track: nil, year: nil, genre: nil, coverArt: nil, size: nil, contentType: nil, suffix: nil, duration: 100, bitRate: nil, samplingRate: nil, path: nil, discNumber: nil, created: nil, starred: nil, playCount: nil)
         
         XCTAssertEqual(song1, song2)
     }
@@ -2366,7 +2369,7 @@ final class NullPlayerTests: XCTestCase {
     func testSubsonicSearchResultsWithContent() {
         let artist = SubsonicArtist(id: "1", name: "Artist", albumCount: 1, coverArt: nil, artistImageUrl: nil, starred: nil)
         let album = SubsonicAlbum(id: "1", name: "Album", artist: nil, artistId: nil, year: nil, genre: nil, coverArt: nil, songCount: 10, duration: 100, created: nil, starred: nil, playCount: nil)
-        let song = SubsonicSong(id: "1", parent: nil, title: "Song", album: nil, artist: nil, albumId: nil, artistId: nil, track: nil, year: nil, genre: nil, coverArt: nil, size: nil, contentType: nil, suffix: nil, duration: 100, bitRate: nil, path: nil, discNumber: nil, created: nil, starred: nil, playCount: nil)
+        let song = SubsonicSong(id: "1", parent: nil, title: "Song", album: nil, artist: nil, albumId: nil, artistId: nil, track: nil, year: nil, genre: nil, coverArt: nil, size: nil, contentType: nil, suffix: nil, duration: 100, bitRate: nil, samplingRate: nil, path: nil, discNumber: nil, created: nil, starred: nil, playCount: nil)
         
         var results = SubsonicSearchResults()
         results.artists = [artist]

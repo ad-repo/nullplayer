@@ -108,6 +108,7 @@ public struct SubsonicSong: Identifiable, Equatable {
     public let suffix: String?          // File extension
     public let duration: Int            // Duration in seconds
     public let bitRate: Int?            // Bitrate in kbps
+    public let samplingRate: Int?       // Sample rate in Hz (e.g., 44100, 96000)
     public let path: String?            // Server-side file path
     public let discNumber: Int?
     public let created: Date?
@@ -443,6 +444,7 @@ public struct SongDTO: Decodable {
     public let suffix: String?
     public let duration: Int?
     public let bitRate: Int?
+    public let samplingRate: Int?
     public let path: String?
     public let discNumber: Int?
     public let created: String?
@@ -467,6 +469,7 @@ public struct SongDTO: Decodable {
             suffix: suffix,
             duration: duration ?? 0,
             bitRate: bitRate,
+            samplingRate: samplingRate,
             path: path,
             discNumber: discNumber,
             created: parseDate(created),

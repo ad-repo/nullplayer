@@ -620,6 +620,7 @@ class StreamingAudioPlayer {
 extension StreamingAudioPlayer: AudioPlayerDelegate {
     func audioPlayerDidStartPlaying(player: AudioPlayer, with entryId: AudioEntryId) {
         NSLog("StreamingAudioPlayer: Started playing entry: %@", entryId.id)
+        hasReportedFormat = false  // Reset for new track (including gapless queue transitions)
         delegate?.streamingPlayerDidChangeState(.playing)
     }
     

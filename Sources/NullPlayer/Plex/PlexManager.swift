@@ -747,6 +747,7 @@ class PlexManager {
         let media = plexTrack.media.first
         let bitrate = media?.bitrate
         let channels = media?.audioChannels
+        let sampleRate = media?.audioSampleRate
         
         // Use grandparentTitle as artist, but avoid duplication if title already contains artist
         var artist = plexTrack.grandparentTitle
@@ -764,7 +765,7 @@ class PlexManager {
             album: plexTrack.parentTitle,
             duration: plexTrack.durationInSeconds,
             bitrate: bitrate,
-            sampleRate: nil,  // Plex doesn't provide sample rate in API
+            sampleRate: sampleRate,
             channels: channels,
             plexRatingKey: plexTrack.id,  // Store rating key for play tracking
             artworkThumb: plexTrack.thumb,
@@ -791,7 +792,7 @@ class PlexManager {
             album: nil,
             duration: movie.durationInSeconds,
             bitrate: movie.media.first?.bitrate,
-            sampleRate: nil,
+            sampleRate: movie.media.first?.audioSampleRate,
             channels: movie.media.first?.audioChannels,
             plexRatingKey: movie.id,
             artworkThumb: movie.thumb,
@@ -817,7 +818,7 @@ class PlexManager {
             album: episode.parentTitle,  // Use season name as "album"
             duration: episode.durationInSeconds,
             bitrate: episode.media.first?.bitrate,
-            sampleRate: nil,
+            sampleRate: episode.media.first?.audioSampleRate,
             channels: episode.media.first?.audioChannels,
             plexRatingKey: episode.id,
             artworkThumb: episode.thumb,
