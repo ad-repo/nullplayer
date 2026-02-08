@@ -41,7 +41,7 @@ class ModernSpectrumView: NSView {
     
     // MARK: - Layout Constants
     
-    private var titleBarHeight: CGFloat { ModernSkinElements.spectrumTitleBarHeight }
+    private var titleBarHeight: CGFloat { WindowManager.shared.hideTitleBars ? borderWidth : ModernSkinElements.spectrumTitleBarHeight }
     private var borderWidth: CGFloat { ModernSkinElements.spectrumBorderWidth }
     
     // MARK: - Initialization
@@ -145,30 +145,25 @@ class ModernSpectrumView: NSView {
         // Draw window border with glow
         renderer.drawWindowBorder(in: bounds, context: context)
         
-        // Draw title bar
-        let titleBarRect = NSRect(
-            x: 0,
-            y: bounds.height - titleBarHeight,
-            width: bounds.width,
-            height: titleBarHeight
-        )
-        
-        // Use spectrum-specific title bar element if skin provides it
-        let titleBarId = "spectrum_titlebar"
-        if let img = renderer.skin.image(for: titleBarId) {
-            let scaledTitleRect = renderer.scaledRect(ModernSkinElements.spectrumTitleBar.defaultRect)
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-            img.draw(in: scaledTitleRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-            NSGraphicsContext.restoreGraphicsState()
+        // Draw title bar (unless hidden)
+        if !WindowManager.shared.hideTitleBars {
+            // Use spectrum-specific title bar element if skin provides it
+            let titleBarId = "spectrum_titlebar"
+            if let img = renderer.skin.image(for: titleBarId) {
+                let scaledTitleRect = renderer.scaledRect(ModernSkinElements.spectrumTitleBar.defaultRect)
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+                img.draw(in: scaledTitleRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+                NSGraphicsContext.restoreGraphicsState()
+            }
+            // Draw title text and separator using the standard title bar renderer
+            renderer.drawTitleBar(in: ModernSkinElements.spectrumTitleBar.defaultRect, title: "NULLPLAYER ANALYZER", context: context)
+            
+            // Draw close button
+            let closeState = (pressedButton == "spectrum_btn_close") ? "pressed" : "normal"
+            renderer.drawWindowControlButton("spectrum_btn_close", state: closeState,
+                                             in: ModernSkinElements.spectrumBtnClose.defaultRect, context: context)
         }
-        // Draw title text and separator using the standard title bar renderer
-        renderer.drawTitleBar(in: ModernSkinElements.spectrumTitleBar.defaultRect, title: "NULLPLAYER ANALYZER", context: context)
-        
-        // Draw close button
-        let closeState = (pressedButton == "spectrum_btn_close") ? "pressed" : "normal"
-        renderer.drawWindowControlButton("spectrum_btn_close", state: closeState,
-                                         in: ModernSkinElements.spectrumBtnClose.defaultRect, context: context)
         
         // Draw shade mode title bar content if in shade mode
         if isShadeMode {
@@ -245,6 +240,9 @@ class ModernSpectrumView: NSView {
     }
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars {
+            return point.y >= bounds.height - 6  // invisible drag zone
+        }
         // Title bar minus close button area
         let closeWidth: CGFloat = 25 * scale
         return point.y >= bounds.height - titleBarHeight &&
@@ -252,6 +250,7 @@ class ModernSpectrumView: NSView {
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let closeRect = renderer.scaledRect(ModernSkinElements.spectrumBtnClose.defaultRect)
         // Expand hit area slightly for usability
         let hitRect = closeRect.insetBy(dx: -4, dy: -4)
@@ -301,11 +300,12 @@ class ModernSpectrumView: NSView {
             return
         }
         
-        // Content area - single click allows window dragging
+        // Content area - window dragging
+        // When title bars are hidden, all drags allow undocking (no visual title bar distinction)
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: false)
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.hideTitleBars)
         }
     }
     

@@ -1278,7 +1278,12 @@ class PlexBrowserView: NSView {
             return NSPoint(x: x, y: y)
         } else {
             // Normal mode: no scaling, just flip Y coordinate (macOS bottom-left to skin top-left)
-            return NSPoint(x: point.x, y: bounds.height - point.y)
+            var skinPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+            // When title bars are hidden, offset to match the shifted drawing
+            if WindowManager.shared.hideTitleBars {
+                skinPoint.y += Layout.titleBarHeight
+            }
+            return skinPoint
         }
     }
     
@@ -1309,6 +1314,11 @@ class PlexBrowserView: NSView {
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
+        
+        // When hiding title bars, shift content up to clip the title bar off the top
+        if WindowManager.shared.hideTitleBars && !isShadeMode {
+            context.translateBy(x: 0, y: -Layout.titleBarHeight)
+        }
         
         // Use low interpolation for cleaner scaling of skin sprites (none can cause artifacts)
         context.interpolationQuality = .low
@@ -5443,6 +5453,10 @@ class PlexBrowserView: NSView {
     
     /// Check if point hits title bar (for dragging)
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars {
+            // Invisible drag zone at the top of the visible window
+            return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
+        }
         let originalSize = originalWindowSize
         return skinPoint.y < Layout.titleBarHeight &&
                skinPoint.x < originalSize.width - 30  // Leave room for window buttons
@@ -5450,6 +5464,7 @@ class PlexBrowserView: NSView {
     
     /// Check if point hits close button (enlarged hit area extends to right edge and top)
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let originalSize = originalWindowSize
         let closeRect = NSRect(x: originalSize.width - 20, y: 0, width: 20, height: 14)
         return closeRect.contains(skinPoint)
@@ -5457,6 +5472,7 @@ class PlexBrowserView: NSView {
     
     /// Check if point hits shade button (enlarged hit area, full title bar height)
     private func hitTestShadeButton(at skinPoint: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let originalSize = originalWindowSize
         let shadeRect = NSRect(x: originalSize.width - 31, y: 0, width: 11, height: 14)
         return shadeRect.contains(skinPoint)

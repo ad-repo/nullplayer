@@ -316,7 +316,13 @@ class PlaylistView: NSView {
         // Transform point back to original coordinates
         let x = point.x / scale
         // Convert from macOS coords (origin bottom-left) to skin coords (origin top-left)
-        let y = effectiveSize.height - (point.y / scale)
+        var y = effectiveSize.height - (point.y / scale)
+        
+        // When title bars are hidden, the drawing is shifted up by titleBarHeight,
+        // so we need to offset the skin coordinate to match
+        if WindowManager.shared.hideTitleBars && !isShadeMode {
+            y += Layout.titleBarHeight
+        }
         
         return NSPoint(x: x, y: y)
     }
@@ -338,9 +344,16 @@ class PlaylistView: NSView {
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
         
+        // When hiding title bars, shift content up to clip the title bar off the top
+        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
+        
         // Apply width-based scaling (allows vertical expansion for more tracks)
         if scale != 1.0 {
             context.scaleBy(x: scale, y: scale)
+        }
+        
+        if hidingTitleBar {
+            context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
         
         // Use effective bounds for drawing (height can be taller than original for more tracks)
@@ -800,6 +813,11 @@ class PlaylistView: NSView {
     
     /// Check if point hits title bar (for dragging)
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars {
+            // Use view-space drag zone: skinPoint.y near the top = small y value
+            // With the offset applied, skin y = titleBarHeight corresponds to the top of the visible window
+            return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
+        }
         let effectiveSize = effectiveWindowSize
         return skinPoint.y < Layout.titleBarHeight && 
                skinPoint.x < effectiveSize.width - 30  // Leave room for window buttons
@@ -807,6 +825,7 @@ class PlaylistView: NSView {
     
     /// Check if point hits close button (enlarged hit area extends to right edge and top)
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let effectiveSize = effectiveWindowSize
         let closeRect = NSRect(x: effectiveSize.width - 20, y: 0, width: 20, height: 14)
         return closeRect.contains(skinPoint)
@@ -814,6 +833,7 @@ class PlaylistView: NSView {
     
     /// Check if point hits shade button (enlarged hit area, full title bar height)
     private func hitTestShadeButton(at skinPoint: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let effectiveSize = effectiveWindowSize
         let shadeRect = NSRect(x: effectiveSize.width - 31, y: 0, width: 11, height: 14)
         return shadeRect.contains(skinPoint)

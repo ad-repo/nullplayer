@@ -321,7 +321,7 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Layout Constants (independent of classic skin)
     
     private struct Layout {
-        static let titleBarHeight: CGFloat = ModernSkinElements.libraryTitleBarHeight
+        static var titleBarHeight: CGFloat { WindowManager.shared.hideTitleBars ? borderWidth : ModernSkinElements.libraryTitleBarHeight }
         static let tabBarHeight: CGFloat = 24
         static let serverBarHeight: CGFloat = 24
         static let searchBarHeight: CGFloat = 26
@@ -529,17 +529,20 @@ class ModernLibraryBrowserView: NSView {
         let baseWidth = bounds.width / scale
         let baseHeight = bounds.height / scale
         
-        // Title bar at TOP in base space
-        let titleBarRect = NSRect(x: 0, y: baseHeight - 14, width: baseWidth, height: 14)
-        renderer.drawTitleBar(in: titleBarRect, title: "NULLPLAYER LIBRARY", context: context)
-        
-        // Close and shade buttons in title bar (base space)
-        let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - 12, width: 10, height: 10)
-        let shadeBtnRect = NSRect(x: baseWidth - 26, y: baseHeight - 12, width: 10, height: 10)
-        let closeState = pressedButton == .close ? "pressed" : "normal"
-        let shadeState = pressedButton == .shade ? "pressed" : "normal"
-        renderer.drawWindowControlButton("library_btn_close", state: closeState, in: closeBtnRect, context: context)
-        renderer.drawWindowControlButton("library_btn_shade", state: shadeState, in: shadeBtnRect, context: context)
+        // Draw title bar (unless hidden)
+        if !WindowManager.shared.hideTitleBars {
+            // Title bar at TOP in base space
+            let titleBarRect = NSRect(x: 0, y: baseHeight - 14, width: baseWidth, height: 14)
+            renderer.drawTitleBar(in: titleBarRect, title: "NULLPLAYER LIBRARY", context: context)
+            
+            // Close and shade buttons in title bar (base space)
+            let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - 12, width: 10, height: 10)
+            let shadeBtnRect = NSRect(x: baseWidth - 26, y: baseHeight - 12, width: 10, height: 10)
+            let closeState = pressedButton == .close ? "pressed" : "normal"
+            let shadeState = pressedButton == .shade ? "pressed" : "normal"
+            renderer.drawWindowControlButton("library_btn_close", state: closeState, in: closeBtnRect, context: context)
+            renderer.drawWindowControlButton("library_btn_shade", state: shadeState, in: shadeBtnRect, context: context)
+        }
         
         // Server bar (below title bar in screen coords)
         let serverBarY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
@@ -1746,16 +1749,21 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Hit Testing (Bottom-Left Origin)
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars {
+            return point.y >= bounds.height - 6  // invisible drag zone
+        }
         return point.y > bounds.height - Layout.titleBarHeight &&
                point.x < bounds.width - 30
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let closeRect = NSRect(x: bounds.width - 20, y: bounds.height - Layout.titleBarHeight, width: 20, height: Layout.titleBarHeight)
         return closeRect.contains(point)
     }
     
     private func hitTestShadeButton(at point: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let shadeRect = NSRect(x: bounds.width - 31, y: bounds.height - Layout.titleBarHeight, width: 11, height: Layout.titleBarHeight)
         return shadeRect.contains(point)
     }

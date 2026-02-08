@@ -72,6 +72,118 @@ class WindowManager {
         set { UserDefaults.standard.set(newValue, forKey: "modernUIEnabled") }
     }
     
+    /// Whether title bars are hidden on all windows
+    var hideTitleBars: Bool {
+        get { UserDefaults.standard.bool(forKey: "hideTitleBars") }
+        set { UserDefaults.standard.set(newValue, forKey: "hideTitleBars") }
+    }
+    
+    /// Toggle hide title bars mode and resize all visible windows
+    func toggleHideTitleBars() {
+        let wasHidden = hideTitleBars
+        hideTitleBars = !wasHidden
+        let hiding = !wasHidden
+        
+        // Build ordered list of stack windows (top to bottom) with their deltas
+        let stackEntries: [(NSWindowController?, CGFloat)] = [
+            (mainWindowController as? NSWindowController, isModernUIEnabled ? ModernSkinElements.playlistTitleBarHeight : 14 * Skin.scaleFactor),
+            (equalizerWindowController as? NSWindowController, isModernUIEnabled ? ModernSkinElements.eqTitleBarHeight : 14 * Skin.scaleFactor),
+            (playlistWindowController as? NSWindowController, isModernUIEnabled ? ModernSkinElements.playlistTitleBarHeight : 20 * Skin.scaleFactor),
+            (spectrumWindowController as? NSWindowController, isModernUIEnabled ? ModernSkinElements.spectrumTitleBarHeight : 14 * Skin.scaleFactor),
+        ]
+        
+        // Get visible stack windows sorted top-to-bottom by their current frame
+        var visibleStack: [(NSWindow, CGFloat)] = []
+        for (controller, delta) in stackEntries {
+            if let w = controller?.window, w.isVisible {
+                visibleStack.append((w, delta))
+            }
+        }
+        visibleStack.sort { $0.0.frame.maxY > $1.0.frame.maxY }
+        
+        // Process stack windows keeping the main window's top edge fixed.
+        // Track cumulative shift so each window below accommodates the growth/shrink of windows above.
+        if let first = visibleStack.first {
+            let topEdge = first.0.frame.maxY  // Pin this
+            var nextTop = topEdge
+            
+            for (w, delta) in visibleStack {
+                adjustWindowSizeConstraints(w, delta: delta, hiding: hiding)
+                
+                var newHeight = w.frame.height
+                if hiding {
+                    newHeight -= delta
+                } else {
+                    newHeight += delta
+                }
+                let newY = nextTop - newHeight
+                w.setFrame(NSRect(x: w.frame.origin.x, y: newY, width: w.frame.width, height: newHeight), display: false)
+                w.contentView?.needsDisplay = true
+                nextTop = newY  // Next window's top = this window's bottom
+            }
+        }
+        
+        // Side windows: match the new stack height
+        let stackBounds = verticalStackBounds()
+        let sideWindowControllers: [(NSWindowController?, CGFloat)] = [
+            (projectMWindowController as? NSWindowController, isModernUIEnabled ? ModernSkinElements.projectMTitleBarHeight : 20 * Skin.scaleFactor),
+            (plexBrowserWindowController as? NSWindowController, isModernUIEnabled ? ModernSkinElements.libraryTitleBarHeight : 20 * Skin.scaleFactor),
+        ]
+        
+        for (controller, delta) in sideWindowControllers {
+            guard let w = controller?.window, w.isVisible else { continue }
+            adjustWindowSizeConstraints(w, delta: delta, hiding: hiding)
+            
+            if stackBounds != .zero {
+                // Match stack height and alignment
+                var frame = w.frame
+                frame.origin.y = stackBounds.minY
+                frame.size.height = stackBounds.height
+                w.setFrame(frame, display: false)
+            }
+            w.contentView?.needsDisplay = true
+        }
+    }
+    
+    /// Adjust a window's minSize/maxSize constraints for title bar hide/show
+    private func adjustWindowSizeConstraints(_ window: NSWindow, delta: CGFloat, hiding: Bool) {
+        var minSize = window.minSize
+        if hiding {
+            minSize.height = max(0, minSize.height - delta)
+        } else {
+            minSize.height += delta
+        }
+        window.minSize = minSize
+        if window.maxSize.height < CGFloat.greatestFiniteMagnitude {
+            var maxSize = window.maxSize
+            if hiding {
+                maxSize.height = max(0, maxSize.height - delta)
+            } else {
+                maxSize.height += delta
+            }
+            window.maxSize = maxSize
+        }
+    }
+    
+    /// Adjust a window's frame for hidden title bars (shrink by title bar height, pin top edge).
+    /// Call after creating a window when hideTitleBars is already true.
+    func adjustWindowForHiddenTitleBars(_ window: NSWindow, titleBarHeight: CGFloat) {
+        guard hideTitleBars else { return }
+        // Relax size constraints so the window can shrink
+        var minSize = window.minSize
+        minSize.height = max(0, minSize.height - titleBarHeight)
+        window.minSize = minSize
+        if window.maxSize.height < CGFloat.greatestFiniteMagnitude {
+            var maxSize = window.maxSize
+            maxSize.height = max(0, maxSize.height - titleBarHeight)
+            window.maxSize = maxSize
+        }
+        var frame = window.frame
+        frame.origin.y += titleBarHeight
+        frame.size.height -= titleBarHeight
+        window.setFrame(frame, display: false)
+    }
+    
     /// Playlist window controller (classic or modern, accessed via protocol)
     private(set) var playlistWindowController: PlaylistWindowProviding?
     
@@ -191,13 +303,19 @@ class WindowManager {
     // MARK: - Window Management
     
     func showMainWindow() {
-        if mainWindowController == nil {
+        let isNew = mainWindowController == nil
+        if isNew {
             if isModernUIEnabled {
                 let modern = ModernMainWindowController()
                 mainWindowController = modern
             } else {
                 mainWindowController = MainWindowController()
             }
+        }
+        // Adjust for hidden title bars on first creation (before positioning/showing)
+        if isNew, let window = mainWindowController?.window {
+            let tbHeight = isModernUIEnabled ? ModernSkinElements.playlistTitleBarHeight : 14 * Skin.scaleFactor
+            adjustWindowForHiddenTitleBars(window, titleBarHeight: tbHeight)
         }
         mainWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(mainWindowController?.window)
@@ -227,6 +345,8 @@ class WindowManager {
                 playlistWindow.setFrame(frame, display: true)
             } else {
                 positionSubWindow(playlistWindow)
+                let tbHeight = isModernUIEnabled ? ModernSkinElements.playlistTitleBarHeight : 20 * Skin.scaleFactor
+                adjustWindowForHiddenTitleBars(playlistWindow, titleBarHeight: tbHeight)
             }
             NSLog("showPlaylist: window frame = \(playlistWindow.frame)")
         }
@@ -266,6 +386,8 @@ class WindowManager {
                 eqWindow.setFrame(frame, display: true)
             } else {
                 positionSubWindow(eqWindow)
+                let tbHeight = isModernUIEnabled ? ModernSkinElements.eqTitleBarHeight : 14 * Skin.scaleFactor
+                adjustWindowForHiddenTitleBars(eqWindow, titleBarHeight: tbHeight)
             }
         }
         
@@ -381,10 +503,12 @@ class WindowManager {
                 // Position to the right of the vertical stack
                 // Only match stack height if there's more than just the main window
                 let stackBounds = verticalStackBounds()
-                let mainHeight = isModernUIEnabled ? ModernSkinElements.mainWindowSize.height : Skin.mainWindowSize.height
-                let stackHasMultipleWindows = stackBounds.height > mainHeight + 1
+                let mainWindow = mainWindowController?.window
+                let mainActualHeight = mainWindow?.frame.height ?? 0
+                let stackHasMultipleWindows = stackBounds.height > mainActualHeight + 1
                 if stackBounds != .zero && stackHasMultipleWindows {
                     // Match stack height when multiple windows are stacked
+                    // No adjustWindowForHiddenTitleBars needed - stack height already accounts for it
                     let newFrame = NSRect(
                         x: stackBounds.maxX,
                         y: stackBounds.minY,
@@ -392,14 +516,16 @@ class WindowManager {
                         height: stackBounds.height
                     )
                     window.setFrame(newFrame, display: true)
-                } else if let mainWindow = mainWindowController?.window {
+                } else if let mainWindow = mainWindow {
                     // Use default height (4× main) when only main window is visible
+                    // Side window matches stack height, so use 4× actual main height
                     let mainFrame = mainWindow.frame
+                    let defaultHeight = mainFrame.height * 4
                     let newFrame = NSRect(
                         x: mainFrame.maxX,
-                        y: mainFrame.maxY - window.frame.height,
+                        y: mainFrame.maxY - defaultHeight,
                         width: window.frame.width,
-                        height: window.frame.height  // Keep default 4× height
+                        height: defaultHeight
                     )
                     window.setFrame(newFrame, display: true)
                 }
@@ -835,10 +961,12 @@ class WindowManager {
                 // Position to the left of the vertical stack
                 // Only match stack height if there's more than just the main window
                 let stackBounds = verticalStackBounds()
-                let mainHeight = isModernUIEnabled ? ModernSkinElements.mainWindowSize.height : Skin.mainWindowSize.height
-                let stackHasMultipleWindows = stackBounds.height > mainHeight + 1
+                let mainWindow = mainWindowController?.window
+                let mainActualHeight = mainWindow?.frame.height ?? 0
+                let stackHasMultipleWindows = stackBounds.height > mainActualHeight + 1
                 if stackBounds != .zero && stackHasMultipleWindows {
                     // Match stack height when multiple windows are stacked
+                    // No adjustWindowForHiddenTitleBars needed - stack height already accounts for it
                     let newFrame = NSRect(
                         x: stackBounds.minX - window.frame.width,
                         y: stackBounds.minY,
@@ -846,14 +974,16 @@ class WindowManager {
                         height: stackBounds.height
                     )
                     window.setFrame(newFrame, display: true)
-                } else if let mainWindow = mainWindowController?.window {
+                } else if let mainWindow = mainWindow {
                     // Use default height (4× main) when only main window is visible
+                    // Side window matches stack height, so use 4× actual main height
                     let mainFrame = mainWindow.frame
+                    let defaultHeight = mainFrame.height * 4
                     let newFrame = NSRect(
                         x: mainFrame.minX - window.frame.width,
-                        y: mainFrame.maxY - window.frame.height,
+                        y: mainFrame.maxY - defaultHeight,
                         width: window.frame.width,
-                        height: window.frame.height  // Keep default 4× height
+                        height: defaultHeight
                     )
                     window.setFrame(newFrame, display: true)
                 }
@@ -908,6 +1038,8 @@ class WindowManager {
                 window.setFrame(frame, display: true)
             } else {
                 positionSubWindow(window)
+                let tbHeight = isModernUIEnabled ? ModernSkinElements.spectrumTitleBarHeight : 20 * Skin.scaleFactor
+                adjustWindowForHiddenTitleBars(window, titleBarHeight: tbHeight)
             }
         }
         

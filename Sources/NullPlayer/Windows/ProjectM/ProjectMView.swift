@@ -136,7 +136,7 @@ class ProjectMView: NSView {
         
         // The visualization area is the content area inside the chrome
         // Chrome: title bar at top, thin borders on sides and bottom
-        let titleHeight = Layout.titleBarHeight
+        let titleHeight = WindowManager.shared.hideTitleBars ? CGFloat(0) : Layout.titleBarHeight
         let leftBorder = Layout.leftBorder
         let rightBorder = Layout.rightBorder
         let bottomBorder = Layout.bottomBorder
@@ -180,7 +180,12 @@ class ProjectMView: NSView {
     /// Convert a point from view coordinates (macOS bottom-left origin) to skin coordinates (top-left origin)
     private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
         // Simply flip Y coordinate - no scaling needed for resizable window
-        return NSPoint(x: point.x, y: bounds.height - point.y)
+        var skinPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        // When title bars are hidden, offset to match the shifted drawing
+        if WindowManager.shared.hideTitleBars && !isShadeMode {
+            skinPoint.y += Layout.titleBarHeight
+        }
+        return skinPoint
     }
     
     // MARK: - Drawing
@@ -209,6 +214,11 @@ class ProjectMView: NSView {
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
+        
+        // When hiding title bars, shift content up to clip the title bar off the top
+        if WindowManager.shared.hideTitleBars && !isShadeMode {
+            context.translateBy(x: 0, y: -Layout.titleBarHeight)
+        }
         
         // Draw window chrome at actual window bounds (no scaling - chrome tiles to fill)
         renderer.drawProjectMWindow(in: context, bounds: bounds, isActive: isActive,
@@ -313,6 +323,10 @@ class ProjectMView: NSView {
     
     /// Check if point hits title bar (for dragging)
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars {
+            // Invisible drag zone at the top of the visible window
+            return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
+        }
         // Title bar is at the top, leave room for close button on the right
         return skinPoint.y < Layout.titleBarHeight && 
                skinPoint.x < bounds.width - 25  // Leave room for close button area
@@ -320,6 +334,7 @@ class ProjectMView: NSView {
     
     /// Check if point hits close button
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         // Close button is in the right corner of the title bar
         // The titlebar image is scaled to fit window width, so use a generous hit area
         // in the top-right corner (entire title bar height, last 25px of width)
@@ -390,12 +405,12 @@ class ProjectMView: NSView {
             return
         }
         
-        // Content area - allow window dragging (removed click-to-advance preset to prevent crashes from rapid clicking)
+        // Content area - window dragging (removed click-to-advance preset to prevent crashes from rapid clicking)
         // Use arrow keys, context menu, or auto-cycle to change presets instead
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: false)
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.hideTitleBars)
         }
     }
     

@@ -974,6 +974,7 @@ Shows detailed metadata for the currently playing track or video. This option is
 - Fade Duration (when Sweet Fades enabled)
 - Browser Album Art Background
 - Remember State on Quit
+- Hide Title Bars (hides skinned title bars on all windows; drag zone retained at top edge)
 
 ### Local Library
 - Track count
@@ -1134,9 +1135,21 @@ When enabled, the following is saved on quit and restored on launch:
 - **ProjectM preset** (restores the last-used visualization preset)
 - **Library Browser source** (remembers which library was selected)
 - **Custom skin** (if a non-default skin was loaded)
-- **UI preferences** (time display mode, always on top)
+- **UI preferences** (time display mode, always on top, hide title bars)
 
 **Note**: Streaming tracks require their respective servers (Plex/Navidrome) to be available on launch. Tracks from unavailable servers will be skipped. The playlist is restored but no track is automatically loaded or played - you choose when to start playback.
+
+### Hide Title Bars
+
+**Hide Title Bars** removes the skinned title bars from all windows for a cleaner look. Toggle via the right-click context menu.
+
+When enabled:
+- **All windows shrink** by the title bar height, so content fits without stretching
+- **Window border** at the top remains visible for visual separation
+- **Dragging** still works — drag any window from anywhere to move or undock it
+- **Window controls** (close, minimize, shade buttons) are hidden — use the context menu or keyboard shortcuts instead
+- **Side windows** (ProjectM, Library Browser) automatically match the center stack height
+- **Setting persists** across sessions via UserDefaults
 
 ---
 

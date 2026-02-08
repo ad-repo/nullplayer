@@ -186,6 +186,12 @@ Sources/NullPlayer/
   - Multi-monitor: Screen edge snapping is skipped if it would cause docked windows to end up on different screens
   - `Snap to Default` centers main window on its current screen (not always the primary display)
   - Coordinated minimize: uses `addChildWindow`/`removeChildWindow` in `windowWillMiniaturize`/`windowDidDeminiaturize` to temporarily make docked windows children of the main window so they animate into the dock together. Child relationships are removed on restore so windows remain independent for normal docking/dragging
+- **Hide Title Bars mode**: `hideTitleBars` UserDefaults preference hides skinned title bars on all windows. Key implementation details:
+  - Each view's `titleBarHeight` computed property returns `borderWidth` (not 0) when hidden, preserving the top border line
+  - `toggleHideTitleBars()` must adjust `minSize`/`maxSize` constraints BEFORE resizing (EQ has `maxSize = minSize`)
+  - Stack windows (main, EQ, playlist, spectrum) resize independently; side windows (ProjectM, Library Browser) match the stack height
+  - When title bars are hidden, all window drags pass `fromTitleBar: true` to allow undocking (no visual title bar to grab)
+  - Classic windows use drawing transform offset (`translateBy`) to shift the skin image up; modern windows use conditional `titleBarHeight`
 - **Sonos menu**: Uses custom `SonosRoomCheckboxView` to keep menu open during multi-select
 - **Sonos room IDs**: `sonosRooms` returns room UDNs, `sonosDevices` only has group coordinators - match carefully
 - **Subsonic→Sonos casting**: Uses LocalMediaServer proxy because Sonos can't handle URLs with query params (auth tokens). The proxy also handles localhost-bound Navidrome servers. Stream URLs omit `f=json` (only for API responses, not binary streams)

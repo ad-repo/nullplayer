@@ -91,7 +91,7 @@ class SpectrumView: NSView {
     
     private func calculateContentArea() -> NSRect {
         // Content area inside the chrome
-        let titleHeight = Layout.titleBarHeight
+        let titleHeight = WindowManager.shared.hideTitleBars ? CGFloat(0) : Layout.titleBarHeight
         let leftBorder = Layout.leftBorder
         let rightBorder = Layout.rightBorder
         let bottomBorder = Layout.bottomBorder
@@ -123,7 +123,12 @@ class SpectrumView: NSView {
     
     /// Convert a point from view coordinates (macOS bottom-left) to skin coordinates (top-left)
     private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
-        return NSPoint(x: point.x, y: bounds.height - point.y)
+        var skinPoint = NSPoint(x: point.x, y: bounds.height - point.y)
+        // When title bars are hidden, offset to match the shifted drawing
+        if WindowManager.shared.hideTitleBars && !isShadeMode {
+            skinPoint.y += Layout.titleBarHeight
+        }
+        return skinPoint
     }
     
     // MARK: - Drawing
@@ -145,6 +150,11 @@ class SpectrumView: NSView {
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
+        
+        // When hiding title bars, shift content up to clip the title bar off the top
+        if WindowManager.shared.hideTitleBars && !isShadeMode {
+            context.translateBy(x: 0, y: -Layout.titleBarHeight)
+        }
         
         // Draw window chrome with "NULLPLAYER ANALYZER" title
         renderer.drawSpectrumAnalyzerWindow(in: context, bounds: bounds, isActive: isActive,
@@ -209,11 +219,16 @@ class SpectrumView: NSView {
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars {
+            // Invisible drag zone at the very top of the visible window
+            return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
+        }
         return skinPoint.y < Layout.titleBarHeight &&
                skinPoint.x < bounds.width - 25
     }
     
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let titleHeight = Layout.titleBarHeight
         let closeRect = NSRect(x: bounds.width - 25, y: 0, width: 25, height: titleHeight)
         return closeRect.contains(skinPoint)
@@ -263,11 +278,11 @@ class SpectrumView: NSView {
             return
         }
         
-        // Content area - single click allows window dragging
+        // Content area - window dragging
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: false)
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.hideTitleBars)
         }
     }
     

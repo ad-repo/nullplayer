@@ -65,6 +65,12 @@ class ContextMenuBuilder {
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
         
+        // Hide Title Bars
+        let hideTitleBars = NSMenuItem(title: "Hide Title Bars", action: #selector(MenuActions.toggleHideTitleBars), keyEquivalent: "")
+        hideTitleBars.target = MenuActions.shared
+        hideTitleBars.state = wm.hideTitleBars ? .on : .off
+        menu.addItem(hideTitleBars)
+        
         // Remember State On Quit
         let rememberState = NSMenuItem(title: "Remember State On Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
         rememberState.target = MenuActions.shared
@@ -1999,6 +2005,10 @@ class MenuActions: NSObject {
     
     @objc func toggleAlwaysOnTop() {
         WindowManager.shared.isAlwaysOnTop.toggle()
+    }
+    
+    @objc func toggleHideTitleBars() {
+        WindowManager.shared.toggleHideTitleBars()
     }
     
     @objc func snapToDefault() {

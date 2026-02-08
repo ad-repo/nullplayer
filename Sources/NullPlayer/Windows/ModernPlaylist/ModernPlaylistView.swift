@@ -68,7 +68,7 @@ class ModernPlaylistView: NSView {
     
     // MARK: - Layout Constants
     
-    private var titleBarHeight: CGFloat { ModernSkinElements.playlistTitleBarHeight }
+    private var titleBarHeight: CGFloat { WindowManager.shared.hideTitleBars ? borderWidth : ModernSkinElements.playlistTitleBarHeight }
     private var bottomBarHeight: CGFloat { ModernSkinElements.playlistBottomBarHeight }
     private var borderWidth: CGFloat { ModernSkinElements.playlistBorderWidth }
     private var itemHeight: CGFloat { ModernSkinElements.playlistItemHeight }
@@ -251,18 +251,20 @@ class ModernPlaylistView: NSView {
         // Draw window border with glow
         renderer.drawWindowBorder(in: bounds, context: context)
         
-        // Draw title bar
-        renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER PLAYLIST", context: context)
-        
-        // Draw close button
-        let closeState = (pressedButton == "playlist_btn_close") ? "pressed" : "normal"
-        renderer.drawWindowControlButton("playlist_btn_close", state: closeState,
-                                         in: closeBtnBaseRect, context: context)
-        
-        // Draw shade button
-        let shadeState = (pressedButton == "playlist_btn_shade") ? "pressed" : "normal"
-        renderer.drawWindowControlButton("playlist_btn_shade", state: shadeState,
-                                         in: shadeBtnBaseRect, context: context)
+        // Draw title bar (unless hidden)
+        if !WindowManager.shared.hideTitleBars {
+            renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER PLAYLIST", context: context)
+            
+            // Draw close button
+            let closeState = (pressedButton == "playlist_btn_close") ? "pressed" : "normal"
+            renderer.drawWindowControlButton("playlist_btn_close", state: closeState,
+                                             in: closeBtnBaseRect, context: context)
+            
+            // Draw shade button
+            let shadeState = (pressedButton == "playlist_btn_shade") ? "pressed" : "normal"
+            renderer.drawWindowControlButton("playlist_btn_shade", state: shadeState,
+                                             in: shadeBtnBaseRect, context: context)
+        }
         
         if isShadeMode {
             return
@@ -662,12 +664,16 @@ class ModernPlaylistView: NSView {
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars {
+            return point.y >= bounds.height - 6  // invisible drag zone
+        }
         let closeWidth: CGFloat = 30 * ModernSkinElements.scaleFactor
         return point.y >= bounds.height - titleBarHeight &&
                point.x < bounds.width - closeWidth
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let scale = ModernSkinElements.scaleFactor
         let closeRect = NSRect(x: bounds.width - 18 * scale, y: bounds.height - titleBarHeight + 2 * scale,
                                width: 14 * scale, height: 12 * scale)
@@ -675,6 +681,7 @@ class ModernPlaylistView: NSView {
     }
     
     private func hitTestShadeButton(at point: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let scale = ModernSkinElements.scaleFactor
         let shadeRect = NSRect(x: bounds.width - 32 * scale, y: bounds.height - titleBarHeight + 2 * scale,
                                width: 12 * scale, height: 12 * scale)

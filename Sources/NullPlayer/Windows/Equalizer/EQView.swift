@@ -312,14 +312,24 @@ class EQView: NSView {
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
         
+        // When hiding title bars, shift content up to clip the title bar off the top
+        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
+        
         // Apply scaling for resized window
         if scale != 1.0 {
             let scaledWidth = originalSize.width * scale
             let scaledHeight = originalSize.height * scale
             let offsetX = (bounds.width - scaledWidth) / 2
-            let offsetY = (bounds.height - scaledHeight) / 2
+            let offsetY: CGFloat
+            if hidingTitleBar {
+                offsetY = -Layout.titleBarHeight * scale
+            } else {
+                offsetY = (bounds.height - scaledHeight) / 2
+            }
             context.translateBy(x: offsetX, y: offsetY)
             context.scaleBy(x: scale, y: scale)
+        } else if hidingTitleBar {
+            context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
         
         let skin = WindowManager.shared.currentSkin
@@ -498,7 +508,13 @@ class EQView: NSView {
         
         // Check for double-click on title bar to toggle shade mode
         if event.clickCount == 2 {
-            if skinPoint.y < Layout.titleBarHeight && skinPoint.x < bounds.width - 30 {
+            let isTitleBarDblClick: Bool
+            if WindowManager.shared.hideTitleBars {
+                isTitleBarDblClick = viewPoint.y >= bounds.height - 6
+            } else {
+                isTitleBarDblClick = skinPoint.y < Layout.titleBarHeight && skinPoint.x < bounds.width - 30
+            }
+            if isTitleBarDblClick {
                 toggleShadeMode()
                 return
             }
@@ -511,15 +527,15 @@ class EQView: NSView {
         
         // Window dragging is handled by macOS via isMovableByWindowBackground
         
-        // Close button (checked first for priority, enlarged hit area)
-        if Layout.closeHitRect.contains(skinPoint) {
+        // Close button (checked first for priority, enlarged hit area) - skip when title bars hidden
+        if !WindowManager.shared.hideTitleBars && Layout.closeHitRect.contains(skinPoint) {
             pressedButton = .close
             needsDisplay = true
             return
         }
         
-        // Shade button (toggle compact mode, enlarged hit area)
-        if Layout.shadeHitRect.contains(skinPoint) {
+        // Shade button (toggle compact mode, enlarged hit area) - skip when title bars hidden
+        if !WindowManager.shared.hideTitleBars && Layout.shadeHitRect.contains(skinPoint) {
             pressedButton = .shade
             needsDisplay = true
             return
@@ -565,7 +581,13 @@ class EQView: NSView {
         
         // Not on any control - start window drag
         // Only allow undocking if dragging from title bar area
-        let isTitleBarArea = skinPoint.y < Layout.titleBarHeight
+        // When title bars are hidden, all drags allow undocking
+        let isTitleBarArea: Bool
+        if WindowManager.shared.hideTitleBars {
+            isTitleBarArea = true
+        } else {
+            isTitleBarArea = skinPoint.y < Layout.titleBarHeight
+        }
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {

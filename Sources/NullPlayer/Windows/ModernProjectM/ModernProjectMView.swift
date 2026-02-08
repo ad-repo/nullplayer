@@ -66,7 +66,7 @@ class ModernProjectMView: NSView {
     
     // MARK: - Layout Constants
     
-    private var titleBarHeight: CGFloat { ModernSkinElements.projectMTitleBarHeight }
+    private var titleBarHeight: CGFloat { WindowManager.shared.hideTitleBars ? borderWidth : ModernSkinElements.projectMTitleBarHeight }
     private var borderWidth: CGFloat { ModernSkinElements.projectMBorderWidth }
     
     // MARK: - Initialization
@@ -205,30 +205,33 @@ class ModernProjectMView: NSView {
         // Draw window border with glow
         renderer.drawWindowBorder(in: bounds, context: context)
         
-        // Compute title bar and button rects dynamically in base space
-        // (window is larger than the 275x116 base, so we can't use fixed element rects)
-        let baseWidth = bounds.width / scale
-        let baseHeight = bounds.height / scale
-        
-        let titleBarRect = NSRect(x: 0, y: baseHeight - 14, width: baseWidth, height: 14)
-        let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - 12, width: 10, height: 10)
-        
-        // Draw title bar image if skin provides one
-        let titleBarId = "projectm_titlebar"
-        if let img = renderer.skin.image(for: titleBarId) {
-            let scaledTitleRect = renderer.scaledRect(titleBarRect)
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-            img.draw(in: scaledTitleRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-            NSGraphicsContext.restoreGraphicsState()
+        // Draw title bar (unless hidden)
+        if !WindowManager.shared.hideTitleBars {
+            // Compute title bar and button rects dynamically in base space
+            // (window is larger than the 275x116 base, so we can't use fixed element rects)
+            let baseWidth = bounds.width / scale
+            let baseHeight = bounds.height / scale
+            
+            let titleBarRect = NSRect(x: 0, y: baseHeight - 14, width: baseWidth, height: 14)
+            let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - 12, width: 10, height: 10)
+            
+            // Draw title bar image if skin provides one
+            let titleBarId = "projectm_titlebar"
+            if let img = renderer.skin.image(for: titleBarId) {
+                let scaledTitleRect = renderer.scaledRect(titleBarRect)
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+                img.draw(in: scaledTitleRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+                NSGraphicsContext.restoreGraphicsState()
+            }
+            // Draw title text and separator
+            renderer.drawTitleBar(in: titleBarRect, title: "projectM", context: context)
+            
+            // Draw close button
+            let closeState = (pressedButton == "projectm_btn_close") ? "pressed" : "normal"
+            renderer.drawWindowControlButton("projectm_btn_close", state: closeState,
+                                             in: closeBtnRect, context: context)
         }
-        // Draw title text and separator
-        renderer.drawTitleBar(in: titleBarRect, title: "projectM", context: context)
-        
-        // Draw close button
-        let closeState = (pressedButton == "projectm_btn_close") ? "pressed" : "normal"
-        renderer.drawWindowControlButton("projectm_btn_close", state: closeState,
-                                         in: closeBtnRect, context: context)
         
         // In shade mode, just draw title bar - no content area
         if isShadeMode {
@@ -338,12 +341,16 @@ class ModernProjectMView: NSView {
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars {
+            return point.y >= bounds.height - 6  // invisible drag zone
+        }
         // Title bar at the top, leave room for close button on the right
         return point.y >= bounds.height - titleBarHeight &&
                point.x < bounds.width - 30
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        if WindowManager.shared.hideTitleBars { return false }
         let closeRect = NSRect(x: bounds.width - 20, y: bounds.height - titleBarHeight,
                                width: 20, height: titleBarHeight)
         return closeRect.contains(point)
@@ -386,11 +393,12 @@ class ModernProjectMView: NSView {
             return
         }
         
-        // Content area - allow window dragging
+        // Content area - window dragging
+        // When title bars are hidden, all drags allow undocking (no visual title bar distinction)
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: false)
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.hideTitleBars)
         }
     }
     

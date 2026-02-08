@@ -769,8 +769,13 @@ class MainWindowView: NSView {
     private func convertToOriginalCoordinates(_ point: NSPoint) -> NSPoint {
         let originalSize = isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
         let scale = scaleFactor
+        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
         
         if scale == 1.0 {
+            if hidingTitleBar {
+                // Offset Y to account for hidden title bar shift
+                return NSPoint(x: point.x, y: point.y + SkinElements.titleBarHeight)
+            }
             return point
         }
         
@@ -778,7 +783,13 @@ class MainWindowView: NSView {
         let scaledWidth = originalSize.width * scale
         let scaledHeight = originalSize.height * scale
         let offsetX = (bounds.width - scaledWidth) / 2
-        let offsetY = (bounds.height - scaledHeight) / 2
+        let offsetY: CGFloat
+        if hidingTitleBar {
+            // Match the draw transform: full title bar shift
+            offsetY = -SkinElements.titleBarHeight * scale
+        } else {
+            offsetY = (bounds.height - scaledHeight) / 2
+        }
         
         // Transform point back to original coordinates
         let x = (point.x - offsetX) / scale
@@ -809,15 +820,27 @@ class MainWindowView: NSView {
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
         
+        // When hiding title bars, shift content up to clip the title bar off the top
+        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
+        
         // Apply scaling for resized window
         if scale != 1.0 {
             // Center the scaled content
             let scaledWidth = originalSize.width * scale
             let scaledHeight = originalSize.height * scale
             let offsetX = (bounds.width - scaledWidth) / 2
-            let offsetY = (bounds.height - scaledHeight) / 2
+            let offsetY: CGFloat
+            if hidingTitleBar {
+                // Shift up by full title bar height so it's above the visible area
+                offsetY = -SkinElements.titleBarHeight * scale
+            } else {
+                offsetY = (bounds.height - scaledHeight) / 2
+            }
             context.translateBy(x: offsetX, y: offsetY)
             context.scaleBy(x: scale, y: scale)
+        } else if hidingTitleBar {
+            // No scaling, but still need to shift up for hidden title bar
+            context.translateBy(x: 0, y: -SkinElements.titleBarHeight)
         }
         
         let skin = WindowManager.shared.currentSkin
@@ -992,8 +1015,10 @@ class MainWindowView: NSView {
             pressedButton: pressedButton
         )
         
-        // Draw window controls (minimize, shade, close)
-        renderer.drawWindowControls(in: context, bounds: drawBounds, pressedButton: pressedButton)
+        // Draw window controls (minimize, shade, close) - skip when title bars are hidden
+        if !WindowManager.shared.hideTitleBars {
+            renderer.drawWindowControls(in: context, bounds: drawBounds, pressedButton: pressedButton)
+        }
     }
     
     // MARK: - Public Methods
@@ -1282,14 +1307,24 @@ class MainWindowView: NSView {
         
         // Hit test for actions
         if let action = regionManager.hitTest(point: point, in: .main, windowSize: hitTestSize) {
-            handleMouseDown(action: action, at: point)
-            return
+            // Skip window control actions when title bars are hidden
+            let isWindowControl = (action == .close || action == .minimize || action == .shade || action == .openMainMenu)
+            if !(WindowManager.shared.hideTitleBars && isWindowControl) {
+                handleMouseDown(action: action, at: point)
+                return
+            }
         }
         
         // No action hit - start window drag
         // Only allow undocking if dragging from title bar area (top 14 pixels in skin coords)
-        // skinY already calculated above for spectrum check
-        let isTitleBarArea = skinY < 14  // Title bar is 14px tall
+        // When title bars are hidden, use a small drag zone at the top of the view
+        // When title bars are hidden, all drags allow undocking (no visual title bar distinction)
+        let isTitleBarArea: Bool
+        if WindowManager.shared.hideTitleBars {
+            isTitleBarArea = true
+        } else {
+            isTitleBarArea = skinY < 14  // Title bar is 14px tall
+        }
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {
