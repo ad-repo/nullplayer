@@ -43,6 +43,13 @@ let package = Package(
             pkgConfig: nil,
             providers: []
         ),
+        // System library target for libaubio (BPM/tempo detection)
+        .systemLibrary(
+            name: "CAubio",
+            path: "Frameworks/libaubio",
+            pkgConfig: nil,
+            providers: []
+        ),
         .executableTarget(
             name: "NullPlayer",
             dependencies: [
@@ -52,6 +59,7 @@ let package = Package(
                 "KSPlayer",
                 "AudioStreaming",
                 "CProjectM",
+                "CAubio",
                 "FlyingFox",
             ],
             path: "Sources/NullPlayer",
@@ -65,7 +73,11 @@ let package = Package(
                 .copy("ModernSkin/BloomShader.metal")
             ],
             linkerSettings: [
-                .unsafeFlags(["-L", "Frameworks", "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
+                .unsafeFlags([
+                    "-L", "Frameworks",
+                    "-L", "/opt/homebrew/lib",
+                    "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
+                ]),
             ]
         ),
         .testTarget(

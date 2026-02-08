@@ -781,23 +781,28 @@ Real-time BPM (beats per minute) detection runs on the audio tap alongside spect
 
 ### Algorithm
 
-1. **Bass energy extraction** - Small 512-point FFT isolates 20-200 Hz energy per frame
-2. **Energy buffering** - Raw bass energy values stored in a rolling ~12-second buffer with timestamps
-3. **Autocorrelation** - Mean-normalized autocorrelation of the energy buffer finds dominant periodicity. The actual sample rate is computed from timestamps (not hardcoded)
-4. **Octave correction** - Raw BPM is doubled/halved to fit 60-200 BPM range
-5. **Smoothing** - Three-layer stabilization:
-   - Median filter (window of 7 estimates) removes outliers
-   - EMA (alpha 0.2) smooths transitions
-   - Lock-in: after 3 stable readings, resists change until 3+ consecutive readings deviate by >5 BPM
+Powered by **aubio** (`libaubio`), a mature C library for audio analysis. Uses aubio's `aubio_tempo_t` which combines onset detection with beat tracking for accurate tempo estimation across all genres (including extreme tempos like grindcore).
+
+1. **Audio input** - Mono-mixed PCM samples fed to aubio in hop-size chunks (512 samples)
+2. **Onset detection** - aubio detects note/beat onsets using spectral flux
+3. **Beat tracking** - aubio's internal beat tracker finds periodicity from onset patterns
+4. **BPM + confidence** - `aubio_tempo_get_bpm()` and `aubio_tempo_get_confidence()` return the current estimate
+5. **Smoothing** - Median filter over last 10 readings for display stability
+6. **Confidence threshold** - Only displays when aubio's confidence exceeds 0.1
 
 ### Data Flow
 
 - Both `AudioEngine` (local) and `StreamingAudioPlayer` (streaming) own a `BPMDetector` instance
 - Fed from the same mono-mixed PCM buffer used for spectrum analysis (before windowing)
-- Needs ~3 seconds of data (~150 frames) before first analysis attempt
-- Analysis runs every 0.5 seconds (not every frame)
-- Posts `.bpmUpdated` notification with `["bpm": Int]` (0 = no confidence)
+- aubio processes in 512-sample hops internally (samples are accumulated from the 2048-sample audio tap)
+- Posts `.bpmUpdated` notification with `["bpm": Int]` (0 = no confident reading)
 - Notifications throttled to 1/second to avoid UI spam
+
+### Dependencies
+
+- **libaubio** (`Frameworks/libaubio.5.dylib`) - C library, bundled in the app like libprojectM
+- Headers in `Frameworks/libaubio/` with `CAubio` module map
+- Install via `brew install aubio` for development
 
 ### Display
 
@@ -925,6 +930,7 @@ To fix problematic M4A files, re-encode with `ffmpeg -i input.m4a -movflags +fas
 | Accelerate | FFT for spectrum analysis | System |
 | CoreAudio | Output device management | System |
 | [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) | HTTP streaming with AVAudioEngine | 1.4.0+ |
+| [aubio](https://aubio.org) | Real-time BPM/tempo detection | 0.4.9+ |
 
 ## Platform Requirements
 

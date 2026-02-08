@@ -62,7 +62,7 @@ echo ""
 
 # Step 1: Check frameworks exist
 log_info "Checking required frameworks..."
-if [[ ! -d "$REPO_ROOT/Frameworks/VLCKit.framework" ]] || [[ ! -f "$REPO_ROOT/Frameworks/libprojectM-4.dylib" ]]; then
+if [[ ! -d "$REPO_ROOT/Frameworks/VLCKit.framework" ]] || [[ ! -f "$REPO_ROOT/Frameworks/libprojectM-4.dylib" ]] || [[ ! -f "$REPO_ROOT/Frameworks/libaubio.5.dylib" ]]; then
     log_error "Required frameworks not found. Run ./scripts/bootstrap.sh first."
     exit 1
 fi
@@ -97,6 +97,15 @@ log_info "Copying frameworks..."
 cp -R "$REPO_ROOT/Frameworks/VLCKit.framework" "$FRAMEWORKS_DIR/"
 cp "$REPO_ROOT/Frameworks/libprojectM-4.dylib" "$FRAMEWORKS_DIR/"
 ln -sf "libprojectM-4.dylib" "$FRAMEWORKS_DIR/libprojectM-4.4.dylib"
+
+# Copy libaubio (BPM detection)
+if [[ -f "$REPO_ROOT/Frameworks/libaubio.5.dylib" ]]; then
+    cp "$REPO_ROOT/Frameworks/libaubio.5.dylib" "$FRAMEWORKS_DIR/"
+    ln -sf "libaubio.5.dylib" "$FRAMEWORKS_DIR/libaubio.dylib"
+    log_success "libaubio copied"
+else
+    log_warning "libaubio.5.dylib not found - BPM detection will not work"
+fi
 
 # Copy ogg and vorbis frameworks from xcframework artifacts
 OGG_FRAMEWORK="$REPO_ROOT/.build/artifacts/ogg-binary-xcframework/ogg/ogg.xcframework/macos-arm64_x86_64/ogg.framework"
@@ -173,6 +182,13 @@ install_name_tool -change "@rpath/libprojectM-4.4.dylib" "@executable_path/../Fr
 
 # Update libprojectM's own install name
 install_name_tool -id "@executable_path/../Frameworks/libprojectM-4.dylib" "$FRAMEWORKS_DIR/libprojectM-4.dylib" 2>/dev/null || true
+
+# Fix libaubio reference in executable
+if [[ -f "$FRAMEWORKS_DIR/libaubio.5.dylib" ]]; then
+    install_name_tool -change "/opt/homebrew/opt/aubio/lib/libaubio.5.dylib" "@executable_path/../Frameworks/libaubio.5.dylib" "$MACOS_DIR/NullPlayer" 2>/dev/null || true
+    install_name_tool -change "/opt/homebrew/lib/libaubio.5.dylib" "@executable_path/../Frameworks/libaubio.5.dylib" "$MACOS_DIR/NullPlayer" 2>/dev/null || true
+    install_name_tool -id "@executable_path/../Frameworks/libaubio.5.dylib" "$FRAMEWORKS_DIR/libaubio.5.dylib" 2>/dev/null || true
+fi
 
 log_success "App bundle created at $APP_BUNDLE"
 
