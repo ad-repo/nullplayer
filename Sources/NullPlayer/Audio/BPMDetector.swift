@@ -1,7 +1,7 @@
 import Foundation
 import CAubio
 
-/// Real-time BPM detector powered by aubio's tempo/beat detection.
+/// Real-time BPM detector powered by aubio's tempo detection.
 ///
 /// Uses aubio's `aubio_tempo_t` for beat detection and BPM estimation.
 /// Thread-safe: `reset()` sets a flag consumed by `process()` on the audio
@@ -88,7 +88,6 @@ class BPMDetector {
     
     /// Process audio samples. Called from the audio tap thread ONLY.
     func process(samples: UnsafePointer<Float>, count: Int, sampleRate: Double) {
-        // Handle reset request from another thread
         if needsReset {
             needsReset = false
             destroyAubio()
@@ -124,7 +123,6 @@ class BPMDetector {
         let hop = Int(hopSize)
         let now = CFAbsoluteTimeGetCurrent()
         
-        // Process in hop-sized chunks
         while ringCount >= hop {
             for i in 0..<hop {
                 inputData[i] = ringBuffer[ringReadPos]
@@ -155,7 +153,6 @@ class BPMDetector {
             }
         }
         
-        // Post notification (throttled)
         if hasConfidentReading && displayedBPM > 0 && now - lastNotificationTime >= notificationInterval {
             lastNotificationTime = now
             let bpm = displayedBPM
