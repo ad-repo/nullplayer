@@ -565,14 +565,16 @@ class ModernLibraryBrowserView: NSView {
         let listRect = NSRect(x: Layout.borderWidth, y: listAreaY,
                               width: bounds.width - Layout.borderWidth * 2, height: listAreaHeight)
         
-        if currentSource.isPlex && !PlexManager.shared.isLinked {
+        if isArtOnlyMode {
+            // Art-only mode takes precedence over loading/error states (matches PlexBrowserView)
+            // so that visualization continues uninterrupted during data refreshes
+            drawArtOnlyArea(in: context, contentRect: listRect, skin: skin, artwork: capturedArtwork)
+        } else if currentSource.isPlex && !PlexManager.shared.isLinked {
             drawNotLinkedState(in: context, listRect: listRect, skin: skin)
         } else if isLoading {
             drawLoadingState(in: context, listRect: listRect, skin: skin)
         } else if let error = errorMessage {
             drawErrorState(in: context, message: error, listRect: listRect, skin: skin)
-        } else if isArtOnlyMode {
-            drawArtOnlyArea(in: context, contentRect: listRect, skin: skin, artwork: capturedArtwork)
         } else {
             drawListArea(in: context, listAreaY: listAreaY, listAreaHeight: listAreaHeight, skin: skin, artwork: capturedArtwork)
         }
@@ -2697,7 +2699,14 @@ class ModernLibraryBrowserView: NSView {
     }
     
     @objc private func trackDidChange(_ notification: Notification) {
-        if isArtOnlyMode { fetchCurrentTrackRating(); loadAllArtworkForCurrentTrack() }
+        if isArtOnlyMode {
+            // Art-only mode uses loadAllArtworkForCurrentTrack exclusively.
+            // Don't also call loadArtwork(for:) to avoid a race where loadArtwork
+            // finishes last with nil and overwrites valid artwork.
+            fetchCurrentTrackRating()
+            loadAllArtworkForCurrentTrack()
+            return
+        }
         guard WindowManager.shared.showBrowserArtworkBackground else {
             if currentArtwork != nil { currentArtwork = nil; artworkTrackId = nil; needsDisplay = true }; return
         }
@@ -2799,8 +2808,14 @@ class ModernLibraryBrowserView: NSView {
         visualizerTime += 1.0/30.0
         let spectrumData = WindowManager.shared.audioEngine.spectrumData
         let currentLevel = spectrumData.reduce(0, +) / Float(spectrumData.count)
-        if currentLevel < 0.001 { silenceFrames += 1; if silenceFrames > 15 { return } }
-        else {
+        let isPlaying = WindowManager.shared.audioEngine.state == .playing
+        if currentLevel < 0.001 {
+            silenceFrames += 1
+            // Only skip redraws during silence when audio is NOT playing.
+            // When playing, streaming audio may still be buffering (no spectrum data yet)
+            // so we keep redrawing to show time-based effects on the artwork.
+            if silenceFrames > 15 && !isPlaying { return }
+        } else {
             silenceFrames = 0
             if visMode == .random {
                 let bass = spectrumData.prefix(10).reduce(0, +) / 10.0

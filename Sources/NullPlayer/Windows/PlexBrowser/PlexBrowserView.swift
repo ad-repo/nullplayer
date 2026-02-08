@@ -958,13 +958,16 @@ class PlexBrowserView: NSView {
         // Check audio level - only animate when music is playing
         let spectrumData = WindowManager.shared.audioEngine.spectrumData
         let currentLevel = spectrumData.reduce(0, +) / Float(spectrumData.count)
+        let isPlaying = WindowManager.shared.audioEngine.state == .playing
         
         // Detect silence (very low audio level)
         if currentLevel < 0.001 {
             silenceFrames += 1
-            // After ~0.5 seconds of silence, stop animating
-            if silenceFrames > 15 { // Adjusted for 30fps
-                return // Don't redraw during silence
+            // Only skip redraws during silence when audio is NOT playing.
+            // When playing, streaming audio may still be buffering (no spectrum data yet)
+            // so we keep redrawing to show time-based effects on the artwork.
+            if silenceFrames > 15 && !isPlaying {
+                return
             }
         } else {
             silenceFrames = 0
@@ -4663,10 +4666,13 @@ class PlexBrowserView: NSView {
     // MARK: - Artwork Background
     
     @objc private func trackDidChange(_ notification: Notification) {
-        // Fetch new track's rating and reload artwork when in art mode
         if isArtOnlyMode {
+            // Art-only mode uses loadAllArtworkForCurrentTrack exclusively.
+            // Don't also call loadArtwork(for:) to avoid a race where loadArtwork
+            // finishes last with nil and overwrites valid artwork.
             fetchCurrentTrackRating()
             loadAllArtworkForCurrentTrack()
+            return
         }
         
         guard WindowManager.shared.showBrowserArtworkBackground else {
