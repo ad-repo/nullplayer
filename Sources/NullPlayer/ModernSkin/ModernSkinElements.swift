@@ -110,11 +110,11 @@ enum ModernSkinElements {
     static let btnSpectrum = Element("btn_spectrum", NSRect(x: 242, y: 42, width: 22, height: 14),
                                      states: ["off", "on", "off_pressed", "on_pressed"])
     
-    // MARK: - Seek Bar (thin line spanning full width)
+    // MARK: - Seek Bar (thin line spanning full width, centered between transport & toggle rows)
     
-    static let seekTrack = Element("seek_track", NSRect(x: 8, y: 36, width: 259, height: 3))
-    static let seekFill = Element("seek_fill", NSRect(x: 8, y: 36, width: 0, height: 3))
-    static let seekThumb = Element("seek_thumb", NSRect(x: 8, y: 34, width: 6, height: 6),
+    static let seekTrack = Element("seek_track", NSRect(x: 8, y: 32, width: 259, height: 3))
+    static let seekFill = Element("seek_fill", NSRect(x: 8, y: 32, width: 0, height: 3))
+    static let seekThumb = Element("seek_thumb", NSRect(x: 8, y: 30, width: 6, height: 6),
                                    states: ["normal", "pressed"])
     
     // MARK: - Transport Buttons (bottom-left, 6 buttons)
