@@ -71,6 +71,9 @@
         },
         "eq_titlebar": {
             "color": "#0c1018"
+        },
+        "library_titlebar": {
+            "color": "#0c1018"
         }
     },
     "animations": {

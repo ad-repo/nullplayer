@@ -4,8 +4,11 @@ import AppKit
 /// Used by modern skin windows which have fixed dimensions and handle their
 /// own dragging via the view layer. Supports fullscreen via style mask.
 ///
-/// Optionally supports bottom-edge resize for windows like the playlist
-/// that need vertical expansion. Configure via `allowedResizeEdges`.
+/// Optionally supports edge resize for windows that need it.
+/// Configure via `allowedResizeEdges`:
+/// - Empty (default) = no resize allowed (ModernEQ, ModernSpectrum, ModernMainWindow)
+/// - `[.bottom]` = vertical-only expansion (ModernPlaylist)
+/// - `[.left, .right, .top, .bottom]` = full multi-edge resize (ModernLibraryBrowser)
 class BorderlessWindow: NSWindow {
     
     /// Edges that allow resize dragging. Empty (default) = no resize allowed.
@@ -14,6 +17,9 @@ class BorderlessWindow: NSWindow {
     /// Available resize edges
     enum ResizeEdge {
         case bottom
+        case top
+        case left
+        case right
     }
     
     // MARK: - Resize State
@@ -23,6 +29,9 @@ class BorderlessWindow: NSWindow {
     
     /// Whether we're currently in a resize operation
     private var isResizing = false
+    
+    /// Which edges are actively being resized
+    private var activeResizeEdges: Set<ResizeEdge> = []
     
     /// Initial mouse location in screen coordinates when resize started
     private var initialMouseLocation: NSPoint = .zero
@@ -37,10 +46,40 @@ class BorderlessWindow: NSWindow {
     
     // MARK: - Edge Detection
     
-    /// Check if the point is near the bottom edge (for resize)
-    private func isNearBottomEdge(at windowPoint: NSPoint) -> Bool {
-        guard allowedResizeEdges.contains(.bottom) else { return false }
-        return windowPoint.y < edgeThickness
+    /// Detect which allowed resize edges the point is near
+    private func detectResizeEdges(at windowPoint: NSPoint) -> Set<ResizeEdge> {
+        var edges = Set<ResizeEdge>()
+        
+        if allowedResizeEdges.contains(.bottom) && windowPoint.y < edgeThickness {
+            edges.insert(.bottom)
+        }
+        if allowedResizeEdges.contains(.top) && windowPoint.y > frame.height - edgeThickness {
+            edges.insert(.top)
+        }
+        if allowedResizeEdges.contains(.left) && windowPoint.x < edgeThickness {
+            edges.insert(.left)
+        }
+        if allowedResizeEdges.contains(.right) && windowPoint.x > frame.width - edgeThickness {
+            edges.insert(.right)
+        }
+        
+        return edges
+    }
+    
+    /// Get the appropriate cursor for the given resize edges
+    private func cursor(for edges: Set<ResizeEdge>) -> NSCursor {
+        let hasH = edges.contains(.left) || edges.contains(.right)
+        let hasV = edges.contains(.top) || edges.contains(.bottom)
+        
+        if hasH && hasV {
+            // Corner - use crosshair since macOS doesn't have diagonal resize cursors
+            return NSCursor.crosshair
+        } else if hasH {
+            return NSCursor.resizeLeftRight
+        } else if hasV {
+            return NSCursor.resizeUpDown
+        }
+        return NSCursor.arrow
     }
     
     // MARK: - Event Handling
@@ -55,8 +94,10 @@ class BorderlessWindow: NSWindow {
         switch event.type {
         case .leftMouseDown:
             let windowPoint = event.locationInWindow
-            if isNearBottomEdge(at: windowPoint) {
+            let edges = detectResizeEdges(at: windowPoint)
+            if !edges.isEmpty {
                 isResizing = true
+                activeResizeEdges = edges
                 initialMouseLocation = NSEvent.mouseLocation
                 initialFrame = frame
                 return
@@ -64,20 +105,22 @@ class BorderlessWindow: NSWindow {
             
         case .leftMouseDragged:
             if isResizing {
-                performBottomResize()
+                performResize()
                 return
             }
             
         case .leftMouseUp:
             if isResizing {
                 isResizing = false
+                activeResizeEdges = []
                 return
             }
             
         case .mouseMoved:
             let windowPoint = event.locationInWindow
-            if isNearBottomEdge(at: windowPoint) {
-                NSCursor.resizeUpDown.set()
+            let edges = detectResizeEdges(at: windowPoint)
+            if !edges.isEmpty {
+                cursor(for: edges).set()
             } else if !isResizing {
                 NSCursor.arrow.set()
             }
@@ -91,35 +134,70 @@ class BorderlessWindow: NSWindow {
     
     // MARK: - Resize Logic
     
-    private func performBottomResize() {
+    private func performResize() {
         let currentMouseLocation = NSEvent.mouseLocation
+        let deltaX = currentMouseLocation.x - initialMouseLocation.x
         let deltaY = currentMouseLocation.y - initialMouseLocation.y
+        
+        var newFrame = initialFrame
         
         // Bottom edge: moving mouse down (negative deltaY) increases height,
         // and moves the origin down
-        let newHeight = initialFrame.height - deltaY
+        if activeResizeEdges.contains(.bottom) {
+            let newHeight = initialFrame.height - deltaY
+            newFrame.size.height = newHeight
+            newFrame.origin.y = initialFrame.origin.y + deltaY
+        }
         
-        guard newHeight >= minSize.height else {
-            // Snap to minimum
-            var newFrame = initialFrame
-            newFrame.origin.y = initialFrame.maxY - minSize.height
+        // Top edge: moving mouse up (positive deltaY) increases height,
+        // origin stays the same
+        if activeResizeEdges.contains(.top) {
+            let newHeight = initialFrame.height + deltaY
+            newFrame.size.height = newHeight
+        }
+        
+        // Left edge: moving mouse left (negative deltaX) increases width,
+        // and moves the origin left
+        if activeResizeEdges.contains(.left) {
+            let newWidth = initialFrame.width - deltaX
+            newFrame.size.width = newWidth
+            newFrame.origin.x = initialFrame.origin.x + deltaX
+        }
+        
+        // Right edge: moving mouse right (positive deltaX) increases width,
+        // origin stays the same
+        if activeResizeEdges.contains(.right) {
+            let newWidth = initialFrame.width + deltaX
+            newFrame.size.width = newWidth
+        }
+        
+        // Clamp to min/max size, adjusting origin as needed
+        if newFrame.size.width < minSize.width {
+            if activeResizeEdges.contains(.left) {
+                newFrame.origin.x = initialFrame.maxX - minSize.width
+            }
+            newFrame.size.width = minSize.width
+        }
+        if maxSize.width > 0 && newFrame.size.width > maxSize.width {
+            if activeResizeEdges.contains(.left) {
+                newFrame.origin.x = initialFrame.maxX - maxSize.width
+            }
+            newFrame.size.width = maxSize.width
+        }
+        
+        if newFrame.size.height < minSize.height {
+            if activeResizeEdges.contains(.bottom) {
+                newFrame.origin.y = initialFrame.maxY - minSize.height
+            }
             newFrame.size.height = minSize.height
-            setFrame(newFrame, display: true)
-            return
         }
-        
-        if maxSize.height > 0 && newHeight > maxSize.height {
-            // Snap to maximum
-            var newFrame = initialFrame
-            newFrame.origin.y = initialFrame.maxY - maxSize.height
+        if maxSize.height > 0 && newFrame.size.height > maxSize.height {
+            if activeResizeEdges.contains(.bottom) {
+                newFrame.origin.y = initialFrame.maxY - maxSize.height
+            }
             newFrame.size.height = maxSize.height
-            setFrame(newFrame, display: true)
-            return
         }
         
-        var newFrame = initialFrame
-        newFrame.origin.y = initialFrame.origin.y + deltaY
-        newFrame.size.height = newHeight
         setFrame(newFrame, display: true)
     }
 }

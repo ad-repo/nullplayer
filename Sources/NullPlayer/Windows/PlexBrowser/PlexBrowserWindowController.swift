@@ -1,7 +1,7 @@
 import AppKit
 
-/// Controller for the Plex browser window
-class PlexBrowserWindowController: NSWindowController {
+/// Controller for the Plex browser window (classic skin mode)
+class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProviding {
     
     // MARK: - Properties
     
@@ -20,7 +20,7 @@ class PlexBrowserWindowController: NSWindowController {
     private static let shadeHeight: CGFloat = 14
     
     /// Shade mode state
-    private var isShadeMode = false
+    private(set) var isShadeMode = false
     
     /// Normal mode frame (stored when entering shade mode)
     private var normalModeFrame: NSRect?

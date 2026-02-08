@@ -237,6 +237,37 @@ enum ModernSkinElements {
     static let spectrumBtnClose = Element("spectrum_btn_close", NSRect(x: 256, y: 104, width: 10, height: 10),
                                           states: ["normal", "pressed"])
     
+    // MARK: - Library Browser Window
+    
+    /// Library browser default window size (wider than main window; height = 4x main window)
+    static let libraryDefaultSize = NSSize(
+        width: 550,
+        height: baseMainSize.height * scaleFactor * 4
+    )
+    
+    /// Library browser minimum size
+    static let libraryMinSize = NSSize(width: 480, height: 300)
+    
+    /// Library browser shade mode height
+    static let libraryShadeHeight: CGFloat = 18 * scaleFactor
+    
+    /// Library browser title bar height
+    static let libraryTitleBarHeight: CGFloat = 14 * scaleFactor
+    
+    /// Library browser border width
+    static let libraryBorderWidth: CGFloat = 3 * scaleFactor
+    
+    /// Library browser title bar (per-window skinning)
+    static let libraryTitleBar = Element("library_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
+    
+    /// Library browser close button
+    static let libraryBtnClose = Element("library_btn_close", NSRect(x: 256, y: 104, width: 10, height: 10),
+                                         states: ["normal", "pressed"])
+    
+    /// Library browser shade button
+    static let libraryBtnShade = Element("library_btn_shade", NSRect(x: 244, y: 104, width: 10, height: 10),
+                                         states: ["normal", "pressed"])
+    
     // MARK: - All Elements
     
     static let allElements: [Element] = [
@@ -253,7 +284,8 @@ enum ModernSkinElements {
         volumeTrack, volumeFill, volumeThumb,
         playlistTitleBar, playlistBtnClose, playlistBtnShade,
         eqTitleBar, eqBtnClose, eqBtnShade,
-        spectrumTitleBar, spectrumBtnClose
+        spectrumTitleBar, spectrumBtnClose,
+        libraryTitleBar, libraryBtnClose, libraryBtnShade
     ]
     
     /// Look up element by ID

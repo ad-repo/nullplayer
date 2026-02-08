@@ -237,6 +237,16 @@ The modern EQ window renders a 10-band graphic equalizer with preamp, ON/OFF tog
 
 If a skin provides no window-specific images, the renderer falls back to the shared chrome elements, then to programmatic fallback using palette colors.
 
+### Library Browser Window Chrome
+
+| Element ID | Default Rect | States | Description |
+|-----------|-------------|--------|-------------|
+| `library_titlebar` | 0,102,275,14 | normal | Library browser title bar (falls back to `titlebar` rendering) |
+| `library_btn_close` | 256,104,10,10 | normal, pressed | Library browser close button (falls back to `btn_close`) |
+| `library_btn_shade` | 244,104,10,10 | normal, pressed | Library browser shade button (falls back to `btn_shade`) |
+
+The modern library browser provides multi-source browsing (Local Files, Plex, Subsonic/Navidrome, Internet Radio) with multiple browse modes (Artists, Albums, Tracks, Playlists, Movies, Shows, Search, Radio). Tabs and selections use the modern boxed toggle style with `accent` color when active and `textDim` color when inactive. The window supports multi-edge resizing (all four edges and corners).
+
 ## Multi-Window Support
 
 The modern skin system renders multiple windows:
@@ -245,6 +255,7 @@ The modern skin system renders multiple windows:
 - **Playlist Window** -- track list with selection, scrolling, marquee, accent-colored playing track
 - **EQ Window** -- 10-band graphic equalizer with preamp, Auto EQ, presets, curve graph
 - **Spectrum Analyzer Window** -- standalone visualization with skin chrome
+- **Library Browser Window** -- multi-source browser (Local/Plex/Subsonic/Radio) with hierarchy, columns, artwork, visualizer
 
 All windows share the same `window_background`, `window_border`, palette colors, glow, grid, and font settings from the active skin. To customize individual windows differently, prefix element IDs with the window name (e.g., `spectrum_titlebar` vs `titlebar`).
 
@@ -252,7 +263,7 @@ All windows share the same `window_background`, `window_border`, palette colors,
 
 The bundled default skin ("NeonWave") is fully programmatic -- it contains zero PNG image assets and relies entirely on the palette colors and the renderer's programmatic fallback.
 
-**Windows covered**: Main window + Playlist window + EQ window + Spectrum Analyzer window
+**Windows covered**: Main window + Playlist window + EQ window + Spectrum Analyzer window + Library Browser window
 
 **Palette**: `#00ffcc` (cyan primary), `#ff00aa` (magenta accent), `#080810` (background)
 

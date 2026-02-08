@@ -78,8 +78,8 @@ class WindowManager {
     /// Equalizer window controller (classic or modern, accessed via protocol)
     private(set) var equalizerWindowController: EQWindowProviding?
     
-    /// Plex browser window controller (also handles local media library)
-    private var plexBrowserWindowController: PlexBrowserWindowController?
+    /// Library browser window controller (classic or modern, accessed via protocol)
+    private var plexBrowserWindowController: LibraryBrowserWindowProviding?
     
     /// Video player window controller
     private var videoPlayerWindowController: VideoPlayerWindowController?
@@ -363,7 +363,11 @@ class WindowManager {
     func showPlexBrowser(at restoredFrame: NSRect? = nil) {
         let isNewWindow = plexBrowserWindowController == nil
         if isNewWindow {
-            plexBrowserWindowController = PlexBrowserWindowController()
+            if isModernUIEnabled {
+                plexBrowserWindowController = ModernLibraryBrowserWindowController()
+            } else {
+                plexBrowserWindowController = PlexBrowserWindowController()
+            }
         }
         plexBrowserWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
@@ -377,7 +381,8 @@ class WindowManager {
                 // Position to the right of the vertical stack
                 // Only match stack height if there's more than just the main window
                 let stackBounds = verticalStackBounds()
-                let stackHasMultipleWindows = stackBounds.height > Skin.mainWindowSize.height + 1
+                let mainHeight = isModernUIEnabled ? ModernSkinElements.mainWindowSize.height : Skin.mainWindowSize.height
+                let stackHasMultipleWindows = stackBounds.height > mainHeight + 1
                 if stackBounds != .zero && stackHasMultipleWindows {
                     // Match stack height when multiple windows are stacked
                     let newFrame = NSRect(
