@@ -149,7 +149,6 @@ class ModernLibraryBrowserView: NSView {
     weak var controller: ModernLibraryBrowserWindowController?
     
     private var renderer: ModernSkinRenderer!
-    private var gridLayer: GridBackgroundLayer?
     
     // Browse state
     private var currentSource: ModernBrowserSource = .local {
@@ -358,16 +357,6 @@ class ModernLibraryBrowserView: NSView {
             skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         }
         renderer = ModernSkinRenderer(skin: skin)
-        
-        // Setup grid background layer
-        if let gridConfig = skin.config.background.grid {
-            let grid = GridBackgroundLayer()
-            grid.configure(with: gridConfig)
-            grid.frame = bounds
-            grid.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-            layer?.insertSublayer(grid, at: 0)
-            gridLayer = grid
-        }
         
         // Load saved column widths and sort
         loadColumnWidths()
@@ -2652,7 +2641,6 @@ class ModernLibraryBrowserView: NSView {
     @objc private func modernSkinDidChange() {
         let skin = currentSkin()
         renderer = ModernSkinRenderer(skin: skin)
-        if let gridConfig = skin.config.background.grid { gridLayer?.configure(with: gridConfig) }
         needsDisplay = true
     }
     

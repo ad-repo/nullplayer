@@ -20,9 +20,6 @@ class ModernProjectMView: NSView {
     /// The skin renderer
     private var renderer: ModernSkinRenderer!
     
-    /// Grid background layer
-    private var gridLayer: GridBackgroundLayer?
-    
     /// The OpenGL visualization view
     private(set) var visualizationGLView: VisualizationGLView?
     
@@ -91,9 +88,6 @@ class ModernProjectMView: NSView {
         // Initialize renderer with skin respecting lock setting
         let skin = resolveCurrentSkin()
         renderer = ModernSkinRenderer(skin: skin)
-        
-        // Set up grid background
-        setupGridBackground(skin: skin)
         
         // Set up accessibility
         setupAccessibility()
@@ -165,19 +159,6 @@ class ModernProjectMView: NSView {
             return ModernSkinLoader.shared.loadDefault()
         }
         return ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
-    }
-    
-    private func setupGridBackground(skin: ModernSkin) {
-        gridLayer?.removeFromSuperlayer()
-        
-        if let gridConfig = skin.config.background.grid {
-            let grid = GridBackgroundLayer()
-            grid.configure(with: gridConfig)
-            grid.frame = bounds
-            grid.zPosition = 1
-            layer?.addSublayer(grid)
-            gridLayer = grid
-        }
     }
     
     private func setupVisualizationView() {
@@ -260,7 +241,6 @@ class ModernProjectMView: NSView {
     func skinDidChange() {
         let skin = resolveCurrentSkin()
         renderer = ModernSkinRenderer(skin: skin)
-        setupGridBackground(skin: skin)
         needsDisplay = true
     }
     
@@ -310,9 +290,8 @@ class ModernProjectMView: NSView {
     func setShadeMode(_ enabled: Bool) {
         isShadeMode = enabled
         
-        // Show/hide visualization view and grid
+        // Show/hide visualization view
         visualizationGLView?.isHidden = enabled
-        gridLayer?.isHidden = enabled
         
         // Stop/start rendering based on mode
         if enabled {
@@ -336,9 +315,6 @@ class ModernProjectMView: NSView {
     func updateVisualizationFrame() {
         let visArea = calculateVisualizationArea()
         visualizationGLView?.frame = visArea
-        
-        // Update grid layer frame
-        gridLayer?.frame = bounds
     }
     
     /// Stop rendering (for window close/hide)

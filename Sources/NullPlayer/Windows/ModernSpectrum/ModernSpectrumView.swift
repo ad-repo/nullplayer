@@ -20,9 +20,6 @@ class ModernSpectrumView: NSView {
     /// The skin renderer
     private var renderer: ModernSkinRenderer!
     
-    /// Grid background layer
-    private var gridLayer: GridBackgroundLayer?
-    
     /// The Metal-based spectrum analyzer view
     private var spectrumAnalyzerView: SpectrumAnalyzerView?
     
@@ -67,9 +64,6 @@ class ModernSpectrumView: NSView {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
         
-        // Set up grid background
-        setupGridBackground(skin: skin)
-        
         // Create and add Metal spectrum analyzer view
         setupSpectrumAnalyzerView()
         
@@ -100,19 +94,6 @@ class ModernSpectrumView: NSView {
     }
     
     // MARK: - Setup
-    
-    private func setupGridBackground(skin: ModernSkin) {
-        gridLayer?.removeFromSuperlayer()
-        
-        if let gridConfig = skin.config.background.grid {
-            let grid = GridBackgroundLayer()
-            grid.configure(with: gridConfig)
-            grid.frame = bounds
-            grid.zPosition = 1
-            layer?.addSublayer(grid)
-            gridLayer = grid
-        }
-    }
     
     private func setupSpectrumAnalyzerView() {
         let contentArea = calculateContentArea()
@@ -201,7 +182,6 @@ class ModernSpectrumView: NSView {
     func skinDidChange() {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
-        setupGridBackground(skin: skin)
         updateSpectrumColors()
         spectrumAnalyzerView?.skinDidChange()
         needsDisplay = true
@@ -228,9 +208,8 @@ class ModernSpectrumView: NSView {
     func setShadeMode(_ enabled: Bool) {
         isShadeMode = enabled
         
-        // Hide/show spectrum view and grid
+        // Hide/show spectrum view
         spectrumAnalyzerView?.isHidden = enabled
-        gridLayer?.isHidden = enabled
         
         needsDisplay = true
     }
@@ -248,8 +227,6 @@ class ModernSpectrumView: NSView {
             view.barWidth = max(2.0, floor(barWidth))
         }
         
-        // Update grid layer frame
-        gridLayer?.frame = bounds
     }
     
     func stopRendering() {

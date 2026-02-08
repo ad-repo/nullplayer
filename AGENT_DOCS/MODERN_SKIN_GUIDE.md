@@ -490,7 +490,7 @@ This section documents the repeatable pattern for creating modern-skinned versio
 
 5. **Create `Windows/Modern{Window}/Modern{Window}WindowController.swift`** -- Borderless window, shade mode, fullscreen, `NSWindowDelegate` for docking, conforms to the protocol. Zero classic skin imports.
 
-6. **Create `Windows/Modern{Window}/Modern{Window}View.swift`** -- Compose `ModernSkinRenderer` methods for chrome (`drawWindowBackground`, `drawWindowBorder`, `drawTitleBar`, `drawWindowControlButton`), `GridBackgroundLayer`, skin change observation via `ModernSkinDidChange` notification. Zero classic skin imports.
+6. **Create `Windows/Modern{Window}/Modern{Window}View.swift`** -- Compose `ModernSkinRenderer` methods for chrome (`drawWindowBackground`, `drawWindowBorder`, `drawTitleBar`, `drawWindowControlButton`), skin change observation via `ModernSkinDidChange` notification. Zero classic skin imports. Note: `GridBackgroundLayer` is only used in the main window; sub-windows use solid backgrounds.
 
 7. **Update `WindowManager.swift`** -- Change the controller property type to the protocol. Conditionally create modern or classic controller in the show method based on `isModernUIEnabled`.
 
@@ -501,7 +501,7 @@ This section documents the repeatable pattern for creating modern-skinned versio
 ### Key Rules
 
 - **Zero classic imports**: Files in `ModernSkin/` and `Windows/Modern{Window}/` must NEVER import or reference anything from `Skin/` or `Windows/{ClassicWindow}/`
-- **Skin changes**: Observe `ModernSkinEngine.skinDidChangeNotification` to re-create renderer and grid background
+- **Skin changes**: Observe `ModernSkinEngine.skinDidChangeNotification` to re-create renderer
 - **Scale factor**: Use `ModernSkinElements.scaleFactor` for all geometry
 - **Coordinates**: Standard macOS bottom-left origin (no flipping needed, unlike classic skin system)
 

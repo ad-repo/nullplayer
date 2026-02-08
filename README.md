@@ -121,8 +121,28 @@ See [AGENTS.md](AGENTS.md) for documentation links and key source files.
 
 ## Skins
 
-NullPlayer supports classic classic skin 2.x skins (.wsz files)
+NullPlayer has two UI modes, selectable from the right-click context menu under **UI Mode**:
 
+### Classic Mode
+
+Classic Winamp 2.x skin support. Drop any `.wsz` skin file into your skins directory and select it from the Skins menu.
+
+### Modern Mode
+
+A custom skin engine built from scratch with a neon cyberpunk aesthetic. Modern skins are JSON-configured and support:
+
+- **Color palette theming** -- define 12 named colors and the entire UI adapts
+- **Custom PNG image assets** -- optionally replace any UI element with your own artwork
+- **Procedural grid backgrounds** -- configurable Tron-style perspective grids
+- **Bloom/glow post-processing** -- Metal-based glow effects on bright UI elements
+- **Custom fonts** -- bundle TTF/OTF fonts or use any system font
+- **Animations** -- sprite frame cycling and parametric effects (pulse, glow, rotate, color cycle)
+
+The bundled default skin ("NeonWave") is fully programmatic -- zero image assets, pure palette-driven rendering.
+
+**Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
+
+**Skin installation**: Place skin folders or `.nps` bundles in `~/Library/Application Support/NullPlayer/ModernSkins/`, then right-click the player and select your skin from **Modern UI > Select Skin**.
 
 ## License
 
