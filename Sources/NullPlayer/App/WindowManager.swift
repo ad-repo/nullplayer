@@ -84,8 +84,8 @@ class WindowManager {
     /// Video player window controller
     private var videoPlayerWindowController: VideoPlayerWindowController?
     
-    /// ProjectM visualization window controller
-    private var projectMWindowController: ProjectMWindowController?
+    /// ProjectM visualization window controller (classic or modern, accessed via protocol)
+    private var projectMWindowController: ProjectMWindowProviding?
     
     /// Spectrum analyzer window controller (classic or modern, accessed via protocol)
     private var spectrumWindowController: SpectrumWindowProviding?
@@ -817,7 +817,11 @@ class WindowManager {
     func showProjectM(at restoredFrame: NSRect? = nil) {
         let isNewWindow = projectMWindowController == nil
         if isNewWindow {
-            projectMWindowController = ProjectMWindowController()
+            if isModernUIEnabled {
+                projectMWindowController = ModernProjectMWindowController()
+            } else {
+                projectMWindowController = ProjectMWindowController()
+            }
         }
         projectMWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(projectMWindowController?.window)
@@ -831,7 +835,8 @@ class WindowManager {
                 // Position to the left of the vertical stack
                 // Only match stack height if there's more than just the main window
                 let stackBounds = verticalStackBounds()
-                let stackHasMultipleWindows = stackBounds.height > Skin.mainWindowSize.height + 1
+                let mainHeight = isModernUIEnabled ? ModernSkinElements.mainWindowSize.height : Skin.mainWindowSize.height
+                let stackHasMultipleWindows = stackBounds.height > mainHeight + 1
                 if stackBounds != .zero && stackHasMultipleWindows {
                     // Match stack height when multiple windows are stacked
                     let newFrame = NSRect(
@@ -982,7 +987,7 @@ class WindowManager {
     
     /// Select a visualization preset by index
     func selectVisualizationPreset(at index: Int) {
-        projectMWindowController?.selectPreset(at: index)
+        projectMWindowController?.selectPreset(at: index, hardCut: false)
     }
 
     func notifyMainWindowVisibilityChanged() {

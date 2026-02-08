@@ -1,13 +1,15 @@
 import AppKit
 
-/// Controller for the ProjectM visualization window (classic skin).
+/// Controller for the ProjectM visualization window (modern skin).
 /// Conforms to `ProjectMWindowProviding` so WindowManager can use it interchangeably
-/// with the modern `ModernProjectMWindowController`.
-class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
+/// with the classic `ProjectMWindowController`.
+///
+/// This controller has ZERO dependencies on the classic skin system.
+class ModernProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     
     // MARK: - Properties
     
-    private var projectMView: ProjectMView!
+    private var projectMView: ModernProjectMView!
     
     /// Whether the window is in shade mode
     private(set) var isShadeMode = false
@@ -23,13 +25,17 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     // MARK: - Initialization
     
     convenience init() {
-        // Create borderless window with manual resize handling
-        let window = ResizableWindow(
-            contentRect: NSRect(origin: .zero, size: SkinElements.ProjectM.defaultSize),
-            styleMask: [.borderless, .resizable],
+        let windowSize = ModernSkinElements.projectMDefaultSize
+        
+        let window = BorderlessWindow(
+            contentRect: NSRect(origin: .zero, size: windowSize),
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
+        
+        // Enable multi-edge resizing (all edges + corners)
+        window.allowedResizeEdges = [.left, .right, .top, .bottom]
         
         self.init(window: window)
         
@@ -47,8 +53,9 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.minSize = SkinElements.ProjectM.minSize
-        window.title = "ProjectM"
+        window.minSize = ModernSkinElements.projectMMinSize
+        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        window.title = "projectM"
         
         // Prevent window from being released when closed - we reuse the same controller
         window.isReleasedWhenClosed = false
@@ -59,17 +66,22 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
         window.delegate = self
         
         // Set accessibility identifier for UI testing
-        window.setAccessibilityIdentifier("ProjectMWindow")
+        window.setAccessibilityIdentifier("ModernProjectMWindow")
         window.setAccessibilityLabel("Visualization Window")
+    }
+    
+    private func setupView() {
+        projectMView = ModernProjectMView(frame: NSRect(origin: .zero, size: ModernSkinElements.projectMDefaultSize))
+        projectMView.controller = self
+        projectMView.autoresizingMask = [.width, .height]
+        window?.contentView = projectMView
     }
     
     // MARK: - Window Display
     
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
-        // Position after window is shown to ensure correct frame dimensions
-        positionWindow()
-        // Restart rendering (may have been stopped by windowWillClose or hide)
+        // Note: Positioning is handled by WindowManager before showWindow is called
         projectMView.startRendering()
     }
     
@@ -77,29 +89,6 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     /// This saves CPU since orderOut() doesn't trigger windowWillClose
     func stopRenderingForHide() {
         projectMView.stopRendering()
-    }
-    
-    /// Position the window to the LEFT of the main window
-    /// Always positions on the left side, even if partially offscreen
-    private func positionWindow() {
-        guard let window = window else { return }
-        guard let mainWindow = WindowManager.shared.mainWindowController?.window else {
-            window.center()
-            return
-        }
-        
-        let mainFrame = mainWindow.frame
-        let newX = mainFrame.minX - window.frame.width  // Always LEFT of main
-        let newY = mainFrame.maxY - window.frame.height  // Top-aligned
-        
-        window.setFrameOrigin(NSPoint(x: newX, y: newY))
-    }
-    
-    private func setupView() {
-        projectMView = ProjectMView(frame: NSRect(origin: .zero, size: SkinElements.ProjectM.defaultSize))
-        projectMView.controller = self
-        projectMView.autoresizingMask = [.width, .height]
-        window?.contentView = projectMView
     }
     
     // MARK: - Public Methods
@@ -110,7 +99,6 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     
     // MARK: - Shade Mode
     
-    /// Toggle shade mode on/off
     func setShadeMode(_ enabled: Bool) {
         guard let window = window else { return }
         
@@ -121,13 +109,17 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
             normalModeFrame = window.frame
             
             // Calculate new shade mode frame (keep width, reduce height)
-            let shadeHeight = SkinElements.ProjectM.shadeHeight
+            let shadeHeight = ModernSkinElements.projectMShadeHeight
             let newFrame = NSRect(
                 x: window.frame.origin.x,
                 y: window.frame.origin.y + window.frame.height - shadeHeight,
                 width: window.frame.width,
                 height: shadeHeight
             )
+            
+            // Lock size in shade mode
+            window.minSize = NSSize(width: ModernSkinElements.projectMMinSize.width, height: shadeHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: shadeHeight)
             
             // Resize window
             window.setFrame(newFrame, display: true, animate: true)
@@ -139,14 +131,18 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
             if let storedFrame = normalModeFrame {
                 newFrame = storedFrame
             } else {
-                let normalSize = SkinElements.ProjectM.defaultSize
+                let normalSize = ModernSkinElements.projectMDefaultSize
                 newFrame = NSRect(
                     x: window.frame.origin.x,
                     y: window.frame.origin.y + window.frame.height - normalSize.height,
-                    width: window.frame.width,
+                    width: normalSize.width,
                     height: normalSize.height
                 )
             }
+            
+            // Restore size constraints
+            window.minSize = ModernSkinElements.projectMMinSize
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             
             // Resize window
             window.setFrame(newFrame, display: true, animate: true)
@@ -201,7 +197,7 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
         // Hide menu bar and dock
         NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
         
-        NSLog("ProjectMWindowController: Entered custom fullscreen")
+        NSLog("ModernProjectMWindowController: Entered custom fullscreen")
     }
     
     /// Exit custom fullscreen mode
@@ -226,7 +222,7 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
         
         preFullscreenFrame = nil
         
-        NSLog("ProjectMWindowController: Exited custom fullscreen")
+        NSLog("ModernProjectMWindowController: Exited custom fullscreen")
     }
     
     /// Whether the window is in custom fullscreen mode
@@ -236,72 +232,47 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     
     // MARK: - Preset Navigation
     
-    /// Go to next preset
-    /// - Parameter hardCut: If true, switch immediately without blending
     func nextPreset(hardCut: Bool = false) {
         projectMView.visualizationGLView?.nextPreset(hardCut: hardCut)
     }
     
-    /// Go to previous preset
-    /// - Parameter hardCut: If true, switch immediately without blending
     func previousPreset(hardCut: Bool = false) {
         projectMView.visualizationGLView?.previousPreset(hardCut: hardCut)
     }
     
-    /// Select preset at specific index
-    /// - Parameters:
-    ///   - index: The preset index to select
-    ///   - hardCut: If true, switch immediately without blending
     func selectPreset(at index: Int, hardCut: Bool = false) {
         projectMView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
     }
     
-    /// Select a random preset
-    /// - Parameter hardCut: If true, switch immediately without blending
     func randomPreset(hardCut: Bool = false) {
         projectMView.visualizationGLView?.randomPreset(hardCut: hardCut)
     }
     
-    /// Set specific preset by index
-    /// - Parameters:
-    ///   - index: The preset index to select
-    ///   - hardCut: If true, switch immediately without blending
-    func setPreset(_ index: Int, hardCut: Bool = false) {
-        projectMView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
-    }
-    
-    /// Lock or unlock the current preset
     var isPresetLocked: Bool {
         get { projectMView.visualizationGLView?.isPresetLocked ?? false }
         set { projectMView.visualizationGLView?.isPresetLocked = newValue }
     }
     
-    /// Whether projectM is available
     var isProjectMAvailable: Bool {
         return projectMView.visualizationGLView?.isProjectMAvailable ?? false
     }
     
-    /// Current preset name
     var currentPresetName: String {
         return projectMView.visualizationGLView?.currentPresetName ?? ""
     }
     
-    /// Current preset index
     var currentPresetIndex: Int {
         return projectMView.visualizationGLView?.currentPresetIndex ?? 0
     }
     
-    /// Total number of presets
     var presetCount: Int {
         return projectMView.visualizationGLView?.presetCount ?? 0
     }
     
-    /// Reload all presets from bundled and custom folders
     func reloadPresets() {
         projectMView.visualizationGLView?.reloadPresets()
     }
     
-    /// Get information about loaded presets
     var presetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
         return projectMView.visualizationGLView?.presetsInfo ?? (0, 0, nil)
     }
@@ -309,7 +280,7 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
 
 // MARK: - NSWindowDelegate
 
-extension ProjectMWindowController: NSWindowDelegate {
+extension ModernProjectMWindowController: NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         guard let window = window else { return }
         let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
@@ -339,16 +310,6 @@ extension ProjectMWindowController: NSWindowDelegate {
     }
     
     func windowDidResignKey(_ notification: Notification) {
-        projectMView.needsDisplay = true
-    }
-    
-    func windowWillEnterFullScreen(_ notification: Notification) {
-        // Hide window chrome in fullscreen
-        projectMView.needsDisplay = true
-    }
-    
-    func windowDidExitFullScreen(_ notification: Notification) {
-        // Restore window chrome after fullscreen
         projectMView.needsDisplay = true
     }
     

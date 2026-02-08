@@ -237,6 +237,36 @@ enum ModernSkinElements {
     static let spectrumBtnClose = Element("spectrum_btn_close", NSRect(x: 256, y: 104, width: 10, height: 10),
                                           states: ["normal", "pressed"])
     
+    // MARK: - ProjectM Visualization Window
+    
+    /// ProjectM window default size (same dimensions as Library Browser -- wider than main window, height = 4x main)
+    static let projectMDefaultSize = NSSize(
+        width: 550,
+        height: baseMainSize.height * scaleFactor * 4
+    )
+    
+    /// ProjectM window minimum size (resizable)
+    static let projectMMinSize = NSSize(
+        width: 480,
+        height: 300
+    )
+    
+    /// ProjectM window shade mode height
+    static let projectMShadeHeight: CGFloat = 18 * scaleFactor
+    
+    /// ProjectM window title bar height
+    static let projectMTitleBarHeight: CGFloat = 14 * scaleFactor
+    
+    /// ProjectM window border width
+    static let projectMBorderWidth: CGFloat = 3 * scaleFactor
+    
+    /// ProjectM window title bar (per-window skinning)
+    static let projectMTitleBar = Element("projectm_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
+    
+    /// ProjectM window close button (per-window skinning)
+    static let projectMBtnClose = Element("projectm_btn_close", NSRect(x: 256, y: 104, width: 10, height: 10),
+                                          states: ["normal", "pressed"])
+    
     // MARK: - Library Browser Window
     
     /// Library browser default window size (wider than main window; height = 4x main window)
@@ -285,6 +315,7 @@ enum ModernSkinElements {
         playlistTitleBar, playlistBtnClose, playlistBtnShade,
         eqTitleBar, eqBtnClose, eqBtnShade,
         spectrumTitleBar, spectrumBtnClose,
+        projectMTitleBar, projectMBtnClose,
         libraryTitleBar, libraryBtnClose, libraryBtnShade
     ]
     

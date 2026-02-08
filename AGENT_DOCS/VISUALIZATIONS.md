@@ -181,6 +181,12 @@ All effects use Core Image filters for GPU acceleration and respond to audio lev
 
 The ProjectM visualizer renders classic ProjectM presets - the legendary visualization system from classic. It uses OpenGL for real-time procedural graphics synchronized to music.
 
+The window has two implementations selected by the UI mode:
+- **Classic UI**: `ProjectMWindowController` + `ProjectMView` (uses classic `SkinRenderer` for chrome)
+- **Modern UI**: `ModernProjectMWindowController` + `ModernProjectMView` (uses `ModernSkinRenderer` for chrome with palette colors, glow, and grid background)
+
+Both embed the same `VisualizationGLView` (OpenGL) for visualization rendering.
+
 ### Accessing the Visualizer
 
 1. **Context Menu** → Visualizations → ProjectM Window
@@ -287,6 +293,18 @@ The active beat sensitivity is configurable via the context menu:
 | **Max** | 2.0 | Maximum beat reactivity |
 
 Setting is persisted across app restarts (UserDefaults key: `projectMBeatSensitivity`).
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `Windows/ProjectM/ProjectMWindowController.swift` | Window controller (classic skin) |
+| `Windows/ProjectM/ProjectMView.swift` | Container view with classic skin chrome |
+| `Windows/ModernProjectM/ModernProjectMWindowController.swift` | Window controller (modern skin) |
+| `Windows/ModernProjectM/ModernProjectMView.swift` | Container view with modern skin chrome |
+| `Visualization/VisualizationGLView.swift` | OpenGL visualization rendering (shared) |
+| `Visualization/ProjectMWrapper.swift` | ProjectM library wrapper |
+| `App/ProjectMWindowProviding.swift` | Protocol abstracting classic/modern controllers |
 
 ---
 

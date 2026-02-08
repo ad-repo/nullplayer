@@ -74,6 +74,9 @@
         },
         "library_titlebar": {
             "color": "#0c1018"
+        },
+        "projectm_titlebar": {
+            "color": "#0c1018"
         }
     },
     "animations": {

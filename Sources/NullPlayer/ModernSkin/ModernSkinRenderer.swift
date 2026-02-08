@@ -522,7 +522,7 @@ class ModernSkinRenderer {
         let inset = scaledR.insetBy(dx: 2 * scaleFactor, dy: 2 * scaleFactor)
         
         switch id {
-        case "btn_close", "spectrum_btn_close", "playlist_btn_close", "eq_btn_close", "library_btn_close":
+        case "btn_close", "spectrum_btn_close", "playlist_btn_close", "eq_btn_close", "library_btn_close", "projectm_btn_close":
             // X shape
             context.move(to: CGPoint(x: inset.minX, y: inset.minY))
             context.addLine(to: CGPoint(x: inset.maxX, y: inset.maxY))
