@@ -23,6 +23,9 @@ struct ModernSkinConfig: Codable {
     /// Window chrome configuration
     let window: WindowConfig
     
+    /// Marquee/scrolling text configuration
+    let marquee: MarqueeConfig?
+    
     /// Per-element overrides (position, size, color, image path)
     let elements: [String: ElementConfig]?
     
@@ -52,8 +55,15 @@ struct ColorPalette: Codable {
     let negative: String?      // Negative indicator
     let warning: String?       // Warning indicator
     let border: String?        // Border color (defaults to primary)
+    let timeColor: String?     // Time display digit color (defaults to "#d9d900" warm yellow)
+    let marqueeColor: String?  // Marquee/title text color (defaults to "#d9d900" warm yellow)
+    let eqLow: String?         // EQ color at -12dB (defaults to "#00d900" green)
+    let eqMid: String?         // EQ color at 0dB (defaults to "#d9d900" yellow)
+    let eqHigh: String?        // EQ color at +12dB (defaults to "#d92600" red)
     
     // MARK: - Color Resolution
+    
+    private static let defaultTimeColor = "#d9d900"  // Warm glowing yellow (0.85, 0.85, 0.0)
     
     func resolvedPrimary() -> NSColor { NSColor.from(hex: primary) }
     func resolvedSecondary() -> NSColor { NSColor.from(hex: secondary) }
@@ -67,6 +77,11 @@ struct ColorPalette: Codable {
     func resolvedNegative() -> NSColor { NSColor.from(hex: negative ?? "#ff0000") }
     func resolvedWarning() -> NSColor { NSColor.from(hex: warning ?? "#ffaa00") }
     func resolvedBorder() -> NSColor { NSColor.from(hex: border ?? primary) }
+    func resolvedTimeColor() -> NSColor { NSColor.from(hex: timeColor ?? Self.defaultTimeColor) }
+    func resolvedMarqueeColor() -> NSColor { NSColor.from(hex: marqueeColor ?? Self.defaultTimeColor) }
+    func resolvedEqLow() -> NSColor { NSColor.from(hex: eqLow ?? "#00d900") }
+    func resolvedEqMid() -> NSColor { NSColor.from(hex: eqMid ?? "#d9d900") }
+    func resolvedEqHigh() -> NSColor { NSColor.from(hex: eqHigh ?? "#d92600") }
 }
 
 struct FontConfig: Codable {
@@ -105,12 +120,19 @@ struct GlowConfig: Codable {
     let intensity: CGFloat?
     let threshold: CGFloat?
     let color: String?
+    let elementBlur: CGFloat?  // Multiplier for element-level glow blur (defaults to 1.0)
 }
 
 struct WindowConfig: Codable {
     let borderWidth: CGFloat?
     let borderColor: String?
     let cornerRadius: CGFloat?
+    let scale: CGFloat?        // UI scale factor (defaults to 1.25)
+}
+
+struct MarqueeConfig: Codable {
+    let scrollSpeed: CGFloat?  // Scroll speed in points per second (defaults to 30)
+    let scrollGap: CGFloat?    // Gap between repeated text in points (defaults to 50)
 }
 
 struct ElementConfig: Codable {

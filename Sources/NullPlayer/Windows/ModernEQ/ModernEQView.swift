@@ -52,6 +52,9 @@ class ModernEQView: NSView {
     /// Scale factor for layout
     private let scale = ModernSkinElements.scaleFactor
     
+    /// Glow multiplier from skin config
+    private var glowMultiplier: CGFloat = 1.0
+    
     // MARK: - Layout Constants
     
     private var titleBarHeight: CGFloat { ModernSkinElements.eqTitleBarHeight }
@@ -139,6 +142,7 @@ class ModernEQView: NSView {
         // Initialize with current skin
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
+        glowMultiplier = skin.elementGlowMultiplier
         
         // Load current EQ state from audio engine
         loadCurrentEQState()
@@ -366,7 +370,7 @@ class ModernEQView: NSView {
         // Separator line between preamp and bands
         let sepX = bandStartX - 5 * scale
         context.saveGState()
-        context.setShadow(offset: .zero, blur: 3 * scale,
+        context.setShadow(offset: .zero, blur: 3 * scale * glowMultiplier,
                           color: skin.primaryColor.withAlphaComponent(0.3).cgColor)
         context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.2).cgColor)
         context.setLineWidth(1.0)
@@ -437,7 +441,7 @@ class ModernEQView: NSView {
         
         if glow {
             context.saveGState()
-            context.setShadow(offset: .zero, blur: 4 * scale,
+            context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
                               color: color.withAlphaComponent(0.8).cgColor)
             str.draw(at: origin)
             context.restoreGState()
@@ -460,7 +464,7 @@ class ModernEQView: NSView {
             context.fill(rect)
             
             // Glow border
-            context.setShadow(offset: .zero, blur: 6 * scale,
+            context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
                               color: skin.accentColor.withAlphaComponent(0.6).cgColor)
             context.setStrokeColor(skin.accentColor.withAlphaComponent(0.8).cgColor)
             context.setLineWidth(1.0)
@@ -483,7 +487,7 @@ class ModernEQView: NSView {
         // Text with glow when active
         context.saveGState()
         if isActive {
-            context.setShadow(offset: .zero, blur: 4 * scale,
+            context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
                               color: color.withAlphaComponent(0.8).cgColor)
         }
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
@@ -507,7 +511,7 @@ class ModernEQView: NSView {
         if isPressed {
             context.setFillColor(skin.accentColor.withAlphaComponent(0.15).cgColor)
             context.fill(rect)
-            context.setShadow(offset: .zero, blur: 5 * scale,
+            context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier,
                               color: skin.accentColor.withAlphaComponent(0.5).cgColor)
         }
         context.setStrokeColor(color.withAlphaComponent(isPressed ? 0.8 : 0.3).cgColor)
@@ -551,7 +555,7 @@ class ModernEQView: NSView {
             
             // Wide outer bloom
             context.saveGState()
-            context.setShadow(offset: .zero, blur: 10 * scale,
+            context.setShadow(offset: .zero, blur: 10 * scale * glowMultiplier,
                               color: fillColor.withAlphaComponent(0.5).cgColor)
             context.setFillColor(fillColor.withAlphaComponent(0.4).cgColor)
             context.fill(fillRect)
@@ -566,7 +570,7 @@ class ModernEQView: NSView {
             // Hot neon center line through fill
             let lineX = x + sliderWidth / 2
             context.saveGState()
-            context.setShadow(offset: .zero, blur: 5 * scale,
+            context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier,
                               color: fillColor.withAlphaComponent(1.0).cgColor)
             context.setStrokeColor(fillColor.withAlphaComponent(0.9).cgColor)
             context.setLineWidth(2.0)
@@ -574,7 +578,7 @@ class ModernEQView: NSView {
             context.addLine(to: CGPoint(x: lineX, y: fillRect.maxY))
             context.strokePath()
             // Second pass for extra brightness
-            context.setShadow(offset: .zero, blur: 2 * scale,
+            context.setShadow(offset: .zero, blur: 2 * scale * glowMultiplier,
                               color: NSColor.white.withAlphaComponent(0.4).cgColor)
             context.setStrokeColor(fillColor.withAlphaComponent(0.7).cgColor)
             context.setLineWidth(1.0)
@@ -586,7 +590,7 @@ class ModernEQView: NSView {
         
         // Center line (0 dB) - subtle glow
         context.saveGState()
-        context.setShadow(offset: .zero, blur: 3 * scale,
+        context.setShadow(offset: .zero, blur: 3 * scale * glowMultiplier,
                           color: skin.primaryColor.withAlphaComponent(0.3).cgColor)
         context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.35).cgColor)
         context.setLineWidth(0.5)
@@ -603,7 +607,7 @@ class ModernEQView: NSView {
         
         // Massive outer bloom
         context.saveGState()
-        context.setShadow(offset: .zero, blur: 12 * scale,
+        context.setShadow(offset: .zero, blur: 12 * scale * glowMultiplier,
                           color: fillColor.withAlphaComponent(0.8).cgColor)
         context.setFillColor(fillColor.cgColor)
         context.fill(thumbRect)
@@ -611,7 +615,7 @@ class ModernEQView: NSView {
         
         // Second bloom pass for intensity
         context.saveGState()
-        context.setShadow(offset: .zero, blur: 6 * scale,
+        context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
                           color: fillColor.withAlphaComponent(0.9).cgColor)
         context.setFillColor(fillColor.cgColor)
         context.fill(thumbRect)
@@ -646,7 +650,7 @@ class ModernEQView: NSView {
         
         // Glowing border
         context.saveGState()
-        context.setShadow(offset: .zero, blur: 4 * scale,
+        context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
                           color: skin.accentColor.withAlphaComponent(0.3).cgColor)
         context.setStrokeColor(skin.accentColor.withAlphaComponent(0.4).cgColor)
         context.setLineWidth(1.0)
@@ -695,7 +699,7 @@ class ModernEQView: NSView {
         // Curve - wide glow
         context.saveGState()
         context.clip(to: rect)
-        context.setShadow(offset: .zero, blur: 8 * scale,
+        context.setShadow(offset: .zero, blur: 8 * scale * glowMultiplier,
                           color: skin.accentColor.withAlphaComponent(0.8).cgColor)
         context.setStrokeColor(skin.accentColor.withAlphaComponent(0.8).cgColor)
         context.setLineWidth(2.5 * scale)
@@ -734,7 +738,7 @@ class ModernEQView: NSView {
                                  width: dotR * 2, height: dotR * 2)
             context.saveGState()
             context.clip(to: rect)
-            context.setShadow(offset: .zero, blur: 6 * scale,
+            context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
                               color: skin.accentColor.withAlphaComponent(0.9).cgColor)
             context.setFillColor(skin.accentColor.cgColor)
             context.fillEllipse(in: dotRect)
@@ -753,16 +757,26 @@ class ModernEQView: NSView {
     // MARK: - Color Mapping
     
     /// Convert EQ band value (-12 to +12) to color
-    /// +12dB (top) = RED, 0dB (middle) = YELLOW, -12dB (bottom) = GREEN
+    /// Uses skin palette: eqLow (-12dB), eqMid (0dB), eqHigh (+12dB)
     private func eqValueToColor(_ value: Float) -> NSColor {
         let normalized = CGFloat((value + 12) / 24) // 0..1
+        let skin = renderer.skin
         
+        // Extract RGB components from skin EQ colors
+        var lr: CGFloat = 0, lg: CGFloat = 0, lb: CGFloat = 0
+        var mr: CGFloat = 0, mg: CGFloat = 0, mb: CGFloat = 0
+        var hr: CGFloat = 0, hg: CGFloat = 0, hb: CGFloat = 0
+        (skin.eqLowColor.usingColorSpace(.sRGB) ?? skin.eqLowColor).getRed(&lr, green: &lg, blue: &lb, alpha: nil)
+        (skin.eqMidColor.usingColorSpace(.sRGB) ?? skin.eqMidColor).getRed(&mr, green: &mg, blue: &mb, alpha: nil)
+        (skin.eqHighColor.usingColorSpace(.sRGB) ?? skin.eqHighColor).getRed(&hr, green: &hg, blue: &hb, alpha: nil)
+        
+        // 5-stop gradient derived from 3 skin colors with smooth interpolation
         let colorStops: [(position: CGFloat, r: CGFloat, g: CGFloat, b: CGFloat)] = [
-            (0.0, 0.0, 0.85, 0.0),    // Green at -12dB
-            (0.33, 0.5, 0.85, 0.0),   // Yellow-green
-            (0.5, 0.85, 0.85, 0.0),   // Yellow at 0dB
-            (0.66, 0.85, 0.5, 0.0),   // Orange
-            (1.0, 0.85, 0.15, 0.0),   // Red at +12dB
+            (0.0,  lr, lg, lb),                                                    // Low at -12dB
+            (0.33, lr + (mr - lr) * 0.66, lg + (mg - lg) * 0.66, lb + (mb - lb) * 0.66), // Low-Mid blend
+            (0.5,  mr, mg, mb),                                                    // Mid at 0dB
+            (0.66, mr + (hr - mr) * 0.66, mg + (hg - mg) * 0.66, mb + (hb - mb) * 0.66), // Mid-High blend
+            (1.0,  hr, hg, hb),                                                    // High at +12dB
         ]
         
         var lowerStop = colorStops[0]
@@ -792,6 +806,7 @@ class ModernEQView: NSView {
     func skinDidChange() {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
+        glowMultiplier = skin.elementGlowMultiplier
         needsDisplay = true
     }
     

@@ -16,14 +16,13 @@ enum ModernSkinElements {
     /// Matches classic Winamp dimensions for docking compatibility
     static let baseMainSize = NSSize(width: 275, height: 116)
     
-    /// Scale factor for modern UI rendering
-    static let scaleFactor: CGFloat = 1.25
+    /// Scale factor for modern UI rendering (configurable via skin.json window.scale)
+    static var scaleFactor: CGFloat = 1.25
     
     /// Scaled main window size
-    static let mainWindowSize = NSSize(
-        width: baseMainSize.width * scaleFactor,
-        height: baseMainSize.height * scaleFactor
-    )
+    static var mainWindowSize: NSSize {
+        NSSize(width: baseMainSize.width * scaleFactor, height: baseMainSize.height * scaleFactor)
+    }
     
     // MARK: - Element Definition
     
@@ -142,28 +141,27 @@ enum ModernSkinElements {
     // MARK: - Playlist Window
     
     /// Playlist window size (same width as main window for docking; height expandable)
-    static let playlistWindowSize = NSSize(
-        width: baseMainSize.width * scaleFactor,
-        height: baseMainSize.height * scaleFactor
-    )
+    static var playlistWindowSize: NSSize {
+        NSSize(width: baseMainSize.width * scaleFactor, height: baseMainSize.height * scaleFactor)
+    }
     
     /// Playlist window minimum size (width locked, height expandable)
-    static let playlistMinSize = playlistWindowSize
+    static var playlistMinSize: NSSize { playlistWindowSize }
     
     /// Playlist window shade mode height
-    static let playlistShadeHeight: CGFloat = 18 * scaleFactor
+    static var playlistShadeHeight: CGFloat { 18 * scaleFactor }
     
     /// Playlist window title bar height
-    static let playlistTitleBarHeight: CGFloat = 14 * scaleFactor
+    static var playlistTitleBarHeight: CGFloat { 14 * scaleFactor }
     
     /// Playlist window bottom bar height (ADD/REM/SEL/MISC/LIST buttons)
-    static let playlistBottomBarHeight: CGFloat = 20 * scaleFactor
+    static var playlistBottomBarHeight: CGFloat { 20 * scaleFactor }
     
     /// Playlist window border width
-    static let playlistBorderWidth: CGFloat = 3 * scaleFactor
+    static var playlistBorderWidth: CGFloat { 3 * scaleFactor }
     
     /// Playlist track row height
-    static let playlistItemHeight: CGFloat = 15 * scaleFactor
+    static var playlistItemHeight: CGFloat { 15 * scaleFactor }
     
     /// Playlist title bar element (per-window skinning)
     static let playlistTitleBar = Element("playlist_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
@@ -179,22 +177,21 @@ enum ModernSkinElements {
     // MARK: - EQ Window
     
     /// EQ window size (same width as main window for docking compatibility)
-    static let eqWindowSize = NSSize(
-        width: baseMainSize.width * scaleFactor,
-        height: baseMainSize.height * scaleFactor
-    )
+    static var eqWindowSize: NSSize {
+        NSSize(width: baseMainSize.width * scaleFactor, height: baseMainSize.height * scaleFactor)
+    }
     
     /// EQ window minimum size
-    static let eqMinSize = eqWindowSize
+    static var eqMinSize: NSSize { eqWindowSize }
     
     /// EQ window shade mode height
-    static let eqShadeHeight: CGFloat = 18 * scaleFactor
+    static var eqShadeHeight: CGFloat { 18 * scaleFactor }
     
     /// EQ window title bar height
-    static let eqTitleBarHeight: CGFloat = 14 * scaleFactor
+    static var eqTitleBarHeight: CGFloat { 14 * scaleFactor }
     
     /// EQ window border width
-    static let eqBorderWidth: CGFloat = 3 * scaleFactor
+    static var eqBorderWidth: CGFloat { 3 * scaleFactor }
     
     /// EQ title bar element (per-window skinning)
     static let eqTitleBar = Element("eq_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
@@ -210,22 +207,21 @@ enum ModernSkinElements {
     // MARK: - Spectrum Window
     
     /// Spectrum analyzer window size (same base as main window for docking compatibility)
-    static let spectrumWindowSize = NSSize(
-        width: baseMainSize.width * scaleFactor,
-        height: baseMainSize.height * scaleFactor
-    )
+    static var spectrumWindowSize: NSSize {
+        NSSize(width: baseMainSize.width * scaleFactor, height: baseMainSize.height * scaleFactor)
+    }
     
     /// Spectrum window minimum size
-    static let spectrumMinSize = spectrumWindowSize
+    static var spectrumMinSize: NSSize { spectrumWindowSize }
     
     /// Spectrum window shade mode height
-    static let spectrumShadeHeight: CGFloat = 18 * scaleFactor
+    static var spectrumShadeHeight: CGFloat { 18 * scaleFactor }
     
     /// Spectrum window title bar height
-    static let spectrumTitleBarHeight: CGFloat = 14 * scaleFactor
+    static var spectrumTitleBarHeight: CGFloat { 14 * scaleFactor }
     
     /// Spectrum window border width
-    static let spectrumBorderWidth: CGFloat = 3 * scaleFactor
+    static var spectrumBorderWidth: CGFloat { 3 * scaleFactor }
     
     /// Number of bars in the standalone spectrum window
     static let spectrumBarCount = 84
@@ -240,25 +236,21 @@ enum ModernSkinElements {
     // MARK: - ProjectM Visualization Window
     
     /// ProjectM window default size (same dimensions as Library Browser -- wider than main window, height = 4x main)
-    static let projectMDefaultSize = NSSize(
-        width: 550,
-        height: baseMainSize.height * scaleFactor * 4
-    )
+    static var projectMDefaultSize: NSSize {
+        NSSize(width: 550, height: baseMainSize.height * scaleFactor * 4)
+    }
     
     /// ProjectM window minimum size (resizable)
-    static let projectMMinSize = NSSize(
-        width: 480,
-        height: 300
-    )
+    static let projectMMinSize = NSSize(width: 480, height: 300)
     
     /// ProjectM window shade mode height
-    static let projectMShadeHeight: CGFloat = 18 * scaleFactor
+    static var projectMShadeHeight: CGFloat { 18 * scaleFactor }
     
     /// ProjectM window title bar height
-    static let projectMTitleBarHeight: CGFloat = 14 * scaleFactor
+    static var projectMTitleBarHeight: CGFloat { 14 * scaleFactor }
     
     /// ProjectM window border width
-    static let projectMBorderWidth: CGFloat = 3 * scaleFactor
+    static var projectMBorderWidth: CGFloat { 3 * scaleFactor }
     
     /// ProjectM window title bar (per-window skinning)
     static let projectMTitleBar = Element("projectm_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
@@ -270,22 +262,21 @@ enum ModernSkinElements {
     // MARK: - Library Browser Window
     
     /// Library browser default window size (wider than main window; height = 4x main window)
-    static let libraryDefaultSize = NSSize(
-        width: 550,
-        height: baseMainSize.height * scaleFactor * 4
-    )
+    static var libraryDefaultSize: NSSize {
+        NSSize(width: 550, height: baseMainSize.height * scaleFactor * 4)
+    }
     
     /// Library browser minimum size
     static let libraryMinSize = NSSize(width: 480, height: 300)
     
     /// Library browser shade mode height
-    static let libraryShadeHeight: CGFloat = 18 * scaleFactor
+    static var libraryShadeHeight: CGFloat { 18 * scaleFactor }
     
     /// Library browser title bar height
-    static let libraryTitleBarHeight: CGFloat = 14 * scaleFactor
+    static var libraryTitleBarHeight: CGFloat { 14 * scaleFactor }
     
     /// Library browser border width
-    static let libraryBorderWidth: CGFloat = 3 * scaleFactor
+    static var libraryBorderWidth: CGFloat { 3 * scaleFactor }
     
     /// Library browser title bar (per-window skinning)
     static let libraryTitleBar = Element("library_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))

@@ -12,11 +12,15 @@ class ModernSkinRenderer {
     /// Scale factor for rendering
     let scaleFactor: CGFloat
     
+    /// Glow multiplier for element-level blur effects
+    let glowMultiplier: CGFloat
+    
     // MARK: - Initialization
     
     init(skin: ModernSkin, scaleFactor: CGFloat = ModernSkinElements.scaleFactor) {
         self.skin = skin
         self.scaleFactor = scaleFactor
+        self.glowMultiplier = skin.elementGlowMultiplier
     }
     
     // MARK: - Generic Element Drawing
@@ -98,7 +102,7 @@ class ModernSkinRenderer {
         let separatorY = scaledR.minY
         context.saveGState()
         if skin.config.glow.enabled {
-            context.setShadow(offset: .zero, blur: 4 * scaleFactor,
+            context.setShadow(offset: .zero, blur: 4 * scaleFactor * glowMultiplier,
                               color: skin.borderColor.withAlphaComponent(0.5).cgColor)
         }
         context.setStrokeColor(skin.borderColor.withAlphaComponent(0.4).cgColor)
@@ -168,7 +172,8 @@ class ModernSkinRenderer {
     /// |_d_|
     /// ```
     private func draw7SegmentChar(_ char: String, in rect: NSRect, context: CGContext) {
-        let color = skin.primaryColor
+        // Time digit color from skin palette (defaults to warm glowing yellow)
+        let color = skin.timeColor
         
         // Segment thickness relative to digit size
         let segT = rect.width * 0.15       // segment thickness
@@ -176,10 +181,11 @@ class ModernSkinRenderer {
         
         context.saveGState()
         
-        // Glow shadow
+        // Multi-pass glow for warm neon effect (EQ style)
         if skin.config.glow.enabled {
-            context.setShadow(offset: .zero, blur: 4 * scaleFactor,
-                              color: color.withAlphaComponent(0.7).cgColor)
+            // Wide outer bloom
+            context.setShadow(offset: .zero, blur: 8 * scaleFactor * glowMultiplier,
+                              color: color.withAlphaComponent(0.5).cgColor)
         }
         
         context.setFillColor(color.cgColor)
@@ -366,7 +372,7 @@ class ModernSkinRenderer {
             // Solid fill with glow
             context.saveGState()
             if skin.config.glow.enabled {
-                context.setShadow(offset: .zero, blur: 4 * scaleFactor,
+                context.setShadow(offset: .zero, blur: 4 * scaleFactor * glowMultiplier,
                                   color: skin.primaryColor.withAlphaComponent(0.6).cgColor)
             }
             context.setFillColor(skin.primaryColor.cgColor)
@@ -387,7 +393,7 @@ class ModernSkinRenderer {
             // Fallback: tiny glowing circle
             context.saveGState()
             if skin.config.glow.enabled {
-                context.setShadow(offset: .zero, blur: 3 * scaleFactor,
+                context.setShadow(offset: .zero, blur: 3 * scaleFactor * glowMultiplier,
                                   color: thumbColor.withAlphaComponent(0.8).cgColor)
             }
             context.setFillColor(thumbColor.cgColor)
@@ -495,7 +501,7 @@ class ModernSkinRenderer {
         
         // Draw with glow
         context.saveGState()
-        context.setShadow(offset: .zero, blur: 3 * scaleFactor,
+        context.setShadow(offset: .zero, blur: 3 * scaleFactor * glowMultiplier,
                           color: drawColor.withAlphaComponent(0.7).cgColor)
         str.draw(in: scaledR)
         context.restoreGState()
@@ -601,7 +607,7 @@ class ModernSkinRenderer {
         context.setFillColor(skin.primaryColor.cgColor)
         
         if skin.config.glow.enabled {
-            context.setShadow(offset: .zero, blur: 3 * scaleFactor,
+            context.setShadow(offset: .zero, blur: 3 * scaleFactor * glowMultiplier,
                               color: skin.primaryColor.withAlphaComponent(0.6).cgColor)
         }
         
@@ -642,7 +648,7 @@ class ModernSkinRenderer {
         
         // Separator line at top
         if skin.config.glow.enabled {
-            context.setShadow(offset: .zero, blur: 4 * scaleFactor,
+            context.setShadow(offset: .zero, blur: 4 * scaleFactor * glowMultiplier,
                               color: skin.borderColor.withAlphaComponent(0.4).cgColor)
         }
         context.setStrokeColor(skin.borderColor.withAlphaComponent(0.3).cgColor)
@@ -718,7 +724,7 @@ class ModernSkinRenderer {
                                    glowColor: NSColor, context: CGContext) {
         // Draw glow layer
         context.saveGState()
-        context.setShadow(offset: .zero, blur: 4 * scaleFactor,
+        context.setShadow(offset: .zero, blur: 4 * scaleFactor * glowMultiplier,
                           color: glowColor.withAlphaComponent(0.6).cgColor)
         attributedString.draw(at: point)
         context.restoreGState()

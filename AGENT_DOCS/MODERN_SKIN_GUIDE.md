@@ -74,12 +74,18 @@ MySkin/
         "radius": 8,
         "intensity": 0.6,
         "threshold": 0.7,
-        "color": "#00ffcc"
+        "color": "#00ffcc",
+        "elementBlur": 1.0
     },
     "window": {
         "borderWidth": 1,
         "borderColor": "#00ffcc",
-        "cornerRadius": 8
+        "cornerRadius": 8,
+        "scale": 1.25
+    },
+    "marquee": {
+        "scrollSpeed": 30,
+        "scrollGap": 50
     },
     "elements": {
         "btn_play": {
@@ -100,7 +106,7 @@ MySkin/
 
 ## Color Palette
 
-The palette defines 12 named colors used throughout the UI:
+The palette defines 17 named colors used throughout the UI:
 
 | Key | Purpose | Fallback |
 |-----|---------|----------|
@@ -116,6 +122,11 @@ The palette defines 12 named colors used throughout the UI:
 | `negative` | Error/negative indicator | `#ff0000` |
 | `warning` | Warning indicator | `#ffaa00` |
 | `border` | Window border color | Same as `primary` |
+| `timeColor` | Time display digit color | `#d9d900` (warm yellow) |
+| `marqueeColor` | Scrolling title/marquee text color | `#d9d900` (warm yellow) |
+| `eqLow` | EQ color at -12dB (bottom of slider) | `#00d900` (green) |
+| `eqMid` | EQ color at 0dB (middle of slider) | `#d9d900` (yellow) |
+| `eqHigh` | EQ color at +12dB (top of slider) | `#d92600` (red) |
 
 All colors are hex strings (e.g., `"#00ffcc"`).
 
@@ -340,7 +351,8 @@ The bloom post-processor adds glow effects to bright elements:
     "radius": 8,
     "intensity": 0.6,
     "threshold": 0.7,
-    "color": "#00ffcc"
+    "color": "#00ffcc",
+    "elementBlur": 1.0
 }
 ```
 
@@ -349,6 +361,7 @@ The bloom post-processor adds glow effects to bright elements:
 - `intensity`: Bloom brightness multiplier
 - `threshold`: Brightness threshold (0-1, pixels above this glow)
 - `color`: Override glow color (defaults to palette primary)
+- `elementBlur`: Multiplier for per-element glow blur on buttons, text, sliders (default 1.0, set 0 for flat)
 
 ## Animation Configuration
 

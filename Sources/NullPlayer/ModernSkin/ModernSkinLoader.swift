@@ -248,7 +248,12 @@ class ModernSkinLoader {
                 positive: nil,
                 negative: nil,
                 warning: nil,
-                border: nil
+                border: nil,
+                timeColor: nil,
+                marqueeColor: nil,
+                eqLow: nil,
+                eqMid: nil,
+                eqHigh: nil
             ),
             fonts: FontConfig(
                 primaryName: ModernSkinFont.defaultFontName,
@@ -262,8 +267,9 @@ class ModernSkinLoader {
                 image: nil,
                 grid: GridConfig(color: "#00ffcc", spacing: 18, angle: 75, opacity: 0.06, perspective: true)
             ),
-            glow: GlowConfig(enabled: true, radius: 6, intensity: 0.7, threshold: 0.5, color: nil),
-            window: WindowConfig(borderWidth: 1.5, borderColor: "#00ffcc", cornerRadius: 0),
+            glow: GlowConfig(enabled: true, radius: 6, intensity: 0.7, threshold: 0.5, color: nil, elementBlur: nil),
+            window: WindowConfig(borderWidth: 1.5, borderColor: "#00ffcc", cornerRadius: 0, scale: nil),
+            marquee: nil,
             elements: nil,
             animations: nil
         )

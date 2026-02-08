@@ -40,6 +40,14 @@ class ModernSkin {
     let negativeColor: NSColor
     let warningColor: NSColor
     let borderColor: NSColor
+    let timeColor: NSColor
+    let marqueeColor: NSColor
+    let eqLowColor: NSColor
+    let eqMidColor: NSColor
+    let eqHighColor: NSColor
+    
+    /// Multiplier for element-level glow blur (from glow.elementBlur, defaults to 1.0)
+    let elementGlowMultiplier: CGFloat
     
     // MARK: - Initialization
     
@@ -60,6 +68,12 @@ class ModernSkin {
         self.negativeColor = config.palette.resolvedNegative()
         self.warningColor = config.palette.resolvedWarning()
         self.borderColor = config.palette.resolvedBorder()
+        self.timeColor = config.palette.resolvedTimeColor()
+        self.marqueeColor = config.palette.resolvedMarqueeColor()
+        self.eqLowColor = config.palette.resolvedEqLow()
+        self.eqMidColor = config.palette.resolvedEqMid()
+        self.eqHighColor = config.palette.resolvedEqHigh()
+        self.elementGlowMultiplier = config.glow.elementBlur ?? 1.0
     }
     
     // MARK: - Image Access

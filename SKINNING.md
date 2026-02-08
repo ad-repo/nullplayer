@@ -81,7 +81,12 @@ MyPaletteSkin/
         "positive": "#00ff88",
         "negative": "#ff3366",
         "warning": "#ffaa00",
-        "border": "#00ffcc"
+        "border": "#00ffcc",
+        "timeColor": "#d9d900",
+        "marqueeColor": "#d9d900",
+        "eqLow": "#00d900",
+        "eqMid": "#d9d900",
+        "eqHigh": "#d92600"
     },
     "fonts": {
         "primaryName": "DepartureMono-Regular",
@@ -105,12 +110,18 @@ MyPaletteSkin/
         "radius": 8,
         "intensity": 0.6,
         "threshold": 0.7,
-        "color": "#00ffcc"
+        "color": "#00ffcc",
+        "elementBlur": 1.0
+    },
+    "marquee": {
+        "scrollSpeed": 30,
+        "scrollGap": 50
     },
     "window": {
         "borderWidth": 1,
         "borderColor": "#00ffcc",
-        "cornerRadius": 8
+        "cornerRadius": 8,
+        "scale": 1.25
     }
 }
 ```
@@ -135,6 +146,8 @@ The palette is the heart of a palette-only skin. These 12 colors control the ent
 | `negative` | Error/negative indicators | No (defaults to `#ff0000`) |
 | `warning` | Warning indicators | No (defaults to `#ffaa00`) |
 | `border` | Window border color | No (defaults to `primary`) |
+| `timeColor` | Time display digit color | No (defaults to `#d9d900` warm yellow) |
+| `marqueeColor` | Scrolling title text color | No (defaults to `#d9d900` warm yellow) |
 
 All colors are hex strings: `"#rrggbb"`.
 
@@ -221,6 +234,9 @@ The bloom post-processor adds a soft glow to bright UI elements:
 | `intensity` | Glow brightness | 0.0-2.0 |
 | `threshold` | How bright a pixel must be before it glows | 0.0-1.0 |
 | `color` | Override glow tint color | Hex string |
+| `elementBlur` | Multiplier for per-element glow blur (buttons, text, sliders) | 0.0-3.0 (default 1.0) |
+
+The `elementBlur` multiplier scales the glow halos on individual UI elements (separate from the bloom post-processor). Set to `0` for completely flat elements, or `2.0` for extra neon intensity.
 
 **Performance note**: Glow uses Metal GPU shaders. Set `"enabled": false` if you want maximum performance or a flat aesthetic.
 
@@ -239,6 +255,21 @@ The bloom post-processor adds a soft glow to bright UI elements:
 | `borderWidth` | Border thickness in points (0 = no border) |
 | `borderColor` | Border color (defaults to palette `border` or `primary`) |
 | `cornerRadius` | Rounded corner radius (0 = square corners) |
+| `scale` | UI scale factor (default 1.25). Smaller = more compact, larger = bigger UI |
+
+### Marquee (Scrolling Title Text)
+
+```json
+"marquee": {
+    "scrollSpeed": 30,
+    "scrollGap": 50
+}
+```
+
+| Key | What it does | Default |
+|-----|-------------|---------|
+| `scrollSpeed` | Scroll speed in points per second | 30 |
+| `scrollGap` | Gap between repeated text in points | 50 |
 
 ### Per-Window Titlebar Colors
 

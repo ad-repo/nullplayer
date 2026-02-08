@@ -159,6 +159,9 @@ class ModernSkinEngine {
     private func configureSkinDependencies() {
         guard let skin = currentSkin else { return }
         
+        // Apply scale factor from skin config
+        ModernSkinElements.scaleFactor = skin.config.window.scale ?? 1.25
+        
         // Configure bloom processor
         bloomProcessor.configure(with: skin.config.glow)
         

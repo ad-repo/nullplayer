@@ -270,10 +270,18 @@ class ModernMarqueeLayer: CALayer {
     
     private func drawWithGlow(_ str: NSAttributedString, at point: NSPoint, ctx: CGContext) {
         let color = glowColor ?? textColor
+        let gm = glowMultiplier
+        // Wide outer bloom (EQ style multi-pass glow)
         ctx.saveGState()
-        ctx.setShadow(offset: .zero, blur: 4, color: color.withAlphaComponent(0.6).cgColor)
+        ctx.setShadow(offset: .zero, blur: 8 * gm, color: color.withAlphaComponent(0.5).cgColor)
         str.draw(at: point)
         ctx.restoreGState()
+        // Inner glow pass
+        ctx.saveGState()
+        ctx.setShadow(offset: .zero, blur: 4 * gm, color: color.withAlphaComponent(0.7).cgColor)
+        str.draw(at: point)
+        ctx.restoreGState()
+        // Crisp text on top
         str.draw(at: point)
     }
     
@@ -297,11 +305,20 @@ class ModernMarqueeLayer: CALayer {
     
     // MARK: - Configuration from Skin
     
+    /// Element glow multiplier from skin config
+    private var glowMultiplier: CGFloat = 1.0
+    
     /// Configure the marquee from a modern skin
     func configure(with skin: ModernSkin) {
-        textColor = skin.textColor
+        // Marquee color from skin palette (defaults to warm glowing yellow)
+        textColor = skin.marqueeColor
         glowEnabled = skin.config.glow.enabled
-        glowColor = skin.primaryColor
+        glowColor = skin.marqueeColor
+        glowMultiplier = skin.elementGlowMultiplier
+        
+        // Marquee scroll settings from skin config
+        scrollSpeed = skin.config.marquee?.scrollSpeed ?? 30.0
+        scrollGap = skin.config.marquee?.scrollGap ?? 50.0
         
         if let font = skin.primaryFont {
             let bodySize = skin.config.fonts.bodySize ?? 9
