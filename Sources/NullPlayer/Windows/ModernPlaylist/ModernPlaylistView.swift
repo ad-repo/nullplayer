@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 
 // =============================================================================
 // MODERN PLAYLIST VIEW - Playlist editor with modern skin chrome
@@ -19,8 +20,6 @@ class ModernPlaylistView: NSView {
     /// The skin renderer
     private var renderer: ModernSkinRenderer!
     
-    /// Grid background layer
-    private var gridLayer: GridBackgroundLayer?
     
     /// Selected track indices
     private var selectedIndices: Set<Int> = []
@@ -53,6 +52,20 @@ class ModernPlaylistView: NSView {
     /// Last known current track index (for detecting track changes)
     private var lastCurrentIndex: Int = -1
     
+    // MARK: - Artwork Background State
+    
+    /// Current artwork image for background display
+    private var currentArtwork: NSImage?
+    
+    /// Track ID for the currently displayed artwork (to avoid reloading)
+    private var artworkTrackId: UUID?
+    
+    /// Async task for loading artwork (can be cancelled)
+    private var artworkLoadTask: Task<Void, Never>?
+    
+    /// Static image cache shared across playlist instances
+    private static let artworkCache = NSCache<NSString, NSImage>()
+    
     // MARK: - Layout Constants
     
     private var titleBarHeight: CGFloat { ModernSkinElements.playlistTitleBarHeight }
@@ -81,8 +94,6 @@ class ModernPlaylistView: NSView {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
         
-        // Set up grid background
-        setupGridBackground(skin: skin)
         
         // Register for drag and drop
         registerForDraggedTypes([.fileURL])
@@ -112,27 +123,20 @@ class ModernPlaylistView: NSView {
         setAccessibilityIdentifier("modernPlaylistView")
         setAccessibilityRole(.group)
         setAccessibilityLabel("Playlist")
+        
+        // Load artwork for currently playing track (if any)
+        loadArtwork(for: WindowManager.shared.audioEngine.currentTrack)
     }
     
     deinit {
         displayTimer?.invalidate()
+        artworkLoadTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
     
     // MARK: - Setup
     
-    private func setupGridBackground(skin: ModernSkin) {
-        gridLayer?.removeFromSuperlayer()
-        
-        if let gridConfig = skin.config.background.grid {
-            let grid = GridBackgroundLayer()
-            grid.configure(with: gridConfig)
-            grid.frame = bounds
-            grid.zPosition = 1
-            layer?.addSublayer(grid)
-            gridLayer = grid
-        }
-    }
+    
     
     // MARK: - Display Timer
     
@@ -232,6 +236,7 @@ class ModernPlaylistView: NSView {
     }
     
     @objc private func handleTrackDidChange(_ note: Notification) {
+        loadArtwork(for: WindowManager.shared.audioEngine.currentTrack)
         needsDisplay = true
     }
     
@@ -291,6 +296,9 @@ class ModernPlaylistView: NSView {
         
         context.saveGState()
         context.clip(to: listRect)
+        
+        // Draw album art background behind tracks
+        drawArtworkBackground(in: listRect, context: context)
         
         let engine = WindowManager.shared.audioEngine
         let tracks = engine.playlist
@@ -441,12 +449,196 @@ class ModernPlaylistView: NSView {
         )
     }
     
+    // MARK: - Artwork Background
+    
+    /// Draw the current artwork behind the track list at low opacity
+    private func drawArtworkBackground(in listRect: NSRect, context: CGContext) {
+        guard let artworkImage = currentArtwork,
+              let cgImage = artworkImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        
+        context.saveGState()
+        context.clip(to: listRect)
+        
+        // Calculate centered fill rect (scale to fill, maintain aspect ratio)
+        let imageSize = NSSize(width: cgImage.width, height: cgImage.height)
+        let artworkRect = calculateCenterFillRect(imageSize: imageSize, in: listRect)
+        
+        // Set low opacity for subtle background
+        context.setAlpha(0.12)
+        
+        // Draw the image (macOS bottom-left origin, no flip needed)
+        context.draw(cgImage, in: artworkRect)
+        
+        context.restoreGState()
+    }
+    
+    /// Calculate a centered fit rect for artwork - scales to fit entirely within bounds, centered
+    private func calculateCenterFillRect(imageSize: NSSize, in targetRect: NSRect) -> NSRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return targetRect }
+        
+        let imageAspect = imageSize.width / imageSize.height
+        let targetAspect = targetRect.width / targetRect.height
+        
+        var width: CGFloat
+        var height: CGFloat
+        
+        if imageAspect > targetAspect {
+            // Image is wider than target - fit to width
+            width = targetRect.width
+            height = width / imageAspect
+        } else {
+            // Image is taller than target - fit to height
+            height = targetRect.height
+            width = height * imageAspect
+        }
+        
+        let x = targetRect.minX + (targetRect.width - width) / 2
+        let y = targetRect.minY + (targetRect.height - height) / 2
+        
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+    
+    /// Load artwork for a track (local embedded, Plex, or Subsonic)
+    private func loadArtwork(for track: Track?) {
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+        
+        guard let track = track else {
+            currentArtwork = nil
+            artworkTrackId = nil
+            needsDisplay = true
+            return
+        }
+        
+        // Skip if same track
+        guard track.id != artworkTrackId else { return }
+        
+        artworkLoadTask = Task { [weak self] in
+            guard let self = self else { return }
+            
+            var image: NSImage?
+            
+            if let plexRatingKey = track.plexRatingKey {
+                // Plex track - load from server
+                image = await self.loadPlexArtwork(ratingKey: plexRatingKey, thumbPath: track.artworkThumb)
+            } else if let subsonicId = track.subsonicId {
+                // Subsonic track - load cover art
+                image = await self.loadSubsonicArtwork(songId: subsonicId)
+            } else if track.url.isFileURL {
+                // Local file - extract embedded artwork
+                image = await self.loadLocalArtwork(url: track.url)
+            }
+            
+            guard !Task.isCancelled else { return }
+            
+            await MainActor.run {
+                self.currentArtwork = image
+                self.artworkTrackId = track.id
+                self.needsDisplay = true
+            }
+        }
+    }
+    
+    /// Load artwork from Plex server
+    private func loadPlexArtwork(ratingKey: String, thumbPath: String?) async -> NSImage? {
+        let cacheKey = NSString(string: "playlist_plex:\(ratingKey)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) {
+            return cached
+        }
+        
+        let path = thumbPath ?? "/library/metadata/\(ratingKey)/thumb"
+        guard let url = PlexManager.shared.artworkURL(thumb: path, size: 400) else { return nil }
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200,
+                  let image = NSImage(data: data) else { return nil }
+            Self.artworkCache.setObject(image, forKey: cacheKey)
+            return image
+        } catch {
+            return nil
+        }
+    }
+    
+    /// Load artwork from Subsonic server
+    private func loadSubsonicArtwork(songId: String) async -> NSImage? {
+        let cacheKey = NSString(string: "playlist_subsonic:\(songId)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) {
+            return cached
+        }
+        
+        // Try using the song ID as cover art ID (most servers support this)
+        guard let artworkURL = SubsonicManager.shared.coverArtURL(coverArtId: songId, size: 400) else { return nil }
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(from: artworkURL)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200,
+                  let image = NSImage(data: data) else { return nil }
+            Self.artworkCache.setObject(image, forKey: cacheKey)
+            return image
+        } catch {
+            return nil
+        }
+    }
+    
+    /// Load embedded artwork from a local audio file
+    private func loadLocalArtwork(url: URL) async -> NSImage? {
+        let cacheKey = NSString(string: "playlist_local:\(url.path)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) {
+            return cached
+        }
+        
+        let asset = AVURLAsset(url: url)
+        
+        do {
+            let metadata = try await asset.load(.metadata)
+            for item in metadata {
+                if item.commonKey == .commonKeyArtwork {
+                    if let data = try await item.load(.dataValue),
+                       let image = NSImage(data: data) {
+                        Self.artworkCache.setObject(image, forKey: cacheKey)
+                        return image
+                    }
+                }
+            }
+            
+            // Check ID3 metadata (MP3 files)
+            let id3Metadata = try await asset.loadMetadata(for: .id3Metadata)
+            for item in id3Metadata {
+                if item.commonKey == .commonKeyArtwork {
+                    if let data = try await item.load(.dataValue),
+                       let image = NSImage(data: data) {
+                        Self.artworkCache.setObject(image, forKey: cacheKey)
+                        return image
+                    }
+                }
+            }
+            
+            // Check iTunes metadata (M4A/AAC files)
+            let itunesMetadata = try await asset.loadMetadata(for: .iTunesMetadata)
+            for item in itunesMetadata {
+                if item.commonKey == .commonKeyArtwork {
+                    if let data = try await item.load(.dataValue),
+                       let image = NSImage(data: data) {
+                        Self.artworkCache.setObject(image, forKey: cacheKey)
+                        return image
+                    }
+                }
+            }
+        } catch {
+            NSLog("ModernPlaylistView: Failed to load local artwork: %@", error.localizedDescription)
+        }
+        
+        return nil
+    }
+    
     // MARK: - Skin Change
     
     func skinDidChange() {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
-        setupGridBackground(skin: skin)
         updateCurrentTrackTextWidth()
         needsDisplay = true
     }
@@ -465,7 +657,6 @@ class ModernPlaylistView: NSView {
     
     func setShadeMode(_ enabled: Bool) {
         isShadeMode = enabled
-        gridLayer?.isHidden = enabled
         needsDisplay = true
     }
     
@@ -1132,6 +1323,5 @@ class ModernPlaylistView: NSView {
     
     override func layout() {
         super.layout()
-        gridLayer?.frame = bounds
     }
 }
