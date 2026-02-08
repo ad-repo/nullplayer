@@ -414,7 +414,7 @@ class ModernSkinRenderer {
             return
         }
         
-        // Fallback: text label with accent color for ON state, dim for OFF
+        // Fallback: text label with accent (magenta) for ON state, dim for OFF
         let onColor = skin.accentColor
         let offColor = skin.textDimColor
         let textColor = isOn ? onColor : offColor

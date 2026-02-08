@@ -450,26 +450,26 @@ class ModernEQView: NSView {
     private func drawToggleButton(label: String, isActive: Bool, rect: NSRect,
                                    font: NSFont, context: CGContext) {
         let skin = renderer.skin
-        let color = isActive ? skin.primaryColor : skin.textDimColor
+        let color = isActive ? skin.accentColor : skin.textDimColor
         
         context.saveGState()
         
         if isActive {
             // Glowing active state
-            context.setFillColor(skin.primaryColor.withAlphaComponent(0.12).cgColor)
+            context.setFillColor(skin.accentColor.withAlphaComponent(0.12).cgColor)
             context.fill(rect)
             
             // Glow border
             context.setShadow(offset: .zero, blur: 6 * scale,
-                              color: skin.primaryColor.withAlphaComponent(0.6).cgColor)
-            context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.8).cgColor)
+                              color: skin.accentColor.withAlphaComponent(0.6).cgColor)
+            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.8).cgColor)
             context.setLineWidth(1.0)
             context.stroke(rect)
             context.restoreGState()
             
             // Crisp border on top
             context.saveGState()
-            context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.6).cgColor)
+            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.6).cgColor)
             context.setLineWidth(1.0)
             context.stroke(rect)
         } else {
@@ -501,14 +501,14 @@ class ModernEQView: NSView {
     private func drawPushButton(label: String, isPressed: Bool, rect: NSRect,
                                  font: NSFont, context: CGContext) {
         let skin = renderer.skin
-        let color = isPressed ? skin.primaryColor : skin.textDimColor
+        let color = isPressed ? skin.accentColor : skin.textDimColor
         
         context.saveGState()
         if isPressed {
-            context.setFillColor(skin.primaryColor.withAlphaComponent(0.15).cgColor)
+            context.setFillColor(skin.accentColor.withAlphaComponent(0.15).cgColor)
             context.fill(rect)
             context.setShadow(offset: .zero, blur: 5 * scale,
-                              color: skin.primaryColor.withAlphaComponent(0.5).cgColor)
+                              color: skin.accentColor.withAlphaComponent(0.5).cgColor)
         }
         context.setStrokeColor(color.withAlphaComponent(isPressed ? 0.8 : 0.3).cgColor)
         context.setLineWidth(isPressed ? 1.0 : 0.5)
