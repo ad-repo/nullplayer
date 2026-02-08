@@ -31,6 +31,7 @@ class StreamingAudioPlayer {
     /// Real-time BPM detector for tempo display
     let bpmDetector = BPMDetector()
     
+    
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
     private let fftSize: Int = 2048

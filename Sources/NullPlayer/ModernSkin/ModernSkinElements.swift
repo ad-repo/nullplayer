@@ -213,7 +213,7 @@ enum ModernSkinElements {
         titleBar, titleBarText, btnClose, btnMinimize, btnShade,
         timeDisplay,
         marqueeBackground,
-        infoBitrate, infoSampleRate, infoStereo, infoMono, infoCast,
+        infoBitrate, infoSampleRate, infoBPM, infoStereo, infoMono, infoCast,
         statusPlay, statusPause, statusStop,
         spectrumArea,
         btnEQ, btnPlaylist, btnLibrary, btnProjectM, btnSpectrum,

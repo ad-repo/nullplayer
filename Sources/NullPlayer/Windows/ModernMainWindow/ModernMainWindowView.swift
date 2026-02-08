@@ -640,6 +640,7 @@ class ModernMainWindowView: NSView {
         needsDisplay = true
     }
     
+    
     // MARK: - Visualization Mode
     
     /// Cycle through visualization modes on the mini spectrum area

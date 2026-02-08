@@ -4,8 +4,8 @@ import Accelerate
 /// Real-time BPM detector using onset detection and autocorrelation.
 ///
 /// Processes audio buffers from the audio tap to detect tempo. Uses bass-band
-/// energy onset detection with autocorrelation to find periodicity, plus
-/// multi-layer smoothing (median filter + EMA + lock-in) for stable output.
+/// energy autocorrelation to find periodicity, with harmonic disambiguation
+/// and multi-layer smoothing for stable, non-jumpy output.
 ///
 /// Thread safety: All `process` calls must happen on the same thread (the audio tap thread).
 /// BPM updates are posted to the main thread via notification.
@@ -33,15 +33,14 @@ class BPMDetector {
     private let lockInTolerance: Float = 5.0
     
     /// Lock-in: how many consecutive out-of-range readings to break lock
-    private let lockBreakCount = 3
+    private let lockBreakCount = 6
     
     // MARK: - State
     
     /// Sample rate of the audio being processed
     private var sampleRate: Double = 44100
     
-    /// Rolling buffer of bass energy values (raw, not thresholded)
-    /// Each entry corresponds to one audio frame (~60Hz)
+    /// Rolling buffer of bass energy values
     private var energyBuffer: [Float] = []
     
     /// Maximum energy buffer size (~12 seconds at 60Hz)
@@ -73,9 +72,6 @@ class BPMDetector {
     /// Timing for notification throttling (don't spam UI)
     private var lastNotificationTime: CFAbsoluteTime = 0
     private let notificationInterval: CFAbsoluteTime = 1.0
-    
-    /// Frame counter for debug logging
-    private var frameCount = 0
     
     /// Pre-allocated buffers for autocorrelation
     private var autocorrelationBuffer: [Float] = []
@@ -110,7 +106,7 @@ class BPMDetector {
         // Extract bass energy using low-frequency FFT bins
         let bassEnergy = computeBassEnergy(samples: samples, count: count)
         
-        // Store raw energy (no thresholding - autocorrelation works on the full signal)
+        // Store raw energy
         energyBuffer.append(bassEnergy)
         energyTimestamps.append(now)
         
@@ -120,8 +116,6 @@ class BPMDetector {
             energyBuffer.removeFirst(excess)
             energyTimestamps.removeFirst(excess)
         }
-        
-        frameCount += 1
         
         // Run autocorrelation analysis at intervals
         // Need at least ~3 seconds of data for meaningful analysis
@@ -144,7 +138,6 @@ class BPMDetector {
         lockBreakConsecutiveCount = 0
         lastAnalysisTime = 0
         lastNotificationTime = 0
-        frameCount = 0
         
         // Post reset (clear display)
         DispatchQueue.main.async {
@@ -168,19 +161,15 @@ class BPMDetector {
         for i in 0..<processCount {
             bassRealIn[i] = samples[i] * bassWindow[i]
         }
-        // Zero-pad if needed
         if processCount < bassFFTSize {
             for i in processCount..<bassFFTSize {
                 bassRealIn[i] = 0
             }
         }
-        // Clear imaginary input
         memset(&bassImagIn, 0, bassFFTSize * MemoryLayout<Float>.size)
         
-        // Forward FFT
         vDSP_DFT_Execute(setup, bassRealIn, bassImagIn, &bassRealOut, &bassImagOut)
         
-        // Sum energy in bass range: 20-200 Hz
         let freqResolution = Float(sampleRate) / Float(bassFFTSize)
         let halfSize = bassFFTSize / 2
         let minBin = max(1, Int(20.0 / freqResolution))
@@ -195,7 +184,6 @@ class BPMDetector {
             energy += re * re + im * im
         }
         
-        // Normalize by number of bins
         let binCount = Float(maxBin - minBin + 1)
         return energy / binCount
     }
@@ -203,8 +191,6 @@ class BPMDetector {
     // MARK: - Autocorrelation Analysis
     
     /// Run autocorrelation on the energy buffer and update BPM estimate.
-    /// Uses the raw energy signal directly - autocorrelation finds periodicity
-    /// without needing explicit onset detection.
     private func analyzeAndUpdate(timestamp: CFAbsoluteTime) {
         let n = energyBuffer.count
         guard n >= 150 else { return }
@@ -214,8 +200,7 @@ class BPMDetector {
         guard timeSpan > 0 else { return }
         let onsetRate = Float(n - 1) / Float(timeSpan)
         
-        // BPM range → lag range in energy samples
-        // lag = onsetRate * 60 / bpm
+        // BPM range → lag range
         let minLag = max(2, Int(onsetRate * 60.0 / maxBPM))
         let maxLag = min(n / 2, Int(onsetRate * 60.0 / minBPM))
         
@@ -232,18 +217,14 @@ class BPMDetector {
             autocorrelationBuffer = [Float](repeating: 0, count: lagCount)
         }
         
-        // Use the most recent portion
-        let analysisLength = n
-        
         for lagIdx in 0..<lagCount {
             let lag = minLag + lagIdx
-            let compareLength = analysisLength - lag
+            let compareLength = n - lag
             guard compareLength > 0 else {
                 autocorrelationBuffer[lagIdx] = 0
                 continue
             }
             
-            // Normalized autocorrelation: subtract mean, dot product
             var sum: Float = 0
             for i in 0..<compareLength {
                 let a = energyBuffer[i] - meanEnergy
@@ -253,30 +234,34 @@ class BPMDetector {
             autocorrelationBuffer[lagIdx] = sum / Float(compareLength)
         }
         
-        // Find the dominant peak in the autocorrelation
-        guard let peakIdx = findDominantPeak(in: autocorrelationBuffer, count: lagCount) else {
+        // Find the best BPM, preferring the fundamental period over harmonics
+        guard let bestBPM = findBestBPM(onsetRate: onsetRate, minLag: minLag, lagCount: lagCount) else {
             return
         }
         
-        let bestLag = Float(minLag + peakIdx)
-        guard bestLag > 0 else { return }
-        
-        // Convert lag to BPM
-        var rawBPM = onsetRate * 60.0 / bestLag
-        
-        // Octave correction: bring into range
-        while rawBPM < minBPM && rawBPM > 0 { rawBPM *= 2 }
-        while rawBPM > maxBPM { rawBPM /= 2 }
-        
-        guard rawBPM >= minBPM && rawBPM <= maxBPM else { return }
+        // Normalize to the same octave as the current lock-in value (if any)
+        // This prevents double/half-time oscillation from corrupting the median filter
+        var normalizedBPM = bestBPM
+        if displayedBPM > 0 && hasConfidentReading {
+            let displayed = Float(displayedBPM)
+            // If the new estimate is close to 2x or 0.5x the displayed, snap it
+            if abs(normalizedBPM - displayed * 2) < displayed * 0.15 {
+                normalizedBPM /= 2
+            } else if abs(normalizedBPM - displayed / 2) < displayed * 0.15 {
+                normalizedBPM *= 2
+            }
+            // Ensure still in range after snap
+            if normalizedBPM < minBPM || normalizedBPM > maxBPM {
+                normalizedBPM = bestBPM  // revert
+            }
+        }
         
         // Add to recent estimates for median filtering
-        recentEstimates.append(rawBPM)
+        recentEstimates.append(normalizedBPM)
         if recentEstimates.count > medianWindowSize {
             recentEstimates.removeFirst(recentEstimates.count - medianWindowSize)
         }
         
-        // Need enough estimates for median
         guard recentEstimates.count >= 3 else { return }
         
         // Median filter
@@ -299,9 +284,12 @@ class BPMDetector {
             } else {
                 lockBreakConsecutiveCount += 1
                 if lockBreakConsecutiveCount >= lockBreakCount {
+                    // Break lock - also clear old estimates to avoid mixing octaves
                     isLockedIn = false
                     lockInConsecutiveCount = 0
                     lockBreakConsecutiveCount = 0
+                    recentEstimates.removeAll()
+                    smoothedBPM = Float(roundedBPM)
                     displayedBPM = roundedBPM
                     hasConfidentReading = true
                 }
@@ -321,7 +309,8 @@ class BPMDetector {
             }
         }
         
-        // Post notification (throttled)
+        // Post notification (throttled) - always post the current displayed value
+        // once we have confidence, to keep the UI label visible
         guard hasConfidentReading && displayedBPM > 0 else { return }
         if timestamp - lastNotificationTime >= notificationInterval {
             lastNotificationTime = timestamp
@@ -336,30 +325,92 @@ class BPMDetector {
         }
     }
     
-    /// Find the dominant peak in the autocorrelation buffer.
-    private func findDominantPeak(in buffer: [Float], count: Int) -> Int? {
-        guard count > 2 else { return nil }
+    /// Find the best BPM from autocorrelation, preferring the fundamental period.
+    ///
+    /// The autocorrelation of a periodic signal has peaks at the fundamental period
+    /// AND at integer subdivisions (harmonics). A peak at lag=N (fundamental) will
+    /// also produce peaks at lag=N/2 (double-time), lag=N/3 (triple-time), etc.
+    /// We want the fundamental (largest lag = slowest BPM within range).
+    private func findBestBPM(onsetRate: Float, minLag: Int, lagCount: Int) -> Float? {
+        guard lagCount > 2 else { return nil }
         
-        // Find all local maxima
-        var peaks: [(index: Int, value: Float)] = []
-        for i in 1..<(count - 1) {
-            if buffer[i] > buffer[i - 1] && buffer[i] > buffer[i + 1] && buffer[i] > 0 {
-                peaks.append((index: i, value: buffer[i]))
+        // Find all local maxima with their BPM values
+        struct Peak {
+            let lagIdx: Int
+            let lag: Int
+            let value: Float
+            let bpm: Float
+        }
+        
+        var peaks: [Peak] = []
+        for i in 1..<(lagCount - 1) {
+            if autocorrelationBuffer[i] > autocorrelationBuffer[i - 1] &&
+               autocorrelationBuffer[i] > autocorrelationBuffer[i + 1] &&
+               autocorrelationBuffer[i] > 0 {
+                let lag = minLag + i
+                var bpm = onsetRate * 60.0 / Float(lag)
+                // Octave-correct into range
+                while bpm < minBPM && bpm > 0 { bpm *= 2 }
+                while bpm > maxBPM { bpm /= 2 }
+                if bpm >= minBPM && bpm <= maxBPM {
+                    peaks.append(Peak(lagIdx: i, lag: lag, value: autocorrelationBuffer[i], bpm: bpm))
+                }
             }
         }
         
-        guard !peaks.isEmpty else {
-            // No local maxima found - just find the global max
+        // Fallback: global max if no local maxima
+        if peaks.isEmpty {
             var maxVal: Float = 0
             var maxIdx: vDSP_Length = 0
-            vDSP_maxvi(buffer, 1, &maxVal, &maxIdx, vDSP_Length(count))
-            return maxVal > 0 ? Int(maxIdx) : nil
+            vDSP_maxvi(autocorrelationBuffer, 1, &maxVal, &maxIdx, vDSP_Length(lagCount))
+            guard maxVal > 0 else { return nil }
+            let lag = minLag + Int(maxIdx)
+            var bpm = onsetRate * 60.0 / Float(lag)
+            while bpm < minBPM && bpm > 0 { bpm *= 2 }
+            while bpm > maxBPM { bpm /= 2 }
+            return (bpm >= minBPM && bpm <= maxBPM) ? bpm : nil
         }
         
         // Sort by value descending
         peaks.sort { $0.value > $1.value }
         
-        // Return the highest peak
-        return peaks[0].index
+        let strongestPeak = peaks[0]
+        
+        // Check if the strongest peak has a harmonic relationship with a
+        // longer-lag peak (lower BPM = fundamental). If a peak exists at
+        // ~2x the lag with reasonable strength, prefer it (it's the fundamental).
+        for candidate in peaks {
+            // Skip the strongest itself
+            if candidate.lagIdx == strongestPeak.lagIdx { continue }
+            
+            // Is this candidate at roughly 2x the lag of the strongest? (fundamental)
+            let lagRatio = Float(candidate.lag) / Float(strongestPeak.lag)
+            if lagRatio > 1.8 && lagRatio < 2.2 {
+                // This is the fundamental period (half the BPM)
+                // Accept it if it has at least 40% of the strongest peak's energy
+                if candidate.value >= strongestPeak.value * 0.4 {
+                    return candidate.bpm
+                }
+            }
+        }
+        
+        // No harmonic disambiguation needed - use the strongest peak
+        // But if the current lock-in exists, check if the strongest peak's BPM
+        // is double the locked value - if so, use half (fundamental)
+        if displayedBPM > 0 && hasConfidentReading {
+            let ratio = strongestPeak.bpm / Float(displayedBPM)
+            if ratio > 1.8 && ratio < 2.2 {
+                // Strongest peak is at double-time of the locked value
+                // Look for any peak near the locked BPM
+                for candidate in peaks {
+                    let candidateRatio = candidate.bpm / Float(displayedBPM)
+                    if candidateRatio > 0.9 && candidateRatio < 1.1 && candidate.value > strongestPeak.value * 0.3 {
+                        return candidate.bpm
+                    }
+                }
+            }
+        }
+        
+        return strongestPeak.bpm
     }
 }

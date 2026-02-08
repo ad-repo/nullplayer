@@ -31,6 +31,7 @@ extension Notification.Name {
     /// Posted when BPM detection updates
     /// userInfo contains: "bpm" (Int) - 0 means no confident reading
     static let bpmUpdated = Notification.Name("bpmUpdated")
+    
 }
 
 /// Audio playback state
@@ -274,6 +275,7 @@ class AudioEngine {
     
     /// Real-time BPM detector for tempo display
     private let bpmDetector = BPMDetector()
+    
     
     /// Raw PCM audio data for waveform visualization (mono, normalized -1 to 1)
     private(set) var pcmData: [Float] = Array(repeating: 0, count: 512)

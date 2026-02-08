@@ -154,11 +154,12 @@ Every skinnable element has an ID, default position/size, and valid states.
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
 | `marquee_bg` | 95,66,170,30 | normal | Marquee background panel |
-| `info_bitrate` | 95,58,60,10 | normal | Bitrate label |
-| `info_samplerate` | 155,58,50,10 | normal | Sample rate label |
-| `info_stereo` | 210,58,30,10 | off, on | Stereo indicator |
-| `info_mono` | 210,58,30,10 | off, on | Mono indicator |
-| `info_cast` | 242,58,25,10 | off, on | Cast active indicator |
+| `info_bitrate` | 95,62,40,9 | normal | Bitrate label |
+| `info_samplerate` | 135,62,30,9 | normal | Sample rate label |
+| `info_bpm` | 165,62,30,9 | normal | BPM label |
+| `info_stereo` | 198,62,32,9 | off, on | Stereo indicator |
+| `info_mono` | 198,62,32,9 | off, on | Mono indicator |
+| `info_cast` | 232,62,34,9 | off, on | Cast active indicator |
 
 ### Status & Spectrum
 
