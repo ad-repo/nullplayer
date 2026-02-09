@@ -363,6 +363,11 @@ class ContextMenuBuilder {
             item.target = MenuActions.shared
             item.representedObject = mode
             item.state = (currentMode == mode) ? .on : .off
+            // Disable modes whose shader file is missing
+            if let qualityMode = mode.spectrumQualityMode,
+               !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
+                item.isEnabled = false
+            }
             modeMenu.addItem(item)
         }
         modeItem.submenu = modeMenu
@@ -552,6 +557,10 @@ class ContextMenuBuilder {
             item.target = MenuActions.shared
             item.representedObject = mode
             item.state = (currentQuality == mode) ? .on : .off
+            // Disable modes whose shader file is missing
+            if !SpectrumAnalyzerView.isShaderAvailable(for: mode) {
+                item.isEnabled = false
+            }
             modeMenu.addItem(item)
         }
         modeItem.submenu = modeMenu

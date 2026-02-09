@@ -159,7 +159,15 @@ class MainWindowView: NSView {
         // Restore saved visualization mode
         if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
            let mode = MainWindowVisMode(rawValue: savedMode) {
-            mainVisMode = mode
+            // Validate shader availability before restoring a GPU mode — if the shader file
+            // is missing (e.g., not included in DMG), fall back to Spectrum to prevent crashes
+            if let qualityMode = mode.spectrumQualityMode,
+               !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
+                NSLog("MainWindowView: Shader unavailable for \(mode.rawValue), falling back to Spectrum")
+                mainVisMode = .spectrum
+            } else {
+                mainVisMode = mode
+            }
         }
         
         // Setup layer-based marquee for normal mode
@@ -439,14 +447,34 @@ class MainWindowView: NSView {
             mainVisMode = .spectrum
             return
         }
-        let nextIndex = allModes.index(after: currentIndex)
-        mainVisMode = (nextIndex < allModes.endIndex) ? allModes[nextIndex] : allModes[allModes.startIndex]
+        // Skip modes whose shader file is missing
+        var nextIndex = allModes.index(after: currentIndex)
+        if nextIndex >= allModes.endIndex { nextIndex = allModes.startIndex }
+        let startIndex = nextIndex
+        while true {
+            let mode = allModes[nextIndex]
+            if let qualityMode = mode.spectrumQualityMode,
+               !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
+                nextIndex = allModes.index(after: nextIndex)
+                if nextIndex >= allModes.endIndex { nextIndex = allModes.startIndex }
+                if nextIndex == startIndex { break }  // All modes checked, none available
+                continue
+            }
+            mainVisMode = mode
+            return
+        }
+        mainVisMode = .spectrum  // Fallback if nothing available
     }
     
     @objc private func mainVisSettingsChanged() {
         // Reload vis mode from UserDefaults
         if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
            let mode = MainWindowVisMode(rawValue: savedMode) {
+            // Validate shader availability before applying a GPU mode
+            if let qualityMode = mode.spectrumQualityMode,
+               !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
+                return  // Don't switch to an unavailable mode
+            }
             if mode != mainVisMode {
                 mainVisMode = mode
             }

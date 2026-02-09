@@ -431,7 +431,11 @@ class ModernSpectrumView: NSView {
         guard let view = spectrumAnalyzerView else { return }
         let modes = SpectrumQualityMode.allCases
         guard let idx = modes.firstIndex(of: view.qualityMode) else { return }
-        let newIdx = (idx + 1) % modes.count
+        // Skip modes whose shader file is missing
+        var newIdx = (idx + 1) % modes.count
+        while !SpectrumAnalyzerView.isShaderAvailable(for: modes[newIdx]) && newIdx != idx {
+            newIdx = (newIdx + 1) % modes.count
+        }
         let newMode = modes[newIdx]
         view.qualityMode = newMode
         UserDefaults.standard.set(newMode.rawValue, forKey: "spectrumQualityMode")
@@ -470,6 +474,10 @@ class ModernSpectrumView: NSView {
             item.target = self
             item.representedObject = mode
             item.state = (spectrumAnalyzerView?.qualityMode == mode) ? .on : .off
+            // Disable modes whose shader file is missing
+            if !SpectrumAnalyzerView.isShaderAvailable(for: mode) {
+                item.isEnabled = false
+            }
             qualityMenu.addItem(item)
         }
         let qualityMenuItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")

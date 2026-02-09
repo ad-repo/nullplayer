@@ -215,6 +215,24 @@ Sources/NullPlayer/
   let byte = data[data.startIndex]
   let slice = data[(data.startIndex + 4)..<(data.startIndex + total)]
   ```
+- **Metal command encoders**: Never use `if let enc = cb.makeRenderCommandEncoder(...), let pl = pipeline { ... }` — if `pipeline` is nil, the encoder is created but never ended, leaving the command buffer in an invalid state and causing a Metal API violation crash on `commit()`. Always guard the pipeline BEFORE creating the encoder:
+  ```swift
+  // WRONG - encoder created but never ended if pipeline is nil:
+  if let enc = cb.makeRenderCommandEncoder(descriptor: rpd), let pl = pipeline {
+      enc.setRenderPipelineState(pl)
+      enc.endEncoding()
+  }
+  cb.commit()  // Crashes!
+  
+  // CORRECT - guard pipeline first, then create encoder:
+  guard let pl = pipeline else { inFlightSemaphore.signal(); return }
+  if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
+      enc.setRenderPipelineState(pl)
+      enc.endEncoding()
+  }
+  cb.commit()
+  ```
+- **Spectrum shader availability**: Use `SpectrumAnalyzerView.isShaderAvailable(for:)` to check if a mode's shader file exists before switching to it. This static method works without a view instance and should be used when restoring modes from UserDefaults and when building menus. The instance method `isPipelineAvailable(for:)` checks the actual compiled pipeline and is used after `setupMetal()`
 - **No Spotify/Apple/Amazon**: These integrations are explicitly not accepted
 - **Plex API filter operators**: `URLQueryItem` will URL-encode operators like `>=`, `<=` which breaks Plex filtering. Build URLs manually for filter params. Note: Plex only supports `>=`, `<=`, `=`, `!=` operators - **NOT `<` or `>`** (use `<=` with value-1 instead):
   ```swift

@@ -685,9 +685,24 @@ class ModernMainWindowView: NSView {
             mainVisMode = .spectrum
             return
         }
-        let nextIndex = allModes.index(after: currentIndex)
-        mainVisMode = (nextIndex < allModes.endIndex) ? allModes[nextIndex] : allModes[allModes.startIndex]
-        NSLog("ModernMainWindow: Vis mode changed to %@", mainVisMode.rawValue)
+        // Skip modes whose shader file is missing
+        var nextIndex = allModes.index(after: currentIndex)
+        if nextIndex >= allModes.endIndex { nextIndex = allModes.startIndex }
+        let startIndex = nextIndex
+        while true {
+            let mode = allModes[nextIndex]
+            if let qualityMode = mode.spectrumQualityMode,
+               !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
+                nextIndex = allModes.index(after: nextIndex)
+                if nextIndex >= allModes.endIndex { nextIndex = allModes.startIndex }
+                if nextIndex == startIndex { break }  // All modes checked, none available
+                continue
+            }
+            mainVisMode = mode
+            NSLog("ModernMainWindow: Vis mode changed to %@", mainVisMode.rawValue)
+            return
+        }
+        mainVisMode = .spectrum  // Fallback if nothing available
     }
     
     /// Set up or update the Metal overlay for GPU-rendered modes
@@ -722,7 +737,15 @@ class ModernMainWindowView: NSView {
     private func restoreVisMode() {
         if let savedMode = UserDefaults.standard.string(forKey: "modernMainWindowVisMode"),
            let mode = MainWindowVisMode(rawValue: savedMode) {
-            mainVisMode = mode
+            // Validate shader availability before restoring a GPU mode — if the shader file
+            // is missing (e.g., not included in DMG), fall back to Spectrum to prevent crashes
+            if let qualityMode = mode.spectrumQualityMode,
+               !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
+                NSLog("ModernMainWindowView: Shader unavailable for \(mode.rawValue), falling back to Spectrum")
+                mainVisMode = .spectrum
+            } else {
+                mainVisMode = mode
+            }
         }
     }
     

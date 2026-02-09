@@ -134,11 +134,14 @@ else
     log_warning "No resources found at $BUNDLE_RESOURCES"
 fi
 
-# Copy Metal shader files from bundle root (SPM places .copy() files there)
-if [[ -f "$BUILD_DIR/NullPlayer_NullPlayer.bundle/SpectrumShaders.metal" ]]; then
-    cp "$BUILD_DIR/NullPlayer_NullPlayer.bundle/SpectrumShaders.metal" "$RESOURCES_DIR/"
-    log_success "Metal shaders copied"
-fi
+# Copy ALL Metal shader files from bundle root (SPM places .copy() files there)
+# Includes: SpectrumShaders, FlameShaders, CosmicShaders, ElectricityShaders, MatrixShaders, BloomShader
+for metal_file in "$BUILD_DIR/NullPlayer_NullPlayer.bundle/"*.metal; do
+    if [[ -f "$metal_file" ]]; then
+        cp "$metal_file" "$RESOURCES_DIR/"
+    fi
+done
+log_success "Metal shaders copied"
 
 # Also copy Info.plist from source
 cp "$REPO_ROOT/Sources/NullPlayer/Resources/Info.plist" "$CONTENTS_DIR/"

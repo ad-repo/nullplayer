@@ -25,6 +25,18 @@ enum SpectrumQualityMode: String, CaseIterable {
     case matrix = "Matrix"           // Falling digital rain driven by spectrum
     
     var displayName: String { rawValue }
+    
+    /// The Metal shader file required for this mode.
+    /// Returns nil if the mode shares a shader already checked by another mode.
+    var requiredShaderFile: String {
+        switch self {
+        case .classic, .enhanced, .ultra: return "SpectrumShaders"
+        case .flame: return "FlameShaders"
+        case .cosmic: return "CosmicShaders"
+        case .electricity: return "ElectricityShaders"
+        case .matrix: return "MatrixShaders"
+        }
+    }
 }
 
 /// Visual style presets for Flame mode
@@ -273,6 +285,29 @@ struct UltraParams {
 
 /// Metal-based spectrum analyzer visualization view
 class SpectrumAnalyzerView: NSView {
+    
+    // MARK: - Shader Availability
+    
+    /// Check if the Metal shader file for a given mode is available in the app bundle.
+    /// This is a static check that works without a SpectrumAnalyzerView instance, making it
+    /// safe to call from MainWindowView/ModernMainWindowView before the overlay is created.
+    static func isShaderAvailable(for mode: SpectrumQualityMode) -> Bool {
+        return BundleHelper.url(forResource: mode.requiredShaderFile, withExtension: "metal") != nil
+    }
+    
+    /// Check if the Metal render pipeline for a given mode was successfully created.
+    /// Only valid after setupMetal() has run. Use isShaderAvailable() for pre-init checks.
+    private func isPipelineAvailable(for mode: SpectrumQualityMode) -> Bool {
+        switch mode {
+        case .classic: return barPipelineState != nil
+        case .enhanced: return ledPipelineState != nil
+        case .ultra: return ultraPipelineState != nil
+        case .flame: return flamePropPipeline != nil && flameRenderPipeline != nil
+        case .cosmic: return cosmicRenderPipeline != nil
+        case .electricity: return electricityRenderPipeline != nil
+        case .matrix: return matrixRenderPipeline != nil
+        }
+    }
     
     // MARK: - Configuration
     
@@ -634,6 +669,14 @@ class SpectrumAnalyzerView: NSView {
         
         // Set up Metal
         setupMetal()
+        
+        // Validate the restored mode has a working pipeline — if a shader file is missing
+        // (e.g., DMG didn't include it), fall back to Classic to prevent crashes.
+        // This must run AFTER setupMetal() so isPipelineAvailable() gives accurate results.
+        if !isPipelineAvailable(for: qualityMode) {
+            NSLog("SpectrumAnalyzerView: Pipeline not available for \(qualityMode.rawValue), falling back to Classic")
+            qualityMode = .classic
+        }
         
         // Load colors from current skin
         updateColorsFromSkin()
@@ -1255,6 +1298,14 @@ class SpectrumAnalyzerView: NSView {
             return
         }
         
+        // Safety net: if the mode requires a pipeline that doesn't exist, skip the frame.
+        // This should never happen if commonInit() validation worked, but guards against
+        // race conditions or runtime pipeline failures.
+        if !isPipelineAvailable(for: currentMode) {
+            inFlightSemaphore.signal()
+            return
+        }
+        
         // Flame, Cosmic, and Electricity modes use completely different pipelines
         if currentMode == .flame {
             renderFlame(drawable: drawable)
@@ -1401,8 +1452,11 @@ class SpectrumAnalyzerView: NSView {
     
     /// Render flame mode: single compute pass + render pass with ping-pong textures
     private func renderFlame(drawable: CAMetalDrawable) {
+        // Guard ALL required pipelines BEFORE creating any encoders to prevent Metal API violations.
+        // Creating an encoder without calling endEncoding() leaves the command buffer in an invalid state.
         guard let cb = commandQueue?.makeCommandBuffer(),
-              let simA = flameSimTextureA, let simB = flameSimTextureB else {
+              let simA = flameSimTextureA, let simB = flameSimTextureB,
+              let computePL = flamePropPipeline, let renderPL = flameRenderPipeline else {
             inFlightSemaphore.signal(); return
         }
         var localSpectrum: [Float] = []; var localStyle: FlameStyle = .inferno; var localTime: Float = 0
@@ -1450,8 +1504,8 @@ class SpectrumAnalyzerView: NSView {
         flameCurrentTex = 1 - flameCurrentTex
         let tgSize = MTLSize(width: 16, height: 16, depth: 1)
         let tgs = MTLSize(width: (flameGridWidth + 15) / 16, height: (flameGridHeight + 15) / 16, depth: 1)
-        if let enc = cb.makeComputeCommandEncoder(), let pl = flamePropPipeline {
-            enc.setComputePipelineState(pl)
+        if let enc = cb.makeComputeCommandEncoder() {
+            enc.setComputePipelineState(computePL)
             enc.setTexture(readTex, index: 0); enc.setTexture(writeTex, index: 1)
             enc.setBuffer(flameParamsBuffer, offset: 0, index: 0)
             enc.setBuffer(flameSpectrumBuffer, offset: 0, index: 1)
@@ -1461,8 +1515,8 @@ class SpectrumAnalyzerView: NSView {
         rpd.colorAttachments[0].texture = drawable.texture
         rpd.colorAttachments[0].loadAction = .clear; rpd.colorAttachments[0].storeAction = .store
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd), let pl = flameRenderPipeline {
-            enc.setRenderPipelineState(pl)
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
+            enc.setRenderPipelineState(renderPL)
             enc.setFragmentTexture(writeTex, index: 0)
             enc.setFragmentBuffer(flameParamsBuffer, offset: 0, index: 0)
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6); enc.endEncoding()
@@ -1564,6 +1618,11 @@ class SpectrumAnalyzerView: NSView {
         rpd.colorAttachments[0].storeAction = .store
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         
+        // Guard pipeline BEFORE creating encoder to prevent Metal API violations
+        guard let pl = cosmicRenderPipeline else {
+            inFlightSemaphore.signal(); return
+        }
+        
         // Update spectrum buffer for frequency-aligned flares
         // Uses displaySpectrum (already normalized by AudioEngine) not rawSpectrum
         var localSpectrum: [Float] = []
@@ -1578,7 +1637,7 @@ class SpectrumAnalyzerView: NSView {
             }
         }
         
-        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd), let pl = cosmicRenderPipeline {
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
             enc.setRenderPipelineState(pl)
             enc.setFragmentBuffer(cosmicParamsBuffer, offset: 0, index: 0)
             enc.setFragmentBuffer(flameSpectrumBuffer, offset: 0, index: 1)
@@ -1675,6 +1734,11 @@ class SpectrumAnalyzerView: NSView {
             )
         }
         
+        // Guard pipeline BEFORE creating encoder to prevent Metal API violations
+        guard let pl = electricityRenderPipeline else {
+            inFlightSemaphore.signal(); return
+        }
+        
         // Render full-screen quad
         let rpd = MTLRenderPassDescriptor()
         rpd.colorAttachments[0].texture = drawable.texture
@@ -1682,7 +1746,7 @@ class SpectrumAnalyzerView: NSView {
         rpd.colorAttachments[0].storeAction = .store
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         
-        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd), let pl = electricityRenderPipeline {
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
             enc.setRenderPipelineState(pl)
             enc.setFragmentBuffer(electricityParamsBuffer, offset: 0, index: 0)
             enc.setFragmentBuffer(flameSpectrumBuffer, offset: 0, index: 1)
@@ -1794,6 +1858,11 @@ class SpectrumAnalyzerView: NSView {
             )
         }
         
+        // Guard pipeline BEFORE creating encoder to prevent Metal API violations
+        guard let pl = matrixRenderPipeline else {
+            inFlightSemaphore.signal(); return
+        }
+        
         // Render full-screen quad
         let rpd = MTLRenderPassDescriptor()
         rpd.colorAttachments[0].texture = drawable.texture
@@ -1801,7 +1870,7 @@ class SpectrumAnalyzerView: NSView {
         rpd.colorAttachments[0].storeAction = .store
         rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         
-        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd), let pl = matrixRenderPipeline {
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
             enc.setRenderPipelineState(pl)
             enc.setFragmentBuffer(matrixParamsBuffer, offset: 0, index: 0)
             enc.setFragmentBuffer(flameSpectrumBuffer, offset: 0, index: 1)
