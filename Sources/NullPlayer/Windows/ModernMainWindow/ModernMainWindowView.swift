@@ -495,17 +495,18 @@ class ModernMainWindowView: NSView {
     private func drawEQPlaylistButtons(context: CGContext) {
         let audioEngine = WindowManager.shared.audioEngine
         
-        // 9 toggle buttons right-aligned: 2X, SH, RP, CA, pM, EQ, PL, SP, LB
+        // 10 toggle buttons right-aligned: 2X, HT, SH, RP, CA, pM, EQ, PL, SP, LB
         let y: CGFloat = 42
         let h: CGFloat = 14
         let w: CGFloat = 18
         let spacing: CGFloat = 2
         let rightPad: CGFloat = 8  // Attractive padding from right edge
-        let totalWidth = CGFloat(9) * w + CGFloat(8) * spacing
+        let totalWidth = CGFloat(10) * w + CGFloat(9) * spacing
         let startX: CGFloat = 275 - rightPad - totalWidth
         
         let buttonDefs: [(String, String, Bool)] = [
             ("btn_2x", "2X", WindowManager.shared.isDoubleSize),
+            ("btn_ht", "HT", WindowManager.shared.hideTitleBars),
             ("btn_shuffle", "SH", audioEngine.shuffleEnabled),
             ("btn_repeat", "RP", audioEngine.repeatEnabled),
             ("btn_cast", "CA", CastManager.shared.isCasting),
@@ -773,8 +774,9 @@ class ModernMainWindowView: NSView {
             ("btn_stop", ModernSkinElements.btnStop.defaultRect),
             ("btn_next", ModernSkinElements.btnNext.defaultRect),
             ("btn_eject", ModernSkinElements.btnEject.defaultRect),
-            // Toggle button row (9 buttons right-aligned: 2X, SH, RP, CA, pM, EQ, PL, SP, LB)
-            ("btn_2x", NSRect(x: 89, y: 42, width: 18, height: 14)),
+            // Toggle button row (10 buttons right-aligned: 2X, HT, SH, RP, CA, pM, EQ, PL, SP, LB)
+            ("btn_2x", NSRect(x: 69, y: 42, width: 18, height: 14)),
+            ("btn_ht", NSRect(x: 89, y: 42, width: 18, height: 14)),
             ("btn_shuffle", NSRect(x: 109, y: 42, width: 18, height: 14)),
             ("btn_repeat", NSRect(x: 129, y: 42, width: 18, height: 14)),
             ("btn_cast", NSRect(x: 149, y: 42, width: 18, height: 14)),
@@ -1002,6 +1004,9 @@ class ModernMainWindowView: NSView {
             
         case "btn_2x":
             WindowManager.shared.isDoubleSize.toggle()
+            
+        case "btn_ht":
+            WindowManager.shared.toggleHideTitleBars()
             
         case "btn_shuffle":
             audioEngine.shuffleEnabled.toggle()

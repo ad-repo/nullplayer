@@ -1752,22 +1752,25 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Hit Testing (Bottom-Left Origin)
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        let m = ModernSkinElements.sizeMultiplier
         if WindowManager.shared.hideTitleBars {
-            return point.y >= bounds.height - 6  // invisible drag zone
+            return point.y >= bounds.height - 6 * m  // invisible drag zone
         }
         return point.y > bounds.height - Layout.titleBarHeight &&
-               point.x < bounds.width - 30
+               point.x < bounds.width - 30 * m
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        let m = ModernSkinElements.sizeMultiplier
         if WindowManager.shared.hideTitleBars { return false }
-        let closeRect = NSRect(x: bounds.width - 20, y: bounds.height - Layout.titleBarHeight, width: 20, height: Layout.titleBarHeight)
+        let closeRect = NSRect(x: bounds.width - 20 * m, y: bounds.height - Layout.titleBarHeight, width: 20 * m, height: Layout.titleBarHeight)
         return closeRect.contains(point)
     }
     
     private func hitTestShadeButton(at point: NSPoint) -> Bool {
+        let m = ModernSkinElements.sizeMultiplier
         if WindowManager.shared.hideTitleBars { return false }
-        let shadeRect = NSRect(x: bounds.width - 31, y: bounds.height - Layout.titleBarHeight, width: 11, height: Layout.titleBarHeight)
+        let shadeRect = NSRect(x: bounds.width - 31 * m, y: bounds.height - Layout.titleBarHeight, width: 11 * m, height: Layout.titleBarHeight)
         return shadeRect.contains(point)
     }
     
@@ -1781,10 +1784,11 @@ class ModernLibraryBrowserView: NSView {
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return nil }
         
-        let font = currentSkin().smallFont?.withSize(9) ?? NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let skin = currentSkin()
+        let font = skin.sideWindowFont(size: 11)
         let sortText = "Sort"
         let sortAttrs: [NSAttributedString.Key: Any] = [.font: font]
-        let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16
+        let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
         
         let tabsWidth = bounds.width - Layout.borderWidth * 2 - sortWidth
         let tabWidth = tabsWidth / CGFloat(ModernBrowseMode.allCases.count)
@@ -1801,10 +1805,11 @@ class ModernLibraryBrowserView: NSView {
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return false }
         
-        let font = currentSkin().smallFont?.withSize(9) ?? NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let skin = currentSkin()
+        let font = skin.sideWindowFont(size: 11)
         let sortText = "Sort"
         let sortAttrs: [NSAttributedString.Key: Any] = [.font: font]
-        let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16
+        let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
         
         let sortX = bounds.width - Layout.borderWidth - sortWidth
         return point.x >= sortX && point.x < bounds.width - Layout.borderWidth
@@ -2173,20 +2178,22 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Server Bar Click Handling
     
     private func handleServerBarClick(at point: NSPoint, event: NSEvent) {
+        let m = ModernSkinElements.sizeMultiplier
         let barRect = NSRect(x: Layout.borderWidth, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
                             width: bounds.width - Layout.borderWidth * 2, height: Layout.serverBarHeight)
         let relativeX = point.x - barRect.minX
         let barWidth = barRect.width
         
-        let refreshZoneStart = barWidth - 30
+        let refreshZoneStart = barWidth - 30 * m
         if relativeX >= refreshZoneStart { handleRefreshClick(); return }
         
         // ART toggle - match drawn button positions
-        let font = currentSkin().primaryFont?.withSize(11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let skin = currentSkin()
+        let font = skin.sideWindowFont(size: 11)
         let fontAttrs: [NSAttributedString.Key: Any] = [.font: font]
         let artTextWidth = "ART".size(withAttributes: fontAttrs).width
-        let artBtnWidth = artTextWidth + 16
-        let artZoneStart = refreshZoneStart - 12 - artBtnWidth
+        let artBtnWidth = artTextWidth + 16 * m
+        let artZoneStart = refreshZoneStart - 12 * m - artBtnWidth
         let artZoneEnd = artZoneStart + artBtnWidth
         if currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
             isArtOnlyMode.toggle(); return
@@ -2195,42 +2202,39 @@ class ModernLibraryBrowserView: NSView {
         // VIS button - match drawn button positions
         if isArtOnlyMode && currentArtwork != nil {
             let visTextWidth = "VIS".size(withAttributes: fontAttrs).width
-            let visBtnWidth = visTextWidth + 16
-            let visZoneStart = artZoneStart - 8 - visBtnWidth
+            let visBtnWidth = visTextWidth + 16 * m
+            let visZoneStart = artZoneStart - 8 * m - visBtnWidth
             let visZoneEnd = visZoneStart + visBtnWidth
             if relativeX >= visZoneStart && relativeX <= visZoneEnd { toggleVisualization(); return }
         }
         
         switch currentSource {
         case .local:
-            let localFont = currentSkin().primaryFont?.withSize(11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-            let localNameWidth = "Local Files".size(withAttributes: [.font: localFont]).width
-            let sourcePrefix = "Source: ".size(withAttributes: [.font: localFont]).width + 4
+            let localNameWidth = "Local Files".size(withAttributes: fontAttrs).width
+            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
             let sourceZoneEnd = sourcePrefix + localNameWidth
-            let addZoneStart = sourceZoneEnd + 28
-            let addZoneEnd = addZoneStart + 50
+            let addZoneStart = sourceZoneEnd + 28 * m
+            let addZoneEnd = addZoneStart + 50 * m
             if relativeX >= addZoneStart && relativeX <= addZoneEnd { showAddFilesMenu(at: event) }
             else if relativeX < sourceZoneEnd { showSourceMenu(at: event) }
         case .plex:
-            let font = currentSkin().primaryFont?.withSize(11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-            let sourcePrefix = "Source: ".size(withAttributes: [.font: font]).width + 4
-            let maxServerWidth: CGFloat = 100
+            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
+            let maxServerWidth: CGFloat = 100 * m
             let serverZoneEnd = sourcePrefix + maxServerWidth
-            let libLabelWidth = "Lib:".size(withAttributes: [.font: font]).width + 4
-            let libraryZoneStart = serverZoneEnd + 12
-            let maxLibraryWidth: CGFloat = 80
+            let libLabelWidth = "Lib:".size(withAttributes: fontAttrs).width + 4 * m
+            let libraryZoneStart = serverZoneEnd + 12 * m
+            let maxLibraryWidth: CGFloat = 80 * m
             let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
             if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd { showLibraryMenu(at: event) }
             else if relativeX < serverZoneEnd { showSourceMenu(at: event) }
         case .subsonic:
             if relativeX < barWidth * 0.5 { showSourceMenu(at: event) }
         case .radio:
-            let radioFont = currentSkin().primaryFont?.withSize(11) ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-            let radioNameWidth = "Internet Radio".size(withAttributes: [.font: radioFont]).width
-            let sourcePrefix = "Source: ".size(withAttributes: [.font: radioFont]).width + 4
+            let radioNameWidth = "Internet Radio".size(withAttributes: fontAttrs).width
+            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
             let sourceZoneEnd = sourcePrefix + radioNameWidth
-            let addZoneStart = sourceZoneEnd + 28
-            let addZoneEnd = addZoneStart + 50
+            let addZoneStart = sourceZoneEnd + 28 * m
+            let addZoneEnd = addZoneStart + 50 * m
             if relativeX >= addZoneStart && relativeX <= addZoneEnd { showRadioAddMenu(at: event) }
             else if relativeX < sourceZoneEnd { showSourceMenu(at: event) }
         }
