@@ -112,7 +112,7 @@ Sources/NullPlayer/
 ├── Audio/            # AudioEngine, StreamingAudioPlayer, EQ
 ├── Casting/          # Chromecast, Sonos, DLNA casting
 ├── Radio/            # Internet radio (Shoutcast/Icecast) support
-├── Skin/             # Classic Winamp skin loading and rendering
+├── Skin/             # Classic .wsz skin loading and rendering
 ├── ModernSkin/       # Modern skin engine (independent of classic system)
 ├── Windows/          # All window views (MainWindow, ModernMainWindow, ModernSpectrum, ModernPlaylist, ModernEQ, ModernProjectM, ModernLibraryBrowser, Playlist, EQ, etc.)
 ├── Plex/             # Plex server integration
@@ -155,7 +155,10 @@ Sources/NullPlayer/
 ### Modifying skin rendering (classic)
 1. Check sprite coordinates in `SkinElements.swift`
 2. Rendering logic in `SkinRenderer.swift`
-3. Test with multiple skins (they vary in implementation)
+3. No skins are bundled -- the app starts unskinned with native macOS fallback rendering
+4. Users load `.wsz` skins via Skins > Load Skin... or place them in `~/Library/Application Support/NullPlayer/Skins/`
+5. Official skin packages are in `dist/Skins/` (NullPlayer-Classic.wsz, NullPlayer-Dark.wsz, NullPlayer-Light.wsz)
+6. Test with multiple skins (they vary in implementation)
 
 ### Modifying modern skin rendering
 1. Element definitions in `ModernSkin/ModernSkinElements.swift`

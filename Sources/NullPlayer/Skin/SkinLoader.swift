@@ -32,21 +32,9 @@ class SkinLoader {
         return try loadSkin(from: tempDir)
     }
     
-    /// Load the default/built-in skin from the app bundle (Base Skin 1)
+    /// Load the default skin -- returns an unskinned fallback with nil images.
+    /// Users must load a .wsz skin file to get a skinned appearance.
     func loadDefault() -> Skin {
-        // Try to load the bundled base-2.91.wsz skin
-        // Use BundleHelper to work in both SPM development and standalone app bundle
-        if let bundledSkinURL = BundleHelper.url(forResource: "base-2.91", withExtension: "wsz") {
-            do {
-                return try load(from: bundledSkinURL)
-            } catch {
-                print("Failed to load bundled skin: \(error)")
-            }
-        } else {
-            print("Could not find bundled skin base-2.91.wsz")
-        }
-        
-        // Fallback: Return a skin with nil images - will use fallback rendering
         return Skin(
             main: nil,
             cbuttons: nil,
@@ -64,43 +52,13 @@ class SkinLoader {
             eqEx: nil,
             pledit: nil,
             gen: nil,
+            libraryWindow: nil,
+            nullPlayerLogo: nil,
             playlistColors: .default,
             visColors: defaultVisColors(),
             regions: nil,
             cursors: [:]
         )
-    }
-    
-    /// Load the second built-in skin from the app bundle (Base Skin 2)
-    func loadBaseSkin2() -> Skin {
-        if let bundledSkinURL = BundleHelper.url(forResource: "base-skin-2", withExtension: "wsz") {
-            do {
-                return try load(from: bundledSkinURL)
-            } catch {
-                print("Failed to load Base Skin 2: \(error)")
-            }
-        } else {
-            print("Could not find Base Skin 2")
-        }
-        
-        // Fallback to default skin
-        return loadDefault()
-    }
-    
-    /// Load the third built-in skin from the app bundle (Base Skin 3)
-    func loadBaseSkin3() -> Skin {
-        if let bundledSkinURL = BundleHelper.url(forResource: "base-skin-3", withExtension: "wsz") {
-            do {
-                return try load(from: bundledSkinURL)
-            } catch {
-                print("Failed to load Base Skin 3: \(error)")
-            }
-        } else {
-            print("Could not find Base Skin 3")
-        }
-        
-        // Fallback to default skin
-        return loadDefault()
     }
     
     // MARK: - Private Methods
@@ -145,6 +103,10 @@ class SkinLoader {
         // Load cursors
         let cursors = loadCursors(from: skinDirectory)
         
+        // Load NullPlayer custom PNG assets (bundled inside .wsz packages)
+        let libraryWindow = loadPNG(named: "library-window", from: skinDirectory)
+        let nullPlayerLogo = loadPNG(named: "null_outline", from: skinDirectory)
+        
         return Skin(
             main: loadImage("main"),
             cbuttons: loadImage("cbuttons"),
@@ -161,7 +123,9 @@ class SkinLoader {
             eqmain: loadImage("eqmain"),
             eqEx: loadImage("eq_ex"),
             pledit: loadImage("pledit"),
-            gen: loadImage("gen"),
+            gen: loadImage("gen") ?? loadPNG(named: "gen", from: skinDirectory),
+            libraryWindow: libraryWindow,
+            nullPlayerLogo: nullPlayerLogo,
             playlistColors: playlistColors,
             visColors: visColors,
             regions: regions,
@@ -202,6 +166,13 @@ class SkinLoader {
         
         // Fallback to original directory
         return directory
+    }
+    
+    /// Load a PNG image from a skin directory (for NullPlayer custom assets inside .wsz)
+    private func loadPNG(named name: String, from directory: URL) -> NSImage? {
+        let url = directory.appendingPathComponent("\(name).png")
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return NSImage(contentsOf: url)
     }
     
     private func loadBMP(from url: URL) -> NSImage? {

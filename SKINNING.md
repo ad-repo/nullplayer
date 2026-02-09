@@ -2,6 +2,8 @@
 
 This guide walks you through creating custom skins for NullPlayer's modern UI mode. You can create a skin with nothing more than a text editor -- no programming required.
 
+> **Classic Mode skins**: NullPlayer also supports classic `.wsz` skins in Classic Mode. No skins are bundled -- load a `.wsz` file via **Skins > Load Skin...** or place files in `~/Library/Application Support/NullPlayer/Skins/`. Official skin packages are available in `dist/Skins/`. Use **Skins > Get More Skins...** to find community-created skins online.
+
 ## Two Approaches
 
 There are two ways to skin NullPlayer's modern UI:

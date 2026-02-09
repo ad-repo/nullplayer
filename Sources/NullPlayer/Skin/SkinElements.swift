@@ -6,8 +6,6 @@ import AppKit
 // For comprehensive documentation on skin skin format, sprite coordinates,
 // and implementation notes, see: AGENT_DOCS/SKIN_FORMAT_RESEARCH.md
 //
-// Primary external reference for coordinates:
-// https://raw.githubusercontent.com/captbaritone/webamp/master/packages/webamp/js/skinSprites.ts
 // =============================================================================
 
 // MARK: - Window Types
@@ -589,7 +587,7 @@ struct SkinElements {
         static let titleInactive = NSRect(x: 0, y: 149, width: 275, height: 14)
         
         /// ON button (from eqmain.bmp at y=119, width=26, height=12)
-        /// Coordinates from webamp source
+        /// Coordinates from skin spec
         static let onButtonOffNormal = NSRect(x: 10, y: 119, width: 26, height: 12)
         static let onButtonOffPressed = NSRect(x: 128, y: 119, width: 26, height: 12)
         static let onButtonOnNormal = NSRect(x: 69, y: 119, width: 26, height: 12)
@@ -598,7 +596,7 @@ struct SkinElements {
         static let onButtonInactive = NSRect(x: 10, y: 119, width: 26, height: 12)
         
         /// AUTO button (from eqmain.bmp at y=119, width=32, height=12)
-        /// Coordinates from webamp source
+        /// Coordinates from skin spec
         static let autoButtonOffNormal = NSRect(x: 36, y: 119, width: 32, height: 12)
         static let autoButtonOffPressed = NSRect(x: 154, y: 119, width: 32, height: 12)
         static let autoButtonOnNormal = NSRect(x: 95, y: 119, width: 32, height: 12)
@@ -625,7 +623,7 @@ struct SkinElements {
         }
         
         /// Slider thumb states (vertical EQ sliders) - 11x11 pixels
-        /// Located in eqmain.bmp (NOT eq_ex.bmp) - coordinates from webamp source
+        /// Located in eqmain.bmp (NOT eq_ex.bmp) - coordinates from skin spec
         static let sliderThumbNormal = NSRect(x: 0, y: 164, width: 11, height: 11)
         static let sliderThumbPressed = NSRect(x: 0, y: 176, width: 11, height: 11)
         
@@ -656,8 +654,7 @@ struct SkinElements {
     }
     
     // MARK: - Playlist Elements (pledit.bmp - 280x186)
-    // Coordinates verified from webamp source:
-    // https://github.com/captbaritone/webamp/blob/master/packages/webamp/js/skinSprites.ts
+    // Coordinates verified from skin spec
     
     struct Playlist {
         /// Minimum playlist size

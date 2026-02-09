@@ -7,8 +7,6 @@ import CoreImage
 // For comprehensive documentation on skin skin format, sprite coordinates,
 // and implementation notes, see: AGENT_DOCS/SKIN_FORMAT_RESEARCH.md
 //
-// Primary external reference for coordinates:
-// https://raw.githubusercontent.com/captbaritone/webamp/master/packages/webamp/js/skinSprites.ts
 // =============================================================================
 
 /// Handles pixel-perfect rendering of skin skin sprites
@@ -63,7 +61,7 @@ class SkinRenderer {
             }
             
             // Draw the NullPlayer logo icon as a square (not stretched to the wider fill rect)
-            if let logoImage = Skin.nullPlayerLogoImage,
+            if let logoImage = skin.nullPlayerLogoImage,
                let logoCG = logoImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
                 let iconSize: CGFloat = 19  // Square icon
                 let iconRect = NSRect(x: logoRect.minX + 4, y: logoRect.minY + 2, width: iconSize, height: iconSize)
@@ -1367,7 +1365,7 @@ class SkinRenderer {
         
         let sliderHeight = SkinElements.Equalizer.Sliders.sliderHeight
         let sliderY = SkinElements.Equalizer.Sliders.sliderY
-        let thumbSize: CGFloat = 11  // 11x11 pixels per webamp spec
+        let thumbSize: CGFloat = 11  // 11x11 pixels per skin spec
         
         // Value is -12 to +12 dB, convert to 0-1
         let normalizedValue = (value + 12) / 24
@@ -1380,7 +1378,7 @@ class SkinRenderer {
         drawEQSliderColorBars(at: xPos, sliderY: sliderY, sliderHeight: sliderHeight, 
                               normalizedValue: normalizedValue, in: context)
         
-        // Draw slider knob from eqmain.bmp (coordinates from webamp: x=0, y=164, 11x11)
+        // Draw slider knob from eqmain.bmp (x=0, y=164, 11x11)
         let thumbRect = NSRect(x: xPos, y: thumbY, width: thumbSize, height: thumbSize)
         
         if let eqImage = skin.eqmain {
@@ -1583,7 +1581,7 @@ class SkinRenderer {
     /// Creates a solid background gap in the title bar decorations for the text
     private func drawProjectMTitleText(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true) {
         // Load gen.png from skin or bundle
-        let genImage = skin.gen ?? Skin.genWindowImage
+        let genImage = skin.genWindowImage
         guard let genImage = genImage,
               let cgImage = genImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return  // GenFont required - no fallback
@@ -1767,7 +1765,7 @@ class SkinRenderer {
     /// Draw "NULLPLAYER ANALYZER" text using GenFont from gen.png
     private func drawSpectrumAnalyzerTitleText(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true) {
         // Load gen.png from skin or bundle
-        let genImage = skin.gen ?? Skin.genWindowImage
+        let genImage = skin.genWindowImage
         guard let genImage = genImage,
               let cgImage = genImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return  // GenFont required - no fallback
@@ -1927,7 +1925,7 @@ class SkinRenderer {
     ///   (ProjectM, library, analyzer).
     private func drawGenFontTitleText(_ text: String, in context: CGContext, bounds: NSRect, titleHeight: CGFloat, isActive: Bool = true, fontScale: CGFloat = Skin.scaleFactor) {
         // Load gen.png from skin or bundle
-        let genImage = skin.gen ?? Skin.genWindowImage
+        let genImage = skin.genWindowImage
         guard let genImage = genImage,
               let cgImage = genImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return  // GenFont required - no fallback
@@ -2775,7 +2773,7 @@ class SkinRenderer {
         // Use PLEDIT sprites for skin-following (matches ProjectM window approach)
         guard let pleditImage = skin.pledit else {
             // Fall back to library-window.png if no skin loaded
-            if let libraryImage = Skin.libraryWindowImage {
+            if let libraryImage = skin.libraryWindowImage {
                 drawLibraryWindowTitleBar(from: libraryImage, in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
                 return
             }
@@ -3416,7 +3414,7 @@ class SkinRenderer {
     /// Draw Plex browser side borders
     private func drawPlexBrowserSideBorders(in context: CGContext, bounds: NSRect) {
         // Try to use library-window.png first
-        if let libraryImage = Skin.libraryWindowImage {
+        if let libraryImage = skin.libraryWindowImage {
             drawLibraryWindowSideBorders(from: libraryImage, in: context, bounds: bounds)
             return
         }
@@ -3475,7 +3473,7 @@ class SkinRenderer {
     /// Draw Plex browser status bar at bottom
     private func drawPlexBrowserStatusBar(in context: CGContext, bounds: NSRect) {
         // Try to use library-window.png first
-        if let libraryImage = Skin.libraryWindowImage {
+        if let libraryImage = skin.libraryWindowImage {
             drawLibraryWindowStatusBar(from: libraryImage, in: context, bounds: bounds)
             return
         }
@@ -3521,7 +3519,7 @@ class SkinRenderer {
     /// Draw Plex browser scrollbar
     func drawPlexBrowserScrollbar(in context: CGContext, bounds: NSRect, scrollPosition: CGFloat, contentHeight: CGFloat) {
         // Try to use library-window.png first
-        if let libraryImage = Skin.libraryWindowImage {
+        if let libraryImage = skin.libraryWindowImage {
             drawLibraryWindowScrollbar(from: libraryImage, in: context, bounds: bounds, scrollPosition: scrollPosition)
             return
         }
@@ -3817,44 +3815,40 @@ class SkinRenderer {
     // MARK: - Fallback Rendering
     
     private func drawFallbackMainBackground(in context: CGContext, bounds: NSRect, isActive: Bool) {
-        // Classic skin dark gray background
-        NSColor(calibratedWhite: 0.18, alpha: 1.0).setFill()
+        // Native macOS system appearance
+        NSColor.windowBackgroundColor.setFill()
         context.fill(bounds)
         
-        // Title bar gradient
+        // Title bar
         let titleRect = NSRect(x: 0, y: bounds.height - SkinElements.titleBarHeight,
                                width: bounds.width, height: SkinElements.titleBarHeight)
         
         if isActive {
-            let gradient = NSGradient(colors: [
-                NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.6, alpha: 1.0),
-                NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.3, alpha: 1.0)
-            ])
-            gradient?.draw(in: titleRect, angle: 90)
+            NSColor.controlAccentColor.withAlphaComponent(0.8).setFill()
         } else {
-            NSColor(calibratedWhite: 0.3, alpha: 1.0).setFill()
-            context.fill(titleRect)
+            NSColor.windowBackgroundColor.setFill()
         }
+        context.fill(titleRect)
         
         // Draw border
-        NSColor.black.setStroke()
+        NSColor.separatorColor.setStroke()
         context.stroke(bounds.insetBy(dx: 0.5, dy: 0.5))
     }
     
     private func drawFallbackButton(_ button: ButtonType, state: ButtonState, at position: NSRect, in context: CGContext) {
-        // Button background
+        // Native macOS system-style button
         let isPressed = (state == .pressed || state == .activePressed)
-        let bgColor = isPressed ? NSColor(calibratedWhite: 0.25, alpha: 1.0) : NSColor(calibratedWhite: 0.15, alpha: 1.0)
+        let bgColor = isPressed ? NSColor.controlColor : NSColor.controlBackgroundColor
         bgColor.setFill()
         
-        let path = NSBezierPath(roundedRect: position, xRadius: 2, yRadius: 2)
+        let path = NSBezierPath(roundedRect: position, xRadius: 3, yRadius: 3)
         path.fill()
         
-        NSColor.darkGray.setStroke()
+        NSColor.separatorColor.setStroke()
         path.stroke()
         
         // Draw button symbol
-        NSColor.lightGray.setFill()
+        NSColor.labelColor.setFill()
         let cx = position.midX
         let cy = position.midY
         
@@ -3940,7 +3934,7 @@ class SkinRenderer {
         let prefix = isNegative ? "-" : ""
         let timeString = String(format: "%@%02d:%02d", prefix, minutes, seconds)
         let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.green,
+            .foregroundColor: NSColor.labelColor,
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold)
         ]
         
@@ -3954,7 +3948,7 @@ class SkinRenderer {
         
         switch state {
         case .playing:
-            NSColor.green.setFill()
+            NSColor.controlAccentColor.setFill()
             let path = NSBezierPath()
             path.move(to: NSPoint(x: rect.minX, y: rect.minY))
             path.line(to: NSPoint(x: rect.minX, y: rect.maxY))
@@ -3962,39 +3956,39 @@ class SkinRenderer {
             path.close()
             path.fill()
         case .paused:
-            NSColor.yellow.setFill()
+            NSColor.secondaryLabelColor.setFill()
             context.fill(NSRect(x: rect.minX, y: rect.minY, width: 3, height: rect.height))
             context.fill(NSRect(x: rect.minX + 5, y: rect.minY, width: 3, height: rect.height))
         case .stopped:
-            NSColor.gray.setFill()
+            NSColor.tertiaryLabelColor.setFill()
             context.fill(rect.insetBy(dx: 1, dy: 1))
         }
     }
     
     private func drawFallbackSlider(value: CGFloat, rect: NSRect, in context: CGContext) {
         // Background
-        NSColor.darkGray.setFill()
+        NSColor.separatorColor.setFill()
         context.fill(rect)
         
         // Progress fill
         let fillRect = NSRect(x: rect.minX, y: rect.minY,
                              width: rect.width * value, height: rect.height)
-        NSColor.green.setFill()
+        NSColor.controlAccentColor.setFill()
         context.fill(fillRect)
         
         // Border
-        NSColor.gray.setStroke()
+        NSColor.separatorColor.setStroke()
         context.stroke(rect)
     }
     
     private func drawFallbackEQBackground(in context: CGContext, bounds: NSRect) {
-        // Dark background
-        NSColor(calibratedWhite: 0.15, alpha: 1.0).setFill()
+        // Native macOS system appearance
+        NSColor.windowBackgroundColor.setFill()
         context.fill(bounds)
         
         // Title bar
         let titleRect = NSRect(x: 0, y: bounds.height - 14, width: bounds.width, height: 14)
-        NSColor(calibratedRed: 0.0, green: 0.0, blue: 0.5, alpha: 1.0).setFill()
+        NSColor.controlAccentColor.withAlphaComponent(0.8).setFill()
         context.fill(titleRect)
         
         // Draw EQ text
@@ -4007,7 +4001,7 @@ class SkinRenderer {
         // Draw frequency labels
         let freqs = ["60", "170", "310", "600", "1K", "3K", "6K", "12K", "14K", "16K"]
         let smallAttrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.green,
+            .foregroundColor: NSColor.secondaryLabelColor,
             .font: NSFont.systemFont(ofSize: 6)
         ]
         

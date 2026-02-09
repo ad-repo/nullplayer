@@ -132,21 +132,6 @@ class ContextMenuBuilder {
         getMoreSkins.target = MenuActions.shared
         menu.addItem(getMoreSkins)
         
-        // Base Skin 1
-        let baseSkin1 = NSMenuItem(title: "<Base Skin 1>", action: #selector(MenuActions.loadBaseSkin), keyEquivalent: "")
-        baseSkin1.target = MenuActions.shared
-        menu.addItem(baseSkin1)
-        
-        // Base Skin 2
-        let baseSkin2 = NSMenuItem(title: "<Base Skin 2>", action: #selector(MenuActions.loadBaseSkin2), keyEquivalent: "")
-        baseSkin2.target = MenuActions.shared
-        menu.addItem(baseSkin2)
-        
-        // Base Skin 3
-        let baseSkin3 = NSMenuItem(title: "<Base Skin 3>", action: #selector(MenuActions.loadBaseSkin3), keyEquivalent: "")
-        baseSkin3.target = MenuActions.shared
-        menu.addItem(baseSkin3)
-        
         menu.addItem(NSMenuItem.separator())
         
         // Lock Browser/ProjectM toggle
@@ -1808,18 +1793,6 @@ class MenuActions: NSObject {
         if panel.runModal() == .OK, let url = panel.url {
             WindowManager.shared.loadSkin(from: url)
         }
-    }
-    
-    @objc func loadBaseSkin() {
-        WindowManager.shared.loadBaseSkin()
-    }
-    
-    @objc func loadBaseSkin2() {
-        WindowManager.shared.loadBaseSkin2()
-    }
-    
-    @objc func loadBaseSkin3() {
-        WindowManager.shared.loadBaseSkin3()
     }
     
     @objc func loadSkin(_ sender: NSMenuItem) {

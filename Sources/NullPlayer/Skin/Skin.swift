@@ -58,6 +58,14 @@ struct Skin {
     /// Generic window sprites including font (gen.bmp)
     let gen: NSImage?
     
+    // MARK: - NullPlayer Custom Assets (loaded from .wsz if present)
+    
+    /// Library window image (library-window.png inside .wsz)
+    let libraryWindow: NSImage?
+    
+    /// NullPlayer logo icon (null_outline.png inside .wsz)
+    let nullPlayerLogo: NSImage?
+    
     /// Playlist colors
     let playlistColors: PlaylistColors
     
@@ -95,34 +103,19 @@ struct Skin {
     /// Shade mode height scaled
     static let shadeHeight: CGFloat = 14 * scaleFactor
     
-    // MARK: - Custom Window Images
+    // MARK: - Custom Window Image Helpers
     
-    /// Library window image loaded from bundle (not from .wsz skins)
-    static var libraryWindowImage: NSImage? {
-        guard let url = BundleHelper.url(forResource: "library-window", withExtension: "png") else { return nil }
-        return NSImage(contentsOf: url)
-    }
+    /// Get the library window image from this skin instance (loaded from .wsz)
+    /// Returns nil if not present in the skin package
+    var libraryWindowImage: NSImage? { libraryWindow }
     
-    /// ProjectM title bar image loaded from bundle (custom sprite sheet)
-    /// Layout: 1518x48 - 2 rows (24px each): active (y=0-23), inactive (y=24-47)
-    static var projectMTitlebarImage: NSImage? {
-        guard let url = BundleHelper.url(forResource: "projectM_titlebar", withExtension: "png") else { return nil }
-        return NSImage(contentsOf: url)
-    }
+    /// Get the NullPlayer logo icon from this skin instance (loaded from .wsz)
+    /// Returns nil if not present in the skin package
+    var nullPlayerLogoImage: NSImage? { nullPlayerLogo }
     
-    /// NullPlayer logo icon loaded from bundle (replaces old skin logo in main window)
-    static var nullPlayerLogoImage: NSImage? {
-        guard let url = BundleHelper.url(forResource: "null_outline", withExtension: "png") else { return nil }
-        return NSImage(contentsOf: url)
-    }
-    
-    /// GEN.BMP sprite sheet loaded from bundle (for ProjectM/AVS window chrome)
-    /// Layout: 194x109 - title bars, borders, corners, and pixel alphabet
-    /// Provides authentic classic skin-style window chrome for visualization windows
-    static var genWindowImage: NSImage? {
-        guard let url = BundleHelper.url(forResource: "gen", withExtension: "png") else { return nil }
-        return NSImage(contentsOf: url)
-    }
+    /// Get the gen window image from this skin instance (loaded from .wsz as gen.bmp/gen.png)
+    /// Returns nil if not present in the skin package
+    var genWindowImage: NSImage? { gen }
 }
 
 // MARK: - Playlist Colors

@@ -125,7 +125,7 @@ NullPlayer has two UI modes, selectable from the right-click context menu under 
 
 ### Classic Mode
 
-Classic Winamp 2.x skin support. Drop any `.wsz` skin file into your skins directory and select it from the Skins menu.
+Classic `.wsz` skin support. No skins are bundled -- the app starts with a native macOS appearance. To apply a skin, use **Skins > Load Skin...** to open a `.wsz` file, or place skin files in `~/Library/Application Support/NullPlayer/Skins/` and select them from the Skins menu. Official NullPlayer skin packages are available in the `dist/Skins/` directory or from [Releases](https://github.com/ad-repo/nullplayer/releases). Thousands of community-created skins can be downloaded from the **Skins > Get More Skins...** menu link.
 
 ### Modern Mode
 

@@ -136,7 +136,6 @@ class AppStateManager {
         
         // Skin
         var customSkinPath: String?
-        var baseSkinIndex: Int?  // 1, 2, or 3 for base skins; nil for custom skin
         
         // ProjectM preset
         var projectMPresetIndex: Int?
@@ -154,7 +153,7 @@ class AppStateManager {
             case eqEnabled, eqAutoEnabled, eqPreamp, eqBands
             case playlistTracks, playlistURLs, currentTrackIndex, playbackPosition, wasPlaying
             case timeDisplayMode, isAlwaysOnTop
-            case customSkinPath, baseSkinIndex
+            case customSkinPath
             case projectMPresetIndex
             case stateVersion
         }
@@ -218,7 +217,7 @@ class AppStateManager {
             
             // Skin
             customSkinPath = try container.decodeIfPresent(String.self, forKey: .customSkinPath)
-            baseSkinIndex = try container.decodeIfPresent(Int.self, forKey: .baseSkinIndex)
+            // baseSkinIndex from older saved states is silently ignored (base skins no longer bundled)
             
             // ProjectM preset - nil for backward compatibility with older saved states
             projectMPresetIndex = try container.decodeIfPresent(Int.self, forKey: .projectMPresetIndex)
@@ -260,7 +259,6 @@ class AppStateManager {
             timeDisplayMode: String,
             isAlwaysOnTop: Bool,
             customSkinPath: String? = nil,
-            baseSkinIndex: Int? = nil,
             projectMPresetIndex: Int? = nil,
             stateVersion: Int = 1
         ) {
@@ -296,7 +294,6 @@ class AppStateManager {
             self.timeDisplayMode = timeDisplayMode
             self.isAlwaysOnTop = isAlwaysOnTop
             self.customSkinPath = customSkinPath
-            self.baseSkinIndex = baseSkinIndex
             self.projectMPresetIndex = projectMPresetIndex
             self.stateVersion = stateVersion
         }
@@ -385,9 +382,8 @@ class AppStateManager {
             timeDisplayMode: wm.timeDisplayMode.rawValue,
             isAlwaysOnTop: wm.isAlwaysOnTop,
             
-            // Skin - save path if using a custom skin, or base skin index
+            // Skin - save path if using a custom skin
             customSkinPath: getCustomSkinPath(),
-            baseSkinIndex: wm.currentBaseSkinIndex,
             
             // ProjectM preset
             projectMPresetIndex: wm.visualizationPresetIndex
@@ -511,18 +507,11 @@ class AppStateManager {
         NSLog("AppStateManager: Restoring isAlwaysOnTop = %d", state.isAlwaysOnTop ? 1 : 0)
         wm.isAlwaysOnTop = state.isAlwaysOnTop
         
-        // Restore skin
+        // Restore skin (custom skin path only; base skins no longer bundled)
         if let skinPath = state.customSkinPath {
             let skinURL = URL(fileURLWithPath: skinPath)
             if FileManager.default.fileExists(atPath: skinPath) {
                 wm.loadSkin(from: skinURL)
-            }
-        } else if let baseSkinIndex = state.baseSkinIndex {
-            switch baseSkinIndex {
-            case 1: wm.loadBaseSkin()
-            case 2: wm.loadBaseSkin2()
-            case 3: wm.loadBaseSkin3()
-            default: wm.loadBaseSkin()
             }
         }
         
@@ -700,20 +689,11 @@ class AppStateManager {
         NSLog("AppStateManager: Restoring isAlwaysOnTop = %d", state.isAlwaysOnTop ? 1 : 0)
         wm.isAlwaysOnTop = state.isAlwaysOnTop
         
-        // Restore skin
+        // Restore skin (custom skin path only; base skins no longer bundled)
         if let skinPath = state.customSkinPath {
-            // Custom skin from file
             let skinURL = URL(fileURLWithPath: skinPath)
             if FileManager.default.fileExists(atPath: skinPath) {
                 wm.loadSkin(from: skinURL)
-            }
-        } else if let baseSkinIndex = state.baseSkinIndex {
-            // Base skin by index
-            switch baseSkinIndex {
-            case 1: wm.loadBaseSkin()
-            case 2: wm.loadBaseSkin2()
-            case 3: wm.loadBaseSkin3()
-            default: wm.loadBaseSkin()
             }
         }
         

@@ -467,5 +467,4 @@ Settings are persisted across app restarts.
 
 ## External References
 
-- [Webamp skinSprites.ts](https://raw.githubusercontent.com/captbaritone/webamp/master/packages/webamp/js/skinSprites.ts) - Authoritative sprite coordinates
-- [skin Skin Museum](https://skins.webamp.org/) - Skin downloads
+- [Skin Archive](https://skins.webamp.org/) - Community skin downloads

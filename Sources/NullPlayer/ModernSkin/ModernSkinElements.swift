@@ -88,7 +88,7 @@ enum ModernSkinElements {
                                     states: ["off", "on"])
     static let infoMono = Element("info_mono", NSRect(x: 198, y: 62, width: 32, height: 9),
                                   states: ["off", "on"])
-    static let infoCast = Element("info_cast", NSRect(x: 232, y: 62, width: 34, height: 9),
+    static let infoCast = Element("info_cast", NSRect(x: 230, y: 62, width: 34, height: 9),
                                   states: ["off", "on"])
     
     // MARK: - Status Indicator (left of time display)

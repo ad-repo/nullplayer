@@ -823,24 +823,32 @@ Right-click a movie or episode in the Library Browser:
 
 ## Skins
 
-NullPlayer supports classic classic skin 2.x skins (.wsz files).
+NullPlayer supports classic `.wsz` skins in Classic Mode. No skins are bundled -- the app starts with a native macOS appearance. You must load a skin to get the classic skinned look.
 
 ### Loading Skins
 
-- **Skins > Load Skin...** - Select a .wsz file
-- **Skins > Get More Skins...** - Opens [classic skin Skin Museum](https://skins.webamp.org/)
-- **&lt;Base Skin 1/2/3&gt;** - Built-in default skins
+- **Skins > Load Skin...** - Browse and select a `.wsz` skin file from your computer
+- **Skins > Get More Skins...** - Opens a website where you can download thousands of free `.wsz` skins
 
-### Managing Skins
+### Installing Skins
 
-Downloaded skins appear in the Skins menu if placed in:
+Place downloaded `.wsz` skin files in:
 ```
 ~/Library/Application Support/NullPlayer/Skins/
 ```
 
+Installed skins appear in the Skins menu for quick selection.
+
+### Official Skin Packages
+
+Three official NullPlayer skin packages are available in `dist/Skins/`:
+- **NullPlayer-Classic.wsz** - Classic retro style
+- **NullPlayer-Dark.wsz** - Dark theme variant
+- **NullPlayer-Light.wsz** - Light theme variant
+
 ### Lock Browser/ProjectM to Default
 
-Enable this option to keep the Library Browser and ProjectM windows using the default skin regardless of main player skin.
+Enable this option to keep the Library Browser and ProjectM windows using the default appearance regardless of the main player skin.
 
 ---
 
@@ -952,9 +960,8 @@ Shows detailed metadata for the currently playing track or video. This option is
 ### Skins
 - Load Skin...
 - Get More Skins...
-- Base skins (1, 2, 3)
 - Lock Browser/ProjectM to Default
-- Available skins list
+- Available skins list (from Skins directory)
 
 ### Visualizations
 - Preset count info
@@ -1135,7 +1142,7 @@ When enabled, the following is saved on quit and restored on launch:
 - **Playlist** (local files AND streaming tracks from Plex/Subsonic)
 - **ProjectM preset** (restores the last-used visualization preset)
 - **Library Browser source** (remembers which library was selected)
-- **Custom skin** (if a non-default skin was loaded)
+- **Custom skin** (if a .wsz skin was loaded)
 - **UI preferences** (time display mode, always on top, hide title bars)
 
 **Note**: Streaming tracks require their respective servers (Plex/Navidrome) to be available on launch. Tracks from unavailable servers will be skipped. The playlist is restored but no track is automatically loaded or played - you choose when to start playback.
@@ -1215,7 +1222,7 @@ When enabled:
 |------|----------|
 | Library database | `~/Library/Application Support/NullPlayer/library.json` |
 | Library backups | `~/Library/Application Support/NullPlayer/Backups/` |
-| Downloaded skins | `~/Library/Application Support/NullPlayer/Skins/` |
+| Classic skins (.wsz) | `~/Library/Application Support/NullPlayer/Skins/` |
 | Plex credentials | macOS Keychain |
 | Window positions | UserDefaults |
 | EQ settings | UserDefaults |
@@ -1261,12 +1268,10 @@ When enabled:
 
 ## Credits
 
-- [Webamp](https://github.com/captbaritone/webamp) - Skin parsing reference
-- [classic skin Skin Museum](https://skins.webamp.org/) - Skin archive
+- [Skin Archive](https://skins.webamp.org/) - Community .wsz skin downloads
 - [projectM](https://github.com/projectM-visualizer/projectm) - ProjectM visualizations
 - [KSPlayer](https://github.com/kingslay/KSPlayer) - Video playback
 - [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) - HTTP audio streaming
-- Original classic skin by Nullsoft
 
 ---
 
