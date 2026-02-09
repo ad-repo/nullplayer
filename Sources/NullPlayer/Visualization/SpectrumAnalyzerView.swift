@@ -1228,17 +1228,26 @@ class SpectrumAnalyzerView: NSView {
     /// nonisolated(unsafe) because Swift doesn't recognize our lock-based synchronization
     nonisolated(unsafe) private var idleFrameCount: Int = 0
     
-    /// Frames to wait before stopping display link when idle (~1 second at 60fps)
-    private let idleFrameThreshold: Int = 60
+    /// Frame skip counter for 30fps effective rendering (skip every other frame)
+    nonisolated(unsafe) private var frameSkipCounter: Int = 0
+    
+    /// Frames to wait before stopping display link when idle (~1 second at effective 30fps)
+    private let idleFrameThreshold: Int = 30
     
     /// Track if we stopped rendering due to idle (vs window hidden)
     /// Protected by dataLock for thread-safe access from render and updateSpectrum
     /// nonisolated(unsafe) because Swift doesn't recognize our lock-based synchronization
     nonisolated(unsafe) private var stoppedDueToIdle: Bool = false
     
-    /// Called by display link at 60Hz
+    /// Called by display link at 60Hz, renders at effective 30fps via frame skipping
     /// Note: This is internal (not private) so the display link callback can access it
     func render() {
+        // Skip every other frame for effective 30fps rendering.
+        // A spectrum analyzer is visually indistinguishable at 30fps vs 60fps,
+        // and this halves CPU-side work (decay, band mapping, peak tracking, vertex updates).
+        frameSkipCounter += 1
+        guard frameSkipCounter & 1 == 0 else { return }
+        
         guard isRendering, let metalLayer = metalLayer else { return }
         
         // Non-blocking check for semaphore slot - if GPU is backed up, skip frame immediately
@@ -1897,7 +1906,9 @@ class SpectrumAnalyzerView: NSView {
     private func updateDisplaySpectrumLocked() -> Bool {
         var hasData = false
         
-        let decay = renderDecayFactor
+        // Decay factor is tuned for 60fps; square it for 30fps to maintain same visual decay speed
+        // (at 30fps each frame spans 2x the time, so decay^2 gives equivalent per-second decay)
+        let decay = renderDecayFactor * renderDecayFactor
         let outputCount = renderBarCount
         let ultraOutputCount = ultraBarCount
         
@@ -2143,9 +2154,9 @@ class SpectrumAnalyzerView: NSView {
         let bounceCoeff: Float = 0.3          // Energy retained on bounce
         let minBounceVelocity: Float = 0.01   // Minimum velocity to trigger bounce
         
-        // Smooth exponential decay factor (per frame)
-        // 0.94 means each frame retains 94% of brightness → smooth natural fadeout
-        let decayMultiplier: Float = 0.94
+        // Smooth exponential decay factor (per frame at effective 30fps)
+        // Original 0.94 at 60fps → squared for 30fps to maintain same visual decay speed
+        let decayMultiplier: Float = 0.94 * 0.94  // ≈ 0.8836
         
         // Soft gradient zone at bar top (in normalized 0-1 space)
         // Instead of hard cutoff, brightness ramps smoothly over this range
@@ -2156,8 +2167,8 @@ class SpectrumAnalyzerView: NSView {
         let ceiling: Float = 1.0
         let range = ceiling - floor
         
-        // Update animation time
-        animationTime += 1.0 / 60.0
+        // Update animation time (effective 30fps due to frame skipping)
+        animationTime += 1.0 / 30.0
         
         for col in 0..<min(colCount, ultraDisplaySpectrum.count) {
             let rawLevel = ultraDisplaySpectrum[col]

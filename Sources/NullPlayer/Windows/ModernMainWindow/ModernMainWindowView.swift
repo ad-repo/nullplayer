@@ -71,6 +71,9 @@ class ModernMainWindowView: NSView {
     /// Timer for distinguishing single vs double click on vis area
     private var visClickTimer: Timer?
     
+    /// Throttle timestamp for CPU-rendered mini spectrum updates (20Hz)
+    private var lastMiniSpectrumUpdate: CFAbsoluteTime = 0
+    
     /// Tracking area for cursor updates
     private var mainTrackingArea: NSTrackingArea?
     
@@ -88,7 +91,7 @@ class ModernMainWindowView: NSView {
     
     private func commonInit() {
         wantsLayer = true
-        layer?.isOpaque = false
+        layer?.isOpaque = true
         
         // Initialize with current skin or fallback
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
@@ -233,50 +236,70 @@ class ModernMainWindowView: NSView {
             return
         }
         
-        // 1. Window background
+        // 1. Window background + border -- clip to dirtyRect to avoid full-bounds fill
+        context.saveGState()
+        context.clip(to: dirtyRect)
         renderer.drawWindowBackground(in: windowBounds, context: context)
-        
-        // 2. Window border with glow
         renderer.drawWindowBorder(in: windowBounds, context: context)
+        context.restoreGState()
         
-        // 3. Title bar (unless hidden)
+        // 2. Title bar (unless hidden) -- only if dirty rect overlaps
         if !WindowManager.shared.hideTitleBars {
-            let titleRect = ModernSkinElements.titleBar.defaultRect
-            renderer.drawTitleBar(in: titleRect, title: "NULLPLAYER", context: context)
-            
-            // 4. Window controls (close, minimize, shade)
-            drawWindowControls(context: context)
+            let titleScaled = scaledRect(ModernSkinElements.titleBar.defaultRect)
+            if dirtyRect.intersects(titleScaled) {
+                renderer.drawTitleBar(in: ModernSkinElements.titleBar.defaultRect, title: "NULLPLAYER", context: context)
+                drawWindowControls(context: context)
+            }
         }
         
-        // 5. Time display
-        drawTimeDisplay(context: context)
+        // 3. Time display + status indicator
+        let timeScaled = scaledRect(ModernSkinElements.timeDisplay.defaultRect)
+        let statusScaled = scaledRect(ModernSkinElements.statusPlay.defaultRect)
+        let timeStatusRegion = timeScaled.union(statusScaled)
+        if dirtyRect.intersects(timeStatusRegion) {
+            drawTimeDisplay(context: context)
+            let state = effectivePlaybackState()
+            renderer.drawStatusIndicator(state, in: ModernSkinElements.statusPlay.defaultRect, context: context)
+        }
         
-        // 6. Info panel background
-        renderer.drawElement("marquee_bg", in: ModernSkinElements.marqueeBackground.defaultRect, context: context)
+        // 4. Info panel (marquee background + info labels)
+        let infoPanelScaled = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+        if dirtyRect.intersects(infoPanelScaled) {
+            renderer.drawElement("marquee_bg", in: ModernSkinElements.marqueeBackground.defaultRect, context: context)
+            drawInfoLabels(context: context)
+        }
         
-        // 7. Info labels (bitrate, sample rate, stereo/mono, cast)
-        drawInfoLabels(context: context)
-        
-        // 8. Status indicator (play/pause/stop)
-        let state = effectivePlaybackState()
-        renderer.drawStatusIndicator(state, in: ModernSkinElements.statusPlay.defaultRect, context: context)
-        
-        // 9. Mini spectrum (only in classic spectrum mode; GPU modes use Metal overlay)
+        // 5. Mini spectrum (only in classic spectrum mode; GPU modes use Metal overlay)
         if mainVisMode == .spectrum {
-            renderer.drawMiniSpectrum(spectrumLevels, in: ModernSkinElements.spectrumArea.defaultRect, context: context)
+            let specScaled = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
+            if dirtyRect.intersects(specScaled) {
+                renderer.drawMiniSpectrum(spectrumLevels, in: ModernSkinElements.spectrumArea.defaultRect, context: context)
+            }
         }
         
-        // 10. EQ & Playlist toggle buttons (above seek bar)
-        drawEQPlaylistButtons(context: context)
+        // 6. EQ & Playlist toggle buttons (above seek bar)
+        let toggleRegion = scaledRect(NSRect(x: 93, y: 42, width: 174, height: 14))
+        if dirtyRect.intersects(toggleRegion) {
+            drawEQPlaylistButtons(context: context)
+        }
         
-        // 11. Seek bar
-        drawSeekBar(context: context)
+        // 7. Seek bar (track + thumb padding)
+        let seekScaled = scaledRect(ModernSkinElements.seekTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
+        if dirtyRect.intersects(seekScaled) {
+            drawSeekBar(context: context)
+        }
         
-        // 12. Transport buttons
-        drawTransportButtons(context: context)
+        // 8. Transport buttons
+        let transportRegion = scaledRect(NSRect(x: 6, y: 3, width: 168, height: 24))
+        if dirtyRect.intersects(transportRegion) {
+            drawTransportButtons(context: context)
+        }
         
-        // 13. Volume slider (bottom-right)
-        drawVolumeSlider(context: context)
+        // 9. Volume slider (track + thumb padding)
+        let volumeScaled = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
+        if dirtyRect.intersects(volumeScaled) {
+            drawVolumeSlider(context: context)
+        }
     }
     
     // MARK: - Shade Mode Drawing
@@ -537,9 +560,22 @@ class ModernMainWindowView: NSView {
     // MARK: - Public Update Methods
     
     func updateTime(current: TimeInterval, duration: TimeInterval) {
+        // Change detection: only redraw when seconds digit actually changes
+        let oldSeconds = Int(self.currentTime)
+        let newSeconds = Int(current)
+        let durationChanged = abs(self.duration - duration) > 0.5
+        
         self.currentTime = current
         self.duration = duration
-        needsDisplay = true
+        
+        guard oldSeconds != newSeconds || durationChanged else { return }
+        
+        // Invalidate only the time display and seek bar regions (not the entire window)
+        let timeRect = scaledRect(ModernSkinElements.timeDisplay.defaultRect)
+        setNeedsDisplay(timeRect.insetBy(dx: -2, dy: -2))
+        
+        let seekRect = scaledRect(ModernSkinElements.seekTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
+        setNeedsDisplay(seekRect)
     }
     
     func updateTrackInfo(_ track: Track?) {
@@ -574,10 +610,20 @@ class ModernMainWindowView: NSView {
     }
     
     func updateSpectrum(_ levels: [Float]) {
-        // Downsample the full spectrum (75 bins) to 8 bars for mini display
-        // Sample evenly across the spectrum range for a representative visualization
         guard !levels.isEmpty else { return }
         
+        // Always forward to Metal overlay (it has its own frame pacing via CVDisplayLink)
+        if mainVisMode.usesMetal {
+            metalOverlay?.updateSpectrum(levels)
+        }
+        
+        // Throttle CPU-rendered mini spectrum to 20Hz (the 8-bar display doesn't need 60Hz)
+        guard mainVisMode == .spectrum else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        guard now - lastMiniSpectrumUpdate >= 0.05 else { return }
+        lastMiniSpectrumUpdate = now
+        
+        // Downsample the full spectrum (75 bins) to 8 bars for mini display
         let barCount = 8
         let binCount = levels.count
         var downsampled = [Float](repeating: 0, count: barCount)
@@ -604,16 +650,9 @@ class ModernMainWindowView: NSView {
         
         self.spectrumLevels = downsampled
         
-        // Feed Metal overlay when in a GPU-rendered mode
-        if mainVisMode.usesMetal {
-            metalOverlay?.updateSpectrum(levels)
-        }
-        
         // Only invalidate the spectrum area, not the whole window
-        if mainVisMode == .spectrum {
-            let specRect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
-            setNeedsDisplay(specRect.insetBy(dx: -2, dy: -2))
-        }
+        let specRect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
+        setNeedsDisplay(specRect.insetBy(dx: -2, dy: -2))
     }
     
     func skinDidChange() {
@@ -671,8 +710,12 @@ class ModernMainWindowView: NSView {
     
     @objc private func bpmDidUpdate(_ notification: Notification) {
         guard let bpm = notification.userInfo?["bpm"] as? Int else { return }
-        currentBPM = bpm > 0 ? bpm : nil
-        needsDisplay = true
+        let newBPM = bpm > 0 ? bpm : nil
+        guard newBPM != currentBPM else { return }
+        currentBPM = newBPM
+        // Only invalidate the info panel area where BPM is displayed
+        let infoRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+        setNeedsDisplay(infoRect)
     }
     
     
@@ -760,6 +803,34 @@ class ModernMainWindowView: NSView {
     private func scaledRect(_ rect: NSRect) -> NSRect {
         NSRect(x: rect.origin.x * scale, y: rect.origin.y * scale,
                width: rect.size.width * scale, height: rect.size.height * scale)
+    }
+    
+    /// Invalidate the screen region for a given element ID (for targeted partial redraws)
+    private func invalidateElement(_ elementId: String) {
+        let rect: NSRect
+        switch elementId {
+        case "seek_track":
+            rect = scaledRect(ModernSkinElements.seekTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
+        case "volume_track":
+            rect = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
+        case "time_display":
+            rect = scaledRect(ModernSkinElements.timeDisplay.defaultRect).insetBy(dx: -2, dy: -2)
+        case "info_bpm":
+            rect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+        case "spectrum_area":
+            rect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
+        case "btn_prev", "btn_play", "btn_pause", "btn_stop", "btn_next", "btn_eject":
+            rect = scaledRect(NSRect(x: 6, y: 3, width: 168, height: 24))
+        case "btn_close", "btn_minimize", "btn_shade":
+            rect = scaledRect(ModernSkinElements.titleBar.defaultRect)
+        case let id where id.hasPrefix("btn_"):
+            // Toggle buttons (EQ, PL, SH, 2X, etc.)
+            rect = scaledRect(NSRect(x: 93, y: 42, width: 174, height: 14))
+        default:
+            needsDisplay = true
+            return
+        }
+        setNeedsDisplay(rect)
     }
     
     private func hitTest(point: NSPoint) -> String? {
@@ -874,7 +945,8 @@ class ModernMainWindowView: NSView {
                 if event.clickCount == 2 {
                     // Cycle: normal → 2x → 0.5x → normal
                     bpmMultiplierState = (bpmMultiplierState + 1) % 3
-                    needsDisplay = true
+                    let infoRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+                    setNeedsDisplay(infoRect)
                 }
             } else if element == "spectrum_area" {
                 // Handle single-click vs double-click on spectrum area
@@ -893,7 +965,8 @@ class ModernMainWindowView: NSView {
                 }
             }
             
-            needsDisplay = true
+            // Invalidate only the area of the pressed element
+            invalidateElement(element)
         } else {
             // Window dragging (title bar or background)
             isDraggingWindow = true
@@ -918,11 +991,17 @@ class ModernMainWindowView: NSView {
         if isDraggingSeek {
             let point = convert(event.locationInWindow, from: nil)
             updateSeekPosition(from: point)
-            needsDisplay = true
+            // Invalidate seek bar + time display only
+            let seekRect = scaledRect(ModernSkinElements.seekTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
+            setNeedsDisplay(seekRect)
+            let timeRect = scaledRect(ModernSkinElements.timeDisplay.defaultRect).insetBy(dx: -2, dy: -2)
+            setNeedsDisplay(timeRect)
         } else if isDraggingVolume {
             let point = convert(event.locationInWindow, from: nil)
             updateVolumePosition(from: point)
-            needsDisplay = true
+            // Invalidate volume slider area only
+            let volRect = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
+            setNeedsDisplay(volRect)
         } else if isDraggingWindow, let window = window {
             // Delta-based dragging: apply mouse delta to current window origin each frame
             let currentPoint = event.locationInWindow
@@ -941,7 +1020,8 @@ class ModernMainWindowView: NSView {
     override func mouseUp(with event: NSEvent) {
         if isDraggingVolume {
             isDraggingVolume = false
-            needsDisplay = true
+            let volRect = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
+            setNeedsDisplay(volRect)
         } else if isDraggingSeek {
             isDraggingSeek = false
             if let pos = seekDragPosition {
@@ -965,8 +1045,12 @@ class ModernMainWindowView: NSView {
             }
         }
         
-        pressedElement = nil
-        needsDisplay = true
+        if let element = pressedElement {
+            pressedElement = nil
+            invalidateElement(element)
+        } else {
+            pressedElement = nil
+        }
     }
     
     // MARK: - Slider Interaction
