@@ -10,8 +10,8 @@ class DebugWindowController: NSWindowController, NSWindowDelegate {
     private var stopToolbarItem: NSToolbarItem?
     private var upnpFilterToolbarItem: NSToolbarItem?
     
-    /// Whether to hide UPnPManager messages
-    private var hideUPnPMessages = false
+    /// Whether to hide UPnPManager messages (hidden by default to reduce noise)
+    private var hideUPnPMessages = true
     
     // MARK: - Initialization
     
