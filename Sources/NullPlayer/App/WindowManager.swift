@@ -1176,7 +1176,67 @@ class WindowManager {
     }
     
     private func loadDefaultSkin() {
+        // 1. Try last used skin from UserDefaults
+        if let lastPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath"),
+           FileManager.default.fileExists(atPath: lastPath) {
+            do {
+                currentSkin = try SkinLoader.shared.load(from: URL(fileURLWithPath: lastPath))
+                currentSkinPath = lastPath
+                return
+            } catch {
+                NSLog("Failed to restore last skin: \(error)")
+            }
+        }
+        
+        // 2. Try bundled default skin from app resources
+        if let bundledURL = findBundledClassicSkin("NullPlayer-Silver") {
+            do {
+                currentSkin = try SkinLoader.shared.load(from: bundledURL)
+                return
+            } catch {
+                NSLog("Failed to load bundled skin: \(error)")
+            }
+        }
+        
+        // 3. Fallback: unskinned native macOS rendering
         currentSkin = SkinLoader.shared.loadDefault()
+    }
+    
+    private func findBundledClassicSkin(_ name: String) -> URL? {
+        let bundle = Bundle.main
+        guard let resourceURL = bundle.resourceURL else { return nil }
+        // Mirror search paths from ModernSkinLoader.findBundledSkinDirectory()
+        let searchPaths = [
+            resourceURL.appendingPathComponent("Resources/Skins/\(name).wsz"),
+            resourceURL.appendingPathComponent("NullPlayer_NullPlayer.bundle/Resources/Skins/\(name).wsz"),
+            resourceURL.appendingPathComponent("Skins/\(name).wsz"),
+        ]
+        for path in searchPaths {
+            if FileManager.default.fileExists(atPath: path.path) {
+                return path
+            }
+        }
+        return nil
+    }
+    
+    /// Load the bundled default classic skin (NullPlayer-Silver) at runtime
+    func loadBundledDefaultSkin() {
+        if let bundledURL = findBundledClassicSkin("NullPlayer-Silver") {
+            do {
+                currentSkin = try SkinLoader.shared.load(from: bundledURL)
+                currentSkinPath = nil
+                UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+                notifySkinChanged()
+                return
+            } catch {
+                NSLog("Failed to load bundled default skin: \(error)")
+            }
+        }
+        // Fallback: unskinned
+        currentSkin = SkinLoader.shared.loadDefault()
+        currentSkinPath = nil
+        UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+        notifySkinChanged()
     }
     
     private func notifySkinChanged() {

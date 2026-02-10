@@ -197,6 +197,17 @@ class ContextMenuBuilder {
         
         classicMenu.addItem(NSMenuItem.separator())
         
+        // Default Skin (Silver)
+        let defaultSkinItem = NSMenuItem(title: "Default Skin (Silver)", action: #selector(MenuActions.loadDefaultClassicSkin), keyEquivalent: "")
+        defaultSkinItem.target = MenuActions.shared
+        // Show checkmark if using the bundled default skin (no custom skin path)
+        if !isModern && WindowManager.shared.currentSkinPath == nil {
+            defaultSkinItem.state = .on
+        }
+        classicMenu.addItem(defaultSkinItem)
+        
+        classicMenu.addItem(NSMenuItem.separator())
+        
         // Lock Browser/ProjectM toggle
         let lockToggle = NSMenuItem(title: "Lock Browser/ProjectM to Default", action: #selector(MenuActions.toggleLockBrowserProjectM(_:)), keyEquivalent: "")
         lockToggle.target = MenuActions.shared
@@ -1838,6 +1849,21 @@ class MenuActions: NSObject {
     }
     
     // MARK: - Skin Operations
+    
+    @objc func loadDefaultClassicSkin() {
+        let wm = WindowManager.shared
+        // Clear the last used skin so the bundled default loads
+        UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+        
+        if wm.isModernUIEnabled {
+            // Switch to classic mode with default skin on next launch
+            wm.isModernUIEnabled = false
+            showRestartAlert()
+        } else {
+            // Already in classic mode - load bundled default skin now
+            wm.loadBundledDefaultSkin()
+        }
+    }
     
     @objc func loadSkinFromFile() {
         let panel = NSOpenPanel()

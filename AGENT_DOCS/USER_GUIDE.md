@@ -823,7 +823,18 @@ Right-click a movie or episode in the Library Browser:
 
 ## Skins
 
-NullPlayer supports classic `.wsz` skins in Classic Mode. No skins are bundled -- the app starts with a native macOS appearance. You must load a skin to get the classic skinned look.
+NullPlayer supports classic `.wsz` skins in Classic Mode. A built-in **NullPlayer-Silver** skin provides a clean silver/gray appearance out of the box. You can also load any standard `.wsz` skin file.
+
+### Default Skin
+
+NullPlayer ships with **NullPlayer-Silver**, a clean silver/gray skin that loads automatically on first launch. It features:
+- Silver/gray window chrome with subtle gradients
+- Dark LCD-style displays with green text for time and marquee
+- Orange volume fill and blue seek thumb
+- Green active toggles for shuffle, repeat, EQ, and playlist buttons
+- A cool-to-warm spectrum visualization palette
+
+If you load a different skin, NullPlayer remembers your choice and restores it on next launch. To return to the default skin, use **Skins > Remove Skin** in the menu.
 
 ### Loading Skins
 
@@ -841,7 +852,8 @@ Installed skins appear in the Skins menu for quick selection.
 
 ### Official Skin Packages
 
-Three official NullPlayer skin packages are available in `dist/Skins/`:
+Four official NullPlayer skin packages are available in `dist/Skins/`:
+- **NullPlayer-Silver.wsz** - Clean silver/gray style (bundled default)
 - **NullPlayer-Classic.wsz** - Classic retro style
 - **NullPlayer-Dark.wsz** - Dark theme variant
 - **NullPlayer-Light.wsz** - Light theme variant

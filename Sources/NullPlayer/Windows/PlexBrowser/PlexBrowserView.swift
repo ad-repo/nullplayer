@@ -1089,7 +1089,7 @@ class PlexBrowserView: NSView {
     /// Show the rating overlay
     private func showRatingOverlay() {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-              currentTrack.plexRatingKey != nil else { return }
+              currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.url.isFileURL else { return }
         
         ratingOverlay.frame = bounds
         ratingOverlay.setRating(currentTrackRating ?? 0)
@@ -1107,10 +1107,10 @@ class PlexBrowserView: NSView {
         needsDisplay = true
     }
     
-    /// Submit rating to Plex (debounced to prevent rapid API calls)
+    /// Submit rating (debounced to prevent rapid API calls)
+    /// Supports Plex, Subsonic, and local file ratings
     private func submitRating(_ rating: Int) {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-              let ratingKey = currentTrack.plexRatingKey else { return }
+        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { return }
         
         // Update UI immediately for responsiveness
         currentTrackRating = rating
@@ -1123,12 +1123,26 @@ class PlexBrowserView: NSView {
         ratingSubmitTask = Task {
             do {
                 try await Task.sleep(nanoseconds: 500_000_000)  // 0.5s debounce
-                
-                // Check if cancelled during debounce
                 try Task.checkCancellation()
                 
-                try await PlexManager.shared.serverClient?.rateItem(ratingKey: ratingKey, rating: rating)
-                NSLog("PlexBrowser: Rated track %@ with %d stars", ratingKey, rating / 2)
+                if let ratingKey = currentTrack.plexRatingKey {
+                    // Plex: 0-10 scale
+                    try await PlexManager.shared.serverClient?.rateItem(ratingKey: ratingKey, rating: rating)
+                    NSLog("PlexBrowser: Rated track %@ with %d stars", ratingKey, rating / 2)
+                } else if let subsonicId = currentTrack.subsonicId {
+                    // Subsonic: 0-5 scale
+                    let subsonicRating = rating / 2
+                    try await SubsonicManager.shared.setRating(songId: subsonicId, rating: subsonicRating)
+                    NSLog("PlexBrowser: Rated Subsonic track %@ with %d stars", subsonicId, subsonicRating)
+                } else if currentTrack.url.isFileURL {
+                    // Local file: 0-10 scale in MediaLibrary
+                    await MainActor.run {
+                        if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
+                            MediaLibrary.shared.setRating(for: libraryTrack.id, rating: rating > 0 ? rating : nil)
+                            NSLog("PlexBrowser: Rated local track with %d stars", rating / 2)
+                        }
+                    }
+                }
                 
                 // Dismiss after short delay to show the selection
                 try await Task.sleep(nanoseconds: 300_000_000)  // 0.3s
@@ -1143,30 +1157,51 @@ class PlexBrowserView: NSView {
         }
     }
     
-    /// Fetch current track's rating from Plex
+    /// Fetch current track's rating from Plex, Subsonic, or local library
     private func fetchCurrentTrackRating() {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-              let ratingKey = currentTrack.plexRatingKey else {
+        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
             currentTrackRating = nil
             return
         }
         
-        Task {
-            do {
-                if let trackDetails = try await PlexManager.shared.serverClient?.fetchTrackDetails(trackID: ratingKey) {
-                    await MainActor.run {
-                        if let userRating = trackDetails.userRating {
-                            currentTrackRating = Int(userRating)
-                            NSLog("PlexBrowser: Fetched rating %d for track %@", Int(userRating), ratingKey)
-                        } else {
-                            currentTrackRating = nil
+        if let ratingKey = currentTrack.plexRatingKey {
+            // Plex: fetch from server (0-10 scale)
+            Task {
+                do {
+                    if let trackDetails = try await PlexManager.shared.serverClient?.fetchTrackDetails(trackID: ratingKey) {
+                        await MainActor.run {
+                            currentTrackRating = trackDetails.userRating.map { Int($0) }
+                            needsDisplay = true
                         }
-                        needsDisplay = true
                     }
+                } catch {
+                    NSLog("PlexBrowser: Failed to fetch track rating: %@", error.localizedDescription)
                 }
-            } catch {
-                NSLog("PlexBrowser: Failed to fetch track rating: %@", error.localizedDescription)
             }
+        } else if let subsonicId = currentTrack.subsonicId {
+            // Subsonic: fetch from server (1-5 scale, convert to 0-10)
+            Task {
+                do {
+                    if let song = try await SubsonicManager.shared.serverClient?.fetchSong(id: subsonicId) {
+                        await MainActor.run {
+                            currentTrackRating = song.userRating.map { $0 * 2 }
+                            needsDisplay = true
+                        }
+                    }
+                } catch {
+                    NSLog("PlexBrowser: Failed to fetch Subsonic track rating: %@", error.localizedDescription)
+                }
+            }
+        } else if currentTrack.url.isFileURL {
+            // Local file: read from library (already 0-10 scale)
+            if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
+                currentTrackRating = libraryTrack.rating
+            } else {
+                currentTrackRating = nil
+            }
+            needsDisplay = true
+        } else {
+            currentTrackRating = nil
         }
     }
     
@@ -1506,6 +1541,38 @@ class PlexBrowserView: NSView {
         let prefixWidth = CGFloat(prefix.count) * scaledCharWidth
         let sourceNameStartX = barRect.minX + 4 + prefixWidth
         
+        // Star rating (art-only mode with a ratable track playing) - drawn for ALL sources
+        if isArtOnlyMode,
+           let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+           currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.url.isFileURL {
+            let starSize: CGFloat = 12
+            let starSpacing: CGFloat = 2
+            let totalStars = 5
+            let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
+            let starsX = barRect.maxX - starsWidth - 8
+            let starY = barRect.minY + (barRect.height - starSize) / 2
+            
+            let rating = currentTrackRating ?? 0
+            let filledCount = rating / 2
+            
+            let greenColor = renderer.skinTextColor()
+            let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
+                                  green: greenColor.greenComponent * 0.4,
+                                  blue: greenColor.blueComponent * 0.4,
+                                  alpha: 0.6)
+            
+            for i in 0..<totalStars {
+                let x = starsX + CGFloat(i) * (starSize + starSpacing)
+                let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
+                let isFilled = i < filledCount
+                drawPixelStar(in: starRect, color: isFilled ? greenColor : dimGreen, context: context)
+            }
+            
+            rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
+        } else {
+            rateButtonRect = .zero
+        }
+        
         switch currentSource {
         case .local:
             // LOCAL FILES mode
@@ -1657,45 +1724,9 @@ class PlexBrowserView: NSView {
                     visX = artX  // No VIS button
                 }
                 
-                // Item count or RATE button (positioned from right side)
-                // In art-only mode with Plex track playing, show RATE instead of item count
-                let countSpacing: CGFloat = isArtOnlyMode ? 12 : 24
-                
-                if isArtOnlyMode,
-                   let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                   currentTrack.plexRatingKey != nil {
-                    // Draw star rating in server bar - larger green stars
-                    let starSize: CGFloat = 12
-                    let starSpacing: CGFloat = 2
-                    let totalStars = 5
-                    let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
-                    let starsX = visX - starsWidth - countSpacing
-                    let starY = barRect.minY + (barRect.height - starSize) / 2
-                    
-                    // Get current rating (0-10 scale -> 0-5 filled stars)
-                    let rating = currentTrackRating ?? 0
-                    let filledCount = rating / 2
-                    
-                    // Use skin's actual text.bmp color for stars (sampled from font bitmap)
-                    let greenColor = renderer.skinTextColor()
-                    let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
-                                          green: greenColor.greenComponent * 0.4,
-                                          blue: greenColor.blueComponent * 0.4,
-                                          alpha: 0.6)
-                    
-                    // Draw 5 stars
-                    for i in 0..<totalStars {
-                        let x = starsX + CGFloat(i) * (starSize + starSpacing)
-                        let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
-                        let isFilled = i < filledCount
-                        drawPixelStar(in: starRect, color: isFilled ? greenColor : dimGreen, context: context)
-                    }
-                    
-                    // Store hit rect for click detection (covers all stars)
-                    rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
-                } else {
-                    // Normal item count display
-                    rateButtonRect = .zero
+                // Item count (only when not in art-only mode; stars are drawn globally above)
+                if !isArtOnlyMode {
+                    let countSpacing: CGFloat = 24
                     
                     // Show top-level item count (artists/albums/tracks), not expanded tree count
                     let itemCount: Int
