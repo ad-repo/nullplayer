@@ -90,6 +90,7 @@ struct SubsonicSong: Identifiable, Equatable {
     let created: Date?
     let starred: Date?           // Date when starred
     let playCount: Int?
+    let userRating: Int?         // User rating [1-5], nil if unrated
     
     var formattedDuration: String {
         let minutes = duration / 60
@@ -414,6 +415,7 @@ struct SongDTO: Decodable {
     let created: String?
     let starred: String?
     let playCount: Int?
+    let userRating: Int?
     
     func toSong() -> SubsonicSong {
         SubsonicSong(
@@ -438,7 +440,8 @@ struct SongDTO: Decodable {
             discNumber: discNumber,
             created: parseDate(created),
             starred: parseDate(starred),
-            playCount: playCount
+            playCount: playCount,
+            userRating: userRating
         )
     }
 }

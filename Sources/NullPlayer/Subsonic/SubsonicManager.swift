@@ -442,6 +442,17 @@ class SubsonicManager {
         try await client.unstar(artistId: id)
     }
     
+    // MARK: - Rating
+    
+    /// Set the rating for a song
+    /// - Parameters:
+    ///   - songId: The Subsonic song ID
+    ///   - rating: Rating between 1 and 5, or 0 to remove the rating
+    func setRating(songId: String, rating: Int) async throws {
+        guard let client = serverClient else { return }
+        try await client.setRating(id: songId, rating: rating)
+    }
+    
     // MARK: - Playlist Management
     
     /// Create a new playlist

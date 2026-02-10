@@ -22,6 +22,7 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
     var dateAdded: Date
     var lastPlayed: Date?
     var playCount: Int
+    var rating: Int?             // User rating on 0-10 scale (matching Plex), nil if unrated
     
     init(url: URL) {
         self.id = UUID()
@@ -50,7 +51,8 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
          fileSize: Int64 = 0,
          dateAdded: Date = Date(),
          lastPlayed: Date? = nil,
-         playCount: Int = 0) {
+         playCount: Int = 0,
+         rating: Int? = nil) {
         self.id = id
         self.url = url
         self.title = title
@@ -69,6 +71,7 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
         self.dateAdded = dateAdded
         self.lastPlayed = lastPlayed
         self.playCount = playCount
+        self.rating = rating
     }
     
     /// Display title (artist - title or just title)
@@ -219,6 +222,7 @@ class MediaLibrary {
     /// Notification names
     static let libraryDidChangeNotification = Notification.Name("MediaLibraryDidChange")
     static let scanProgressNotification = Notification.Name("MediaLibraryScanProgress")
+    static let trackRatingDidChangeNotification = Notification.Name("MediaLibraryTrackRatingDidChange")
     
     // MARK: - Initialization
     
@@ -356,6 +360,33 @@ class MediaLibrary {
         if didUpdate {
             saveLibrary()
         }
+    }
+    
+    /// Set the rating for a track
+    /// - Parameters:
+    ///   - trackId: The UUID of the track to rate
+    ///   - rating: Rating on 0-10 scale (matching Plex), or nil to clear
+    func setRating(for trackId: UUID, rating: Int?) {
+        var didUpdate = false
+        dataQueue.sync {
+            guard let index = tracks.firstIndex(where: { $0.id == trackId }) else { return }
+            
+            tracks[index].rating = rating
+            tracksByPath[tracks[index].url.path] = tracks[index]
+            didUpdate = true
+        }
+        
+        if didUpdate {
+            saveLibrary()
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: Self.trackRatingDidChangeNotification, object: trackId)
+            }
+        }
+    }
+    
+    /// Find a library track by its file URL
+    func findTrack(byURL url: URL) -> LibraryTrack? {
+        dataQueue.sync { tracksByPath[url.path] }
     }
     
     // MARK: - Folder Scanning

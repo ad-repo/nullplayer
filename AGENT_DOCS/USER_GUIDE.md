@@ -937,7 +937,7 @@ Shows detailed metadata for the currently playing track or video. This option is
 - Duration, Bitrate, Sample Rate, Channels
 - File path (local) or server path (Plex)
 - Genre, Year, Track Number (Plex only)
-- Last.fm scrobble count and your rating (Plex only)
+- Last.fm scrobble count and your rating (Plex, Subsonic/Navidrome, local files)
 
 **For Videos:**
 - Title, Year, Studio (movies)

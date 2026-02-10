@@ -722,6 +722,37 @@ class ModernLibraryBrowserView: NSView {
             visEndX = visX
         }
         
+        // Star rating (art-only mode with a track playing)
+        if isArtOnlyMode,
+           let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+           currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.url.isFileURL {
+            let starSize: CGFloat = 14 * m
+            let starSpacing: CGFloat = 4 * m
+            let totalStars = 5
+            let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
+            let starsX = visEndX - starsWidth - 16 * m
+            let starY = barRect.minY + (barRect.height - starSize) / 2
+            
+            // Get current rating (0-10 scale -> 0-5 filled stars)
+            let rating = currentTrackRating ?? 0
+            let filledCount = rating / 2
+            
+            let filledColor = accentColor
+            let emptyColor = dimColor.withAlphaComponent(0.3)
+            
+            for i in 0..<totalStars {
+                let x = starsX + CGFloat(i) * (starSize + starSpacing)
+                let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
+                let isFilled = i < filledCount
+                drawPixelStar(in: starRect, color: isFilled ? filledColor : emptyColor, context: context)
+            }
+            
+            // Store hit rect for click detection
+            rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
+        } else {
+            rateButtonRect = .zero
+        }
+        
         // Source-specific content
         switch currentSource {
         case .local:
@@ -733,11 +764,13 @@ class ModernLibraryBrowserView: NSView {
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
             addText.draw(at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs)
             
-            // Item count
-            let countText = "\(displayItems.count) items"
-            let countWidth = countText.size(withAttributes: prefixAttrs).width
-            let countX = visEndX - countWidth - 24 * m
-            countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+            // Item count (only in list mode, not art-only)
+            if !isArtOnlyMode {
+                let countText = "\(displayItems.count) items"
+                let countWidth = countText.size(withAttributes: prefixAttrs).width
+                let countX = visEndX - countWidth - 24 * m
+                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+            }
             
         case .plex(let serverId):
             let manager = PlexManager.shared
@@ -768,19 +801,21 @@ class ModernLibraryBrowserView: NSView {
                 libraryText.draw(at: NSPoint(x: libraryX, y: textY), withAttributes: nameAttrs)
                 context.restoreGState()
                 
-                // Item count
-                let itemCount: Int
-                if manager.currentLibrary?.type == "artist" {
-                    itemCount = cachedArtists.count
-                } else if manager.currentLibrary?.type == "movie" {
-                    itemCount = cachedMovies.count
-                } else {
-                    itemCount = displayItems.count
+                // Item count (only in list mode, not art-only)
+                if !isArtOnlyMode {
+                    let itemCount: Int
+                    if manager.currentLibrary?.type == "artist" {
+                        itemCount = cachedArtists.count
+                    } else if manager.currentLibrary?.type == "movie" {
+                        itemCount = cachedMovies.count
+                    } else {
+                        itemCount = displayItems.count
+                    }
+                    let countText = "\(itemCount) ITEMS"
+                    let countWidth = countText.size(withAttributes: prefixAttrs).width
+                    let countX = visEndX - countWidth - 24 * m
+                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
                 }
-                let countText = "\(itemCount) ITEMS"
-                let countWidth = countText.size(withAttributes: prefixAttrs).width
-                let countX = visEndX - countWidth - 24 * m
-                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
             } else {
                 let linkText = "Click to link your Plex account"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
@@ -794,10 +829,13 @@ class ModernLibraryBrowserView: NSView {
                 let serverName = configuredServer?.name ?? "Select Server"
                 serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: nameAttrs)
                 
-                let countText = "\(displayItems.count) items"
-                let countWidth = countText.size(withAttributes: prefixAttrs).width
-                let countX = visEndX - countWidth - 24 * m
-                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+                // Item count (only in list mode, not art-only)
+                if !isArtOnlyMode {
+                    let countText = "\(displayItems.count) items"
+                    let countWidth = countText.size(withAttributes: prefixAttrs).width
+                    let countX = visEndX - countWidth - 24 * m
+                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+                }
             } else {
                 let linkText = "Click to add a Subsonic server"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
@@ -814,10 +852,46 @@ class ModernLibraryBrowserView: NSView {
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
             addText.draw(at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs)
             
-            let countText = "\(displayItems.count) stations"
-            let countWidth = countText.size(withAttributes: prefixAttrs).width
-            let countX = visEndX - countWidth - 24 * m
-            countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+            // Item count (only in list mode, not art-only)
+            if !isArtOnlyMode {
+                let countText = "\(displayItems.count) stations"
+                let countWidth = countText.size(withAttributes: prefixAttrs).width
+                let countX = visEndX - countWidth - 24 * m
+                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+            }
+        }
+    }
+    
+    /// Draw a low-res pixel-art star for server bar rating display
+    /// Pattern is top-down but macOS Y goes up, so we draw rows from maxY downward
+    private func drawPixelStar(in rect: NSRect, color: NSColor, context: CGContext) {
+        let pattern: [[Int]] = [
+            [0, 0, 0, 0, 1, 0, 0, 0, 0],
+            [0, 0, 0, 1, 1, 1, 0, 0, 0],
+            [0, 0, 0, 1, 1, 1, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 1, 1, 1, 1, 1, 1, 0],
+            [0, 0, 1, 1, 1, 1, 1, 0, 0],
+            [0, 0, 1, 1, 0, 1, 1, 0, 0],
+            [0, 1, 1, 0, 0, 0, 1, 1, 0],
+            [1, 1, 0, 0, 0, 0, 0, 1, 1],
+        ]
+        
+        let patternSize = 9
+        let pixelW = rect.width / CGFloat(patternSize)
+        let pixelH = rect.height / CGFloat(patternSize)
+        
+        context.setFillColor(color.cgColor)
+        
+        for row in 0..<patternSize {
+            for col in 0..<patternSize {
+                if pattern[row][col] == 1 {
+                    let x = rect.minX + CGFloat(col) * pixelW
+                    // Flip Y: row 0 (top of star) draws at maxY, row 8 at minY
+                    let y = rect.maxY - CGFloat(row + 1) * pixelH
+                    context.fill(CGRect(x: x, y: y, width: ceil(pixelW), height: ceil(pixelH)))
+                }
+            }
         }
     }
     
@@ -2081,8 +2155,17 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Keyboard Events
     
     override func keyDown(with event: NSEvent) {
-        // ESC dismisses rating overlay or exits art/vis mode
-        if isRatingOverlayVisible && event.keyCode == 53 { hideRatingOverlay(); return }
+        // Rating overlay: ESC to dismiss, 1-5 to set stars
+        if isRatingOverlayVisible {
+            if event.keyCode == 53 { hideRatingOverlay(); return }
+            // Keys 1-5 (keycodes 18-22)
+            if event.keyCode >= 18 && event.keyCode <= 22 {
+                let starRating = Int(event.keyCode - 17)  // 1-5
+                ratingOverlay.setRating(starRating * 2)
+                submitRating(starRating * 2)
+                return
+            }
+        }
         
         if isVisualizingArt && isArtOnlyMode {
             switch event.keyCode {
@@ -2206,6 +2289,15 @@ class ModernLibraryBrowserView: NSView {
             let visZoneStart = artZoneStart - 8 * m - visBtnWidth
             let visZoneEnd = visZoneStart + visBtnWidth
             if relativeX >= visZoneStart && relativeX <= visZoneEnd { toggleVisualization(); return }
+        }
+        
+        // RATE button click (star area in art-only mode)
+        if !rateButtonRect.isEmpty {
+            let rateRelativeStart = rateButtonRect.minX - barRect.minX
+            let rateRelativeEnd = rateButtonRect.maxX - barRect.minX
+            if relativeX >= rateRelativeStart && relativeX <= rateRelativeEnd {
+                showRatingOverlay(); return
+            }
         }
         
         switch currentSource {
@@ -2424,6 +2516,17 @@ class ModernLibraryBrowserView: NSView {
         let menu = NSMenu(title: "Art")
         let visItem = NSMenuItem(title: "Enable Visualization", action: #selector(enableArtVisualization), keyEquivalent: "")
         visItem.target = self; menu.addItem(visItem)
+        
+        // Rate submenu (when a rateable track is playing)
+        if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+           currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.url.isFileURL {
+            menu.addItem(NSMenuItem.separator())
+            let rateMenu = buildRateSubmenu()
+            let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateItem.submenu = rateMenu
+            menu.addItem(rateItem)
+        }
+        
         menu.addItem(NSMenuItem.separator())
         let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
         exitItem.target = self; menu.addItem(exitItem)
@@ -2438,6 +2541,10 @@ class ModernLibraryBrowserView: NSView {
             playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
             let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self; addItem.representedObject = track; menu.addItem(addItem)
+            menu.addItem(NSMenuItem.separator())
+            let rateMenu = buildRateSubmenuForPlex(ratingKey: track.id)
+            let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateItem.submenu = rateMenu; menu.addItem(rateItem)
         case .album(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayAlbum(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = album; menu.addItem(playItem)
@@ -2450,6 +2557,10 @@ class ModernLibraryBrowserView: NSView {
         case .localTrack(let track):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalTrack(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = track; menu.addItem(playItem)
+            menu.addItem(NSMenuItem.separator())
+            let rateMenu = buildRateSubmenuForLocal(trackId: track.id)
+            let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateItem.submenu = rateMenu; menu.addItem(rateItem)
             menu.addItem(NSMenuItem.separator())
             let tagsItem = NSMenuItem(title: "See Tags", action: #selector(contextMenuShowTags(_:)), keyEquivalent: "")
             tagsItem.target = self; tagsItem.representedObject = track; menu.addItem(tagsItem)
@@ -2464,6 +2575,10 @@ class ModernLibraryBrowserView: NSView {
         case .subsonicTrack(let song):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlaySubsonicSong(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = song; menu.addItem(playItem)
+            menu.addItem(NSMenuItem.separator())
+            let rateMenu = buildRateSubmenuForSubsonic(songId: song.id)
+            let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateItem.submenu = rateMenu; menu.addItem(rateItem)
         case .subsonicAlbum(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlaySubsonicAlbum(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = album; menu.addItem(playItem)
@@ -2893,7 +3008,8 @@ class ModernLibraryBrowserView: NSView {
     }()
     
     private func showRatingOverlay() {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack, currentTrack.plexRatingKey != nil else { return }
+        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+              currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.url.isFileURL else { return }
         ratingOverlay.frame = bounds; ratingOverlay.setRating(currentTrackRating ?? 0)
         ratingOverlay.isHidden = false; isRatingOverlayVisible = true; needsDisplay = true
     }
@@ -2904,14 +3020,27 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func submitRating(_ rating: Int) {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-              let ratingKey = currentTrack.plexRatingKey else { return }
+        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { return }
         currentTrackRating = rating; needsDisplay = true; ratingSubmitTask?.cancel()
         ratingSubmitTask = Task {
             do {
                 try await Task.sleep(nanoseconds: 500_000_000)
                 try Task.checkCancellation()
-                try await PlexManager.shared.serverClient?.rateItem(ratingKey: ratingKey, rating: rating)
+                
+                if let ratingKey = currentTrack.plexRatingKey {
+                    // Plex: rating is already 0-10 scale
+                    try await PlexManager.shared.serverClient?.rateItem(ratingKey: ratingKey, rating: rating)
+                } else if let subsonicId = currentTrack.subsonicId {
+                    // Subsonic: convert 0-10 to 0-5
+                    let subsonicRating = rating / 2
+                    try await SubsonicManager.shared.setRating(songId: subsonicId, rating: subsonicRating)
+                } else if currentTrack.url.isFileURL {
+                    // Local file: store 0-10 scale
+                    if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
+                        MediaLibrary.shared.setRating(for: libraryTrack.id, rating: rating > 0 ? rating : nil)
+                    }
+                }
+                
                 try await Task.sleep(nanoseconds: 300_000_000)
                 await MainActor.run { hideRatingOverlay() }
             } catch is CancellationError { } catch { NSLog("Rating failed: %@", error.localizedDescription) }
@@ -2919,16 +3048,188 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func fetchCurrentTrackRating() {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-              let ratingKey = currentTrack.plexRatingKey else { currentTrackRating = nil; return }
+        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
+            currentTrackRating = nil; return
+        }
+        
+        if let ratingKey = currentTrack.plexRatingKey {
+            // Plex: fetch from server (0-10 scale)
+            Task {
+                do {
+                    if let details = try await PlexManager.shared.serverClient?.fetchTrackDetails(trackID: ratingKey) {
+                        await MainActor.run {
+                            currentTrackRating = details.userRating.map { Int($0) }; needsDisplay = true
+                        }
+                    }
+                } catch { }
+            }
+        } else if let subsonicId = currentTrack.subsonicId {
+            // Subsonic: fetch from server (1-5 scale, convert to 0-10)
+            Task {
+                do {
+                    if let song = try await SubsonicManager.shared.serverClient?.fetchSong(id: subsonicId) {
+                        await MainActor.run {
+                            currentTrackRating = song.userRating.map { $0 * 2 }; needsDisplay = true
+                        }
+                    }
+                } catch { }
+            }
+        } else if currentTrack.url.isFileURL {
+            // Local file: read from library (already 0-10 scale)
+            if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
+                currentTrackRating = libraryTrack.rating
+            } else {
+                currentTrackRating = nil
+            }
+            needsDisplay = true
+        } else {
+            currentTrackRating = nil
+        }
+    }
+    
+    // MARK: - Rate Submenus
+    
+    /// Build rate submenu for the currently playing track (art mode overlay)
+    private func buildRateSubmenu() -> NSMenu {
+        let menu = NSMenu(title: "Rate")
+        for stars in 1...5 {
+            let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+            let item = NSMenuItem(title: label, action: #selector(contextMenuRateCurrentTrack(_:)), keyEquivalent: "")
+            item.target = self; item.tag = stars * 2  // 0-10 scale
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+        let clearItem = NSMenuItem(title: "Clear Rating", action: #selector(contextMenuRateCurrentTrack(_:)), keyEquivalent: "")
+        clearItem.target = self; clearItem.tag = 0
+        menu.addItem(clearItem)
+        return menu
+    }
+    
+    /// Build rate submenu for a Plex track
+    private func buildRateSubmenuForPlex(ratingKey: String) -> NSMenu {
+        let menu = NSMenu(title: "Rate")
+        for stars in 1...5 {
+            let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+            let item = NSMenuItem(title: label, action: #selector(contextMenuRatePlex(_:)), keyEquivalent: "")
+            item.target = self; item.tag = stars * 2; item.representedObject = ratingKey
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+        let clearItem = NSMenuItem(title: "Clear Rating", action: #selector(contextMenuRatePlex(_:)), keyEquivalent: "")
+        clearItem.target = self; clearItem.tag = 0; clearItem.representedObject = ratingKey
+        menu.addItem(clearItem)
+        return menu
+    }
+    
+    /// Build rate submenu for a Subsonic track
+    private func buildRateSubmenuForSubsonic(songId: String) -> NSMenu {
+        let menu = NSMenu(title: "Rate")
+        for stars in 1...5 {
+            let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+            let item = NSMenuItem(title: label, action: #selector(contextMenuRateSubsonic(_:)), keyEquivalent: "")
+            item.target = self; item.tag = stars; item.representedObject = songId  // tag is 1-5 for Subsonic
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+        let clearItem = NSMenuItem(title: "Clear Rating", action: #selector(contextMenuRateSubsonic(_:)), keyEquivalent: "")
+        clearItem.target = self; clearItem.tag = 0; clearItem.representedObject = songId
+        menu.addItem(clearItem)
+        return menu
+    }
+    
+    /// Build rate submenu for a local track
+    private func buildRateSubmenuForLocal(trackId: UUID) -> NSMenu {
+        let menu = NSMenu(title: "Rate")
+        for stars in 1...5 {
+            let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+            let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocal(_:)), keyEquivalent: "")
+            item.target = self; item.tag = stars * 2; item.representedObject = trackId  // 0-10 scale
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+        let clearItem = NSMenuItem(title: "Clear Rating", action: #selector(contextMenuRateLocal(_:)), keyEquivalent: "")
+        clearItem.target = self; clearItem.tag = -1; clearItem.representedObject = trackId  // -1 = clear
+        menu.addItem(clearItem)
+        return menu
+    }
+    
+    @objc private func contextMenuRateCurrentTrack(_ sender: NSMenuItem) {
+        let rating = sender.tag  // 0-10 scale, 0 = clear
+        submitRating(rating)
+    }
+    
+    @objc private func contextMenuRatePlex(_ sender: NSMenuItem) {
+        guard let ratingKey = sender.representedObject as? String else { return }
+        let rating = sender.tag  // 0-10 scale
         Task {
             do {
-                if let details = try await PlexManager.shared.serverClient?.fetchTrackDetails(trackID: ratingKey) {
-                    await MainActor.run {
-                        currentTrackRating = details.userRating.map { Int($0) }; needsDisplay = true
+                try await PlexManager.shared.serverClient?.rateItem(ratingKey: ratingKey, rating: rating > 0 ? rating : nil)
+                await MainActor.run {
+                    // Update art mode rating if this is the current track
+                    if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+                       currentTrack.plexRatingKey == ratingKey {
+                        currentTrackRating = rating > 0 ? rating : nil; needsDisplay = true
                     }
                 }
-            } catch { }
+            } catch { NSLog("Plex rating failed: %@", error.localizedDescription) }
+        }
+    }
+    
+    @objc private func contextMenuRateSubsonic(_ sender: NSMenuItem) {
+        guard let songId = sender.representedObject as? String else { return }
+        let subsonicRating = sender.tag  // 0-5 scale for Subsonic
+        Task {
+            do {
+                try await SubsonicManager.shared.setRating(songId: songId, rating: subsonicRating)
+                await MainActor.run {
+                    // Update art mode rating if this is the current track
+                    if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+                       currentTrack.subsonicId == songId {
+                        currentTrackRating = subsonicRating > 0 ? subsonicRating * 2 : nil; needsDisplay = true
+                    }
+                    // Update the cached song in displayItems
+                    updateCachedSubsonicRating(songId: songId, rating: subsonicRating)
+                }
+            } catch { NSLog("Subsonic rating failed: %@", error.localizedDescription) }
+        }
+    }
+    
+    @objc private func contextMenuRateLocal(_ sender: NSMenuItem) {
+        guard let trackId = sender.representedObject as? UUID else { return }
+        let rating = sender.tag  // 0-10, or -1 for clear
+        MediaLibrary.shared.setRating(for: trackId, rating: rating >= 0 ? rating : nil)
+        // Update art mode rating if this is the current track
+        if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+           let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url),
+           libraryTrack.id == trackId {
+            currentTrackRating = rating >= 0 ? rating : nil; needsDisplay = true
+        }
+        needsDisplay = true
+    }
+    
+    /// Update cached SubsonicSong rating in displayItems after a rating change
+    private func updateCachedSubsonicRating(songId: String, rating: Int) {
+        for (index, item) in displayItems.enumerated() {
+            if case .subsonicTrack(let song) = item.type, song.id == songId {
+                let updatedSong = SubsonicSong(
+                    id: song.id, parent: song.parent, title: song.title,
+                    album: song.album, artist: song.artist, albumId: song.albumId,
+                    artistId: song.artistId, track: song.track, year: song.year,
+                    genre: song.genre, coverArt: song.coverArt, size: song.size,
+                    contentType: song.contentType, suffix: song.suffix,
+                    duration: song.duration, bitRate: song.bitRate,
+                    samplingRate: song.samplingRate, path: song.path,
+                    discNumber: song.discNumber, created: song.created,
+                    starred: song.starred, playCount: song.playCount,
+                    userRating: rating > 0 ? rating : nil
+                )
+                displayItems[index] = ModernDisplayItem(
+                    id: item.id, title: item.title, info: item.info,
+                    indentLevel: item.indentLevel, hasChildren: item.hasChildren,
+                    type: .subsonicTrack(updatedSong)
+                )
+                break
+            }
         }
     }
     
@@ -3974,7 +4275,11 @@ extension ModernDisplayItem {
         case "duration": return song.formattedDuration
         case "bitrate": return song.bitRate.map { "\($0)k" } ?? ""
         case "size": return Self.formatFileSize(song.size)
-        case "rating": return song.starred != nil ? "★★★★★" : ""
+        case "rating":
+            if let userRating = song.userRating, userRating > 0 {
+                return Self.formatRating(Double(userRating) * 2.0)
+            }
+            return song.starred != nil ? "★" : ""
         case "plays": return song.playCount.map { String($0) } ?? ""
         default: return ""
         }
@@ -3992,6 +4297,7 @@ extension ModernDisplayItem {
         case "duration": return track.formattedDuration
         case "bitrate": return track.bitrate.map { "\($0)k" } ?? ""
         case "size": return Self.formatFileSize(track.fileSize)
+        case "rating": return Self.formatRating(track.rating.map { Double($0) })
         case "plays": return track.playCount > 0 ? String(track.playCount) : ""
         default: return ""
         }

@@ -523,6 +523,26 @@ class SubsonicServerClient {
         let _: SubsonicPingResponse = try await performRequest(request)
     }
     
+    // MARK: - Rating
+    
+    /// Set the rating for a song (or album/artist)
+    /// - Parameters:
+    ///   - id: The ID of the song/album/artist to rate
+    ///   - rating: Rating between 1 and 5 (inclusive), or 0 to remove the rating
+    func setRating(id: String, rating: Int) async throws {
+        let params = [
+            URLQueryItem(name: "id", value: id),
+            URLQueryItem(name: "rating", value: String(rating))
+        ]
+        
+        guard let request = buildRequest(endpoint: "setRating", params: params) else {
+            throw SubsonicClientError.invalidURL
+        }
+        
+        let _: SubsonicPingResponse = try await performRequest(request)
+        NSLog("SubsonicServerClient: Set rating %d for item %@", rating, id)
+    }
+    
     // MARK: - Scrobbling
     
     /// Report that a song is being played (scrobble)
