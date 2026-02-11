@@ -7278,6 +7278,16 @@ class PlexBrowserView: NSView {
             addItem.representedObject = track
             menu.addItem(addItem)
             
+            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = track
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = track
+            menu.addItem(queueItem)
+            
             menu.addItem(NSMenuItem.separator())
             
             let radioItem = NSMenuItem(title: "Start Track Radio", action: #selector(contextMenuStartTrackRadio(_:)), keyEquivalent: "")
@@ -7296,6 +7306,16 @@ class PlexBrowserView: NSView {
             addItem.representedObject = album
             menu.addItem(addItem)
             
+            let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlayAlbumNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = album
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddAlbumToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = album
+            menu.addItem(queueItem)
+            
             menu.addItem(NSMenuItem.separator())
             
             let radioItem = NSMenuItem(title: "Start Album Radio", action: #selector(contextMenuStartAlbumRadio(_:)), keyEquivalent: "")
@@ -7308,6 +7328,16 @@ class PlexBrowserView: NSView {
             playItem.target = self
             playItem.representedObject = artist
             menu.addItem(playItem)
+            
+            let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayArtistNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = artist
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddArtistToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = artist
+            menu.addItem(queueItem)
             
             let expandItem = NSMenuItem(title: expandedArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
@@ -7331,6 +7361,16 @@ class PlexBrowserView: NSView {
             addItem.target = self
             addItem.representedObject = movie
             menu.addItem(addItem)
+            
+            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayMovieNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = movie
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddMovieToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = movie
+            menu.addItem(queueItem)
             
             // Cast submenu (for video-capable devices)
             let videoDevices = CastManager.shared.videoCapableDevices
@@ -7386,6 +7426,16 @@ class PlexBrowserView: NSView {
             addItem.representedObject = show
             menu.addItem(addItem)
             
+            let playNextItem = NSMenuItem(title: "Play Show Next", action: #selector(contextMenuPlayShowNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = show
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add Show to Queue", action: #selector(contextMenuAddShowToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = show
+            menu.addItem(queueItem)
+            
             // External links submenu
             menu.addItem(NSMenuItem.separator())
             
@@ -7421,6 +7471,16 @@ class PlexBrowserView: NSView {
             addItem.representedObject = season
             menu.addItem(addItem)
             
+            let playNextItem = NSMenuItem(title: "Play Season Next", action: #selector(contextMenuPlaySeasonNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = season
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add Season to Queue", action: #selector(contextMenuAddSeasonToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = season
+            menu.addItem(queueItem)
+            
         case .episode(let episode):
             let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEpisode(_:)), keyEquivalent: "")
             playItem.target = self
@@ -7431,6 +7491,16 @@ class PlexBrowserView: NSView {
             addItem.target = self
             addItem.representedObject = episode
             menu.addItem(addItem)
+            
+            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayEpisodeNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = episode
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddEpisodeToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = episode
+            menu.addItem(queueItem)
             
             // Cast submenu (for video-capable devices)
             let videoDevicesEpisode = CastManager.shared.videoCapableDevices
@@ -7486,6 +7556,16 @@ class PlexBrowserView: NSView {
             addItem.representedObject = track
             menu.addItem(addItem)
             
+            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayLocalTrackNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = track
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddLocalTrackToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = track
+            menu.addItem(queueItem)
+            
             menu.addItem(NSMenuItem.separator())
             
             let tagsItem = NSMenuItem(title: "See Tags", action: #selector(contextMenuShowTags(_:)), keyEquivalent: "")
@@ -7521,6 +7601,16 @@ class PlexBrowserView: NSView {
             addItem.representedObject = album
             menu.addItem(addItem)
             
+            let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlayLocalAlbumNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = album
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddLocalAlbumToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = album
+            menu.addItem(queueItem)
+            
             menu.addItem(NSMenuItem.separator())
             
             let removeItem = NSMenuItem(title: "Remove Album from Library", action: #selector(contextMenuRemoveLocalAlbum(_:)), keyEquivalent: "")
@@ -7538,6 +7628,16 @@ class PlexBrowserView: NSView {
             playItem.target = self
             playItem.representedObject = artist
             menu.addItem(playItem)
+            
+            let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayLocalArtistNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = artist
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddLocalArtistToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = artist
+            menu.addItem(queueItem)
             
             let expandItem = NSMenuItem(title: expandedLocalArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
@@ -7567,6 +7667,16 @@ class PlexBrowserView: NSView {
             addItem.representedObject = song
             menu.addItem(addItem)
             
+            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlaySubsonicSongNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = song
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddSubsonicSongToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = song
+            menu.addItem(queueItem)
+            
         case .subsonicAlbum(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlaySubsonicAlbum(_:)), keyEquivalent: "")
             playItem.target = self
@@ -7578,11 +7688,31 @@ class PlexBrowserView: NSView {
             addItem.representedObject = album
             menu.addItem(addItem)
             
+            let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlaySubsonicAlbumNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = album
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddSubsonicAlbumToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = album
+            menu.addItem(queueItem)
+            
         case .subsonicArtist(let artist):
             let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlaySubsonicArtist(_:)), keyEquivalent: "")
             playItem.target = self
             playItem.representedObject = artist
             menu.addItem(playItem)
+            
+            let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlaySubsonicArtistNext(_:)), keyEquivalent: "")
+            playNextItem.target = self
+            playNextItem.representedObject = artist
+            menu.addItem(playNextItem)
+            
+            let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddSubsonicArtistToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self
+            queueItem.representedObject = artist
+            menu.addItem(queueItem)
             
             let expandItem = NSMenuItem(title: expandedSubsonicArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
@@ -7657,7 +7787,7 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuAddToPlaylist(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? PlexTrack,
               let convertedTrack = PlexManager.shared.convertToTrack(track) else { return }
-        WindowManager.shared.audioEngine.loadTracks([convertedTrack])
+        WindowManager.shared.audioEngine.appendTracks([convertedTrack])
     }
     
     @objc private func contextMenuPlayLocalTrack(_ sender: NSMenuItem) {
@@ -7667,7 +7797,7 @@ class PlexBrowserView: NSView {
     
     @objc private func contextMenuAddLocalTrackToPlaylist(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
-        WindowManager.shared.audioEngine.loadTracks([track.toTrack()])
+        WindowManager.shared.audioEngine.appendTracks([track.toTrack()])
     }
     
     @objc private func contextMenuShowTags(_ sender: NSMenuItem) {
@@ -7689,7 +7819,7 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuAddLocalAlbumToPlaylist(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
         let tracks = album.tracks.map { $0.toTrack() }
-        WindowManager.shared.audioEngine.loadTracks(tracks)
+        WindowManager.shared.audioEngine.appendTracks(tracks)
     }
     
     @objc private func contextMenuPlayLocalArtist(_ sender: NSMenuItem) {
@@ -7876,7 +8006,7 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuAddSubsonicSongToPlaylist(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? SubsonicSong,
               let track = SubsonicManager.shared.convertToTrack(song) else { return }
-        WindowManager.shared.audioEngine.loadTracks([track])
+        WindowManager.shared.audioEngine.appendTracks([track])
     }
     
     @objc private func contextMenuPlaySubsonicAlbum(_ sender: NSMenuItem) {
@@ -7890,7 +8020,7 @@ class PlexBrowserView: NSView {
             do {
                 let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
                 let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                WindowManager.shared.audioEngine.loadTracks(tracks)
+                WindowManager.shared.audioEngine.appendTracks(tracks)
             } catch {
                 NSLog("Failed to add subsonic album to playlist: %@", error.localizedDescription)
             }
@@ -7925,7 +8055,7 @@ class PlexBrowserView: NSView {
             do {
                 let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
                 let convertedTracks = PlexManager.shared.convertToTracks(tracks)
-                WindowManager.shared.audioEngine.loadTracks(convertedTracks)
+                WindowManager.shared.audioEngine.appendTracks(convertedTracks)
             } catch {
                 NSLog("Failed to add album to playlist: %@", error.localizedDescription)
             }
@@ -7945,7 +8075,7 @@ class PlexBrowserView: NSView {
             NSLog("Failed to convert movie to track for playlist")
             return
         }
-        WindowManager.shared.audioEngine.loadTracks([track])
+        WindowManager.shared.audioEngine.appendTracks([track])
         NSLog("Added movie to playlist: %@", movie.title)
     }
     
@@ -7955,7 +8085,7 @@ class PlexBrowserView: NSView {
             NSLog("Failed to convert episode to track for playlist")
             return
         }
-        WindowManager.shared.audioEngine.loadTracks([track])
+        WindowManager.shared.audioEngine.appendTracks([track])
         NSLog("Added episode to playlist: %@", episode.title)
     }
     
@@ -7966,7 +8096,7 @@ class PlexBrowserView: NSView {
                 let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
                 let tracks = PlexManager.shared.convertToTracks(episodes)
                 if !tracks.isEmpty {
-                    WindowManager.shared.audioEngine.loadTracks(tracks)
+                    WindowManager.shared.audioEngine.appendTracks(tracks)
                     NSLog("Added %d episodes from season to playlist: %@", tracks.count, season.title)
                 }
             } catch {
@@ -7987,12 +8117,475 @@ class PlexBrowserView: NSView {
                     allTracks.append(contentsOf: tracks)
                 }
                 if !allTracks.isEmpty {
-                    WindowManager.shared.audioEngine.loadTracks(allTracks)
+                    WindowManager.shared.audioEngine.appendTracks(allTracks)
                     NSLog("Added %d episodes from show to playlist: %@", allTracks.count, show.title)
                 }
             } catch {
                 NSLog("Failed to add show to playlist: %@", error.localizedDescription)
             }
+        }
+    }
+    
+    // MARK: - Play Next / Add to Queue Handlers
+    
+    @objc private func contextMenuPlayNext(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? PlexTrack,
+              let t = PlexManager.shared.convertToTrack(track) else { return }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent([t])
+    }
+    @objc private func contextMenuAddToQueue(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? PlexTrack,
+              let t = PlexManager.shared.convertToTrack(track) else { return }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks([t])
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+    @objc private func contextMenuPlayLocalTrackNext(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track.toTrack()])
+    }
+    @objc private func contextMenuAddLocalTrackToQueue(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks([track.toTrack()])
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+    @objc private func contextMenuPlaySubsonicSongNext(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? SubsonicSong,
+              let track = SubsonicManager.shared.convertToTrack(song) else { return }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+    }
+    @objc private func contextMenuAddSubsonicSongToQueue(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? SubsonicSong,
+              let track = SubsonicManager.shared.convertToTrack(song) else { return }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks([track])
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+    @objc private func contextMenuPlayAlbumNext(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? PlexAlbum else { return }
+        Task { @MainActor in
+            do {
+                let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
+                let converted = PlexManager.shared.convertToTracks(tracks)
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(converted)
+            } catch { NSLog("Failed to play album next: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuAddAlbumToQueue(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? PlexAlbum else { return }
+        Task { @MainActor in
+            do {
+                let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
+                let converted = PlexManager.shared.convertToTracks(tracks)
+                let engine = WindowManager.shared.audioEngine
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(converted)
+                if wasEmpty { engine.playTrack(at: 0) }
+            } catch { NSLog("Failed to add album to queue: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayLocalAlbumNext(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? Album else { return }
+        let tracks = album.tracks.map { $0.toTrack() }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
+    }
+    @objc private func contextMenuAddLocalAlbumToQueue(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? Album else { return }
+        let tracks = album.tracks.map { $0.toTrack() }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks(tracks)
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+    @objc private func contextMenuPlaySubsonicAlbumNext(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? SubsonicAlbum else { return }
+        Task { @MainActor in
+            do {
+                let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
+                let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
+            } catch { NSLog("Failed to play subsonic album next: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuAddSubsonicAlbumToQueue(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? SubsonicAlbum else { return }
+        Task { @MainActor in
+            do {
+                let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
+                let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
+                let engine = WindowManager.shared.audioEngine
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(tracks)
+                if wasEmpty { engine.playTrack(at: 0) }
+            } catch { NSLog("Failed to add subsonic album to queue: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayArtistNext(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? PlexArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
+                var allTracks: [PlexTrack] = []
+                for album in albums {
+                    let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
+                    allTracks.append(contentsOf: tracks)
+                }
+                let converted = PlexManager.shared.convertToTracks(allTracks)
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(converted)
+            } catch { NSLog("Failed to play artist next: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuAddArtistToQueue(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? PlexArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
+                var allTracks: [PlexTrack] = []
+                for album in albums {
+                    let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
+                    allTracks.append(contentsOf: tracks)
+                }
+                let converted = PlexManager.shared.convertToTracks(allTracks)
+                let engine = WindowManager.shared.audioEngine
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(converted)
+                if wasEmpty { engine.playTrack(at: 0) }
+            } catch { NSLog("Failed to add artist to queue: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayLocalArtistNext(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? Artist else { return }
+        var allTracks: [Track] = []
+        for album in artist.albums {
+            allTracks.append(contentsOf: album.tracks.map { $0.toTrack() })
+        }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+    }
+    @objc private func contextMenuAddLocalArtistToQueue(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? Artist else { return }
+        var allTracks: [Track] = []
+        for album in artist.albums {
+            allTracks.append(contentsOf: album.tracks.map { $0.toTrack() })
+        }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks(allTracks)
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+    @objc private func contextMenuPlaySubsonicArtistNext(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? SubsonicArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: artist)
+                var allTracks: [Track] = []
+                for album in albums {
+                    let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
+                    allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
+                }
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+            } catch { NSLog("Failed to play subsonic artist next: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuAddSubsonicArtistToQueue(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? SubsonicArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: artist)
+                var allTracks: [Track] = []
+                for album in albums {
+                    let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
+                    allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
+                }
+                let engine = WindowManager.shared.audioEngine
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(allTracks)
+                if wasEmpty { engine.playTrack(at: 0) }
+            } catch { NSLog("Failed to add subsonic artist to queue: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayMovieNext(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie,
+              let track = PlexManager.shared.convertToTrack(movie) else { return }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+    }
+    @objc private func contextMenuAddMovieToQueue(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie,
+              let track = PlexManager.shared.convertToTrack(movie) else { return }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks([track])
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+    @objc private func contextMenuPlayEpisodeNext(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode,
+              let track = PlexManager.shared.convertToTrack(episode) else { return }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+    }
+    @objc private func contextMenuAddEpisodeToQueue(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode,
+              let track = PlexManager.shared.convertToTrack(episode) else { return }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks([track])
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+    @objc private func contextMenuPlaySeasonNext(_ sender: NSMenuItem) {
+        guard let season = sender.representedObject as? PlexSeason else { return }
+        Task { @MainActor in
+            do {
+                let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                let tracks = PlexManager.shared.convertToTracks(episodes)
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
+            } catch { NSLog("Failed to play season next: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuAddSeasonToQueue(_ sender: NSMenuItem) {
+        guard let season = sender.representedObject as? PlexSeason else { return }
+        Task { @MainActor in
+            do {
+                let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                let tracks = PlexManager.shared.convertToTracks(episodes)
+                let engine = WindowManager.shared.audioEngine
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(tracks)
+                if wasEmpty { engine.playTrack(at: 0) }
+            } catch { NSLog("Failed to add season to queue: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayShowNext(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow else { return }
+        Task { @MainActor in
+            do {
+                let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
+                var allTracks: [Track] = []
+                for season in seasons {
+                    let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                    allTracks.append(contentsOf: PlexManager.shared.convertToTracks(episodes))
+                }
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+            } catch { NSLog("Failed to play show next: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuAddShowToQueue(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow else { return }
+        Task { @MainActor in
+            do {
+                let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
+                var allTracks: [Track] = []
+                for season in seasons {
+                    let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                    allTracks.append(contentsOf: PlexManager.shared.convertToTracks(episodes))
+                }
+                let engine = WindowManager.shared.audioEngine
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(allTracks)
+                if wasEmpty { engine.playTrack(at: 0) }
+            } catch { NSLog("Failed to add show to queue: %@", error.localizedDescription) }
+        }
+    }
+    
+    // MARK: - Keyboard Shortcut Helpers
+    
+    private func playNextSelected() {
+        guard let index = selectedIndices.first, index < displayItems.count else { return }
+        let item = displayItems[index]
+        switch item.type {
+        case .track(let track):
+            if let t = PlexManager.shared.convertToTrack(track) {
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent([t])
+            }
+        case .localTrack(let track):
+            WindowManager.shared.audioEngine.insertTracksAfterCurrent([track.toTrack()])
+        case .subsonicTrack(let song):
+            if let track = SubsonicManager.shared.convertToTrack(song) {
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+            }
+        case .album(let album):
+            Task { @MainActor in
+                if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(tracks))
+                }
+            }
+        case .localAlbum(let album):
+            WindowManager.shared.audioEngine.insertTracksAfterCurrent(album.tracks.map { $0.toTrack() })
+        case .subsonicAlbum(let album):
+            Task { @MainActor in
+                if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
+                }
+            }
+        case .artist(let artist):
+            Task { @MainActor in
+                if let albums = try? await PlexManager.shared.fetchAlbums(forArtist: artist) {
+                    var allTracks: [PlexTrack] = []
+                    for album in albums {
+                        if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
+                            allTracks.append(contentsOf: tracks)
+                        }
+                    }
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(allTracks))
+                }
+            }
+        case .localArtist(let artist):
+            var allTracks: [Track] = []
+            for album in artist.albums { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+            WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+        case .subsonicArtist(let artist):
+            Task { @MainActor in
+                if let albums = try? await SubsonicManager.shared.fetchAlbums(forArtist: artist) {
+                    var allTracks: [Track] = []
+                    for album in albums {
+                        if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
+                            allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
+                        }
+                    }
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+                }
+            }
+        case .movie(let movie):
+            if let track = PlexManager.shared.convertToTrack(movie) {
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+            }
+        case .episode(let episode):
+            if let track = PlexManager.shared.convertToTrack(episode) {
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+            }
+        case .season(let season):
+            Task { @MainActor in
+                if let episodes = try? await PlexManager.shared.fetchEpisodes(forSeason: season) {
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(episodes))
+                }
+            }
+        case .show(let show):
+            Task { @MainActor in
+                if let seasons = try? await PlexManager.shared.fetchSeasons(forShow: show) {
+                    var allTracks: [Track] = []
+                    for season in seasons {
+                        if let episodes = try? await PlexManager.shared.fetchEpisodes(forSeason: season) {
+                            allTracks.append(contentsOf: PlexManager.shared.convertToTracks(episodes))
+                        }
+                    }
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+                }
+            }
+        default: break
+        }
+    }
+    
+    private func addSelectedToQueue() {
+        guard let index = selectedIndices.first, index < displayItems.count else { return }
+        let item = displayItems[index]
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        
+        switch item.type {
+        case .track(let track):
+            if let t = PlexManager.shared.convertToTrack(track) {
+                engine.appendTracks([t])
+                if wasEmpty { engine.playTrack(at: 0) }
+            }
+        case .localTrack(let track):
+            engine.appendTracks([track.toTrack()])
+            if wasEmpty { engine.playTrack(at: 0) }
+        case .subsonicTrack(let song):
+            if let track = SubsonicManager.shared.convertToTrack(song) {
+                engine.appendTracks([track])
+                if wasEmpty { engine.playTrack(at: 0) }
+            }
+        case .album(let album):
+            Task { @MainActor in
+                if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
+                    let converted = PlexManager.shared.convertToTracks(tracks)
+                    let wasEmpty = engine.playlist.isEmpty
+                    engine.appendTracks(converted)
+                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
+        case .localAlbum(let album):
+            let tracks = album.tracks.map { $0.toTrack() }
+            engine.appendTracks(tracks)
+            if wasEmpty { engine.playTrack(at: 0) }
+        case .subsonicAlbum(let album):
+            Task { @MainActor in
+                if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
+                    let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
+                    let wasEmpty = engine.playlist.isEmpty
+                    engine.appendTracks(tracks)
+                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
+        case .artist(let artist):
+            Task { @MainActor in
+                if let albums = try? await PlexManager.shared.fetchAlbums(forArtist: artist) {
+                    var allTracks: [PlexTrack] = []
+                    for album in albums {
+                        if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
+                            allTracks.append(contentsOf: tracks)
+                        }
+                    }
+                    let converted = PlexManager.shared.convertToTracks(allTracks)
+                    let wasEmpty = engine.playlist.isEmpty
+                    engine.appendTracks(converted)
+                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
+        case .localArtist(let artist):
+            var allTracks: [Track] = []
+            for album in artist.albums { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+            engine.appendTracks(allTracks)
+            if wasEmpty { engine.playTrack(at: 0) }
+        case .subsonicArtist(let artist):
+            Task { @MainActor in
+                if let albums = try? await SubsonicManager.shared.fetchAlbums(forArtist: artist) {
+                    var allTracks: [Track] = []
+                    for album in albums {
+                        if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
+                            allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
+                        }
+                    }
+                    let wasEmpty = engine.playlist.isEmpty
+                    engine.appendTracks(allTracks)
+                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
+        case .movie(let movie):
+            if let track = PlexManager.shared.convertToTrack(movie) {
+                engine.appendTracks([track])
+                if wasEmpty { engine.playTrack(at: 0) }
+            }
+        case .episode(let episode):
+            if let track = PlexManager.shared.convertToTrack(episode) {
+                engine.appendTracks([track])
+                if wasEmpty { engine.playTrack(at: 0) }
+            }
+        case .season(let season):
+            Task { @MainActor in
+                if let episodes = try? await PlexManager.shared.fetchEpisodes(forSeason: season) {
+                    let tracks = PlexManager.shared.convertToTracks(episodes)
+                    let wasEmpty = engine.playlist.isEmpty
+                    engine.appendTracks(tracks)
+                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
+        case .show(let show):
+            Task { @MainActor in
+                if let seasons = try? await PlexManager.shared.fetchSeasons(forShow: show) {
+                    var allTracks: [Track] = []
+                    for season in seasons {
+                        if let episodes = try? await PlexManager.shared.fetchEpisodes(forSeason: season) {
+                            allTracks.append(contentsOf: PlexManager.shared.convertToTracks(episodes))
+                        }
+                    }
+                    let wasEmpty = engine.playlist.isEmpty
+                    engine.appendTracks(allTracks)
+                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
+        default: break
         }
     }
     
@@ -8582,9 +9175,15 @@ class PlexBrowserView: NSView {
         }
         
         switch event.keyCode {
-        case 36: // Enter - play selected
-            if let index = selectedIndices.first, index < displayItems.count {
-                handleDoubleClick(on: displayItems[index])
+        case 36: // Enter
+            if event.modifierFlags.contains(.shift) {
+                playNextSelected()
+            } else if event.modifierFlags.contains(.option) {
+                addSelectedToQueue()
+            } else {
+                if let index = selectedIndices.first, index < displayItems.count {
+                    handleDoubleClick(on: displayItems[index])
+                }
             }
             
         case 125: // Down arrow
@@ -10581,8 +11180,8 @@ class PlexBrowserView: NSView {
         
         if let convertedTrack = PlexManager.shared.convertToTrack(track) {
             NSLog("  streamURL: %@", convertedTrack.url.absoluteString)
-            WindowManager.shared.audioEngine.loadTracks([convertedTrack])
-            NSLog("  Called loadTracks()")
+            WindowManager.shared.audioEngine.playNow([convertedTrack])
+            NSLog("  Called playNow()")
         } else {
             NSLog("  ERROR: Failed to convert track - streamURL is nil")
         }
@@ -10594,7 +11193,7 @@ class PlexBrowserView: NSView {
                 let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
                 let convertedTracks = PlexManager.shared.convertToTracks(tracks)
                 NSLog("Playing album %@ with %d tracks", album.title, convertedTracks.count)
-                WindowManager.shared.audioEngine.loadTracks(convertedTracks)
+                WindowManager.shared.audioEngine.playNow(convertedTracks)
             } catch {
                 NSLog("Failed to play album: %@", error.localizedDescription)
             }
@@ -10619,7 +11218,7 @@ class PlexBrowserView: NSView {
                 
                 let convertedTracks = PlexManager.shared.convertToTracks(allTracks)
                 NSLog("Playing artist %@ with %d tracks", artist.title, convertedTracks.count)
-                WindowManager.shared.audioEngine.loadTracks(convertedTracks)
+                WindowManager.shared.audioEngine.playNow(convertedTracks)
             } catch {
                 NSLog("Failed to play artist: %@", error.localizedDescription)
             }
@@ -10659,7 +11258,7 @@ class PlexBrowserView: NSView {
                 stopLoadingAnimation()
                 needsDisplay = true
                 
-                WindowManager.shared.audioEngine.loadTracks(convertedTracks)
+                WindowManager.shared.audioEngine.playNow(convertedTracks)
             } catch {
                 NSLog("Failed to play Plex playlist '%@' (id=%@): %@", playlist.title, playlist.id, error.localizedDescription)
                 isLoading = false
@@ -10786,7 +11385,7 @@ class PlexBrowserView: NSView {
     private func playSubsonicSong(_ song: SubsonicSong) {
         NSLog("playSubsonicSong: %@", song.title)
         if let track = SubsonicManager.shared.convertToTrack(song) {
-            WindowManager.shared.audioEngine.loadTracks([track])
+            WindowManager.shared.audioEngine.playNow([track])
         }
     }
     
@@ -10796,7 +11395,7 @@ class PlexBrowserView: NSView {
                 let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
                 let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
                 NSLog("Playing subsonic album %@ with %d tracks", album.name, tracks.count)
-                WindowManager.shared.audioEngine.loadTracks(tracks)
+                WindowManager.shared.audioEngine.playNow(tracks)
             } catch {
                 NSLog("Failed to play subsonic album: %@", error.localizedDescription)
             }
@@ -10814,7 +11413,7 @@ class PlexBrowserView: NSView {
                     allTracks.append(contentsOf: tracks)
                 }
                 NSLog("Playing subsonic artist %@ with %d tracks", artist.name, allTracks.count)
-                WindowManager.shared.audioEngine.loadTracks(allTracks)
+                WindowManager.shared.audioEngine.playNow(allTracks)
             } catch {
                 NSLog("Failed to play subsonic artist: %@", error.localizedDescription)
             }
@@ -10838,7 +11437,7 @@ class PlexBrowserView: NSView {
                 stopLoadingAnimation()
                 needsDisplay = true
                 
-                WindowManager.shared.audioEngine.loadTracks(tracks)
+                WindowManager.shared.audioEngine.playNow(tracks)
             } catch {
                 NSLog("Failed to play subsonic playlist: %@", error.localizedDescription)
                 isLoading = false
@@ -10854,13 +11453,13 @@ class PlexBrowserView: NSView {
     private func playLocalTrack(_ track: LibraryTrack) {
         NSLog("playLocalTrack: %@", track.title)
         let playbackTrack = track.toTrack()
-        WindowManager.shared.audioEngine.loadTracks([playbackTrack])
+        WindowManager.shared.audioEngine.playNow([playbackTrack])
     }
     
     private func playLocalAlbum(_ album: Album) {
         NSLog("playLocalAlbum: %@ (%d tracks)", album.name, album.tracks.count)
         let tracks = album.tracks.map { $0.toTrack() }
-        WindowManager.shared.audioEngine.loadTracks(tracks)
+        WindowManager.shared.audioEngine.playNow(tracks)
     }
     
     private func playLocalArtist(_ artist: Artist) {
@@ -10869,7 +11468,7 @@ class PlexBrowserView: NSView {
         for album in artist.albums {
             tracks.append(contentsOf: album.tracks.map { $0.toTrack() })
         }
-        WindowManager.shared.audioEngine.loadTracks(tracks)
+        WindowManager.shared.audioEngine.playNow(tracks)
     }
 }
 

@@ -1204,6 +1204,16 @@ class ModernPlaylistView: NSView {
         needsDisplay = true
     }
     
+    @objc private func sortByArtist(_ sender: Any?) {
+        WindowManager.shared.audioEngine.sortPlaylist(by: .artist)
+        needsDisplay = true
+    }
+    
+    @objc private func sortByAlbum(_ sender: Any?) {
+        WindowManager.shared.audioEngine.sortPlaylist(by: .album)
+        needsDisplay = true
+    }
+    
     @objc private func sortByFilename(_ sender: Any?) {
         WindowManager.shared.audioEngine.sortPlaylist(by: .filename)
         needsDisplay = true
@@ -1335,7 +1345,126 @@ class ModernPlaylistView: NSView {
     // MARK: - Context Menu
     
     override func menu(for event: NSEvent) -> NSMenu? {
-        return ContextMenuBuilder.buildMenu()
+        let menu = NSMenu()
+        let engine = WindowManager.shared.audioEngine
+        let tracks = engine.playlist
+        let hasSelection = !selectedIndices.isEmpty
+        let hasTracks = !tracks.isEmpty
+        
+        // Play selected
+        let playItem = NSMenuItem(title: "Play", action: #selector(playSelected(_:)), keyEquivalent: "")
+        playItem.target = self
+        playItem.isEnabled = hasSelection
+        menu.addItem(playItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Remove selected
+        let removeItem = NSMenuItem(title: "Remove Selected", action: #selector(removeSelected(_:)), keyEquivalent: "")
+        removeItem.target = self
+        removeItem.isEnabled = hasSelection
+        menu.addItem(removeItem)
+        
+        // Clear playlist
+        let clearItem = NSMenuItem(title: "Clear Playlist", action: #selector(removeAll(_:)), keyEquivalent: "")
+        clearItem.target = self
+        clearItem.isEnabled = hasTracks
+        menu.addItem(clearItem)
+        
+        // Remove dead files
+        let deadItem = NSMenuItem(title: "Remove Dead Files", action: #selector(removeDeadFiles(_:)), keyEquivalent: "")
+        deadItem.target = self
+        deadItem.isEnabled = hasTracks
+        menu.addItem(deadItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // Selection submenu
+        let selectionMenu = NSMenu()
+        
+        let selectAllItem = NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "a")
+        selectAllItem.keyEquivalentModifierMask = .command
+        selectAllItem.target = self
+        selectAllItem.isEnabled = hasTracks
+        selectionMenu.addItem(selectAllItem)
+        
+        let selectNoneItem = NSMenuItem(title: "Select None", action: #selector(selectNone(_:)), keyEquivalent: "")
+        selectNoneItem.target = self
+        selectNoneItem.isEnabled = hasSelection
+        selectionMenu.addItem(selectNoneItem)
+        
+        let invertItem = NSMenuItem(title: "Invert Selection", action: #selector(invertSelection(_:)), keyEquivalent: "")
+        invertItem.target = self
+        invertItem.isEnabled = hasTracks
+        selectionMenu.addItem(invertItem)
+        
+        let cropItem = NSMenuItem(title: "Crop Selection", action: #selector(cropSelection(_:)), keyEquivalent: "")
+        cropItem.target = self
+        cropItem.isEnabled = hasSelection
+        selectionMenu.addItem(cropItem)
+        
+        let selectionMenuItem = NSMenuItem(title: "Selection", action: nil, keyEquivalent: "")
+        selectionMenuItem.submenu = selectionMenu
+        menu.addItem(selectionMenuItem)
+        
+        // Sort submenu
+        let sortMenu = NSMenu()
+        
+        let sortTitleItem = NSMenuItem(title: "Sort by Title", action: #selector(sortByTitle(_:)), keyEquivalent: "")
+        sortTitleItem.target = self
+        sortTitleItem.isEnabled = hasTracks
+        sortMenu.addItem(sortTitleItem)
+        
+        let sortArtistItem = NSMenuItem(title: "Sort by Artist", action: #selector(sortByArtist(_:)), keyEquivalent: "")
+        sortArtistItem.target = self
+        sortArtistItem.isEnabled = hasTracks
+        sortMenu.addItem(sortArtistItem)
+        
+        let sortAlbumItem = NSMenuItem(title: "Sort by Album", action: #selector(sortByAlbum(_:)), keyEquivalent: "")
+        sortAlbumItem.target = self
+        sortAlbumItem.isEnabled = hasTracks
+        sortMenu.addItem(sortAlbumItem)
+        
+        let sortFilenameItem = NSMenuItem(title: "Sort by Filename", action: #selector(sortByFilename(_:)), keyEquivalent: "")
+        sortFilenameItem.target = self
+        sortFilenameItem.isEnabled = hasTracks
+        sortMenu.addItem(sortFilenameItem)
+        
+        let sortPathItem = NSMenuItem(title: "Sort by Path", action: #selector(sortByPath(_:)), keyEquivalent: "")
+        sortPathItem.target = self
+        sortPathItem.isEnabled = hasTracks
+        sortMenu.addItem(sortPathItem)
+        
+        sortMenu.addItem(NSMenuItem.separator())
+        
+        let reverseItem = NSMenuItem(title: "Reverse", action: #selector(reverse(_:)), keyEquivalent: "")
+        reverseItem.target = self
+        reverseItem.isEnabled = hasTracks
+        sortMenu.addItem(reverseItem)
+        
+        let randomizeItem = NSMenuItem(title: "Randomize", action: #selector(randomize(_:)), keyEquivalent: "")
+        randomizeItem.target = self
+        randomizeItem.isEnabled = hasTracks
+        sortMenu.addItem(randomizeItem)
+        
+        let sortMenuItem = NSMenuItem(title: "Sort", action: nil, keyEquivalent: "")
+        sortMenuItem.submenu = sortMenu
+        menu.addItem(sortMenuItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // File info
+        let infoItem = NSMenuItem(title: "File Info...", action: #selector(showFileInfo(_:)), keyEquivalent: "")
+        infoItem.target = self
+        infoItem.isEnabled = selectedIndices.count == 1
+        menu.addItem(infoItem)
+        
+        return menu
+    }
+    
+    @objc private func playSelected(_ sender: Any?) {
+        guard let index = selectedIndices.first else { return }
+        WindowManager.shared.audioEngine.playTrack(at: index)
     }
     
     // MARK: - Layout

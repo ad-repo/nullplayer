@@ -165,6 +165,20 @@ The Playlist Editor manages your playback queue.
 - **Enter key** - Play selected track
 - **Cmd+A** - Select all tracks
 
+### Context Menu
+
+Right-click anywhere in the playlist to access playlist-specific options (the main player context menu is not shown in the playlist):
+
+| Option | Description |
+|--------|-------------|
+| **Play** | Play the selected track |
+| **Remove Selected** | Remove selected tracks from playlist |
+| **Clear Playlist** | Remove all tracks |
+| **Remove Dead Files** | Remove tracks whose files no longer exist |
+| **Selection** | Submenu: Select All, Select None, Invert Selection, Crop Selection |
+| **Sort** | Submenu: Sort by Title/Artist/Album/Filename/Path, Reverse, Randomize |
+| **File Info...** | Show metadata for selected track |
+
 ### Classic UI: Bottom Bar
 
 The classic playlist includes a bottom bar with:
@@ -308,6 +322,26 @@ When connected to Plex:
 - Play tracks directly or add to playlist
 - Full video playback support
 - Automatic play statistics (scrobbling)
+
+### Queue Management
+
+The playlist queue is preserved when playing new items. Double-clicking or pressing Enter on a track inserts it after the current track and starts playing immediately, without erasing the rest of your queue.
+
+| Action | Effect |
+|--------|--------|
+| **Double-click / Enter** | Insert after current track and play immediately ("jump the line") |
+| **Play Next** (Shift+Enter) | Insert after currently playing track (doesn't start playback) |
+| **Add to Queue** (Option+Enter) | Append to end of playlist |
+
+**Keyboard shortcuts:**
+- **Enter** - Play Now (insert and play immediately)
+- **Shift+Enter** - Play Next (insert after current, no playback change)
+- **Option+Enter** - Add to Queue (append to end)
+
+**Context menu:**
+Right-click any track, album, or artist to see queue options.
+
+If the playlist is empty, all actions will start playback automatically.
 
 ### Column Configuration
 
@@ -922,6 +956,16 @@ Enable this option to keep the Library Browser and ProjectM windows using the de
 | **Enter** | Play selected track |
 | **Cmd+A** | Select all |
 
+### Library Browser
+
+| Key | Action |
+|-----|--------|
+| **↑** | Move selection up |
+| **↓** | Move selection down |
+| **Enter** | Play selected item |
+| **Shift+Enter** | Play Next (insert after current) |
+| **Option+Enter** | Add to Queue (append to end) |
+
 ### Video Player
 
 | Key | Action |
@@ -1040,11 +1084,11 @@ Shows detailed metadata for the currently playing track or video. This option is
 
 | Item Type | Menu Options |
 |-----------|--------------|
-| **Track** | Play, Add to Playlist, Start Track Radio |
-| **Album** | Play Album, Add Album to Playlist, Start Album Radio |
-| **Artist** | Play All by Artist, Expand/Collapse, Start Artist Radio |
-| **Movie** | Play Movie, Add to Playlist, Cast to..., View Online |
-| **Episode** | Play Episode, Add to Playlist, Cast to..., View Online |
+| **Track** | Play, Add to Playlist, Play Next, Add to Queue, Start Track Radio |
+| **Album** | Play Album, Add Album to Playlist, Play Album Next, Add Album to Queue, Start Album Radio |
+| **Artist** | Play All by Artist, Play Artist Next, Add Artist to Queue, Expand/Collapse, Start Artist Radio |
+| **Movie** | Play Movie, Add to Playlist, Play Next, Add to Queue, Cast to..., View Online |
+| **Episode** | Play Episode, Add to Playlist, Play Next, Add to Queue, Cast to..., View Online |
 
 ### Video Player Context Menu (Right-click on video)
 

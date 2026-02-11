@@ -2092,6 +2092,48 @@ class AudioEngine {
         delegate?.audioEngineDidChangePlaylist()
     }
     
+    /// Insert tracks immediately after the current position.
+    /// If nothing is playing (currentIndex == -1), inserts at index 0.
+    /// Starts playback if playlist was empty and startPlaybackIfEmpty is true.
+    func insertTracksAfterCurrent(_ tracks: [Track], startPlaybackIfEmpty: Bool = true) {
+        guard !tracks.isEmpty else { return }
+        
+        let wasEmpty = playlist.isEmpty
+        let insertIndex = currentIndex >= 0 ? currentIndex + 1 : 0
+        
+        // Insert tracks at the calculated position
+        playlist.insert(contentsOf: tracks, at: insertIndex)
+        
+        // No need to adjust currentIndex - we're inserting AFTER current
+        
+        // Start playback if playlist was empty
+        if wasEmpty && startPlaybackIfEmpty {
+            currentIndex = 0
+            loadTrack(at: 0)
+            play()
+        }
+        
+        delegate?.audioEngineDidChangePlaylist()
+    }
+    
+    /// Insert tracks after current position and immediately play the first inserted track.
+    /// This is the "Play Now" / "Jump the Line" behavior - adds to queue and starts playing immediately.
+    func playNow(_ tracks: [Track]) {
+        guard !tracks.isEmpty else { return }
+        
+        let insertIndex = currentIndex >= 0 ? currentIndex + 1 : 0
+        
+        // Insert tracks at the calculated position
+        playlist.insert(contentsOf: tracks, at: insertIndex)
+        
+        // Jump to and play the first inserted track
+        currentIndex = insertIndex
+        loadTrack(at: insertIndex)
+        play()
+        
+        delegate?.audioEngineDidChangePlaylist()
+    }
+    
     /// Set the playlist files without starting playback (for state restoration)
     /// This clears the existing playlist and populates it with the given files,
     /// but does NOT load or play any track.
