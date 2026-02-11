@@ -7331,6 +7331,11 @@ class PlexBrowserView: NSView {
             playItem.representedObject = item
             menu.addItem(playItem)
             
+            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayAndReplaceTrack(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = item
+            menu.addItem(playReplaceItem)
+            
             let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self
             addItem.representedObject = track
@@ -7358,6 +7363,11 @@ class PlexBrowserView: NSView {
             playItem.target = self
             playItem.representedObject = album
             menu.addItem(playItem)
+            
+            let playReplaceItem = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlayAlbumAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = album
+            menu.addItem(playReplaceItem)
             
             let addItem = NSMenuItem(title: "Add Album to Playlist", action: #selector(contextMenuAddAlbumToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self
@@ -7387,6 +7397,11 @@ class PlexBrowserView: NSView {
             playItem.representedObject = artist
             menu.addItem(playItem)
             
+            let playReplaceItem = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlayArtistAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = artist
+            menu.addItem(playReplaceItem)
+            
             let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayArtistNext(_:)), keyEquivalent: "")
             playNextItem.target = self
             playNextItem.representedObject = artist
@@ -7414,6 +7429,11 @@ class PlexBrowserView: NSView {
             playItem.target = self
             playItem.representedObject = movie
             menu.addItem(playItem)
+            
+            let playReplaceItem = NSMenuItem(title: "Play Movie and Replace Queue", action: #selector(contextMenuPlayMovieAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = movie
+            menu.addItem(playReplaceItem)
             
             let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddMovieToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self
@@ -7479,6 +7499,11 @@ class PlexBrowserView: NSView {
             expandItem.representedObject = item
             menu.addItem(expandItem)
             
+            let playReplaceItem = NSMenuItem(title: "Play Show and Replace Queue", action: #selector(contextMenuPlayShowAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = show
+            menu.addItem(playReplaceItem)
+            
             let addItem = NSMenuItem(title: "Add All Episodes to Playlist", action: #selector(contextMenuAddShowToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self
             addItem.representedObject = show
@@ -7524,6 +7549,11 @@ class PlexBrowserView: NSView {
             expandItem.representedObject = item
             menu.addItem(expandItem)
             
+            let playReplaceItem = NSMenuItem(title: "Play Season and Replace Queue", action: #selector(contextMenuPlaySeasonAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = season
+            menu.addItem(playReplaceItem)
+            
             let addItem = NSMenuItem(title: "Add Season to Playlist", action: #selector(contextMenuAddSeasonToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self
             addItem.representedObject = season
@@ -7544,6 +7574,11 @@ class PlexBrowserView: NSView {
             playItem.target = self
             playItem.representedObject = episode
             menu.addItem(playItem)
+            
+            let playReplaceItem = NSMenuItem(title: "Play Episode and Replace Queue", action: #selector(contextMenuPlayEpisodeAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = episode
+            menu.addItem(playReplaceItem)
             
             let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddEpisodeToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self
@@ -7609,6 +7644,11 @@ class PlexBrowserView: NSView {
             playItem.representedObject = track
             menu.addItem(playItem)
             
+            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayLocalTrackAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = track
+            menu.addItem(playReplaceItem)
+            
             let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddLocalTrackToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self
             addItem.representedObject = track
@@ -7654,6 +7694,11 @@ class PlexBrowserView: NSView {
             playItem.representedObject = album
             menu.addItem(playItem)
             
+            let playReplaceItem = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlayLocalAlbumAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = album
+            menu.addItem(playReplaceItem)
+            
             let addItem = NSMenuItem(title: "Add Album to Playlist", action: #selector(contextMenuAddLocalAlbumToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self
             addItem.representedObject = album
@@ -7686,6 +7731,11 @@ class PlexBrowserView: NSView {
             playItem.target = self
             playItem.representedObject = artist
             menu.addItem(playItem)
+            
+            let playReplaceItem = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlayLocalArtistAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self
+            playReplaceItem.representedObject = artist
+            menu.addItem(playReplaceItem)
             
             let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayLocalArtistNext(_:)), keyEquivalent: "")
             playNextItem.target = self
@@ -7883,6 +7933,94 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuPlayLocalArtist(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }
         playLocalArtist(artist)
+    }
+    
+    // MARK: - Play and Replace Queue Handlers
+    
+    @objc private func contextMenuPlayAndReplaceTrack(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem,
+              case .track(let track) = item.type,
+              let t = PlexManager.shared.convertToTrack(track) else { return }
+        WindowManager.shared.audioEngine.loadTracks([t])
+    }
+    
+    @objc private func contextMenuPlayAlbumAndReplace(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? PlexAlbum else { return }
+        Task { @MainActor in
+            do {
+                let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
+                WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(tracks))
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    
+    @objc private func contextMenuPlayArtistAndReplace(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? PlexArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
+                var all: [PlexTrack] = []
+                for album in albums { all.append(contentsOf: try await PlexManager.shared.fetchTracks(forAlbum: album)) }
+                if all.isEmpty { all = try await PlexManager.shared.fetchTracks(forArtist: artist) }
+                WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(all))
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    
+    @objc private func contextMenuPlayMovieAndReplace(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? PlexMovie else { return }
+        // Movies use video player, just play the movie (video player handles its own queue)
+        playMovie(movie)
+    }
+    
+    @objc private func contextMenuPlayShowAndReplace(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? PlexShow else { return }
+        Task { @MainActor in
+            do {
+                let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
+                var allEpisodes: [PlexEpisode] = []
+                for season in seasons {
+                    let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                    allEpisodes.append(contentsOf: episodes)
+                }
+                let tracks = PlexManager.shared.convertToTracks(allEpisodes)
+                if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    
+    @objc private func contextMenuPlaySeasonAndReplace(_ sender: NSMenuItem) {
+        guard let season = sender.representedObject as? PlexSeason else { return }
+        Task { @MainActor in
+            do {
+                let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
+                let tracks = PlexManager.shared.convertToTracks(episodes)
+                if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    
+    @objc private func contextMenuPlayEpisodeAndReplace(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? PlexEpisode,
+              let track = PlexManager.shared.convertToTrack(episode) else { return }
+        WindowManager.shared.audioEngine.loadTracks([track])
+    }
+    
+    @objc private func contextMenuPlayLocalTrackAndReplace(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        WindowManager.shared.audioEngine.loadTracks([track.toTrack()])
+    }
+    
+    @objc private func contextMenuPlayLocalAlbumAndReplace(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? Album else { return }
+        WindowManager.shared.audioEngine.loadTracks(album.tracks.map { $0.toTrack() })
+    }
+    
+    @objc private func contextMenuPlayLocalArtistAndReplace(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? Artist else { return }
+        var tracks: [Track] = []
+        for album in artist.albums { tracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+        WindowManager.shared.audioEngine.loadTracks(tracks)
     }
     
     @objc private func contextMenuShowInFinder(_ sender: NSMenuItem) {
