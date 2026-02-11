@@ -2334,11 +2334,11 @@ class ModernLibraryBrowserView: NSView {
             if let index = selectedIndices.first, index < displayItems.count { handleDoubleClick(on: displayItems[index]) }
         case 125: // Down
             if let maxIndex = selectedIndices.max(), maxIndex < displayItems.count - 1 {
-                selectedIndices = [maxIndex + 1]; ensureVisible(index: maxIndex + 1); needsDisplay = true
+                selectedIndices = [maxIndex + 1]; ensureVisible(index: maxIndex + 1); loadArtworkForSelection(); needsDisplay = true
             }
         case 126: // Up
             if let minIndex = selectedIndices.min(), minIndex > 0 {
-                selectedIndices = [minIndex - 1]; ensureVisible(index: minIndex - 1); needsDisplay = true
+                selectedIndices = [minIndex - 1]; ensureVisible(index: minIndex - 1); loadArtworkForSelection(); needsDisplay = true
             }
         default:
             if browseMode == .search, let chars = event.characters, !chars.isEmpty {
@@ -2545,11 +2545,7 @@ class ModernLibraryBrowserView: NSView {
             else { selectedIndices.insert(index) }
         } else {
             selectedIndices = [index]
-            switch item.type {
-            case .track: playTrack(item)
-            case .localTrack(let track): playLocalTrack(track)
-            default: break
-            }
+            loadArtworkForSelection()
         }
         
         if event.clickCount == 2 { handleDoubleClick(on: item) }
@@ -2768,6 +2764,10 @@ class ModernLibraryBrowserView: NSView {
         case .album(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayAlbum(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = album; menu.addItem(playItem)
+            menu.addItem(NSMenuItem.separator())
+            let rateMenu = buildRateSubmenuForPlex(ratingKey: album.id)
+            let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateItem.submenu = rateMenu; menu.addItem(rateItem)
         case .artist(let artist):
             let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayArtist(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = artist; menu.addItem(playItem)
@@ -2777,6 +2777,8 @@ class ModernLibraryBrowserView: NSView {
         case .localTrack(let track):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalTrack(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = track; menu.addItem(playItem)
+            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddLocalTrackToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self; addItem.representedObject = track; menu.addItem(addItem)
             menu.addItem(NSMenuItem.separator())
             let rateMenu = buildRateSubmenuForLocal(trackId: track.id)
             let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
@@ -2795,6 +2797,17 @@ class ModernLibraryBrowserView: NSView {
         case .subsonicTrack(let song):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlaySubsonicSong(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = song; menu.addItem(playItem)
+            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddSubsonicSongToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self; addItem.representedObject = song; menu.addItem(addItem)
+            menu.addItem(NSMenuItem.separator())
+            if song.albumId != nil {
+                let albumItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlaySubsonicSongAlbum(_:)), keyEquivalent: "")
+                albumItem.target = self; albumItem.representedObject = song; menu.addItem(albumItem)
+            }
+            if song.artistId != nil {
+                let artistItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlaySubsonicSongArtist(_:)), keyEquivalent: "")
+                artistItem.target = self; artistItem.representedObject = song; menu.addItem(artistItem)
+            }
             menu.addItem(NSMenuItem.separator())
             let rateMenu = buildRateSubmenuForSubsonic(songId: song.id)
             let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
@@ -2802,6 +2815,10 @@ class ModernLibraryBrowserView: NSView {
         case .subsonicAlbum(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlaySubsonicAlbum(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = album; menu.addItem(playItem)
+            menu.addItem(NSMenuItem.separator())
+            let rateMenu = buildRateSubmenuForSubsonic(songId: album.id)
+            let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateItem.submenu = rateMenu; menu.addItem(rateItem)
         case .subsonicArtist(let artist):
             let playItem = NSMenuItem(title: "Play All", action: #selector(contextMenuPlaySubsonicArtist(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = artist; menu.addItem(playItem)
@@ -2912,7 +2929,7 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuAddToPlaylist(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? PlexTrack,
               let t = PlexManager.shared.convertToTrack(track) else { return }
-        WindowManager.shared.audioEngine.loadTracks([t])
+        WindowManager.shared.audioEngine.appendTracks([t])
     }
     @objc private func contextMenuPlayAlbum(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? PlexAlbum else { return }; playAlbum(album)
@@ -2944,6 +2961,10 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuPlayLocalArtist(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }; playLocalArtist(artist)
     }
+    @objc private func contextMenuAddLocalTrackToPlaylist(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        WindowManager.shared.audioEngine.appendTracks([track.toTrack()])
+    }
     @objc private func contextMenuPlaySubsonicSong(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? SubsonicSong else { return }; playSubsonicSong(song)
     }
@@ -2955,6 +2976,41 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func contextMenuPlaySubsonicPlaylist(_ sender: NSMenuItem) {
         guard let playlist = sender.representedObject as? SubsonicPlaylist else { return }; playSubsonicPlaylist(playlist)
+    }
+    @objc private func contextMenuAddSubsonicSongToPlaylist(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? SubsonicSong,
+              let track = SubsonicManager.shared.convertToTrack(song) else { return }
+        WindowManager.shared.audioEngine.appendTracks([track])
+    }
+    @objc private func contextMenuPlaySubsonicSongAlbum(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? SubsonicSong,
+              let albumId = song.albumId else { return }
+        Task { @MainActor in
+            if let album = cachedSubsonicAlbums.first(where: { $0.id == albumId }) {
+                playSubsonicAlbum(album)
+            } else {
+                do {
+                    let (_, songs) = try await SubsonicManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
+                    let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
+                    if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
+                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription) }
+            }
+        }
+    }
+    @objc private func contextMenuPlaySubsonicSongArtist(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? SubsonicSong,
+              let artistId = song.artistId else { return }
+        Task { @MainActor in
+            if let artist = cachedSubsonicArtists.first(where: { $0.id == artistId }) {
+                playSubsonicArtist(artist)
+            } else {
+                do {
+                    let results = try await SubsonicManager.shared.search(query: song.artist ?? "")
+                    let tracks = results.songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
+                    if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
+                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription) }
+            }
+        }
     }
     @objc private func contextMenuPlayPlexPlaylist(_ sender: NSMenuItem) {
         guard let playlist = sender.representedObject as? PlexPlaylist else { return }; playPlexPlaylist(playlist)
@@ -3548,6 +3604,83 @@ class ModernLibraryBrowserView: NSView {
         currentArtwork = artworkImages[artworkIndex]; needsDisplay = true
     }
     
+    private func loadArtworkForSelection() {
+        guard WindowManager.shared.showBrowserArtworkBackground else { return }
+        guard let index = selectedIndices.first, index < displayItems.count else { return }
+        
+        let item = displayItems[index]
+        artworkLoadTask?.cancel()
+        
+        artworkLoadTask = Task { [weak self] in
+            guard let self = self else { return }
+            var image: NSImage?
+            
+            switch item.type {
+            case .track(let track):
+                if let thumb = track.thumb {
+                    image = await self.loadPlexArtwork(ratingKey: track.id, thumbPath: thumb)
+                }
+            case .album(let album):
+                if let thumb = album.thumb {
+                    image = await self.loadPlexArtwork(ratingKey: album.id, thumbPath: thumb)
+                }
+            case .artist(let artist):
+                if let thumb = artist.thumb {
+                    image = await self.loadPlexArtwork(ratingKey: artist.id, thumbPath: thumb)
+                }
+            case .movie(let movie):
+                if let thumb = movie.thumb {
+                    image = await self.loadPlexArtwork(ratingKey: movie.id, thumbPath: thumb)
+                }
+            case .episode(let episode):
+                if let thumb = episode.thumb {
+                    image = await self.loadPlexArtwork(ratingKey: episode.id, thumbPath: thumb)
+                }
+            case .show(let show):
+                if let thumb = show.thumb {
+                    image = await self.loadPlexArtwork(ratingKey: show.id, thumbPath: thumb)
+                }
+            case .season(let season):
+                if let thumb = season.thumb {
+                    image = await self.loadPlexArtwork(ratingKey: season.id, thumbPath: thumb)
+                }
+            case .localTrack(let track):
+                image = await self.loadLocalArtwork(url: track.url)
+            case .localAlbum(let album):
+                if let track = album.tracks.first {
+                    image = await self.loadLocalArtwork(url: track.url)
+                }
+            case .localArtist(let artist):
+                let artistTracks = self.cachedLocalTracks.filter { $0.artist == artist.name }
+                if let track = artistTracks.first {
+                    image = await self.loadLocalArtwork(url: track.url)
+                }
+            case .subsonicTrack(let song):
+                if let coverArt = song.coverArt {
+                    image = await self.loadSubsonicArtwork(songId: coverArt)
+                }
+            case .subsonicAlbum(let album):
+                if let coverArt = album.coverArt {
+                    image = await self.loadSubsonicArtwork(songId: coverArt)
+                }
+            case .subsonicArtist(let artist):
+                if let coverArt = artist.coverArt {
+                    image = await self.loadSubsonicArtwork(songId: coverArt)
+                }
+            default:
+                break
+            }
+            
+            guard !Task.isCancelled else { return }
+            if let image = image {
+                await MainActor.run {
+                    self.currentArtwork = image
+                    self.needsDisplay = true
+                }
+            }
+        }
+    }
+    
     // MARK: - Public Methods
     
     func reloadData() {
@@ -3730,7 +3863,7 @@ class ModernLibraryBrowserView: NSView {
                         else { cachedSubsonicAlbums = try await manager.fetchAlbums() }
                     }
                     buildSubsonicAlbumItems()
-                case .tracks: buildSubsonicAlbumItems()
+                case .tracks: buildSubsonicTrackItems()
                 case .plists:
                     if cachedSubsonicPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty { cachedSubsonicPlaylists = manager.cachedPlaylists }
@@ -3988,6 +4121,39 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
+    private func buildSubsonicTrackItems() {
+        Task { @MainActor in
+            do {
+                let results = try await SubsonicManager.shared.serverClient?.search(query: "", artistCount: 0, albumCount: 0, songCount: 500) ?? SubsonicSearchResults()
+                let songs = results.songs
+                displayItems = songs.sorted(by: {
+                    let artist1 = $0.artist ?? ""
+                    let artist2 = $1.artist ?? ""
+                    if artist1 != artist2 { return artist1.localizedCaseInsensitiveCompare(artist2) == .orderedAscending }
+                    let album1 = $0.album ?? ""
+                    let album2 = $1.album ?? ""
+                    if album1 != album2 { return album1.localizedCaseInsensitiveCompare(album2) == .orderedAscending }
+                    return ($0.track ?? 0) < ($1.track ?? 0)
+                }).map {
+                    ModernDisplayItem(
+                        id: $0.id,
+                        title: "\($0.artist ?? "Unknown") - \($0.title)",
+                        info: $0.formattedDuration,
+                        indentLevel: 0,
+                        hasChildren: false,
+                        type: .subsonicTrack($0)
+                    )
+                }
+                applyColumnSort()
+                needsDisplay = true
+            } catch {
+                NSLog("Failed to fetch Subsonic tracks: %@", error.localizedDescription)
+                displayItems = []
+                needsDisplay = true
+            }
+        }
+    }
+    
     private func buildSubsonicPlaylistItems() {
         displayItems.removeAll()
         for playlist in cachedSubsonicPlaylists.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
@@ -4084,7 +4250,7 @@ class ModernLibraryBrowserView: NSView {
             switch browseMode {
             case .artists: buildSubsonicArtistItems()
             case .albums: buildSubsonicAlbumItems()
-            case .tracks: buildSubsonicAlbumItems()
+            case .tracks: buildSubsonicTrackItems()
             case .plists: buildSubsonicPlaylistItems()
             default: displayItems = []
             }
