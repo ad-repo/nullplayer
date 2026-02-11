@@ -309,6 +309,30 @@ When connected to Plex:
 - Full video playback support
 - Automatic play statistics (scrobbling)
 
+### Column Configuration
+
+The Library Browser displays metadata in configurable columns.
+
+**Resizing columns:**
+- Hover over a column border in the header row — the cursor changes to a resize indicator
+- Click and drag to resize the column
+- Column widths are saved automatically
+
+**Showing/hiding columns:**
+- Right-click anywhere on the column header row to open the column menu
+- Check or uncheck columns to toggle their visibility
+- The Title column is always visible
+
+**Available track columns:**
+#, Title, Artist, Album, Album Artist, Year, Genre, Time, Bitrate, Sample Rate, Channels, Size, Rating, Plays, Disc, Date Added, Last Played, Path
+
+**Sorting:**
+- Click a column header to sort by that column
+- Click again to reverse the sort direction
+- The sorted column shows a ▲/▼ indicator
+
+**Reset to Default** in the right-click menu restores the default column set and widths.
+
 ### Album Art Background
 
 Enable **Browser Album Art Background** in Playback Options to show a blurred artwork background while browsing.

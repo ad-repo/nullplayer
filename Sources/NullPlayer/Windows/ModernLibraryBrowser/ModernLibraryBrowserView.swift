@@ -175,6 +175,11 @@ class ModernLibraryBrowserView: NSView {
     private var columnSortId: String? { didSet { saveColumnSort(); applyColumnSort(collapseExpanded: true) } }
     private var columnSortAscending: Bool = true { didSet { saveColumnSort(); applyColumnSort(collapseExpanded: true) } }
     
+    // Visible columns (ordered lists of column IDs; persisted to UserDefaults)
+    private var visibleTrackColumnIds: [String] = ModernBrowserColumn.defaultTrackColumnIds { didSet { saveVisibleColumns() } }
+    private var visibleAlbumColumnIds: [String] = ModernBrowserColumn.defaultAlbumColumnIds { didSet { saveVisibleColumns() } }
+    private var visibleArtistColumnIds: [String] = ModernBrowserColumn.defaultArtistColumnIds { didSet { saveVisibleColumns() } }
+    
     // Display items
     private var displayItems: [ModernDisplayItem] = []
     
@@ -358,8 +363,9 @@ class ModernLibraryBrowserView: NSView {
         }
         renderer = ModernSkinRenderer(skin: skin)
         
-        // Load saved column widths and sort
+        // Load saved column widths, visibility, and sort
         loadColumnWidths()
+        loadVisibleColumns()
         loadColumnSort()
         
         // Load saved source
@@ -1644,11 +1650,22 @@ class ModernLibraryBrowserView: NSView {
     private func columnsForItem(_ item: ModernDisplayItem) -> [ModernBrowserColumn]? {
         switch item.type {
         case .track, .subsonicTrack, .localTrack:
-            return ModernBrowserColumn.trackColumns
+            let visible = visibleTrackColumnIds
+            return ModernBrowserColumn.allTrackColumns
+                .filter { visible.contains($0.id) }
+                .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
         case .album, .subsonicAlbum, .localAlbum:
-            return ModernBrowserColumn.albumColumns
+            let visible = visibleAlbumColumnIds
+            return ModernBrowserColumn.allAlbumColumns
+                .filter { visible.contains($0.id) }
+                .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
         case .artist, .subsonicArtist, .localArtist:
-            if item.indentLevel == 0 { return ModernBrowserColumn.artistColumns }
+            if item.indentLevel == 0 {
+                let visible = visibleArtistColumnIds
+                return ModernBrowserColumn.allArtistColumns
+                    .filter { visible.contains($0.id) }
+                    .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
+            }
             return nil
         default:
             return nil
@@ -1657,6 +1674,11 @@ class ModernLibraryBrowserView: NSView {
     
     private func widthForColumn(_ column: ModernBrowserColumn, availableWidth: CGFloat, columns: [ModernBrowserColumn]) -> CGFloat {
         if column.id == "title" {
+            // If a stored width exists for the title column (set when user resizes any column), use it
+            if let storedWidth = columnWidths["title"] {
+                return max(column.minWidth, storedWidth)
+            }
+            // Otherwise, title is flexible and fills remaining space
             let fixedWidth = columns.filter { $0.id != "title" }.reduce(0) {
                 $0 + (columnWidths[$1.id] ?? $1.minWidth)
             }
@@ -1700,6 +1722,53 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
+    private func saveVisibleColumns() {
+        UserDefaults.standard.set(visibleTrackColumnIds, forKey: "BrowserVisibleTrackColumns")
+        UserDefaults.standard.set(visibleAlbumColumnIds, forKey: "BrowserVisibleAlbumColumns")
+        UserDefaults.standard.set(visibleArtistColumnIds, forKey: "BrowserVisibleArtistColumns")
+    }
+    
+    private func loadVisibleColumns() {
+        if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleTrackColumns") {
+            visibleTrackColumnIds = saved
+        }
+        if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleAlbumColumns") {
+            visibleAlbumColumnIds = saved
+        }
+        if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleArtistColumns") {
+            visibleArtistColumnIds = saved
+        }
+    }
+    
+    /// Returns the currently visible columns based on what type of items are displayed
+    private func currentVisibleColumns() -> [ModernBrowserColumn] {
+        if displayItems.contains(where: {
+            switch $0.type { case .track, .subsonicTrack, .localTrack: return true; default: return false }
+        }) {
+            return ModernBrowserColumn.allTrackColumns.filter { visibleTrackColumnIds.contains($0.id) }
+                .sorted { visibleTrackColumnIds.firstIndex(of: $0.id)! < visibleTrackColumnIds.firstIndex(of: $1.id)! }
+        }
+        if displayItems.contains(where: {
+            switch $0.type { case .album, .subsonicAlbum, .localAlbum: return true; default: return false }
+        }) {
+            return ModernBrowserColumn.allAlbumColumns.filter { visibleAlbumColumnIds.contains($0.id) }
+                .sorted { visibleAlbumColumnIds.firstIndex(of: $0.id)! < visibleAlbumColumnIds.firstIndex(of: $1.id)! }
+        }
+        return ModernBrowserColumn.allArtistColumns.filter { visibleArtistColumnIds.contains($0.id) }
+            .sorted { visibleArtistColumnIds.firstIndex(of: $0.id)! < visibleArtistColumnIds.firstIndex(of: $1.id)! }
+    }
+    
+    /// Returns all possible columns for the given column category (for the right-click menu)
+    private func allColumnsForCurrentView() -> [ModernBrowserColumn] {
+        if displayItems.contains(where: {
+            switch $0.type { case .track, .subsonicTrack, .localTrack: return true; default: return false }
+        }) { return ModernBrowserColumn.allTrackColumns }
+        if displayItems.contains(where: {
+            switch $0.type { case .album, .subsonicAlbum, .localAlbum: return true; default: return false }
+        }) { return ModernBrowserColumn.allAlbumColumns }
+        return ModernBrowserColumn.allArtistColumns
+    }
+    
     private func applyColumnSort(collapseExpanded: Bool = false) {
         guard let sortColumnId = columnSortId, !displayItems.isEmpty else {
             needsDisplay = true
@@ -1723,13 +1792,9 @@ class ModernLibraryBrowserView: NSView {
             }
         }
         
-        let column: ModernBrowserColumn?
-        if let c = ModernBrowserColumn.trackColumns.first(where: { $0.id == sortColumnId }) { column = c }
-        else if let c = ModernBrowserColumn.albumColumns.first(where: { $0.id == sortColumnId }) { column = c }
-        else if let c = ModernBrowserColumn.artistColumns.first(where: { $0.id == sortColumnId }) { column = c }
-        else { column = nil }
-        
-        guard let sortColumn = column else { needsDisplay = true; return }
+        guard let sortColumn = ModernBrowserColumn.findColumn(id: sortColumnId) else {
+            needsDisplay = true; return
+        }
         
         let hasNestedItems = displayItems.contains { $0.indentLevel > 0 }
         if hasNestedItems { needsDisplay = true; return }
@@ -1748,10 +1813,18 @@ class ModernLibraryBrowserView: NSView {
         
         let ascending = columnSortAscending
         sortableItems.sort { a, b in
+            // Date columns: sort by raw date, not formatted string
+            if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" {
+                let aDate = a.columnDateValue(for: sortColumn) ?? .distantPast
+                let bDate = b.columnDateValue(for: sortColumn) ?? .distantPast
+                return ascending ? aDate < bDate : aDate > bDate
+            }
+            
             let aVal = a.columnValue(for: sortColumn)
             let bVal = b.columnValue(for: sortColumn)
             
-            if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" || sortColumn.id == "albums" {
+            if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" ||
+               sortColumn.id == "albums" || sortColumn.id == "discNum" || sortColumn.id == "channels" {
                 let aNum = Int(aVal.components(separatedBy: "-").last ?? aVal) ?? 0
                 let bNum = Int(bVal.components(separatedBy: "-").last ?? bVal) ?? 0
                 return ascending ? aNum < bNum : aNum > bNum
@@ -1761,10 +1834,12 @@ class ModernLibraryBrowserView: NSView {
                 let bSeconds = parseDuration(bVal)
                 return ascending ? aSeconds < bSeconds : aSeconds > bSeconds
             }
-            if sortColumn.id == "bitrate" {
-                let aKbps = Int(aVal.replacingOccurrences(of: "k", with: "")) ?? 0
-                let bKbps = Int(bVal.replacingOccurrences(of: "k", with: "")) ?? 0
-                return ascending ? aKbps < bKbps : aKbps > bKbps
+            if sortColumn.id == "bitrate" || sortColumn.id == "sampleRate" {
+                let cleaned = { (s: String) -> Double in
+                    let num = s.replacingOccurrences(of: "k", with: "")
+                    return Double(num) ?? 0
+                }
+                return ascending ? cleaned(aVal) < cleaned(bVal) : cleaned(aVal) > cleaned(bVal)
             }
             if sortColumn.id == "size" {
                 let aSize = parseSize(aVal)
@@ -1942,12 +2017,6 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestColumnResize(at point: NSPoint) -> String? {
-        // Simplified: column resize detection
-        return nil
-    }
-    
-    private func hitTestColumnHeader(at point: NSPoint) -> String? {
-        // Simplified: column header click detection
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return nil }
         
@@ -1957,23 +2026,67 @@ class ModernLibraryBrowserView: NSView {
         
         guard point.y >= headerBottomY && point.y < headerTopY else { return nil }
         
-        let columns: [ModernBrowserColumn]
-        if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack: return true; default: return false }
-        }) { columns = ModernBrowserColumn.trackColumns }
-        else if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum: return true; default: return false }
-        }) { columns = ModernBrowserColumn.albumColumns }
-        else { columns = ModernBrowserColumn.artistColumns }
+        let columns = currentVisibleColumns()
+        guard columns.count > 1 else { return nil }
         
         let headerWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
-        var x = Layout.borderWidth + 4
+        let threshold: CGFloat = 4 * ModernSkinElements.sizeMultiplier
+        var x = Layout.borderWidth + 4 - horizontalScrollOffset
+        
+        for (index, column) in columns.enumerated() {
+            let width = widthForColumn(column, availableWidth: headerWidth, columns: columns)
+            let edgeX = x + width
+            
+            // Don't allow resizing the last column (it fills remaining space or is fixed-end)
+            // Allow resizing any column except title (title is flexible)
+            if index < columns.count - 1 && column.id != "title" {
+                if abs(point.x - edgeX) < threshold {
+                    return column.id
+                }
+            }
+            // Allow resizing column to the left of title (drag left edge of title = resize previous column)
+            if index > 0 && column.id == "title" {
+                if abs(point.x - x) < threshold {
+                    return columns[index - 1].id
+                }
+            }
+            x += width
+        }
+        return nil
+    }
+    
+    private func hitTestColumnHeader(at point: NSPoint) -> String? {
+        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        guard hasColumns else { return nil }
+        
+        var headerTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        if browseMode == .search { headerTopY -= Layout.searchBarHeight }
+        let headerBottomY = headerTopY - columnHeaderHeight
+        
+        guard point.y >= headerBottomY && point.y < headerTopY else { return nil }
+        
+        let columns = currentVisibleColumns()
+        
+        let headerWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
+        var x = Layout.borderWidth + 4 - horizontalScrollOffset
         for column in columns {
             let width = widthForColumn(column, availableWidth: headerWidth, columns: columns)
             if point.x >= x && point.x < x + width { return column.id }
             x += width
         }
         return nil
+    }
+    
+    /// Returns true if the point is within the column header area (for right-click detection)
+    private func hitTestColumnHeaderArea(at point: NSPoint) -> Bool {
+        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        guard hasColumns else { return false }
+        
+        var headerTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        if browseMode == .search { headerTopY -= Layout.searchBarHeight }
+        let headerBottomY = headerTopY - columnHeaderHeight
+        
+        return point.y >= headerBottomY && point.y < headerTopY
     }
     
     // MARK: - Mouse Events
@@ -2041,6 +2154,22 @@ class ModernLibraryBrowserView: NSView {
         }
         if isArtOnlyMode && !isVisualizingArt && hitTestContentArea(at: point) {
             cycleToNextArtwork(); return
+        }
+        
+        // Column resize (check before sort so edge-drag doesn't trigger sort)
+        if let columnId = hitTestColumnResize(at: point) {
+            resizingColumnId = columnId
+            resizeStartX = point.x
+            let columns = currentVisibleColumns()
+            let headerWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
+            resizeStartWidth = widthForColumn(ModernBrowserColumn.findColumn(id: columnId)!, availableWidth: headerWidth, columns: columns)
+            // Freeze the title column's current width so it doesn't flex during resize
+            if columnWidths["title"] == nil {
+                let titleWidth = widthForColumn(.title, availableWidth: headerWidth, columns: columns)
+                columnWidths["title"] = titleWidth
+            }
+            NSCursor.resizeLeftRight.push()
+            return
         }
         
         // Column header click for sorting
@@ -2120,8 +2249,22 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if hitTestColumnResize(at: point) != nil {
+            NSCursor.resizeLeftRight.set()
+        } else {
+            NSCursor.arrow.set()
+        }
+    }
+    
     override func rightMouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        
+        // Right-click on column header: show column visibility menu
+        if hitTestColumnHeaderArea(at: point) {
+            showColumnConfigMenu(at: event); return
+        }
         
         if isArtOnlyMode && isVisualizingArt && hitTestContentArea(at: point) {
             showVisualizerMenu(at: event); return
@@ -2531,6 +2674,83 @@ class ModernLibraryBrowserView: NSView {
         let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
         exitItem.target = self; menu.addItem(exitItem)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+    
+    private func showColumnConfigMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        
+        let allColumns = allColumnsForCurrentView()
+        let visibleIds = currentVisibleColumnIds()
+        
+        for column in allColumns {
+            let item = NSMenuItem(title: column.title, action: #selector(toggleColumnVisibility(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = column.id
+            item.state = visibleIds.contains(column.id) ? .on : .off
+            // Title column is always visible
+            if column.id == "title" { item.isEnabled = false }
+            menu.addItem(item)
+        }
+        
+        menu.addItem(NSMenuItem.separator())
+        let resetItem = NSMenuItem(title: "Reset to Default", action: #selector(resetColumnsToDefault), keyEquivalent: "")
+        resetItem.target = self
+        menu.addItem(resetItem)
+        
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+    
+    private func currentVisibleColumnIds() -> [String] {
+        if displayItems.contains(where: {
+            switch $0.type { case .track, .subsonicTrack, .localTrack: return true; default: return false }
+        }) { return visibleTrackColumnIds }
+        if displayItems.contains(where: {
+            switch $0.type { case .album, .subsonicAlbum, .localAlbum: return true; default: return false }
+        }) { return visibleAlbumColumnIds }
+        return visibleArtistColumnIds
+    }
+    
+    @objc private func toggleColumnVisibility(_ sender: NSMenuItem) {
+        guard let columnId = sender.representedObject as? String else { return }
+        
+        // Determine which column ID list to modify
+        if displayItems.contains(where: {
+            switch $0.type { case .track, .subsonicTrack, .localTrack: return true; default: return false }
+        }) {
+            if let index = visibleTrackColumnIds.firstIndex(of: columnId) {
+                visibleTrackColumnIds.remove(at: index)
+                // Clear sort if hiding the sorted column
+                if columnSortId == columnId { columnSortId = nil }
+            } else {
+                visibleTrackColumnIds.append(columnId)
+            }
+        } else if displayItems.contains(where: {
+            switch $0.type { case .album, .subsonicAlbum, .localAlbum: return true; default: return false }
+        }) {
+            if let index = visibleAlbumColumnIds.firstIndex(of: columnId) {
+                visibleAlbumColumnIds.remove(at: index)
+                if columnSortId == columnId { columnSortId = nil }
+            } else {
+                visibleAlbumColumnIds.append(columnId)
+            }
+        } else {
+            if let index = visibleArtistColumnIds.firstIndex(of: columnId) {
+                visibleArtistColumnIds.remove(at: index)
+                if columnSortId == columnId { columnSortId = nil }
+            } else {
+                visibleArtistColumnIds.append(columnId)
+            }
+        }
+        needsDisplay = true
+    }
+    
+    @objc private func resetColumnsToDefault() {
+        visibleTrackColumnIds = ModernBrowserColumn.defaultTrackColumnIds
+        visibleAlbumColumnIds = ModernBrowserColumn.defaultAlbumColumnIds
+        visibleArtistColumnIds = ModernBrowserColumn.defaultArtistColumnIds
+        columnWidths.removeAll()
+        needsDisplay = true
     }
     
     private func showContextMenu(for item: ModernDisplayItem, at event: NSEvent) {
@@ -4201,6 +4421,7 @@ private struct ModernBrowserColumn {
     let title: String
     let minWidth: CGFloat
     
+    // Original columns
     static let trackNumber = ModernBrowserColumn(id: "trackNum", title: "#", minWidth: 30)
     static let title = ModernBrowserColumn(id: "title", title: "Title", minWidth: 120)
     static let artist = ModernBrowserColumn(id: "artist", title: "Artist", minWidth: 100)
@@ -4214,14 +4435,38 @@ private struct ModernBrowserColumn {
     static let playCount = ModernBrowserColumn(id: "plays", title: "Plays", minWidth: 45)
     static let albums = ModernBrowserColumn(id: "albums", title: "Albums", minWidth: 55)
     
+    // Additional columns (hidden by default)
+    static let discNumber = ModernBrowserColumn(id: "discNum", title: "Disc", minWidth: 35)
+    static let albumArtist = ModernBrowserColumn(id: "albumArtist", title: "Album Artist", minWidth: 100)
+    static let sampleRate = ModernBrowserColumn(id: "sampleRate", title: "Sample Rate", minWidth: 60)
+    static let channels = ModernBrowserColumn(id: "channels", title: "Channels", minWidth: 50)
+    static let dateAdded = ModernBrowserColumn(id: "dateAdded", title: "Date Added", minWidth: 80)
+    static let lastPlayed = ModernBrowserColumn(id: "lastPlayed", title: "Last Played", minWidth: 80)
+    static let filePath = ModernBrowserColumn(id: "path", title: "Path", minWidth: 150)
+    
+    // All available columns (superset for each view type)
+    static let allTrackColumns: [ModernBrowserColumn] = [
+        .trackNumber, .title, .artist, .album, .albumArtist, .year, .genre, .duration,
+        .bitrate, .sampleRate, .channels, .size, .rating, .playCount, .discNumber,
+        .dateAdded, .lastPlayed, .filePath
+    ]
+    static let allAlbumColumns: [ModernBrowserColumn] = [.title, .year, .genre, .duration, .rating]
+    static let allArtistColumns: [ModernBrowserColumn] = [.title, .albums, .genre]
+    
+    // Default visible column IDs (backwards-compatible with the original set)
+    static let defaultTrackColumnIds: [String] = ["trackNum", "title", "artist", "album", "year", "genre", "duration", "bitrate", "size", "rating", "plays"]
+    static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
+    static let defaultArtistColumnIds: [String] = ["title", "albums", "genre"]
+    
+    // Legacy arrays kept for backwards compatibility with sort lookup
     static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .year, .genre, .duration, .bitrate, .size, .rating, .playCount]
     static let albumColumns: [ModernBrowserColumn] = [.title, .year, .genre, .duration, .rating]
     static let artistColumns: [ModernBrowserColumn] = [.title, .albums, .genre]
     
     static func findColumn(id: String) -> ModernBrowserColumn? {
-        if let c = trackColumns.first(where: { $0.id == id }) { return c }
-        if let c = albumColumns.first(where: { $0.id == id }) { return c }
-        if let c = artistColumns.first(where: { $0.id == id }) { return c }
+        if let c = allTrackColumns.first(where: { $0.id == id }) { return c }
+        if let c = allAlbumColumns.first(where: { $0.id == id }) { return c }
+        if let c = allArtistColumns.first(where: { $0.id == id }) { return c }
         return nil
     }
 }
@@ -4252,13 +4497,20 @@ extension ModernDisplayItem {
             return track.index.map { String($0) } ?? ""
         case "artist": return track.grandparentTitle ?? ""
         case "album": return track.parentTitle ?? ""
+        case "albumArtist": return track.grandparentTitle ?? ""
         case "year": return track.parentYear.map { String($0) } ?? ""
         case "genre": return track.genre ?? ""
         case "duration": return track.formattedDuration
         case "bitrate": return track.media.first?.bitrate.map { "\($0)k" } ?? ""
+        case "sampleRate": return ""  // Not available in Plex API track model
+        case "channels": return track.media.first?.audioChannels.map { Self.formatChannels($0) } ?? ""
         case "size": return Self.formatFileSize(track.media.first?.parts.first?.size)
         case "rating": return Self.formatRating(track.userRating)
         case "plays": return track.ratingCount.map { String($0) } ?? ""
+        case "discNum": return track.parentIndex.map { String($0) } ?? ""
+        case "dateAdded": return track.addedAt.map { Self.formatDate($0) } ?? ""
+        case "lastPlayed": return ""  // Not available in Plex API
+        case "path": return track.media.first?.parts.first?.file?.components(separatedBy: "/").last ?? ""
         default: return ""
         }
     }
@@ -4270,10 +4522,13 @@ extension ModernDisplayItem {
             return song.track.map { String($0) } ?? ""
         case "artist": return song.artist ?? ""
         case "album": return song.album ?? ""
+        case "albumArtist": return song.artist ?? ""  // Subsonic doesn't separate album artist
         case "year": return song.year.map { String($0) } ?? ""
         case "genre": return song.genre ?? ""
         case "duration": return song.formattedDuration
         case "bitrate": return song.bitRate.map { "\($0)k" } ?? ""
+        case "sampleRate": return ""  // Not available in Subsonic API
+        case "channels": return ""  // Not available in Subsonic API
         case "size": return Self.formatFileSize(song.size)
         case "rating":
             if let userRating = song.userRating, userRating > 0 {
@@ -4281,6 +4536,10 @@ extension ModernDisplayItem {
             }
             return song.starred != nil ? "★" : ""
         case "plays": return song.playCount.map { String($0) } ?? ""
+        case "discNum": return song.discNumber.map { String($0) } ?? ""
+        case "dateAdded": return song.created.map { Self.formatDate($0) } ?? ""
+        case "lastPlayed": return ""  // Not available in Subsonic API
+        case "path": return song.path?.components(separatedBy: "/").last ?? ""
         default: return ""
         }
     }
@@ -4292,13 +4551,20 @@ extension ModernDisplayItem {
             return track.trackNumber.map { String($0) } ?? ""
         case "artist": return track.artist ?? ""
         case "album": return track.album ?? ""
+        case "albumArtist": return track.albumArtist ?? track.artist ?? ""
         case "year": return track.year.map { String($0) } ?? ""
         case "genre": return track.genre ?? ""
         case "duration": return track.formattedDuration
         case "bitrate": return track.bitrate.map { "\($0)k" } ?? ""
+        case "sampleRate": return track.sampleRate.map { Self.formatSampleRate($0) } ?? ""
+        case "channels": return track.channels.map { Self.formatChannels($0) } ?? ""
         case "size": return Self.formatFileSize(track.fileSize)
         case "rating": return Self.formatRating(track.rating.map { Double($0) })
         case "plays": return track.playCount > 0 ? String(track.playCount) : ""
+        case "discNum": return track.discNumber.map { String($0) } ?? ""
+        case "dateAdded": return Self.formatDate(track.dateAdded)
+        case "lastPlayed": return track.lastPlayed.map { Self.formatDate($0) } ?? ""
+        case "path": return track.url.lastPathComponent
         default: return ""
         }
     }
@@ -4349,5 +4615,51 @@ extension ModernDisplayItem {
         guard let rating = rating, rating > 0 else { return "" }
         let stars = Int(rating / 2.0); let empty = 5 - stars
         return String(repeating: "★", count: stars) + String(repeating: "☆", count: empty)
+    }
+    
+    static func formatSampleRate(_ hz: Int) -> String {
+        let khz = Double(hz) / 1000.0
+        if khz == Double(Int(khz)) { return "\(Int(khz))k" }
+        return String(format: "%.1fk", khz)
+    }
+    
+    static func formatChannels(_ count: Int) -> String {
+        switch count {
+        case 1: return "Mono"
+        case 2: return "Stereo"
+        case 6: return "5.1"
+        case 8: return "7.1"
+        default: return "\(count)ch"
+        }
+    }
+    
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }()
+    
+    static func formatDate(_ date: Date) -> String {
+        dateFormatter.string(from: date)
+    }
+    
+    /// Returns the raw sortable date for a column, if applicable
+    func columnDateValue(for column: ModernBrowserColumn) -> Date? {
+        switch column.id {
+        case "dateAdded":
+            switch type {
+            case .localTrack(let t): return t.dateAdded
+            case .track(let t): return t.addedAt
+            case .subsonicTrack(let s): return s.created
+            default: return nil
+            }
+        case "lastPlayed":
+            switch type {
+            case .localTrack(let t): return t.lastPlayed
+            default: return nil
+            }
+        default: return nil
+        }
     }
 }

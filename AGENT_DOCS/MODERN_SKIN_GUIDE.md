@@ -272,6 +272,8 @@ The modern ProjectM window embeds the same `VisualizationGLView` (OpenGL) used b
 
 The modern library browser provides multi-source browsing (Local Files, Plex, Subsonic/Navidrome, Internet Radio) with multiple browse modes (Artists, Albums, Tracks, Playlists, Movies, Shows, Search, Radio). Tabs and selections use the modern boxed toggle style with `accent` color when active and `textDim` color when inactive. The window supports multi-edge resizing (all four edges and corners).
 
+**Configurable columns:** The library browser displays metadata in resizable, toggleable columns. Users can drag column borders to resize, right-click the header to show/hide columns, and sort by clicking headers. Column widths, visibility, and sort preferences persist in UserDefaults (`BrowserColumnWidths`, `BrowserVisibleTrackColumns`, `BrowserVisibleAlbumColumns`, `BrowserVisibleArtistColumns`, `BrowserColumnSortId`, `BrowserColumnSortAscending`). Available track columns include: #, Title, Artist, Album, Album Artist, Year, Genre, Time, Bitrate, Sample Rate, Channels, Size, Rating, Plays, Disc, Date Added, Last Played, Path. The `currentVisibleColumns()` method returns the filtered/ordered column set for rendering and hit testing. The resize threshold scales with `sizeMultiplier` for Double Size mode compatibility.
+
 ## Multi-Window Support
 
 The modern skin system renders multiple windows:
