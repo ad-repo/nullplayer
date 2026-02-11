@@ -2288,7 +2288,7 @@ class ModernLibraryBrowserView: NSView {
         let totalHeight = CGFloat(displayItems.count) * itemHeight
         
         if totalHeight > listHeight && abs(event.deltaY) > 0 {
-            scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset + event.deltaY * 3))
+            scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - event.deltaY * 3))
             
             let listRect = NSRect(x: 0, y: Layout.statusBarHeight, width: bounds.width, height: listHeight)
             setNeedsDisplay(listRect)
