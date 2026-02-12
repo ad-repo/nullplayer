@@ -330,6 +330,7 @@ The playlist queue is preserved when playing new items. Double-clicking or press
 | Action | Effect |
 |--------|--------|
 | **Double-click / Enter** | Insert after current track and play immediately ("jump the line") |
+| **Play and Replace Queue** | Clear playlist and replace with selected content (context menu only) |
 | **Play Next** (Shift+Enter) | Insert after currently playing track (doesn't start playback) |
 | **Add to Queue** (Option+Enter) | Append to end of playlist |
 
@@ -1084,11 +1085,11 @@ Shows detailed metadata for the currently playing track or video. This option is
 
 | Item Type | Menu Options |
 |-----------|--------------|
-| **Track** | Play, Add to Playlist, Play Next, Add to Queue, Start Track Radio |
-| **Album** | Play Album, Add Album to Playlist, Play Album Next, Add Album to Queue, Start Album Radio |
-| **Artist** | Play All by Artist, Play Artist Next, Add Artist to Queue, Expand/Collapse, Start Artist Radio |
-| **Movie** | Play Movie, Add to Playlist, Play Next, Add to Queue, Cast to..., View Online |
-| **Episode** | Play Episode, Add to Playlist, Play Next, Add to Queue, Cast to..., View Online |
+| **Track** | Play, Play and Replace Queue, Add to Playlist, Play Next, Add to Queue, Start Track Radio |
+| **Album** | Play Album, Play and Replace Queue, Add Album to Playlist, Play Album Next, Add Album to Queue, Start Album Radio |
+| **Artist** | Play All by Artist, Play and Replace Queue, Play Artist Next, Add Artist to Queue, Expand/Collapse, Start Artist Radio |
+| **Movie** | Play Movie, Play and Replace Queue, Add to Playlist, Play Next, Add to Queue, Cast to..., View Online |
+| **Episode** | Play Episode, Play and Replace Queue, Add to Playlist, Play Next, Add to Queue, Cast to..., View Online |
 
 ### Video Player Context Menu (Right-click on video)
 

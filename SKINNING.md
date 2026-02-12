@@ -156,7 +156,7 @@ The palette is the heart of a palette-only skin. These colors control the entire
 | `border` | Window border color | No (defaults to `primary`) |
 | `timeColor` | Time display digit color | No (defaults to `#d9d900` warm yellow) |
 | `marqueeColor` | Scrolling title text color | No (defaults to `#d9d900` warm yellow) |
-| `dataColor` | Data field values: playlist track numbers, library browser info (source, library, item count) | No (defaults to `#d9d900` warm yellow) |
+| `dataColor` | Data field values: playlist track numbers, library browser info (source, library, item count), star ratings in art-only mode | No (defaults to `#d9d900` warm yellow) |
 
 All colors are hex strings: `"#rrggbb"`.
 

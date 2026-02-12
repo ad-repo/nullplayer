@@ -129,6 +129,7 @@ The palette defines 17 named colors used throughout the UI:
 | `border` | Window border color | Same as `primary` |
 | `timeColor` | Time display digit color | `#d9d900` (warm yellow) |
 | `marqueeColor` | Scrolling title/marquee text color | `#d9d900` (warm yellow) |
+| `dataColor` | Data field values: playlist track numbers, library browser info (source, library, item count), star ratings in art-only mode | `#d9d900` (warm yellow) |
 | `eqLow` | EQ color at -12dB (bottom of slider) | `#00d900` (green) |
 | `eqMid` | EQ color at 0dB (middle of slider) | `#d9d900` (yellow) |
 | `eqHigh` | EQ color at +12dB (top of slider) | `#d92600` (red) |
