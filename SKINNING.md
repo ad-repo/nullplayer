@@ -86,6 +86,7 @@ MyPaletteSkin/
         "border": "#00ffcc",
         "timeColor": "#d9d900",
         "marqueeColor": "#d9d900",
+        "dataColor": "#d9d900",
         "eqLow": "#00d900",
         "eqMid": "#d9d900",
         "eqHigh": "#d92600"
@@ -137,7 +138,7 @@ Every section except `meta` and `palette` is optional -- the engine provides sen
 
 ### Color Palette
 
-The palette is the heart of a palette-only skin. These 12 colors control the entire UI:
+The palette is the heart of a palette-only skin. These colors control the entire UI:
 
 | Key | What it controls | Required? |
 |-----|-----------------|-----------|
@@ -155,6 +156,7 @@ The palette is the heart of a palette-only skin. These 12 colors control the ent
 | `border` | Window border color | No (defaults to `primary`) |
 | `timeColor` | Time display digit color | No (defaults to `#d9d900` warm yellow) |
 | `marqueeColor` | Scrolling title text color | No (defaults to `#d9d900` warm yellow) |
+| `dataColor` | Data field values: playlist track numbers, library browser info (source, library, item count) | No (defaults to `#d9d900` warm yellow) |
 
 All colors are hex strings: `"#rrggbb"`.
 

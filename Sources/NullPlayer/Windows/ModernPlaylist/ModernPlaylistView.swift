@@ -354,28 +354,37 @@ class ModernPlaylistView: NSView {
             let isSelected = selectedIndices.contains(index)
             
             // Text color -- current track uses accent (magenta), selected uses primary text
-            let textColor: NSColor
+            let titleColor: NSColor
             if isCurrent {
-                textColor = skin.accentColor
+                titleColor = skin.accentColor
             } else if isSelected {
-                textColor = skin.textColor
+                titleColor = skin.textColor
             } else {
-                textColor = skin.textDimColor
+                titleColor = skin.textDimColor
             }
             
-            // Build track text
+            // Track number uses dataColor (yellow glow)
+            let numberColor = skin.dataColor
+            
+            // Build track text components
+            let numberText = "\(index + 1). "
             let videoPrefix = track.mediaType == .video ? "[V] " : ""
-            let titleText = "\(index + 1). \(videoPrefix)\(track.displayTitle)"
+            let titleText = "\(videoPrefix)\(track.displayTitle)"
+            let fullText = numberText + titleText
             let duration = track.duration ?? 0
             let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
             
-            let textAttrs: [NSAttributedString.Key: Any] = [
+            let numberAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
-                .foregroundColor: textColor
+                .foregroundColor: numberColor
+            ]
+            let titleAttrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: titleColor
             ]
             
-            // Draw duration right-aligned
-            let durationAttr = NSAttributedString(string: durationStr, attributes: textAttrs)
+            // Draw duration right-aligned (uses title color)
+            let durationAttr = NSAttributedString(string: durationStr, attributes: titleAttrs)
             let durationSize = durationAttr.size()
             let durationX = itemRect.maxX - durationSize.width - 6
             let textY = itemRect.minY + (itemRect.height - durationSize.height) / 2
@@ -388,23 +397,26 @@ class ModernPlaylistView: NSView {
             context.saveGState()
             context.clip(to: NSRect(x: titleX, y: itemRect.minY, width: titleMaxWidth, height: itemRect.height))
             
-            let titleAttr = NSAttributedString(string: titleText, attributes: textAttrs)
-            let titleSize = titleAttr.size()
+            // Build attributed string with number in dataColor, title in state color
+            let fullAttr = NSMutableAttributedString()
+            fullAttr.append(NSAttributedString(string: numberText, attributes: numberAttrs))
+            fullAttr.append(NSAttributedString(string: titleText, attributes: titleAttrs))
+            let fullSize = fullAttr.size()
             
-            if isCurrent && titleSize.width > titleMaxWidth {
+            if isCurrent && fullSize.width > titleMaxWidth {
                 // Marquee scrolling for current track
                 let separatorWidth: CGFloat = 30
-                let separator = NSAttributedString(string: "     ", attributes: textAttrs)
+                let separator = NSAttributedString(string: "     ", attributes: titleAttrs)
                 
                 // Draw two copies for seamless wrapping
                 let drawX1 = titleX - marqueeOffset
-                let drawX2 = drawX1 + titleSize.width + separatorWidth
+                let drawX2 = drawX1 + fullSize.width + separatorWidth
                 
-                titleAttr.draw(at: NSPoint(x: drawX1, y: textY))
-                separator.draw(at: NSPoint(x: drawX1 + titleSize.width, y: textY))
-                titleAttr.draw(at: NSPoint(x: drawX2, y: textY))
+                fullAttr.draw(at: NSPoint(x: drawX1, y: textY))
+                separator.draw(at: NSPoint(x: drawX1 + fullSize.width, y: textY))
+                fullAttr.draw(at: NSPoint(x: drawX2, y: textY))
             } else {
-                titleAttr.draw(at: NSPoint(x: titleX, y: textY))
+                fullAttr.draw(at: NSPoint(x: titleX, y: textY))
             }
             
             context.restoreGState()

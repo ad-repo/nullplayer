@@ -42,6 +42,7 @@ class ModernSkin {
     let borderColor: NSColor
     let timeColor: NSColor
     let marqueeColor: NSColor
+    let dataColor: NSColor
     let eqLowColor: NSColor
     let eqMidColor: NSColor
     let eqHighColor: NSColor
@@ -70,6 +71,7 @@ class ModernSkin {
         self.borderColor = config.palette.resolvedBorder()
         self.timeColor = config.palette.resolvedTimeColor()
         self.marqueeColor = config.palette.resolvedMarqueeColor()
+        self.dataColor = config.palette.resolvedDataColor()
         self.eqLowColor = config.palette.resolvedEqLow()
         self.eqMidColor = config.palette.resolvedEqMid()
         self.eqHighColor = config.palette.resolvedEqHigh()

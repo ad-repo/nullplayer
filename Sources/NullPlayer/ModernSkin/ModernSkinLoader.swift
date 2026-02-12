@@ -251,6 +251,7 @@ class ModernSkinLoader {
                 border: nil,
                 timeColor: nil,
                 marqueeColor: nil,
+                dataColor: nil,
                 eqLow: nil,
                 eqMid: nil,
                 eqHigh: nil

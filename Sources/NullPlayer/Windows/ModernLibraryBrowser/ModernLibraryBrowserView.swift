@@ -677,8 +677,8 @@ class ModernLibraryBrowserView: NSView {
         context.fill(barRect)
         
         let font = skin.sideWindowFont(size: 11)
-        let textColor = skin.textColor
         let dimColor = skin.textDimColor
+        let dataColor = skin.dataColor
         let accentColor = skin.accentColor
         
         let m = ModernSkinElements.sizeMultiplier
@@ -691,7 +691,7 @@ class ModernLibraryBrowserView: NSView {
         let prefixWidth = prefix.size(withAttributes: prefixAttrs).width
         let sourceNameStartX = barRect.minX + 4 * m + prefixWidth
         
-        let nameAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
+        let dataAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: dataColor]
         let activeAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: accentColor]
         
         // Right side: F5 refresh label
@@ -743,7 +743,7 @@ class ModernLibraryBrowserView: NSView {
             let rating = currentTrackRating ?? 0
             let filledCount = rating / 2
             
-            let filledColor = accentColor
+            let filledColor = dataColor
             let emptyColor = dimColor.withAlphaComponent(0.3)
             
             for i in 0..<totalStars {
@@ -763,8 +763,8 @@ class ModernLibraryBrowserView: NSView {
         switch currentSource {
         case .local:
             let sourceText = "Local Files"
-            sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: nameAttrs)
-            let sourceTextWidth = sourceText.size(withAttributes: nameAttrs).width
+            sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
+            let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
             
             let addText = "+ADD"
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
@@ -773,9 +773,9 @@ class ModernLibraryBrowserView: NSView {
             // Item count (only in list mode, not art-only)
             if !isArtOnlyMode {
                 let countText = "\(displayItems.count) items"
-                let countWidth = countText.size(withAttributes: prefixAttrs).width
+                let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
-                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
             }
             
         case .plex(let serverId):
@@ -789,7 +789,7 @@ class ModernLibraryBrowserView: NSView {
                 context.saveGState()
                 let clipRect = NSRect(x: sourceNameStartX, y: textY, width: maxServerWidth, height: font.pointSize + 4 * m)
                 context.clip(to: clipRect)
-                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: nameAttrs)
+                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
                 context.restoreGState()
                 
                 let libLabel = "Lib:"
@@ -804,7 +804,7 @@ class ModernLibraryBrowserView: NSView {
                 context.saveGState()
                 let libClipRect = NSRect(x: libraryX, y: textY, width: maxLibraryWidth, height: font.pointSize + 4 * m)
                 context.clip(to: libClipRect)
-                libraryText.draw(at: NSPoint(x: libraryX, y: textY), withAttributes: nameAttrs)
+                libraryText.draw(at: NSPoint(x: libraryX, y: textY), withAttributes: dataAttrs)
                 context.restoreGState()
                 
                 // Item count (only in list mode, not art-only)
@@ -818,9 +818,9 @@ class ModernLibraryBrowserView: NSView {
                         itemCount = displayItems.count
                     }
                     let countText = "\(itemCount) ITEMS"
-                    let countWidth = countText.size(withAttributes: prefixAttrs).width
+                    let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
-                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
                 }
             } else {
                 let linkText = "Click to link your Plex account"
@@ -833,14 +833,14 @@ class ModernLibraryBrowserView: NSView {
             let configuredServer = SubsonicManager.shared.servers.first(where: { $0.id == serverId })
             if configuredServer != nil {
                 let serverName = configuredServer?.name ?? "Select Server"
-                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: nameAttrs)
+                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
                 
                 // Item count (only in list mode, not art-only)
                 if !isArtOnlyMode {
                     let countText = "\(displayItems.count) items"
-                    let countWidth = countText.size(withAttributes: prefixAttrs).width
+                    let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
-                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
                 }
             } else {
                 let linkText = "Click to add a Subsonic server"
@@ -851,8 +851,8 @@ class ModernLibraryBrowserView: NSView {
             
         case .radio:
             let sourceText = "Internet Radio"
-            sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: nameAttrs)
-            let sourceTextWidth = sourceText.size(withAttributes: nameAttrs).width
+            sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
+            let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
             
             let addText = "+ADD"
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
@@ -861,9 +861,9 @@ class ModernLibraryBrowserView: NSView {
             // Item count (only in list mode, not art-only)
             if !isArtOnlyMode {
                 let countText = "\(displayItems.count) stations"
-                let countWidth = countText.size(withAttributes: prefixAttrs).width
+                let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
-                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
             }
         }
     }

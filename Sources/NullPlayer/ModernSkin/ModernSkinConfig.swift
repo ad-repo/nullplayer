@@ -57,6 +57,7 @@ struct ColorPalette: Codable {
     let border: String?        // Border color (defaults to primary)
     let timeColor: String?     // Time display digit color (defaults to "#d9d900" warm yellow)
     let marqueeColor: String?  // Marquee/title text color (defaults to "#d9d900" warm yellow)
+    let dataColor: String?     // Data field values: playlist numbers, library info (defaults to "#d9d900" warm yellow)
     let eqLow: String?         // EQ color at -12dB (defaults to "#00d900" green)
     let eqMid: String?         // EQ color at 0dB (defaults to "#d9d900" yellow)
     let eqHigh: String?        // EQ color at +12dB (defaults to "#d92600" red)
@@ -79,6 +80,7 @@ struct ColorPalette: Codable {
     func resolvedBorder() -> NSColor { NSColor.from(hex: border ?? primary) }
     func resolvedTimeColor() -> NSColor { NSColor.from(hex: timeColor ?? Self.defaultTimeColor) }
     func resolvedMarqueeColor() -> NSColor { NSColor.from(hex: marqueeColor ?? Self.defaultTimeColor) }
+    func resolvedDataColor() -> NSColor { NSColor.from(hex: dataColor ?? Self.defaultTimeColor) }
     func resolvedEqLow() -> NSColor { NSColor.from(hex: eqLow ?? "#00d900") }
     func resolvedEqMid() -> NSColor { NSColor.from(hex: eqMid ?? "#d9d900") }
     func resolvedEqHigh() -> NSColor { NSColor.from(hex: eqHigh ?? "#d92600") }
