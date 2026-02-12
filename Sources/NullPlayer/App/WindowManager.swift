@@ -1131,23 +1131,6 @@ class WindowManager {
     
     // MARK: - Skin Management
     
-    /// When true, Browser and ProjectM windows always use default skin (default: false - follow skin changes)
-    var lockBrowserProjectMSkin: Bool {
-        get {
-            // Default to false (unlocked) - windows follow skin changes by default
-            if UserDefaults.standard.object(forKey: "lockBrowserProjectMSkin") == nil {
-                return false
-            }
-            return UserDefaults.standard.bool(forKey: "lockBrowserProjectMSkin")
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "lockBrowserProjectMSkin")
-            // Refresh these windows when setting changes
-            plexBrowserWindowController?.skinDidChange()
-            projectMWindowController?.skinDidChange()
-        }
-    }
-    
     /// When true, shows album art as transparent background in browser window (default: true)
     var showBrowserArtworkBackground: Bool {
         get {

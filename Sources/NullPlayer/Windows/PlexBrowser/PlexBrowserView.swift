@@ -1335,13 +1335,8 @@ class PlexBrowserView: NSView {
         let originalSize = originalWindowSize
         let scale = scaleFactor
         
-        // Use default skin if locked, otherwise use current skin
-        let skin: Skin
-        if WindowManager.shared.lockBrowserProjectMSkin {
-            skin = SkinLoader.shared.loadDefault()
-        } else {
-            skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
-        }
+        // Use current skin
+        let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
         let renderer = SkinRenderer(skin: skin)
         let isActive = window?.isKeyWindow ?? true
         
