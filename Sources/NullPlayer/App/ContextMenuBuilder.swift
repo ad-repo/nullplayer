@@ -192,11 +192,6 @@ class ContextMenuBuilder {
         loadSkin.target = MenuActions.shared
         classicMenu.addItem(loadSkin)
         
-        // Get More Skins...
-        let getMoreSkins = NSMenuItem(title: "Get More Skins...", action: #selector(MenuActions.getMoreSkins), keyEquivalent: "")
-        getMoreSkins.target = MenuActions.shared
-        classicMenu.addItem(getMoreSkins)
-        
         classicMenu.addItem(NSMenuItem.separator())
         
         // Default Skin (Silver)
@@ -207,14 +202,6 @@ class ContextMenuBuilder {
             defaultSkinItem.state = .on
         }
         classicMenu.addItem(defaultSkinItem)
-        
-        classicMenu.addItem(NSMenuItem.separator())
-        
-        // Lock Browser/ProjectM toggle
-        let lockToggle = NSMenuItem(title: "Lock Browser/ProjectM to Default", action: #selector(MenuActions.toggleLockBrowserProjectM(_:)), keyEquivalent: "")
-        lockToggle.target = MenuActions.shared
-        lockToggle.state = WindowManager.shared.lockBrowserProjectMSkin ? .on : .off
-        classicMenu.addItem(lockToggle)
         
         classicMenu.addItem(NSMenuItem.separator())
         
@@ -1919,16 +1906,6 @@ class MenuActions: NSObject {
         } else {
             // Already in modern mode — load the skin immediately
             ModernSkinEngine.shared.loadSkin(named: name)
-        }
-    }
-    
-    @objc func toggleLockBrowserProjectM(_ sender: NSMenuItem) {
-        WindowManager.shared.lockBrowserProjectMSkin.toggle()
-    }
-    
-    @objc func getMoreSkins() {
-        if let url = URL(string: "https://skins.webamp.org/") {
-            NSWorkspace.shared.open(url)
         }
     }
     

@@ -157,11 +157,8 @@ class ModernProjectMView: NSView {
         setAccessibilityLabel("Visualization")
     }
     
-    /// Resolve which skin to use based on lock setting
+    /// Resolve which skin to use
     private func resolveCurrentSkin() -> ModernSkin {
-        if WindowManager.shared.lockBrowserProjectMSkin {
-            return ModernSkinLoader.shared.loadDefault()
-        }
         return ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
     }
     

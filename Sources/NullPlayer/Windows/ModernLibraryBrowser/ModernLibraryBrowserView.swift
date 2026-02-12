@@ -354,13 +354,8 @@ class ModernLibraryBrowserView: NSView {
         layer?.isOpaque = false
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         
-        // Load skin (respecting lock)
-        let skin: ModernSkin
-        if WindowManager.shared.lockBrowserProjectMSkin {
-            skin = ModernSkinLoader.shared.loadDefault()
-        } else {
-            skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
-        }
+        // Load skin
+        let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
         
         // Load saved column widths, visibility, and sort
@@ -485,9 +480,6 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Current Skin Helper
     
     private func currentSkin() -> ModernSkin {
-        if WindowManager.shared.lockBrowserProjectMSkin {
-            return ModernSkinLoader.shared.loadDefault()
-        }
         return ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
     }
     
