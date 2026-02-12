@@ -63,7 +63,7 @@ class ModernMainWindowView: NSView {
     private var currentBPM: Int?
     
     /// BPM multiplier cycle state: 0 = normal, 1 = 2x, 2 = 0.5x
-    private var bpmMultiplierState: Int = 0
+    private var bpmMultiplierState: Int = 2
     
     /// Scale factor for hit testing (computed to track double-size changes)
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
@@ -582,7 +582,7 @@ class ModernMainWindowView: NSView {
         self.currentTrack = track
         self.videoTitle = nil
         self.currentBPM = nil  // Reset BPM for new track
-        self.bpmMultiplierState = 0  // Reset multiplier for new track
+        self.bpmMultiplierState = 2  // Reset multiplier for new track (default to 0.5x)
         
         if let track = track {
             marqueeLayer.text = track.displayTitle.uppercased()
