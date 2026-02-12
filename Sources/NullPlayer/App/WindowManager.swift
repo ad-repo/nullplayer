@@ -77,28 +77,6 @@ class WindowManager {
         set { UserDefaults.standard.set(newValue, forKey: "hideTitleBars") }
     }
     
-    /// Custom title name for classic mode title bars (replaces "NULLPLAYER")
-    var classicTitleName: String {
-        get {
-            let custom = UserDefaults.standard.string(forKey: "classicTitleName") ?? ""
-            return custom.isEmpty ? "NULLPLAYER" : custom
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "classicTitleName")
-        }
-    }
-    
-    /// Reset classic title name to default ("NULLPLAYER")
-    func resetClassicTitleName() {
-        UserDefaults.standard.removeObject(forKey: "classicTitleName")
-    }
-    
-    /// Whether a custom classic title name is set
-    var hasCustomClassicTitleName: Bool {
-        let custom = UserDefaults.standard.string(forKey: "classicTitleName") ?? ""
-        return !custom.isEmpty
-    }
-    
     /// Toggle hide title bars mode and resize all visible windows (modern UI only)
     func toggleHideTitleBars() {
         guard isModernUIEnabled else { return }
@@ -1140,19 +1118,6 @@ class WindowManager {
     /// Reload all visualization presets from bundled and custom folders
     func reloadVisualizationPresets() {
         projectMWindowController?.reloadPresets()
-    }
-    
-    /// Refresh all classic mode windows to update title bars (e.g., after custom title change)
-    func refreshAllClassicTitleBars() {
-        guard !isModernUIEnabled else { return }
-        
-        // Trigger redraw on all classic windows
-        mainWindowController?.window?.contentView?.needsDisplay = true
-        equalizerWindowController?.window?.contentView?.needsDisplay = true
-        playlistWindowController?.window?.contentView?.needsDisplay = true
-        spectrumWindowController?.window?.contentView?.needsDisplay = true
-        plexBrowserWindowController?.window?.contentView?.needsDisplay = true
-        projectMWindowController?.window?.contentView?.needsDisplay = true
     }
     
     /// Select a visualization preset by index

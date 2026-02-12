@@ -218,19 +218,6 @@ class ContextMenuBuilder {
         
         classicMenu.addItem(NSMenuItem.separator())
         
-        // Custom title name
-        let setTitleItem = NSMenuItem(title: "Set Custom Title...", action: #selector(MenuActions.setCustomClassicTitle), keyEquivalent: "")
-        setTitleItem.target = MenuActions.shared
-        classicMenu.addItem(setTitleItem)
-        
-        if WindowManager.shared.hasCustomClassicTitleName {
-            let resetTitleItem = NSMenuItem(title: "Reset Title to Default", action: #selector(MenuActions.resetClassicTitle), keyEquivalent: "")
-            resetTitleItem.target = MenuActions.shared
-            classicMenu.addItem(resetTitleItem)
-        }
-        
-        classicMenu.addItem(NSMenuItem.separator())
-        
         // Available classic skins from Skins directory
         let currentSkinPath = WindowManager.shared.currentSkinPath
         let availableSkins = WindowManager.shared.availableSkins()
@@ -1937,41 +1924,6 @@ class MenuActions: NSObject {
     
     @objc func toggleLockBrowserProjectM(_ sender: NSMenuItem) {
         WindowManager.shared.lockBrowserProjectMSkin.toggle()
-    }
-    
-    @objc func setCustomClassicTitle() {
-        let wm = WindowManager.shared
-        
-        let alert = NSAlert()
-        alert.messageText = "Set Custom Title"
-        alert.informativeText = "Enter a custom name for the title bars:"
-        alert.addButton(withTitle: "Set")
-        alert.addButton(withTitle: "Cancel")
-        
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-        input.stringValue = wm.classicTitleName
-        alert.accessoryView = input
-        
-        // Make the text field first responder so user can type immediately
-        alert.window.initialFirstResponder = input
-        
-        if alert.runModal() == .alertFirstButtonReturn {
-            let newName = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if newName.isEmpty {
-                wm.resetClassicTitleName()
-            } else {
-                wm.classicTitleName = newName
-            }
-            // Trigger redraw of all classic windows
-            wm.refreshAllClassicTitleBars()
-        }
-    }
-    
-    @objc func resetClassicTitle() {
-        let wm = WindowManager.shared
-        wm.resetClassicTitleName()
-        // Trigger redraw of all classic windows
-        wm.refreshAllClassicTitleBars()
     }
     
     @objc func getMoreSkins() {
