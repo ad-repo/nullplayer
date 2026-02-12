@@ -242,6 +242,7 @@ class PlaylistView: NSView {
     // MARK: - Marquee Layer Management
     
     /// Calculate current track text width for marquee scrolling
+    /// Uses system font width for non-Latin characters, bitmap font width otherwise
     private func updateCurrentTrackTextWidth() {
         let engine = WindowManager.shared.audioEngine
         let currentIndex = engine.currentIndex
@@ -255,9 +256,15 @@ class PlaylistView: NSView {
         let videoPrefix = track.mediaType == .video ? "[V] " : ""
         let titleText = "\(currentIndex + 1). \(videoPrefix)\(track.displayTitle)"
         
-        // Calculate text width in skin coordinates
-        let charWidth = SkinElements.TextFont.charWidth
-        currentTrackTextWidth = CGFloat(titleText.count) * charWidth
+        // Check if we need system font fallback for non-Latin characters
+        if cachedTextBitmapCGImage == nil || containsNonLatinCharacters(titleText) {
+            // Use system font width for non-Latin characters
+            currentTrackTextWidth = systemFontTextWidth(titleText)
+        } else {
+            // Calculate text width using bitmap font's fixed character width
+            let charWidth = SkinElements.TextFont.charWidth
+            currentTrackTextWidth = CGFloat(titleText.count) * charWidth
+        }
     }
     
     /// No longer needed - marquee handled in draw cycle
@@ -459,6 +466,7 @@ class PlaylistView: NSView {
     /// Draw track text using bitmap font (TEXT.BMP) - same font as main window
     /// Current track uses marquee scrolling for long titles
     /// Selected tracks are drawn in white
+    /// Falls back to system font for non-Latin characters (Japanese, Chinese, Cyrillic, etc.)
     private func drawTrackText(in context: CGContext, track: Track, index: Int, rect: NSRect, color: NSColor, font: NSFont, isCurrentTrack: Bool = false, isSelected: Bool = false) {
         let skin = WindowManager.shared.currentSkin
         let charWidth = SkinElements.TextFont.charWidth
@@ -467,26 +475,46 @@ class PlaylistView: NSView {
         // Calculate dimensions
         let duration = track.duration ?? 0
         let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
-        let durationWidth = CGFloat(durationStr.count) * charWidth
-        let durationX = rect.maxX - durationWidth - 4
         let titleX = rect.minX + 2
-        let titleMaxWidth = durationX - titleX - 6
         
         // Prepend [V] indicator for video tracks
         let videoPrefix = track.mediaType == .video ? "[V] " : ""
         let titleText = "\(index + 1). \(videoPrefix)\(track.displayTitle)"
         
+        // Check if we need system font fallback for non-Latin characters
+        let needsSystemFont = cachedTextBitmapCGImage == nil || containsNonLatinCharacters(titleText)
+        
+        // Calculate duration width based on font type (duration is always ASCII)
+        let durationWidth: CGFloat
+        if needsSystemFont {
+            durationWidth = systemFontTextWidth(durationStr)
+        } else {
+            durationWidth = CGFloat(durationStr.count) * charWidth
+        }
+        let durationX = rect.maxX - durationWidth - 4
+        let titleMaxWidth = durationX - titleX - 6
+        
         // Vertical centering
         let textY = rect.minY + (rect.height - charHeight) / 2
         
-        // Draw duration (right-aligned) using bitmap font
-        drawBitmapText(durationStr, at: NSPoint(x: durationX, y: textY), in: context, skin: skin, isSelected: isSelected)
+        // Draw duration (right-aligned)
+        if needsSystemFont {
+            drawSystemFontText(durationStr, at: NSPoint(x: durationX, y: textY), in: context, color: color, isSelected: isSelected)
+        } else {
+            drawBitmapText(durationStr, at: NSPoint(x: durationX, y: textY), in: context, skin: skin, isSelected: isSelected)
+        }
         
         // Draw title (clipped to available width)
         context.saveGState()
         context.clip(to: NSRect(x: titleX, y: rect.minY, width: titleMaxWidth, height: rect.height))
         
-        let titleWidth = CGFloat(titleText.count) * charWidth
+        // Calculate title width based on font type
+        let titleWidth: CGFloat
+        if needsSystemFont {
+            titleWidth = systemFontTextWidth(titleText)
+        } else {
+            titleWidth = CGFloat(titleText.count) * charWidth
+        }
         
         if isCurrentTrack && titleWidth > titleMaxWidth {
             // Current track with long title - draw with marquee scrolling
@@ -494,16 +522,28 @@ class PlaylistView: NSView {
             
             // Draw first copy
             let xOffset1 = titleX - marqueeOffset
-            drawBitmapText(titleText, at: NSPoint(x: xOffset1, y: textY), in: context, skin: skin, isSelected: isSelected)
+            if needsSystemFont {
+                drawSystemFontText(titleText, at: NSPoint(x: xOffset1, y: textY), in: context, color: color, isSelected: isSelected)
+            } else {
+                drawBitmapText(titleText, at: NSPoint(x: xOffset1, y: textY), in: context, skin: skin, isSelected: isSelected)
+            }
             
             // Draw second copy for seamless loop
             let xOffset2 = xOffset1 + cycleWidth
             if xOffset2 < titleX + titleMaxWidth {
-                drawBitmapText(titleText, at: NSPoint(x: xOffset2, y: textY), in: context, skin: skin, isSelected: isSelected)
+                if needsSystemFont {
+                    drawSystemFontText(titleText, at: NSPoint(x: xOffset2, y: textY), in: context, color: color, isSelected: isSelected)
+                } else {
+                    drawBitmapText(titleText, at: NSPoint(x: xOffset2, y: textY), in: context, skin: skin, isSelected: isSelected)
+                }
             }
         } else {
             // Non-current track or short title - draw normally
-            drawBitmapText(titleText, at: NSPoint(x: titleX, y: textY), in: context, skin: skin, isSelected: isSelected)
+            if needsSystemFont {
+                drawSystemFontText(titleText, at: NSPoint(x: titleX, y: textY), in: context, color: color, isSelected: isSelected)
+            } else {
+                drawBitmapText(titleText, at: NSPoint(x: titleX, y: textY), in: context, skin: skin, isSelected: isSelected)
+            }
         }
         
         context.restoreGState()
@@ -607,6 +647,60 @@ class PlaylistView: NSView {
         }
         
         return offscreenContext.makeImage()
+    }
+    
+    // MARK: - Non-Latin Character Detection
+    
+    /// Check if text contains characters not supported by the bitmap font (TEXT.BMP).
+    /// The bitmap font only supports A-Z, 0-9, and limited symbols.
+    /// Non-Latin characters (Japanese, Chinese, Korean, Cyrillic, Arabic, etc.) need system font fallback.
+    private func containsNonLatinCharacters(_ text: String) -> Bool {
+        for char in text {
+            switch char {
+            case "A"..."Z", "a"..."z", "0"..."9":
+                continue
+            case " ", "\"", "@", ":", "(", ")", "-", "'", "!", "_", "+", "\\", "/",
+                 "[", "]", "^", "&", "%", ".", "=", "$", "#", "?", "*":
+                continue
+            default:
+                return true  // Non-Latin or unsupported character
+            }
+        }
+        return false
+    }
+    
+    /// Draw text using system font (fallback for non-Latin characters).
+    /// Context is already flipped to skin coordinates (Y=0 at top), so we need to unflip
+    /// temporarily for NSAttributedString.draw() to render correctly.
+    private func drawSystemFontText(_ text: String, at position: NSPoint, in context: CGContext, color: NSColor, isSelected: Bool = false) {
+        let textColor = isSelected ? NSColor.white : color
+        let fontSize = SkinElements.TextFont.charHeight
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: textColor,
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .regular)
+        ]
+        
+        // Context is flipped for skin rendering - need to unflip for NSAttributedString
+        context.saveGState()
+        
+        // Unflip: the context was flipped with translateBy(0, height) + scaleBy(1, -1)
+        // We need to reverse this for the text area
+        let centerY = position.y + fontSize / 2
+        context.translateBy(x: 0, y: centerY)
+        context.scaleBy(x: 1, y: -1)
+        context.translateBy(x: 0, y: -centerY)
+        
+        text.draw(at: NSPoint(x: position.x, y: position.y), withAttributes: attrs)
+        context.restoreGState()
+    }
+    
+    /// Calculate text width using system font (for non-Latin character fallback)
+    private func systemFontTextWidth(_ text: String) -> CGFloat {
+        let fontSize = SkinElements.TextFont.charHeight
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .regular)
+        ]
+        return text.size(withAttributes: attrs).width
     }
     
     /// Draw time/info display at the bottom of the track list area (just above the bottom bar)

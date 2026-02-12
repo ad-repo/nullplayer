@@ -193,28 +193,6 @@ class SkinRenderer {
             // Draw main background from skin
             drawImage(mainImage, in: bounds, context: context)
             
-            // Replace the baked-in skin logo with the NullPlayer logo.
-            // The click region is preserved in SkinRegion.
-            let logoRect = NSRect(x: 242, y: 85, width: 28, height: 23)
-            
-            // Sample background color from a point just left of the logo area
-            if let bgColor = samplePixelColor(in: mainImage, at: NSPoint(x: 240, y: 100)) {
-                bgColor.setFill()
-                context.fill(logoRect)
-            }
-            
-            // Draw the NullPlayer logo icon as a square (not stretched to the wider fill rect)
-            if let logoImage = skin.nullPlayerLogoImage,
-               let logoCG = logoImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-                let iconSize: CGFloat = 19  // Square icon
-                let iconRect = NSRect(x: logoRect.minX + 4, y: logoRect.minY + 2, width: iconSize, height: iconSize)
-                context.saveGState()
-                context.translateBy(x: iconRect.minX, y: iconRect.minY + iconRect.height)
-                context.scaleBy(x: 1, y: -1)
-                context.interpolationQuality = .high
-                context.draw(logoCG, in: CGRect(x: 0, y: 0, width: iconRect.width, height: iconRect.height))
-                context.restoreGState()
-            }
         } else {
             // Draw fallback background
             drawFallbackMainBackground(in: context, bounds: bounds, isActive: isActive)
@@ -224,43 +202,16 @@ class SkinRenderer {
         drawTitleBar(in: context, bounds: bounds, isActive: isActive)
     }
     
-    /// Draw title bar using PLEDIT.BMP tiles (matching ProjectM/Library/Analyzer style)
+    /// Draw title bar using original TITLEBAR.BMP from the skin
     func drawTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool) {
-        let titleHeight = SkinElements.Playlist.titleHeight  // 20 - native PLEDIT sprite height
+        let titleHeight = SkinElements.titleBarHeight  // 14 - native titlebar.bmp height
         
-        // Use PLEDIT tiles for the title bar background (same as ProjectM/Library/Analyzer)
-        if let pleditImage = skin.pledit {
-            let leftCornerWidth: CGFloat = 25
-            let rightCornerWidth: CGFloat = 25
-            let tileWidth: CGFloat = 25
-            
-            let leftCorner = isActive ? SkinElements.Playlist.TitleBarActive.leftCorner : SkinElements.Playlist.TitleBarInactive.leftCorner
-            let tileSprite = isActive ? SkinElements.Playlist.TitleBarActive.tile : SkinElements.Playlist.TitleBarInactive.tile
-            let rightCorner = isActive ? SkinElements.Playlist.TitleBarActive.rightCorner : SkinElements.Playlist.TitleBarInactive.rightCorner
-            
-            // Draw left corner
-            drawSprite(from: pleditImage, sourceRect: leftCorner,
-                      to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
-            
-            // Draw right corner
-            drawSprite(from: pleditImage, sourceRect: rightCorner,
-                      to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
-            
-            // Tile middle section
-            let middleStart = leftCornerWidth
-            let middleEnd = bounds.width - rightCornerWidth
-            var x: CGFloat = middleStart
-            while x < middleEnd {
-                let w = min(tileWidth, middleEnd - x)
-                drawSprite(from: pleditImage, sourceRect: tileSprite,
-                          to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
-                x += tileWidth
-            }
+        // Use original TITLEBAR.BMP sprites
+        if let titlebarImage = skin.titlebar {
+            let sourceRect = isActive ? SkinElements.TitleBar.active : SkinElements.TitleBar.inactive
+            drawSprite(from: titlebarImage, sourceRect: sourceRect,
+                      to: NSRect(x: 0, y: 0, width: bounds.width, height: titleHeight), in: context)
         }
-        
-        // Draw "NULLPLAYER" text using GenFont with dark background gap
-        // fontScale: 1.0 because the view already applies context scaling
-        drawGenFontTitleText("NULLPLAYER", in: context, bounds: bounds, titleHeight: titleHeight, isActive: isActive, fontScale: 1.0)
     }
     
     // MARK: - Button Rendering

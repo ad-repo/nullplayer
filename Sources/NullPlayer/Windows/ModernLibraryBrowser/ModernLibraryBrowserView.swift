@@ -677,8 +677,8 @@ class ModernLibraryBrowserView: NSView {
         context.fill(barRect)
         
         let font = skin.sideWindowFont(size: 11)
-        let textColor = skin.textColor
         let dimColor = skin.textDimColor
+        let dataColor = skin.dataColor
         let accentColor = skin.accentColor
         
         let m = ModernSkinElements.sizeMultiplier
@@ -691,7 +691,7 @@ class ModernLibraryBrowserView: NSView {
         let prefixWidth = prefix.size(withAttributes: prefixAttrs).width
         let sourceNameStartX = barRect.minX + 4 * m + prefixWidth
         
-        let nameAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
+        let dataAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: dataColor]
         let activeAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: accentColor]
         
         // Right side: F5 refresh label
@@ -743,7 +743,7 @@ class ModernLibraryBrowserView: NSView {
             let rating = currentTrackRating ?? 0
             let filledCount = rating / 2
             
-            let filledColor = accentColor
+            let filledColor = dataColor
             let emptyColor = dimColor.withAlphaComponent(0.3)
             
             for i in 0..<totalStars {
@@ -763,8 +763,8 @@ class ModernLibraryBrowserView: NSView {
         switch currentSource {
         case .local:
             let sourceText = "Local Files"
-            sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: nameAttrs)
-            let sourceTextWidth = sourceText.size(withAttributes: nameAttrs).width
+            sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
+            let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
             
             let addText = "+ADD"
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
@@ -773,9 +773,9 @@ class ModernLibraryBrowserView: NSView {
             // Item count (only in list mode, not art-only)
             if !isArtOnlyMode {
                 let countText = "\(displayItems.count) items"
-                let countWidth = countText.size(withAttributes: prefixAttrs).width
+                let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
-                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
             }
             
         case .plex(let serverId):
@@ -789,7 +789,7 @@ class ModernLibraryBrowserView: NSView {
                 context.saveGState()
                 let clipRect = NSRect(x: sourceNameStartX, y: textY, width: maxServerWidth, height: font.pointSize + 4 * m)
                 context.clip(to: clipRect)
-                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: nameAttrs)
+                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
                 context.restoreGState()
                 
                 let libLabel = "Lib:"
@@ -804,7 +804,7 @@ class ModernLibraryBrowserView: NSView {
                 context.saveGState()
                 let libClipRect = NSRect(x: libraryX, y: textY, width: maxLibraryWidth, height: font.pointSize + 4 * m)
                 context.clip(to: libClipRect)
-                libraryText.draw(at: NSPoint(x: libraryX, y: textY), withAttributes: nameAttrs)
+                libraryText.draw(at: NSPoint(x: libraryX, y: textY), withAttributes: dataAttrs)
                 context.restoreGState()
                 
                 // Item count (only in list mode, not art-only)
@@ -818,9 +818,9 @@ class ModernLibraryBrowserView: NSView {
                         itemCount = displayItems.count
                     }
                     let countText = "\(itemCount) ITEMS"
-                    let countWidth = countText.size(withAttributes: prefixAttrs).width
+                    let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
-                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
                 }
             } else {
                 let linkText = "Click to link your Plex account"
@@ -833,14 +833,14 @@ class ModernLibraryBrowserView: NSView {
             let configuredServer = SubsonicManager.shared.servers.first(where: { $0.id == serverId })
             if configuredServer != nil {
                 let serverName = configuredServer?.name ?? "Select Server"
-                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: nameAttrs)
+                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
                 
                 // Item count (only in list mode, not art-only)
                 if !isArtOnlyMode {
                     let countText = "\(displayItems.count) items"
-                    let countWidth = countText.size(withAttributes: prefixAttrs).width
+                    let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
-                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
                 }
             } else {
                 let linkText = "Click to add a Subsonic server"
@@ -851,8 +851,8 @@ class ModernLibraryBrowserView: NSView {
             
         case .radio:
             let sourceText = "Internet Radio"
-            sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: nameAttrs)
-            let sourceTextWidth = sourceText.size(withAttributes: nameAttrs).width
+            sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
+            let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
             
             let addText = "+ADD"
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
@@ -861,9 +861,9 @@ class ModernLibraryBrowserView: NSView {
             // Item count (only in list mode, not art-only)
             if !isArtOnlyMode {
                 let countText = "\(displayItems.count) stations"
-                let countWidth = countText.size(withAttributes: prefixAttrs).width
+                let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
-                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: nameAttrs)
+                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
             }
         }
     }
@@ -2761,6 +2761,8 @@ class ModernLibraryBrowserView: NSView {
         case .track(let track):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlay(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayAndReplaceTrack(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = item; menu.addItem(playReplaceItem)
             let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self; addItem.representedObject = track; menu.addItem(addItem)
             let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayNext(_:)), keyEquivalent: "")
@@ -2774,6 +2776,8 @@ class ModernLibraryBrowserView: NSView {
         case .album(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayAlbum(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = album; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlayAlbumAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = album; menu.addItem(playReplaceItem)
             let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlayAlbumNext(_:)), keyEquivalent: "")
             playNextItem.target = self; playNextItem.representedObject = album; menu.addItem(playNextItem)
             let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddAlbumToQueue(_:)), keyEquivalent: "")
@@ -2785,6 +2789,8 @@ class ModernLibraryBrowserView: NSView {
         case .artist(let artist):
             let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayArtist(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = artist; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlayArtistAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = artist; menu.addItem(playReplaceItem)
             let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayArtistNext(_:)), keyEquivalent: "")
             playNextItem.target = self; playNextItem.representedObject = artist; menu.addItem(playNextItem)
             let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddArtistToQueue(_:)), keyEquivalent: "")
@@ -2795,6 +2801,8 @@ class ModernLibraryBrowserView: NSView {
         case .localTrack(let track):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalTrack(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = track; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayLocalTrackAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = track; menu.addItem(playReplaceItem)
             let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddLocalTrackToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self; addItem.representedObject = track; menu.addItem(addItem)
             let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayLocalTrackNext(_:)), keyEquivalent: "")
@@ -2813,6 +2821,8 @@ class ModernLibraryBrowserView: NSView {
         case .localAlbum(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayLocalAlbum(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = album; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlayLocalAlbumAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = album; menu.addItem(playReplaceItem)
             let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlayLocalAlbumNext(_:)), keyEquivalent: "")
             playNextItem.target = self; playNextItem.representedObject = album; menu.addItem(playNextItem)
             let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddLocalAlbumToQueue(_:)), keyEquivalent: "")
@@ -2820,6 +2830,8 @@ class ModernLibraryBrowserView: NSView {
         case .localArtist(let artist):
             let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayLocalArtist(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = artist; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlayLocalArtistAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = artist; menu.addItem(playReplaceItem)
             let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayLocalArtistNext(_:)), keyEquivalent: "")
             playNextItem.target = self; playNextItem.representedObject = artist; menu.addItem(playNextItem)
             let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddLocalArtistToQueue(_:)), keyEquivalent: "")
@@ -2827,6 +2839,8 @@ class ModernLibraryBrowserView: NSView {
         case .subsonicTrack(let song):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlaySubsonicSong(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = song; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlaySubsonicSongAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = song; menu.addItem(playReplaceItem)
             let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddSubsonicSongToPlaylist(_:)), keyEquivalent: "")
             addItem.target = self; addItem.representedObject = song; menu.addItem(addItem)
             let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlaySubsonicSongNext(_:)), keyEquivalent: "")
@@ -2849,6 +2863,8 @@ class ModernLibraryBrowserView: NSView {
         case .subsonicAlbum(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlaySubsonicAlbum(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = album; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlaySubsonicAlbumAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = album; menu.addItem(playReplaceItem)
             let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlaySubsonicAlbumNext(_:)), keyEquivalent: "")
             playNextItem.target = self; playNextItem.representedObject = album; menu.addItem(playNextItem)
             let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddSubsonicAlbumToQueue(_:)), keyEquivalent: "")
@@ -2860,6 +2876,8 @@ class ModernLibraryBrowserView: NSView {
         case .subsonicArtist(let artist):
             let playItem = NSMenuItem(title: "Play All", action: #selector(contextMenuPlaySubsonicArtist(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = artist; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlaySubsonicArtistAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = artist; menu.addItem(playReplaceItem)
             let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlaySubsonicArtistNext(_:)), keyEquivalent: "")
             playNextItem.target = self; playNextItem.representedObject = artist; menu.addItem(playNextItem)
             let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddSubsonicArtistToQueue(_:)), keyEquivalent: "")
@@ -2890,9 +2908,13 @@ class ModernLibraryBrowserView: NSView {
         case .subsonicPlaylist(let playlist):
             let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlaySubsonicPlaylist(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = playlist; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Playlist and Replace Queue", action: #selector(contextMenuPlaySubsonicPlaylistAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = playlist; menu.addItem(playReplaceItem)
         case .plexPlaylist(let playlist):
             let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlayPlexPlaylist(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = playlist; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Playlist and Replace Queue", action: #selector(contextMenuPlayPlexPlaylistAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = playlist; menu.addItem(playReplaceItem)
         case .header: return
         }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
@@ -3084,6 +3106,96 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func contextMenuPlayEpisode(_ sender: NSMenuItem) {
         guard let episode = sender.representedObject as? PlexEpisode else { return }; playEpisode(episode)
+    }
+    
+    // MARK: - Play and Replace Queue Handlers
+    
+    @objc private func contextMenuPlayAndReplaceTrack(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? ModernDisplayItem,
+              case .track(let track) = item.type,
+              let t = PlexManager.shared.convertToTrack(track) else { return }
+        WindowManager.shared.audioEngine.loadTracks([t])
+    }
+    @objc private func contextMenuPlayAlbumAndReplace(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? PlexAlbum else { return }
+        Task { @MainActor in
+            do {
+                let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
+                WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(tracks))
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayArtistAndReplace(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? PlexArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await PlexManager.shared.fetchAlbums(forArtist: artist)
+                var all: [PlexTrack] = []
+                for album in albums { all.append(contentsOf: try await PlexManager.shared.fetchTracks(forAlbum: album)) }
+                if all.isEmpty { all = try await PlexManager.shared.fetchTracks(forArtist: artist) }
+                WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(all))
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayLocalTrackAndReplace(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        WindowManager.shared.audioEngine.loadTracks([track.toTrack()])
+    }
+    @objc private func contextMenuPlayLocalAlbumAndReplace(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? Album else { return }
+        WindowManager.shared.audioEngine.loadTracks(album.tracks.map { $0.toTrack() })
+    }
+    @objc private func contextMenuPlayLocalArtistAndReplace(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? Artist else { return }
+        var tracks: [Track] = []
+        for album in artist.albums { tracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+        WindowManager.shared.audioEngine.loadTracks(tracks)
+    }
+    @objc private func contextMenuPlaySubsonicSongAndReplace(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? SubsonicSong,
+              let t = SubsonicManager.shared.convertToTrack(song) else { return }
+        WindowManager.shared.audioEngine.loadTracks([t])
+    }
+    @objc private func contextMenuPlaySubsonicAlbumAndReplace(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? SubsonicAlbum else { return }
+        Task { @MainActor in
+            do {
+                let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
+                WindowManager.shared.audioEngine.loadTracks(songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlaySubsonicArtistAndReplace(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? SubsonicArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: artist)
+                var all: [Track] = []
+                for album in albums {
+                    let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
+                    all.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
+                }
+                WindowManager.shared.audioEngine.loadTracks(all)
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlaySubsonicPlaylistAndReplace(_ sender: NSMenuItem) {
+        guard let playlist = sender.representedObject as? SubsonicPlaylist else { return }
+        Task { @MainActor in
+            do {
+                let (_, songs) = try await SubsonicManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
+                WindowManager.shared.audioEngine.loadTracks(songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayPlexPlaylistAndReplace(_ sender: NSMenuItem) {
+        guard let playlist = sender.representedObject as? PlexPlaylist else { return }
+        Task { @MainActor in
+            do {
+                let tracks = try await PlexManager.shared.fetchPlaylistTracks(playlistID: playlist.id, smartContent: playlist.smart ? playlist.content : nil)
+                WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(tracks))
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
     }
     
     // MARK: - Play Next / Add to Queue Handlers

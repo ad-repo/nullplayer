@@ -221,6 +221,21 @@ private var currentTrackTextWidth: CGFloat = 0
 let xOffset = needsMarquee ? -marqueeOffset : 0
 ```
 
+### Unicode Fallback
+
+The bitmap font (`TEXT.BMP`) only supports ASCII characters. Track titles with Japanese, Chinese, Korean, Cyrillic, Arabic, or other non-Latin characters are automatically detected and rendered using system font fallback, matching the behavior of the main window marquee.
+
+```swift
+private func containsNonLatinCharacters(_ text: String) -> Bool {
+    // Returns true if text contains characters outside A-Z, 0-9, and common symbols
+}
+```
+
+This ensures:
+- **Latin text**: Uses skin bitmap font for authentic look
+- **Non-Latin text**: Falls back to system font for proper Unicode display
+- **Mixed text**: Falls back to system font if any non-Latin characters present
+
 ### Selected Track Appearance
 
 Selected tracks display white text instead of green. This uses pixel manipulation:
