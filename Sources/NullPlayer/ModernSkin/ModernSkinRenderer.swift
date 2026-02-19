@@ -480,17 +480,13 @@ class ModernSkinRenderer {
         
         context.saveGState()
         
-        // Multi-pass glow for warm neon effect (EQ style)
-        if skin.config.glow.enabled {
-            // Wide outer bloom
-            context.setShadow(offset: .zero, blur: 8 * scaleFactor * glowMultiplier,
-                              color: color.withAlphaComponent(0.5).cgColor)
-        }
-        
-        context.setFillColor(color.cgColor)
-        
-        // Colon: two small rounded squares
+        // Colon: two small rounded squares (active only, no ghost)
         if char == ":" {
+            if skin.config.glow.enabled {
+                context.setShadow(offset: .zero, blur: 8 * scaleFactor * glowMultiplier,
+                                  color: color.withAlphaComponent(0.5).cgColor)
+            }
+            context.setFillColor(color.cgColor)
             let dotSize = rect.width * 0.35
             let dotX = rect.midX - dotSize / 2
             let radius = dotSize * 0.2
@@ -502,8 +498,13 @@ class ModernSkinRenderer {
             return
         }
         
-        // Minus: just the middle segment
+        // Minus: just the middle segment (active only, no ghost)
         if char == "-" {
+            if skin.config.glow.enabled {
+                context.setShadow(offset: .zero, blur: 8 * scaleFactor * glowMultiplier,
+                                  color: color.withAlphaComponent(0.5).cgColor)
+            }
+            context.setFillColor(color.cgColor)
             fillRoundedSegment(NSRect(x: rect.minX + gap,
                                        y: rect.midY - segT / 2,
                                        width: rect.width - gap * 2,
@@ -546,41 +547,20 @@ class ModernSkinRenderer {
         let botVEnd = midY - gap
         let hInset = segT * 0.5  // horizontal segments inset from vertical edges
         
-        // Segment a (top horizontal)
-        if segs[0] {
-            fillRoundedSegment(NSRect(x: x + hInset, y: topVEnd,
-                                       width: w - hInset * 2, height: segT), context: context)
+        // Draw active segments with glow
+        if skin.config.glow.enabled {
+            context.setShadow(offset: .zero, blur: 8 * scaleFactor * glowMultiplier,
+                              color: color.withAlphaComponent(0.5).cgColor)
         }
-        // Segment b (top-right vertical)
-        if segs[1] {
-            fillRoundedSegment(NSRect(x: x + w - segT, y: topVStart,
-                                       width: segT, height: topVEnd - topVStart), context: context)
-        }
-        // Segment c (bottom-right vertical)
-        if segs[2] {
-            fillRoundedSegment(NSRect(x: x + w - segT, y: botVStart,
-                                       width: segT, height: botVEnd - botVStart), context: context)
-        }
-        // Segment d (bottom horizontal)
-        if segs[3] {
-            fillRoundedSegment(NSRect(x: x + hInset, y: y,
-                                       width: w - hInset * 2, height: segT), context: context)
-        }
-        // Segment e (bottom-left vertical)
-        if segs[4] {
-            fillRoundedSegment(NSRect(x: x, y: botVStart,
-                                       width: segT, height: botVEnd - botVStart), context: context)
-        }
-        // Segment f (top-left vertical)
-        if segs[5] {
-            fillRoundedSegment(NSRect(x: x, y: topVStart,
-                                       width: segT, height: topVEnd - topVStart), context: context)
-        }
-        // Segment g (middle horizontal)
-        if segs[6] {
-            fillRoundedSegment(NSRect(x: x + hInset, y: midY - segT / 2,
-                                       width: w - hInset * 2, height: segT), context: context)
-        }
+        context.setFillColor(color.cgColor)
+        
+        if segs[0] { fillRoundedSegment(NSRect(x: x + hInset, y: topVEnd, width: w - hInset * 2, height: segT), context: context) }
+        if segs[1] { fillRoundedSegment(NSRect(x: x + w - segT, y: topVStart, width: segT, height: topVEnd - topVStart), context: context) }
+        if segs[2] { fillRoundedSegment(NSRect(x: x + w - segT, y: botVStart, width: segT, height: botVEnd - botVStart), context: context) }
+        if segs[3] { fillRoundedSegment(NSRect(x: x + hInset, y: y, width: w - hInset * 2, height: segT), context: context) }
+        if segs[4] { fillRoundedSegment(NSRect(x: x, y: botVStart, width: segT, height: botVEnd - botVStart), context: context) }
+        if segs[5] { fillRoundedSegment(NSRect(x: x, y: topVStart, width: segT, height: topVEnd - topVStart), context: context) }
+        if segs[6] { fillRoundedSegment(NSRect(x: x + hInset, y: midY - segT / 2, width: w - hInset * 2, height: segT), context: context) }
         
         context.restoreGState()
     }

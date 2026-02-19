@@ -254,7 +254,7 @@ class ModernMainWindowView: NSView {
         let timeStatusRegion = timeScaled.union(statusScaled)
         if dirtyRect.intersects(timeStatusRegion) {
             // Recessed panel behind time digits and status indicator
-            renderer.drawInsetPanel(in: NSRect(x: 6, y: 64, width: 86, height: 33), context: context)
+            renderer.drawInsetPanel(in: NSRect(x: 10, y: 63, width: 80, height: 35), context: context)
             drawTimeDisplay(context: context)
             let state = effectivePlaybackState()
             renderer.drawStatusIndicator(state, in: ModernSkinElements.statusPlay.defaultRect, context: context)
@@ -296,6 +296,8 @@ class ModernMainWindowView: NSView {
         // 9. Volume slider (track + thumb padding)
         let volumeScaled = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
         if dirtyRect.intersects(volumeScaled) {
+            // Recessed panel behind the volume slider
+            renderer.drawInsetPanel(in: NSRect(x: 175, y: 6, width: 91, height: 17), context: context)
             drawVolumeSlider(context: context)
         }
     }

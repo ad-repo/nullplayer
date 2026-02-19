@@ -67,11 +67,12 @@ enum ModernSkinElements {
     // MARK: - Time Display (left side)
     
     /// Time display area -- region for 7-segment LED digits (to the right of status indicator)
-    static let timeDisplay = Element("time_display", NSRect(x: 18, y: 68, width: 72, height: 26))
+    /// Width 76: max readout "199:59" is 3×12 + colon 5 + 2×12 + 5 gaps = 70px → 3px padding each side
+    static let timeDisplay = Element("time_display", NSRect(x: 14, y: 68, width: 76, height: 26))
     
-    /// Individual time digits -- 7-segment LED style, sized to match reference
-    static let timeDigitSize = NSSize(width: 13, height: 20)
-    static let timeColonSize = NSSize(width: 6, height: 20)
+    /// Individual time digits -- 7-segment LED style
+    static let timeDigitSize = NSSize(width: 12, height: 20)
+    static let timeColonSize = NSSize(width: 5, height: 20)
     
     // MARK: - Marquee / Info Panel (right side)
     
@@ -94,9 +95,10 @@ enum ModernSkinElements {
     // MARK: - Status Indicator (left of time display)
     
     /// Play/pause/stop status indicator (small icon to the left of time digits)
-    static let statusPlay = Element("status_play", NSRect(x: 8, y: 72, width: 8, height: 10))
-    static let statusPause = Element("status_pause", NSRect(x: 8, y: 72, width: 8, height: 10))
-    static let statusStop = Element("status_stop", NSRect(x: 8, y: 72, width: 8, height: 10))
+    /// y:76 centers the 10px icon in the time panel (panel center y:80.5)
+    static let statusPlay = Element("status_play", NSRect(x: 10, y: 76, width: 8, height: 10))
+    static let statusPause = Element("status_pause", NSRect(x: 10, y: 76, width: 8, height: 10))
+    static let statusStop = Element("status_stop", NSRect(x: 10, y: 76, width: 8, height: 10))
     
     /// Mini spectrum analyzer area (to the left of status)
     static let spectrumArea = Element("spectrum_area", NSRect(x: 10, y: 41, width: 80, height: 18),
