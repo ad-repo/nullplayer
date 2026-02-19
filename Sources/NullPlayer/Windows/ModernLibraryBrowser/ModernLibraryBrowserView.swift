@@ -297,6 +297,10 @@ class ModernLibraryBrowserView: NSView {
     private var serverScrollTimer: Timer?
     private var lastServerName: String = ""
     private var lastLibraryName: String = ""
+    private var serverNameTextWidth: CGFloat = 0
+    private var libraryNameTextWidth: CGFloat = 0
+    private var serverNameMaxWidth: CGFloat = 0
+    private var libraryNameMaxWidth: CGFloat = 0
     
     // Shade mode
     private(set) var isShadeMode = false
@@ -840,13 +844,16 @@ class ModernLibraryBrowserView: NSView {
             if configuredServer != nil || manager.isLinked {
                 let serverName = configuredServer?.name ?? "Select Server"
                 let maxServerWidth: CGFloat = 100 * m
-                
-                context.saveGState()
-                let clipRect = NSRect(x: sourceNameStartX, y: textY, width: maxServerWidth, height: font.pointSize + 4 * m)
-                context.clip(to: clipRect)
-                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
-                context.restoreGState()
-                
+                let textH = font.pointSize + 4 * m
+
+                // Store widths for scroll logic
+                serverNameMaxWidth = maxServerWidth
+                serverNameTextWidth = (serverName as NSString).size(withAttributes: dataAttrs).width
+
+                drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
+                                  availableWidth: maxServerWidth, scrollOffset: serverNameScrollOffset,
+                                  textHeight: textH, attributes: dataAttrs, in: context)
+
                 let libLabel = "Lib:"
                 let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
                 libLabel.draw(at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs)
@@ -855,12 +862,14 @@ class ModernLibraryBrowserView: NSView {
                 let libraryX = libraryLabelX + libLabelWidth + 4 * m
                 let libraryText = manager.currentLibrary?.title ?? "Select"
                 let maxLibraryWidth: CGFloat = 80 * m
-                
-                context.saveGState()
-                let libClipRect = NSRect(x: libraryX, y: textY, width: maxLibraryWidth, height: font.pointSize + 4 * m)
-                context.clip(to: libClipRect)
-                libraryText.draw(at: NSPoint(x: libraryX, y: textY), withAttributes: dataAttrs)
-                context.restoreGState()
+
+                // Store widths for scroll logic
+                libraryNameMaxWidth = maxLibraryWidth
+                libraryNameTextWidth = (libraryText as NSString).size(withAttributes: dataAttrs).width
+
+                drawScrollingText(libraryText, startX: libraryX, textY: textY,
+                                  availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
+                                  textHeight: textH, attributes: dataAttrs, in: context)
                 
                 // Item count (only in list mode, not art-only)
                 if !isArtOnlyMode {
@@ -888,8 +897,19 @@ class ModernLibraryBrowserView: NSView {
             let configuredServer = SubsonicManager.shared.servers.first(where: { $0.id == serverId })
             if configuredServer != nil {
                 let serverName = configuredServer?.name ?? "Select Server"
-                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
-                
+                let textH = font.pointSize + 4 * m
+                // Leave room for item count on the right
+                let maxServerWidth = visEndX - sourceNameStartX - (isArtOnlyMode ? 8 : 80) * m
+
+                // Store widths for scroll logic; clear unused library fields
+                serverNameMaxWidth = maxServerWidth
+                serverNameTextWidth = (serverName as NSString).size(withAttributes: dataAttrs).width
+                libraryNameMaxWidth = 0; libraryNameTextWidth = 0
+
+                drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
+                                  availableWidth: maxServerWidth, scrollOffset: serverNameScrollOffset,
+                                  textHeight: textH, attributes: dataAttrs, in: context)
+
                 // Item count (only in list mode, not art-only)
                 if !isArtOnlyMode {
                     let countText = "\(displayItems.count) items"
@@ -908,8 +928,19 @@ class ModernLibraryBrowserView: NSView {
             let configuredServer = JellyfinManager.shared.servers.first(where: { $0.id == serverId })
             if configuredServer != nil {
                 let serverName = configuredServer?.name ?? "Select Server"
-                serverName.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
-                
+                let textH = font.pointSize + 4 * m
+                // Leave room for item count on the right
+                let maxServerWidth = visEndX - sourceNameStartX - (isArtOnlyMode ? 8 : 80) * m
+
+                // Store widths for scroll logic; clear unused library fields
+                serverNameMaxWidth = maxServerWidth
+                serverNameTextWidth = (serverName as NSString).size(withAttributes: dataAttrs).width
+                libraryNameMaxWidth = 0; libraryNameTextWidth = 0
+
+                drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
+                                  availableWidth: maxServerWidth, scrollOffset: serverNameScrollOffset,
+                                  textHeight: textH, attributes: dataAttrs, in: context)
+
                 // Item count (only in list mode, not art-only)
                 if !isArtOnlyMode {
                     let countText = "\(displayItems.count) items"
@@ -943,6 +974,42 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
+    /// Draw text with circular scrolling when it overflows the available width.
+    /// Uses NSAttributedString drawing (system font) rather than bitmap sprites.
+    private func drawScrollingText(_ text: String,
+                                   startX: CGFloat, textY: CGFloat,
+                                   availableWidth: CGFloat,
+                                   scrollOffset: CGFloat,
+                                   textHeight: CGFloat,
+                                   attributes: [NSAttributedString.Key: Any],
+                                   in context: CGContext) {
+        let textWidth = (text as NSString).size(withAttributes: attributes).width
+
+        // Text fits — draw once with a simple clip, no scrolling artifacts.
+        guard textWidth > availableWidth else {
+            context.saveGState()
+            context.clip(to: NSRect(x: startX, y: textY, width: availableWidth, height: textHeight))
+            text.draw(at: NSPoint(x: startX, y: textY), withAttributes: attributes)
+            context.restoreGState()
+            return
+        }
+
+        let separatorWidth = textWidth * 0.3  // 30% gap before repeat
+        let totalCycleWidth = textWidth + separatorWidth
+
+        context.saveGState()
+        context.clip(to: NSRect(x: startX, y: textY, width: availableWidth, height: textHeight))
+
+        // Two passes for seamless circular wrap
+        for pass in 0..<2 {
+            let baseX = startX - scrollOffset + CGFloat(pass) * totalCycleWidth
+            if baseX + totalCycleWidth < startX || baseX > startX + availableWidth { continue }
+            text.draw(at: NSPoint(x: baseX, y: textY), withAttributes: attributes)
+        }
+
+        context.restoreGState()
+    }
+
     /// Draw a low-res pixel-art star for server bar rating display
     /// Pattern is top-down but macOS Y goes up, so we draw rows from maxY downward
     private func drawPixelStar(in rect: NSRect, color: NSColor, context: CGContext) {
@@ -4090,7 +4157,7 @@ class ModernLibraryBrowserView: NSView {
     private func startServerNameScroll() {
         guard serverScrollTimer == nil else { return }
         serverScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.067, repeats: true) { [weak self] _ in
-            // Scrolling handled in draw
+            self?.handleServerNameScrollTick()
         }
     }
     
@@ -4098,7 +4165,102 @@ class ModernLibraryBrowserView: NSView {
         serverScrollTimer?.invalidate(); serverScrollTimer = nil
         serverNameScrollOffset = 0; libraryNameScrollOffset = 0
     }
-    
+
+    private func handleServerNameScrollTick() {
+        guard let window = window,
+              window.isVisible,
+              window.occlusionState.contains(.visible) else { return }
+        updateServerNameScroll()
+    }
+
+    private func updateServerNameScroll() {
+        // serverNameMaxWidth / serverNameTextWidth are written by drawServerBar each draw cycle.
+        // If nothing has been drawn yet (both zero) there is nothing to scroll.
+        guard serverNameMaxWidth > 0 else { return }
+
+        // Local and Radio sources have fixed short labels — no scrolling needed.
+        switch currentSource {
+        case .local, .radio:
+            if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
+                serverNameScrollOffset = 0; libraryNameScrollOffset = 0
+                setNeedsDisplay(serverBarRect())
+            }
+            return
+        default: break
+        }
+
+        let currentServerName: String
+        let currentLibraryName: String
+        switch currentSource {
+        case .plex(let id):
+            let mgr = PlexManager.shared
+            let server = mgr.servers.first(where: { $0.id == id })
+            currentServerName = server?.name ?? "Select Server"
+            currentLibraryName = mgr.currentLibrary?.title ?? "Select"
+        case .subsonic(let id):
+            let server = SubsonicManager.shared.servers.first(where: { $0.id == id })
+            currentServerName = server?.name ?? "Select Server"
+            currentLibraryName = ""
+        case .jellyfin(let id):
+            let server = JellyfinManager.shared.servers.first(where: { $0.id == id })
+            currentServerName = server?.name ?? "Select Server"
+            currentLibraryName = ""
+        default:
+            return
+        }
+
+        // Reset offsets when names change.
+        if currentServerName != lastServerName {
+            lastServerName = currentServerName
+            serverNameScrollOffset = 0
+        }
+        if currentLibraryName != lastLibraryName {
+            lastLibraryName = currentLibraryName
+            libraryNameScrollOffset = 0
+        }
+
+        let serverNeedsScroll = serverNameTextWidth > serverNameMaxWidth
+        let libraryNeedsScroll = libraryNameMaxWidth > 0 && libraryNameTextWidth > libraryNameMaxWidth
+
+        if !serverNeedsScroll && !libraryNeedsScroll {
+            if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
+                serverNameScrollOffset = 0; libraryNameScrollOffset = 0
+                setNeedsDisplay(serverBarRect())
+            }
+            return
+        }
+
+        var needsRedraw = false
+
+        if serverNeedsScroll {
+            let separator: CGFloat = serverNameTextWidth * 0.3  // ~30% gap
+            let totalCycle = serverNameTextWidth + separator
+            serverNameScrollOffset += 1
+            if serverNameScrollOffset >= totalCycle { serverNameScrollOffset = 0 }
+            needsRedraw = true
+        } else if serverNameScrollOffset != 0 {
+            serverNameScrollOffset = 0; needsRedraw = true
+        }
+
+        if libraryNeedsScroll {
+            let separator: CGFloat = libraryNameTextWidth * 0.3
+            let totalCycle = libraryNameTextWidth + separator
+            libraryNameScrollOffset += 1
+            if libraryNameScrollOffset >= totalCycle { libraryNameScrollOffset = 0 }
+            needsRedraw = true
+        } else if libraryNameScrollOffset != 0 {
+            libraryNameScrollOffset = 0; needsRedraw = true
+        }
+
+        if needsRedraw { setNeedsDisplay(serverBarRect()) }
+    }
+
+    /// Returns the rect of the server bar for targeted redraws.
+    private func serverBarRect() -> NSRect {
+        let barY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        return NSRect(x: 0, y: barY, width: bounds.width, height: Layout.serverBarHeight)
+    }
+
     // MARK: - Visualizer Timer
     
     private func startVisualizerTimer() {
