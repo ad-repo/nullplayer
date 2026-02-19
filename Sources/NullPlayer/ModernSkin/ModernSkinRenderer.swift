@@ -858,6 +858,9 @@ class ModernSkinRenderer {
         let barCount = min(levels.count, 8)
         guard barCount > 0 else { return }
         
+        // Recessed panel background behind the bars
+        drawInsetPanelScaled(scaledR, context: context)
+        
         let barWidth = scaledR.width / CGFloat(barCount) - 1 * scaleFactor
         let gap = 1 * scaleFactor
         
@@ -1042,24 +1045,36 @@ class ModernSkinRenderer {
         attributedString.draw(at: point)
     }
     
+    // MARK: - Shared Panel Drawing
+    
+    /// Draw a subtle recessed inset panel — dark fill with faint border.
+    /// Accepts base (unscaled) coordinates. Used for the time display and spectrum area.
+    func drawInsetPanel(in rect: NSRect, context: CGContext) {
+        drawInsetPanelScaled(scaledRect(rect), context: context)
+    }
+    
+    /// Same as drawInsetPanel but accepts an already-scaled rect (used from drawFallback).
+    private func drawInsetPanelScaled(_ scaledR: NSRect, context: CGContext) {
+        context.saveGState()
+        let corner = 2 * scaleFactor
+        let path = CGPath(roundedRect: scaledR, cornerWidth: corner, cornerHeight: corner, transform: nil)
+        context.setFillColor(skin.surfaceColor.withAlphaComponent(0.8).cgColor)
+        context.addPath(path)
+        context.fillPath()
+        context.setStrokeColor(skin.borderColor.withAlphaComponent(0.3).cgColor)
+        context.setLineWidth(0.5 * scaleFactor)
+        context.addPath(path)
+        context.strokePath()
+        context.restoreGState()
+    }
+    
     // MARK: - Programmatic Fallback Drawing
     
     private func drawFallback(_ id: String, state: String, in rect: NSRect, context: CGContext) {
         // Default fallback: filled rect with surface color and optional border
         switch id {
         case "marquee_bg":
-            // Dark recessed panel
-            context.saveGState()
-            context.setFillColor(skin.surfaceColor.withAlphaComponent(0.8).cgColor)
-            let path = CGPath(roundedRect: rect, cornerWidth: 2 * scaleFactor, cornerHeight: 2 * scaleFactor, transform: nil)
-            context.addPath(path)
-            context.fillPath()
-            // Inner border
-            context.setStrokeColor(skin.borderColor.withAlphaComponent(0.3).cgColor)
-            context.setLineWidth(0.5 * scaleFactor)
-            context.addPath(path)
-            context.strokePath()
-            context.restoreGState()
+            drawInsetPanelScaled(rect, context: context)
             
         case _ where id.hasPrefix("btn_"):
             // Already handled by specific draw methods

@@ -253,6 +253,8 @@ class ModernMainWindowView: NSView {
         let statusScaled = scaledRect(ModernSkinElements.statusPlay.defaultRect)
         let timeStatusRegion = timeScaled.union(statusScaled)
         if dirtyRect.intersects(timeStatusRegion) {
+            // Recessed panel behind time digits and status indicator
+            renderer.drawInsetPanel(in: NSRect(x: 6, y: 64, width: 86, height: 33), context: context)
             drawTimeDisplay(context: context)
             let state = effectivePlaybackState()
             renderer.drawStatusIndicator(state, in: ModernSkinElements.statusPlay.defaultRect, context: context)
