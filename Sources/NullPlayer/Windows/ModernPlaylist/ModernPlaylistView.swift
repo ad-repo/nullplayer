@@ -68,7 +68,10 @@ class ModernPlaylistView: NSView {
     
     // MARK: - Layout Constants
     
-    private var titleBarHeight: CGFloat { WindowManager.shared.hideTitleBars ? borderWidth : ModernSkinElements.playlistTitleBarHeight }
+    private var titleBarHeight: CGFloat {
+        let hide = WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode
+        return hide ? borderWidth : ModernSkinElements.playlistTitleBarHeight
+    }
     private var bottomBarHeight: CGFloat { ModernSkinElements.playlistBottomBarHeight }
     private var borderWidth: CGFloat { ModernSkinElements.playlistBorderWidth }
     private var itemHeight: CGFloat { ModernSkinElements.playlistItemHeight }
@@ -275,8 +278,8 @@ class ModernPlaylistView: NSView {
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
         
-        // Draw title bar (unless hidden)
-        if !WindowManager.shared.hideTitleBars {
+        // Draw title bar (unless hidden by docking)
+        if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER PLAYLIST", prefix: "playlist_", context: context)
             
             // Draw close button
@@ -722,7 +725,7 @@ class ModernPlaylistView: NSView {
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars {
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             return point.y >= bounds.height - 6  // invisible drag zone
         }
         let closeWidth: CGFloat = 28 * ModernSkinElements.scaleFactor
@@ -731,7 +734,7 @@ class ModernPlaylistView: NSView {
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars { return false }
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
         let scale = ModernSkinElements.scaleFactor
         let closeRect = NSRect(x: bounds.width - 16 * scale, y: bounds.height - titleBarHeight + 2 * scale,
                                width: 14 * scale, height: 12 * scale)
@@ -739,7 +742,7 @@ class ModernPlaylistView: NSView {
     }
     
     private func hitTestShadeButton(at point: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars { return false }
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
         let scale = ModernSkinElements.scaleFactor
         let shadeRect = NSRect(x: bounds.width - 28 * scale, y: bounds.height - titleBarHeight + 2 * scale,
                                width: 12 * scale, height: 12 * scale)
@@ -827,6 +830,16 @@ class ModernPlaylistView: NSView {
         
         // Title bar → window drag
         if hitTestTitleBar(at: point) {
+            isDraggingWindow = true
+            windowDragStartPoint = event.locationInWindow
+            if let window = window {
+                WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+            }
+            return
+        }
+        
+        // When title bar is hidden (docked + HT on), allow dragging from anywhere
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
             if let window = window {

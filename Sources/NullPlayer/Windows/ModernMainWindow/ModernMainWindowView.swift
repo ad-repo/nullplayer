@@ -209,20 +209,11 @@ class ModernMainWindowView: NSView {
             }
         } else {
             // Title bar area → open hand for dragging
-            if WindowManager.shared.hideTitleBars {
-                // Invisible drag zone at top of window
-                if point.y >= bounds.height - 6 {
-                    NSCursor.openHand.set()
-                } else {
-                    NSCursor.arrow.set()
-                }
+            let base = basePoint(from: point)
+            if ModernSkinElements.titleBar.defaultRect.contains(base) {
+                NSCursor.openHand.set()
             } else {
-                let base = basePoint(from: point)
-                if ModernSkinElements.titleBar.defaultRect.contains(base) {
-                    NSCursor.openHand.set()
-                } else {
-                    NSCursor.arrow.set()
-                }
+                NSCursor.arrow.set()
             }
         }
     }
@@ -250,13 +241,11 @@ class ModernMainWindowView: NSView {
         renderer.drawWindowBorder(in: windowBounds, context: context, adjacentEdges: adjacentEdges)
         context.restoreGState()
         
-        // 2. Title bar (unless hidden) -- only if dirty rect overlaps
-        if !WindowManager.shared.hideTitleBars {
-            let titleScaled = scaledRect(ModernSkinElements.titleBar.defaultRect)
-            if dirtyRect.intersects(titleScaled) {
-                renderer.drawTitleBar(in: ModernSkinElements.titleBar.defaultRect, title: "NULLPLAYER", context: context)
-                drawWindowControls(context: context)
-            }
+        // 2. Title bar -- only if dirty rect overlaps
+        let titleScaled = scaledRect(ModernSkinElements.titleBar.defaultRect)
+        if dirtyRect.intersects(titleScaled) {
+            renderer.drawTitleBar(in: ModernSkinElements.titleBar.defaultRect, title: "NULLPLAYER", context: context)
+            drawWindowControls(context: context)
         }
         
         // 3. Time display + status indicator
@@ -861,14 +850,12 @@ class ModernMainWindowView: NSView {
         // Check elements in priority order (front to back)
         var hitTargets: [(String, NSRect)] = []
         
-        // Window controls (only when title bars are visible)
-        if !WindowManager.shared.hideTitleBars {
-            hitTargets.append(contentsOf: [
-                ("btn_close", ModernSkinElements.btnClose.defaultRect),
-                ("btn_minimize", ModernSkinElements.btnMinimize.defaultRect),
-                ("btn_shade", ModernSkinElements.btnShade.defaultRect),
-            ])
-        }
+        // Window controls
+        hitTargets.append(contentsOf: [
+            ("btn_close", ModernSkinElements.btnClose.defaultRect),
+            ("btn_minimize", ModernSkinElements.btnMinimize.defaultRect),
+            ("btn_shade", ModernSkinElements.btnShade.defaultRect),
+        ])
         
         hitTargets.append(contentsOf: [
             // Transport
@@ -924,13 +911,8 @@ class ModernMainWindowView: NSView {
                 updateMarqueeForMode()
                 return
             }
-            let isTitleBarDblClick: Bool
-            if WindowManager.shared.hideTitleBars {
-                isTitleBarDblClick = point.y >= bounds.height - 6
-            } else {
-                let base = basePoint(from: point)
-                isTitleBarDblClick = ModernSkinElements.titleBar.defaultRect.contains(base)
-            }
+            let base = basePoint(from: point)
+            let isTitleBarDblClick = ModernSkinElements.titleBar.defaultRect.contains(base)
             if isTitleBarDblClick {
                 controller?.toggleShadeMode()
                 updateMarqueeForMode()
@@ -983,14 +965,8 @@ class ModernMainWindowView: NSView {
             dragStartPoint = event.locationInWindow
             
             // Determine if dragging from title bar
-            // When title bars are hidden, all drags allow undocking (no visual title bar distinction)
-            let isTitleBar: Bool
-            if WindowManager.shared.hideTitleBars {
-                isTitleBar = true
-            } else {
-                let base = basePoint(from: point)
-                isTitleBar = ModernSkinElements.titleBar.defaultRect.contains(base)
-            }
+            let base = basePoint(from: point)
+            let isTitleBar = ModernSkinElements.titleBar.defaultRect.contains(base)
             if let window = window {
                 WindowManager.shared.windowWillStartDragging(window, fromTitleBar: isTitleBar)
             }

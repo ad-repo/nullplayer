@@ -377,7 +377,7 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Layout Constants (independent of classic skin)
     
     private struct Layout {
-        static var titleBarHeight: CGFloat { WindowManager.shared.hideTitleBars ? borderWidth : ModernSkinElements.libraryTitleBarHeight }
+        static var titleBarHeight: CGFloat { ModernSkinElements.libraryTitleBarHeight }
         static var tabBarHeight: CGFloat { 24 * ModernSkinElements.sizeMultiplier }
         static var serverBarHeight: CGFloat { 24 * ModernSkinElements.sizeMultiplier }
         static var searchBarHeight: CGFloat { 26 * ModernSkinElements.sizeMultiplier }
@@ -592,8 +592,8 @@ class ModernLibraryBrowserView: NSView {
         let baseWidth = bounds.width / scale
         let baseHeight = bounds.height / scale
         
-        // Draw title bar (unless hidden)
-        if !WindowManager.shared.hideTitleBars {
+        // Draw title bar
+        if true {
             // Title bar at TOP in base space
             let titleBarRect = NSRect(x: 0, y: baseHeight - 14, width: baseWidth, height: 14)
             renderer.drawTitleBar(in: titleBarRect, title: "NULLPLAYER LIBRARY", prefix: "library_", context: context)
@@ -1979,23 +1979,18 @@ class ModernLibraryBrowserView: NSView {
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
         let m = ModernSkinElements.sizeMultiplier
-        if WindowManager.shared.hideTitleBars {
-            return point.y >= bounds.height - 6 * m  // invisible drag zone
-        }
         return point.y > bounds.height - Layout.titleBarHeight &&
                point.x < bounds.width - 30 * m
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
         let m = ModernSkinElements.sizeMultiplier
-        if WindowManager.shared.hideTitleBars { return false }
         let closeRect = NSRect(x: bounds.width - 20 * m, y: bounds.height - Layout.titleBarHeight, width: 20 * m, height: Layout.titleBarHeight)
         return closeRect.contains(point)
     }
     
     private func hitTestShadeButton(at point: NSPoint) -> Bool {
         let m = ModernSkinElements.sizeMultiplier
-        if WindowManager.shared.hideTitleBars { return false }
         let shadeRect = NSRect(x: bounds.width - 31 * m, y: bounds.height - Layout.titleBarHeight, width: 11 * m, height: Layout.titleBarHeight)
         return shadeRect.contains(point)
     }

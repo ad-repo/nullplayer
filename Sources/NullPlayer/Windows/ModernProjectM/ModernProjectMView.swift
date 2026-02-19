@@ -66,7 +66,7 @@ class ModernProjectMView: NSView {
     
     // MARK: - Layout Constants
     
-    private var titleBarHeight: CGFloat { WindowManager.shared.hideTitleBars ? borderWidth : ModernSkinElements.projectMTitleBarHeight }
+    private var titleBarHeight: CGFloat { ModernSkinElements.projectMTitleBarHeight }
     private var borderWidth: CGFloat { ModernSkinElements.projectMBorderWidth }
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
@@ -213,8 +213,8 @@ class ModernProjectMView: NSView {
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
         
-        // Draw title bar (unless hidden)
-        if !WindowManager.shared.hideTitleBars {
+        // Draw title bar
+        if true {
             // Compute title bar and button rects dynamically in base space
             // (window is larger than the 275x116 base, so we can't use fixed element rects)
             let baseWidth = bounds.width / scale
@@ -353,16 +353,11 @@ class ModernProjectMView: NSView {
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars {
-            return point.y >= bounds.height - 6  // invisible drag zone
-        }
-        // Title bar at the top, leave room for close button on the right
         return point.y >= bounds.height - titleBarHeight &&
                point.x < bounds.width - 30
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars { return false }
         let closeRect = NSRect(x: bounds.width - 20, y: bounds.height - titleBarHeight,
                                width: 20, height: titleBarHeight)
         return closeRect.contains(point)
@@ -405,12 +400,11 @@ class ModernProjectMView: NSView {
             return
         }
         
-        // Content area - window dragging
-        // When title bars are hidden, all drags allow undocking (no visual title bar distinction)
+        // Content area - window dragging (title bar always visible, so no undocking from content)
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.hideTitleBars)
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: false)
         }
     }
     
