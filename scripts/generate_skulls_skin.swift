@@ -77,6 +77,19 @@ func clearBitmap(_ rep: NSBitmapImageRep) {
     }
 }
 
+func withFlippedCGContext(_ rep: NSBitmapImageRep, _ block: (CGContext, Int, Int) -> Void) {
+    NSGraphicsContext.saveGraphicsState()
+    if let gc = NSGraphicsContext(bitmapImageRep: rep) {
+        NSGraphicsContext.current = gc
+        let ctx = gc.cgContext
+        // Flip to top-left origin matching bitmap row order
+        ctx.translateBy(x: 0, y: CGFloat(rep.pixelsHigh))
+        ctx.scaleBy(x: 1, y: -1)
+        block(ctx, rep.pixelsWide, rep.pixelsHigh)
+    }
+    NSGraphicsContext.restoreGraphicsState()
+}
+
 // MARK: - 7x11 Bold Pixel Font (stereo receiver style)
 
 /// Each character is 7-wide x 11-tall, stored as 11 rows of UInt8 (bits 6..0 = pixels left-to-right).
@@ -258,43 +271,80 @@ func renderTransportButton(icon: String, pressed: Bool) -> NSBitmapImageRep {
         for py in 1..<(h-1) { setPixel(rep, x: w - 2, y: py, sh) }
     }
     
-    // Draw icon in center
-    let cx = w / 2, cy = h / 2
-    let ic = C.iconWhite
-    let offset = pressed ? 1 : 0
-    
-    switch icon {
-    case "prev":
-        // |<< -- vertical bar + two left triangles
-        for dy in -4...4 { setPixel(rep, x: cx - 6 + offset, y: cy + dy + offset, ic) }
-        for dy in -3...3 { setPixel(rep, x: cx - 2 - abs(dy) + offset, y: cy + dy + offset, ic) }
-        for dy in -3...3 { setPixel(rep, x: cx + 2 - abs(dy) + offset, y: cy + dy + offset, ic) }
-    case "play":
-        // Right-pointing triangle
-        for dy in -5...5 {
-            let lineW = 5 - abs(dy)
-            for dx in 0..<lineW { setPixel(rep, x: cx - 3 + dx + offset, y: cy + dy + offset, ic) }
+    // Draw icon using Core Graphics — amber stroked/filled outlines
+    let iconAlpha: CGFloat = pressed ? 0.7 : 1.0
+    let iconColor = CGColor(
+        red: CGFloat(C.amber.0) / 255.0,
+        green: CGFloat(C.amber.1) / 255.0,
+        blue: CGFloat(C.amber.2) / 255.0,
+        alpha: iconAlpha
+    )
+    let fOx: CGFloat = pressed ? 1 : 0
+    withFlippedCGContext(rep) { ctx, _, _ in
+        let cx = CGFloat(w) / 2 + fOx
+        let cy = CGFloat(h) / 2 + fOx
+        ctx.setFillColor(iconColor)
+        ctx.setStrokeColor(iconColor)
+        ctx.setLineWidth(1.5)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        ctx.setShouldAntialias(true)
+        switch icon {
+        case "prev":
+            // |<< — filled bar on left + two left-pointing chevron strokes
+            ctx.fill(CGRect(x: cx - 8, y: cy - 6, width: 2, height: 12))
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: cx, y: cy - 6))
+            ctx.addLine(to: CGPoint(x: cx - 4, y: cy))
+            ctx.addLine(to: CGPoint(x: cx, y: cy + 6))
+            ctx.strokePath()
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: cx + 6, y: cy - 6))
+            ctx.addLine(to: CGPoint(x: cx + 2, y: cy))
+            ctx.addLine(to: CGPoint(x: cx + 6, y: cy + 6))
+            ctx.strokePath()
+        case "play":
+            // ▶ — filled right-pointing triangle
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: cx - 5, y: cy - 6))
+            ctx.addLine(to: CGPoint(x: cx - 5, y: cy + 6))
+            ctx.addLine(to: CGPoint(x: cx + 6, y: cy))
+            ctx.closePath()
+            ctx.fillPath()
+        case "pause":
+            // ‖ — two filled vertical bars
+            ctx.fill(CGRect(x: cx - 5,   y: cy - 5.5, width: 3.5, height: 11))
+            ctx.fill(CGRect(x: cx + 1.5, y: cy - 5.5, width: 3.5, height: 11))
+        case "stop":
+            // ■ — filled square
+            ctx.fill(CGRect(x: cx - 5, y: cy - 5, width: 10, height: 10))
+        case "next":
+            // >>| — two right-pointing chevron strokes + filled bar on right
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: cx - 6, y: cy - 6))
+            ctx.addLine(to: CGPoint(x: cx - 2, y: cy))
+            ctx.addLine(to: CGPoint(x: cx - 6, y: cy + 6))
+            ctx.strokePath()
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: cx, y: cy - 6))
+            ctx.addLine(to: CGPoint(x: cx + 4, y: cy))
+            ctx.addLine(to: CGPoint(x: cx, y: cy + 6))
+            ctx.strokePath()
+            ctx.fill(CGRect(x: cx + 6, y: cy - 6, width: 2, height: 12))
+        case "eject":
+            // △— — filled upward triangle + filled horizontal bar below
+            ctx.beginPath()
+            ctx.move(to: CGPoint(x: cx,     y: cy - 6))
+            ctx.addLine(to: CGPoint(x: cx - 6, y: cy + 1))
+            ctx.addLine(to: CGPoint(x: cx + 6, y: cy + 1))
+            ctx.closePath()
+            ctx.fillPath()
+            ctx.fill(CGRect(x: cx - 6, y: cy + 3, width: 12, height: 2))
+        default:
+            break
         }
-    case "pause":
-        // Two vertical bars
-        fillRect(rep, x: cx - 4 + offset, y: cy - 4 + offset, w: 3, h: 9, ic)
-        fillRect(rep, x: cx + 2 + offset, y: cy - 4 + offset, w: 3, h: 9, ic)
-    case "stop":
-        // Filled square
-        fillRect(rep, x: cx - 4 + offset, y: cy - 4 + offset, w: 8, h: 8, ic)
-    case "next":
-        // >>| -- two right triangles + vertical bar
-        for dy in -3...3 { setPixel(rep, x: cx - 4 + abs(dy) + offset, y: cy + dy + offset, ic) }
-        for dy in -3...3 { setPixel(rep, x: cx + abs(dy) + offset, y: cy + dy + offset, ic) }
-        for dy in -4...4 { setPixel(rep, x: cx + 5 + offset, y: cy + dy + offset, ic) }
-    case "eject":
-        // Triangle pointing up + horizontal line below
-        for dy in 0...4 { setPixel(rep, x: cx - dy + offset, y: cy - 3 + dy + offset, ic); setPixel(rep, x: cx + dy + offset, y: cy - 3 + dy + offset, ic) }
-        fillRect(rep, x: cx - 4 + offset, y: cy + 3 + offset, w: 9, h: 2, ic)
-    default:
-        break
     }
-    
+
     return rep
 }
 
