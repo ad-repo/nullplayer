@@ -42,6 +42,11 @@ class ProjectMWrapper: VisualizationEngine {
     /// Current preset index
     private var _currentPresetIndex: Int = 0
     
+    /// Pending preset index to load on the next render frame (protected by renderLock)
+    /// Preset loading requires an active OpenGL context, so it must happen on the
+    /// CVDisplayLink render thread where the context is always current.
+    private var _pendingPresetIndex: Int? = nil
+    
     /// Lock for thread-safe PCM updates
     private let pcmLock = NSLock()
     
@@ -268,6 +273,8 @@ class ProjectMWrapper: VisualizationEngine {
     var hasValidPreset: Bool {
         renderLock.lock()
         defer { renderLock.unlock() }
+        // A pending preset is queued but not yet loaded on the render thread — not ready yet
+        guard _pendingPresetIndex == nil else { return false }
         let timeSinceChange = CFAbsoluteTimeGetCurrent() - _lastPresetChangeTime
         return presetCount > 0 && _currentPresetIndex >= 0 && _presetLoaded && !_presetLoadInProgress && _framesAfterLoad >= framesRequiredAfterLoad && timeSinceChange >= minTimeAfterPresetChange
     }
@@ -301,8 +308,12 @@ class ProjectMWrapper: VisualizationEngine {
     /// Used to detect and prevent re-entry
     private var _isRendering: Bool = false
     
-    /// Renders a single frame of visualization
-    /// Must be called with a valid OpenGL context active
+    /// Whether the first render frame of the current preset has completed without crashing.
+    /// Reset to false each time a new preset is loaded. Used by the crash-detection sentinel.
+    private var _firstRenderCompleted: Bool = false
+    
+    /// Renders a single frame of visualization.
+    /// Must be called with a valid OpenGL context active (CVDisplayLink render thread).
     func renderFrame() {
         #if canImport(CProjectM)
         guard let h = handle else { return }
@@ -317,8 +328,39 @@ class ProjectMWrapper: VisualizationEngine {
         _isRendering = true
         defer { _isRendering = false }
         
+        // Execute any pending preset load now that we're on the render thread with
+        // the OpenGL context current. libprojectM creates shaders and loads textures
+        // during preset loading, so the GL context MUST be active on this thread.
+        if let pendingIndex = _pendingPresetIndex {
+            _pendingPresetIndex = nil
+            
+            let path = presetFiles[pendingIndex]
+            let name = presetName(at: pendingIndex)
+            NSLog("ProjectMWrapper: Loading preset %d on render thread: %@", pendingIndex, name)
+            
+            _presetLoadInProgress = true
+            projectm_load_preset_file(h, path, false)  // Always use hard cut for safety
+            
+            // Reset all GL textures after each preset load. libprojectM can free the 3D
+            // noise volume texture (sampler_noisevol_hq) when switching to presets that
+            // don't reference it, leaving a dangling pointer that crashes the next preset
+            // rendering call for any preset that does use it.
+            projectm_reset_textures(h)
+            
+            _presetLoaded = true
+            _presetLoadInProgress = false
+            _firstRenderCompleted = false  // Arm the crash-detection sentinel for this preset
+            
+            NSLog("ProjectMWrapper: Preset loaded and textures reset on render thread")
+            
+            // Clear to black this frame and let the warmup period begin
+            glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
+            glClearColor(0.0, 0.0, 0.0, 1.0)
+            glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+            return
+        }
+        
         // Don't render until a preset is fully loaded - projectM crashes without one
-        // Also skip if a preset load is in progress
         guard _presetLoaded && !_presetLoadInProgress else { return }
         
         // Wait for BOTH frame count AND time delay after preset load
@@ -337,8 +379,21 @@ class ProjectMWrapper: VisualizationEngine {
         // Update viewport
         glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
         
-        // Render the frame
+        // Before the first render of each new preset, write a crash-detection sentinel
+        // file. If projectm_opengl_render_frame crashes (SIGSEGV in a buggy shader),
+        // the file persists on disk. On the next app launch, that preset is permanently
+        // blacklisted and removed from the rotation so the crash never recurs.
+        if !_firstRenderCompleted {
+            Self.writeCrashSentinel(presetPath: presetFiles[_currentPresetIndex])
+        }
+        
         projectm_opengl_render_frame(h)
+        
+        // Render succeeded — clear the sentinel and mark first render done
+        if !_firstRenderCompleted {
+            Self.clearCrashSentinel()
+            _firstRenderCompleted = true
+        }
         #endif
     }
     
@@ -361,10 +416,16 @@ class ProjectMWrapper: VisualizationEngine {
         }
         
         var newPresets: [String] = []
+        let blacklist = Self.crashedPresetPaths
         
         while let fileURL = enumerator.nextObject() as? URL {
             if fileURL.pathExtension.lowercased() == "milk" {
-                newPresets.append(fileURL.path)
+                let filePath = fileURL.path
+                if blacklist.contains(filePath) {
+                    NSLog("ProjectMWrapper: Skipping blacklisted preset (crashed on previous render): %@", fileURL.lastPathComponent)
+                } else {
+                    newPresets.append(filePath)
+                }
             }
         }
         
@@ -416,10 +477,16 @@ class ProjectMWrapper: VisualizationEngine {
         return url.deletingPathExtension().lastPathComponent
     }
     
-    /// Loads a preset by index
+    /// Queues a preset to load by index.
+    ///
+    /// The actual `projectm_load_preset_file` call is deferred to the CVDisplayLink
+    /// render thread (via `renderFrame()`), where the OpenGL context is always current.
+    /// Calling libprojectM GL functions from the main thread without an active context
+    /// corrupts GL state and causes crashes after a few preset changes.
+    ///
     /// - Parameters:
     ///   - index: Preset index
-    ///   - smoothTransition: If true, blend smoothly; if false, switch immediately
+    ///   - smoothTransition: Ignored (always hard-cut for safety); kept for API compatibility
     func loadPreset(at index: Int, smoothTransition: Bool = true) {
         guard index >= 0 && index < presetFiles.count else {
             NSLog("ProjectMWrapper: Invalid preset index %d (count: %d)", index, presetFiles.count)
@@ -427,25 +494,20 @@ class ProjectMWrapper: VisualizationEngine {
         }
         
         #if canImport(CProjectM)
-        guard let h = handle else {
+        guard handle != nil else {
             NSLog("ProjectMWrapper: No projectM handle available")
             return
         }
         
         // Rate limiting: ignore preset changes that are too close together
-        // This prevents crashes from rapid clicking by giving projectM time to stabilize
         let timeSinceLastChange = CFAbsoluteTimeGetCurrent() - _lastPresetChangeTime
         if timeSinceLastChange < minTimeBetweenPresetChanges && _presetLoaded {
-            // Too soon since last change - ignore this request
             return
         }
         
-        let path = presetFiles[index]
         let name = presetName(at: index)
+        NSLog("ProjectMWrapper: Queuing preset %d: %@ (will load on render thread)", index, name)
         
-        NSLog("ProjectMWrapper: Loading preset %d: %@ from %@", index, name, path)
-        
-        // Lock to prevent concurrent rendering during preset switch
         renderLock.lock()
         
         // Double-check rate limiting inside the lock (in case of concurrent calls)
@@ -455,24 +517,19 @@ class ProjectMWrapper: VisualizationEngine {
             return
         }
         
-        // Mark that we're loading - this prevents rendering during the load
-        _presetLoadInProgress = true
+        // Queue the preset for loading on the render thread (where GL context is current).
+        // Reset rendering state so frames are suppressed until the load completes.
+        _pendingPresetIndex = index
         _presetLoaded = false
-        _framesAfterLoad = 0  // Reset frame counter for new preset
-        _lastPresetChangeTime = CFAbsoluteTimeGetCurrent()  // Record timestamp
-        
-        // Load the preset file (use hard cut to avoid blend race conditions)
-        // Soft transitions can cause crashes when accessing textures from both presets
-        projectm_load_preset_file(h, path, false)  // Always use hard cut for safety
-        
-        // Update state after load completes
-        _currentPresetIndex = index
-        _presetLoaded = true
         _presetLoadInProgress = false
+        _framesAfterLoad = 0
+        _lastPresetChangeTime = CFAbsoluteTimeGetCurrent()
+        
+        // Optimistic update so UI (preset name, index) reflects the selection immediately
+        _currentPresetIndex = index
         
         renderLock.unlock()
         
-        NSLog("ProjectMWrapper: Preset loaded successfully")
         postPresetChangeNotification()
         #endif
     }
@@ -610,6 +667,9 @@ extension ProjectMWrapper {
     
     /// Clears all presets and reloads from configured paths
     func reloadAllPresets() {
+        // Check for a previous crash sentinel before rebuilding the list
+        Self.checkAndHandlePreviousCrash()
+        
         // Clear existing presets
         presetFiles.removeAll()
         _currentPresetIndex = 0
@@ -744,6 +804,10 @@ extension ProjectMWrapper {
     
     /// Configures the wrapper with bundled presets and textures
     func loadBundledPresets() {
+        // Check if a previous run crashed during preset rendering and blacklist that preset.
+        // Must happen before addPresetPath so the blacklist is applied when scanning files.
+        Self.checkAndHandlePreviousCrash()
+        
         // Add texture path first (presets may reference textures)
         var texturePaths: [String] = []
         if let texturesPath = Self.bundledTexturesPath {
@@ -793,5 +857,81 @@ extension ProjectMWrapper {
         // initialization could leave projectM in an inconsistent state.
         // Users can switch presets manually or auto-switching will happen
         // based on the preset duration setting.
+    }
+}
+
+// MARK: - Crash Detection
+
+extension ProjectMWrapper {
+    
+    /// Path to the crash-detection sentinel file.
+    ///
+    /// This file is written immediately before the first `projectm_opengl_render_frame`
+    /// call for a new preset, and deleted immediately after it succeeds. If the app
+    /// crashes during rendering (SIGSEGV/SIGBUS inside a buggy libprojectM shader),
+    /// the file persists. On the next launch, the offending preset is permanently
+    /// blacklisted and excluded from the rotation.
+    static var crashSentinelPath: String {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("NullPlayer", isDirectory: true).path
+        return (dir as NSString).appendingPathComponent("projectm_crash_sentinel.txt")
+    }
+    
+    /// UserDefaults key for the set of preset file paths that have crashed on rendering.
+    private static let crashedPresetsKey = "projectMCrashedPresets"
+    
+    /// The set of preset file paths that have previously crashed libprojectM on rendering.
+    /// These are excluded when building the preset list.
+    static var crashedPresetPaths: Set<String> {
+        get {
+            let arr = UserDefaults.standard.stringArray(forKey: crashedPresetsKey) ?? []
+            return Set(arr)
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: crashedPresetsKey)
+        }
+    }
+    
+    /// Writes the crash-detection sentinel file with the given preset path.
+    /// Must be called just before `projectm_opengl_render_frame`.
+    static func writeCrashSentinel(presetPath: String) {
+        let sentinelDir = (crashSentinelPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: sentinelDir,
+                                                  withIntermediateDirectories: true)
+        // Write atomically so the file is either fully written or not present
+        try? presetPath.write(toFile: crashSentinelPath, atomically: true, encoding: .utf8)
+    }
+    
+    /// Removes the crash-detection sentinel file after a successful render.
+    static func clearCrashSentinel() {
+        try? FileManager.default.removeItem(atPath: crashSentinelPath)
+    }
+    
+    /// Checks whether a previous run crashed during preset rendering.
+    ///
+    /// If a sentinel file exists, the preset it names crashed libprojectM. That preset
+    /// is added to the persistent blacklist and the sentinel is removed.
+    /// Call this once at startup (before building the preset list).
+    static func checkAndHandlePreviousCrash() {
+        guard let crashedPath = try? String(contentsOfFile: crashSentinelPath, encoding: .utf8),
+              !crashedPath.isEmpty else { return }
+        
+        // Remove the sentinel so we don't re-process it on the next launch
+        clearCrashSentinel()
+        
+        var crashed = crashedPresetPaths
+        if !crashed.contains(crashedPath) {
+            crashed.insert(crashedPath)
+            crashedPresetPaths = crashed
+            NSLog("ProjectMWrapper: Blacklisted preset that crashed libprojectM on render: %@",
+                  (crashedPath as NSString).lastPathComponent)
+        }
+    }
+    
+    /// Clears the entire preset blacklist (for troubleshooting / user-facing "reset" action).
+    static func clearCrashedPresetsBlacklist() {
+        UserDefaults.standard.removeObject(forKey: crashedPresetsKey)
+        clearCrashSentinel()
+        NSLog("ProjectMWrapper: Cleared preset crash blacklist")
     }
 }

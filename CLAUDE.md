@@ -97,7 +97,7 @@ Skills contain detailed technical documentation. Key skills include:
 - **audio-system**: Audio pipelines, EQ, spectrum analysis
 - **modern-skin-guide**: Modern skin engine and creation
 - **user-guide**: Features, menus, keyboard shortcuts
-- **plex-integration**, **jellyfin-integration**: Server integrations
+- **plex-integration**, **jellyfin-integration**, **subsonic-integration**: Server integrations (Plex, Jellyfin, Navidrome/Subsonic)
 - **sonos-casting**, **chromecast-casting**: Casting protocols
 - **radio-streaming**: Internet radio support
 - **visualizations**: Album art and ProjectM
@@ -214,6 +214,8 @@ Sources/NullPlayer/
   ```
 - **Skin coordinates**: skin skins use top-left origin, macOS uses bottom-left
 - **Library browser expand tasks must use `Task.detached`**: In `ModernLibraryBrowserView`, expand tasks (artist → albums, album → songs, etc.) for Jellyfin and Subsonic must use `Task.detached { @MainActor ... }` instead of `Task { @MainActor ... }`. Regular `Task { }` can inherit cancellation state from the calling context on the main actor, causing the task to be immediately cancelled. Artist expansion should also prefer filtering cached albums by `artistId` (instant) before falling back to a network request
+- **Jellyfin library selector is browse-mode-aware**: The "Lib:" click zone in the library browser shows a music library picker when in music tabs (Artists/Albums/Tracks/Plists) and a video library picker when in Movies/Shows tabs. `JellyfinManager` has separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification (`musicLibraryDidChangeNotification`, `videoLibraryDidChangeNotification`). `fetchMusicLibraries()` and `fetchVideoLibraries()` both return ALL views without `CollectionType` filtering. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
+- **Subsonic music folders**: `SubsonicManager` now tracks `musicFolders: [SubsonicMusicFolder]` and `currentMusicFolder: SubsonicMusicFolder?` (nil = all folders). Fetched via `getMusicFolders` on connect. `musicFolderId` is passed to `getArtists` and `getAlbumList2` when a folder is selected. Persisted via `SubsonicCurrentMusicFolderID` UserDefaults key. Posts `musicFolderDidChangeNotification` on change.
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
 - **Local file completion handler**: Must use `scheduleFile(_:at:completionCallbackType:completionHandler:)` with `.dataPlayedBack` - NOT the deprecated 3-parameter `scheduleFile(_:at:completionHandler:)` which defaults to `.dataConsumed` and fires before audio finishes playing, causing premature track advancement and UI desync
 - **Window docking**: Complex snapping logic in `WindowManager` - test edge cases

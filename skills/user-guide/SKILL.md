@@ -76,12 +76,13 @@ Modern UI adds: **2X** (Double Size), **HT** (Hide Title Bars), **CA** (Cast), *
 
 ### Jellyfin Integration
 - Browse music and video libraries
-- Multiple library support
+- **Library selector** in status bar: click "Lib:" to switch library. Mode-aware — shows music library picker in music tabs (Artists/Albums/Tracks/Plists) and video library picker in Movies/Shows tabs. "All" option browses across all libraries.
 - Rating scale: 0-100% (0-10 internal)
 - Scrobbling (50% or 4 minutes for audio, 90% for video)
 
 ### Navidrome/Subsonic
 - Browse artists, albums, playlists
+- **Music folder selector** in status bar: click "Lib:" to filter by music folder. "All" shows content from all folders.
 - Token authentication
 - Scrobbling (50% or 4 minutes)
 - Casting support via proxy
