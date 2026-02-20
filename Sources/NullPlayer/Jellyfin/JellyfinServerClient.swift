@@ -276,32 +276,26 @@ class JellyfinServerClient {
     
     // MARK: - Music Libraries
     
-    /// Fetch music libraries (Jellyfin can have multiple)
+    /// Fetch all libraries/views on the server (no collection type filtering)
     func fetchMusicLibraries() async throws -> [JellyfinMusicLibrary] {
         guard let request = buildRequest(path: "/Users/\(server.userId)/Views") else {
             throw JellyfinClientError.invalidURL
         }
         
         let response: JellyfinViewsResponse = try await performRequest(request)
-        
-        return response.Items
-            .filter { $0.CollectionType == "music" }
-            .map { $0.toMusicLibrary() }
+        return response.Items.map { $0.toMusicLibrary() }
     }
     
     // MARK: - Video Libraries
     
-    /// Fetch video libraries (movies and tvshows collection types)
+    /// Fetch all libraries/views on the server (no collection type filtering)
     func fetchVideoLibraries() async throws -> [JellyfinMusicLibrary] {
         guard let request = buildRequest(path: "/Users/\(server.userId)/Views") else {
             throw JellyfinClientError.invalidURL
         }
         
         let response: JellyfinViewsResponse = try await performRequest(request)
-        
-        return response.Items
-            .filter { $0.CollectionType == "movies" || $0.CollectionType == "tvshows" }
-            .map { $0.toMusicLibrary() }
+        return response.Items.map { $0.toMusicLibrary() }
     }
     
     // MARK: - Movie Operations

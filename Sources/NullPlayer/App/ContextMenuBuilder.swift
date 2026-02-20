@@ -1000,6 +1000,34 @@ class ContextMenuBuilder {
             }
         }
         
+        // Music folders submenu (if more than one folder)
+        let musicFolders = SubsonicManager.shared.musicFolders
+        if musicFolders.count > 1 {
+            let foldersItem = NSMenuItem(title: "Music Folders", action: nil, keyEquivalent: "")
+            let foldersMenu = NSMenu()
+            foldersMenu.autoenablesItems = false
+            
+            let allItem = NSMenuItem(title: "All Folders", action: #selector(MenuActions.selectSubsonicMusicFolder(_:)), keyEquivalent: "")
+            allItem.target = MenuActions.shared
+            allItem.representedObject = Optional<String>.none as Any
+            allItem.state = SubsonicManager.shared.currentMusicFolder == nil ? .on : .off
+            foldersMenu.addItem(allItem)
+            foldersMenu.addItem(NSMenuItem.separator())
+            
+            for folder in musicFolders {
+                let folderItem = NSMenuItem(title: folder.name, action: #selector(MenuActions.selectSubsonicMusicFolder(_:)), keyEquivalent: "")
+                folderItem.target = MenuActions.shared
+                folderItem.representedObject = folder.id
+                folderItem.state = folder.id == SubsonicManager.shared.currentMusicFolder?.id ? .on : .off
+                foldersMenu.addItem(folderItem)
+            }
+            
+            foldersItem.submenu = foldersMenu
+            subsonicMenu.addItem(foldersItem)
+            
+            subsonicMenu.addItem(NSMenuItem.separator())
+        }
+        
         // Refresh Library
         let refreshItem = NSMenuItem(title: "Refresh Library", action: #selector(MenuActions.refreshSubsonicLibrary), keyEquivalent: "")
         refreshItem.target = MenuActions.shared
@@ -1088,6 +1116,34 @@ class ContextMenuBuilder {
                 
                 jellyfinMenu.addItem(NSMenuItem.separator())
             }
+        }
+        
+        // Music libraries submenu (if more than one music library)
+        let musicLibs = JellyfinManager.shared.musicLibraries
+        if musicLibs.count > 1 {
+            let musicLibItem = NSMenuItem(title: "Music Libraries", action: nil, keyEquivalent: "")
+            let musicLibMenu = NSMenu()
+            musicLibMenu.autoenablesItems = false
+            
+            let allItem = NSMenuItem(title: "All Libraries", action: #selector(MenuActions.selectJellyfinMusicLibrary(_:)), keyEquivalent: "")
+            allItem.target = MenuActions.shared
+            allItem.representedObject = Optional<String>.none as Any
+            allItem.state = JellyfinManager.shared.currentMusicLibrary == nil ? .on : .off
+            musicLibMenu.addItem(allItem)
+            musicLibMenu.addItem(NSMenuItem.separator())
+            
+            for lib in musicLibs {
+                let libItem = NSMenuItem(title: "\(lib.name) (Music)", action: #selector(MenuActions.selectJellyfinMusicLibrary(_:)), keyEquivalent: "")
+                libItem.target = MenuActions.shared
+                libItem.representedObject = lib.id
+                libItem.state = lib.id == JellyfinManager.shared.currentMusicLibrary?.id ? .on : .off
+                musicLibMenu.addItem(libItem)
+            }
+            
+            musicLibItem.submenu = musicLibMenu
+            jellyfinMenu.addItem(musicLibItem)
+            
+            jellyfinMenu.addItem(NSMenuItem.separator())
         }
         
         // Video libraries submenu (if multiple video libraries)
@@ -2558,6 +2614,24 @@ class MenuActions: NSObject {
         // Select for both movie and show (Jellyfin video libs can contain both)
         JellyfinManager.shared.selectMovieLibrary(lib)
         JellyfinManager.shared.selectShowLibrary(lib)
+    }
+    
+    @objc func selectJellyfinMusicLibrary(_ sender: NSMenuItem) {
+        if let libId = sender.representedObject as? String,
+           let lib = JellyfinManager.shared.musicLibraries.first(where: { $0.id == libId }) {
+            JellyfinManager.shared.selectMusicLibrary(lib)
+        } else {
+            JellyfinManager.shared.clearMusicLibrarySelection()
+        }
+    }
+    
+    @objc func selectSubsonicMusicFolder(_ sender: NSMenuItem) {
+        if let folderId = sender.representedObject as? String,
+           let folder = SubsonicManager.shared.musicFolders.first(where: { $0.id == folderId }) {
+            SubsonicManager.shared.selectMusicFolder(folder)
+        } else {
+            SubsonicManager.shared.clearMusicFolderSelection()
+        }
     }
     
     // MARK: - Output Device

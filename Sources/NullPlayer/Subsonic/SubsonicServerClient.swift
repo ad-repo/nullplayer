@@ -219,11 +219,28 @@ class SubsonicServerClient {
         }
     }
     
+    // MARK: - Music Folders
+    
+    /// Fetch all music folders (root library folders) on the server
+    func fetchMusicFolders() async throws -> [SubsonicMusicFolder] {
+        guard let request = buildRequest(endpoint: "getMusicFolders") else {
+            throw SubsonicClientError.invalidURL
+        }
+        
+        let response: SubsonicMusicFoldersResponse = try await performRequest(request)
+        return response.musicFolders?.musicFolder?.map { $0.toMusicFolder() } ?? []
+    }
+    
     // MARK: - Artist Operations
     
     /// Fetch all artists (indexed A-Z)
-    func fetchArtists() async throws -> [SubsonicIndex] {
-        guard let request = buildRequest(endpoint: "getArtists") else {
+    /// - Parameter musicFolderId: Optional music folder ID to filter by
+    func fetchArtists(musicFolderId: String? = nil) async throws -> [SubsonicIndex] {
+        var params: [URLQueryItem] = []
+        if let folderId = musicFolderId {
+            params.append(URLQueryItem(name: "musicFolderId", value: folderId))
+        }
+        guard let request = buildRequest(endpoint: "getArtists", params: params) else {
             throw SubsonicClientError.invalidURL
         }
         
@@ -242,8 +259,9 @@ class SubsonicServerClient {
     }
     
     /// Fetch all artists as a flat list
-    func fetchAllArtists() async throws -> [SubsonicArtist] {
-        let indexes = try await fetchArtists()
+    /// - Parameter musicFolderId: Optional music folder ID to filter by
+    func fetchAllArtists(musicFolderId: String? = nil) async throws -> [SubsonicArtist] {
+        let indexes = try await fetchArtists(musicFolderId: musicFolderId)
         return indexes.flatMap { $0.artists }
     }
     
@@ -281,12 +299,16 @@ class SubsonicServerClient {
     ///   - type: Sort type (alphabeticalByName, newest, frequent, recent, starred, etc.)
     ///   - size: Number of albums to return (max 500)
     ///   - offset: Offset for pagination
-    func fetchAlbums(type: AlbumListType = .alphabeticalByName, size: Int = 100, offset: Int = 0) async throws -> [SubsonicAlbum] {
-        let params = [
+    ///   - musicFolderId: Optional music folder ID to filter by
+    func fetchAlbums(type: AlbumListType = .alphabeticalByName, size: Int = 100, offset: Int = 0, musicFolderId: String? = nil) async throws -> [SubsonicAlbum] {
+        var params = [
             URLQueryItem(name: "type", value: type.rawValue),
             URLQueryItem(name: "size", value: String(size)),
             URLQueryItem(name: "offset", value: String(offset))
         ]
+        if let folderId = musicFolderId {
+            params.append(URLQueryItem(name: "musicFolderId", value: folderId))
+        }
         
         guard let request = buildRequest(endpoint: "getAlbumList2", params: params) else {
             throw SubsonicClientError.invalidURL
@@ -297,13 +319,16 @@ class SubsonicServerClient {
     }
     
     /// Fetch all albums (paginated)
-    func fetchAllAlbums(type: AlbumListType = .alphabeticalByName) async throws -> [SubsonicAlbum] {
+    /// - Parameters:
+    ///   - type: Sort type
+    ///   - musicFolderId: Optional music folder ID to filter by
+    func fetchAllAlbums(type: AlbumListType = .alphabeticalByName, musicFolderId: String? = nil) async throws -> [SubsonicAlbum] {
         var allAlbums: [SubsonicAlbum] = []
         var offset = 0
         let pageSize = 500
         
         while true {
-            let albums = try await fetchAlbums(type: type, size: pageSize, offset: offset)
+            let albums = try await fetchAlbums(type: type, size: pageSize, offset: offset, musicFolderId: musicFolderId)
             allAlbums.append(contentsOf: albums)
             
             if albums.count < pageSize {

@@ -510,6 +510,13 @@ class ModernLibraryBrowserView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(trackDidChange),
                                                name: .audioTrackDidChange, object: nil)
         
+        NotificationCenter.default.addObserver(self, selector: #selector(jellyfinMusicLibraryDidChange),
+                                               name: JellyfinManager.musicLibraryDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(jellyfinVideoLibraryDidChange),
+                                               name: JellyfinManager.videoLibraryDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(subsonicMusicFolderDidChange),
+                                               name: SubsonicManager.musicFolderDidChangeNotification, object: nil)
+        
         // External source selection (e.g. Subsonic/Jellyfin menu > Show in Library Browser)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSetBrowserSource(_:)),
                                                name: NSNotification.Name("SetBrowserSource"), object: nil)
@@ -897,17 +904,30 @@ class ModernLibraryBrowserView: NSView {
             let configuredServer = SubsonicManager.shared.servers.first(where: { $0.id == serverId })
             if configuredServer != nil {
                 let serverName = configuredServer?.name ?? "Select Server"
+                let maxServerWidth: CGFloat = 100 * m
                 let textH = font.pointSize + 4 * m
-                // Leave room for item count on the right
-                let maxServerWidth = visEndX - sourceNameStartX - (isArtOnlyMode ? 8 : 80) * m
 
-                // Store widths for scroll logic; clear unused library fields
                 serverNameMaxWidth = maxServerWidth
                 serverNameTextWidth = (serverName as NSString).size(withAttributes: dataAttrs).width
-                libraryNameMaxWidth = 0; libraryNameTextWidth = 0
 
                 drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
                                   availableWidth: maxServerWidth, scrollOffset: serverNameScrollOffset,
+                                  textHeight: textH, attributes: dataAttrs, in: context)
+
+                let libLabel = "Lib:"
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
+                libLabel.draw(at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs)
+
+                let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
+                let libraryX = libraryLabelX + libLabelWidth + 4 * m
+                let folderText = SubsonicManager.shared.currentMusicFolder?.name ?? "All"
+                let maxLibraryWidth: CGFloat = 80 * m
+
+                libraryNameMaxWidth = maxLibraryWidth
+                libraryNameTextWidth = (folderText as NSString).size(withAttributes: dataAttrs).width
+
+                drawScrollingText(folderText, startX: libraryX, textY: textY,
+                                  availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
                 // Item count (only in list mode, not art-only)
@@ -928,17 +948,30 @@ class ModernLibraryBrowserView: NSView {
             let configuredServer = JellyfinManager.shared.servers.first(where: { $0.id == serverId })
             if configuredServer != nil {
                 let serverName = configuredServer?.name ?? "Select Server"
+                let maxServerWidth: CGFloat = 100 * m
                 let textH = font.pointSize + 4 * m
-                // Leave room for item count on the right
-                let maxServerWidth = visEndX - sourceNameStartX - (isArtOnlyMode ? 8 : 80) * m
 
-                // Store widths for scroll logic; clear unused library fields
                 serverNameMaxWidth = maxServerWidth
                 serverNameTextWidth = (serverName as NSString).size(withAttributes: dataAttrs).width
-                libraryNameMaxWidth = 0; libraryNameTextWidth = 0
 
                 drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
                                   availableWidth: maxServerWidth, scrollOffset: serverNameScrollOffset,
+                                  textHeight: textH, attributes: dataAttrs, in: context)
+
+                let libLabel = "Lib:"
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
+                libLabel.draw(at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs)
+
+                let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
+                let libraryX = libraryLabelX + libLabelWidth + 4 * m
+                let libraryText = jellyfinCurrentLibraryName
+                let maxLibraryWidth: CGFloat = 80 * m
+
+                libraryNameMaxWidth = maxLibraryWidth
+                libraryNameTextWidth = (libraryText as NSString).size(withAttributes: dataAttrs).width
+
+                drawScrollingText(libraryText, startX: libraryX, textY: textY,
+                                  availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
                 // Item count (only in list mode, not art-only)
@@ -2608,9 +2641,27 @@ class ModernLibraryBrowserView: NSView {
             if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd { showLibraryMenu(at: event) }
             else if relativeX < serverZoneEnd { showSourceMenu(at: event) }
         case .subsonic:
-            if relativeX < barWidth * 0.5 { showSourceMenu(at: event) }
+            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
+            let maxServerWidth: CGFloat = 100 * m
+            let serverZoneEnd = sourcePrefix + maxServerWidth
+            let libLabelWidth = "Lib:".size(withAttributes: fontAttrs).width + 4 * m
+            let libraryZoneStart = serverZoneEnd + 12 * m
+            let maxLibraryWidth: CGFloat = 80 * m
+            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
+            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd { showSubsonicFolderMenu(at: event) }
+            else if relativeX < serverZoneEnd { showSourceMenu(at: event) }
         case .jellyfin:
-            if relativeX < barWidth * 0.5 { showSourceMenu(at: event) }
+            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
+            let maxServerWidth: CGFloat = 100 * m
+            let serverZoneEnd = sourcePrefix + maxServerWidth
+            let libLabelWidth = "Lib:".size(withAttributes: fontAttrs).width + 4 * m
+            let libraryZoneStart = serverZoneEnd + 12 * m
+            let maxLibraryWidth: CGFloat = 80 * m
+            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
+            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd {
+                if browseMode.isVideoMode { showJellyfinVideoLibraryMenu(at: event) }
+                else { showJellyfinLibraryMenu(at: event) }
+            } else if relativeX < serverZoneEnd { showSourceMenu(at: event) }
         case .radio:
             let radioNameWidth = "Internet Radio".size(withAttributes: fontAttrs).width
             let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
@@ -2783,6 +2834,63 @@ class ModernLibraryBrowserView: NSView {
             let item = NSMenuItem(title: "\(library.title) (\(typeLabel))", action: #selector(selectLibrary(_:)), keyEquivalent: "")
             item.target = self; item.representedObject = library
             item.state = library.id == currentLibraryId ? .on : .off
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+    
+    private func showJellyfinLibraryMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let libraries = JellyfinManager.shared.musicLibraries
+        let currentId = JellyfinManager.shared.currentMusicLibrary?.id
+        let allItem = NSMenuItem(title: "All Libraries", action: #selector(selectJellyfinMusicLibrary(_:)), keyEquivalent: "")
+        allItem.target = self; allItem.representedObject = Optional<JellyfinMusicLibrary>.none as Any
+        allItem.state = currentId == nil ? .on : .off
+        menu.addItem(allItem)
+        if !libraries.isEmpty { menu.addItem(NSMenuItem.separator()) }
+        for library in libraries {
+            let item = NSMenuItem(title: "\(library.name) (Music)", action: #selector(selectJellyfinMusicLibrary(_:)), keyEquivalent: "")
+            item.target = self; item.representedObject = library
+            item.state = library.id == currentId ? .on : .off
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+    
+    private func showJellyfinVideoLibraryMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let libraries = JellyfinManager.shared.videoLibraries
+        let currentMovieId = JellyfinManager.shared.currentMovieLibrary?.id
+        let currentShowId = JellyfinManager.shared.currentShowLibrary?.id
+        let activeId = browseMode == .shows ? currentShowId : currentMovieId
+        let allItem = NSMenuItem(title: "All Libraries", action: #selector(selectJellyfinVideoLibraryFromBrowser(_:)), keyEquivalent: "")
+        allItem.target = self; allItem.representedObject = Optional<JellyfinMusicLibrary>.none as Any
+        allItem.state = activeId == nil ? .on : .off
+        menu.addItem(allItem)
+        if !libraries.isEmpty { menu.addItem(NSMenuItem.separator()) }
+        for library in libraries {
+            let typeLabel = library.collectionType == "tvshows" ? "TV Shows" : "Movies"
+            let item = NSMenuItem(title: "\(library.name) (\(typeLabel))", action: #selector(selectJellyfinVideoLibraryFromBrowser(_:)), keyEquivalent: "")
+            item.target = self; item.representedObject = library
+            item.state = library.id == activeId ? .on : .off
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+    
+    private func showSubsonicFolderMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let folders = SubsonicManager.shared.musicFolders
+        let currentId = SubsonicManager.shared.currentMusicFolder?.id
+        let allItem = NSMenuItem(title: "All Folders", action: #selector(selectSubsonicMusicFolder(_:)), keyEquivalent: "")
+        allItem.target = self; allItem.representedObject = Optional<SubsonicMusicFolder>.none as Any
+        allItem.state = currentId == nil ? .on : .off
+        menu.addItem(allItem)
+        if !folders.isEmpty { menu.addItem(NSMenuItem.separator()) }
+        for folder in folders {
+            let item = NSMenuItem(title: folder.name, action: #selector(selectSubsonicMusicFolder(_:)), keyEquivalent: "")
+            item.target = self; item.representedObject = folder
+            item.state = folder.id == currentId ? .on : .off
             menu.addItem(item)
         }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
@@ -3199,6 +3307,36 @@ class ModernLibraryBrowserView: NSView {
     @objc private func selectLibrary(_ sender: NSMenuItem) {
         guard let library = sender.representedObject as? PlexLibrary else { return }
         PlexManager.shared.selectLibrary(library); clearAllCachedData(); reloadData()
+    }
+    @objc private func selectJellyfinMusicLibrary(_ sender: NSMenuItem) {
+        let library = sender.representedObject as? JellyfinMusicLibrary
+        if let library = library {
+            JellyfinManager.shared.selectMusicLibrary(library)
+        } else {
+            JellyfinManager.shared.clearMusicLibrarySelection()
+        }
+        clearAllCachedData(); reloadData()
+    }
+    @objc private func selectJellyfinVideoLibraryFromBrowser(_ sender: NSMenuItem) {
+        let library = sender.representedObject as? JellyfinMusicLibrary
+        if let library = library {
+            JellyfinManager.shared.selectMovieLibrary(library)
+            JellyfinManager.shared.selectShowLibrary(library)
+        } else {
+            JellyfinManager.shared.selectMovieLibrary(nil)
+            JellyfinManager.shared.selectShowLibrary(nil)
+        }
+        cachedJellyfinMovies = []; cachedJellyfinShows = []
+        reloadData()
+    }
+    @objc private func selectSubsonicMusicFolder(_ sender: NSMenuItem) {
+        let folder = sender.representedObject as? SubsonicMusicFolder
+        if let folder = folder {
+            SubsonicManager.shared.selectMusicFolder(folder)
+        } else {
+            SubsonicManager.shared.clearMusicFolderSelection()
+        }
+        clearAllCachedData(); reloadData()
     }
     @objc private func addFiles() {
         let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.allowsMultipleSelection = true
@@ -4039,6 +4177,26 @@ class ModernLibraryBrowserView: NSView {
     
     @objc private func plexContentDidPreload() { reloadData() }
     
+    @objc private func jellyfinMusicLibraryDidChange() {
+        DispatchQueue.main.async { [weak self] in
+            self?.clearAllCachedData(); self?.reloadData()
+        }
+    }
+    
+    @objc private func jellyfinVideoLibraryDidChange() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.browseMode.isVideoMode else { return }
+            self.cachedJellyfinMovies = []; self.cachedJellyfinShows = []
+            self.reloadData()
+        }
+    }
+    
+    @objc private func subsonicMusicFolderDidChange() {
+        DispatchQueue.main.async { [weak self] in
+            self?.clearAllCachedData(); self?.reloadData()
+        }
+    }
+    
     @objc private func mediaLibraryDidChange() {
         guard case .local = currentSource, browseMode != .radio else { return }
         DispatchQueue.main.async { [weak self] in
@@ -4152,6 +4310,16 @@ class ModernLibraryBrowserView: NSView {
         loadingAnimationTimer?.invalidate(); loadingAnimationTimer = nil; loadingAnimationFrame = 0
     }
     
+    /// Returns the display name of the currently relevant Jellyfin library based on browse mode.
+    private var jellyfinCurrentLibraryName: String {
+        let mgr = JellyfinManager.shared
+        switch browseMode {
+        case .movies: return mgr.currentMovieLibrary?.name ?? "All"
+        case .shows:  return mgr.currentShowLibrary?.name ?? "All"
+        default:      return mgr.currentMusicLibrary?.name ?? "All"
+        }
+    }
+    
     // MARK: - Server Name Scroll
     
     private func startServerNameScroll() {
@@ -4200,11 +4368,11 @@ class ModernLibraryBrowserView: NSView {
         case .subsonic(let id):
             let server = SubsonicManager.shared.servers.first(where: { $0.id == id })
             currentServerName = server?.name ?? "Select Server"
-            currentLibraryName = ""
+            currentLibraryName = SubsonicManager.shared.currentMusicFolder?.name ?? "All"
         case .jellyfin(let id):
             let server = JellyfinManager.shared.servers.first(where: { $0.id == id })
             currentServerName = server?.name ?? "Select Server"
-            currentLibraryName = ""
+            currentLibraryName = jellyfinCurrentLibraryName
         default:
             return
         }
