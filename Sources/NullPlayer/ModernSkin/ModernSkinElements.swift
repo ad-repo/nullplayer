@@ -77,7 +77,7 @@ enum ModernSkinElements {
     // MARK: - Marquee / Info Panel (right side)
     
     /// Marquee display area (right side of upper display)
-    static let marqueeBackground = Element("marquee_bg", NSRect(x: 93, y: 60, width: 174, height: 38))
+    static let marqueeBackground = Element("marquee_bg", NSRect(x: 93, y: 60, width: 176, height: 38))
     
     /// Info labels row (below marquee text, inside marquee panel)
     /// Layout: [bitrate] [samplerate] [bpm] [stereo/mono] [casting]
@@ -96,12 +96,12 @@ enum ModernSkinElements {
     
     /// Play/pause/stop status indicator (small icon to the left of time digits)
     /// y:76 centers the 10px icon in the time panel (panel center y:80.5)
-    static let statusPlay = Element("status_play", NSRect(x: 10, y: 76, width: 8, height: 10))
-    static let statusPause = Element("status_pause", NSRect(x: 10, y: 76, width: 8, height: 10))
-    static let statusStop = Element("status_stop", NSRect(x: 10, y: 76, width: 8, height: 10))
+    static let statusPlay = Element("status_play", NSRect(x: 6, y: 76, width: 8, height: 10))
+    static let statusPause = Element("status_pause", NSRect(x: 6, y: 76, width: 8, height: 10))
+    static let statusStop = Element("status_stop", NSRect(x: 6, y: 76, width: 8, height: 10))
     
     /// Mini spectrum analyzer area (to the left of status)
-    static let spectrumArea = Element("spectrum_area", NSRect(x: 10, y: 41, width: 80, height: 18),
+    static let spectrumArea = Element("spectrum_area", NSRect(x: 6, y: 39, width: 84, height: 18),
                                       animated: true)
     
     // MARK: - Window Toggle Buttons (above seek bar, right side)
@@ -121,9 +121,9 @@ enum ModernSkinElements {
     
     // MARK: - Seek Bar (thin line spanning full width, centered between transport & toggle rows)
     
-    static let seekTrack = Element("seek_track", NSRect(x: 8, y: 32, width: 259, height: 3))
-    static let seekFill = Element("seek_fill", NSRect(x: 8, y: 32, width: 0, height: 3))
-    static let seekThumb = Element("seek_thumb", NSRect(x: 8, y: 30, width: 6, height: 6),
+    static let seekTrack = Element("seek_track", NSRect(x: 6, y: 32, width: 263, height: 3))
+    static let seekFill = Element("seek_fill", NSRect(x: 6, y: 32, width: 0, height: 3))
+    static let seekThumb = Element("seek_thumb", NSRect(x: 6, y: 30, width: 6, height: 6),
                                    states: ["normal", "pressed"])
     
     // MARK: - Transport Buttons (bottom-left, 6 buttons)
@@ -143,9 +143,9 @@ enum ModernSkinElements {
     
     // MARK: - Volume Slider (bottom-right, replaces old shuffle/repeat/cast buttons)
     
-    static let volumeTrack = Element("volume_track", NSRect(x: 180, y: 12, width: 85, height: 3))
-    static let volumeFill = Element("volume_fill", NSRect(x: 180, y: 12, width: 0, height: 3))
-    static let volumeThumb = Element("volume_thumb", NSRect(x: 180, y: 10, width: 6, height: 6),
+    static let volumeTrack = Element("volume_track", NSRect(x: 182, y: 12, width: 87, height: 3))
+    static let volumeFill = Element("volume_fill", NSRect(x: 182, y: 12, width: 0, height: 3))
+    static let volumeThumb = Element("volume_thumb", NSRect(x: 182, y: 10, width: 6, height: 6),
                                      states: ["normal", "pressed"])
     
     // MARK: - Playlist Window

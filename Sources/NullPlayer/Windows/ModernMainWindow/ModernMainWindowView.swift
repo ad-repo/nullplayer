@@ -254,7 +254,7 @@ class ModernMainWindowView: NSView {
         let timeStatusRegion = timeScaled.union(statusScaled)
         if dirtyRect.intersects(timeStatusRegion) {
             // Recessed panel behind time digits and status indicator
-            renderer.drawInsetPanel(in: NSRect(x: 10, y: 63, width: 80, height: 35), context: context)
+            renderer.drawInsetPanel(in: NSRect(x: 6, y: 60, width: 84, height: 38), context: context)
             drawTimeDisplay(context: context)
             let state = effectivePlaybackState()
             renderer.drawStatusIndicator(state, in: ModernSkinElements.statusPlay.defaultRect, context: context)
@@ -276,7 +276,7 @@ class ModernMainWindowView: NSView {
         }
         
         // 6. EQ & Playlist toggle buttons (above seek bar)
-        let toggleRegion = scaledRect(NSRect(x: 93, y: 42, width: 174, height: 14))
+        let toggleRegion = scaledRect(NSRect(x: 93, y: 42, width: 176, height: 14))
         if dirtyRect.intersects(toggleRegion) {
             drawEQPlaylistButtons(context: context)
         }
@@ -297,7 +297,7 @@ class ModernMainWindowView: NSView {
         let volumeScaled = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
         if dirtyRect.intersects(volumeScaled) {
             // Recessed panel behind the volume slider
-            renderer.drawInsetPanel(in: NSRect(x: 175, y: 6, width: 91, height: 17), context: context)
+            renderer.drawInsetPanel(in: NSRect(x: 177, y: 6, width: 92, height: 17), context: context)
             drawVolumeSlider(context: context)
         }
     }
@@ -516,7 +516,7 @@ class ModernMainWindowView: NSView {
         let y: CGFloat = 42
         let h: CGFloat = 14
         let leftEdge: CGFloat = 93   // Match marquee left edge
-        let rightEdge: CGFloat = 267  // Match marquee right edge
+        let rightEdge: CGFloat = 269  // Match marquee right edge
         let w: CGFloat = 16
         let spacing = (rightEdge - leftEdge - 10 * w) / 9  // ~1.56
         let startX = leftEdge
@@ -828,7 +828,7 @@ class ModernMainWindowView: NSView {
             rect = scaledRect(ModernSkinElements.titleBar.defaultRect)
         case let id where id.hasPrefix("btn_"):
             // Toggle buttons (EQ, PL, SH, 2X, etc.)
-            rect = scaledRect(NSRect(x: 93, y: 42, width: 174, height: 14))
+            rect = scaledRect(NSRect(x: 93, y: 42, width: 176, height: 14))
         default:
             needsDisplay = true
             return
@@ -873,7 +873,7 @@ class ModernMainWindowView: NSView {
         ])
         do {
             let leftEdge: CGFloat = 93
-            let rightEdge: CGFloat = 267
+            let rightEdge: CGFloat = 269
             let bw: CGFloat = 16
             let bs = (rightEdge - leftEdge - 10 * bw) / 9
             let ids = ["btn_2x", "btn_ht", "btn_shuffle", "btn_repeat", "btn_cast",
