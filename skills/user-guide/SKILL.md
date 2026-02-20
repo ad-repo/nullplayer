@@ -165,10 +165,12 @@ Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix (double-click to cycle)
 - Modern skins use `skin.json` format
 - Bundled modern skins: NeonWave (default), Skulls
 
-### Double Size Mode (Modern UI)
-- Toggle via **2X button** or context menu
+### Double Size Mode
+- Toggle via **2X button** or context menu → **Double Size**
 - Scales all windows by 2x
 - Persists across restarts
+- **Modern UI**: toggles live instantly
+- **Classic UI**: requires a restart (dialog appears before any UI change)
 
 ### Hide Title Bars (Modern UI)
 - Toggle via context menu
@@ -229,4 +231,4 @@ For comprehensive documentation, see:
 - **Shift+Click** for multi-select in playlist/browser
 - **Cmd+J** to jump to currently playing track
 - Windows **dock automatically** when dragged near each other
-- Modern UI has **Double Size** (2X) and **Hide Title Bars** (HT) modes
+- **Double Size** (2X) is available in both modern and classic UI; classic requires restart
