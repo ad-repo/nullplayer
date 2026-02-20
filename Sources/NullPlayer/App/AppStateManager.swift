@@ -215,7 +215,7 @@ class AppStateManager {
         
         // -- v2 fields (added for comprehensive state restoration) --
         
-        // Double size mode (modern UI only)
+        // Double size mode (both modes)
         var isDoubleSize: Bool = false
         
         // Modern skin name
@@ -679,6 +679,15 @@ class AppStateManager {
         let savedDoubleSize = state.isDoubleSize
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // Restore double size BEFORE showing sub-windows so applyDoubleSize
+            // doesn't re-scale frames that are already at their saved 2x sizes.
+            // At this point only the main window is visible, so applyDoubleSize
+            // correctly updates its minSize/frame without touching sub-window heights.
+            if savedDoubleSize {
+                wm.isDoubleSize = true
+                NSLog("AppStateManager: Restored double size mode")
+            }
+            
             if state.isEqualizerVisible {
                 wm.showEqualizer(at: equalizerFrame)
             }
@@ -714,14 +723,6 @@ class AppStateManager {
                         wm.selectVisualizationPreset(at: presetIndex)
                         NSLog("AppStateManager: Restored ProjectM preset index: %d", presetIndex)
                     }
-                }
-            }
-            
-            // Restore double size mode (modern UI only) after windows are positioned
-            if savedDoubleSize && wm.isModernUIEnabled {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    wm.isDoubleSize = true
-                    NSLog("AppStateManager: Restored double size mode")
                 }
             }
         }

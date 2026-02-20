@@ -73,13 +73,11 @@ class ContextMenuBuilder {
             menu.addItem(hideTitleBars)
         }
         
-        // Double Size (modern UI only)
-        if wm.isModernUIEnabled {
-            let doubleSize = NSMenuItem(title: "Double Size", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
-            doubleSize.target = MenuActions.shared
-            doubleSize.state = wm.isDoubleSize ? .on : .off
-            menu.addItem(doubleSize)
-        }
+        // Double Size (both modern and classic UI)
+        let doubleSize = NSMenuItem(title: "Double Size", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
+        doubleSize.target = MenuActions.shared
+        doubleSize.state = wm.isDoubleSize ? .on : .off
+        menu.addItem(doubleSize)
         
         // Remember State On Quit
         let rememberState = NSMenuItem(title: "Remember State On Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
@@ -2182,10 +2180,12 @@ class MenuActions: NSObject {
     
     /// Shows a restart confirmation alert. Returns `true` if the user confirmed and the app is restarting.
     @discardableResult
-    private func showRestartAlert() -> Bool {
+    private func showRestartAlert(
+        informativeText: String = "NullPlayer needs to restart to apply the UI mode change. Restart now?"
+    ) -> Bool {
         let alert = NSAlert()
         alert.messageText = "Restart Required"
-        alert.informativeText = "NullPlayer needs to restart to apply the UI mode change. Restart now?"
+        alert.informativeText = informativeText
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Restart")
         alert.addButton(withTitle: "Cancel")
@@ -2375,7 +2375,29 @@ class MenuActions: NSObject {
     }
     
     @objc func toggleDoubleSize() {
-        WindowManager.shared.isDoubleSize.toggle()
+        let wm = WindowManager.shared
+        if wm.isModernUIEnabled {
+            // Modern mode: live toggle works correctly
+            wm.isDoubleSize.toggle()
+        } else {
+            // Classic mode: show the dialog BEFORE touching the UI so it never distorts.
+            // Inline the alert so we can toggle the flag and call relaunchApp() ourselves —
+            // the standard showRestartAlert() helper calls relaunchApp() internally and never
+            // returns, which would leave the flag at the old value when saveState() fires.
+            let alert = NSAlert()
+            alert.messageText = "Restart Required"
+            alert.informativeText = "NullPlayer needs to restart to apply the size change. Restart now?"
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Restart")
+            alert.addButton(withTitle: "Cancel")
+            
+            if alert.runModal() == .alertFirstButtonReturn {
+                // Toggle first so applicationWillTerminate → saveState() captures the new value.
+                // applyDoubleSize() starts an async animation that never renders — app terminates first.
+                wm.isDoubleSize.toggle()
+                relaunchApp()
+            }
+        }
     }
     
     @objc func snapToDefault() {

@@ -45,10 +45,9 @@ class WindowManager {
         }
     }
     
-    /// Double size mode (2x scaling) - not persisted, always starts at 1x (modern UI only)
+    /// Double size mode (2x scaling) - not persisted, always starts at 1x (both modern and classic UI)
     var isDoubleSize: Bool = false {
         didSet {
-            guard isModernUIEnabled else { isDoubleSize = false; return }
             applyDoubleSize()
             NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
         }
