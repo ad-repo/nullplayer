@@ -662,7 +662,7 @@ class ModernSkinRenderer {
         // Thumb -- small dot at the current position, uses gradient end color if provided
         let thumbColor = gradient?.1 ?? skin.primaryColor
         let thumbDiameter: CGFloat = 5 * scaleFactor
-        let thumbX = scaledTrack.minX + fillWidth - thumbDiameter / 2
+        let thumbX = scaledTrack.minX + (scaledTrack.width - thumbDiameter) * min(max(fillFraction, 0), 1)
         let thumbY = scaledTrack.midY - thumbDiameter / 2
         let thumbRect = NSRect(x: thumbX, y: thumbY, width: thumbDiameter, height: thumbDiameter)
         
