@@ -278,6 +278,17 @@ class ModernSpectrumView: NSView {
     
     // MARK: - Mouse Events
     
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // When title bars are hidden, intercept clicks that would go to the spectrum
+        // analyzer subview so ModernSpectrumView.mouseDown handles them for drag-to-undock
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode {
+            if super.hitTest(point) == spectrumAnalyzerView {
+                return self
+            }
+        }
+        return super.hitTest(point)
+    }
+    
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
     }

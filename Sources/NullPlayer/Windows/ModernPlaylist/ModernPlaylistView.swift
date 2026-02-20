@@ -40,6 +40,10 @@ class ModernPlaylistView: NSView {
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     
+    /// Deferred track click when title bars are hidden (drag-to-undock support)
+    private var pendingTrackClick: (index: Int, event: NSEvent)?
+    private var hasDraggedWindow = false
+    
     /// Display update timer for marquee scrolling and playback time updates
     private var displayTimer: Timer?
     
@@ -824,7 +828,18 @@ class ModernPlaylistView: NSView {
         
         // Track list
         if let trackIndex = hitTestTrackList(at: point) {
-            handleTrackClick(index: trackIndex, event: event)
+            if WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode {
+                // Defer the click so the user can drag to undock; commit on mouseUp if no drag
+                pendingTrackClick = (trackIndex, event)
+                hasDraggedWindow = false
+                isDraggingWindow = true
+                windowDragStartPoint = event.locationInWindow
+                if let window = window {
+                    WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+                }
+            } else {
+                handleTrackClick(index: trackIndex, event: event)
+            }
             return
         }
         
@@ -895,6 +910,7 @@ class ModernPlaylistView: NSView {
     
     override func mouseDragged(with event: NSEvent) {
         if isDraggingWindow, let window = window {
+            hasDraggedWindow = true
             let currentPoint = event.locationInWindow
             let deltaX = currentPoint.x - windowDragStartPoint.x
             let deltaY = currentPoint.y - windowDragStartPoint.y
@@ -917,6 +933,13 @@ class ModernPlaylistView: NSView {
                 WindowManager.shared.windowDidFinishDragging(window)
             }
         }
+        
+        // Commit deferred track click if the user didn't actually drag
+        if let pending = pendingTrackClick, !hasDraggedWindow {
+            handleTrackClick(index: pending.index, event: pending.event)
+        }
+        pendingTrackClick = nil
+        hasDraggedWindow = false
         
         if isShadeMode {
             handleShadeMouseUp(at: point)
