@@ -147,41 +147,35 @@ fragment float4 led_matrix_fragment(
     LEDVertexOut in [[stage_in]],
     constant LEDParams& params [[buffer(1)]]
 ) {
-    // === ROUNDED RECTANGLE with anti-aliased edges ===
-    // No external spacing — corner rounding provides the only cell separation
-    float2 centered = in.uv * 2.0 - 1.0;  // -1 to 1
-    float cornerRadius = 0.22;
-    float2 q = abs(centered) - (1.0 - cornerRadius);
-    float sdfDist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
-    float edgeSmooth = 0.05;
-    float shape = 1.0 - smoothstep(cornerRadius - edgeSmooth, cornerRadius + edgeSmooth, sdfDist);
-    if (shape < 0.01) {
-        discard_fragment();
-    }
-
-    // Off cells: fully discard so the dark background provides clean contrast
+    // Off cells: discard for clean contrast against active bars
     if (in.brightness < 0.01 && in.isPeak < 0.5) {
         discard_fragment();
     }
 
-    // === BASE COLOR - rainbow hue from column position ===
+    // === LED CORNER CLIPPING (hard discard, no alpha) ===
+    // Tiny corner cutouts at cell intersections give LED panel definition.
+    // Using a HARD discard (not smoothstep alpha) so there are no semi-transparent
+    // seams at cell edges — the old shape-as-alpha approach produced shape=0.5 at
+    // every cell boundary, creating a visible dark grid line on all four sides.
+    float2 centered = in.uv * 2.0 - 1.0;
+    float cornerRadius = 0.30;
+    float2 q = abs(centered) - (1.0 - cornerRadius);
+    if (length(max(q, 0.0)) > cornerRadius) {
+        discard_fragment();
+    }
+
+    // === BASE COLOR ===
     float hue = in.normalizedColumn;
     float3 baseColor = hsv2rgb(hue, 1.0, 1.0);
     float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
-
-    // === PERCEPTUAL GAMMA ===
-    // Makes bright cells look punchier and fades look smoother
     float percBrightness = pow(displayBrightness, 0.72);
 
     // === WARM FADE TRAIL ===
-    // Subtle shift toward amber only at very low brightness (tail of decay)
     float3 warmTint = float3(1.0, 0.35, 0.05);
     float warmBlend = pow(max(0.0, 1.0 - displayBrightness * 2.0), 2.0) * 0.45;
-    float3 fadedColor = mix(baseColor, warmTint, warmBlend);
-    float3 color = fadedColor * percBrightness;
+    float3 color = mix(baseColor, warmTint, warmBlend) * percBrightness;
 
     // === INNER LED GLOW (3D depth) ===
-    // Subtle center-bright gradient — keep edges strong so cells fill their space
     float radialDist = length(centered);
     float innerGlow = 1.0 - smoothstep(0.0, 1.0, radialDist) * 0.22;
     color *= innerGlow;
@@ -192,31 +186,24 @@ fragment float4 led_matrix_fragment(
     color += float3(specular);
 
     // === HEIGHT-BASED INTENSITY ===
-    float heightBoost = mix(0.85, 1.35, in.normalizedRow);
-    color *= heightBoost;
+    color *= mix(0.85, 1.35, in.normalizedRow);
 
     // === HIGH-BRIGHTNESS BLOOM ===
-    // Near-full cells get an extra glow punch
     if (percBrightness > 0.8) {
-        float bloom = (percBrightness - 0.8) * 3.5;
-        color += baseColor * bloom * 0.25;
+        color += baseColor * (percBrightness - 0.8) * 3.5 * 0.25;
     }
 
     // === PEAK CELL RENDERING ===
     if (in.isPeak > 0.5) {
         float3 peakColor = mix(baseColor, float3(1.0), 0.5);
-        peakColor *= innerGlow;
-        peakColor += float3(specular * 1.6);
         float pulse = 1.0 + sin(params.time * 8.0) * 0.07;
         color = peakColor * 1.3 * pulse;
     }
 
-    // Brightness boost (for small embedded views)
-    color *= params.brightnessBoost;
+    color = min(color * params.brightnessBoost, float3(1.0));
 
-    color = min(color, float3(1.0));
-
-    return float4(color, shape);
+    // Fully opaque — no alpha seam artifacts at cell boundaries
+    return float4(color, 1.0);
 }
 
 // MARK: - Classic Bar Shaders (Classic Mode)

@@ -971,7 +971,7 @@ class SpectrumAnalyzerView: NSView {
         guard let device = device else { return }
         
         let maxColumns = 512  // Enough for Ultra mode's 512 bars
-        let maxRows = 16
+        let maxRows = 32     // Enough headroom for Enhanced mode row count increases
         let maxCells = maxColumns * maxRows
         
         // Ultra mode has more rows (64) for ultra high resolution
