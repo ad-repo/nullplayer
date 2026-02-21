@@ -42,20 +42,8 @@ class ContextMenuBuilder {
         // Options submenu
         menu.addItem(buildOptionsMenuItem())
         
-        // Local Library submenu
-        menu.addItem(buildLocalLibraryMenuItem())
-        
-        // Plex submenu
-        menu.addItem(buildPlexMenuItem())
-        
-        // Subsonic submenu
-        menu.addItem(buildSubsonicMenuItem())
-        
-        // Jellyfin submenu
-        menu.addItem(buildJellyfinMenuItem())
-
-        // Emby submenu
-        menu.addItem(buildEmbyMenuItem())
+        // Libraries submenu (Local, Plex, Subsonic, Jellyfin, Emby)
+        menu.addItem(buildLibrariesMenuItem())
 
         // Output Devices submenu (includes local, AirPlay, and casting)
         menu.addItem(buildOutputDevicesMenuItem())
@@ -761,8 +749,22 @@ class ContextMenuBuilder {
         return spectrumItem
     }
     
+    // MARK: - Libraries Submenu
+
+    private static func buildLibrariesMenuItem() -> NSMenuItem {
+        let librariesItem = NSMenuItem(title: "Libraries", action: nil, keyEquivalent: "")
+        let librariesMenu = NSMenu()
+        librariesMenu.addItem(buildLocalLibraryMenuItem())
+        librariesMenu.addItem(buildPlexMenuItem())
+        librariesMenu.addItem(buildSubsonicMenuItem())
+        librariesMenu.addItem(buildJellyfinMenuItem())
+        librariesMenu.addItem(buildEmbyMenuItem())
+        librariesItem.submenu = librariesMenu
+        return librariesItem
+    }
+
     // MARK: - Local Library Submenu
-    
+
     private static func buildLocalLibraryMenuItem() -> NSMenuItem {
         let libraryItem = NSMenuItem(title: "Local Library", action: nil, keyEquivalent: "")
         let libraryMenu = NSMenu()

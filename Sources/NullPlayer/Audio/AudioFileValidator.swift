@@ -6,6 +6,14 @@ enum AudioFileValidator {
     
     /// Supported audio extensions
     static let supportedExtensions: Set<String> = ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"]
+
+    /// Supported video extensions
+    static let supportedVideoExtensions: Set<String> = ["mp4", "mkv", "mov", "avi", "m4v", "wmv", "flv", "webm", "ts", "m2ts", "mpg", "mpeg"]
+
+    /// Returns true if the URL's extension is a supported video format
+    static func isVideoFile(url: URL) -> Bool {
+        supportedVideoExtensions.contains(url.pathExtension.lowercased())
+    }
     
     /// Result of validating a batch of URLs
     struct ValidationResult {
