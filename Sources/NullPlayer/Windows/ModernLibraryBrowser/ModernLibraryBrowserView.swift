@@ -2305,9 +2305,8 @@ class ModernLibraryBrowserView: NSView {
             let width = widthForColumn(column, availableWidth: headerWidth, columns: columns)
             let edgeX = x + width
             
-            // Don't allow resizing the last column (it fills remaining space or is fixed-end)
-            // Allow resizing any column except title (title is flexible)
-            if index < columns.count - 1 && column.id != "title" {
+            // Allow resizing any non-last column by dragging its right edge
+            if index < columns.count - 1 {
                 if abs(point.x - edgeX) < threshold {
                     return column.id
                 }
