@@ -2251,10 +2251,10 @@ class SpectrumAnalyzerView: NSView {
         
         switch localQualityMode {
         case .enhanced:
-            // Calculate cell dimensions for Enhanced mode (16 rows)
-            let cellSpacing: Float = 1.0 * Float(scale)
-            let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
-            let cellWidth = Float(localBarWidth * scale) - 1.0
+            // No gap between cells — full fill, LED definition comes from corner rounding only
+            let cellSpacing: Float = 0.0
+            let cellHeight = (scaledHeight - 2.0) / Float(ledRowCount)  // 2px top margin so peaks aren't clipped
+            let cellWidth = Float(localBarWidth * scale)
             
             // Update params buffer
             if let buffer = paramsBuffer {

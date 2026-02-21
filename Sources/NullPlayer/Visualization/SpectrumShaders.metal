@@ -148,9 +148,9 @@ fragment float4 led_matrix_fragment(
     constant LEDParams& params [[buffer(1)]]
 ) {
     // === ROUNDED RECTANGLE with anti-aliased edges ===
-    // Tighter radius (0.18) so cells fill more of their allocated area
+    // No external spacing — corner rounding provides the only cell separation
     float2 centered = in.uv * 2.0 - 1.0;  // -1 to 1
-    float cornerRadius = 0.18;
+    float cornerRadius = 0.22;
     float2 q = abs(centered) - (1.0 - cornerRadius);
     float sdfDist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
     float edgeSmooth = 0.05;
