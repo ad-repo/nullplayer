@@ -1,0 +1,81 @@
+{
+    "meta": {
+        "name": "EmeraldForgePlatinum",
+        "author": "NullPlayer",
+        "version": "1.2",
+        "description": "Deep emerald theme with platinum accents and no yellow tones"
+    },
+    "titleText": {
+        "mode": "image",
+        "charSpacing": 2,
+        "charHeight": 10,
+        "alignment": "center",
+        "tintColor": "#3bd98a"
+    },
+    "palette": {
+        "primary": "#3bd98a",
+        "secondary": "#239b63",
+        "accent": "#aeb6bf",
+        "highlight": "#e4e9ed",
+        "background": "#0e1411",
+        "surface": "#161d18",
+
+        "text": "#f3f5f6",
+        "textDim": "#8f9a99",
+
+        "positive": "#6be0b0",
+        "negative": "#b85c4a",
+        "warning": "#8aa6b3",
+
+        "border": "#239b63"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 10,
+        "bodySize": 11,
+        "smallSize": 7,
+        "timeSize": 24
+    },
+    "background": {
+        "grid": {
+            "color": "#1f7a56",
+            "spacing": 18,
+            "angle": 75,
+            "opacity": 0.025,
+            "perspective": true
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 5,
+        "intensity": 0.4,
+        "threshold": 0.65
+    },
+    "window": {
+        "borderWidth": 1.5,
+        "borderColor": "#1f7a56",
+        "cornerRadius": 0,
+        "seamlessDocking": 1.0
+    },
+    "elements": {
+        "titlebar": { "color": "#161d18" },
+        "marquee_bg": { "color": "#131a15" },
+        "info_cast": { "color": "#aeb6bf" },
+        "spectrum_area": { "color": "#239b63" },
+        "seek_fill": { "color": "#3bd98a" },
+        "spectrum_titlebar": { "color": "#161d18" },
+        "playlist_titlebar": { "color": "#161d18" },
+        "eq_titlebar": { "color": "#161d18" },
+        "library_titlebar": { "color": "#161d18" },
+        "projectm_titlebar": { "color": "#161d18" }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 3.0,
+            "minValue": 0.4,
+            "maxValue": 1.0
+        }
+    }
+}
