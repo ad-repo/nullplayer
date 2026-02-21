@@ -75,6 +75,11 @@ class LocalMediaServer {
         let server = HTTPServer(address: address)
         self.server = server
         
+        // Health check route
+        await server.appendRoute("GET /health") { _ in
+            return HTTPResponse(statusCode: .ok)
+        }
+
         // Add route handler for media files (local files)
         await server.appendRoute("GET /media/*") { [weak self] request in
             guard let self = self else {
@@ -348,8 +353,7 @@ class LocalMediaServer {
     private func checkServerHealth() {
         guard isRunning, let ip = _localIPAddress else { return }
         
-        // Health check URL will 404 (no route) but we're checking the server responds at all
-        let url = URL(string: "http://\(ip):\(port)/media/healthcheck")!
+        let url = URL(string: "http://\(ip):\(port)/health")!
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
         
