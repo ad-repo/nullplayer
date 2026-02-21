@@ -2251,10 +2251,12 @@ class SpectrumAnalyzerView: NSView {
         
         switch localQualityMode {
         case .enhanced:
-            // No gap between cells — full fill, LED definition comes from corner rounding only
+            // Derive cell width directly from viewport so bars always fill the full width.
+            // barWidth is floor()'d by the view so barCount*barWidth < scaledWidth; using
+            // scaledWidth/barCount avoids the right-side gap entirely.
             let cellSpacing: Float = 0.0
             let cellHeight = (scaledHeight - 2.0) / Float(ledRowCount)  // 2px top margin so peaks aren't clipped
-            let cellWidth = Float(localBarWidth * scale)
+            let cellWidth = scaledWidth / Float(localBarCount)
             
             // Update params buffer
             if let buffer = paramsBuffer {
