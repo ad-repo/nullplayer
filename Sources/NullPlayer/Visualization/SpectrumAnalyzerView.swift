@@ -526,7 +526,7 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var peakHoldPositions: [Float] = []  // Peak hold position per column (0-1) - Enhanced mode
     nonisolated(unsafe) private var ultraPeakPositions: [Float] = []  // Peak positions for Ultra mode (separate to avoid resize conflicts)
     nonisolated(unsafe) private var cellBrightness: [[Float]] = []   // Brightness per cell [column][row]
-    private let ledRowCount = 16  // Number of LED rows in matrix (Enhanced mode)
+    private let ledRowCount = 24  // Number of LED rows in matrix (Enhanced mode)
     private let ultraLedRowCount = 64  // Ultra high resolution
     private let ultraBarCount = 512  // Maximum fidelity
     
@@ -2252,7 +2252,7 @@ class SpectrumAnalyzerView: NSView {
         switch localQualityMode {
         case .enhanced:
             // Calculate cell dimensions for Enhanced mode (16 rows)
-            let cellSpacing: Float = 2.0 * Float(scale)
+            let cellSpacing: Float = 1.0 * Float(scale)
             let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
             let cellWidth = Float(localBarWidth * scale) - 1.0
             
