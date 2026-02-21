@@ -53,7 +53,10 @@ class ContextMenuBuilder {
         
         // Jellyfin submenu
         menu.addItem(buildJellyfinMenuItem())
-        
+
+        // Emby submenu
+        menu.addItem(buildEmbyMenuItem())
+
         // Output Devices submenu (includes local, AirPlay, and casting)
         menu.addItem(buildOutputDevicesMenuItem())
         
@@ -1182,7 +1185,148 @@ class ContextMenuBuilder {
         jellyfinItem.submenu = jellyfinMenu
         return jellyfinItem
     }
-    
+
+    // MARK: - Emby Submenu
+
+    private static func buildEmbyMenuItem() -> NSMenuItem {
+        let embyItem = NSMenuItem(title: "Emby", action: nil, keyEquivalent: "")
+        let embyMenu = NSMenu()
+        embyMenu.autoenablesItems = false
+
+        let servers = EmbyManager.shared.servers
+        let currentServer = EmbyManager.shared.currentServer
+
+        // Add Server / Manage Servers
+        if servers.isEmpty {
+            let addItem = NSMenuItem(title: "Add Server...", action: #selector(MenuActions.addEmbyServer), keyEquivalent: "")
+            addItem.target = MenuActions.shared
+            embyMenu.addItem(addItem)
+        } else {
+            // Connection status
+            switch EmbyManager.shared.connectionState {
+            case .connected:
+                if let server = currentServer {
+                    let statusItem = NSMenuItem(title: "✓ Connected to \(server.name)", action: nil, keyEquivalent: "")
+                    embyMenu.addItem(statusItem)
+                }
+            case .connecting:
+                let statusItem = NSMenuItem(title: "Connecting...", action: nil, keyEquivalent: "")
+                embyMenu.addItem(statusItem)
+            case .error:
+                let statusItem = NSMenuItem(title: "⚠ Connection Error", action: nil, keyEquivalent: "")
+                embyMenu.addItem(statusItem)
+            case .disconnected:
+                let statusItem = NSMenuItem(title: "Not Connected", action: nil, keyEquivalent: "")
+                embyMenu.addItem(statusItem)
+            }
+
+            embyMenu.addItem(NSMenuItem.separator())
+
+            // Servers submenu
+            let serversItem = NSMenuItem(title: "Servers", action: nil, keyEquivalent: "")
+            let serversMenu = NSMenu()
+            serversMenu.autoenablesItems = false
+
+            for server in servers {
+                let serverItem = NSMenuItem(title: server.name, action: #selector(MenuActions.selectEmbyServer(_:)), keyEquivalent: "")
+                serverItem.target = MenuActions.shared
+                serverItem.representedObject = server.id
+                serverItem.state = server.id == currentServer?.id ? .on : .off
+                serversMenu.addItem(serverItem)
+            }
+
+            serversMenu.addItem(NSMenuItem.separator())
+
+            let addServerItem = NSMenuItem(title: "Add Server...", action: #selector(MenuActions.addEmbyServer), keyEquivalent: "")
+            addServerItem.target = MenuActions.shared
+            serversMenu.addItem(addServerItem)
+
+            let manageItem = NSMenuItem(title: "Manage Servers...", action: #selector(MenuActions.manageEmbyServers), keyEquivalent: "")
+            manageItem.target = MenuActions.shared
+            serversMenu.addItem(manageItem)
+
+            serversItem.submenu = serversMenu
+            embyMenu.addItem(serversItem)
+
+            embyMenu.addItem(NSMenuItem.separator())
+
+            // Disconnect option (if connected)
+            if currentServer != nil {
+                let disconnectItem = NSMenuItem(title: "Disconnect", action: #selector(MenuActions.disconnectEmby), keyEquivalent: "")
+                disconnectItem.target = MenuActions.shared
+                embyMenu.addItem(disconnectItem)
+
+                embyMenu.addItem(NSMenuItem.separator())
+            }
+        }
+
+        // Music libraries submenu (if more than one music library)
+        let musicLibs = EmbyManager.shared.musicLibraries
+        if musicLibs.count > 1 {
+            let musicLibItem = NSMenuItem(title: "Music Libraries", action: nil, keyEquivalent: "")
+            let musicLibMenu = NSMenu()
+            musicLibMenu.autoenablesItems = false
+
+            let allItem = NSMenuItem(title: "All Libraries", action: #selector(MenuActions.selectEmbyMusicLibrary(_:)), keyEquivalent: "")
+            allItem.target = MenuActions.shared
+            allItem.representedObject = Optional<String>.none as Any
+            allItem.state = EmbyManager.shared.currentMusicLibrary == nil ? .on : .off
+            musicLibMenu.addItem(allItem)
+            musicLibMenu.addItem(NSMenuItem.separator())
+
+            for lib in musicLibs {
+                let libItem = NSMenuItem(title: "\(lib.name) (Music)", action: #selector(MenuActions.selectEmbyMusicLibrary(_:)), keyEquivalent: "")
+                libItem.target = MenuActions.shared
+                libItem.representedObject = lib.id
+                libItem.state = lib.id == EmbyManager.shared.currentMusicLibrary?.id ? .on : .off
+                musicLibMenu.addItem(libItem)
+            }
+
+            musicLibItem.submenu = musicLibMenu
+            embyMenu.addItem(musicLibItem)
+
+            embyMenu.addItem(NSMenuItem.separator())
+        }
+
+        // Video libraries submenu (if multiple video libraries)
+        let videoLibs = EmbyManager.shared.videoLibraries
+        if videoLibs.count > 1 {
+            let videoLibItem = NSMenuItem(title: "Video Libraries", action: nil, keyEquivalent: "")
+            let videoLibMenu = NSMenu()
+            videoLibMenu.autoenablesItems = false
+
+            for lib in videoLibs {
+                let libItem = NSMenuItem(title: lib.name, action: #selector(MenuActions.selectEmbyVideoLibrary(_:)), keyEquivalent: "")
+                libItem.target = MenuActions.shared
+                libItem.representedObject = lib.id
+                let isMovieLib = lib.id == EmbyManager.shared.currentMovieLibrary?.id
+                let isShowLib = lib.id == EmbyManager.shared.currentShowLibrary?.id
+                libItem.state = (isMovieLib || isShowLib) ? .on : .off
+                videoLibMenu.addItem(libItem)
+            }
+
+            videoLibItem.submenu = videoLibMenu
+            embyMenu.addItem(videoLibItem)
+
+            embyMenu.addItem(NSMenuItem.separator())
+        }
+
+        // Refresh Library
+        let refreshItem = NSMenuItem(title: "Refresh Library", action: #selector(MenuActions.refreshEmbyLibrary), keyEquivalent: "")
+        refreshItem.target = MenuActions.shared
+        refreshItem.isEnabled = currentServer != nil
+        embyMenu.addItem(refreshItem)
+
+        // Show in Browser
+        let browserItem = NSMenuItem(title: "Show in Library Browser", action: #selector(MenuActions.showEmbyInBrowser), keyEquivalent: "")
+        browserItem.target = MenuActions.shared
+        browserItem.isEnabled = currentServer != nil
+        embyMenu.addItem(browserItem)
+
+        embyItem.submenu = embyMenu
+        return embyItem
+    }
+
     // MARK: - Output Devices Submenu (Unified)
     
     /// Public access to the output devices menu (used by modern skin CAST button)
@@ -2646,7 +2790,67 @@ class MenuActions: NSObject {
             JellyfinManager.shared.clearMusicLibrarySelection()
         }
     }
-    
+
+    // MARK: - Emby Actions
+
+    @objc func addEmbyServer() {
+        WindowManager.shared.showEmbyLinkSheet()
+    }
+
+    @objc func manageEmbyServers() {
+        WindowManager.shared.showEmbyServerList()
+    }
+
+    @objc func selectEmbyServer(_ sender: NSMenuItem) {
+        guard let serverID = sender.representedObject as? String,
+              let server = EmbyManager.shared.servers.first(where: { $0.id == serverID }) else { return }
+        Task {
+            do {
+                try await EmbyManager.shared.connect(to: server)
+                await MainActor.run { NotificationCenter.default.post(name: EmbyManager.serversDidChangeNotification, object: nil) }
+            } catch {
+                await MainActor.run { let a = NSAlert(); a.messageText = "Failed to Connect"; a.informativeText = error.localizedDescription; a.runModal() }
+            }
+        }
+    }
+
+    @objc func disconnectEmby() {
+        EmbyManager.shared.disconnect()
+        NotificationCenter.default.post(name: EmbyManager.connectionStateDidChangeNotification, object: nil)
+    }
+
+    @objc func refreshEmbyLibrary() {
+        Task { await EmbyManager.shared.preloadLibraryContent() }
+    }
+
+    @objc func showEmbyInBrowser() {
+        guard let serverId = EmbyManager.shared.currentServer?.id else { return }
+
+        WindowManager.shared.showPlexBrowser()
+
+        NotificationCenter.default.post(
+            name: NSNotification.Name("SetBrowserSource"),
+            object: BrowserSource.emby(serverId: serverId)
+        )
+    }
+
+    @objc func selectEmbyVideoLibrary(_ sender: NSMenuItem) {
+        guard let libId = sender.representedObject as? String,
+              let lib = EmbyManager.shared.videoLibraries.first(where: { $0.id == libId }) else { return }
+        // Select for both movie and show (Emby video libs can contain both)
+        EmbyManager.shared.selectMovieLibrary(lib)
+        EmbyManager.shared.selectShowLibrary(lib)
+    }
+
+    @objc func selectEmbyMusicLibrary(_ sender: NSMenuItem) {
+        if let libId = sender.representedObject as? String,
+           let lib = EmbyManager.shared.musicLibraries.first(where: { $0.id == libId }) {
+            EmbyManager.shared.selectMusicLibrary(lib)
+        } else {
+            EmbyManager.shared.clearMusicLibrarySelection()
+        }
+    }
+
     @objc func selectSubsonicMusicFolder(_ sender: NSMenuItem) {
         if let folderId = sender.representedObject as? String,
            let folder = SubsonicManager.shared.musicFolders.first(where: { $0.id == folderId }) {

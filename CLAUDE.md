@@ -97,7 +97,7 @@ Skills contain detailed technical documentation. Key skills include:
 - **audio-system**: Audio pipelines, EQ, spectrum analysis
 - **modern-skin-guide**: Modern skin engine and creation
 - **user-guide**: Features, menus, keyboard shortcuts
-- **plex-integration**, **jellyfin-integration**, **subsonic-integration**: Server integrations (Plex, Jellyfin, Navidrome/Subsonic)
+- **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations (Plex, Jellyfin, Navidrome/Subsonic, Emby)
 - **sonos-casting**, **chromecast-casting**: Casting protocols
 - **radio-streaming**: Internet radio support
 - **visualizations**: Album art and ProjectM
@@ -120,6 +120,7 @@ Sources/NullPlayer/
 ├── Plex/             # Plex server integration
 ├── Subsonic/         # Navidrome/Subsonic server integration
 ├── Jellyfin/         # Jellyfin media server integration
+├── Emby/             # Emby media server integration
 ├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer + flame mode
 └── Models/           # Track, Playlist, MediaLibrary
 ```
@@ -137,6 +138,7 @@ Sources/NullPlayer/
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
 | Jellyfin | `Jellyfin/JellyfinManager.swift`, `Jellyfin/JellyfinServerClient.swift`, `Jellyfin/JellyfinModels.swift`, `Jellyfin/JellyfinPlaybackReporter.swift` |
+| Emby | `Emby/EmbyManager.swift`, `Emby/EmbyServerClient.swift`, `Emby/EmbyModels.swift`, `Emby/EmbyPlaybackReporter.swift`, `Emby/EmbyVideoPlaybackReporter.swift` |
 | Radio | `Radio/RadioManager.swift`, `Data/Models/RadioStation.swift`, `Windows/Radio/AddRadioStationSheet.swift` |
 | Casting | `Casting/CastManager.swift`, `Casting/CastProtocol.swift`, `Casting/ChromecastManager.swift`, `Casting/UPnPManager.swift`, `Casting/LocalMediaServer.swift`, `Casting/CastDevice.swift` |
 | App | `App/WindowManager.swift`, `App/AppStateManager.swift`, `App/ContextMenuBuilder.swift`, `App/MainWindowProviding.swift`, `App/SpectrumWindowProviding.swift`, `App/PlaylistWindowProviding.swift`, `App/EQWindowProviding.swift`, `App/ProjectMWindowProviding.swift`, `App/LibraryBrowserWindowProviding.swift` |
@@ -186,7 +188,7 @@ Sources/NullPlayer/
 
 ## Gotchas
 
-- **Remember State On Quit**: `AppStateManager` saves/restores complete session state (v2). Two-phase restoration: settings first (`restoreSettingsState` — skin, volume, EQ, windows, double size), then playlist (`restorePlaylistState` — tracks with ordering preserved, current track index, seek position). Streaming tracks (Plex/Subsonic/Jellyfin) are loaded as placeholder `Track` objects with saved metadata, then replaced asynchronously via `engine.replaceTrack(at:with:)`. Radio tracks are saved via `SavedTrack.radioURL`. Many other settings (visualization modes, browser columns, radio stations, hide title bars) persist independently via UserDefaults and are NOT part of `AppState`. When adding new state: if it's a preference that should always persist, use UserDefaults directly; if it's session state that should only persist when "Remember State" is enabled, add it to the `AppState` struct with `decodeIfPresent` defaults
+- **Remember State On Quit**: `AppStateManager` saves/restores complete session state (v2). Two-phase restoration: settings first (`restoreSettingsState` — skin, volume, EQ, windows, double size), then playlist (`restorePlaylistState` — tracks with ordering preserved, current track index, seek position). Streaming tracks (Plex/Subsonic/Jellyfin/Emby) are loaded as placeholder `Track` objects with saved metadata, then replaced asynchronously via `engine.replaceTrack(at:with:)`. Radio tracks are saved via `SavedTrack.radioURL`. Many other settings (visualization modes, browser columns, radio stations, hide title bars) persist independently via UserDefaults and are NOT part of `AppState`. When adding new state: if it's a preference that should always persist, use UserDefaults directly; if it's session state that should only persist when "Remember State" is enabled, add it to the `AppState` struct with `decodeIfPresent` defaults
 - **Modern skin system is completely independent**: Files in `ModernSkin/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, and `Windows/ModernLibraryBrowser/` must NEVER import or reference anything from `Skin/` or `Windows/MainWindow/`. The coupling points are only: `AppDelegate` (mode selection), `WindowManager` (via `MainWindowProviding`, `SpectrumWindowProviding`, `PlaylistWindowProviding`, `EQWindowProviding`, `ProjectMWindowProviding`, and `LibraryBrowserWindowProviding` protocols), and shared infrastructure (`AudioEngine`, `Track`, `PlaybackState`)
 - **UI mode switching requires restart**: The `modernUIEnabled` UserDefaults preference selects which `MainWindowProviding` implementation `WindowManager` creates. Changing it at runtime shows a "Restart / Cancel" confirmation dialog — choosing Restart relaunches the app automatically, choosing Cancel reverts the preference
 - **Mode-specific features must be guarded at all layers**: When a feature only applies to one UI mode (modern or classic), enforce it in three places:
@@ -213,8 +215,8 @@ Sources/NullPlayer/
   }
   ```
 - **Skin coordinates**: skin skins use top-left origin, macOS uses bottom-left
-- **Library browser expand tasks must use `Task.detached`**: In `ModernLibraryBrowserView`, expand tasks (artist → albums, album → songs, etc.) for Jellyfin and Subsonic must use `Task.detached { @MainActor ... }` instead of `Task { @MainActor ... }`. Regular `Task { }` can inherit cancellation state from the calling context on the main actor, causing the task to be immediately cancelled. Artist expansion should also prefer filtering cached albums by `artistId` (instant) before falling back to a network request
-- **Jellyfin library selector is browse-mode-aware**: The "Lib:" click zone in the library browser shows a music library picker when in music tabs (Artists/Albums/Tracks/Plists) and a video library picker when in Movies/Shows tabs. `JellyfinManager` has separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification (`musicLibraryDidChangeNotification`, `videoLibraryDidChangeNotification`). `fetchMusicLibraries()` and `fetchVideoLibraries()` both return ALL views without `CollectionType` filtering. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
+- **Library browser expand tasks must use `Task.detached`**: In `ModernLibraryBrowserView`, expand tasks (artist → albums, album → songs, etc.) for Jellyfin, Emby, and Subsonic must use `Task.detached { @MainActor ... }` instead of `Task { @MainActor ... }`. Regular `Task { }` can inherit cancellation state from the calling context on the main actor, causing the task to be immediately cancelled. Artist expansion should also prefer filtering cached albums by `artistId` (instant) before falling back to a network request
+- **Jellyfin/Emby library selector is browse-mode-aware**: The "Lib:" click zone in the library browser shows a music library picker when in music tabs (Artists/Albums/Tracks/Plists) and a video library picker when in Movies/Shows tabs. Both `JellyfinManager` and `EmbyManager` have separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification (`musicLibraryDidChangeNotification`, `videoLibraryDidChangeNotification`). `fetchMusicLibraries()` and `fetchVideoLibraries()` both return ALL views without `CollectionType` filtering. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
 - **Subsonic music folders**: `SubsonicManager` now tracks `musicFolders: [SubsonicMusicFolder]` and `currentMusicFolder: SubsonicMusicFolder?` (nil = all folders). Fetched via `getMusicFolders` on connect. `musicFolderId` is passed to `getArtists` and `getAlbumList2` when a folder is selected. Persisted via `SubsonicCurrentMusicFolderID` UserDefaults key. Posts `musicFolderDidChangeNotification` on change.
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
 - **Local file completion handler**: Must use `scheduleFile(_:at:completionCallbackType:completionHandler:)` with `.dataPlayedBack` - NOT the deprecated 3-parameter `scheduleFile(_:at:completionHandler:)` which defaults to `.dataConsumed` and fires before audio finishes playing, causing premature track advancement and UI desync
@@ -287,7 +289,7 @@ Sources/NullPlayer/
   ```
 - **Sonos playback polling**: CastManager polls Sonos every 5s via `GetTransportInfo` + `GetPositionInfo` to detect external pause/stop and sync position. This is different from Chromecast which uses its own 1s status polling. The polling timer starts in `startSonosPolling()` and stops in `stopSonosPolling()` / `stopCasting()`.
 - **Sonos Content-Type matching**: The content type in `CastMetadata` (used in DIDL-Lite `protocolInfo`) MUST match the actual file format. Use `CastManager.detectAudioContentType(for:)` to derive from URL extension. Never hardcode `"audio/mpeg"` or `"audio/flac"` -- Sonos may reject mismatched content.
-- **Subsonic/Jellyfin streaming URL content type**: Streaming URLs from Subsonic (`/rest/stream?id=...`) and Jellyfin (`/Audio/{id}/stream`) have no file extension, so `detectAudioContentType(for:)` defaults to `audio/mpeg`. This breaks Sonos casting for non-MP3 formats. Always prefer `Track.contentType` (set by the server client from API metadata) or upstream HEAD detection via `prepareProxyURL()`. The `SavedTrack.contentType` field preserves this across app restarts.
+- **Subsonic/Jellyfin/Emby streaming URL content type**: Streaming URLs from Subsonic (`/rest/stream?id=...`), Jellyfin (`/Audio/{id}/stream`), and Emby (`/Audio/{id}/stream`) have no file extension, so `detectAudioContentType(for:)` defaults to `audio/mpeg`. This breaks Sonos casting for non-MP3 formats. Always prefer `Track.contentType` (set by the server client from API metadata) or upstream HEAD detection via `prepareProxyURL()`. The `SavedTrack.contentType` field preserves this across app restarts.
 - **Sonos HEAD requests**: LocalMediaServer must handle HEAD requests (not just GET). Sonos sends HEAD before GET to check Content-Length. Missing HEAD handler causes 404 which can prevent playback.
 - **Sonos Content-Length for MP3/OGG**: Sonos closes the connection if `Content-Length` header is missing for MP3 and OGG. Chunked transfer encoding only works for WAV/FLAC. The stream proxy must buffer the full response for MP3/OGG to provide Content-Length.
 - **Sonos radio URI scheme**: For MP3 internet radio streams cast to Sonos, use `x-rincon-mp3radio://` instead of `http://`. This uses Sonos's internal radio buffering which is more resilient. Only applies to MP3 radio, not AAC/OGG.
@@ -304,13 +306,15 @@ Manual QA for UI/playback changes:
 - Local file playback
 - Plex streaming
 - Subsonic/Navidrome streaming
+- Jellyfin streaming
+- Emby streaming
 - Internet radio (playback, auto-reconnect, ICY metadata display)
 - Multiple skins
 - Window snapping/docking
 - Visualizations
 - Sonos casting (multi-room selection, join/leave while casting)
 - Radio casting to Sonos (verify stream plays, time resets to 0:00)
-- Video casting (Plex movies/episodes to Chromecast/DLNA TVs)
+- Video casting (Plex/Jellyfin/Emby movies/episodes to Chromecast/DLNA TVs)
 
 ## Troubleshooting Integrations
 

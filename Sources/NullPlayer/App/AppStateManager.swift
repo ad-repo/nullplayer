@@ -65,7 +65,11 @@ class AppStateManager {
         // For Jellyfin tracks
         var jellyfinId: String?
         var jellyfinServerId: String?
-        
+
+        // For Emby tracks
+        var embyId: String?
+        var embyServerId: String?
+
         // For radio tracks (internet radio streams)
         var radioURL: String?
         var radioStationName: String?
@@ -119,6 +123,16 @@ class AppStateManager {
                     duration: track.duration,
                     contentType: track.contentType
                 )
+            } else if let embyId = track.embyId {
+                return SavedTrack(
+                    embyId: embyId,
+                    embyServerId: track.embyServerId,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    duration: track.duration,
+                    contentType: track.contentType
+                )
             } else if !track.url.isFileURL {
                 // Non-file URL without streaming service IDs = radio/internet stream
                 // Match against known radio stations for station name
@@ -154,7 +168,10 @@ class AppStateManager {
         
         /// Whether this is a Jellyfin track
         var isJellyfin: Bool { jellyfinId != nil }
-        
+
+        /// Whether this is an Emby track
+        var isEmby: Bool { embyId != nil }
+
         /// Whether this is a radio/internet stream track
         var isRadio: Bool { radioURL != nil }
     }
@@ -754,6 +771,7 @@ class AppStateManager {
         var plexIndicesToFetch: [(SavedTrack, Int)] = []
         var subsonicIndicesToFetch: [(SavedTrack, Int)] = []
         var jellyfinIndicesToFetch: [(SavedTrack, Int)] = []
+        var embyIndicesToFetch: [(SavedTrack, Int)] = []
         var skippedIndices: Set<Int> = []
         
         for (index, savedTrack) in state.playlistTracks.enumerated() {
@@ -812,6 +830,17 @@ class AppStateManager {
                 )
                 jellyfinIndicesToFetch.append((savedTrack, allTracks.count))
                 allTracks.append(placeholder)
+            } else if savedTrack.isEmby {
+                let placeholder = Track(
+                    url: URL(string: "about:blank")!,
+                    title: savedTrack.title,
+                    artist: savedTrack.artist,
+                    album: savedTrack.album,
+                    duration: savedTrack.duration,
+                    contentType: savedTrack.contentType
+                )
+                embyIndicesToFetch.append((savedTrack, allTracks.count))
+                allTracks.append(placeholder)
             } else {
                 // Unknown type - skip
                 skippedIndices.insert(index)
@@ -848,7 +877,7 @@ class AppStateManager {
         }
         
         // Fetch streaming tracks asynchronously and replace placeholders
-        let hasStreamingTracks = !plexIndicesToFetch.isEmpty || !subsonicIndicesToFetch.isEmpty || !jellyfinIndicesToFetch.isEmpty
+        let hasStreamingTracks = !plexIndicesToFetch.isEmpty || !subsonicIndicesToFetch.isEmpty || !jellyfinIndicesToFetch.isEmpty || !embyIndicesToFetch.isEmpty
         if hasStreamingTracks {
             let savedCurrentIndex = adjustedIndex
             Task {
@@ -908,7 +937,26 @@ class AppStateManager {
                         }
                     }
                 }
-                
+
+                // Fetch Emby tracks
+                for (savedTrack, playlistIndex) in embyIndicesToFetch {
+                    if let embyId = savedTrack.embyId,
+                       let serverId = savedTrack.embyServerId,
+                       EmbyManager.shared.servers.contains(where: { $0.id == serverId }),
+                       let credentials = KeychainHelper.shared.getEmbyServer(id: serverId),
+                       let client = EmbyServerClient(credentials: credentials) {
+                        do {
+                            if let song = try await client.fetchSong(id: embyId),
+                               let track = EmbyManager.shared.convertToTrack(song) {
+                                replacements.append((track, playlistIndex))
+                            }
+                        } catch {
+                            NSLog("AppStateManager: Failed to fetch Emby track %@: %@",
+                                  savedTrack.title, error.localizedDescription)
+                        }
+                    }
+                }
+
                 // Replace placeholder tracks with real ones on the main thread
                 await MainActor.run {
                     var replacedCurrentTrack = false

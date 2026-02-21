@@ -188,7 +188,60 @@ class KeychainHelper {
     func clearJellyfinCredentials() {
         delete(forKey: JellyfinKeys.jellyfinServers)
     }
-    
+
+    // MARK: - Emby Server Credentials
+
+    private enum EmbyKeys {
+        static let embyServers = "emby_servers"
+    }
+
+    /// Store Emby server credentials
+    func setEmbyServers(_ servers: [EmbyServerCredentials]) -> Bool {
+        guard let data = try? JSONEncoder().encode(servers) else { return false }
+        return setData(data, forKey: EmbyKeys.embyServers)
+    }
+
+    /// Retrieve all stored Emby server credentials
+    func getEmbyServers() -> [EmbyServerCredentials] {
+        guard let data = getData(forKey: EmbyKeys.embyServers) else { return [] }
+        return (try? JSONDecoder().decode([EmbyServerCredentials].self, from: data)) ?? []
+    }
+
+    /// Add a new Emby server
+    func addEmbyServer(_ server: EmbyServerCredentials) -> Bool {
+        var servers = getEmbyServers()
+        servers.removeAll { $0.id == server.id }
+        servers.append(server)
+        return setEmbyServers(servers)
+    }
+
+    /// Update an existing Emby server
+    func updateEmbyServer(_ server: EmbyServerCredentials) -> Bool {
+        var servers = getEmbyServers()
+        if let index = servers.firstIndex(where: { $0.id == server.id }) {
+            servers[index] = server
+            return setEmbyServers(servers)
+        }
+        return false
+    }
+
+    /// Remove an Emby server by ID
+    func removeEmbyServer(id: String) -> Bool {
+        var servers = getEmbyServers()
+        servers.removeAll { $0.id == id }
+        return setEmbyServers(servers)
+    }
+
+    /// Get a specific Emby server by ID
+    func getEmbyServer(id: String) -> EmbyServerCredentials? {
+        return getEmbyServers().first { $0.id == id }
+    }
+
+    /// Delete all Emby server credentials
+    func clearEmbyCredentials() {
+        delete(forKey: EmbyKeys.embyServers)
+    }
+
     // MARK: - Generic Keychain Operations
     
     private func setString(_ value: String, forKey key: String) -> Bool {

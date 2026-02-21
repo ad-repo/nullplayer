@@ -975,6 +975,9 @@ class AudioEngine {
             
             // Report resume to Jellyfin
             JellyfinPlaybackReporter.shared.trackResumed()
+
+            // Report resume to Emby
+            EmbyPlaybackReporter.shared.trackResumed()
         } else {
             // Local file playback via AVAudioEngine
             // Ensure we have a valid audio file loaded before attempting to play
@@ -1004,9 +1007,12 @@ class AudioEngine {
                 
                 // Report resume to Subsonic
                 SubsonicPlaybackReporter.shared.trackResumed()
-                
+
                 // Report resume to Jellyfin
                 JellyfinPlaybackReporter.shared.trackResumed()
+
+                // Report resume to Emby
+                EmbyPlaybackReporter.shared.trackResumed()
             } catch {
                 print("Failed to start audio engine: \(error)")
             }
@@ -1067,8 +1073,11 @@ class AudioEngine {
         
         // Report pause to Jellyfin
         JellyfinPlaybackReporter.shared.trackPaused()
+
+        // Report pause to Emby
+        EmbyPlaybackReporter.shared.trackPaused()
     }
-    
+
     func stop() {
         // Cancel any in-progress crossfade
         cancelCrossfade()
@@ -1122,7 +1131,10 @@ class AudioEngine {
         
         // Report stop to Jellyfin
         JellyfinPlaybackReporter.shared.trackStopped()
-        
+
+        // Report stop to Emby
+        EmbyPlaybackReporter.shared.trackStopped()
+
         // Clear spectrum analyzer
         clearSpectrum()
         
@@ -1803,6 +1815,18 @@ class AudioEngine {
                     duration: trackDuration
                 )
             }
+
+            // Update Emby playback position (for scrobbling)
+            if let track = self.currentTrack,
+               let embyId = track.embyId,
+               let serverId = track.embyServerId {
+                EmbyPlaybackReporter.shared.updatePlayback(
+                    trackId: embyId,
+                    serverId: serverId,
+                    position: current,
+                    duration: trackDuration
+                )
+            }
             
             // Decay spectrum when not playing locally (casting or stopped)
             if self.isCastingActive || self.state != .playing {
@@ -2466,7 +2490,14 @@ class AudioEngine {
                let trackDuration = track.duration {
                 JellyfinPlaybackReporter.shared.trackStarted(trackId: jellyfinId, serverId: serverId, duration: trackDuration)
             }
-            
+
+            // Report track start to Emby
+            if let embyId = track.embyId,
+               let serverId = track.embyServerId,
+               let trackDuration = track.duration {
+                EmbyPlaybackReporter.shared.trackStarted(trackId: embyId, serverId: serverId, duration: trackDuration)
+            }
+
             NSLog("loadLocalTrack: file scheduled, EQ bypass = %d, normGain = %.2f", eqNode.bypass, normalizationGain)
             return true
         } catch {
@@ -2586,7 +2617,14 @@ class AudioEngine {
            let trackDuration = track.duration {
             JellyfinPlaybackReporter.shared.trackStarted(trackId: jellyfinId, serverId: serverId, duration: trackDuration)
         }
-        
+
+        // Report track start to Emby
+        if let embyId = track.embyId,
+           let serverId = track.embyServerId,
+           let trackDuration = track.duration {
+            EmbyPlaybackReporter.shared.trackStarted(trackId: embyId, serverId: serverId, duration: trackDuration)
+        }
+
         NSLog("  Created StreamingAudioPlayer, starting playback with EQ")
     }
     
@@ -2638,7 +2676,10 @@ class AudioEngine {
         
         // Report stop to Jellyfin
         JellyfinPlaybackReporter.shared.trackStopped()
-        
+
+        // Report stop to Emby
+        EmbyPlaybackReporter.shared.trackStopped()
+
         // Check if we have a gaplessly pre-scheduled next track (local files)
         if gaplessPlaybackEnabled && nextScheduledFile != nil && nextScheduledTrackIndex >= 0 {
             // Gapless transition - the next file is already scheduled
@@ -2673,7 +2714,15 @@ class AudioEngine {
                let trackDuration = track.duration {
                 JellyfinPlaybackReporter.shared.trackStarted(trackId: jellyfinId, serverId: serverId, duration: trackDuration)
             }
-            
+
+            // Report track start to Emby
+            if let track = currentTrack,
+               let embyId = track.embyId,
+               let serverId = track.embyServerId,
+               let trackDuration = track.duration {
+                EmbyPlaybackReporter.shared.trackStarted(trackId: embyId, serverId: serverId, duration: trackDuration)
+            }
+
             // Apply normalization for the new track
             if volumeNormalizationEnabled {
                 analyzeAndApplyNormalization(file: audioFile!)
@@ -2720,7 +2769,15 @@ class AudioEngine {
                let trackDuration = track.duration {
                 JellyfinPlaybackReporter.shared.trackStarted(trackId: jellyfinId, serverId: serverId, duration: trackDuration)
             }
-            
+
+            // Report track start to Emby
+            if let track = currentTrack,
+               let embyId = track.embyId,
+               let serverId = track.embyServerId,
+               let trackDuration = track.duration {
+                EmbyPlaybackReporter.shared.trackStarted(trackId: embyId, serverId: serverId, duration: trackDuration)
+            }
+
             // Schedule the next track for gapless
             scheduleNextTrackForGapless()
             
@@ -3069,8 +3126,15 @@ class AudioEngine {
                let trackDuration = track.duration {
                 JellyfinPlaybackReporter.shared.trackStarted(trackId: jellyfinId, serverId: serverId, duration: trackDuration)
             }
+
+            // Report track start to Emby
+            if let embyId = track.embyId,
+               let serverId = track.embyServerId,
+               let trackDuration = track.duration {
+                EmbyPlaybackReporter.shared.trackStarted(trackId: embyId, serverId: serverId, duration: trackDuration)
+            }
         }
-        
+
         // Apply normalization for new track
         if volumeNormalizationEnabled {
             analyzeAndApplyNormalization(file: nextFile)
@@ -3133,8 +3197,15 @@ class AudioEngine {
                let trackDuration = track.duration {
                 JellyfinPlaybackReporter.shared.trackStarted(trackId: jellyfinId, serverId: serverId, duration: trackDuration)
             }
+
+            // Report track start to Emby
+            if let embyId = track.embyId,
+               let serverId = track.embyServerId,
+               let trackDuration = track.duration {
+                EmbyPlaybackReporter.shared.trackStarted(trackId: embyId, serverId: serverId, duration: trackDuration)
+            }
         }
-        
+
         NSLog("Sweet Fades: Streaming crossfade complete, now playing: %@", currentTrack?.title ?? "Unknown")
     }
     
@@ -3409,7 +3480,10 @@ class AudioEngine {
         
         // Report stop to Jellyfin
         JellyfinPlaybackReporter.shared.trackStopped()
-        
+
+        // Report stop to Emby
+        EmbyPlaybackReporter.shared.trackStopped()
+
         NSLog("clearPlaylist: done, playlist count=%d", playlist.count)
         delegate?.audioEngineDidChangePlaylist()
     }

@@ -547,6 +547,9 @@ class WindowManager {
     
     private var jellyfinLinkSheet: JellyfinLinkSheet?
     private var jellyfinServerListSheet: JellyfinServerListSheet?
+
+    private var embyLinkSheet: EmbyLinkSheet?
+    private var embyServerListSheet: EmbyServerListSheet?
     
     /// Show the Jellyfin server add dialog
     func showJellyfinLinkSheet() {
@@ -567,7 +570,29 @@ class WindowManager {
             self?.plexBrowserWindowController?.reloadData()
         }
     }
-    
+
+    // MARK: - Emby Sheets
+
+    /// Show the Emby server add dialog
+    func showEmbyLinkSheet() {
+        embyLinkSheet = EmbyLinkSheet()
+        embyLinkSheet?.showDialog { [weak self] server in
+            self?.embyLinkSheet = nil
+            if server != nil {
+                self?.plexBrowserWindowController?.reloadData()
+            }
+        }
+    }
+
+    /// Show the Emby server list management dialog
+    func showEmbyServerList() {
+        embyServerListSheet = EmbyServerListSheet()
+        embyServerListSheet?.showDialog { [weak self] _ in
+            self?.embyServerListSheet = nil
+            self?.plexBrowserWindowController?.reloadData()
+        }
+    }
+
     // MARK: - Video Player Window
     
     /// Show the video player with a URL and title
@@ -619,7 +644,27 @@ class WindowManager {
         videoPlayerWindowController?.play(jellyfinEpisode: episode)
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
     }
-    
+
+    /// Play an Emby movie in the video player
+    func playEmbyMovie(_ movie: EmbyMovie) {
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        videoPlayerWindowController?.volume = audioEngine.volume
+        videoPlayerWindowController?.play(embyMovie: movie)
+        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+    }
+
+    /// Play an Emby episode in the video player
+    func playEmbyEpisode(_ episode: EmbyEpisode) {
+        if videoPlayerWindowController == nil {
+            videoPlayerWindowController = VideoPlayerWindowController()
+        }
+        videoPlayerWindowController?.volume = audioEngine.volume
+        videoPlayerWindowController?.play(embyEpisode: episode)
+        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+    }
+
     /// Play a video Track from the playlist
     /// Called by AudioEngine when it encounters a video track
     func playVideoTrack(_ track: Track) {
@@ -644,6 +689,8 @@ class WindowManager {
             videoPlayerWindowController?.play(plexTrack: track)
         } else if track.jellyfinId != nil {
             videoPlayerWindowController?.play(jellyfinTrack: track)
+        } else if track.embyId != nil {
+            videoPlayerWindowController?.play(embyTrack: track)
         } else {
             videoPlayerWindowController?.play(url: track.url, title: track.displayTitle)
         }

@@ -634,24 +634,25 @@ class CastManager {
     /// Cast a specific track to a device
     func castTrack(_ track: Track, to device: CastDevice, startPosition: TimeInterval = 0) async throws {
         NSLog("CastManager: castTrack called for '%@' - track.url: %@", track.title, track.url.absoluteString)
-        NSLog("CastManager: track.subsonicId=%@, track.jellyfinId=%@, track.plexRatingKey=%@", 
-              track.subsonicId ?? "nil", track.jellyfinId ?? "nil", track.plexRatingKey ?? "nil")
-        
+        NSLog("CastManager: track.subsonicId=%@, track.jellyfinId=%@, track.embyId=%@, track.plexRatingKey=%@",
+              track.subsonicId ?? "nil", track.jellyfinId ?? "nil", track.embyId ?? "nil", track.plexRatingKey ?? "nil")
+
         // Get castable URL and effective content type
         let castURL: URL
         var effectiveContentType: String? = track.contentType
-        
-        // Check if this is a Subsonic/Jellyfin track casting to Sonos - needs proxy due to query string issues
+
+        // Check if this is a Subsonic/Jellyfin/Emby track casting to Sonos - needs proxy due to query string issues
         let needsSubsonicProxy = track.subsonicId != nil && device.type == .sonos
         let needsJellyfinProxy = track.jellyfinId != nil && device.type == .sonos
-        
+        let needsEmbyProxy = track.embyId != nil && device.type == .sonos
+
         if track.url.scheme == "http" || track.url.scheme == "https" {
-            if needsSubsonicProxy || needsJellyfinProxy {
-                // Subsonic/Jellyfin to Sonos: Use proxy with HEAD-based content type detection
+            if needsSubsonicProxy || needsJellyfinProxy || needsEmbyProxy {
+                // Subsonic/Jellyfin/Emby to Sonos: Use proxy with HEAD-based content type detection
                 let result = try await prepareProxyURL(for: track, device: device)
                 castURL = result.url
                 effectiveContentType = result.contentType
-                NSLog("CastManager: Using proxy for Subsonic/Jellyfin->Sonos: %@", castURL.absoluteString)
+                NSLog("CastManager: Using proxy for Subsonic/Jellyfin/Emby->Sonos: %@", castURL.absoluteString)
             } else {
                 // For Plex/remote URLs, ensure token is included
                 if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: track.url) {
@@ -691,15 +692,20 @@ class CastManager {
             if let jellyfinArtwork = JellyfinManager.shared.imageURL(itemId: track.jellyfinId!, imageTag: imageTag, size: 300) {
                 artworkURL = rewriteLocalhostForCasting(jellyfinArtwork)
             }
+        } else if track.embyId != nil, let imageTag = track.artworkThumb {
+            // Emby track - use server's image URL
+            if let embyArtwork = EmbyManager.shared.imageURL(itemId: track.embyId!, imageTag: imageTag, size: 300) {
+                artworkURL = rewriteLocalhostForCasting(embyArtwork)
+            }
         }
-        
+
         // Use effective content type (from track or upstream HEAD detection),
         // otherwise fall back to URL extension detection (works for Plex and local files)
         let contentType = effectiveContentType ?? Self.detectAudioContentType(for: track.url)
-        
+
         // For radio streams cast to Sonos, use x-rincon-mp3radio:// scheme (Fix 10)
         let finalCastURL = sonosRadioURL(for: castURL, device: device)
-        
+
         let metadata = CastMetadata(
             title: track.title,
             artist: track.artist,
@@ -723,14 +729,15 @@ class CastManager {
         // Check if this is a local file (needs loading state due to async registration)
         let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
         
-        // Check if Subsonic/Jellyfin track to Sonos - also needs loading state since we use proxy
+        // Check if Subsonic/Jellyfin/Emby track to Sonos - also needs loading state since we use proxy
         let needsSubsonicProxy = track.subsonicId != nil && session.device.type == .sonos
         let needsJellyfinProxy = track.jellyfinId != nil && session.device.type == .sonos
-        
+        let needsEmbyProxy = track.embyId != nil && session.device.type == .sonos
+
         // Check if this is a radio station to Sonos - needs loading state for click guarding
         let isRadioToSonos = RadioManager.shared.isActive && session.device.type == .sonos
-        
-        let needsLoadingState = isLocalFile || needsSubsonicProxy || needsJellyfinProxy || isRadioToSonos
+
+        let needsLoadingState = isLocalFile || needsSubsonicProxy || needsJellyfinProxy || needsEmbyProxy || isRadioToSonos
         
         // Increment generation to invalidate any in-flight cast operations
         // This prevents race conditions when user rapidly clicks through tracks
@@ -769,13 +776,13 @@ class CastManager {
         let castURL: URL
         var effectiveContentType: String? = track.contentType
         if track.url.scheme == "http" || track.url.scheme == "https" {
-            if needsSubsonicProxy || needsJellyfinProxy {
-                // Subsonic/Jellyfin to Sonos: Use proxy with HEAD-based content type detection
+            if needsSubsonicProxy || needsJellyfinProxy || needsEmbyProxy {
+                // Subsonic/Jellyfin/Emby to Sonos: Use proxy with HEAD-based content type detection
                 do {
                     let result = try await prepareProxyURL(for: track, device: session.device)
                     castURL = result.url
                     effectiveContentType = result.contentType
-                    NSLog("CastManager: castNewTrack using proxy for Subsonic/Jellyfin->Sonos: %@", castURL.absoluteString)
+                    NSLog("CastManager: castNewTrack using proxy for Subsonic/Jellyfin/Emby->Sonos: %@", castURL.absoluteString)
                 } catch {
                     await clearLoadingState()
                     throw error
@@ -834,12 +841,17 @@ class CastManager {
             if let jellyfinArtwork = JellyfinManager.shared.imageURL(itemId: track.jellyfinId!, imageTag: imageTag, size: 300) {
                 artworkURL = rewriteLocalhostForCasting(jellyfinArtwork)
             }
+        } else if track.embyId != nil, let imageTag = track.artworkThumb {
+            // Emby track - use server's image URL
+            if let embyArtwork = EmbyManager.shared.imageURL(itemId: track.embyId!, imageTag: imageTag, size: 300) {
+                artworkURL = rewriteLocalhostForCasting(embyArtwork)
+            }
         }
-        
+
         // Use effective content type (from track or upstream HEAD detection),
         // otherwise fall back to URL extension detection (works for Plex and local files)
         let contentType = effectiveContentType ?? Self.detectAudioContentType(for: track.url)
-        
+
         // For radio streams cast to Sonos, use x-rincon-mp3radio:// scheme (Fix 10)
         let finalCastURL = sonosRadioURL(for: castURL, device: session.device)
         
@@ -1123,6 +1135,88 @@ class CastManager {
         try await cast(to: device, url: streamURL, metadata: metadata, startPosition: startPosition)
     }
     
+    /// Cast an Emby movie to a video-capable device
+    /// - Parameters:
+    ///   - movie: The EmbyMovie to cast
+    ///   - device: Target cast device (must support video)
+    ///   - startPosition: Optional position to resume from (seconds)
+    func castEmbyMovie(_ movie: EmbyMovie, to device: CastDevice, startPosition: TimeInterval = 0) async throws {
+        guard device.supportsVideo else {
+            throw CastError.unsupportedDevice
+        }
+
+        guard let streamURL = EmbyManager.shared.videoStreamURL(for: movie) else {
+            throw CastError.invalidURL
+        }
+
+        // Get artwork URL
+        let artworkURL = EmbyManager.shared.imageURL(itemId: movie.id, imageTag: movie.imageTag, size: 600)
+
+        let contentType = "video/mp4"
+
+        let metadata = CastMetadata(
+            title: movie.title,
+            artist: nil,
+            album: nil,
+            artworkURL: artworkURL,
+            duration: movie.duration.map { Double($0) },
+            contentType: contentType,
+            mediaType: .video,
+            resolution: nil,
+            year: movie.year,
+            summary: movie.overview
+        )
+
+        NSLog("CastManager: Casting Emby movie '%@' to %@", movie.title, device.name)
+        NSLog("CastManager: Cast URL: %@", redactedURL(streamURL))
+        try await cast(to: device, url: streamURL, metadata: metadata, startPosition: startPosition)
+    }
+
+    /// Cast an Emby episode to a video-capable device
+    /// - Parameters:
+    ///   - episode: The EmbyEpisode to cast
+    ///   - device: Target cast device (must support video)
+    ///   - startPosition: Optional position to resume from (seconds)
+    func castEmbyEpisode(_ episode: EmbyEpisode, to device: CastDevice, startPosition: TimeInterval = 0) async throws {
+        guard device.supportsVideo else {
+            throw CastError.unsupportedDevice
+        }
+
+        guard let streamURL = EmbyManager.shared.videoStreamURL(for: episode) else {
+            throw CastError.invalidURL
+        }
+
+        // Get artwork URL
+        let artworkURL = EmbyManager.shared.imageURL(itemId: episode.id, imageTag: episode.imageTag, size: 600)
+
+        // Build title: "Show Name - S01E01 - Episode Title"
+        let title: String
+        if let showName = episode.seriesName {
+            title = "\(showName) - \(episode.episodeIdentifier) - \(episode.title)"
+        } else {
+            title = episode.title
+        }
+
+        let contentType = "video/mp4"
+
+        let metadata = CastMetadata(
+            title: title,
+            artist: episode.seriesName,
+            album: episode.seasonName,
+            artworkURL: artworkURL,
+            duration: episode.duration.map { Double($0) },
+            contentType: contentType,
+            mediaType: .video,
+            resolution: nil,
+            year: nil,
+            summary: episode.overview
+        )
+
+        NSLog("CastManager: Casting Emby episode '%@' to %@", title, device.name)
+        NSLog("CastManager: Cast URL: %@", redactedURL(streamURL))
+        try await cast(to: device, url: streamURL, metadata: metadata, startPosition: startPosition)
+    }
+
     /// Cast a local video file to a video-capable device
     /// - Parameters:
     ///   - url: Local file URL

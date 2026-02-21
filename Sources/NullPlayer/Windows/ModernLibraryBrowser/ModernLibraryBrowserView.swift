@@ -25,8 +25,9 @@ enum ModernBrowserSource: Equatable, Codable {
     case plex(serverId: String)
     case subsonic(serverId: String)
     case jellyfin(serverId: String)
+    case emby(serverId: String)
     case radio
-    
+
     var displayName: String {
         switch self {
         case .local: return "LOCAL FILES"
@@ -45,10 +46,15 @@ enum ModernBrowserSource: Equatable, Codable {
                 return "JELLYFIN: \(server.name)"
             }
             return "JELLYFIN"
+        case .emby(let serverId):
+            if let server = EmbyManager.shared.servers.first(where: { $0.id == serverId }) {
+                return "EMBY: \(server.name)"
+            }
+            return "EMBY"
         case .radio: return "INTERNET RADIO"
         }
     }
-    
+
     var shortName: String {
         switch self {
         case .local: return "Local Files"
@@ -67,16 +73,22 @@ enum ModernBrowserSource: Equatable, Codable {
                 return server.name
             }
             return "Jellyfin"
+        case .emby(let serverId):
+            if let server = EmbyManager.shared.servers.first(where: { $0.id == serverId }) {
+                return server.name
+            }
+            return "Emby"
         case .radio: return "Radio"
         }
     }
-    
+
     var isSubsonic: Bool { if case .subsonic = self { return true }; return false }
     var isJellyfin: Bool { if case .jellyfin = self { return true }; return false }
+    var isEmby: Bool { if case .emby = self { return true }; return false }
     var isPlex: Bool { if case .plex = self { return true }; return false }
     var isRadio: Bool { if case .radio = self { return true }; return false }
     var isRemote: Bool {
-        switch self { case .local, .radio: return false; case .plex, .subsonic, .jellyfin: return true }
+        switch self { case .local, .radio: return false; case .plex, .subsonic, .jellyfin, .emby: return true }
     }
     
     private static let userDefaultsKey = "BrowserSource"
@@ -281,7 +293,28 @@ class ModernLibraryBrowserView: NSView {
     private var jellyfinSeasonEpisodes: [String: [JellyfinEpisode]] = [:]
     private var expandedJellyfinShows: Set<String> = []
     private var expandedJellyfinSeasons: Set<String> = []
-    
+
+    // Cached data - Emby
+    private var cachedEmbyArtists: [EmbyArtist] = []
+    private var cachedEmbyAlbums: [EmbyAlbum] = []
+    private var cachedEmbyPlaylists: [EmbyPlaylist] = []
+    private var embyArtistAlbums: [String: [EmbyAlbum]] = [:]
+    private var embyPlaylistTracks: [String: [EmbySong]] = [:]
+    private var embyAlbumSongs: [String: [EmbySong]] = [:]
+    private var embyLoadTask: Task<Void, Never>?
+    private var embyExpandTask: Task<Void, Never>?
+    private var expandedEmbyArtists: Set<String> = []
+    private var expandedEmbyAlbums: Set<String> = []
+    private var expandedEmbyPlaylists: Set<String> = []
+
+    // Cached data - Video (Emby)
+    private var cachedEmbyMovies: [EmbyMovie] = []
+    private var cachedEmbyShows: [EmbyShow] = []
+    private var embyShowSeasons: [String: [EmbySeason]] = [:]
+    private var embySeasonEpisodes: [String: [EmbyEpisode]] = [:]
+    private var expandedEmbyShows: Set<String> = []
+    private var expandedEmbySeasons: Set<String> = []
+
     // Cached data - Playlists (Plex)
     private var cachedPlexPlaylists: [PlexPlaylist] = []
     private var plexPlaylistTracks: [String: [PlexTrack]] = [:]
@@ -460,6 +493,17 @@ class ModernLibraryBrowserView: NSView {
                 } else {
                     currentSource = .local
                 }
+            case .emby(let serverId):
+                if EmbyManager.shared.servers.contains(where: { $0.id == serverId }) {
+                    currentSource = savedSource
+                } else if EmbyManager.shared.servers.isEmpty {
+                    pendingSourceRestore = savedSource
+                    currentSource = .local
+                } else if let firstServer = EmbyManager.shared.servers.first {
+                    currentSource = .emby(serverId: firstServer.id)
+                } else {
+                    currentSource = .local
+                }
             case .radio:
                 currentSource = .radio
             }
@@ -514,6 +558,14 @@ class ModernLibraryBrowserView: NSView {
                                                name: JellyfinManager.musicLibraryDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(jellyfinVideoLibraryDidChange),
                                                name: JellyfinManager.videoLibraryDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(embyMusicLibraryDidChange),
+                                               name: EmbyManager.musicLibraryDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(embyVideoLibraryDidChange),
+                                               name: EmbyManager.videoLibraryDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(embyLibraryContentDidPreload),
+                                               name: EmbyManager.libraryContentDidPreloadNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(embyConnectionStateDidChange),
+                                               name: EmbyManager.connectionStateDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(subsonicMusicFolderDidChange),
                                                name: SubsonicManager.musicFolderDidChangeNotification, object: nil)
         
@@ -797,7 +849,7 @@ class ModernLibraryBrowserView: NSView {
         // Star rating (art-only mode with a track playing)
         if isArtOnlyMode,
            let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-           currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.url.isFileURL {
+           currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
             let starSize: CGFloat = 14 * m
             let starSpacing: CGFloat = 4 * m
             let totalStars = 5
@@ -987,7 +1039,51 @@ class ModernLibraryBrowserView: NSView {
                 let linkX = barRect.midX - linkWidth / 2
                 linkText.draw(at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs)
             }
-            
+
+        case .emby(let serverId):
+            let configuredServer = EmbyManager.shared.servers.first(where: { $0.id == serverId })
+            if configuredServer != nil {
+                let serverName = configuredServer?.name ?? "Select Server"
+                let maxServerWidth: CGFloat = 100 * m
+                let textH = font.pointSize + 4 * m
+
+                serverNameMaxWidth = maxServerWidth
+                serverNameTextWidth = (serverName as NSString).size(withAttributes: dataAttrs).width
+
+                drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
+                                  availableWidth: maxServerWidth, scrollOffset: serverNameScrollOffset,
+                                  textHeight: textH, attributes: dataAttrs, in: context)
+
+                let libLabel = "Lib:"
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
+                libLabel.draw(at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs)
+
+                let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
+                let libraryX = libraryLabelX + libLabelWidth + 4 * m
+                let libraryText = embyCurrentLibraryName
+                let maxLibraryWidth: CGFloat = 80 * m
+
+                libraryNameMaxWidth = maxLibraryWidth
+                libraryNameTextWidth = (libraryText as NSString).size(withAttributes: dataAttrs).width
+
+                drawScrollingText(libraryText, startX: libraryX, textY: textY,
+                                  availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
+                                  textHeight: textH, attributes: dataAttrs, in: context)
+
+                // Item count (only in list mode, not art-only)
+                if !isArtOnlyMode {
+                    let countText = "\(displayItems.count) items"
+                    let countWidth = countText.size(withAttributes: dataAttrs).width
+                    let countX = visEndX - countWidth - 24 * m
+                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
+                }
+            } else {
+                let linkText = "Click to add an Emby server"
+                let linkWidth = linkText.size(withAttributes: prefixAttrs).width
+                let linkX = barRect.midX - linkWidth / 2
+                linkText.draw(at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs)
+            }
+
         case .radio:
             let sourceText = "Internet Radio"
             sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
@@ -1418,7 +1514,7 @@ class ModernLibraryBrowserView: NSView {
         case .artists, .albums, .tracks:
             if currentSource.isPlex && library?.isMusicLibrary == true {
                 message = "No \(browseMode.title.lowercased()) found"
-            } else if currentSource.isSubsonic || currentSource.isJellyfin || (currentSource.isPlex && library?.isMusicLibrary != true) {
+            } else if currentSource.isSubsonic || currentSource.isJellyfin || currentSource.isEmby || (currentSource.isPlex && library?.isMusicLibrary != true) {
                 message = "No \(browseMode.title.lowercased()) found"
             } else {
                 message = "No \(browseMode.title.lowercased()) found"
@@ -2662,6 +2758,18 @@ class ModernLibraryBrowserView: NSView {
                 if browseMode.isVideoMode { showJellyfinVideoLibraryMenu(at: event) }
                 else { showJellyfinLibraryMenu(at: event) }
             } else if relativeX < serverZoneEnd { showSourceMenu(at: event) }
+        case .emby:
+            let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
+            let maxServerWidth: CGFloat = 100 * m
+            let serverZoneEnd = sourcePrefix + maxServerWidth
+            let libLabelWidth = "Lib:".size(withAttributes: fontAttrs).width + 4 * m
+            let libraryZoneStart = serverZoneEnd + 12 * m
+            let maxLibraryWidth: CGFloat = 80 * m
+            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
+            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd {
+                if browseMode.isVideoMode { showEmbyVideoLibraryMenu(at: event) }
+                else { showEmbyLibraryMenu(at: event) }
+            } else if relativeX < serverZoneEnd { showSourceMenu(at: event) }
         case .radio:
             let radioNameWidth = "Internet Radio".size(withAttributes: fontAttrs).width
             let sourcePrefix = "Source: ".size(withAttributes: fontAttrs).width + 4 * m
@@ -2699,6 +2807,17 @@ class ModernLibraryBrowserView: NSView {
             isLoading = true; errorMessage = nil; displayItems = []; startLoadingAnimation(); needsDisplay = true
             Task { @MainActor [weak self] in
                 await JellyfinManager.shared.preloadLibraryContent()
+                self?.refreshData()
+            }
+        case .emby:
+            // Cancel any in-flight load task first to prevent race conditions
+            embyExpandTask?.cancel()
+            embyExpandTask = nil
+            EmbyManager.shared.clearCachedContent()
+            // Show loading state immediately, then preload in parallel and refresh
+            isLoading = true; errorMessage = nil; displayItems = []; startLoadingAnimation(); needsDisplay = true
+            Task { @MainActor [weak self] in
+                await EmbyManager.shared.preloadLibraryContent()
                 self?.refreshData()
             }
         case .radio: break
@@ -2817,6 +2936,15 @@ class ModernLibraryBrowserView: NSView {
                 menu.addItem(item)
             }
         }
+        if !EmbyManager.shared.servers.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            for server in EmbyManager.shared.servers {
+                let item = NSMenuItem(title: "🔵 \(server.name)", action: #selector(selectEmbyServer(_:)), keyEquivalent: "")
+                item.target = self; item.representedObject = server.id
+                if case .emby(let id) = currentSource, id == server.id { item.state = .on }
+                menu.addItem(item)
+            }
+        }
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
     }
@@ -2878,6 +3006,45 @@ class ModernLibraryBrowserView: NSView {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
+    private func showEmbyLibraryMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let libraries = EmbyManager.shared.musicLibraries
+        let currentId = EmbyManager.shared.currentMusicLibrary?.id
+        let allItem = NSMenuItem(title: "All Libraries", action: #selector(selectEmbyMusicLibraryFromBrowser(_:)), keyEquivalent: "")
+        allItem.target = self; allItem.representedObject = Optional<EmbyMusicLibrary>.none as Any
+        allItem.state = currentId == nil ? .on : .off
+        menu.addItem(allItem)
+        if !libraries.isEmpty { menu.addItem(NSMenuItem.separator()) }
+        for library in libraries {
+            let item = NSMenuItem(title: "\(library.name) (Music)", action: #selector(selectEmbyMusicLibraryFromBrowser(_:)), keyEquivalent: "")
+            item.target = self; item.representedObject = library
+            item.state = library.id == currentId ? .on : .off
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private func showEmbyVideoLibraryMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let libraries = EmbyManager.shared.videoLibraries
+        let currentMovieId = EmbyManager.shared.currentMovieLibrary?.id
+        let currentShowId = EmbyManager.shared.currentShowLibrary?.id
+        let activeId = browseMode == .shows ? currentShowId : currentMovieId
+        let allItem = NSMenuItem(title: "All Libraries", action: #selector(selectEmbyVideoLibraryFromBrowser(_:)), keyEquivalent: "")
+        allItem.target = self; allItem.representedObject = Optional<EmbyMusicLibrary>.none as Any
+        allItem.state = activeId == nil ? .on : .off
+        menu.addItem(allItem)
+        if !libraries.isEmpty { menu.addItem(NSMenuItem.separator()) }
+        for library in libraries {
+            let typeLabel = library.collectionType == "tvshows" ? "TV Shows" : "Movies"
+            let item = NSMenuItem(title: "\(library.name) (\(typeLabel))", action: #selector(selectEmbyVideoLibraryFromBrowser(_:)), keyEquivalent: "")
+            item.target = self; item.representedObject = library
+            item.state = library.id == activeId ? .on : .off
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
     private func showSubsonicFolderMenu(at event: NSEvent) {
         let menu = NSMenu()
         let folders = SubsonicManager.shared.musicFolders
@@ -2950,7 +3117,7 @@ class ModernLibraryBrowserView: NSView {
         
         // Rate submenu (when a rateable track is playing)
         if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-           currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.url.isFileURL {
+           currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
             menu.addItem(NSMenuItem.separator())
             let rateMenu = buildRateSubmenu()
             let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
@@ -3250,6 +3417,65 @@ class ModernLibraryBrowserView: NSView {
         case .jellyfinEpisode(let episode):
             let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayJellyfinEpisode(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = episode; menu.addItem(playItem)
+        case .embyTrack(let song):
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayEmbySong(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = song; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayEmbySongAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = song; menu.addItem(playReplaceItem)
+            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddEmbySongToPlaylist(_:)), keyEquivalent: "")
+            addItem.target = self; addItem.representedObject = song; menu.addItem(addItem)
+            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayEmbySongNext(_:)), keyEquivalent: "")
+            playNextItem.target = self; playNextItem.representedObject = song; menu.addItem(playNextItem)
+            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddEmbySongToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self; queueItem.representedObject = song; menu.addItem(queueItem)
+            if song.albumId != nil {
+                menu.addItem(NSMenuItem.separator())
+                let albumItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayEmbySongAlbum(_:)), keyEquivalent: "")
+                albumItem.target = self; albumItem.representedObject = song; menu.addItem(albumItem)
+            }
+            if song.artistId != nil {
+                let artistItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayEmbySongArtist(_:)), keyEquivalent: "")
+                artistItem.target = self; artistItem.representedObject = song; menu.addItem(artistItem)
+            }
+            menu.addItem(NSMenuItem.separator())
+            let rateMenu = buildRateSubmenuForEmby(itemId: song.id)
+            let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateItem.submenu = rateMenu; menu.addItem(rateItem)
+        case .embyAlbum(let album):
+            let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayEmbyAlbum(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = album; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlayEmbyAlbumAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = album; menu.addItem(playReplaceItem)
+            let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlayEmbyAlbumNext(_:)), keyEquivalent: "")
+            playNextItem.target = self; playNextItem.representedObject = album; menu.addItem(playNextItem)
+            let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddEmbyAlbumToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self; queueItem.representedObject = album; menu.addItem(queueItem)
+        case .embyArtist(let artist):
+            let playItem = NSMenuItem(title: "Play All", action: #selector(contextMenuPlayEmbyArtist(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = artist; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlayEmbyArtistAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = artist; menu.addItem(playReplaceItem)
+            let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayEmbyArtistNext(_:)), keyEquivalent: "")
+            playNextItem.target = self; playNextItem.representedObject = artist; menu.addItem(playNextItem)
+            let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddEmbyArtistToQueue(_:)), keyEquivalent: "")
+            queueItem.target = self; queueItem.representedObject = artist; menu.addItem(queueItem)
+        case .embyPlaylist(let playlist):
+            let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlayEmbyPlaylist(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = playlist; menu.addItem(playItem)
+            let playReplaceItem = NSMenuItem(title: "Play Playlist and Replace Queue", action: #selector(contextMenuPlayEmbyPlaylistAndReplace(_:)), keyEquivalent: "")
+            playReplaceItem.target = self; playReplaceItem.representedObject = playlist; menu.addItem(playReplaceItem)
+        case .embyMovie(let movie):
+            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlayEmbyMovie(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = movie; menu.addItem(playItem)
+        case .embyShow:
+            let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
+        case .embySeason:
+            let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
+        case .embyEpisode(let episode):
+            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEmbyEpisode(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = episode; menu.addItem(playItem)
         case .subsonicPlaylist(let playlist):
             let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlaySubsonicPlaylist(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = playlist; menu.addItem(playItem)
@@ -3299,6 +3525,16 @@ class ModernLibraryBrowserView: NSView {
             }
         }
     }
+    @objc private func selectEmbyServer(_ sender: NSMenuItem) {
+        guard let serverId = sender.representedObject as? String else { return }
+        currentSource = .emby(serverId: serverId)
+        if let server = EmbyManager.shared.servers.first(where: { $0.id == serverId }) {
+            Task { @MainActor in
+                do { try await EmbyManager.shared.connect(to: server); reloadData() }
+                catch { errorMessage = error.localizedDescription; needsDisplay = true }
+            }
+        }
+    }
     @objc private func linkPlexAccount() { controller?.showLinkSheet() }
     @objc private func selectSortOption(_ sender: NSMenuItem) {
         guard let option = sender.representedObject as? ModernBrowserSortOption else { return }
@@ -3327,6 +3563,27 @@ class ModernLibraryBrowserView: NSView {
             JellyfinManager.shared.selectShowLibrary(nil)
         }
         cachedJellyfinMovies = []; cachedJellyfinShows = []
+        reloadData()
+    }
+    @objc private func selectEmbyMusicLibraryFromBrowser(_ sender: NSMenuItem) {
+        let library = sender.representedObject as? EmbyMusicLibrary
+        if let library = library {
+            EmbyManager.shared.selectMusicLibrary(library)
+        } else {
+            EmbyManager.shared.clearMusicLibrarySelection()
+        }
+        clearAllCachedData(); reloadData()
+    }
+    @objc private func selectEmbyVideoLibraryFromBrowser(_ sender: NSMenuItem) {
+        let library = sender.representedObject as? EmbyMusicLibrary
+        if let library = library {
+            EmbyManager.shared.selectMovieLibrary(library)
+            EmbyManager.shared.selectShowLibrary(library)
+        } else {
+            EmbyManager.shared.selectMovieLibrary(nil)
+            EmbyManager.shared.selectShowLibrary(nil)
+        }
+        cachedEmbyMovies = []; cachedEmbyShows = []
         reloadData()
     }
     @objc private func selectSubsonicMusicFolder(_ sender: NSMenuItem) {
@@ -3545,7 +3802,60 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuPlayJellyfinEpisode(_ sender: NSMenuItem) {
         guard let episode = sender.representedObject as? JellyfinEpisode else { return }; playJellyfinEpisode(episode)
     }
-    
+    @objc private func contextMenuPlayEmbySong(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? EmbySong else { return }; playEmbySong(song)
+    }
+    @objc private func contextMenuPlayEmbyAlbum(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? EmbyAlbum else { return }; playEmbyAlbum(album)
+    }
+    @objc private func contextMenuPlayEmbyArtist(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? EmbyArtist else { return }; playEmbyArtist(artist)
+    }
+    @objc private func contextMenuPlayEmbyPlaylist(_ sender: NSMenuItem) {
+        guard let playlist = sender.representedObject as? EmbyPlaylist else { return }; playEmbyPlaylist(playlist)
+    }
+    @objc private func contextMenuAddEmbySongToPlaylist(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? EmbySong,
+              let track = EmbyManager.shared.convertToTrack(song) else { return }
+        WindowManager.shared.audioEngine.appendTracks([track])
+    }
+    @objc private func contextMenuPlayEmbySongAlbum(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? EmbySong,
+              let albumId = song.albumId else { return }
+        Task { @MainActor in
+            if let album = cachedEmbyAlbums.first(where: { $0.id == albumId }) {
+                playEmbyAlbum(album)
+            } else {
+                do {
+                    let (_, songs) = try await EmbyManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
+                    let tracks = EmbyManager.shared.convertToTracks(songs)
+                    if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
+                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription) }
+            }
+        }
+    }
+    @objc private func contextMenuPlayEmbySongArtist(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? EmbySong,
+              let artistId = song.artistId else { return }
+        Task { @MainActor in
+            if let artist = cachedEmbyArtists.first(where: { $0.id == artistId }) {
+                playEmbyArtist(artist)
+            } else {
+                do {
+                    let results = try await EmbyManager.shared.search(query: song.artist ?? "")
+                    let tracks = EmbyManager.shared.convertToTracks(results.songs)
+                    if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
+                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription) }
+            }
+        }
+    }
+    @objc private func contextMenuPlayEmbyMovie(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? EmbyMovie else { return }; playEmbyMovie(movie)
+    }
+    @objc private func contextMenuPlayEmbyEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? EmbyEpisode else { return }; playEmbyEpisode(episode)
+    }
+
     // MARK: - Play and Replace Queue Handlers
     
     @objc private func contextMenuPlayAndReplaceTrack(_ sender: NSMenuItem) {
@@ -3660,6 +3970,43 @@ class ModernLibraryBrowserView: NSView {
             do {
                 let (_, songs) = try await JellyfinManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
                 WindowManager.shared.audioEngine.loadTracks(JellyfinManager.shared.convertToTracks(songs))
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayEmbySongAndReplace(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? EmbySong,
+              let t = EmbyManager.shared.convertToTrack(song) else { return }
+        WindowManager.shared.audioEngine.loadTracks([t])
+    }
+    @objc private func contextMenuPlayEmbyAlbumAndReplace(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? EmbyAlbum else { return }
+        Task { @MainActor in
+            do {
+                let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                WindowManager.shared.audioEngine.loadTracks(EmbyManager.shared.convertToTracks(songs))
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayEmbyArtistAndReplace(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? EmbyArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
+                var all: [Track] = []
+                for album in albums {
+                    let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                    all.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
+                }
+                WindowManager.shared.audioEngine.loadTracks(all)
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayEmbyPlaylistAndReplace(_ sender: NSMenuItem) {
+        guard let playlist = sender.representedObject as? EmbyPlaylist else { return }
+        Task { @MainActor in
+            do {
+                let (_, songs) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
+                WindowManager.shared.audioEngine.loadTracks(EmbyManager.shared.convertToTracks(songs))
             } catch { NSLog("Failed: %@", error.localizedDescription) }
         }
     }
@@ -3921,7 +4268,74 @@ class ModernLibraryBrowserView: NSView {
             } catch { NSLog("Failed to add jellyfin artist to queue: %@", error.localizedDescription) }
         }
     }
-    
+    @objc private func contextMenuPlayEmbySongNext(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? EmbySong,
+              let track = EmbyManager.shared.convertToTrack(song) else { return }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+    }
+    @objc private func contextMenuAddEmbySongToQueue(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? EmbySong,
+              let track = EmbyManager.shared.convertToTrack(song) else { return }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks([track])
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+    @objc private func contextMenuPlayEmbyAlbumNext(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? EmbyAlbum else { return }
+        Task { @MainActor in
+            do {
+                let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                let tracks = EmbyManager.shared.convertToTracks(songs)
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
+            } catch { NSLog("Failed to play emby album next: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuAddEmbyAlbumToQueue(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? EmbyAlbum else { return }
+        Task { @MainActor in
+            do {
+                let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                let tracks = EmbyManager.shared.convertToTracks(songs)
+                let engine = WindowManager.shared.audioEngine
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(tracks)
+                if wasEmpty { engine.playTrack(at: 0) }
+            } catch { NSLog("Failed to add emby album to queue: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayEmbyArtistNext(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? EmbyArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
+                var allTracks: [Track] = []
+                for album in albums {
+                    let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                    allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
+                }
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+            } catch { NSLog("Failed to play emby artist next: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuAddEmbyArtistToQueue(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? EmbyArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
+                var allTracks: [Track] = []
+                for album in albums {
+                    let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                    allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
+                }
+                let engine = WindowManager.shared.audioEngine
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(allTracks)
+                if wasEmpty { engine.playTrack(at: 0) }
+            } catch { NSLog("Failed to add emby artist to queue: %@", error.localizedDescription) }
+        }
+    }
+
     // MARK: - Keyboard Shortcut Helpers
     
     private func playNextSelected() {
@@ -4002,10 +4416,32 @@ class ModernLibraryBrowserView: NSView {
                     WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
                 }
             }
+        case .embyTrack(let song):
+            if let track = EmbyManager.shared.convertToTrack(song) {
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+            }
+        case .embyAlbum(let album):
+            Task { @MainActor in
+                if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(EmbyManager.shared.convertToTracks(songs))
+                }
+            }
+        case .embyArtist(let artist):
+            Task { @MainActor in
+                if let albums = try? await EmbyManager.shared.fetchAlbums(forArtist: artist) {
+                    var allTracks: [Track] = []
+                    for album in albums {
+                        if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
+                            allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
+                        }
+                    }
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+                }
+            }
         default: break
         }
     }
-    
+
     private func addSelectedToQueue() {
         guard let index = selectedIndices.first, index < displayItems.count else { return }
         let item = displayItems[index]
@@ -4110,10 +4546,38 @@ class ModernLibraryBrowserView: NSView {
                     if wasEmpty { engine.playTrack(at: 0) }
                 }
             }
+        case .embyTrack(let song):
+            if let track = EmbyManager.shared.convertToTrack(song) {
+                engine.appendTracks([track])
+                if wasEmpty { engine.playTrack(at: 0) }
+            }
+        case .embyAlbum(let album):
+            Task { @MainActor in
+                if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
+                    let tracks = EmbyManager.shared.convertToTracks(songs)
+                    let wasEmpty = engine.playlist.isEmpty
+                    engine.appendTracks(tracks)
+                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
+        case .embyArtist(let artist):
+            Task { @MainActor in
+                if let albums = try? await EmbyManager.shared.fetchAlbums(forArtist: artist) {
+                    var allTracks: [Track] = []
+                    for album in albums {
+                        if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
+                            allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
+                        }
+                    }
+                    let wasEmpty = engine.playlist.isEmpty
+                    engine.appendTracks(allTracks)
+                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
         default: break
         }
     }
-    
+
     // MARK: - Notification Handlers
     
     @objc private func modernSkinDidChange() {
@@ -4167,6 +4631,9 @@ class ModernLibraryBrowserView: NSView {
                 case .jellyfin(let serverId):
                     if JellyfinManager.shared.servers.contains(where: { $0.id == serverId }) { self.currentSource = pending; return }
                     else if let first = JellyfinManager.shared.servers.first { self.currentSource = .jellyfin(serverId: first.id); return }
+                case .emby(let serverId):
+                    if EmbyManager.shared.servers.contains(where: { $0.id == serverId }) { self.currentSource = pending; return }
+                    else if let first = EmbyManager.shared.servers.first { self.currentSource = .emby(serverId: first.id); return }
                 case .local: break
                 case .radio: self.currentSource = .radio; return
                 }
@@ -4187,6 +4654,34 @@ class ModernLibraryBrowserView: NSView {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.browseMode.isVideoMode else { return }
             self.cachedJellyfinMovies = []; self.cachedJellyfinShows = []
+            self.reloadData()
+        }
+    }
+
+    @objc private func embyMusicLibraryDidChange() {
+        DispatchQueue.main.async { [weak self] in
+            self?.clearAllCachedData(); self?.reloadData()
+        }
+    }
+
+    @objc private func embyVideoLibraryDidChange() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.browseMode.isVideoMode else { return }
+            self.cachedEmbyMovies = []; self.cachedEmbyShows = []
+            self.reloadData()
+        }
+    }
+
+    @objc private func embyLibraryContentDidPreload() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, case .emby = self.currentSource else { return }
+            self.reloadData()
+        }
+    }
+
+    @objc private func embyConnectionStateDidChange() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, case .emby = self.currentSource else { return }
             self.reloadData()
         }
     }
@@ -4234,6 +4729,7 @@ class ModernLibraryBrowserView: NSView {
         case .plex(let serverId): currentSource = .plex(serverId: serverId)
         case .subsonic(let serverId): currentSource = .subsonic(serverId: serverId)
         case .jellyfin(let serverId): currentSource = .jellyfin(serverId: serverId)
+        case .emby(let serverId): currentSource = .emby(serverId: serverId)
         case .radio: currentSource = .radio
         }
     }
@@ -4291,6 +4787,12 @@ class ModernLibraryBrowserView: NSView {
         cachedJellyfinMovies = []; cachedJellyfinShows = []
         jellyfinShowSeasons = [:]; jellyfinSeasonEpisodes = [:]
         expandedJellyfinShows = []; expandedJellyfinSeasons = []
+        cachedEmbyArtists = []; cachedEmbyAlbums = []; cachedEmbyPlaylists = []
+        embyArtistAlbums = [:]; embyAlbumSongs = [:]; embyPlaylistTracks = [:]
+        expandedEmbyArtists = []; expandedEmbyAlbums = []; expandedEmbyPlaylists = []
+        cachedEmbyMovies = []; cachedEmbyShows = []
+        embyShowSeasons = [:]; embySeasonEpisodes = [:]
+        expandedEmbyShows = []; expandedEmbySeasons = []
         searchResults = nil
     }
     
@@ -4319,7 +4821,17 @@ class ModernLibraryBrowserView: NSView {
         default:      return mgr.currentMusicLibrary?.name ?? "All"
         }
     }
-    
+
+    /// Returns the display name of the currently relevant Emby library based on browse mode.
+    private var embyCurrentLibraryName: String {
+        let mgr = EmbyManager.shared
+        switch browseMode {
+        case .movies: return mgr.currentMovieLibrary?.name ?? "All"
+        case .shows:  return mgr.currentShowLibrary?.name ?? "All"
+        default:      return mgr.currentMusicLibrary?.name ?? "All"
+        }
+    }
+
     // MARK: - Server Name Scroll
     
     private func startServerNameScroll() {
@@ -4373,6 +4885,10 @@ class ModernLibraryBrowserView: NSView {
             let server = JellyfinManager.shared.servers.first(where: { $0.id == id })
             currentServerName = server?.name ?? "Select Server"
             currentLibraryName = jellyfinCurrentLibraryName
+        case .emby(let id):
+            let server = EmbyManager.shared.servers.first(where: { $0.id == id })
+            currentServerName = server?.name ?? "Select Server"
+            currentLibraryName = embyCurrentLibraryName
         default:
             return
         }
@@ -4590,6 +5106,17 @@ class ModernLibraryBrowserView: NSView {
                     }
                 } catch { }
             }
+        } else if let embyId = currentTrack.embyId {
+            // Emby: fetch from server (0-100 scale, convert to 0-10)
+            Task {
+                do {
+                    if let song = try await EmbyManager.shared.serverClient?.fetchSong(id: embyId) {
+                        await MainActor.run {
+                            currentTrackRating = song.userRating.map { $0 / 10 }; needsDisplay = true
+                        }
+                    }
+                } catch { }
+            }
         } else if currentTrack.url.isFileURL {
             // Local file: read from library (already 0-10 scale)
             if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
@@ -4667,7 +5194,22 @@ class ModernLibraryBrowserView: NSView {
         menu.addItem(clearItem)
         return menu
     }
-    
+
+    private func buildRateSubmenuForEmby(itemId: String) -> NSMenu {
+        let menu = NSMenu(title: "Rate")
+        for stars in 1...5 {
+            let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+            let item = NSMenuItem(title: label, action: #selector(contextMenuRateEmby(_:)), keyEquivalent: "")
+            item.target = self; item.tag = stars * 20; item.representedObject = itemId  // Emby uses 0-100 scale
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+        let clearItem = NSMenuItem(title: "Clear Rating", action: #selector(contextMenuRateEmby(_:)), keyEquivalent: "")
+        clearItem.target = self; clearItem.tag = 0; clearItem.representedObject = itemId
+        menu.addItem(clearItem)
+        return menu
+    }
+
     /// Build rate submenu for a local track
     private func buildRateSubmenuForLocal(trackId: UUID) -> NSMenu {
         let menu = NSMenu(title: "Rate")
@@ -4741,7 +5283,24 @@ class ModernLibraryBrowserView: NSView {
             } catch { NSLog("Jellyfin rating failed: %@", error.localizedDescription) }
         }
     }
-    
+
+    @objc private func contextMenuRateEmby(_ sender: NSMenuItem) {
+        guard let itemId = sender.representedObject as? String else { return }
+        let rating = sender.tag  // 0-100 scale (0 = clear, 20/40/60/80/100 for 1-5 stars)
+        Task {
+            do {
+                try await EmbyManager.shared.setRating(itemId: itemId, rating: rating)
+                await MainActor.run {
+                    // Update art mode rating if this is the current track
+                    if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+                       currentTrack.embyId == itemId {
+                        currentTrackRating = rating > 0 ? rating / 10 : nil; needsDisplay = true
+                    }
+                }
+            } catch { NSLog("Emby rating failed: %@", error.localizedDescription) }
+        }
+    }
+
     @objc private func contextMenuRateLocal(_ sender: NSMenuItem) {
         guard let trackId = sender.representedObject as? UUID else { return }
         let rating = sender.tag  // 0-10, or -1 for clear
@@ -4796,6 +5355,8 @@ class ModernLibraryBrowserView: NSView {
                 image = await self.loadSubsonicArtwork(songId: subsonicId)
             } else if let jellyfinId = track.jellyfinId {
                 image = await self.loadJellyfinArtwork(itemId: jellyfinId, imageTag: track.artworkThumb)
+            } else if let embyId = track.embyId {
+                image = await self.loadEmbyArtwork(itemId: embyId, imageTag: track.artworkThumb)
             } else if track.url.isFileURL {
                 image = await self.loadLocalArtwork(url: track.url)
             }
@@ -4803,7 +5364,7 @@ class ModernLibraryBrowserView: NSView {
             await MainActor.run { self.currentArtwork = image; self.artworkTrackId = track.id; self.needsDisplay = true }
         }
     }
-    
+
     private func loadPlexArtwork(ratingKey: String, thumbPath: String? = nil) async -> NSImage? {
         let cacheKey = NSString(string: "plex:\(ratingKey)")
         if let cached = Self.artworkCache.object(forKey: cacheKey) { return cached }
@@ -4844,7 +5405,19 @@ class ModernLibraryBrowserView: NSView {
             Self.artworkCache.setObject(image, forKey: cacheKey); return image
         } catch { return nil }
     }
-    
+
+    private func loadEmbyArtwork(itemId: String, imageTag: String?) async -> NSImage? {
+        let cacheKey = NSString(string: "emby:\(itemId)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) { return cached }
+        guard let url = EmbyManager.shared.imageURL(itemId: itemId, imageTag: imageTag, size: 400) else { return nil }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let image = NSImage(data: data) else { return nil }
+            Self.artworkCache.setObject(image, forKey: cacheKey); return image
+        } catch { return nil }
+    }
+
     private func loadLocalArtwork(url: URL) async -> NSImage? {
         let cacheKey = NSString(string: "local:\(url.path)")
         if let cached = Self.artworkCache.object(forKey: cacheKey) { return cached }
@@ -4877,6 +5450,8 @@ class ModernLibraryBrowserView: NSView {
                 if let img = await self.loadSubsonicArtwork(songId: subId) { images.append(img) }
             } else if let jellyfinId = currentTrack.jellyfinId {
                 if let img = await self.loadJellyfinArtwork(itemId: jellyfinId, imageTag: currentTrack.artworkThumb) { images.append(img) }
+            } else if let embyId = currentTrack.embyId {
+                if let img = await self.loadEmbyArtwork(itemId: embyId, imageTag: currentTrack.artworkThumb) { images.append(img) }
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
@@ -4969,6 +5544,20 @@ class ModernLibraryBrowserView: NSView {
                 image = await self.loadJellyfinArtwork(itemId: season.id, imageTag: season.imageTag)
             case .jellyfinEpisode(let episode):
                 image = await self.loadJellyfinArtwork(itemId: episode.id, imageTag: episode.imageTag)
+            case .embyTrack(let song):
+                image = await self.loadEmbyArtwork(itemId: song.albumId ?? song.id, imageTag: song.imageTag)
+            case .embyAlbum(let album):
+                image = await self.loadEmbyArtwork(itemId: album.id, imageTag: album.imageTag)
+            case .embyArtist(let artist):
+                image = await self.loadEmbyArtwork(itemId: artist.id, imageTag: artist.imageTag)
+            case .embyMovie(let movie):
+                image = await self.loadEmbyArtwork(itemId: movie.id, imageTag: movie.imageTag)
+            case .embyShow(let show):
+                image = await self.loadEmbyArtwork(itemId: show.id, imageTag: show.imageTag)
+            case .embySeason(let season):
+                image = await self.loadEmbyArtwork(itemId: season.id, imageTag: season.imageTag)
+            case .embyEpisode(let episode):
+                image = await self.loadEmbyArtwork(itemId: episode.id, imageTag: episode.imageTag)
             default:
                 break
             }
@@ -4998,6 +5587,7 @@ class ModernLibraryBrowserView: NSView {
         if case .local = currentSource { loadLocalData(); needsDisplay = true; return }
         if case .subsonic(let serverId) = currentSource { loadSubsonicData(serverId: serverId); return }
         if case .jellyfin(let serverId) = currentSource { loadJellyfinData(serverId: serverId); return }
+        if case .emby(let serverId) = currentSource { loadEmbyData(serverId: serverId); return }
         guard PlexManager.shared.isLinked else { displayItems = []; stopLoadingAnimation(); needsDisplay = true; return }
         if PlexManager.shared.serverClient == nil {
             isLoading = true; errorMessage = nil; startLoadingAnimation(); needsDisplay = true
@@ -5048,7 +5638,8 @@ class ModernLibraryBrowserView: NSView {
         if case .local = currentSource { loadLocalData(); return }
         if case .subsonic(let serverId) = currentSource { loadSubsonicData(serverId: serverId); return }
         if case .jellyfin(let serverId) = currentSource { loadJellyfinData(serverId: serverId); return }
-        
+        if case .emby(let serverId) = currentSource { loadEmbyData(serverId: serverId); return }
+
         isLoading = true; errorMessage = nil; startLoadingAnimation(); needsDisplay = true
         Task { @MainActor in
             do {
@@ -5315,7 +5906,97 @@ class ModernLibraryBrowserView: NSView {
             catch { isLoading = false; stopLoadingAnimation(); errorMessage = error.localizedDescription; needsDisplay = true }
         }
     }
-    
+
+    private func loadEmbyData(serverId: String) {
+        isLoading = true; errorMessage = nil; startLoadingAnimation(); needsDisplay = true
+        let manager = EmbyManager.shared
+        if manager.currentServer?.id != serverId {
+            if case .connecting = manager.connectionState,
+               let savedId = UserDefaults.standard.string(forKey: "EmbyCurrentServerID"), savedId == serverId {
+                Task { @MainActor in
+                    NSLog("ModernLibraryBrowser: Waiting for existing Emby connection to '%@'...", serverId)
+                    while case .connecting = manager.connectionState {
+                        try await Task.sleep(nanoseconds: 100_000_000)
+                    }
+                    if case .connected = manager.connectionState, manager.currentServer?.id == serverId {
+                        loadEmbyDataForCurrentMode()
+                    } else {
+                        isLoading = false; stopLoadingAnimation(); errorMessage = "Connection failed"; needsDisplay = true
+                    }
+                }
+                return
+            }
+            if let server = manager.servers.first(where: { $0.id == serverId }) {
+                Task { @MainActor in
+                    do { try await manager.connect(to: server); loadEmbyDataForCurrentMode() }
+                    catch { isLoading = false; stopLoadingAnimation(); errorMessage = error.localizedDescription; needsDisplay = true }
+                }
+            } else { isLoading = false; stopLoadingAnimation(); errorMessage = "Server not found"; needsDisplay = true }
+            return
+        }
+        loadEmbyDataForCurrentMode()
+    }
+
+    private func loadEmbyDataForCurrentMode() {
+        let manager = EmbyManager.shared
+        embyLoadTask?.cancel()
+        embyLoadTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            do {
+                try Task.checkCancellation()
+                if manager.isPreloading {
+                    NSLog("ModernLibraryBrowser: Waiting for Emby preload to complete...")
+                    while manager.isPreloading {
+                        try Task.checkCancellation()
+                        try await Task.sleep(nanoseconds: 100_000_000)
+                    }
+                }
+                switch browseMode {
+                case .artists:
+                    if cachedEmbyArtists.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                            cachedEmbyArtists = manager.cachedArtists; cachedEmbyAlbums = manager.cachedAlbums
+                        } else {
+                            cachedEmbyArtists = try await manager.fetchArtists()
+                            cachedEmbyAlbums = try await manager.fetchAlbums()
+                        }
+                    }
+                    buildEmbyArtistItems()
+                case .albums:
+                    if cachedEmbyAlbums.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedAlbums.isEmpty { cachedEmbyAlbums = manager.cachedAlbums }
+                        else { cachedEmbyAlbums = try await manager.fetchAlbums() }
+                    }
+                    buildEmbyAlbumItems()
+                case .tracks: buildEmbyTrackItems()
+                case .plists:
+                    if cachedEmbyPlaylists.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty { cachedEmbyPlaylists = manager.cachedPlaylists }
+                        else { cachedEmbyPlaylists = try await manager.fetchPlaylists() }
+                    }
+                    buildEmbyPlaylistItems()
+                case .search: displayItems = []
+                case .movies:
+                    if cachedEmbyMovies.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedMovies.isEmpty { cachedEmbyMovies = manager.cachedMovies }
+                        else { cachedEmbyMovies = try await manager.fetchMovies() }
+                    }
+                    buildEmbyMovieItems()
+                case .shows:
+                    if cachedEmbyShows.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedShows.isEmpty { cachedEmbyShows = manager.cachedShows }
+                        else { cachedEmbyShows = try await manager.fetchShows() }
+                    }
+                    buildEmbyShowItems()
+                case .radio: break
+                }
+                isLoading = false; stopLoadingAnimation(); needsDisplay = true
+            } catch is CancellationError { }
+            catch where Task.isCancelled { }
+            catch { isLoading = false; stopLoadingAnimation(); errorMessage = error.localizedDescription; needsDisplay = true }
+        }
+    }
+
     // MARK: - Build Display Items
     
     /// Extract an artist ID from a parentKey path, handling various Plex server formats:
@@ -5695,7 +6376,102 @@ class ModernLibraryBrowserView: NSView {
             }
         }
     }
-    
+
+    // MARK: - Build Emby Display Items
+
+    private func buildEmbyArtistItems() {
+        displayItems.removeAll()
+        for artist in cachedEmbyArtists.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+            let info = artist.albumCount > 0 ? "\(artist.albumCount) albums" : nil
+            let expanded = expandedEmbyArtists.contains(artist.id)
+            displayItems.append(ModernDisplayItem(id: artist.id, title: artist.name, info: info, indentLevel: 0, hasChildren: true, type: .embyArtist(artist)))
+            if expanded, let albums = embyArtistAlbums[artist.id] {
+                for album in albums {
+                    let albumExpanded = expandedEmbyAlbums.contains(album.id)
+                    displayItems.append(ModernDisplayItem(id: album.id, title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .embyAlbum(album)))
+                    if albumExpanded, let songs = embyAlbumSongs[album.id] {
+                        let sorted = songs.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.track ?? 0) < ($1.track ?? 0) }
+                        for song in sorted { displayItems.append(ModernDisplayItem(id: song.id, title: song.title, info: formatDuration(song.duration), indentLevel: 2, hasChildren: false, type: .embyTrack(song))) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func buildEmbyAlbumItems() {
+        displayItems = cachedEmbyAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }).map {
+            ModernDisplayItem(id: $0.id, title: "\($0.artist ?? "Unknown") - \($0.name)", info: $0.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .embyAlbum($0))
+        }
+    }
+
+    private func buildEmbyTrackItems() {
+        Task { @MainActor in
+            do {
+                let results = try await EmbyManager.shared.search(query: "")
+                let songs = results.songs
+                displayItems = songs.sorted(by: {
+                    let artist1 = $0.artist ?? ""
+                    let artist2 = $1.artist ?? ""
+                    if artist1 != artist2 { return artist1.localizedCaseInsensitiveCompare(artist2) == .orderedAscending }
+                    let album1 = $0.album ?? ""
+                    let album2 = $1.album ?? ""
+                    if album1 != album2 { return album1.localizedCaseInsensitiveCompare(album2) == .orderedAscending }
+                    return ($0.track ?? 0) < ($1.track ?? 0)
+                }).map {
+                    ModernDisplayItem(
+                        id: $0.id,
+                        title: "\($0.artist ?? "Unknown") - \($0.title)",
+                        info: $0.formattedDuration,
+                        indentLevel: 0,
+                        hasChildren: false,
+                        type: .embyTrack($0)
+                    )
+                }
+                applyColumnSort()
+                needsDisplay = true
+            } catch {
+                NSLog("Failed to fetch Emby tracks: %@", error.localizedDescription)
+                displayItems = []
+                needsDisplay = true
+            }
+        }
+    }
+
+    private func buildEmbyPlaylistItems() {
+        displayItems.removeAll()
+        for playlist in cachedEmbyPlaylists.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+            let expanded = expandedEmbyPlaylists.contains(playlist.id)
+            displayItems.append(ModernDisplayItem(id: playlist.id, title: playlist.name, info: "\(playlist.songCount) tracks", indentLevel: 0, hasChildren: playlist.songCount > 0, type: .embyPlaylist(playlist)))
+            if expanded, let tracks = embyPlaylistTracks[playlist.id] {
+                for t in tracks { displayItems.append(ModernDisplayItem(id: "\(playlist.id)-\(t.id)", title: t.title, info: formatDuration(t.duration), indentLevel: 1, hasChildren: false, type: .embyTrack(t))) }
+            }
+        }
+    }
+
+    private func buildEmbyMovieItems() {
+        displayItems = cachedEmbyMovies.map { movie in
+            let info = [movie.year.map { String($0) }, movie.formattedDuration].compactMap { $0 }.joined(separator: " • ")
+            return ModernDisplayItem(id: movie.id, title: movie.title, info: info.isEmpty ? nil : info, indentLevel: 0, hasChildren: false, type: .embyMovie(movie))
+        }
+    }
+
+    private func buildEmbyShowItems() {
+        displayItems.removeAll()
+        for show in cachedEmbyShows {
+            let expanded = expandedEmbyShows.contains(show.id)
+            let info = [show.year.map { String($0) }, "\(show.childCount) seasons"].compactMap { $0 }.joined(separator: " • ")
+            displayItems.append(ModernDisplayItem(id: show.id, title: show.title, info: info, indentLevel: 0, hasChildren: true, type: .embyShow(show)))
+            if expanded, let seasons = embyShowSeasons[show.id] {
+                for season in seasons {
+                    displayItems.append(ModernDisplayItem(id: season.id, title: season.title, info: "\(season.childCount) episodes", indentLevel: 1, hasChildren: true, type: .embySeason(season)))
+                    if expandedEmbySeasons.contains(season.id), let episodes = embySeasonEpisodes[season.id] {
+                        for ep in episodes { displayItems.append(ModernDisplayItem(id: ep.id, title: "\(ep.episodeIdentifier) - \(ep.title)", info: ep.formattedDuration, indentLevel: 2, hasChildren: false, type: .embyEpisode(ep))) }
+                    }
+                }
+            }
+        }
+    }
+
     private func formatDuration(_ seconds: Int?) -> String? {
         guard let s = seconds else { return nil }
         let mins = s / 60; let secs = s % 60; return String(format: "%d:%02d", mins, secs)
@@ -5795,6 +6571,16 @@ class ModernLibraryBrowserView: NSView {
             case .shows: buildJellyfinShowItems()
             default: displayItems = []
             }
+        } else if case .emby = currentSource {
+            switch browseMode {
+            case .artists: buildEmbyArtistItems()
+            case .albums: buildEmbyAlbumItems()
+            case .tracks: buildEmbyTrackItems()
+            case .plists: buildEmbyPlaylistItems()
+            case .movies: buildEmbyMovieItems()
+            case .shows: buildEmbyShowItems()
+            default: displayItems = []
+            }
         } else {
             switch browseMode {
             case .artists: buildArtistItems()
@@ -5829,6 +6615,11 @@ class ModernLibraryBrowserView: NSView {
         case .jellyfinPlaylist(let p): return expandedJellyfinPlaylists.contains(p.id)
         case .jellyfinShow(let s): return expandedJellyfinShows.contains(s.id)
         case .jellyfinSeason(let s): return expandedJellyfinSeasons.contains(s.id)
+        case .embyArtist(let a): return expandedEmbyArtists.contains(a.id)
+        case .embyAlbum(let a): return expandedEmbyAlbums.contains(a.id)
+        case .embyPlaylist(let p): return expandedEmbyPlaylists.contains(p.id)
+        case .embyShow(let s): return expandedEmbyShows.contains(s.id)
+        case .embySeason(let s): return expandedEmbySeasons.contains(s.id)
         case .plexPlaylist(let p): return expandedPlexPlaylists.contains(p.id)
         default: return false
         }
@@ -6026,6 +6817,76 @@ class ModernLibraryBrowserView: NSView {
                     }; return
                 }
             }
+        case .embyArtist(let artist):
+            if expandedEmbyArtists.contains(artist.id) { expandedEmbyArtists.remove(artist.id) }
+            else {
+                expandedEmbyArtists.insert(artist.id)
+                if embyArtistAlbums[artist.id] == nil {
+                    let cached = cachedEmbyAlbums.filter { $0.artistId == artist.id }
+                    if !cached.isEmpty {
+                        embyArtistAlbums[artist.id] = cached
+                    } else {
+                        let id = artist.id; embyExpandTask?.cancel()
+                        embyExpandTask = Task.detached { @MainActor [weak self] in
+                            guard let self = self else { return }
+                            do { let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist); embyArtistAlbums[id] = albums; rebuildCurrentModeItems() }
+                            catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                        }; return
+                    }
+                }
+            }
+        case .embyAlbum(let album):
+            if expandedEmbyAlbums.contains(album.id) { expandedEmbyAlbums.remove(album.id) }
+            else {
+                expandedEmbyAlbums.insert(album.id)
+                if embyAlbumSongs[album.id] == nil {
+                    let id = album.id; embyExpandTask?.cancel()
+                    embyExpandTask = Task.detached { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        do { let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album); embyAlbumSongs[id] = songs; rebuildCurrentModeItems() }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                    }; return
+                }
+            }
+        case .embyPlaylist(let playlist):
+            if expandedEmbyPlaylists.contains(playlist.id) { expandedEmbyPlaylists.remove(playlist.id) }
+            else {
+                expandedEmbyPlaylists.insert(playlist.id)
+                if embyPlaylistTracks[playlist.id] == nil {
+                    let id = playlist.id; embyExpandTask?.cancel()
+                    embyExpandTask = Task.detached { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        do { let (_, tracks) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: id) ?? (playlist, []); embyPlaylistTracks[id] = tracks; rebuildCurrentModeItems() }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { NSLog("Failed: \(error)") }
+                    }; return
+                }
+            }
+        case .embyShow(let show):
+            if expandedEmbyShows.contains(show.id) { expandedEmbyShows.remove(show.id) }
+            else {
+                expandedEmbyShows.insert(show.id)
+                if embyShowSeasons[show.id] == nil {
+                    let id = show.id; embyExpandTask?.cancel()
+                    embyExpandTask = Task.detached { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        do { let seasons = try await EmbyManager.shared.fetchSeasons(forShow: show); embyShowSeasons[id] = seasons; rebuildCurrentModeItems() }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { expandedEmbyShows.remove(id); rebuildCurrentModeItems(); NSLog("Failed: \(error)") }
+                    }; return
+                }
+            }
+        case .embySeason(let season):
+            if expandedEmbySeasons.contains(season.id) { expandedEmbySeasons.remove(season.id) }
+            else {
+                expandedEmbySeasons.insert(season.id)
+                if embySeasonEpisodes[season.id] == nil {
+                    let id = season.id; embyExpandTask?.cancel()
+                    embyExpandTask = Task.detached { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        do { let episodes = try await EmbyManager.shared.fetchEpisodes(forSeason: season); embySeasonEpisodes[id] = episodes; rebuildCurrentModeItems() }
+                        catch is CancellationError { } catch where Task.isCancelled { } catch { expandedEmbySeasons.remove(id); rebuildCurrentModeItems(); NSLog("Failed: \(error)") }
+                    }; return
+                }
+            }
         case .plexPlaylist(let playlist):
             if expandedPlexPlaylists.contains(playlist.id) { expandedPlexPlaylists.remove(playlist.id) }
             else {
@@ -6075,6 +6936,35 @@ class ModernLibraryBrowserView: NSView {
     private func playEpisode(_ episode: PlexEpisode) { WindowManager.shared.playEpisode(episode) }
     private func playJellyfinMovie(_ movie: JellyfinMovie) { WindowManager.shared.playJellyfinMovie(movie) }
     private func playJellyfinEpisode(_ episode: JellyfinEpisode) { WindowManager.shared.playJellyfinEpisode(episode) }
+    private func playEmbySong(_ song: EmbySong) {
+        if let t = EmbyManager.shared.convertToTrack(song) { WindowManager.shared.audioEngine.playNow([t]) }
+    }
+    private func playEmbyAlbum(_ album: EmbyAlbum) {
+        Task { @MainActor in
+            do { let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album); WindowManager.shared.audioEngine.playNow(EmbyManager.shared.convertToTracks(songs)) }
+            catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    private func playEmbyArtist(_ artist: EmbyArtist) {
+        Task { @MainActor in
+            do {
+                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
+                var all: [Track] = []
+                for album in albums { let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album); all.append(contentsOf: EmbyManager.shared.convertToTracks(songs)) }
+                WindowManager.shared.audioEngine.playNow(all)
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    private func playEmbyPlaylist(_ playlist: EmbyPlaylist) {
+        Task { @MainActor in
+            do {
+                let (_, songs) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
+                WindowManager.shared.audioEngine.playNow(EmbyManager.shared.convertToTracks(songs))
+            } catch { NSLog("Failed: %@", error.localizedDescription) }
+        }
+    }
+    private func playEmbyMovie(_ movie: EmbyMovie) { WindowManager.shared.playEmbyMovie(movie) }
+    private func playEmbyEpisode(_ episode: EmbyEpisode) { WindowManager.shared.playEmbyEpisode(episode) }
     private func playLocalTrack(_ track: LibraryTrack) { WindowManager.shared.audioEngine.playNow([track.toTrack()]) }
     private func playLocalAlbum(_ album: Album) { WindowManager.shared.audioEngine.playNow(album.tracks.map { $0.toTrack() }) }
     private func playLocalArtist(_ artist: Artist) {
@@ -6193,6 +7083,14 @@ class ModernLibraryBrowserView: NSView {
         case .jellyfinShow: toggleExpand(item)
         case .jellyfinSeason: toggleExpand(item)
         case .jellyfinEpisode(let e): playJellyfinEpisode(e)
+        case .embyTrack(let s): playEmbySong(s)
+        case .embyAlbum(let a): playEmbyAlbum(a)
+        case .embyArtist: toggleExpand(item)
+        case .embyPlaylist(let p): playEmbyPlaylist(p)
+        case .embyMovie(let m): playEmbyMovie(m)
+        case .embyShow: toggleExpand(item)
+        case .embySeason: toggleExpand(item)
+        case .embyEpisode(let e): playEmbyEpisode(e)
         case .plexPlaylist(let p): playPlexPlaylist(p)
         case .radioStation(let s): playRadioStation(s)
         case .plexRadioStation(let r): playPlexRadioStation(r)
@@ -6242,6 +7140,14 @@ private struct ModernDisplayItem {
         case jellyfinShow(JellyfinShow)
         case jellyfinSeason(JellyfinSeason)
         case jellyfinEpisode(JellyfinEpisode)
+        case embyArtist(EmbyArtist)
+        case embyAlbum(EmbyAlbum)
+        case embyTrack(EmbySong)
+        case embyPlaylist(EmbyPlaylist)
+        case embyMovie(EmbyMovie)
+        case embyShow(EmbyShow)
+        case embySeason(EmbySeason)
+        case embyEpisode(EmbyEpisode)
         case plexPlaylist(PlexPlaylist)
         case radioStation(RadioStation)
         case plexRadioStation(PlexRadioType)
@@ -6314,14 +7220,17 @@ extension ModernDisplayItem {
         case .track(let t): return plexTrackValue(t, for: column)
         case .subsonicTrack(let s): return subsonicTrackValue(s, for: column)
         case .jellyfinTrack(let s): return jellyfinTrackValue(s, for: column)
+        case .embyTrack(let s): return embyTrackValue(s, for: column)
         case .localTrack(let t): return localTrackValue(t, for: column)
         case .album(let a): return plexAlbumValue(a, for: column)
         case .subsonicAlbum(let a): return subsonicAlbumValue(a, for: column)
         case .jellyfinAlbum(let a): return jellyfinAlbumValue(a, for: column)
+        case .embyAlbum(let a): return embyAlbumValue(a, for: column)
         case .localAlbum(let a): return localAlbumValue(a, for: column)
         case .artist(let a): return plexArtistValue(a, for: column)
         case .subsonicArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
         case .jellyfinArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
+        case .embyArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
         case .localArtist(let a): return column.id == "albums" ? String(a.albums.count) : ""
         default: return ""
         }
@@ -6465,7 +7374,48 @@ extension ModernDisplayItem {
         default: return ""
         }
     }
-    
+
+    private func embyTrackValue(_ song: EmbySong, for column: ModernBrowserColumn) -> String {
+        switch column.id {
+        case "trackNum":
+            if let disc = song.discNumber, disc > 1, let num = song.track { return "\(disc)-\(num)" }
+            return song.track.map { String($0) } ?? ""
+        case "artist": return song.artist ?? ""
+        case "album": return song.album ?? ""
+        case "albumArtist": return song.artist ?? ""
+        case "year": return song.year.map { String($0) } ?? ""
+        case "genre": return song.genre ?? ""
+        case "duration": return song.formattedDuration
+        case "bitrate": return song.bitRate.map { "\($0)k" } ?? ""
+        case "sampleRate": return song.sampleRate.map { Self.formatSampleRate($0) } ?? ""
+        case "channels": return song.channels.map { Self.formatChannels($0) } ?? ""
+        case "size": return Self.formatFileSize(song.size)
+        case "rating":
+            if let userRating = song.userRating, userRating > 0 {
+                let stars = userRating / 20
+                let empty = 5 - stars
+                return String(repeating: "★", count: max(0, stars)) + String(repeating: "☆", count: max(0, empty))
+            }
+            return song.isFavorite ? "★" : ""
+        case "plays": return song.playCount.map { String($0) } ?? ""
+        case "discNum": return song.discNumber.map { String($0) } ?? ""
+        case "dateAdded": return song.created.map { Self.formatDate($0) } ?? ""
+        case "lastPlayed": return ""
+        case "path": return song.path?.components(separatedBy: "/").last ?? ""
+        default: return ""
+        }
+    }
+
+    private func embyAlbumValue(_ album: EmbyAlbum, for column: ModernBrowserColumn) -> String {
+        switch column.id {
+        case "year": return album.year.map { String($0) } ?? ""
+        case "genre": return album.genre ?? ""
+        case "duration": return album.formattedDuration
+        case "rating": return album.isFavorite ? "★★★★★" : ""
+        default: return ""
+        }
+    }
+
     private func localAlbumValue(_ album: Album, for column: ModernBrowserColumn) -> String {
         switch column.id {
         case "year": return album.year.map { String($0) } ?? ""
