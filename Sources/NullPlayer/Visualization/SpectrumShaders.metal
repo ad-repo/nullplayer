@@ -147,11 +147,6 @@ fragment float4 led_matrix_fragment(
     LEDVertexOut in [[stage_in]],
     constant LEDParams& params [[buffer(1)]]
 ) {
-    // Skip cells with zero brightness (unless peak)
-    if (in.brightness < 0.01 && in.isPeak < 0.5) {
-        discard_fragment();
-    }
-    
     // === ROUNDED RECTANGLE with anti-aliased edges ===
     float2 centered = in.uv * 2.0 - 1.0;  // -1 to 1
     float cornerRadius = 0.32;
@@ -162,11 +157,19 @@ fragment float4 led_matrix_fragment(
     if (shape < 0.01) {
         discard_fragment();
     }
-    
+
     // === BASE COLOR - rainbow hue from column position ===
     float hue = in.normalizedColumn;
     float3 baseColor = hsv2rgb(hue, 1.0, 1.0);
     float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
+
+    // === AMBIENT DIM CELLS ===
+    // Render "off" cells as very dim rainbow LEDs instead of pure black holes.
+    // Gives a realistic dark-panel look: inactive LEDs are visible but subdued.
+    if (displayBrightness < 0.01 && in.isPeak < 0.5) {
+        float3 dimColor = baseColor * 0.035 * params.brightnessBoost;
+        return float4(min(dimColor, float3(1.0)), shape);
+    }
     
     // === WARM FADE TRAIL ===
     // As cells dim, they shift toward warm amber before going dark
