@@ -574,6 +574,12 @@ class PlexBrowserView: NSView {
     private var cachedLocalTracks: [LibraryTrack] = []
     private var expandedLocalArtists: Set<String> = []
     private var expandedLocalAlbums: Set<String> = []
+
+    /// Cached data - Video (Local)
+    private var cachedLocalMovies: [LocalVideo] = []
+    private var cachedLocalShows: [LocalShow] = []
+    private var expandedLocalShows: Set<String> = []
+    private var expandedLocalSeasons: Set<String> = []
     
     /// Cached data - Music (Subsonic)
     private var cachedSubsonicArtists: [SubsonicArtist] = []
@@ -5787,11 +5793,15 @@ class PlexBrowserView: NSView {
                     image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:playlist:\(playlist.id)")
                 }
                 
+            case .localMovie, .localShow, .localSeason, .localEpisode:
+                // Video artwork is loaded during playback via AVAssetImageGenerator
+                break
+
             case .plexRadioStation, .radioStation, .header:
                 // Radio stations load artwork when playing, not on selection
                 break
             }
-            
+
             guard !Task.isCancelled else { return }
             
             await MainActor.run {
@@ -6948,14 +6958,18 @@ class PlexBrowserView: NSView {
         addFilesItem.target = self
         menu.addItem(addFilesItem)
         
+        let addVideoFilesItem = NSMenuItem(title: "Add Video Files...", action: #selector(addVideoFiles), keyEquivalent: "")
+        addVideoFilesItem.target = self
+        menu.addItem(addVideoFilesItem)
+
         let addFolderItem = NSMenuItem(title: "Add Folder...", action: #selector(addWatchFolder), keyEquivalent: "")
         addFolderItem.target = self
         menu.addItem(addFolderItem)
-        
+
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
     }
-    
+
     /// Show the +ADD menu for radio mode
     private func showRadioAddMenu(at event: NSEvent) {
         let menu = NSMenu()
@@ -7178,17 +7192,29 @@ class PlexBrowserView: NSView {
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.audio, .mp3, .wav, .aiff]
         panel.message = "Select audio files to add to your library"
-        
+
         if panel.runModal() == .OK {
             MediaLibrary.shared.addTracks(urls: panel.urls)
-            
+
             // Switch to local source if not already
             if case .plex = currentSource {
                 currentSource = .local
             }
         }
     }
-    
+
+    @objc private func addVideoFiles() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.movie, .video, .mpeg4Movie, .quickTimeMovie]
+        panel.message = "Select video files to add to your library"
+        if panel.runModal() == .OK {
+            MediaLibrary.shared.addVideoFiles(urls: panel.urls)
+            loadLocalData()
+        }
+    }
+
     @objc private func selectLocalSource() {
         currentSource = .local
     }
@@ -8506,10 +8532,74 @@ class PlexBrowserView: NSView {
             viewArtItem.representedObject = item
             menu.addItem(viewArtItem)
             
+        case .localMovie(let movie):
+            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlay(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = item
+            menu.addItem(playItem)
+            let videoDevices = CastManager.shared.videoCapableDevices
+            if !videoDevices.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+                let castItem = NSMenuItem(title: "Cast to...", action: nil, keyEquivalent: "")
+                let castMenu = NSMenu()
+                for device in videoDevices {
+                    let deviceItem = NSMenuItem(title: device.name, action: #selector(contextMenuCastLocalVideo(_:)), keyEquivalent: "")
+                    deviceItem.target = self
+                    deviceItem.representedObject = (movie.url, movie.title, device) as (URL, String, CastDevice)
+                    castMenu.addItem(deviceItem)
+                }
+                castItem.submenu = castMenu
+                menu.addItem(castItem)
+            }
+            menu.addItem(NSMenuItem.separator())
+            let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuShowLocalVideoInFinder(_:)), keyEquivalent: "")
+            finderItem.target = self
+            finderItem.representedObject = movie.url as NSURL
+            menu.addItem(finderItem)
+
+        case .localShow(let show):
+            let expandItem = NSMenuItem(title: expandedLocalShows.contains(show.id) ? "Collapse" : "Expand",
+                                        action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self
+            expandItem.representedObject = item
+            menu.addItem(expandItem)
+
+        case .localSeason:
+            let expandItem = NSMenuItem(title: expandedLocalSeasons.contains(item.id) ? "Collapse" : "Expand",
+                                        action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self
+            expandItem.representedObject = item
+            menu.addItem(expandItem)
+
+        case .localEpisode(let episode):
+            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlay(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = item
+            menu.addItem(playItem)
+            let videoDevices = CastManager.shared.videoCapableDevices
+            if !videoDevices.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+                let castItem = NSMenuItem(title: "Cast to...", action: nil, keyEquivalent: "")
+                let castMenu = NSMenu()
+                for device in videoDevices {
+                    let deviceItem = NSMenuItem(title: device.name, action: #selector(contextMenuCastLocalVideo(_:)), keyEquivalent: "")
+                    deviceItem.target = self
+                    deviceItem.representedObject = (episode.url, episode.title, device) as (URL, String, CastDevice)
+                    castMenu.addItem(deviceItem)
+                }
+                castItem.submenu = castMenu
+                menu.addItem(castItem)
+            }
+            menu.addItem(NSMenuItem.separator())
+            let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuShowLocalVideoInFinder(_:)), keyEquivalent: "")
+            finderItem.target = self
+            finderItem.representedObject = episode.url as NSURL
+            menu.addItem(finderItem)
+
         case .header:
             return
         }
-        
+
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
@@ -8818,8 +8908,36 @@ class PlexBrowserView: NSView {
         }
     }
     
+    @objc private func contextMenuShowLocalVideoInFinder(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? NSURL as URL? else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    @objc private func contextMenuCastLocalVideo(_ sender: NSMenuItem) {
+        guard let (url, title, device) = sender.representedObject as? (URL, String, CastDevice) else { return }
+        if WindowManager.shared.isVideoCastingActive {
+            let alert = NSAlert()
+            alert.messageText = "Already Casting"
+            alert.informativeText = "Stop the current cast before starting a new one."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        Task { @MainActor in
+            do {
+                try await CastManager.shared.castLocalVideo(url, title: title, to: device)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Cast Failed"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
+    }
+
     // MARK: - Subsonic Context Menu Actions
-    
+
     @objc private func contextMenuPlaySubsonicSong(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? SubsonicSong else { return }
         playSubsonicSong(song)
@@ -12406,6 +12524,67 @@ class PlexBrowserView: NSView {
         }
     }
     
+    private func buildLocalMovieItems() {
+        displayItems = cachedLocalMovies.map { movie in
+            let info = [movie.year.map { String($0) }, movie.formattedDuration]
+                .compactMap { $0 }.joined(separator: " • ")
+            return PlexDisplayItem(
+                id: movie.id.uuidString,
+                title: movie.title,
+                info: info.isEmpty ? nil : info,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .localMovie(movie)
+            )
+        }
+    }
+
+    private func buildLocalShowItems() {
+        var items: [PlexDisplayItem] = []
+        for show in cachedLocalShows {
+            let showItem = PlexDisplayItem(
+                id: show.id,
+                title: show.title,
+                info: "\(show.episodeCount) episode\(show.episodeCount == 1 ? "" : "s")",
+                indentLevel: 0,
+                hasChildren: true,
+                type: .localShow(show)
+            )
+            items.append(showItem)
+
+            if expandedLocalShows.contains(show.id) {
+                for season in show.seasons {
+                    let seasonId = "\(show.id)|\(season.number)"
+                    let seasonItem = PlexDisplayItem(
+                        id: seasonId,
+                        title: "Season \(season.number)",
+                        info: "\(season.episodes.count) episode\(season.episodes.count == 1 ? "" : "s")",
+                        indentLevel: 1,
+                        hasChildren: true,
+                        type: .localSeason(season, showTitle: show.id)
+                    )
+                    items.append(seasonItem)
+
+                    if expandedLocalSeasons.contains(seasonId) {
+                        for ep in season.episodes {
+                            let epNum = ep.episodeNumber.map { "E\($0)" } ?? ""
+                            let info = [epNum, ep.formattedDuration].filter { !$0.isEmpty }.joined(separator: " • ")
+                            items.append(PlexDisplayItem(
+                                id: ep.id.uuidString,
+                                title: ep.title,
+                                info: info.isEmpty ? nil : info,
+                                indentLevel: 2,
+                                hasChildren: false,
+                                type: .localEpisode(ep)
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+        displayItems = items
+    }
+
     /// Rebuild display items for the current browse mode
     /// This ensures expand/collapse works correctly regardless of which tab we're on
     private func rebuildCurrentModeItems() {
@@ -12450,8 +12629,12 @@ class PlexBrowserView: NSView {
             case .plists:
                 // TODO: Build local playlist items
                 displayItems = []
-            case .movies, .shows:
-                displayItems = []
+            case .movies:
+                cachedLocalMovies = MediaLibrary.shared.moviesSnapshot
+                buildLocalMovieItems()
+            case .shows:
+                cachedLocalShows = MediaLibrary.shared.allShows()
+                buildLocalShowItems()
             case .radio:
                 // Handled above
                 break
@@ -12562,6 +12745,10 @@ class PlexBrowserView: NSView {
             return expandedLocalArtists.contains(artist.id)
         case .localAlbum(let album):
             return expandedLocalAlbums.contains(album.id)
+        case .localShow:
+            return expandedLocalShows.contains(item.id)
+        case .localSeason:
+            return expandedLocalSeasons.contains(item.id)
         case .subsonicArtist(let artist):
             return expandedSubsonicArtists.contains(artist.id)
         case .subsonicAlbum(let album):
@@ -12746,12 +12933,28 @@ class PlexBrowserView: NSView {
                 expandedLocalArtists.insert(artist.id)
             }
             rebuildCurrentModeItems()
-            
+
         case .localAlbum(let album):
             if expandedLocalAlbums.contains(album.id) {
                 expandedLocalAlbums.remove(album.id)
             } else {
                 expandedLocalAlbums.insert(album.id)
+            }
+            rebuildCurrentModeItems()
+
+        case .localShow:
+            if expandedLocalShows.contains(item.id) {
+                expandedLocalShows.remove(item.id)
+            } else {
+                expandedLocalShows.insert(item.id)
+            }
+            rebuildCurrentModeItems()
+
+        case .localSeason:
+            if expandedLocalSeasons.contains(item.id) {
+                expandedLocalSeasons.remove(item.id)
+            } else {
+                expandedLocalSeasons.insert(item.id)
             }
             rebuildCurrentModeItems()
             
@@ -13299,12 +13502,24 @@ class PlexBrowserView: NSView {
             
         case .localTrack(let track):
             playLocalTrack(track)
-            
+
         case .localAlbum(let album):
             playLocalAlbum(album)
-            
+
         case .localArtist:
             toggleExpand(item)
+
+        case .localMovie(let movie):
+            WindowManager.shared.showVideoPlayer(url: movie.url, title: movie.title)
+
+        case .localShow:
+            toggleExpand(item)
+
+        case .localSeason:
+            toggleExpand(item)
+
+        case .localEpisode(let episode):
+            WindowManager.shared.showVideoPlayer(url: episode.url, title: episode.title)
             
         case .subsonicTrack(let song):
             playSubsonicSong(song)
@@ -13870,6 +14085,10 @@ private struct PlexDisplayItem {
         case localArtist(Artist)
         case localAlbum(Album)
         case localTrack(LibraryTrack)
+        case localMovie(LocalVideo)
+        case localShow(LocalShow)
+        case localSeason(LocalSeason, showTitle: String)
+        case localEpisode(LocalEpisode)
         // Subsonic content types
         case subsonicArtist(SubsonicArtist)
         case subsonicAlbum(SubsonicAlbum)

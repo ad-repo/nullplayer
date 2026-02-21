@@ -97,6 +97,22 @@ Modern UI adds: **2X** (Double Size), **HT** (Hide Title Bars), **CA** (Cast), *
 ### Local Files
 Drag & drop or use File menu. Supports: MP3, M4A, AAC, WAV, AIFF, FLAC, OGG, ALAC
 
+### Local Library Browser
+Switch the Library Browser source to "Local" to manage a persistent media library.
+
+**+ADD menu** (three options):
+- **Add Files...** — file picker filtered to audio formats
+- **Add Video Files...** — file picker filtered to video formats (`.mp4`, `.mkv`, `.mov`, etc.); files are classified as movies or TV episodes automatically (SxxExx naming / iTunes metadata)
+- **Add Folder...** — folder picker; scans immediately for audio and video files, and saves the folder as a "remembered folder"
+
+**Watch folders (remembered folders):**
+- Folders added via "Add Folder..." are persisted in the library database
+- They are **not** monitored automatically — there is no filesystem watcher
+- Press the **⟳ refresh button** to re-scan all remembered folders and pick up newly added files
+- Duplicate detection prevents re-adding files already in the library
+
+**Tabs:** Artists, Albums, Tracks, Playlists, Movies, Shows
+
 ## Output Devices & Casting
 
 ### Sonos

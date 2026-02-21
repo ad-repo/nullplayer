@@ -228,6 +228,8 @@ class ModernLibraryBrowserView: NSView {
     private var expandedArtistNames: Set<String> = []
     private var expandedLocalArtists: Set<String> = []
     private var expandedLocalAlbums: Set<String> = []
+    private var expandedLocalShows: Set<String> = []
+    private var expandedLocalSeasons: Set<String> = []
     private var expandedSubsonicArtists: Set<String> = []
     private var expandedSubsonicAlbums: Set<String> = []
     private var expandedSubsonicPlaylists: Set<String> = []
@@ -252,6 +254,8 @@ class ModernLibraryBrowserView: NSView {
     private var cachedLocalArtists: [Artist] = []
     private var cachedLocalAlbums: [Album] = []
     private var cachedLocalTracks: [LibraryTrack] = []
+    private var cachedLocalMovies: [LocalVideo] = []
+    private var cachedLocalShows: [LocalShow] = []
     
     // Cached data - Subsonic
     private var cachedSubsonicArtists: [SubsonicArtist] = []
@@ -2050,12 +2054,14 @@ class ModernLibraryBrowserView: NSView {
             let hadExpanded = !expandedArtists.isEmpty || !expandedAlbums.isEmpty ||
                               !expandedArtistNames.isEmpty ||
                               !expandedLocalArtists.isEmpty || !expandedLocalAlbums.isEmpty ||
+                              !expandedLocalShows.isEmpty || !expandedLocalSeasons.isEmpty ||
                               !expandedSubsonicArtists.isEmpty || !expandedSubsonicAlbums.isEmpty ||
                               !expandedSubsonicPlaylists.isEmpty || !expandedPlexPlaylists.isEmpty ||
                               !expandedShows.isEmpty || !expandedSeasons.isEmpty
             if hadExpanded {
                 expandedArtists.removeAll(); expandedAlbums.removeAll(); expandedArtistNames.removeAll()
                 expandedLocalArtists.removeAll(); expandedLocalAlbums.removeAll()
+                expandedLocalShows.removeAll(); expandedLocalSeasons.removeAll()
                 expandedSubsonicArtists.removeAll(); expandedSubsonicAlbums.removeAll()
                 expandedSubsonicPlaylists.removeAll(); expandedPlexPlaylists.removeAll()
                 expandedShows.removeAll(); expandedSeasons.removeAll()
@@ -3078,6 +3084,8 @@ class ModernLibraryBrowserView: NSView {
         let menu = NSMenu()
         let addFilesItem = NSMenuItem(title: "Add Files...", action: #selector(addFiles), keyEquivalent: "")
         addFilesItem.target = self; menu.addItem(addFilesItem)
+        let addVideoFilesItem = NSMenuItem(title: "Add Video Files...", action: #selector(addVideoFiles), keyEquivalent: "")
+        addVideoFilesItem.target = self; menu.addItem(addVideoFilesItem)
         let addFolderItem = NSMenuItem(title: "Add Folder...", action: #selector(addWatchFolder), keyEquivalent: "")
         addFolderItem.target = self; menu.addItem(addFolderItem)
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
@@ -3485,6 +3493,52 @@ class ModernLibraryBrowserView: NSView {
             playItem.target = self; playItem.representedObject = playlist; menu.addItem(playItem)
             let playReplaceItem = NSMenuItem(title: "Play Playlist and Replace Queue", action: #selector(contextMenuPlayPlexPlaylistAndReplace(_:)), keyEquivalent: "")
             playReplaceItem.target = self; playReplaceItem.representedObject = playlist; menu.addItem(playReplaceItem)
+        case .localMovie(let movie):
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalMovie(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = movie; menu.addItem(playItem)
+            let videoDevices = CastManager.shared.videoCapableDevices
+            if !videoDevices.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+                let castItem = NSMenuItem(title: "Cast to...", action: nil, keyEquivalent: "")
+                let castMenu = NSMenu()
+                for device in videoDevices {
+                    let deviceItem = NSMenuItem(title: device.name, action: #selector(contextMenuCastLocalVideo(_:)), keyEquivalent: "")
+                    deviceItem.target = self
+                    deviceItem.representedObject = (movie.url, movie.title, device) as (URL, String, CastDevice)
+                    castMenu.addItem(deviceItem)
+                }
+                castItem.submenu = castMenu
+                menu.addItem(castItem)
+            }
+            menu.addItem(NSMenuItem.separator())
+            let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuShowLocalVideoInFinder(_:)), keyEquivalent: "")
+            finderItem.target = self; finderItem.representedObject = movie.url as NSURL; menu.addItem(finderItem)
+        case .localShow:
+            let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
+        case .localSeason:
+            let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
+        case .localEpisode(let episode):
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalEpisode(_:)), keyEquivalent: "")
+            playItem.target = self; playItem.representedObject = episode; menu.addItem(playItem)
+            let videoDevices = CastManager.shared.videoCapableDevices
+            if !videoDevices.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+                let castItem = NSMenuItem(title: "Cast to...", action: nil, keyEquivalent: "")
+                let castMenu = NSMenu()
+                for device in videoDevices {
+                    let deviceItem = NSMenuItem(title: device.name, action: #selector(contextMenuCastLocalVideo(_:)), keyEquivalent: "")
+                    deviceItem.target = self
+                    deviceItem.representedObject = (episode.url, episode.title, device) as (URL, String, CastDevice)
+                    castMenu.addItem(deviceItem)
+                }
+                castItem.submenu = castMenu
+                menu.addItem(castItem)
+            }
+            menu.addItem(NSMenuItem.separator())
+            let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuShowLocalVideoInFinder(_:)), keyEquivalent: "")
+            finderItem.target = self; finderItem.representedObject = episode.url as NSURL; menu.addItem(finderItem)
         case .header: return
         }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
@@ -3599,6 +3653,17 @@ class ModernLibraryBrowserView: NSView {
         panel.allowedContentTypes = [.audio, .mp3, .wav, .aiff]; panel.message = "Select audio files"
         if panel.runModal() == .OK { MediaLibrary.shared.addTracks(urls: panel.urls) }
     }
+    @objc private func addVideoFiles() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.movie, .video, .mpeg4Movie, .quickTimeMovie]
+        panel.message = "Select video files to add to your library"
+        if panel.runModal() == .OK {
+            MediaLibrary.shared.addVideoFiles(urls: panel.urls)
+            loadLocalData()
+        }
+    }
     @objc private func addWatchFolder() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.message = "Select a folder to add to your library"
@@ -3659,6 +3724,40 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuShowInFinder(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         NSWorkspace.shared.activateFileViewerSelecting([track.url])
+    }
+    @objc private func contextMenuPlayLocalMovie(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? LocalVideo else { return }
+        WindowManager.shared.showVideoPlayer(url: movie.url, title: movie.title)
+    }
+    @objc private func contextMenuPlayLocalEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? LocalEpisode else { return }
+        WindowManager.shared.showVideoPlayer(url: episode.url, title: episode.title)
+    }
+    @objc private func contextMenuShowLocalVideoInFinder(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? NSURL as URL? else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+    @objc private func contextMenuCastLocalVideo(_ sender: NSMenuItem) {
+        guard let (url, title, device) = sender.representedObject as? (URL, String, CastDevice) else { return }
+        if WindowManager.shared.isVideoCastingActive {
+            let alert = NSAlert()
+            alert.messageText = "Already Casting"
+            alert.informativeText = "Stop the current cast before starting a new one."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        Task { @MainActor in
+            do {
+                try await CastManager.shared.castLocalVideo(url, title: title, to: device)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Cast Failed"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
     }
     @objc private func contextMenuPlayLocalAlbum(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }; playLocalAlbum(album)
@@ -4770,7 +4869,9 @@ class ModernLibraryBrowserView: NSView {
     
     private func clearLocalCachedData() {
         cachedLocalArtists = []; cachedLocalAlbums = []; cachedLocalTracks = []
+        cachedLocalMovies = []; cachedLocalShows = []
         expandedLocalArtists = []; expandedLocalAlbums = []
+        expandedLocalShows = []; expandedLocalSeasons = []
     }
     
     private func clearAllCachedData() {
@@ -5707,7 +5808,12 @@ class ModernLibraryBrowserView: NSView {
         case .tracks: buildLocalTrackItems()
         case .search: buildLocalSearchItems()
         case .plists: displayItems = []
-        case .movies, .shows: displayItems = []
+        case .movies:
+            cachedLocalMovies = MediaLibrary.shared.moviesSnapshot
+            buildLocalMovieItems()
+        case .shows:
+            cachedLocalShows = MediaLibrary.shared.allShows()
+            buildLocalShowItems()
         case .radio: break
         }
         needsDisplay = true
@@ -6235,6 +6341,33 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
+    private func buildLocalMovieItems() {
+        displayItems = cachedLocalMovies
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            .map { ModernDisplayItem(id: $0.id.uuidString, title: $0.title, info: $0.year.map { String($0) }, indentLevel: 0, hasChildren: false, type: .localMovie($0)) }
+    }
+
+    private func buildLocalShowItems() {
+        displayItems.removeAll()
+        for show in cachedLocalShows.sorted(by: { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }) {
+            let expanded = expandedLocalShows.contains(show.id)
+            displayItems.append(ModernDisplayItem(id: "local-show-\(show.id)", title: show.title, info: "\(show.episodeCount) episodes", indentLevel: 0, hasChildren: true, type: .localShow(show)))
+            if expanded {
+                for season in show.seasons.sorted(by: { $0.number < $1.number }) {
+                    let seasonKey = "\(show.title)|\(season.number)"
+                    let seasonExpanded = expandedLocalSeasons.contains(seasonKey)
+                    displayItems.append(ModernDisplayItem(id: "local-season-\(seasonKey)", title: "Season \(season.number)", info: "\(season.episodes.count) episodes", indentLevel: 1, hasChildren: true, type: .localSeason(season, showTitle: show.title)))
+                    if seasonExpanded {
+                        for episode in season.episodes.sorted(by: { ($0.episodeNumber ?? 0) < ($1.episodeNumber ?? 0) }) {
+                            let epTitle = episode.episodeNumber.map { "E\($0): \(episode.title)" } ?? episode.title
+                            displayItems.append(ModernDisplayItem(id: episode.id.uuidString, title: epTitle, info: episode.formattedDuration, indentLevel: 2, hasChildren: false, type: .localEpisode(episode)))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Subsonic items
     private func buildSubsonicArtistItems() {
         displayItems.removeAll()
@@ -6550,6 +6683,8 @@ class ModernLibraryBrowserView: NSView {
             case .albums: buildLocalAlbumItems()
             case .tracks: buildLocalTrackItems()
             case .search: buildLocalSearchItems()
+            case .movies: buildLocalMovieItems()
+            case .shows: buildLocalShowItems()
             default: displayItems = []
             }
         } else if case .subsonic = currentSource {
@@ -6606,6 +6741,8 @@ class ModernLibraryBrowserView: NSView {
         case .season: return expandedSeasons.contains(item.id)
         case .localArtist(let a): return expandedLocalArtists.contains(a.id)
         case .localAlbum(let a): return expandedLocalAlbums.contains(a.id)
+        case .localShow(let s): return expandedLocalShows.contains(s.id)
+        case .localSeason(let s, let showTitle): return expandedLocalSeasons.contains("\(showTitle)|\(s.number)")
         case .subsonicArtist(let a): return expandedSubsonicArtists.contains(a.id)
         case .subsonicAlbum(let a): return expandedSubsonicAlbums.contains(a.id)
         case .subsonicPlaylist(let p): return expandedSubsonicPlaylists.contains(p.id)
@@ -6700,6 +6837,11 @@ class ModernLibraryBrowserView: NSView {
             if expandedLocalArtists.contains(a.id) { expandedLocalArtists.remove(a.id) } else { expandedLocalArtists.insert(a.id) }
         case .localAlbum(let a):
             if expandedLocalAlbums.contains(a.id) { expandedLocalAlbums.remove(a.id) } else { expandedLocalAlbums.insert(a.id) }
+        case .localShow(let s):
+            if expandedLocalShows.contains(s.id) { expandedLocalShows.remove(s.id) } else { expandedLocalShows.insert(s.id) }
+        case .localSeason(let s, let showTitle):
+            let key = "\(showTitle)|\(s.number)"
+            if expandedLocalSeasons.contains(key) { expandedLocalSeasons.remove(key) } else { expandedLocalSeasons.insert(key) }
         case .subsonicArtist(let artist):
             if expandedSubsonicArtists.contains(artist.id) { expandedSubsonicArtists.remove(artist.id) }
             else {
@@ -7070,6 +7212,10 @@ class ModernLibraryBrowserView: NSView {
         case .localTrack(let t): playLocalTrack(t)
         case .localAlbum(let a): playLocalAlbum(a)
         case .localArtist: toggleExpand(item)
+        case .localMovie(let m): WindowManager.shared.showVideoPlayer(url: m.url, title: m.title)
+        case .localShow: toggleExpand(item)
+        case .localSeason: toggleExpand(item)
+        case .localEpisode(let e): WindowManager.shared.showVideoPlayer(url: e.url, title: e.title)
         case .subsonicTrack(let s): playSubsonicSong(s)
         case .subsonicAlbum(let a): playSubsonicAlbum(a)
         case .subsonicArtist: toggleExpand(item)
@@ -7127,6 +7273,10 @@ private struct ModernDisplayItem {
         case localArtist(Artist)
         case localAlbum(Album)
         case localTrack(LibraryTrack)
+        case localMovie(LocalVideo)
+        case localShow(LocalShow)
+        case localSeason(LocalSeason, showTitle: String)
+        case localEpisode(LocalEpisode)
         case subsonicArtist(SubsonicArtist)
         case subsonicAlbum(SubsonicAlbum)
         case subsonicTrack(SubsonicSong)
