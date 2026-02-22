@@ -328,7 +328,11 @@ class ModernLibraryBrowserView: NSView {
     private var jellyfinSearchResults: JellyfinSearchResults?
     private var subsonicSearchResults: SubsonicSearchResults?
     private var embySearchResults: EmbySearchResults?
-    
+    private var pendingScrollToArtistId: String?
+    private var pendingScrollToArtistName: String?
+    private var pendingScrollAttempts = 0
+    private var pendingArtistLoadUnfiltered = false
+
     // Animation
     private var loadingAnimationTimer: Timer?
     private var loadingAnimationFrame: Int = 0
@@ -2645,7 +2649,34 @@ class ModernLibraryBrowserView: NSView {
         if itemTop < scrollOffset { scrollOffset = itemTop }
         else if itemBottom > scrollOffset + listHeight { scrollOffset = itemBottom - listHeight }
     }
-    
+
+    private func applyPendingArtistScroll() {
+        guard let artistId = pendingScrollToArtistId else { return }
+        let name = pendingScrollToArtistName ?? ""
+        pendingScrollAttempts += 1
+        NSLog("🎵 applyPendingArtistScroll attempt=\(pendingScrollAttempts) id='\(artistId)' name='\(name)' items=\(displayItems.count)")
+        let lItems = displayItems.filter { $0.title.lowercased().hasPrefix(String(name.prefix(1)).lowercased()) }
+        NSLog("🎵 '\(name.prefix(1))' artists in list: \(lItems.prefix(5).map { "\($0.id)|\($0.title)" })")
+        let idx = displayItems.firstIndex(where: { $0.id == artistId })
+            ?? (!name.isEmpty ? displayItems.firstIndex(where: { $0.title.caseInsensitiveCompare(name) == .orderedSame }) : nil)
+        if let idx = idx {
+            NSLog("🎵 FOUND at idx=\(idx) scrollOffset will be set")
+            selectedIndices = [idx]
+            ensureVisible(index: idx)
+            pendingScrollToArtistId = nil
+            pendingScrollToArtistName = nil
+            pendingScrollAttempts = 0
+            needsDisplay = true
+        } else {
+            NSLog("🎵 NOT FOUND (attempt \(pendingScrollAttempts)/3)")
+            if pendingScrollAttempts >= 3 {
+                pendingScrollToArtistId = nil
+                pendingScrollToArtistName = nil
+                pendingScrollAttempts = 0
+            }
+        }
+    }
+
     // MARK: - Drag and Drop
     
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -2883,7 +2914,17 @@ class ModernLibraryBrowserView: NSView {
     
     private func handleListClick(at index: Int, event: NSEvent, point: NSPoint) {
         let item = displayItems[index]
-        
+
+        // In search mode, clicking an artist navigates to the Artists tab
+        if browseMode == .search {
+            switch item.type {
+            case .artist, .subsonicArtist, .jellyfinArtist, .embyArtist, .localArtist:
+                navigateToArtistFromSearch(id: item.id, name: item.title)
+                return
+            default: break
+            }
+        }
+
         if item.hasChildren {
             let indent = CGFloat(item.indentLevel) * 16
             if point.x < Layout.borderWidth + indent + 20 { toggleExpand(item); return }
@@ -5750,7 +5791,11 @@ class ModernLibraryBrowserView: NSView {
                 switch browseMode {
                 case .artists:
                     if cachedArtists.isEmpty {
-                        if pm.isContentPreloaded && !pm.cachedArtists.isEmpty {
+                        if pendingArtistLoadUnfiltered {
+                            // Navigation from search: bypass preload cache, fetch fresh from currentLibrary
+                            cachedArtists = try await pm.fetchArtists()
+                            if cachedAlbums.isEmpty { cachedAlbums = try await pm.fetchAlbums(offset: 0, limit: 10000) }
+                        } else if pm.isContentPreloaded && !pm.cachedArtists.isEmpty {
                             cachedArtists = pm.cachedArtists; cachedAlbums = pm.cachedAlbums
                         } else {
                             cachedArtists = try await pm.fetchArtists()
@@ -5758,6 +5803,7 @@ class ModernLibraryBrowserView: NSView {
                         }
                         buildArtistAlbumCounts()
                     }
+                    pendingArtistLoadUnfiltered = false
                     buildArtistItems()
                 case .albums:
                     if cachedAlbums.isEmpty {
@@ -5889,13 +5935,17 @@ class ModernLibraryBrowserView: NSView {
                 switch browseMode {
                 case .artists:
                     if cachedSubsonicArtists.isEmpty {
-                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                        if pendingArtistLoadUnfiltered {
+                            // Navigation from search: fetch all artists across all music folders
+                            cachedSubsonicArtists = try await manager.fetchArtistsUnfiltered()
+                        } else if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
                             cachedSubsonicArtists = manager.cachedArtists; cachedSubsonicAlbums = manager.cachedAlbums
                         } else {
                             cachedSubsonicArtists = try await manager.fetchArtists()
                             cachedSubsonicAlbums = try await manager.fetchAlbums()
                         }
                     }
+                    pendingArtistLoadUnfiltered = false
                     buildSubsonicArtistItems()
                 case .albums:
                     if cachedSubsonicAlbums.isEmpty {
@@ -5976,13 +6026,17 @@ class ModernLibraryBrowserView: NSView {
                 switch browseMode {
                 case .artists:
                     if cachedJellyfinArtists.isEmpty {
-                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                        if pendingArtistLoadUnfiltered {
+                            // Navigation from search: fetch all artists across all music libraries
+                            cachedJellyfinArtists = try await manager.fetchArtistsUnfiltered()
+                        } else if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
                             cachedJellyfinArtists = manager.cachedArtists; cachedJellyfinAlbums = manager.cachedAlbums
                         } else {
                             cachedJellyfinArtists = try await manager.fetchArtists()
                             cachedJellyfinAlbums = try await manager.fetchAlbums()
                         }
                     }
+                    pendingArtistLoadUnfiltered = false
                     buildJellyfinArtistItems()
                 case .albums:
                     if cachedJellyfinAlbums.isEmpty {
@@ -6070,13 +6124,17 @@ class ModernLibraryBrowserView: NSView {
                 switch browseMode {
                 case .artists:
                     if cachedEmbyArtists.isEmpty {
-                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                        if pendingArtistLoadUnfiltered {
+                            // Navigation from search: fetch all artists across all music libraries
+                            cachedEmbyArtists = try await manager.fetchArtistsUnfiltered()
+                        } else if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
                             cachedEmbyArtists = manager.cachedArtists; cachedEmbyAlbums = manager.cachedAlbums
                         } else {
                             cachedEmbyArtists = try await manager.fetchArtists()
                             cachedEmbyAlbums = try await manager.fetchAlbums()
                         }
                     }
+                    pendingArtistLoadUnfiltered = false
                     buildEmbyArtistItems()
                 case .albums:
                     if cachedEmbyAlbums.isEmpty {
@@ -6166,8 +6224,9 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         }
+        applyPendingArtistScroll()
     }
-    
+
     private func buildAlbumItems() {
         displayItems = sortPlexAlbums(cachedAlbums).map {
             ModernDisplayItem(id: $0.id, title: "\($0.parentTitle ?? "Unknown") - \($0.title)", info: $0.year.map { String($0) }, indentLevel: 0, hasChildren: false, type: .album($0))
@@ -6422,6 +6481,7 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         }
+        applyPendingArtistScroll()
     }
     
     private func buildLocalAlbumItems() {
@@ -6498,8 +6558,9 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         }
+        applyPendingArtistScroll()
     }
-    
+
     private func buildSubsonicAlbumItems() {
         displayItems = cachedSubsonicAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }).map {
             ModernDisplayItem(id: $0.id, title: "\($0.artist ?? "Unknown") - \($0.name)", info: $0.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .subsonicAlbum($0))
@@ -6569,8 +6630,9 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         }
+        applyPendingArtistScroll()
     }
-    
+
     private func buildJellyfinAlbumItems() {
         displayItems = cachedJellyfinAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }).map {
             ModernDisplayItem(id: $0.id, title: "\($0.artist ?? "Unknown") - \($0.name)", info: $0.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .jellyfinAlbum($0))
@@ -6640,6 +6702,7 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         }
+        applyPendingArtistScroll()
     }
 
     private func buildEmbyAlbumItems() {
@@ -7314,11 +7377,29 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
+    private func navigateToArtistFromSearch(id: String, name: String = "") {
+        pendingScrollToArtistId = id
+        pendingScrollToArtistName = name
+        pendingScrollAttempts = 0
+        pendingArtistLoadUnfiltered = true
+        // Clear view-level artist caches to force a fresh fetch that bypasses
+        // folder/library filters (so an artist found via unfiltered search is findable).
+        cachedArtists.removeAll()
+        cachedSubsonicArtists.removeAll()
+        cachedJellyfinArtists.removeAll()
+        cachedEmbyArtists.removeAll()
+        browseMode = .artists
+        selectedIndices.removeAll()
+        scrollOffset = 0
+        loadDataForCurrentMode()
+        needsDisplay = true
+    }
+
     private func handleDoubleClick(on item: ModernDisplayItem) {
         switch item.type {
         case .track: playTrack(item)
         case .album(let a): playAlbum(a)
-        case .artist: toggleExpand(item)
+        case .artist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id) } else { toggleExpand(item) }
         case .movie(let m): playMovie(m)
         case .show: toggleExpand(item)
         case .season: toggleExpand(item)
@@ -7333,11 +7414,11 @@ class ModernLibraryBrowserView: NSView {
         case .localEpisode(let e): WindowManager.shared.showVideoPlayer(url: e.url, title: e.title)
         case .subsonicTrack(let s): playSubsonicSong(s)
         case .subsonicAlbum(let a): playSubsonicAlbum(a)
-        case .subsonicArtist: toggleExpand(item)
+        case .subsonicArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id) } else { toggleExpand(item) }
         case .subsonicPlaylist(let p): playSubsonicPlaylist(p)
         case .jellyfinTrack(let s): playJellyfinSong(s)
         case .jellyfinAlbum(let a): playJellyfinAlbum(a)
-        case .jellyfinArtist: toggleExpand(item)
+        case .jellyfinArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id) } else { toggleExpand(item) }
         case .jellyfinPlaylist(let p): playJellyfinPlaylist(p)
         case .jellyfinMovie(let m): playJellyfinMovie(m)
         case .jellyfinShow: toggleExpand(item)
@@ -7345,7 +7426,7 @@ class ModernLibraryBrowserView: NSView {
         case .jellyfinEpisode(let e): playJellyfinEpisode(e)
         case .embyTrack(let s): playEmbySong(s)
         case .embyAlbum(let a): playEmbyAlbum(a)
-        case .embyArtist: toggleExpand(item)
+        case .embyArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id) } else { toggleExpand(item) }
         case .embyPlaylist(let p): playEmbyPlaylist(p)
         case .embyMovie(let m): playEmbyMovie(m)
         case .embyShow: toggleExpand(item)

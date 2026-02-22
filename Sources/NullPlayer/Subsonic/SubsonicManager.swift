@@ -401,9 +401,15 @@ class SubsonicManager {
         if isContentPreloaded && !cachedArtists.isEmpty {
             return cachedArtists
         }
-        
+
         guard let client = serverClient else { return [] }
         return try await client.fetchAllArtists(musicFolderId: currentMusicFolder?.id)
+    }
+
+    /// Fetch all artists across all music folders (no folder filter, bypasses cache)
+    func fetchArtistsUnfiltered() async throws -> [SubsonicArtist] {
+        guard let client = serverClient else { return [] }
+        return try await client.fetchAllArtists(musicFolderId: nil)
     }
     
     /// Fetch albums (uses cache if available)

@@ -504,6 +504,12 @@ class EmbyManager {
         return try await client.fetchAllArtists(libraryId: currentMusicLibrary?.id)
     }
 
+    /// Fetch all artists across all music libraries (no library filter, bypasses cache)
+    func fetchArtistsUnfiltered() async throws -> [EmbyArtist] {
+        guard let client = serverClient else { return [] }
+        return try await client.fetchAllArtists(libraryId: nil)
+    }
+
     /// Fetch albums (uses cache if available)
     func fetchAlbums() async throws -> [EmbyAlbum] {
         if isContentPreloaded && !cachedAlbums.isEmpty {
