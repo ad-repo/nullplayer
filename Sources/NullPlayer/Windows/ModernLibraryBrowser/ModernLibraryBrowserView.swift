@@ -325,6 +325,9 @@ class ModernLibraryBrowserView: NSView {
     
     // Search
     private var searchResults: PlexSearchResults?
+    private var jellyfinSearchResults: JellyfinSearchResults?
+    private var subsonicSearchResults: SubsonicSearchResults?
+    private var embySearchResults: EmbySearchResults?
     
     // Animation
     private var loadingAnimationTimer: Timer?
@@ -5907,7 +5910,11 @@ class ModernLibraryBrowserView: NSView {
                         else { cachedSubsonicPlaylists = try await manager.fetchPlaylists() }
                     }
                     buildSubsonicPlaylistItems()
-                case .search: displayItems = []
+                case .search:
+                    if !searchQuery.isEmpty {
+                        subsonicSearchResults = try await manager.search(query: searchQuery)
+                        buildSubsonicSearchItems()
+                    } else { displayItems = [] }
                 case .movies, .shows: displayItems = []
                 case .radio: break
                 }
@@ -5917,7 +5924,7 @@ class ModernLibraryBrowserView: NSView {
             catch { isLoading = false; stopLoadingAnimation(); errorMessage = error.localizedDescription; needsDisplay = true }
         }
     }
-    
+
     // MARK: - Jellyfin Data Loading
     
     private func loadJellyfinData(serverId: String) {
@@ -5990,7 +5997,11 @@ class ModernLibraryBrowserView: NSView {
                         else { cachedJellyfinPlaylists = try await manager.fetchPlaylists() }
                     }
                     buildJellyfinPlaylistItems()
-                case .search: displayItems = []
+                case .search:
+                    if !searchQuery.isEmpty {
+                        jellyfinSearchResults = try await manager.search(query: searchQuery)
+                        buildJellyfinSearchItems()
+                    } else { displayItems = [] }
                 case .movies:
                     if cachedJellyfinMovies.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedMovies.isEmpty { cachedJellyfinMovies = manager.cachedMovies }
@@ -6080,7 +6091,11 @@ class ModernLibraryBrowserView: NSView {
                         else { cachedEmbyPlaylists = try await manager.fetchPlaylists() }
                     }
                     buildEmbyPlaylistItems()
-                case .search: displayItems = []
+                case .search:
+                    if !searchQuery.isEmpty {
+                        embySearchResults = try await manager.search(query: searchQuery)
+                        buildEmbySearchItems()
+                    } else { displayItems = [] }
                 case .movies:
                     if cachedEmbyMovies.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedMovies.isEmpty { cachedEmbyMovies = manager.cachedMovies }
@@ -6255,6 +6270,103 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
+    private func buildSubsonicSearchItems() {
+        displayItems.removeAll()
+        guard let results = subsonicSearchResults else { return }
+        if !results.artists.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(results.artists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for artist in results.artists {
+                displayItems.append(ModernDisplayItem(id: artist.id, title: artist.name, info: artist.albumCount > 0 ? "\(artist.albumCount) albums" : nil, indentLevel: 1, hasChildren: true, type: .subsonicArtist(artist)))
+            }
+        }
+        if !results.albums.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(results.albums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for album in results.albums {
+                displayItems.append(ModernDisplayItem(id: album.id, title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .subsonicAlbum(album)))
+            }
+        }
+        if !results.songs.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(results.songs.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for song in results.songs {
+                displayItems.append(ModernDisplayItem(id: song.id, title: song.title, info: formatDuration(song.duration), indentLevel: 1, hasChildren: false, type: .subsonicTrack(song)))
+            }
+        }
+    }
+
+    private func buildJellyfinSearchItems() {
+        displayItems.removeAll()
+        guard let results = jellyfinSearchResults else { return }
+        if !results.artists.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(results.artists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for artist in results.artists {
+                displayItems.append(ModernDisplayItem(id: artist.id, title: artist.name, info: artist.albumCount > 0 ? "\(artist.albumCount) albums" : nil, indentLevel: 1, hasChildren: true, type: .jellyfinArtist(artist)))
+            }
+        }
+        if !results.albums.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(results.albums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for album in results.albums {
+                displayItems.append(ModernDisplayItem(id: album.id, title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .jellyfinAlbum(album)))
+            }
+        }
+        if !results.songs.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(results.songs.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for song in results.songs {
+                displayItems.append(ModernDisplayItem(id: song.id, title: song.title, info: formatDuration(song.duration), indentLevel: 1, hasChildren: false, type: .jellyfinTrack(song)))
+            }
+        }
+        if !results.movies.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-movies", title: "Movies (\(results.movies.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for movie in results.movies {
+                let info = [movie.year.map { String($0) }, movie.formattedDuration].compactMap { $0 }.joined(separator: " • ")
+                displayItems.append(ModernDisplayItem(id: movie.id, title: movie.title, info: info.isEmpty ? nil : info, indentLevel: 1, hasChildren: false, type: .jellyfinMovie(movie)))
+            }
+        }
+        if !results.shows.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-shows", title: "TV Shows (\(results.shows.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for show in results.shows {
+                let info = [show.year.map { String($0) }, "\(show.childCount) seasons"].compactMap { $0 }.joined(separator: " • ")
+                displayItems.append(ModernDisplayItem(id: show.id, title: show.title, info: info, indentLevel: 1, hasChildren: true, type: .jellyfinShow(show)))
+            }
+        }
+    }
+
+    private func buildEmbySearchItems() {
+        displayItems.removeAll()
+        guard let results = embySearchResults else { return }
+        if !results.artists.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(results.artists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for artist in results.artists {
+                displayItems.append(ModernDisplayItem(id: artist.id, title: artist.name, info: artist.albumCount > 0 ? "\(artist.albumCount) albums" : nil, indentLevel: 1, hasChildren: true, type: .embyArtist(artist)))
+            }
+        }
+        if !results.albums.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(results.albums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for album in results.albums {
+                displayItems.append(ModernDisplayItem(id: album.id, title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .embyAlbum(album)))
+            }
+        }
+        if !results.songs.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(results.songs.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for song in results.songs {
+                displayItems.append(ModernDisplayItem(id: song.id, title: song.title, info: formatDuration(song.duration), indentLevel: 1, hasChildren: false, type: .embyTrack(song)))
+            }
+        }
+        if !results.movies.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-movies", title: "Movies (\(results.movies.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for movie in results.movies {
+                let info = [movie.year.map { String($0) }, movie.formattedDuration].compactMap { $0 }.joined(separator: " • ")
+                displayItems.append(ModernDisplayItem(id: movie.id, title: movie.title, info: info.isEmpty ? nil : info, indentLevel: 1, hasChildren: false, type: .embyMovie(movie)))
+            }
+        }
+        if !results.shows.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-shows", title: "TV Shows (\(results.shows.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for show in results.shows {
+                let info = [show.year.map { String($0) }, "\(show.childCount) seasons"].compactMap { $0 }.joined(separator: " • ")
+                displayItems.append(ModernDisplayItem(id: show.id, title: show.title, info: info, indentLevel: 1, hasChildren: true, type: .embyShow(show)))
+            }
+        }
+    }
+
     private func buildRadioStationItems() {
         displayItems = cachedRadioStations.map {
             ModernDisplayItem(id: $0.id.uuidString, title: $0.name, info: $0.genre, indentLevel: 0, hasChildren: false, type: .radioStation($0))
@@ -6693,6 +6805,7 @@ class ModernLibraryBrowserView: NSView {
             case .albums: buildSubsonicAlbumItems()
             case .tracks: buildSubsonicTrackItems()
             case .plists: buildSubsonicPlaylistItems()
+            case .search: buildSubsonicSearchItems()
             default: displayItems = []
             }
         } else if case .jellyfin = currentSource {
@@ -6703,6 +6816,7 @@ class ModernLibraryBrowserView: NSView {
             case .plists: buildJellyfinPlaylistItems()
             case .movies: buildJellyfinMovieItems()
             case .shows: buildJellyfinShowItems()
+            case .search: buildJellyfinSearchItems()
             default: displayItems = []
             }
         } else if case .emby = currentSource {
@@ -6713,6 +6827,7 @@ class ModernLibraryBrowserView: NSView {
             case .plists: buildEmbyPlaylistItems()
             case .movies: buildEmbyMovieItems()
             case .shows: buildEmbyShowItems()
+            case .search: buildEmbySearchItems()
             default: displayItems = []
             }
         } else {
