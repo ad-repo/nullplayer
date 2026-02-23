@@ -17,7 +17,10 @@
 - ProjectM visualizations with 100 included. Users can download more
 - Just like PlexAmp, sonic similarity supportuing radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
-- classic skin 2 skin support (.wsz files)
+- Support for classic Winamp skin skins (.wsz files)
+- New Modern V2 UI user skin system
+- Original Spenctrum analysis visualization system
+- Album art visualization system with user selected effects
 - Main player, Playlist editor, and 10-band Equalizer windows
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
@@ -29,6 +32,7 @@
 - Local media library backup and restore
 - Media Drag and drop support
 - Navidrome/Subsonic server integration with scrobbling support
+- Jellyfin server integration with full support
 - Album/Cover/Movie art browser with visualizations
 - IMDB integration
 - Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
