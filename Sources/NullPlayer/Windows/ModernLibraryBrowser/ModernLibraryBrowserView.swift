@@ -2927,9 +2927,15 @@ class ModernLibraryBrowserView: NSView {
 
         if item.hasChildren {
             let indent = CGFloat(item.indentLevel) * 16
-            if point.x < Layout.borderWidth + indent + 20 { toggleExpand(item); return }
+            let inExpandZone = point.x < Layout.borderWidth + indent + 20
+            if item.type.isAlbumItem {
+                if event.clickCount == 1 { toggleExpand(item) }
+                // Fall through to selection
+            } else if inExpandZone {
+                toggleExpand(item); return
+            }
         }
-        
+
         if event.modifierFlags.contains(.shift) {
             if let lastSelected = selectedIndices.max() {
                 for i in min(lastSelected, index)...max(lastSelected, index) { selectedIndices.insert(i) }
@@ -6228,8 +6234,13 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func buildAlbumItems() {
-        displayItems = sortPlexAlbums(cachedAlbums).map {
-            ModernDisplayItem(id: $0.id, title: "\($0.parentTitle ?? "Unknown") - \($0.title)", info: $0.year.map { String($0) }, indentLevel: 0, hasChildren: false, type: .album($0))
+        displayItems.removeAll()
+        for album in sortPlexAlbums(cachedAlbums) {
+            let expanded = expandedAlbums.contains(album.id)
+            displayItems.append(ModernDisplayItem(id: album.id, title: "\(album.parentTitle ?? "Unknown") - \(album.title)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .album(album)))
+            if expanded, let tracks = albumTracks[album.id] {
+                for t in tracks { displayItems.append(ModernDisplayItem(id: t.id, title: t.title, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .track(t))) }
+            }
         }
     }
     
@@ -6485,7 +6496,15 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func buildLocalAlbumItems() {
-        displayItems = sortAlbums(cachedLocalAlbums).map { ModernDisplayItem(id: "local-album-\($0.id)", title: $0.displayName, info: "\($0.tracks.count) tracks", indentLevel: 0, hasChildren: false, type: .localAlbum($0)) }
+        displayItems.removeAll()
+        for album in sortAlbums(cachedLocalAlbums) {
+            let expanded = expandedLocalAlbums.contains(album.id)
+            displayItems.append(ModernDisplayItem(id: "local-album-\(album.id)", title: album.displayName, info: "\(album.tracks.count) tracks", indentLevel: 0, hasChildren: true, type: .localAlbum(album)))
+            if expanded {
+                let sorted = album.tracks.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
+                for t in sorted { displayItems.append(ModernDisplayItem(id: t.id.uuidString, title: t.title, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .localTrack(t))) }
+            }
+        }
     }
     
     private func buildLocalTrackItems() {
@@ -6562,8 +6581,14 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func buildSubsonicAlbumItems() {
-        displayItems = cachedSubsonicAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }).map {
-            ModernDisplayItem(id: $0.id, title: "\($0.artist ?? "Unknown") - \($0.name)", info: $0.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .subsonicAlbum($0))
+        displayItems.removeAll()
+        for album in cachedSubsonicAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+            let expanded = expandedSubsonicAlbums.contains(album.id)
+            displayItems.append(ModernDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .subsonicAlbum(album)))
+            if expanded, let songs = subsonicAlbumSongs[album.id] {
+                let sorted = songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
+                for s in sorted { displayItems.append(ModernDisplayItem(id: s.id, title: s.title, info: formatDuration(s.duration), indentLevel: 1, hasChildren: false, type: .subsonicTrack(s))) }
+            }
         }
     }
     
@@ -6634,8 +6659,14 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func buildJellyfinAlbumItems() {
-        displayItems = cachedJellyfinAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }).map {
-            ModernDisplayItem(id: $0.id, title: "\($0.artist ?? "Unknown") - \($0.name)", info: $0.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .jellyfinAlbum($0))
+        displayItems.removeAll()
+        for album in cachedJellyfinAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+            let expanded = expandedJellyfinAlbums.contains(album.id)
+            displayItems.append(ModernDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .jellyfinAlbum(album)))
+            if expanded, let songs = jellyfinAlbumSongs[album.id] {
+                let sorted = songs.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.track ?? 0) < ($1.track ?? 0) }
+                for s in sorted { displayItems.append(ModernDisplayItem(id: s.id, title: s.title, info: formatDuration(s.duration), indentLevel: 1, hasChildren: false, type: .jellyfinTrack(s))) }
+            }
         }
     }
     
@@ -6706,8 +6737,14 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func buildEmbyAlbumItems() {
-        displayItems = cachedEmbyAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }).map {
-            ModernDisplayItem(id: $0.id, title: "\($0.artist ?? "Unknown") - \($0.name)", info: $0.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .embyAlbum($0))
+        displayItems.removeAll()
+        for album in cachedEmbyAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+            let expanded = expandedEmbyAlbums.contains(album.id)
+            displayItems.append(ModernDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .embyAlbum(album)))
+            if expanded, let songs = embyAlbumSongs[album.id] {
+                let sorted = songs.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.track ?? 0) < ($1.track ?? 0) }
+                for s in sorted { displayItems.append(ModernDisplayItem(id: s.id, title: s.title, info: formatDuration(s.duration), indentLevel: 1, hasChildren: false, type: .embyTrack(s))) }
+            }
         }
     }
 
@@ -7496,6 +7533,13 @@ private struct ModernDisplayItem {
         case plexPlaylist(PlexPlaylist)
         case radioStation(RadioStation)
         case plexRadioStation(PlexRadioType)
+
+        var isAlbumItem: Bool {
+            switch self {
+            case .album, .localAlbum, .subsonicAlbum, .jellyfinAlbum, .embyAlbum: return true
+            default: return false
+            }
+        }
     }
 }
 

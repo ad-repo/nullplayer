@@ -7439,12 +7439,16 @@ class PlexBrowserView: NSView {
         // Handle expand/collapse
         if item.hasChildren {
             let indent = CGFloat(item.indentLevel) * 16
-            if skinPoint.x < Layout.leftBorder + indent + 20 {
+            let inExpandZone = skinPoint.x < Layout.leftBorder + indent + 20
+            if item.type.isAlbumItem {
+                if event.clickCount == 1 { toggleExpand(item) }
+                // Fall through to selection
+            } else if inExpandZone {
                 toggleExpand(item)
                 return
             }
         }
-        
+
         // Handle selection
         if event.modifierFlags.contains(.shift) {
             if let lastSelected = selectedIndices.max() {
@@ -10752,16 +10756,13 @@ class PlexBrowserView: NSView {
     }
     
     private func buildAlbumItems() {
-        let sortedAlbums = sortPlexAlbums(cachedAlbums)
-        displayItems = sortedAlbums.map { album in
-            PlexDisplayItem(
-                id: album.id,
-                title: "\(album.parentTitle ?? "Unknown") - \(album.title)",
-                info: album.year.map { String($0) },
-                indentLevel: 0,
-                hasChildren: false,
-                type: .album(album)
-            )
+        displayItems.removeAll()
+        for album in sortPlexAlbums(cachedAlbums) {
+            let expanded = expandedAlbums.contains(album.id)
+            displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.parentTitle ?? "Unknown") - \(album.title)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .album(album)))
+            if expanded, let tracks = albumTracks[album.id] {
+                for t in tracks { displayItems.append(PlexDisplayItem(id: t.id, title: t.title, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .track(t))) }
+            }
         }
     }
     
@@ -11630,18 +11631,15 @@ class PlexBrowserView: NSView {
     
     /// Build display items for Subsonic albums
     private func buildSubsonicAlbumItems() {
-        displayItems = cachedSubsonicAlbums
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            .map { album in
-                PlexDisplayItem(
-                    id: album.id,
-                    title: "\(album.artist ?? "Unknown") - \(album.name)",
-                    info: album.year.map { String($0) },
-                    indentLevel: 0,
-                    hasChildren: true,
-                    type: .subsonicAlbum(album)
-                )
+        displayItems.removeAll()
+        for album in cachedSubsonicAlbums.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+            let expanded = expandedSubsonicAlbums.contains(album.id)
+            displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .subsonicAlbum(album)))
+            if expanded, let songs = subsonicAlbumSongs[album.id] {
+                let sorted = songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
+                for s in sorted { displayItems.append(PlexDisplayItem(id: s.id, title: s.title, info: formatDuration(s.duration), indentLevel: 1, hasChildren: false, type: .subsonicTrack(s))) }
             }
+        }
     }
     
     /// Build display items for Subsonic playlists
@@ -12008,20 +12006,17 @@ class PlexBrowserView: NSView {
     }
     
     private func buildJellyfinAlbumItems() {
-        displayItems = cachedJellyfinAlbums
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            .map { album in
-                PlexDisplayItem(
-                    id: album.id,
-                    title: "\(album.artist ?? "Unknown") - \(album.name)",
-                    info: album.year.map { String($0) },
-                    indentLevel: 0,
-                    hasChildren: true,
-                    type: .jellyfinAlbum(album)
-                )
+        displayItems.removeAll()
+        for album in cachedJellyfinAlbums.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+            let expanded = expandedJellyfinAlbums.contains(album.id)
+            displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .jellyfinAlbum(album)))
+            if expanded, let songs = jellyfinAlbumSongs[album.id] {
+                let sorted = songs.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.track ?? 0) < ($1.track ?? 0) }
+                for s in sorted { displayItems.append(PlexDisplayItem(id: s.id, title: s.title, info: formatDuration(s.duration), indentLevel: 1, hasChildren: false, type: .jellyfinTrack(s))) }
             }
+        }
     }
-    
+
     private func buildJellyfinPlaylistItems() {
         displayItems.removeAll()
         
@@ -12177,18 +12172,15 @@ class PlexBrowserView: NSView {
     }
 
     private func buildEmbyAlbumItems() {
-        displayItems = cachedEmbyAlbums
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            .map { album in
-                PlexDisplayItem(
-                    id: album.id,
-                    title: "\(album.artist ?? "Unknown") - \(album.name)",
-                    info: album.year.map { String($0) },
-                    indentLevel: 0,
-                    hasChildren: true,
-                    type: .embyAlbum(album)
-                )
+        displayItems.removeAll()
+        for album in cachedEmbyAlbums.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+            let expanded = expandedEmbyAlbums.contains(album.id)
+            displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .embyAlbum(album)))
+            if expanded, let songs = embyAlbumSongs[album.id] {
+                let sorted = songs.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.track ?? 0) < ($1.track ?? 0) }
+                for s in sorted { displayItems.append(PlexDisplayItem(id: s.id, title: s.title, info: formatDuration(s.duration), indentLevel: 1, hasChildren: false, type: .embyTrack(s))) }
             }
+        }
     }
 
     private func buildEmbyPlaylistItems() {
@@ -12316,16 +12308,14 @@ class PlexBrowserView: NSView {
     }
     
     private func buildLocalAlbumItems() {
-        let sortedAlbums = sortAlbums(cachedLocalAlbums)
-        displayItems = sortedAlbums.map { album in
-            PlexDisplayItem(
-                id: "local-album-\(album.id)",
-                title: album.displayName,
-                info: "\(album.tracks.count) tracks",
-                indentLevel: 0,
-                hasChildren: false,
-                type: .localAlbum(album)
-            )
+        displayItems.removeAll()
+        for album in sortAlbums(cachedLocalAlbums) {
+            let expanded = expandedLocalAlbums.contains(album.id)
+            displayItems.append(PlexDisplayItem(id: "local-album-\(album.id)", title: album.displayName, info: "\(album.tracks.count) tracks", indentLevel: 0, hasChildren: true, type: .localAlbum(album)))
+            if expanded {
+                let sorted = album.tracks.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
+                for t in sorted { displayItems.append(PlexDisplayItem(id: t.id.uuidString, title: t.title, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .localTrack(t))) }
+            }
         }
     }
     
@@ -14118,6 +14108,13 @@ private struct PlexDisplayItem {
         case radioStation(RadioStation)
         // Plex Radio station type (dynamic playlists from Plex library)
         case plexRadioStation(PlexRadioType)
+
+        var isAlbumItem: Bool {
+            switch self {
+            case .album, .localAlbum, .subsonicAlbum, .jellyfinAlbum, .embyAlbum: return true
+            default: return false
+            }
+        }
     }
 }
 
