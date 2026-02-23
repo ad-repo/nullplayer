@@ -1,6 +1,14 @@
-# Artist in search → navigate to Artists tab
+# Remove Tracks Tab from Library
 
-## Completed
+- [x] ModernLibraryBrowserView: remove `tracks` case from `ModernBrowseMode` enum
+- [x] ModernLibraryBrowserView: fix `hitTestTabBar` to return `ModernBrowseMode?` using `allCases` indexing
+- [x] ModernLibraryBrowserView: remove all `case .tracks:` switch arms
+- [x] ModernLibraryBrowserView: remove `buildTrackItems`, `buildLocalTrackItems`, `buildSubsonicTrackItems`, `buildJellyfinTrackItems`, `buildEmbyTrackItems` functions
+- [x] PlexBrowserView: remove `tracks` case from `BrowseMode` enum and fix hit-test
+- [x] PlexBrowserView: remove all `case .tracks:` switch arms and track-listing build functions
+- [x] Build verification
+
+## Previous (completed)
 - [x] Add `pendingScrollToArtistId` property and `navigateToArtistFromSearch` helper
 - [x] Single-click on artist in search navigates to Artists tab (handleListClick early-exit)
 - [x] Add `applyPendingArtistScroll()` hooked into all 5 artist build functions (Plex/Subsonic/Jellyfin/Emby/Local)

@@ -134,18 +134,16 @@ enum BrowserSource: Equatable, Codable {
 enum PlexBrowseMode: Int, CaseIterable {
     case artists = 0
     case albums = 1
-    case tracks = 2
     case plists = 3
     case movies = 4
     case shows = 5
     case search = 6
     case radio = 7
-    
+
     var title: String {
         switch self {
         case .artists: return "Artists"
         case .albums: return "Albums"
-        case .tracks: return "Tracks"
         case .plists: return "Plists"
         case .movies: return "Movies"
         case .shows: return "Shows"
@@ -153,15 +151,15 @@ enum PlexBrowseMode: Int, CaseIterable {
         case .radio: return "Radio"
         }
     }
-    
+
     var isVideoMode: Bool {
         self == .movies || self == .shows
     }
-    
+
     var isMusicMode: Bool {
-        self == .artists || self == .albums || self == .tracks || self == .plists
+        self == .artists || self == .albums || self == .plists
     }
-    
+
     var isRadioMode: Bool {
         self == .radio
     }
@@ -2494,7 +2492,7 @@ class PlexBrowserView: NSView {
         let message: String
         
         switch browseMode {
-        case .artists, .albums, .tracks:
+        case .artists, .albums:
             if library?.isMusicLibrary == true {
                 message = "No \(browseMode.title.lowercased()) found"
             } else {
@@ -6030,24 +6028,25 @@ class PlexBrowserView: NSView {
     }
     
     /// Check if point is in tab bar and return tab index
-    private func hitTestTabBar(at skinPoint: NSPoint) -> Int? {
+    private func hitTestTabBar(at skinPoint: NSPoint) -> PlexBrowseMode? {
         let tabY = Layout.titleBarHeight + Layout.serverBarHeight
         guard skinPoint.y >= tabY && skinPoint.y < tabY + Layout.tabBarHeight else { return nil }
-        
+
         // Calculate sort indicator width (same as in drawTabBar)
         let charWidth = SkinElements.TextFont.charWidth
         let textScale: CGFloat = 1.5
         let scaledCharWidth = charWidth * textScale
         let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
-        
+
         // Tabs area excludes sort indicator
         let tabsWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - sortWidth
         let tabWidth = tabsWidth / CGFloat(PlexBrowseMode.allCases.count)
         let relativeX = skinPoint.x - Layout.leftBorder
-        
+
         if relativeX >= 0 && relativeX < tabsWidth {
-            return Int(relativeX / tabWidth)
+            let index = Int(relativeX / tabWidth)
+            if index < PlexBrowseMode.allCases.count { return PlexBrowseMode.allCases[index] }
         }
         return nil
     }
@@ -6617,14 +6616,12 @@ class PlexBrowserView: NSView {
         }
         
         // Check tab bar
-        if let tabIndex = hitTestTabBar(at: skinPoint) {
-            if let newMode = PlexBrowseMode(rawValue: tabIndex) {
-                browseMode = newMode
-                selectedIndices.removeAll()
-                scrollOffset = 0
-                loadDataForCurrentMode()
-                window?.makeFirstResponder(self)
-            }
+        if let newMode = hitTestTabBar(at: skinPoint) {
+            browseMode = newMode
+            selectedIndices.removeAll()
+            scrollOffset = 0
+            loadDataForCurrentMode()
+            window?.makeFirstResponder(self)
             return
         }
         
@@ -10569,12 +10566,6 @@ class PlexBrowserView: NSView {
                     }
                     buildAlbumItems()
                     
-                case .tracks:
-                    if cachedTracks.isEmpty {
-                        cachedTracks = try await plexManager.fetchTracks(offset: 0, limit: 500)
-                    }
-                    buildTrackItems()
-                    
                 case .movies:
                     NSLog("PlexBrowserView: Loading movies...")
                     if cachedMovies.isEmpty {
@@ -10763,20 +10754,6 @@ class PlexBrowserView: NSView {
             if expanded, let tracks = albumTracks[album.id] {
                 for t in tracks { displayItems.append(PlexDisplayItem(id: t.id, title: t.title, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .track(t))) }
             }
-        }
-    }
-    
-    private func buildTrackItems() {
-        let sortedTracks = sortPlexTracks(cachedTracks)
-        displayItems = sortedTracks.map { track in
-            PlexDisplayItem(
-                id: track.id,
-                title: "\(track.grandparentTitle ?? "Unknown") - \(track.title)",
-                info: track.formattedDuration,
-                indentLevel: 0,
-                hasChildren: false,
-                type: .track(track)
-            )
         }
     }
     
@@ -11235,8 +11212,6 @@ class PlexBrowserView: NSView {
             buildLocalArtistItems()
         case .albums:
             buildLocalAlbumItems()
-        case .tracks:
-            buildLocalTrackItems()
         case .search:
             buildLocalSearchItems()
         case .plists:
@@ -11525,10 +11500,6 @@ class PlexBrowserView: NSView {
                     try Task.checkCancellation()
                     buildSubsonicAlbumItems()
                     
-                case .tracks:
-                    // For Subsonic, show all albums' tracks - not typically used
-                    buildSubsonicAlbumItems()
-                    
                 case .search:
                     // TODO: Implement Subsonic search
                     displayItems = []
@@ -11760,9 +11731,6 @@ class PlexBrowserView: NSView {
                     }
                     buildEmbyAlbumItems()
 
-                case .tracks:
-                    buildEmbyAlbumItems()
-
                 case .plists:
                     if cachedEmbyPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty {
@@ -11888,10 +11856,7 @@ class PlexBrowserView: NSView {
                         }
                     }
                     buildJellyfinAlbumItems()
-                    
-                case .tracks:
-                    buildJellyfinAlbumItems()
-                    
+
                 case .plists:
                     NSLog("PlexBrowserView: Loading Jellyfin playlists...")
                     if cachedJellyfinPlaylists.isEmpty {
@@ -12319,20 +12284,6 @@ class PlexBrowserView: NSView {
         }
     }
     
-    private func buildLocalTrackItems() {
-        let sortedTracks = sortTracks(cachedLocalTracks)
-        displayItems = sortedTracks.map { track in
-            PlexDisplayItem(
-                id: track.id.uuidString,
-                title: track.displayTitle,
-                info: track.formattedDuration,
-                indentLevel: 0,
-                hasChildren: false,
-                type: .localTrack(track)
-            )
-        }
-    }
-    
     // MARK: - Sorting Helpers
     
     private func sortArtists(_ artists: [Artist]) -> [Artist] {
@@ -12612,8 +12563,6 @@ class PlexBrowserView: NSView {
                 buildLocalArtistItems()
             case .albums:
                 buildLocalAlbumItems()
-            case .tracks:
-                buildLocalTrackItems()
             case .search:
                 buildLocalSearchItems()
             case .plists:
@@ -12635,8 +12584,6 @@ class PlexBrowserView: NSView {
                 buildSubsonicArtistItems()
             case .albums:
                 buildSubsonicAlbumItems()
-            case .tracks:
-                buildSubsonicAlbumItems() // Show albums for tracks mode
             case .search:
                 displayItems = [] // TODO: Implement Subsonic search
             case .plists:
@@ -12653,8 +12600,6 @@ class PlexBrowserView: NSView {
                 buildJellyfinArtistItems()
             case .albums:
                 buildJellyfinAlbumItems()
-            case .tracks:
-                buildJellyfinAlbumItems() // Show albums for tracks mode
             case .search:
                 displayItems = [] // TODO: Implement Jellyfin search
             case .plists:
@@ -12672,8 +12617,6 @@ class PlexBrowserView: NSView {
                 buildEmbyArtistItems()
             case .albums:
                 buildEmbyAlbumItems()
-            case .tracks:
-                buildEmbyAlbumItems() // Show albums for tracks mode
             case .search:
                 displayItems = [] // TODO: Implement Emby search
             case .plists:
@@ -12691,8 +12634,6 @@ class PlexBrowserView: NSView {
                 buildArtistItems()
             case .albums:
                 buildAlbumItems()
-            case .tracks:
-                buildTrackItems()
             case .movies:
                 buildMovieItems()
             case .shows:

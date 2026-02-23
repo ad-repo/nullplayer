@@ -107,14 +107,13 @@ enum ModernBrowserSource: Equatable, Codable {
 // MARK: - Browse Mode
 
 enum ModernBrowseMode: Int, CaseIterable {
-    case artists = 0, albums = 1, tracks = 2, plists = 3
+    case artists = 0, albums = 1, plists = 3
     case movies = 4, shows = 5, search = 6, radio = 7
-    
+
     var title: String {
         switch self {
         case .artists: return "Artists"
         case .albums: return "Albums"
-        case .tracks: return "Tracks"
         case .plists: return "Plists"
         case .movies: return "Movies"
         case .shows: return "Shows"
@@ -123,7 +122,7 @@ enum ModernBrowseMode: Int, CaseIterable {
         }
     }
     var isVideoMode: Bool { self == .movies || self == .shows }
-    var isMusicMode: Bool { self == .artists || self == .albums || self == .tracks || self == .plists }
+    var isMusicMode: Bool { self == .artists || self == .albums || self == .plists }
     var isRadioMode: Bool { self == .radio }
 }
 
@@ -1522,7 +1521,7 @@ class ModernLibraryBrowserView: NSView {
         let library = PlexManager.shared.currentLibrary
         let message: String
         switch browseMode {
-        case .artists, .albums, .tracks:
+        case .artists, .albums:
             if currentSource.isPlex && library?.isMusicLibrary == true {
                 message = "No \(browseMode.title.lowercased()) found"
             } else if currentSource.isSubsonic || currentSource.isJellyfin || currentSource.isEmby || (currentSource.isPlex && library?.isMusicLibrary != true) {
@@ -2209,23 +2208,24 @@ class ModernLibraryBrowserView: NSView {
         return point.y >= serverBarY && point.y < bounds.height - Layout.titleBarHeight
     }
     
-    private func hitTestTabBar(at point: NSPoint) -> Int? {
+    private func hitTestTabBar(at point: NSPoint) -> ModernBrowseMode? {
         let tabBarTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return nil }
-        
+
         let skin = currentSkin()
         let font = skin.sideWindowFont(size: 11)
         let sortText = "Sort"
         let sortAttrs: [NSAttributedString.Key: Any] = [.font: font]
         let sortWidth = sortText.size(withAttributes: sortAttrs).width + 16 * ModernSkinElements.sizeMultiplier
-        
+
         let tabsWidth = bounds.width - Layout.borderWidth * 2 - sortWidth
         let tabWidth = tabsWidth / CGFloat(ModernBrowseMode.allCases.count)
         let relativeX = point.x - Layout.borderWidth
-        
+
         if relativeX >= 0 && relativeX < tabsWidth {
-            return Int(relativeX / tabWidth)
+            let index = Int(relativeX / tabWidth)
+            if index < ModernBrowseMode.allCases.count { return ModernBrowseMode.allCases[index] }
         }
         return nil
     }
@@ -2416,11 +2416,9 @@ class ModernLibraryBrowserView: NSView {
         if hitTestSortIndicator(at: point) { showSortMenu(at: event.locationInWindow); return }
         
         // Tab bar (check before content area so tabs work in art-only/viz mode)
-        if let tabIndex = hitTestTabBar(at: point) {
-            if let newMode = ModernBrowseMode(rawValue: tabIndex) {
-                browseMode = newMode; selectedIndices.removeAll(); scrollOffset = 0
-                loadDataForCurrentMode(); window?.makeFirstResponder(self)
-            }
+        if let newMode = hitTestTabBar(at: point) {
+            browseMode = newMode; selectedIndices.removeAll(); scrollOffset = 0
+            loadDataForCurrentMode(); window?.makeFirstResponder(self)
             return
         }
         
@@ -5817,9 +5815,6 @@ class ModernLibraryBrowserView: NSView {
                         else { cachedAlbums = try await pm.fetchAlbums(offset: 0, limit: 500) }
                     }
                     buildAlbumItems()
-                case .tracks:
-                    if cachedTracks.isEmpty { cachedTracks = try await pm.fetchTracks(offset: 0, limit: 500) }
-                    buildTrackItems()
                 case .movies:
                     if cachedMovies.isEmpty {
                         if pm.isContentPreloaded && !pm.cachedMovies.isEmpty { cachedMovies = pm.cachedMovies }
@@ -5860,7 +5855,6 @@ class ModernLibraryBrowserView: NSView {
         switch browseMode {
         case .artists: buildLocalArtistItems()
         case .albums: buildLocalAlbumItems()
-        case .tracks: buildLocalTrackItems()
         case .search: buildLocalSearchItems()
         case .plists: displayItems = []
         case .movies:
@@ -5959,7 +5953,6 @@ class ModernLibraryBrowserView: NSView {
                         else { cachedSubsonicAlbums = try await manager.fetchAlbums() }
                     }
                     buildSubsonicAlbumItems()
-                case .tracks: buildSubsonicTrackItems()
                 case .plists:
                     if cachedSubsonicPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty { cachedSubsonicPlaylists = manager.cachedPlaylists }
@@ -6050,7 +6043,6 @@ class ModernLibraryBrowserView: NSView {
                         else { cachedJellyfinAlbums = try await manager.fetchAlbums() }
                     }
                     buildJellyfinAlbumItems()
-                case .tracks: buildJellyfinTrackItems()
                 case .plists:
                     if cachedJellyfinPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty { cachedJellyfinPlaylists = manager.cachedPlaylists }
@@ -6148,7 +6140,6 @@ class ModernLibraryBrowserView: NSView {
                         else { cachedEmbyAlbums = try await manager.fetchAlbums() }
                     }
                     buildEmbyAlbumItems()
-                case .tracks: buildEmbyTrackItems()
                 case .plists:
                     if cachedEmbyPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty { cachedEmbyPlaylists = manager.cachedPlaylists }
@@ -6241,12 +6232,6 @@ class ModernLibraryBrowserView: NSView {
             if expanded, let tracks = albumTracks[album.id] {
                 for t in tracks { displayItems.append(ModernDisplayItem(id: t.id, title: t.title, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .track(t))) }
             }
-        }
-    }
-    
-    private func buildTrackItems() {
-        displayItems = sortPlexTracks(cachedTracks).map {
-            ModernDisplayItem(id: $0.id, title: "\($0.grandparentTitle ?? "Unknown") - \($0.title)", info: $0.formattedDuration, indentLevel: 0, hasChildren: false, type: .track($0))
         }
     }
     
@@ -6507,10 +6492,6 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
-    private func buildLocalTrackItems() {
-        displayItems = sortTracks(cachedLocalTracks).map { ModernDisplayItem(id: $0.id.uuidString, title: $0.displayTitle, info: $0.formattedDuration, indentLevel: 0, hasChildren: false, type: .localTrack($0)) }
-    }
-    
     private func buildLocalSearchItems() {
         displayItems.removeAll()
         guard !searchQuery.isEmpty else { return }
@@ -6592,39 +6573,6 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
-    private func buildSubsonicTrackItems() {
-        Task { @MainActor in
-            do {
-                let results = try await SubsonicManager.shared.serverClient?.search(query: "", artistCount: 0, albumCount: 0, songCount: 500) ?? SubsonicSearchResults()
-                let songs = results.songs
-                displayItems = songs.sorted(by: {
-                    let artist1 = $0.artist ?? ""
-                    let artist2 = $1.artist ?? ""
-                    if artist1 != artist2 { return artist1.localizedCaseInsensitiveCompare(artist2) == .orderedAscending }
-                    let album1 = $0.album ?? ""
-                    let album2 = $1.album ?? ""
-                    if album1 != album2 { return album1.localizedCaseInsensitiveCompare(album2) == .orderedAscending }
-                    return ($0.track ?? 0) < ($1.track ?? 0)
-                }).map {
-                    ModernDisplayItem(
-                        id: $0.id,
-                        title: "\($0.artist ?? "Unknown") - \($0.title)",
-                        info: $0.formattedDuration,
-                        indentLevel: 0,
-                        hasChildren: false,
-                        type: .subsonicTrack($0)
-                    )
-                }
-                applyColumnSort()
-                needsDisplay = true
-            } catch {
-                NSLog("Failed to fetch Subsonic tracks: %@", error.localizedDescription)
-                displayItems = []
-                needsDisplay = true
-            }
-        }
-    }
-    
     private func buildSubsonicPlaylistItems() {
         displayItems.removeAll()
         for playlist in cachedSubsonicPlaylists.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
@@ -6670,39 +6618,6 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
-    private func buildJellyfinTrackItems() {
-        Task { @MainActor in
-            do {
-                let results = try await JellyfinManager.shared.search(query: "")
-                let songs = results.songs
-                displayItems = songs.sorted(by: {
-                    let artist1 = $0.artist ?? ""
-                    let artist2 = $1.artist ?? ""
-                    if artist1 != artist2 { return artist1.localizedCaseInsensitiveCompare(artist2) == .orderedAscending }
-                    let album1 = $0.album ?? ""
-                    let album2 = $1.album ?? ""
-                    if album1 != album2 { return album1.localizedCaseInsensitiveCompare(album2) == .orderedAscending }
-                    return ($0.track ?? 0) < ($1.track ?? 0)
-                }).map {
-                    ModernDisplayItem(
-                        id: $0.id,
-                        title: "\($0.artist ?? "Unknown") - \($0.title)",
-                        info: $0.formattedDuration,
-                        indentLevel: 0,
-                        hasChildren: false,
-                        type: .jellyfinTrack($0)
-                    )
-                }
-                applyColumnSort()
-                needsDisplay = true
-            } catch {
-                NSLog("Failed to fetch Jellyfin tracks: %@", error.localizedDescription)
-                displayItems = []
-                needsDisplay = true
-            }
-        }
-    }
-    
     private func buildJellyfinPlaylistItems() {
         displayItems.removeAll()
         for playlist in cachedJellyfinPlaylists.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
@@ -6744,39 +6659,6 @@ class ModernLibraryBrowserView: NSView {
             if expanded, let songs = embyAlbumSongs[album.id] {
                 let sorted = songs.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.track ?? 0) < ($1.track ?? 0) }
                 for s in sorted { displayItems.append(ModernDisplayItem(id: s.id, title: s.title, info: formatDuration(s.duration), indentLevel: 1, hasChildren: false, type: .embyTrack(s))) }
-            }
-        }
-    }
-
-    private func buildEmbyTrackItems() {
-        Task { @MainActor in
-            do {
-                let results = try await EmbyManager.shared.search(query: "")
-                let songs = results.songs
-                displayItems = songs.sorted(by: {
-                    let artist1 = $0.artist ?? ""
-                    let artist2 = $1.artist ?? ""
-                    if artist1 != artist2 { return artist1.localizedCaseInsensitiveCompare(artist2) == .orderedAscending }
-                    let album1 = $0.album ?? ""
-                    let album2 = $1.album ?? ""
-                    if album1 != album2 { return album1.localizedCaseInsensitiveCompare(album2) == .orderedAscending }
-                    return ($0.track ?? 0) < ($1.track ?? 0)
-                }).map {
-                    ModernDisplayItem(
-                        id: $0.id,
-                        title: "\($0.artist ?? "Unknown") - \($0.title)",
-                        info: $0.formattedDuration,
-                        indentLevel: 0,
-                        hasChildren: false,
-                        type: .embyTrack($0)
-                    )
-                }
-                applyColumnSort()
-                needsDisplay = true
-            } catch {
-                NSLog("Failed to fetch Emby tracks: %@", error.localizedDescription)
-                displayItems = []
-                needsDisplay = true
             }
         }
     }
@@ -6893,7 +6775,6 @@ class ModernLibraryBrowserView: NSView {
             switch browseMode {
             case .artists: buildLocalArtistItems()
             case .albums: buildLocalAlbumItems()
-            case .tracks: buildLocalTrackItems()
             case .search: buildLocalSearchItems()
             case .movies: buildLocalMovieItems()
             case .shows: buildLocalShowItems()
@@ -6903,7 +6784,6 @@ class ModernLibraryBrowserView: NSView {
             switch browseMode {
             case .artists: buildSubsonicArtistItems()
             case .albums: buildSubsonicAlbumItems()
-            case .tracks: buildSubsonicTrackItems()
             case .plists: buildSubsonicPlaylistItems()
             case .search: buildSubsonicSearchItems()
             default: displayItems = []
@@ -6912,7 +6792,6 @@ class ModernLibraryBrowserView: NSView {
             switch browseMode {
             case .artists: buildJellyfinArtistItems()
             case .albums: buildJellyfinAlbumItems()
-            case .tracks: buildJellyfinTrackItems()
             case .plists: buildJellyfinPlaylistItems()
             case .movies: buildJellyfinMovieItems()
             case .shows: buildJellyfinShowItems()
@@ -6923,7 +6802,6 @@ class ModernLibraryBrowserView: NSView {
             switch browseMode {
             case .artists: buildEmbyArtistItems()
             case .albums: buildEmbyAlbumItems()
-            case .tracks: buildEmbyTrackItems()
             case .plists: buildEmbyPlaylistItems()
             case .movies: buildEmbyMovieItems()
             case .shows: buildEmbyShowItems()
@@ -6934,7 +6812,6 @@ class ModernLibraryBrowserView: NSView {
             switch browseMode {
             case .artists: buildArtistItems()
             case .albums: buildAlbumItems()
-            case .tracks: buildTrackItems()
             case .movies: buildMovieItems()
             case .shows: buildShowItems()
             case .plists: buildPlexPlaylistItems()
