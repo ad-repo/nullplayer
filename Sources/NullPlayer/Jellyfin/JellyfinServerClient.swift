@@ -276,45 +276,44 @@ class JellyfinServerClient {
     
     // MARK: - Music Libraries
     
-    /// Fetch music libraries (Jellyfin can have multiple)
+    /// Fetch all libraries/views on the server (no collection type filtering)
     func fetchMusicLibraries() async throws -> [JellyfinMusicLibrary] {
         guard let request = buildRequest(path: "/Users/\(server.userId)/Views") else {
             throw JellyfinClientError.invalidURL
         }
         
         let response: JellyfinViewsResponse = try await performRequest(request)
-        
-        return response.Items
-            .filter { $0.CollectionType == "music" }
-            .map { $0.toMusicLibrary() }
+        return response.Items.map { $0.toMusicLibrary() }
     }
     
     // MARK: - Video Libraries
-    
-    /// Fetch video libraries (movies and tvshows collection types)
+
+    /// Fetch video libraries only (excludes music, photos, books, etc.)
     func fetchVideoLibraries() async throws -> [JellyfinMusicLibrary] {
         guard let request = buildRequest(path: "/Users/\(server.userId)/Views") else {
             throw JellyfinClientError.invalidURL
         }
-        
+
+        let nonVideoTypes: Set<String> = ["music", "musicvideos", "books", "photos", "playlists", "livetv"]
         let response: JellyfinViewsResponse = try await performRequest(request)
-        
         return response.Items
-            .filter { $0.CollectionType == "movies" || $0.CollectionType == "tvshows" }
+            .filter { item in
+                guard let type = item.CollectionType else { return true }
+                return !nonVideoTypes.contains(type.lowercased())
+            }
             .map { $0.toMusicLibrary() }
     }
     
     // MARK: - Movie Operations
     
     /// Fetch all movies from a library (paginated)
-    func fetchMovies(libraryId: String) async throws -> [JellyfinMovie] {
+    func fetchMovies(libraryId: String? = nil) async throws -> [JellyfinMovie] {
         var allMovies: [JellyfinMovie] = []
         var offset = 0
         let pageSize = 10000
-        
+
         while true {
-            let params = [
-                URLQueryItem(name: "parentId", value: libraryId),
+            var params = [
                 URLQueryItem(name: "IncludeItemTypes", value: "Movie"),
                 URLQueryItem(name: "MediaTypes", value: "Video"),
                 URLQueryItem(name: "Recursive", value: "true"),
@@ -324,6 +323,9 @@ class JellyfinServerClient {
                 URLQueryItem(name: "Limit", value: String(pageSize)),
                 URLQueryItem(name: "StartIndex", value: String(offset))
             ]
+            if let libraryId = libraryId {
+                params.insert(URLQueryItem(name: "parentId", value: libraryId), at: 0)
+            }
             
             guard let request = buildRequest(path: "/Users/\(server.userId)/Items", params: params) else {
                 throw JellyfinClientError.invalidURL
@@ -356,15 +358,14 @@ class JellyfinServerClient {
     
     // MARK: - Show Operations
     
-    /// Fetch all TV shows from a library (paginated)
-    func fetchShows(libraryId: String) async throws -> [JellyfinShow] {
+    /// Fetch all TV shows from a library (paginated). If libraryId is nil, fetches from entire server.
+    func fetchShows(libraryId: String? = nil) async throws -> [JellyfinShow] {
         var allShows: [JellyfinShow] = []
         var offset = 0
         let pageSize = 10000
-        
+
         while true {
-            let params = [
-                URLQueryItem(name: "parentId", value: libraryId),
+            var params = [
                 URLQueryItem(name: "IncludeItemTypes", value: "Series"),
                 URLQueryItem(name: "Recursive", value: "true"),
                 URLQueryItem(name: "SortBy", value: "SortName"),
@@ -373,6 +374,9 @@ class JellyfinServerClient {
                 URLQueryItem(name: "Limit", value: String(pageSize)),
                 URLQueryItem(name: "StartIndex", value: String(offset))
             ]
+            if let libraryId = libraryId {
+                params.insert(URLQueryItem(name: "parentId", value: libraryId), at: 0)
+            }
             
             guard let request = buildRequest(path: "/Users/\(server.userId)/Items", params: params) else {
                 throw JellyfinClientError.invalidURL

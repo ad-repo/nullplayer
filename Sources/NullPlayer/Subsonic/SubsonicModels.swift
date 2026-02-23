@@ -29,6 +29,14 @@ struct SubsonicServerCredentials: Codable {
     let password: String         // Stored encrypted in keychain
 }
 
+// MARK: - Music Folders
+
+/// A music folder (root library) on a Subsonic/Navidrome server
+struct SubsonicMusicFolder: Identifiable, Equatable {
+    let id: String
+    let name: String
+}
+
 // MARK: - Library Content
 
 /// An artist in a Subsonic music library
@@ -218,6 +226,24 @@ struct SubsonicError: Decodable, Error {
 /// Response for ping endpoint
 struct SubsonicPingResponse: Decodable {
     // Ping just returns the status, no additional data
+}
+
+/// Response for getMusicFolders endpoint
+struct SubsonicMusicFoldersResponse: Decodable {
+    let musicFolders: MusicFoldersContainer?
+    
+    struct MusicFoldersContainer: Decodable {
+        let musicFolder: [MusicFolderDTO]?
+    }
+    
+    struct MusicFolderDTO: Decodable {
+        let id: Int
+        let name: String?
+        
+        func toMusicFolder() -> SubsonicMusicFolder {
+            SubsonicMusicFolder(id: String(id), name: name ?? "Folder \(id)")
+        }
+    }
 }
 
 /// Response for getArtists endpoint

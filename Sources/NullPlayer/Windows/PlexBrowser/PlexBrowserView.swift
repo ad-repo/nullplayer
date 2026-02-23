@@ -7,6 +7,7 @@ enum BrowserSource: Equatable, Codable {
     case plex(serverId: String)
     case subsonic(serverId: String)
     case jellyfin(serverId: String)
+    case emby(serverId: String)
     case radio
     
     /// Display name for the source
@@ -29,6 +30,11 @@ enum BrowserSource: Equatable, Codable {
                 return "JELLYFIN: \(server.name)"
             }
             return "JELLYFIN"
+        case .emby(let serverId):
+            if let server = EmbyManager.shared.servers.first(where: { $0.id == serverId }) {
+                return "EMBY: \(server.name)"
+            }
+            return "EMBY"
         case .radio:
             return "INTERNET RADIO"
         }
@@ -54,6 +60,11 @@ enum BrowserSource: Equatable, Codable {
                 return server.name
             }
             return "Jellyfin"
+        case .emby(let serverId):
+            if let server = EmbyManager.shared.servers.first(where: { $0.id == serverId }) {
+                return server.name
+            }
+            return "Emby"
         case .radio:
             return "Radio"
         }
@@ -70,6 +81,12 @@ enum BrowserSource: Equatable, Codable {
         if case .jellyfin = self { return true }
         return false
     }
+
+    /// Whether this is an Emby source
+    var isEmby: Bool {
+        if case .emby = self { return true }
+        return false
+    }
     
     /// Whether this is a Plex source
     var isPlex: Bool {
@@ -83,12 +100,12 @@ enum BrowserSource: Equatable, Codable {
         return false
     }
     
-    /// Whether this is a remote source (Plex, Subsonic, or Jellyfin)
+    /// Whether this is a remote source (Plex, Subsonic, Jellyfin, or Emby)
     var isRemote: Bool {
         switch self {
         case .local, .radio:
             return false
-        case .plex, .subsonic, .jellyfin:
+        case .plex, .subsonic, .jellyfin, .emby:
             return true
         }
     }
@@ -117,18 +134,16 @@ enum BrowserSource: Equatable, Codable {
 enum PlexBrowseMode: Int, CaseIterable {
     case artists = 0
     case albums = 1
-    case tracks = 2
     case plists = 3
     case movies = 4
     case shows = 5
     case search = 6
     case radio = 7
-    
+
     var title: String {
         switch self {
         case .artists: return "Artists"
         case .albums: return "Albums"
-        case .tracks: return "Tracks"
         case .plists: return "Plists"
         case .movies: return "Movies"
         case .shows: return "Shows"
@@ -136,15 +151,15 @@ enum PlexBrowseMode: Int, CaseIterable {
         case .radio: return "Radio"
         }
     }
-    
+
     var isVideoMode: Bool {
         self == .movies || self == .shows
     }
-    
+
     var isMusicMode: Bool {
-        self == .artists || self == .albums || self == .tracks || self == .plists
+        self == .artists || self == .albums || self == .plists
     }
-    
+
     var isRadioMode: Bool {
         self == .radio
     }
@@ -310,11 +325,11 @@ class PlexBrowserView: NSView {
     /// Get columns for a specific item (nil = use simple list rendering)
     private func columnsForItem(_ item: PlexDisplayItem) -> [BrowserColumn]? {
         switch item.type {
-        case .track, .subsonicTrack, .localTrack, .jellyfinTrack:
+        case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack:
             return BrowserColumn.trackColumns
-        case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum:
+        case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum:
             return BrowserColumn.albumColumns
-        case .artist, .subsonicArtist, .localArtist, .jellyfinArtist:
+        case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist:
             // Only show columns for top-level artists (not nested under search results)
             if item.indentLevel == 0 {
                 return BrowserColumn.artistColumns
@@ -557,6 +572,12 @@ class PlexBrowserView: NSView {
     private var cachedLocalTracks: [LibraryTrack] = []
     private var expandedLocalArtists: Set<String> = []
     private var expandedLocalAlbums: Set<String> = []
+
+    /// Cached data - Video (Local)
+    private var cachedLocalMovies: [LocalVideo] = []
+    private var cachedLocalShows: [LocalShow] = []
+    private var expandedLocalShows: Set<String> = []
+    private var expandedLocalSeasons: Set<String> = []
     
     /// Cached data - Music (Subsonic)
     private var cachedSubsonicArtists: [SubsonicArtist] = []
@@ -582,6 +603,18 @@ class PlexBrowserView: NSView {
     private var jellyfinPlaylistTracks: [String: [JellyfinSong]] = [:]
     private var jellyfinAlbumSongs: [String: [JellyfinSong]] = [:]
     private var jellyfinLoadTask: Task<Void, Never>?
+    // Emby music content
+    private var cachedEmbyArtists: [EmbyArtist] = []
+    private var cachedEmbyAlbums: [EmbyAlbum] = []
+    private var cachedEmbyPlaylists: [EmbyPlaylist] = []
+    private var expandedEmbyArtists: Set<String> = []
+    private var expandedEmbyAlbums: Set<String> = []
+    private var expandedEmbyPlaylists: Set<String> = []
+    private var embyArtistAlbums: [String: [EmbyAlbum]] = [:]
+    private var embyPlaylistTracks: [String: [EmbySong]] = [:]
+    private var embyAlbumSongs: [String: [EmbySong]] = [:]
+    private var embyLoadTask: Task<Void, Never>?
+    private var embyExpandTask: Task<Void, Never>?
     private var jellyfinExpandTask: Task<Void, Never>?
     
     /// Cached data - Video (Jellyfin)
@@ -591,7 +624,15 @@ class PlexBrowserView: NSView {
     private var jellyfinSeasonEpisodes: [String: [JellyfinEpisode]] = [:]
     private var expandedJellyfinShows: Set<String> = []
     private var expandedJellyfinSeasons: Set<String> = []
-    
+
+    /// Cached data - Video (Emby)
+    private var cachedEmbyMovies: [EmbyMovie] = []
+    private var cachedEmbyShows: [EmbyShow] = []
+    private var embyShowSeasons: [String: [EmbySeason]] = [:]
+    private var embySeasonEpisodes: [String: [EmbyEpisode]] = [:]
+    private var expandedEmbyShows: Set<String> = []
+    private var expandedEmbySeasons: Set<String> = []
+
     /// Cached data - Radio Stations
     private var cachedRadioStations: [RadioStation] = []
     
@@ -867,6 +908,18 @@ class PlexBrowserView: NSView {
                     currentSource = .local
                 } else if let firstServer = JellyfinManager.shared.servers.first {
                     currentSource = .jellyfin(serverId: firstServer.id)
+                } else {
+                    currentSource = .local
+                }
+            case .emby(let serverId):
+                // Only restore Emby source if server still exists
+                if EmbyManager.shared.servers.contains(where: { $0.id == serverId }) {
+                    currentSource = savedSource
+                } else if EmbyManager.shared.servers.isEmpty {
+                    pendingSourceRestore = savedSource
+                    currentSource = .local
+                } else if let firstServer = EmbyManager.shared.servers.first {
+                    currentSource = .emby(serverId: firstServer.id)
                 } else {
                     currentSource = .local
                 }
@@ -1329,6 +1382,9 @@ class PlexBrowserView: NSView {
             browseMode = .artists
         } else if browseMode == .radio, case .jellyfin = currentSource {
             // Jellyfin doesn't support radio tab, switch to artists tab
+            browseMode = .artists
+        } else if browseMode == .radio, case .emby = currentSource {
+            // Emby doesn't support radio tab, switch to artists tab
             browseMode = .artists
         }
         
@@ -2067,7 +2123,94 @@ class PlexBrowserView: NSView {
                 let linkX = barRect.midX - linkWidth / 2
                 drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
             }
-        
+
+        case .emby(let serverId):
+            // EMBY mode
+            let embyManager = EmbyManager.shared
+            let configuredServer = embyManager.servers.first(where: { $0.id == serverId })
+
+            if configuredServer != nil {
+                let maxServerChars = 20
+                let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
+                let serverName = configuredServer?.name ?? "Select Server"
+                let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
+
+                if serverTextWidth <= maxServerWidth {
+                    drawScaledWhiteSkinText(serverName, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
+                } else {
+                    drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
+                                     availableWidth: maxServerWidth, scale: textScale,
+                                     scrollOffset: serverNameScrollOffset,
+                                     renderer: renderer, in: context)
+                }
+
+                let refreshText = "F5"
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+
+                let artText = "ART"
+                let artWidth = CGFloat(artText.count) * scaledCharWidth
+                var artX = refreshX - artWidth - 24
+                let visText = "VIS"
+                let visWidth = CGFloat(visText.count) * scaledCharWidth
+                var visX = artX - visWidth - 16
+
+                if currentArtwork != nil {
+                    if isArtOnlyMode {
+                        drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
+                        if isVisualizingArt {
+                            drawScaledWhiteSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
+                        } else {
+                            drawScaledSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
+                        }
+                    } else {
+                        drawScaledSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
+                        visX = artX
+                    }
+                } else {
+                    artX = refreshX
+                    visX = artX
+                }
+
+                if isArtOnlyMode,
+                   let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+                   currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
+                    let starSize: CGFloat = 12
+                    let starSpacing: CGFloat = 2
+                    let totalStars = 5
+                    let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
+                    let starsX = visX - starsWidth - 16
+                    let starY = barRect.minY + (barRect.height - starSize) / 2
+                    let rating = currentTrackRating ?? 0
+                    let filledCount = rating / 2
+                    let greenColor = renderer.skinTextColor()
+                    let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
+                                          green: greenColor.greenComponent * 0.4,
+                                          blue: greenColor.blueComponent * 0.4,
+                                          alpha: 0.6)
+                    for i in 0..<totalStars {
+                        let x = starsX + CGFloat(i) * (starSize + starSpacing)
+                        let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
+                        let isFilled = i < filledCount
+                        drawPixelStar(in: starRect, color: isFilled ? greenColor : dimGreen, context: context)
+                    }
+                    rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
+                } else if !isArtOnlyMode {
+                    let countNumber = "\(displayItems.count)"
+                    let countLabel = " items"
+                    let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+                    let countX = visX - countWidth - 24
+                    drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+                    let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+                    drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
+                }
+            } else {
+                let linkText = "Click to add an Emby server"
+                let linkWidth = CGFloat(linkText.count) * scaledCharWidth
+                let linkX = barRect.midX - linkWidth / 2
+                drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
+            }
+
         case .radio:
             // INTERNET RADIO mode
             let sourceText = "Internet Radio"
@@ -2349,7 +2492,7 @@ class PlexBrowserView: NSView {
         let message: String
         
         switch browseMode {
-        case .artists, .albums, .tracks:
+        case .artists, .albums:
             if library?.isMusicLibrary == true {
                 message = "No \(browseMode.title.lowercased()) found"
             } else {
@@ -4923,6 +5066,16 @@ class PlexBrowserView: NSView {
                         self.currentSource = .jellyfin(serverId: firstServer.id)
                         return
                     }
+                case .emby(let serverId):
+                    if EmbyManager.shared.servers.contains(where: { $0.id == serverId }) {
+                        NSLog("PlexBrowserView: Restoring pending Emby source: %@", serverId)
+                        self.currentSource = pending
+                        return
+                    } else if let firstServer = EmbyManager.shared.servers.first {
+                        NSLog("PlexBrowserView: Pending Emby server not found, using first server")
+                        self.currentSource = .emby(serverId: firstServer.id)
+                        return
+                    }
                 case .local:
                     break
                 case .radio:
@@ -4930,7 +5083,7 @@ class PlexBrowserView: NSView {
                     return
                 }
             }
-            
+
             NSLog("PlexBrowserView: Server changed, clearing cache and reloading")
             self.clearAllCachedData()
             self.reloadData()
@@ -4960,7 +5113,14 @@ class PlexBrowserView: NSView {
         jellyfinSeasonEpisodes = [:]
         expandedJellyfinShows = []
         expandedJellyfinSeasons = []
-        
+
+        cachedEmbyArtists = []; cachedEmbyAlbums = []; cachedEmbyPlaylists = []
+        expandedEmbyArtists = []; expandedEmbyAlbums = []; expandedEmbyPlaylists = []
+        embyArtistAlbums = [:]; embyPlaylistTracks = [:]; embyAlbumSongs = [:]
+        cachedEmbyMovies = []; cachedEmbyShows = []
+        embyShowSeasons = [:]; embySeasonEpisodes = [:]
+        expandedEmbyShows = []; expandedEmbySeasons = []
+
         searchResults = nil
     }
     
@@ -4997,6 +5157,7 @@ class PlexBrowserView: NSView {
         case .plex(let serverId): currentSource = .plex(serverId: serverId)
         case .subsonic(let serverId): currentSource = .subsonic(serverId: serverId)
         case .jellyfin(let serverId): currentSource = .jellyfin(serverId: serverId)
+        case .emby(let serverId): currentSource = .emby(serverId: serverId)
         case .radio: currentSource = .radio
         }
     }
@@ -5607,17 +5768,38 @@ class PlexBrowserView: NSView {
                 
             case .jellyfinEpisode(let episode):
                 image = await self.loadJellyfinArtwork(itemId: episode.id, imageTag: episode.imageTag)
-                
+
+            case .embyTrack(let song):
+                image = await self.loadEmbyArtwork(itemId: song.albumId ?? song.id, imageTag: song.imageTag)
+            case .embyAlbum(let album):
+                image = await self.loadEmbyArtwork(itemId: album.id, imageTag: album.imageTag)
+            case .embyArtist(let artist):
+                image = await self.loadEmbyArtwork(itemId: artist.id, imageTag: artist.imageTag)
+            case .embyPlaylist(let playlist):
+                image = await self.loadEmbyArtwork(itemId: playlist.id, imageTag: playlist.imageTag)
+            case .embyMovie(let movie):
+                image = await self.loadEmbyArtwork(itemId: movie.id, imageTag: movie.imageTag)
+            case .embyShow(let show):
+                image = await self.loadEmbyArtwork(itemId: show.id, imageTag: show.imageTag)
+            case .embySeason(let season):
+                image = await self.loadEmbyArtwork(itemId: season.id, imageTag: season.imageTag)
+            case .embyEpisode(let episode):
+                image = await self.loadEmbyArtwork(itemId: episode.id, imageTag: episode.imageTag)
+
             case .plexPlaylist(let playlist):
                 if let thumb = playlist.thumb {
                     image = await self.loadPlexArtworkByThumb(thumb: thumb, cacheKey: "plex:playlist:\(playlist.id)")
                 }
                 
+            case .localMovie, .localShow, .localSeason, .localEpisode:
+                // Video artwork is loaded during playback via AVAssetImageGenerator
+                break
+
             case .plexRadioStation, .radioStation, .header:
                 // Radio stations load artwork when playing, not on selection
                 break
             }
-            
+
             guard !Task.isCancelled else { return }
             
             await MainActor.run {
@@ -5698,6 +5880,19 @@ class PlexBrowserView: NSView {
         let cacheKey = NSString(string: "jellyfin:\(itemId)")
         if let cached = Self.artworkCache.object(forKey: cacheKey) { return cached }
         guard let url = JellyfinManager.shared.imageURL(itemId: itemId, imageTag: imageTag, size: 400) else { return nil }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let image = NSImage(data: data) else { return nil }
+            Self.artworkCache.setObject(image, forKey: cacheKey)
+            return image
+        } catch { return nil }
+    }
+
+    private func loadEmbyArtwork(itemId: String, imageTag: String?) async -> NSImage? {
+        let cacheKey = NSString(string: "emby:\(itemId)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) { return cached }
+        guard let url = EmbyManager.shared.imageURL(itemId: itemId, imageTag: imageTag, size: 400) else { return nil }
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -5833,24 +6028,25 @@ class PlexBrowserView: NSView {
     }
     
     /// Check if point is in tab bar and return tab index
-    private func hitTestTabBar(at skinPoint: NSPoint) -> Int? {
+    private func hitTestTabBar(at skinPoint: NSPoint) -> PlexBrowseMode? {
         let tabY = Layout.titleBarHeight + Layout.serverBarHeight
         guard skinPoint.y >= tabY && skinPoint.y < tabY + Layout.tabBarHeight else { return nil }
-        
+
         // Calculate sort indicator width (same as in drawTabBar)
         let charWidth = SkinElements.TextFont.charWidth
         let textScale: CGFloat = 1.5
         let scaledCharWidth = charWidth * textScale
         let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
-        
+
         // Tabs area excludes sort indicator
         let tabsWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - sortWidth
         let tabWidth = tabsWidth / CGFloat(PlexBrowseMode.allCases.count)
         let relativeX = skinPoint.x - Layout.leftBorder
-        
+
         if relativeX >= 0 && relativeX < tabsWidth {
-            return Int(relativeX / tabWidth)
+            let index = Int(relativeX / tabWidth)
+            if index < PlexBrowseMode.allCases.count { return PlexBrowseMode.allCases[index] }
         }
         return nil
     }
@@ -6420,14 +6616,12 @@ class PlexBrowserView: NSView {
         }
         
         // Check tab bar
-        if let tabIndex = hitTestTabBar(at: skinPoint) {
-            if let newMode = PlexBrowseMode(rawValue: tabIndex) {
-                browseMode = newMode
-                selectedIndices.removeAll()
-                scrollOffset = 0
-                loadDataForCurrentMode()
-                window?.makeFirstResponder(self)
-            }
+        if let newMode = hitTestTabBar(at: skinPoint) {
+            browseMode = newMode
+            selectedIndices.removeAll()
+            scrollOffset = 0
+            loadDataForCurrentMode()
+            window?.makeFirstResponder(self)
             return
         }
         
@@ -6652,12 +6846,21 @@ class PlexBrowserView: NSView {
                     self.refreshData()
                 }
             }
+        case .emby:
+            // Refresh Emby data
+            Task {
+                await EmbyManager.shared.preloadLibraryContent()
+                await MainActor.run {
+                    self.refreshData()
+                }
+            }
         case .radio:
             // Already handled above
             break
         }
     }
-    
+
+
     /// Show the source selection dropdown menu
     private func showSourceMenu(at event: NSEvent) {
         let menu = NSMenu()
@@ -6752,14 +6955,18 @@ class PlexBrowserView: NSView {
         addFilesItem.target = self
         menu.addItem(addFilesItem)
         
+        let addVideoFilesItem = NSMenuItem(title: "Add Video Files...", action: #selector(addVideoFiles), keyEquivalent: "")
+        addVideoFilesItem.target = self
+        menu.addItem(addVideoFilesItem)
+
         let addFolderItem = NSMenuItem(title: "Add Folder...", action: #selector(addWatchFolder), keyEquivalent: "")
         addFolderItem.target = self
         menu.addItem(addFolderItem)
-        
+
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
     }
-    
+
     /// Show the +ADD menu for radio mode
     private func showRadioAddMenu(at event: NSEvent) {
         let menu = NSMenu()
@@ -6982,17 +7189,29 @@ class PlexBrowserView: NSView {
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.audio, .mp3, .wav, .aiff]
         panel.message = "Select audio files to add to your library"
-        
+
         if panel.runModal() == .OK {
             MediaLibrary.shared.addTracks(urls: panel.urls)
-            
+
             // Switch to local source if not already
             if case .plex = currentSource {
                 currentSource = .local
             }
         }
     }
-    
+
+    @objc private func addVideoFiles() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.movie, .video, .mpeg4Movie, .quickTimeMovie]
+        panel.message = "Select video files to add to your library"
+        if panel.runModal() == .OK {
+            MediaLibrary.shared.addVideoFiles(urls: panel.urls)
+            loadLocalData()
+        }
+    }
+
     @objc private func selectLocalSource() {
         currentSource = .local
     }
@@ -7217,12 +7436,16 @@ class PlexBrowserView: NSView {
         // Handle expand/collapse
         if item.hasChildren {
             let indent = CGFloat(item.indentLevel) * 16
-            if skinPoint.x < Layout.leftBorder + indent + 20 {
+            let inExpandZone = skinPoint.x < Layout.leftBorder + indent + 20
+            if item.type.isAlbumItem {
+                if event.clickCount == 1 { toggleExpand(item) }
+                // Fall through to selection
+            } else if inExpandZone {
                 toggleExpand(item)
                 return
             }
         }
-        
+
         // Handle selection
         if event.modifierFlags.contains(.shift) {
             if let lastSelected = selectedIndices.max() {
@@ -8242,7 +8465,32 @@ class PlexBrowserView: NSView {
             playItem.target = self
             playItem.representedObject = episode
             menu.addItem(playItem)
-            
+
+        case .embyTrack(let song):
+            let p = NSMenuItem(title: "Play", action: #selector(contextMenuPlayEmbySong(_:)), keyEquivalent: ""); p.target = self; p.representedObject = song; menu.addItem(p)
+            let pn = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayEmbySongNext(_:)), keyEquivalent: ""); pn.target = self; pn.representedObject = song; menu.addItem(pn)
+            let q = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddEmbySongToQueue(_:)), keyEquivalent: ""); q.target = self; q.representedObject = song; menu.addItem(q)
+        case .embyAlbum(let album):
+            let p = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayEmbyAlbum(_:)), keyEquivalent: ""); p.target = self; p.representedObject = album; menu.addItem(p)
+            let pn = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlayEmbyAlbumNext(_:)), keyEquivalent: ""); pn.target = self; pn.representedObject = album; menu.addItem(pn)
+            let q = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddEmbyAlbumToQueue(_:)), keyEquivalent: ""); q.target = self; q.representedObject = album; menu.addItem(q)
+        case .embyArtist(let artist):
+            let p = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayEmbyArtist(_:)), keyEquivalent: ""); p.target = self; p.representedObject = artist; menu.addItem(p)
+            let pn = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayEmbyArtistNext(_:)), keyEquivalent: ""); pn.target = self; pn.representedObject = artist; menu.addItem(pn)
+            let q = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddEmbyArtistToQueue(_:)), keyEquivalent: ""); q.target = self; q.representedObject = artist; menu.addItem(q)
+            let ex = NSMenuItem(title: expandedEmbyArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: ""); ex.target = self; ex.representedObject = item; menu.addItem(ex)
+        case .embyPlaylist(let playlist):
+            let p = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlayEmbyPlaylist(_:)), keyEquivalent: ""); p.target = self; p.representedObject = playlist; menu.addItem(p)
+            let ex = NSMenuItem(title: expandedEmbyPlaylists.contains(playlist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: ""); ex.target = self; ex.representedObject = item; menu.addItem(ex)
+        case .embyMovie(let movie):
+            let p = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlayEmbyMovie(_:)), keyEquivalent: ""); p.target = self; p.representedObject = movie; menu.addItem(p)
+        case .embyShow:
+            let ex = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: ""); ex.target = self; ex.representedObject = item; menu.addItem(ex)
+        case .embySeason:
+            let ex = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: ""); ex.target = self; ex.representedObject = item; menu.addItem(ex)
+        case .embyEpisode(let episode):
+            let p = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEmbyEpisode(_:)), keyEquivalent: ""); p.target = self; p.representedObject = episode; menu.addItem(p)
+
         case .plexPlaylist(let playlist):
             let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlayPlexPlaylist(_:)), keyEquivalent: "")
             playItem.target = self
@@ -8285,10 +8533,74 @@ class PlexBrowserView: NSView {
             viewArtItem.representedObject = item
             menu.addItem(viewArtItem)
             
+        case .localMovie(let movie):
+            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlay(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = item
+            menu.addItem(playItem)
+            let videoDevices = CastManager.shared.videoCapableDevices
+            if !videoDevices.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+                let castItem = NSMenuItem(title: "Cast to...", action: nil, keyEquivalent: "")
+                let castMenu = NSMenu()
+                for device in videoDevices {
+                    let deviceItem = NSMenuItem(title: device.name, action: #selector(contextMenuCastLocalVideo(_:)), keyEquivalent: "")
+                    deviceItem.target = self
+                    deviceItem.representedObject = (movie.url, movie.title, device) as (URL, String, CastDevice)
+                    castMenu.addItem(deviceItem)
+                }
+                castItem.submenu = castMenu
+                menu.addItem(castItem)
+            }
+            menu.addItem(NSMenuItem.separator())
+            let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuShowLocalVideoInFinder(_:)), keyEquivalent: "")
+            finderItem.target = self
+            finderItem.representedObject = movie.url as NSURL
+            menu.addItem(finderItem)
+
+        case .localShow(let show):
+            let expandItem = NSMenuItem(title: expandedLocalShows.contains(show.id) ? "Collapse" : "Expand",
+                                        action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self
+            expandItem.representedObject = item
+            menu.addItem(expandItem)
+
+        case .localSeason:
+            let expandItem = NSMenuItem(title: expandedLocalSeasons.contains(item.id) ? "Collapse" : "Expand",
+                                        action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
+            expandItem.target = self
+            expandItem.representedObject = item
+            menu.addItem(expandItem)
+
+        case .localEpisode(let episode):
+            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlay(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = item
+            menu.addItem(playItem)
+            let videoDevices = CastManager.shared.videoCapableDevices
+            if !videoDevices.isEmpty {
+                menu.addItem(NSMenuItem.separator())
+                let castItem = NSMenuItem(title: "Cast to...", action: nil, keyEquivalent: "")
+                let castMenu = NSMenu()
+                for device in videoDevices {
+                    let deviceItem = NSMenuItem(title: device.name, action: #selector(contextMenuCastLocalVideo(_:)), keyEquivalent: "")
+                    deviceItem.target = self
+                    deviceItem.representedObject = (episode.url, episode.title, device) as (URL, String, CastDevice)
+                    castMenu.addItem(deviceItem)
+                }
+                castItem.submenu = castMenu
+                menu.addItem(castItem)
+            }
+            menu.addItem(NSMenuItem.separator())
+            let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuShowLocalVideoInFinder(_:)), keyEquivalent: "")
+            finderItem.target = self
+            finderItem.representedObject = episode.url as NSURL
+            menu.addItem(finderItem)
+
         case .header:
             return
         }
-        
+
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
@@ -8597,8 +8909,36 @@ class PlexBrowserView: NSView {
         }
     }
     
+    @objc private func contextMenuShowLocalVideoInFinder(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? NSURL as URL? else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    @objc private func contextMenuCastLocalVideo(_ sender: NSMenuItem) {
+        guard let (url, title, device) = sender.representedObject as? (URL, String, CastDevice) else { return }
+        if WindowManager.shared.isVideoCastingActive {
+            let alert = NSAlert()
+            alert.messageText = "Already Casting"
+            alert.informativeText = "Stop the current cast before starting a new one."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        Task { @MainActor in
+            do {
+                try await CastManager.shared.castLocalVideo(url, title: title, to: device)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Cast Failed"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
+    }
+
     // MARK: - Subsonic Context Menu Actions
-    
+
     @objc private func contextMenuPlaySubsonicSong(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? SubsonicSong else { return }
         playSubsonicSong(song)
@@ -9153,6 +9493,28 @@ class PlexBrowserView: NSView {
                     WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
                 }
             }
+        case .embyTrack(let song):
+            if let track = EmbyManager.shared.convertToTrack(song) {
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+            }
+        case .embyAlbum(let album):
+            Task { @MainActor in
+                if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(EmbyManager.shared.convertToTracks(songs))
+                }
+            }
+        case .embyArtist(let artist):
+            Task { @MainActor in
+                if let albums = try? await EmbyManager.shared.fetchAlbums(forArtist: artist) {
+                    var allTracks: [Track] = []
+                    for album in albums {
+                        if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
+                            allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
+                        }
+                    }
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+                }
+            }
         case .movie(let movie):
             if let track = PlexManager.shared.convertToTrack(movie) {
                 WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
@@ -9182,7 +9544,7 @@ class PlexBrowserView: NSView {
         default: break
         }
     }
-    
+
     private func addSelectedToQueue() {
         guard let index = selectedIndices.first, index < displayItems.count else { return }
         let item = displayItems[index]
@@ -9280,6 +9642,34 @@ class PlexBrowserView: NSView {
                     for album in albums {
                         if let songs = try? await JellyfinManager.shared.fetchSongs(forAlbum: album) {
                             allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
+                        }
+                    }
+                    let wasEmpty = engine.playlist.isEmpty
+                    engine.appendTracks(allTracks)
+                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
+        case .embyTrack(let song):
+            if let track = EmbyManager.shared.convertToTrack(song) {
+                engine.appendTracks([track])
+                if wasEmpty { engine.playTrack(at: 0) }
+            }
+        case .embyAlbum(let album):
+            Task { @MainActor in
+                if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
+                    let tracks = EmbyManager.shared.convertToTracks(songs)
+                    let wasEmpty = engine.playlist.isEmpty
+                    engine.appendTracks(tracks)
+                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
+        case .embyArtist(let artist):
+            Task { @MainActor in
+                if let albums = try? await EmbyManager.shared.fetchAlbums(forArtist: artist) {
+                    var allTracks: [Track] = []
+                    for album in albums {
+                        if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
+                            allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
                         }
                     }
                     let wasEmpty = engine.playlist.isEmpty
@@ -9470,7 +9860,99 @@ class PlexBrowserView: NSView {
         guard let episode = sender.representedObject as? JellyfinEpisode else { return }
         playJellyfinEpisode(episode)
     }
-    
+
+    @objc private func contextMenuPlayEmbySong(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? EmbySong else { return }
+        playEmbySong(song)
+    }
+    @objc private func contextMenuPlayEmbyAlbum(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? EmbyAlbum else { return }
+        playEmbyAlbum(album)
+    }
+    @objc private func contextMenuPlayEmbyArtist(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? EmbyArtist else { return }
+        playEmbyArtist(artist)
+    }
+    @objc private func contextMenuPlayEmbyPlaylist(_ sender: NSMenuItem) {
+        guard let playlist = sender.representedObject as? EmbyPlaylist else { return }
+        playEmbyPlaylist(playlist)
+    }
+    @objc private func contextMenuPlayEmbySongNext(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? EmbySong,
+              let track = EmbyManager.shared.convertToTrack(song) else { return }
+        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+    }
+    @objc private func contextMenuAddEmbySongToQueue(_ sender: NSMenuItem) {
+        guard let song = sender.representedObject as? EmbySong,
+              let track = EmbyManager.shared.convertToTrack(song) else { return }
+        let engine = WindowManager.shared.audioEngine
+        let wasEmpty = engine.playlist.isEmpty
+        engine.appendTracks([track])
+        if wasEmpty { engine.playTrack(at: 0) }
+    }
+    @objc private func contextMenuPlayEmbyAlbumNext(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? EmbyAlbum else { return }
+        Task { @MainActor in
+            do {
+                let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                let tracks = EmbyManager.shared.convertToTracks(songs)
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
+            } catch { NSLog("Failed to play Emby album next: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuAddEmbyAlbumToQueue(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? EmbyAlbum else { return }
+        Task { @MainActor in
+            do {
+                let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                let tracks = EmbyManager.shared.convertToTracks(songs)
+                let engine = WindowManager.shared.audioEngine
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(tracks)
+                if wasEmpty { engine.playTrack(at: 0) }
+            } catch { NSLog("Failed to add Emby album to queue: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayEmbyArtistNext(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? EmbyArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
+                var allTracks: [Track] = []
+                for album in albums {
+                    let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                    allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
+                }
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+            } catch { NSLog("Failed to play Emby artist next: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuAddEmbyArtistToQueue(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? EmbyArtist else { return }
+        Task { @MainActor in
+            do {
+                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
+                var allTracks: [Track] = []
+                for album in albums {
+                    let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                    allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
+                }
+                let engine = WindowManager.shared.audioEngine
+                let wasEmpty = engine.playlist.isEmpty
+                engine.appendTracks(allTracks)
+                if wasEmpty { engine.playTrack(at: 0) }
+            } catch { NSLog("Failed to add Emby artist to queue: %@", error.localizedDescription) }
+        }
+    }
+    @objc private func contextMenuPlayEmbyMovie(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? EmbyMovie else { return }
+        playEmbyMovie(movie)
+    }
+    @objc private func contextMenuPlayEmbyEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? EmbyEpisode else { return }
+        playEmbyEpisode(episode)
+    }
+
     @objc private func contextMenuCastMovie(_ sender: NSMenuItem) {
         NSLog("PlexBrowserView: contextMenuCastMovie ENTER")
         guard let (movie, device) = sender.representedObject as? (PlexMovie, CastDevice) else {
@@ -10035,7 +10517,13 @@ class PlexBrowserView: NSView {
             loadJellyfinData(serverId: serverId)
             return
         }
-        
+
+        // Emby source - use Emby loading
+        if case .emby(let serverId) = currentSource {
+            loadEmbyData(serverId: serverId)
+            return
+        }
+
         // Plex source - async loading
         isLoading = true
         errorMessage = nil
@@ -10077,12 +10565,6 @@ class PlexBrowserView: NSView {
                         }
                     }
                     buildAlbumItems()
-                    
-                case .tracks:
-                    if cachedTracks.isEmpty {
-                        cachedTracks = try await plexManager.fetchTracks(offset: 0, limit: 500)
-                    }
-                    buildTrackItems()
                     
                 case .movies:
                     NSLog("PlexBrowserView: Loading movies...")
@@ -10265,30 +10747,13 @@ class PlexBrowserView: NSView {
     }
     
     private func buildAlbumItems() {
-        let sortedAlbums = sortPlexAlbums(cachedAlbums)
-        displayItems = sortedAlbums.map { album in
-            PlexDisplayItem(
-                id: album.id,
-                title: "\(album.parentTitle ?? "Unknown") - \(album.title)",
-                info: album.year.map { String($0) },
-                indentLevel: 0,
-                hasChildren: false,
-                type: .album(album)
-            )
-        }
-    }
-    
-    private func buildTrackItems() {
-        let sortedTracks = sortPlexTracks(cachedTracks)
-        displayItems = sortedTracks.map { track in
-            PlexDisplayItem(
-                id: track.id,
-                title: "\(track.grandparentTitle ?? "Unknown") - \(track.title)",
-                info: track.formattedDuration,
-                indentLevel: 0,
-                hasChildren: false,
-                type: .track(track)
-            )
+        displayItems.removeAll()
+        for album in sortPlexAlbums(cachedAlbums) {
+            let expanded = expandedAlbums.contains(album.id)
+            displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.parentTitle ?? "Unknown") - \(album.title)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .album(album)))
+            if expanded, let tracks = albumTracks[album.id] {
+                for t in tracks { displayItems.append(PlexDisplayItem(id: t.id, title: t.title, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .track(t))) }
+            }
         }
     }
     
@@ -10747,8 +11212,6 @@ class PlexBrowserView: NSView {
             buildLocalArtistItems()
         case .albums:
             buildLocalAlbumItems()
-        case .tracks:
-            buildLocalTrackItems()
         case .search:
             buildLocalSearchItems()
         case .plists:
@@ -11037,10 +11500,6 @@ class PlexBrowserView: NSView {
                     try Task.checkCancellation()
                     buildSubsonicAlbumItems()
                     
-                case .tracks:
-                    // For Subsonic, show all albums' tracks - not typically used
-                    buildSubsonicAlbumItems()
-                    
                 case .search:
                     // TODO: Implement Subsonic search
                     displayItems = []
@@ -11143,18 +11602,15 @@ class PlexBrowserView: NSView {
     
     /// Build display items for Subsonic albums
     private func buildSubsonicAlbumItems() {
-        displayItems = cachedSubsonicAlbums
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            .map { album in
-                PlexDisplayItem(
-                    id: album.id,
-                    title: "\(album.artist ?? "Unknown") - \(album.name)",
-                    info: album.year.map { String($0) },
-                    indentLevel: 0,
-                    hasChildren: true,
-                    type: .subsonicAlbum(album)
-                )
+        displayItems.removeAll()
+        for album in cachedSubsonicAlbums.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+            let expanded = expandedSubsonicAlbums.contains(album.id)
+            displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .subsonicAlbum(album)))
+            if expanded, let songs = subsonicAlbumSongs[album.id] {
+                let sorted = songs.sorted { ($0.track ?? 0) < ($1.track ?? 0) }
+                for s in sorted { displayItems.append(PlexDisplayItem(id: s.id, title: s.title, info: formatDuration(s.duration), indentLevel: 1, hasChildren: false, type: .subsonicTrack(s))) }
             }
+        }
     }
     
     /// Build display items for Subsonic playlists
@@ -11203,8 +11659,134 @@ class PlexBrowserView: NSView {
         return String(format: "%d:%02d", mins, secs)
     }
     
+    // MARK: - Emby Data Loading
+
+    private func loadEmbyData(serverId: String) {
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+
+        let manager = EmbyManager.shared
+
+        if manager.currentServer?.id != serverId {
+            if let server = manager.servers.first(where: { $0.id == serverId }) {
+                Task { @MainActor in
+                    do {
+                        try await manager.connect(to: server)
+                        loadEmbyDataForCurrentMode()
+                    } catch {
+                        isLoading = false
+                        stopLoadingAnimation()
+                        errorMessage = error.localizedDescription
+                        needsDisplay = true
+                    }
+                }
+            } else {
+                isLoading = false
+                stopLoadingAnimation()
+                errorMessage = "Server not found"
+                needsDisplay = true
+            }
+            return
+        }
+
+        loadEmbyDataForCurrentMode()
+    }
+
+    private func loadEmbyDataForCurrentMode() {
+        let manager = EmbyManager.shared
+
+        embyLoadTask?.cancel()
+
+        embyLoadTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
+
+            do {
+                try Task.checkCancellation()
+
+                switch browseMode {
+                case .artists:
+                    if cachedEmbyArtists.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
+                            cachedEmbyArtists = manager.cachedArtists
+                            cachedEmbyAlbums = manager.cachedAlbums
+                        } else {
+                            try Task.checkCancellation()
+                            cachedEmbyArtists = try await manager.fetchArtists()
+                            try Task.checkCancellation()
+                            cachedEmbyAlbums = try await manager.fetchAlbums()
+                        }
+                    }
+                    buildEmbyArtistItems()
+
+                case .albums:
+                    if cachedEmbyAlbums.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedAlbums.isEmpty {
+                            cachedEmbyAlbums = manager.cachedAlbums
+                        } else {
+                            try Task.checkCancellation()
+                            cachedEmbyAlbums = try await manager.fetchAlbums()
+                        }
+                    }
+                    buildEmbyAlbumItems()
+
+                case .plists:
+                    if cachedEmbyPlaylists.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty {
+                            cachedEmbyPlaylists = manager.cachedPlaylists
+                        } else {
+                            try Task.checkCancellation()
+                            cachedEmbyPlaylists = try await manager.fetchPlaylists()
+                        }
+                    }
+                    buildEmbyPlaylistItems()
+
+                case .search:
+                    displayItems = []
+
+                case .movies:
+                    if cachedEmbyMovies.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedMovies.isEmpty {
+                            cachedEmbyMovies = manager.cachedMovies
+                        } else {
+                            try Task.checkCancellation()
+                            cachedEmbyMovies = try await manager.fetchMovies()
+                        }
+                    }
+                    buildEmbyMovieItems()
+
+                case .shows:
+                    if cachedEmbyShows.isEmpty {
+                        if manager.isContentPreloaded && !manager.cachedShows.isEmpty {
+                            cachedEmbyShows = manager.cachedShows
+                        } else {
+                            try Task.checkCancellation()
+                            cachedEmbyShows = try await manager.fetchShows()
+                        }
+                    }
+                    buildEmbyShowItems()
+
+                case .radio:
+                    break
+                }
+
+                isLoading = false
+                stopLoadingAnimation()
+                needsDisplay = true
+            } catch is CancellationError {
+                // Task was cancelled, don't update UI
+            } catch {
+                isLoading = false
+                stopLoadingAnimation()
+                errorMessage = error.localizedDescription
+                needsDisplay = true
+            }
+        }
+    }
+
     // MARK: - Jellyfin Data Loading
-    
+
     private func loadJellyfinData(serverId: String) {
         isLoading = true
         errorMessage = nil
@@ -11274,10 +11856,7 @@ class PlexBrowserView: NSView {
                         }
                     }
                     buildJellyfinAlbumItems()
-                    
-                case .tracks:
-                    buildJellyfinAlbumItems()
-                    
+
                 case .plists:
                     NSLog("PlexBrowserView: Loading Jellyfin playlists...")
                     if cachedJellyfinPlaylists.isEmpty {
@@ -11392,20 +11971,17 @@ class PlexBrowserView: NSView {
     }
     
     private func buildJellyfinAlbumItems() {
-        displayItems = cachedJellyfinAlbums
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            .map { album in
-                PlexDisplayItem(
-                    id: album.id,
-                    title: "\(album.artist ?? "Unknown") - \(album.name)",
-                    info: album.year.map { String($0) },
-                    indentLevel: 0,
-                    hasChildren: true,
-                    type: .jellyfinAlbum(album)
-                )
+        displayItems.removeAll()
+        for album in cachedJellyfinAlbums.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+            let expanded = expandedJellyfinAlbums.contains(album.id)
+            displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .jellyfinAlbum(album)))
+            if expanded, let songs = jellyfinAlbumSongs[album.id] {
+                let sorted = songs.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.track ?? 0) < ($1.track ?? 0) }
+                for s in sorted { displayItems.append(PlexDisplayItem(id: s.id, title: s.title, info: formatDuration(s.duration), indentLevel: 1, hasChildren: false, type: .jellyfinTrack(s))) }
             }
+        }
     }
-    
+
     private func buildJellyfinPlaylistItems() {
         displayItems.removeAll()
         
@@ -11502,6 +12078,140 @@ class PlexBrowserView: NSView {
         }
     }
     
+    // MARK: - Build Emby Display Items
+
+    private func buildEmbyArtistItems() {
+        displayItems.removeAll()
+
+        let sortedArtists = cachedEmbyArtists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+        for artist in sortedArtists {
+            let albumCount = artist.albumCount
+            let info = albumCount > 0 ? "\(albumCount) album\(albumCount == 1 ? "" : "s")" : nil
+            let isExpanded = expandedEmbyArtists.contains(artist.id)
+
+            displayItems.append(PlexDisplayItem(
+                id: artist.id,
+                title: artist.name,
+                info: info,
+                indentLevel: 0,
+                hasChildren: true,
+                type: .embyArtist(artist)
+            ))
+
+            if isExpanded {
+                if let albums = embyArtistAlbums[artist.id] {
+                    for album in albums {
+                        let albumExpanded = expandedEmbyAlbums.contains(album.id)
+                        displayItems.append(PlexDisplayItem(
+                            id: album.id,
+                            title: album.name,
+                            info: album.year.map { String($0) },
+                            indentLevel: 1,
+                            hasChildren: true,
+                            type: .embyAlbum(album)
+                        ))
+
+                        if albumExpanded, let songs = embyAlbumSongs[album.id] {
+                            let sortedSongs = songs.sorted {
+                                let disc0 = $0.discNumber ?? 1
+                                let disc1 = $1.discNumber ?? 1
+                                if disc0 != disc1 { return disc0 < disc1 }
+                                return ($0.track ?? 0) < ($1.track ?? 0)
+                            }
+                            for song in sortedSongs {
+                                displayItems.append(PlexDisplayItem(
+                                    id: song.id,
+                                    title: song.title,
+                                    info: formatDuration(song.duration),
+                                    indentLevel: 2,
+                                    hasChildren: false,
+                                    type: .embyTrack(song)
+                                ))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func buildEmbyAlbumItems() {
+        displayItems.removeAll()
+        for album in cachedEmbyAlbums.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+            let expanded = expandedEmbyAlbums.contains(album.id)
+            displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .embyAlbum(album)))
+            if expanded, let songs = embyAlbumSongs[album.id] {
+                let sorted = songs.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.track ?? 0) < ($1.track ?? 0) }
+                for s in sorted { displayItems.append(PlexDisplayItem(id: s.id, title: s.title, info: formatDuration(s.duration), indentLevel: 1, hasChildren: false, type: .embyTrack(s))) }
+            }
+        }
+    }
+
+    private func buildEmbyPlaylistItems() {
+        displayItems.removeAll()
+
+        let sortedPlaylists = cachedEmbyPlaylists.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+
+        for playlist in sortedPlaylists {
+            let isExpanded = expandedEmbyPlaylists.contains(playlist.id)
+            let songCount = playlist.songCount
+            let info = "\(songCount) \(songCount == 1 ? "track" : "tracks")"
+
+            displayItems.append(PlexDisplayItem(
+                id: playlist.id,
+                title: playlist.name,
+                info: info,
+                indentLevel: 0,
+                hasChildren: songCount > 0,
+                type: .embyPlaylist(playlist)
+            ))
+
+            if isExpanded, let tracks = embyPlaylistTracks[playlist.id] {
+                for track in tracks {
+                    displayItems.append(PlexDisplayItem(
+                        id: "\(playlist.id)-\(track.id)",
+                        title: track.title,
+                        info: formatDuration(track.duration),
+                        indentLevel: 1,
+                        hasChildren: false,
+                        type: .embyTrack(track)
+                    ))
+                }
+            }
+        }
+    }
+
+    private func buildEmbyMovieItems() {
+        displayItems = cachedEmbyMovies.map { movie in
+            let info = [movie.year.map { String($0) }, movie.formattedDuration].compactMap { $0 }.joined(separator: " • ")
+            return PlexDisplayItem(id: movie.id, title: movie.title, info: info.isEmpty ? nil : info, indentLevel: 0, hasChildren: false, type: .embyMovie(movie))
+        }
+    }
+
+    private func buildEmbyShowItems() {
+        displayItems.removeAll()
+        for show in cachedEmbyShows {
+            let expanded = expandedEmbyShows.contains(show.id)
+            let seasonCount = show.childCount
+            let info = [show.year.map { String($0) }, seasonCount > 0 ? "\(seasonCount) seasons" : nil].compactMap { $0 }.joined(separator: " • ")
+            displayItems.append(PlexDisplayItem(id: show.id, title: show.title, info: info.isEmpty ? nil : info, indentLevel: 0, hasChildren: true, type: .embyShow(show)))
+            if expanded, let seasons = embyShowSeasons[show.id] {
+                for season in seasons {
+                    let episodeCount = season.childCount
+                    displayItems.append(PlexDisplayItem(id: season.id, title: season.title, info: episodeCount > 0 ? "\(episodeCount) episodes" : nil, indentLevel: 1, hasChildren: true, type: .embySeason(season)))
+                    if expandedEmbySeasons.contains(season.id), let episodes = embySeasonEpisodes[season.id] {
+                        for ep in episodes {
+                            displayItems.append(PlexDisplayItem(id: ep.id, title: "\(ep.episodeIdentifier) - \(ep.title)", info: ep.formattedDuration, indentLevel: 2, hasChildren: false, type: .embyEpisode(ep)))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private func buildLocalArtistItems() {
         displayItems.removeAll()
         
@@ -11563,30 +12273,14 @@ class PlexBrowserView: NSView {
     }
     
     private func buildLocalAlbumItems() {
-        let sortedAlbums = sortAlbums(cachedLocalAlbums)
-        displayItems = sortedAlbums.map { album in
-            PlexDisplayItem(
-                id: "local-album-\(album.id)",
-                title: album.displayName,
-                info: "\(album.tracks.count) tracks",
-                indentLevel: 0,
-                hasChildren: false,
-                type: .localAlbum(album)
-            )
-        }
-    }
-    
-    private func buildLocalTrackItems() {
-        let sortedTracks = sortTracks(cachedLocalTracks)
-        displayItems = sortedTracks.map { track in
-            PlexDisplayItem(
-                id: track.id.uuidString,
-                title: track.displayTitle,
-                info: track.formattedDuration,
-                indentLevel: 0,
-                hasChildren: false,
-                type: .localTrack(track)
-            )
+        displayItems.removeAll()
+        for album in sortAlbums(cachedLocalAlbums) {
+            let expanded = expandedLocalAlbums.contains(album.id)
+            displayItems.append(PlexDisplayItem(id: "local-album-\(album.id)", title: album.displayName, info: "\(album.tracks.count) tracks", indentLevel: 0, hasChildren: true, type: .localAlbum(album)))
+            if expanded {
+                let sorted = album.tracks.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
+                for t in sorted { displayItems.append(PlexDisplayItem(id: t.id.uuidString, title: t.title, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .localTrack(t))) }
+            }
         }
     }
     
@@ -11771,6 +12465,67 @@ class PlexBrowserView: NSView {
         }
     }
     
+    private func buildLocalMovieItems() {
+        displayItems = cachedLocalMovies.map { movie in
+            let info = [movie.year.map { String($0) }, movie.formattedDuration]
+                .compactMap { $0 }.joined(separator: " • ")
+            return PlexDisplayItem(
+                id: movie.id.uuidString,
+                title: movie.title,
+                info: info.isEmpty ? nil : info,
+                indentLevel: 0,
+                hasChildren: false,
+                type: .localMovie(movie)
+            )
+        }
+    }
+
+    private func buildLocalShowItems() {
+        var items: [PlexDisplayItem] = []
+        for show in cachedLocalShows {
+            let showItem = PlexDisplayItem(
+                id: show.id,
+                title: show.title,
+                info: "\(show.episodeCount) episode\(show.episodeCount == 1 ? "" : "s")",
+                indentLevel: 0,
+                hasChildren: true,
+                type: .localShow(show)
+            )
+            items.append(showItem)
+
+            if expandedLocalShows.contains(show.id) {
+                for season in show.seasons {
+                    let seasonId = "\(show.id)|\(season.number)"
+                    let seasonItem = PlexDisplayItem(
+                        id: seasonId,
+                        title: "Season \(season.number)",
+                        info: "\(season.episodes.count) episode\(season.episodes.count == 1 ? "" : "s")",
+                        indentLevel: 1,
+                        hasChildren: true,
+                        type: .localSeason(season, showTitle: show.id)
+                    )
+                    items.append(seasonItem)
+
+                    if expandedLocalSeasons.contains(seasonId) {
+                        for ep in season.episodes {
+                            let epNum = ep.episodeNumber.map { "E\($0)" } ?? ""
+                            let info = [epNum, ep.formattedDuration].filter { !$0.isEmpty }.joined(separator: " • ")
+                            items.append(PlexDisplayItem(
+                                id: ep.id.uuidString,
+                                title: ep.title,
+                                info: info.isEmpty ? nil : info,
+                                indentLevel: 2,
+                                hasChildren: false,
+                                type: .localEpisode(ep)
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+        displayItems = items
+    }
+
     /// Rebuild display items for the current browse mode
     /// This ensures expand/collapse works correctly regardless of which tab we're on
     private func rebuildCurrentModeItems() {
@@ -11808,15 +12563,17 @@ class PlexBrowserView: NSView {
                 buildLocalArtistItems()
             case .albums:
                 buildLocalAlbumItems()
-            case .tracks:
-                buildLocalTrackItems()
             case .search:
                 buildLocalSearchItems()
             case .plists:
                 // TODO: Build local playlist items
                 displayItems = []
-            case .movies, .shows:
-                displayItems = []
+            case .movies:
+                cachedLocalMovies = MediaLibrary.shared.moviesSnapshot
+                buildLocalMovieItems()
+            case .shows:
+                cachedLocalShows = MediaLibrary.shared.allShows()
+                buildLocalShowItems()
             case .radio:
                 // Handled above
                 break
@@ -11827,8 +12584,6 @@ class PlexBrowserView: NSView {
                 buildSubsonicArtistItems()
             case .albums:
                 buildSubsonicAlbumItems()
-            case .tracks:
-                buildSubsonicAlbumItems() // Show albums for tracks mode
             case .search:
                 displayItems = [] // TODO: Implement Subsonic search
             case .plists:
@@ -11845,8 +12600,6 @@ class PlexBrowserView: NSView {
                 buildJellyfinArtistItems()
             case .albums:
                 buildJellyfinAlbumItems()
-            case .tracks:
-                buildJellyfinAlbumItems() // Show albums for tracks mode
             case .search:
                 displayItems = [] // TODO: Implement Jellyfin search
             case .plists:
@@ -11858,14 +12611,29 @@ class PlexBrowserView: NSView {
             case .radio:
                 break
             }
+        } else if case .emby = currentSource {
+            switch browseMode {
+            case .artists:
+                buildEmbyArtistItems()
+            case .albums:
+                buildEmbyAlbumItems()
+            case .search:
+                displayItems = [] // TODO: Implement Emby search
+            case .plists:
+                buildEmbyPlaylistItems()
+            case .movies:
+                buildEmbyMovieItems()
+            case .shows:
+                buildEmbyShowItems()
+            case .radio:
+                break
+            }
         } else {
             switch browseMode {
             case .artists:
                 buildArtistItems()
             case .albums:
                 buildAlbumItems()
-            case .tracks:
-                buildTrackItems()
             case .movies:
                 buildMovieItems()
             case .shows:
@@ -11908,6 +12676,10 @@ class PlexBrowserView: NSView {
             return expandedLocalArtists.contains(artist.id)
         case .localAlbum(let album):
             return expandedLocalAlbums.contains(album.id)
+        case .localShow:
+            return expandedLocalShows.contains(item.id)
+        case .localSeason:
+            return expandedLocalSeasons.contains(item.id)
         case .subsonicArtist(let artist):
             return expandedSubsonicArtists.contains(artist.id)
         case .subsonicAlbum(let album):
@@ -11924,6 +12696,16 @@ class PlexBrowserView: NSView {
             return expandedJellyfinShows.contains(show.id)
         case .jellyfinSeason(let season):
             return expandedJellyfinSeasons.contains(season.id)
+        case .embyArtist(let artist):
+            return expandedEmbyArtists.contains(artist.id)
+        case .embyAlbum(let album):
+            return expandedEmbyAlbums.contains(album.id)
+        case .embyPlaylist(let playlist):
+            return expandedEmbyPlaylists.contains(playlist.id)
+        case .embyShow(let show):
+            return expandedEmbyShows.contains(show.id)
+        case .embySeason(let season):
+            return expandedEmbySeasons.contains(season.id)
         case .plexPlaylist(let playlist):
             return expandedPlexPlaylists.contains(playlist.id)
         default:
@@ -12082,12 +12864,28 @@ class PlexBrowserView: NSView {
                 expandedLocalArtists.insert(artist.id)
             }
             rebuildCurrentModeItems()
-            
+
         case .localAlbum(let album):
             if expandedLocalAlbums.contains(album.id) {
                 expandedLocalAlbums.remove(album.id)
             } else {
                 expandedLocalAlbums.insert(album.id)
+            }
+            rebuildCurrentModeItems()
+
+        case .localShow:
+            if expandedLocalShows.contains(item.id) {
+                expandedLocalShows.remove(item.id)
+            } else {
+                expandedLocalShows.insert(item.id)
+            }
+            rebuildCurrentModeItems()
+
+        case .localSeason:
+            if expandedLocalSeasons.contains(item.id) {
+                expandedLocalSeasons.remove(item.id)
+            } else {
+                expandedLocalSeasons.insert(item.id)
             }
             rebuildCurrentModeItems()
             
@@ -12316,7 +13114,151 @@ class PlexBrowserView: NSView {
                 }
             }
             rebuildCurrentModeItems()
-            
+
+        case .embyArtist(let artist):
+            if expandedEmbyArtists.contains(artist.id) {
+                expandedEmbyArtists.remove(artist.id)
+            } else {
+                expandedEmbyArtists.insert(artist.id)
+                // Prefer cached albums filtered by artistId (instant)
+                let cached = cachedEmbyAlbums.filter { $0.artistId == artist.id }
+                if !cached.isEmpty {
+                    embyArtistAlbums[artist.id] = cached
+                } else if embyArtistAlbums[artist.id] == nil {
+                    let artistId = artist.id
+                    embyExpandTask?.cancel()
+                    embyExpandTask = Task.detached { [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
+                            await MainActor.run {
+                                self.embyArtistAlbums[artistId] = albums
+                                self.rebuildCurrentModeItems()
+                                self.needsDisplay = true
+                            }
+                        } catch {
+                            NSLog("Failed to load Emby albums for artist: \(error)")
+                        }
+                    }
+                    return
+                }
+            }
+            rebuildCurrentModeItems()
+
+        case .embyAlbum(let album):
+            if expandedEmbyAlbums.contains(album.id) {
+                expandedEmbyAlbums.remove(album.id)
+            } else {
+                expandedEmbyAlbums.insert(album.id)
+                if embyAlbumSongs[album.id] == nil {
+                    let albumId = album.id
+                    embyExpandTask?.cancel()
+                    embyExpandTask = Task.detached { [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                            await MainActor.run {
+                                self.embyAlbumSongs[albumId] = songs
+                                self.rebuildCurrentModeItems()
+                                self.needsDisplay = true
+                            }
+                        } catch {
+                            NSLog("Failed to load Emby songs for album: \(error)")
+                        }
+                    }
+                    return
+                }
+            }
+            rebuildCurrentModeItems()
+
+        case .embyShow(let show):
+            if expandedEmbyShows.contains(show.id) {
+                expandedEmbyShows.remove(show.id)
+            } else {
+                expandedEmbyShows.insert(show.id)
+                if embyShowSeasons[show.id] == nil {
+                    let showId = show.id
+                    embyExpandTask?.cancel()
+                    embyExpandTask = Task.detached { [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            let seasons = try await EmbyManager.shared.fetchSeasons(forShow: show)
+                            await MainActor.run {
+                                self.embyShowSeasons[showId] = seasons
+                                self.rebuildCurrentModeItems()
+                                self.needsDisplay = true
+                            }
+                        } catch {
+                            await MainActor.run {
+                                self.expandedEmbyShows.remove(showId)
+                                self.rebuildCurrentModeItems()
+                                self.needsDisplay = true
+                            }
+                            NSLog("Failed to load Emby seasons: \(error)")
+                        }
+                    }
+                    return
+                }
+            }
+            rebuildCurrentModeItems()
+
+        case .embySeason(let season):
+            if expandedEmbySeasons.contains(season.id) {
+                expandedEmbySeasons.remove(season.id)
+            } else {
+                expandedEmbySeasons.insert(season.id)
+                if embySeasonEpisodes[season.id] == nil {
+                    let seasonId = season.id
+                    embyExpandTask?.cancel()
+                    embyExpandTask = Task.detached { [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            let episodes = try await EmbyManager.shared.fetchEpisodes(forSeason: season)
+                            await MainActor.run {
+                                self.embySeasonEpisodes[seasonId] = episodes
+                                self.rebuildCurrentModeItems()
+                                self.needsDisplay = true
+                            }
+                        } catch {
+                            await MainActor.run {
+                                self.expandedEmbySeasons.remove(seasonId)
+                                self.rebuildCurrentModeItems()
+                                self.needsDisplay = true
+                            }
+                            NSLog("Failed to load Emby episodes: \(error)")
+                        }
+                    }
+                    return
+                }
+            }
+            rebuildCurrentModeItems()
+
+        case .embyPlaylist(let playlist):
+            if expandedEmbyPlaylists.contains(playlist.id) {
+                expandedEmbyPlaylists.remove(playlist.id)
+            } else {
+                expandedEmbyPlaylists.insert(playlist.id)
+                if embyPlaylistTracks[playlist.id] == nil {
+                    let playlistId = playlist.id
+                    embyExpandTask?.cancel()
+                    embyExpandTask = Task.detached { [weak self] in
+                        guard let self = self else { return }
+                        do {
+                            let (_, tracks) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlistId) ?? (playlist, [])
+                            await MainActor.run {
+                                self.embyPlaylistTracks[playlistId] = tracks
+                                self.rebuildCurrentModeItems()
+                                self.needsDisplay = true
+                            }
+                        } catch {
+                            NSLog("Failed to load Emby tracks for playlist: \(error)")
+                        }
+                    }
+                    return
+                }
+            }
+            rebuildCurrentModeItems()
+
         case .plexPlaylist(let playlist):
             if expandedPlexPlaylists.contains(playlist.id) {
                 expandedPlexPlaylists.remove(playlist.id)
@@ -12491,12 +13433,24 @@ class PlexBrowserView: NSView {
             
         case .localTrack(let track):
             playLocalTrack(track)
-            
+
         case .localAlbum(let album):
             playLocalAlbum(album)
-            
+
         case .localArtist:
             toggleExpand(item)
+
+        case .localMovie(let movie):
+            WindowManager.shared.showVideoPlayer(url: movie.url, title: movie.title)
+
+        case .localShow:
+            toggleExpand(item)
+
+        case .localSeason:
+            toggleExpand(item)
+
+        case .localEpisode(let episode):
+            WindowManager.shared.showVideoPlayer(url: episode.url, title: episode.title)
             
         case .subsonicTrack(let song):
             playSubsonicSong(song)
@@ -12533,7 +13487,31 @@ class PlexBrowserView: NSView {
             
         case .jellyfinEpisode(let episode):
             playJellyfinEpisode(episode)
-            
+
+        case .embyTrack(let song):
+            playEmbySong(song)
+
+        case .embyAlbum(let album):
+            playEmbyAlbum(album)
+
+        case .embyArtist:
+            toggleExpand(item)
+
+        case .embyPlaylist(let playlist):
+            playEmbyPlaylist(playlist)
+
+        case .embyMovie(let movie):
+            playEmbyMovie(movie)
+
+        case .embyShow:
+            toggleExpand(item)
+
+        case .embySeason:
+            toggleExpand(item)
+
+        case .embyEpisode(let episode):
+            playEmbyEpisode(episode)
+
         case .plexPlaylist(let playlist):
             playPlexPlaylist(playlist)
             
@@ -12666,8 +13644,84 @@ class PlexBrowserView: NSView {
         }
     }
     
+    // MARK: - Emby Playback
+
+    private func playEmbySong(_ song: EmbySong) {
+        NSLog("playEmbySong: %@", song.title)
+        if let track = EmbyManager.shared.convertToTrack(song) {
+            WindowManager.shared.audioEngine.playNow([track])
+        }
+    }
+
+    private func playEmbyAlbum(_ album: EmbyAlbum) {
+        Task { @MainActor in
+            do {
+                let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                let tracks = EmbyManager.shared.convertToTracks(songs)
+                NSLog("Playing Emby album %@ with %d tracks", album.name, tracks.count)
+                WindowManager.shared.audioEngine.playNow(tracks)
+            } catch {
+                NSLog("Failed to play Emby album: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    private func playEmbyArtist(_ artist: EmbyArtist) {
+        Task { @MainActor in
+            do {
+                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
+                var allTracks: [Track] = []
+                for album in albums {
+                    let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
+                    allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
+                }
+                NSLog("Playing Emby artist %@ with %d tracks", artist.name, allTracks.count)
+                WindowManager.shared.audioEngine.playNow(allTracks)
+            } catch {
+                NSLog("Failed to play Emby artist: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    private func playEmbyPlaylist(_ playlist: EmbyPlaylist) {
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+
+        Task { @MainActor in
+            do {
+                let (_, songs) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
+                let tracks = EmbyManager.shared.convertToTracks(songs)
+                NSLog("Playing Emby playlist %@ with %d tracks", playlist.name, tracks.count)
+
+                isLoading = false
+                stopLoadingAnimation()
+                needsDisplay = true
+
+                WindowManager.shared.audioEngine.playNow(tracks)
+            } catch {
+                NSLog("Failed to play Emby playlist: %@", error.localizedDescription)
+                isLoading = false
+                stopLoadingAnimation()
+                errorMessage = "Failed to load playlist: \(error.localizedDescription)"
+                needsDisplay = true
+            }
+        }
+    }
+
+    private func playEmbyMovie(_ movie: EmbyMovie) {
+        NSLog("Playing Emby movie: %@", movie.title)
+        WindowManager.shared.playEmbyMovie(movie)
+    }
+
+    private func playEmbyEpisode(_ episode: EmbyEpisode) {
+        NSLog("Playing Emby episode: %@ - %@", episode.episodeIdentifier, episode.title)
+        WindowManager.shared.playEmbyEpisode(episode)
+    }
+
     // MARK: - Jellyfin Playback
-    
+
     private func playJellyfinSong(_ song: JellyfinSong) {
         NSLog("playJellyfinSong: %@", song.title)
         if let track = JellyfinManager.shared.convertToTrack(song) {
@@ -12962,6 +14016,10 @@ private struct PlexDisplayItem {
         case localArtist(Artist)
         case localAlbum(Album)
         case localTrack(LibraryTrack)
+        case localMovie(LocalVideo)
+        case localShow(LocalShow)
+        case localSeason(LocalSeason, showTitle: String)
+        case localEpisode(LocalEpisode)
         // Subsonic content types
         case subsonicArtist(SubsonicArtist)
         case subsonicAlbum(SubsonicAlbum)
@@ -12976,12 +14034,28 @@ private struct PlexDisplayItem {
     case jellyfinShow(JellyfinShow)
     case jellyfinSeason(JellyfinSeason)
     case jellyfinEpisode(JellyfinEpisode)
+    // Emby content types
+    case embyArtist(EmbyArtist)
+    case embyAlbum(EmbyAlbum)
+    case embyTrack(EmbySong)
+    case embyPlaylist(EmbyPlaylist)
+    case embyMovie(EmbyMovie)
+    case embyShow(EmbyShow)
+    case embySeason(EmbySeason)
+    case embyEpisode(EmbyEpisode)
     // Plex playlist type
         case plexPlaylist(PlexPlaylist)
         // Radio station type (Internet Radio - Shoutcast/Icecast)
         case radioStation(RadioStation)
         // Plex Radio station type (dynamic playlists from Plex library)
         case plexRadioStation(PlexRadioType)
+
+        var isAlbumItem: Bool {
+            switch self {
+            case .album, .localAlbum, .subsonicAlbum, .jellyfinAlbum, .embyAlbum: return true
+            default: return false
+            }
+        }
     }
 }
 

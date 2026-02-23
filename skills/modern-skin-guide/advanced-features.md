@@ -240,9 +240,12 @@ At 1.0, shared edges are clipped entirely, also removing glow effects on those e
 
 ## Double Size (2x) Mode
 
-Toggle via the **2X** button on the main window or right-click context menu → **Double Size** (modern UI only). Doubles all window dimensions and rendering scale.
+Toggle via the **2X** button on the main window or right-click context menu → **Double Size** (available in both modern and classic UI). Doubles all window dimensions and rendering scale.
 
-### How It Works
+- **Modern UI**: live toggle — windows resize immediately, views recreate their renderers
+- **Classic UI**: requires restart — a "Restart Required" dialog is shown before any UI change; the flag is toggled then `relaunchApp()` is called so `saveState()` captures the new value on termination
+
+### How It Works (Modern UI)
 
 `ModernSkinElements.scaleFactor` is a computed property: `baseScaleFactor * sizeMultiplier`.
 

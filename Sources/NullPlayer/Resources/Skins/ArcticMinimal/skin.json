@@ -1,0 +1,78 @@
+{
+    "meta": {
+        "name": "ArcticMinimal",
+        "author": "NullPlayer",
+        "version": "1.0",
+        "description": "Cold arctic skin with glacier blue accents, graphite surfaces, and restrained icy glow"
+    },
+    "titleText": {
+        "mode": "image",
+        "charSpacing": 2,
+        "charHeight": 10,
+        "alignment": "center",
+        "tintColor": "#9fd8ff"
+    },
+    "palette": {
+        "primary": "#9fd8ff",
+        "secondary": "#6fb9e6",
+        "accent": "#4c6f8a",
+        "highlight": "#dff3ff",
+        "background": "#0f141a",
+        "surface": "#161c22",
+        "text": "#e6f4ff",
+        "textDim": "#8fa3b3",
+        "positive": "#4fd1a5",
+        "negative": "#e35d6a",
+        "warning": "#f0c36d",
+        "border": "#6fb9e6"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 10,
+        "bodySize": 11,
+        "smallSize": 7,
+        "timeSize": 24
+    },
+    "background": {
+        "grid": {
+            "color": "#6fb9e6",
+            "spacing": 18,
+            "angle": 75,
+            "opacity": 0.03,
+            "perspective": true
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 5,
+        "intensity": 0.45,
+        "threshold": 0.6
+    },
+    "window": {
+        "borderWidth": 1.5,
+        "borderColor": "#6fb9e6",
+        "cornerRadius": 0,
+        "seamlessDocking": 1.0
+    },
+    "elements": {
+        "titlebar": { "color": "#161c22" },
+        "marquee_bg": { "color": "#121820" },
+        "info_cast": { "color": "#6fb9e6" },
+        "spectrum_area": { "color": "#4c6f8a" },
+        "seek_fill": { "color": "#9fd8ff" },
+        "spectrum_titlebar": { "color": "#161c22" },
+        "playlist_titlebar": { "color": "#161c22" },
+        "eq_titlebar": { "color": "#161c22" },
+        "library_titlebar": { "color": "#161c22" },
+        "projectm_titlebar": { "color": "#161c22" }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 3.0,
+            "minValue": 0.4,
+            "maxValue": 1.0
+        }
+    }
+}

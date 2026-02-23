@@ -209,20 +209,11 @@ class ModernMainWindowView: NSView {
             }
         } else {
             // Title bar area → open hand for dragging
-            if WindowManager.shared.hideTitleBars {
-                // Invisible drag zone at top of window
-                if point.y >= bounds.height - 6 {
-                    NSCursor.openHand.set()
-                } else {
-                    NSCursor.arrow.set()
-                }
+            let base = basePoint(from: point)
+            if ModernSkinElements.titleBar.defaultRect.contains(base) {
+                NSCursor.openHand.set()
             } else {
-                let base = basePoint(from: point)
-                if ModernSkinElements.titleBar.defaultRect.contains(base) {
-                    NSCursor.openHand.set()
-                } else {
-                    NSCursor.arrow.set()
-                }
+                NSCursor.arrow.set()
             }
         }
     }
@@ -250,13 +241,11 @@ class ModernMainWindowView: NSView {
         renderer.drawWindowBorder(in: windowBounds, context: context, adjacentEdges: adjacentEdges)
         context.restoreGState()
         
-        // 2. Title bar (unless hidden) -- only if dirty rect overlaps
-        if !WindowManager.shared.hideTitleBars {
-            let titleScaled = scaledRect(ModernSkinElements.titleBar.defaultRect)
-            if dirtyRect.intersects(titleScaled) {
-                renderer.drawTitleBar(in: ModernSkinElements.titleBar.defaultRect, title: "NULLPLAYER", context: context)
-                drawWindowControls(context: context)
-            }
+        // 2. Title bar -- only if dirty rect overlaps
+        let titleScaled = scaledRect(ModernSkinElements.titleBar.defaultRect)
+        if dirtyRect.intersects(titleScaled) {
+            renderer.drawTitleBar(in: ModernSkinElements.titleBar.defaultRect, title: "NULLPLAYER", context: context)
+            drawWindowControls(context: context)
         }
         
         // 3. Time display + status indicator
@@ -264,6 +253,8 @@ class ModernMainWindowView: NSView {
         let statusScaled = scaledRect(ModernSkinElements.statusPlay.defaultRect)
         let timeStatusRegion = timeScaled.union(statusScaled)
         if dirtyRect.intersects(timeStatusRegion) {
+            // Recessed panel behind time digits and status indicator
+            renderer.drawInsetPanel(in: NSRect(x: 6, y: 60, width: 84, height: 38), context: context)
             drawTimeDisplay(context: context)
             let state = effectivePlaybackState()
             renderer.drawStatusIndicator(state, in: ModernSkinElements.statusPlay.defaultRect, context: context)
@@ -285,7 +276,7 @@ class ModernMainWindowView: NSView {
         }
         
         // 6. EQ & Playlist toggle buttons (above seek bar)
-        let toggleRegion = scaledRect(NSRect(x: 93, y: 42, width: 174, height: 14))
+        let toggleRegion = scaledRect(NSRect(x: 93, y: 42, width: 176, height: 14))
         if dirtyRect.intersects(toggleRegion) {
             drawEQPlaylistButtons(context: context)
         }
@@ -305,6 +296,8 @@ class ModernMainWindowView: NSView {
         // 9. Volume slider (track + thumb padding)
         let volumeScaled = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
         if dirtyRect.intersects(volumeScaled) {
+            // Recessed panel behind the volume slider
+            renderer.drawInsetPanel(in: NSRect(x: 177, y: 6, width: 92, height: 17), context: context)
             drawVolumeSlider(context: context)
         }
     }
@@ -523,7 +516,7 @@ class ModernMainWindowView: NSView {
         let y: CGFloat = 42
         let h: CGFloat = 14
         let leftEdge: CGFloat = 93   // Match marquee left edge
-        let rightEdge: CGFloat = 267  // Match marquee right edge
+        let rightEdge: CGFloat = 269  // Match marquee right edge
         let w: CGFloat = 16
         let spacing = (rightEdge - leftEdge - 10 * w) / 9  // ~1.56
         let startX = leftEdge
@@ -835,7 +828,7 @@ class ModernMainWindowView: NSView {
             rect = scaledRect(ModernSkinElements.titleBar.defaultRect)
         case let id where id.hasPrefix("btn_"):
             // Toggle buttons (EQ, PL, SH, 2X, etc.)
-            rect = scaledRect(NSRect(x: 93, y: 42, width: 174, height: 14))
+            rect = scaledRect(NSRect(x: 93, y: 42, width: 176, height: 14))
         default:
             needsDisplay = true
             return
@@ -861,14 +854,12 @@ class ModernMainWindowView: NSView {
         // Check elements in priority order (front to back)
         var hitTargets: [(String, NSRect)] = []
         
-        // Window controls (only when title bars are visible)
-        if !WindowManager.shared.hideTitleBars {
-            hitTargets.append(contentsOf: [
-                ("btn_close", ModernSkinElements.btnClose.defaultRect),
-                ("btn_minimize", ModernSkinElements.btnMinimize.defaultRect),
-                ("btn_shade", ModernSkinElements.btnShade.defaultRect),
-            ])
-        }
+        // Window controls
+        hitTargets.append(contentsOf: [
+            ("btn_close", ModernSkinElements.btnClose.defaultRect),
+            ("btn_minimize", ModernSkinElements.btnMinimize.defaultRect),
+            ("btn_shade", ModernSkinElements.btnShade.defaultRect),
+        ])
         
         hitTargets.append(contentsOf: [
             // Transport
@@ -882,7 +873,7 @@ class ModernMainWindowView: NSView {
         ])
         do {
             let leftEdge: CGFloat = 93
-            let rightEdge: CGFloat = 267
+            let rightEdge: CGFloat = 269
             let bw: CGFloat = 16
             let bs = (rightEdge - leftEdge - 10 * bw) / 9
             let ids = ["btn_2x", "btn_ht", "btn_shuffle", "btn_repeat", "btn_cast",
@@ -924,13 +915,8 @@ class ModernMainWindowView: NSView {
                 updateMarqueeForMode()
                 return
             }
-            let isTitleBarDblClick: Bool
-            if WindowManager.shared.hideTitleBars {
-                isTitleBarDblClick = point.y >= bounds.height - 6
-            } else {
-                let base = basePoint(from: point)
-                isTitleBarDblClick = ModernSkinElements.titleBar.defaultRect.contains(base)
-            }
+            let base = basePoint(from: point)
+            let isTitleBarDblClick = ModernSkinElements.titleBar.defaultRect.contains(base)
             if isTitleBarDblClick {
                 controller?.toggleShadeMode()
                 updateMarqueeForMode()
@@ -983,14 +969,8 @@ class ModernMainWindowView: NSView {
             dragStartPoint = event.locationInWindow
             
             // Determine if dragging from title bar
-            // When title bars are hidden, all drags allow undocking (no visual title bar distinction)
-            let isTitleBar: Bool
-            if WindowManager.shared.hideTitleBars {
-                isTitleBar = true
-            } else {
-                let base = basePoint(from: point)
-                isTitleBar = ModernSkinElements.titleBar.defaultRect.contains(base)
-            }
+            let base = basePoint(from: point)
+            let isTitleBar = ModernSkinElements.titleBar.defaultRect.contains(base)
             if let window = window {
                 WindowManager.shared.windowWillStartDragging(window, fromTitleBar: isTitleBar)
             }

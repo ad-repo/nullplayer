@@ -76,12 +76,13 @@ Modern UI adds: **2X** (Double Size), **HT** (Hide Title Bars), **CA** (Cast), *
 
 ### Jellyfin Integration
 - Browse music and video libraries
-- Multiple library support
+- **Library selector** in status bar: click "Lib:" to switch library. Mode-aware — shows music library picker in music tabs (Artists/Albums/Tracks/Plists) and video library picker in Movies/Shows tabs. "All" option browses across all libraries.
 - Rating scale: 0-100% (0-10 internal)
 - Scrobbling (50% or 4 minutes for audio, 90% for video)
 
 ### Navidrome/Subsonic
 - Browse artists, albums, playlists
+- **Music folder selector** in status bar: click "Lib:" to filter by music folder. "All" shows content from all folders.
 - Token authentication
 - Scrobbling (50% or 4 minutes)
 - Casting support via proxy
@@ -95,6 +96,22 @@ Modern UI adds: **2X** (Double Size), **HT** (Hide Title Bars), **CA** (Cast), *
 
 ### Local Files
 Drag & drop or use File menu. Supports: MP3, M4A, AAC, WAV, AIFF, FLAC, OGG, ALAC
+
+### Local Library Browser
+Switch the Library Browser source to "Local" to manage a persistent media library.
+
+**+ADD menu** (three options):
+- **Add Files...** — file picker filtered to audio formats
+- **Add Video Files...** — file picker filtered to video formats (`.mp4`, `.mkv`, `.mov`, etc.); files are classified as movies or TV episodes automatically (SxxExx naming / iTunes metadata)
+- **Add Folder...** — folder picker; scans immediately for audio and video files, and saves the folder as a "remembered folder"
+
+**Watch folders (remembered folders):**
+- Folders added via "Add Folder..." are persisted in the library database
+- They are **not** monitored automatically — there is no filesystem watcher
+- Press the **⟳ refresh button** to re-scan all remembered folders and pick up newly added files
+- Duplicate detection prevents re-adding files already in the library
+
+**Tabs:** Artists, Albums, Tracks, Playlists, Movies, Shows
 
 ## Output Devices & Casting
 
@@ -164,10 +181,12 @@ Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix (double-click to cycle)
 - Modern skins use `skin.json` format
 - Bundled modern skins: NeonWave (default), Skulls
 
-### Double Size Mode (Modern UI)
-- Toggle via **2X button** or context menu
+### Double Size Mode
+- Toggle via **2X button** or context menu → **Double Size**
 - Scales all windows by 2x
 - Persists across restarts
+- **Modern UI**: toggles live instantly
+- **Classic UI**: requires a restart (dialog appears before any UI change)
 
 ### Hide Title Bars (Modern UI)
 - Toggle via context menu
@@ -228,4 +247,4 @@ For comprehensive documentation, see:
 - **Shift+Click** for multi-select in playlist/browser
 - **Cmd+J** to jump to currently playing track
 - Windows **dock automatically** when dragged near each other
-- Modern UI has **Double Size** (2X) and **Hide Title Bars** (HT) modes
+- **Double Size** (2X) is available in both modern and classic UI; classic requires restart

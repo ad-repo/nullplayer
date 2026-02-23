@@ -60,7 +60,10 @@ class ModernEQView: NSView {
     
     // MARK: - Layout Constants
     
-    private var titleBarHeight: CGFloat { WindowManager.shared.hideTitleBars ? borderWidth : ModernSkinElements.eqTitleBarHeight }
+    private var titleBarHeight: CGFloat {
+        let hide = WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode
+        return hide ? borderWidth : ModernSkinElements.eqTitleBarHeight
+    }
     private var borderWidth: CGFloat { ModernSkinElements.eqBorderWidth }
     
     /// Frequency labels for the 10 bands
@@ -349,6 +352,7 @@ class ModernEQView: NSView {
     }
     
     // MARK: - Drawing
+
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
@@ -359,8 +363,8 @@ class ModernEQView: NSView {
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
         
-        // Draw title bar (unless hidden)
-        if !WindowManager.shared.hideTitleBars {
+        // Draw title bar (unless hidden by docking)
+        if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER EQUALIZER", prefix: "eq_", context: context)
             
             // Draw close button
@@ -867,7 +871,7 @@ class ModernEQView: NSView {
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars {
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             return point.y >= bounds.height - 6  // invisible drag zone
         }
         let closeWidth: CGFloat = 28 * scale
@@ -876,7 +880,7 @@ class ModernEQView: NSView {
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars { return false }
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
         let closeRect = NSRect(x: bounds.width - 16 * scale,
                                y: bounds.height - titleBarHeight + 2 * scale,
                                width: 14 * scale, height: 12 * scale)
@@ -884,7 +888,7 @@ class ModernEQView: NSView {
     }
     
     private func hitTestShadeButton(at point: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars { return false }
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
         let shadeRect = NSRect(x: bounds.width - 28 * scale,
                                y: bounds.height - titleBarHeight + 2 * scale,
                                width: 12 * scale, height: 12 * scale)
@@ -1026,11 +1030,11 @@ class ModernEQView: NSView {
         }
         
         // Anywhere else -> window drag
-        // When title bars are hidden, all drags allow undocking (no visual title bar distinction)
+        // When title bar is hidden (docked + HT on), all drags allow undocking
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.hideTitleBars)
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.effectiveHideTitleBars(for: window))
         }
     }
     

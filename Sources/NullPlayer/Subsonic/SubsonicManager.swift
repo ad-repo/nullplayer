@@ -13,6 +13,7 @@ class SubsonicManager {
     static let serversDidChangeNotification = Notification.Name("SubsonicServersDidChange")
     static let connectionStateDidChangeNotification = Notification.Name("SubsonicConnectionStateDidChange")
     static let libraryContentDidPreloadNotification = Notification.Name("SubsonicLibraryContentDidPreload")
+    static let musicFolderDidChangeNotification = Notification.Name("SubsonicMusicFolderDidChange")
     
     // MARK: - Server State
     
@@ -41,6 +42,19 @@ class SubsonicManager {
     
     /// Client for the current server
     private(set) var serverClient: SubsonicServerClient?
+    
+    // MARK: - Music Folders
+    
+    /// Available music folders on the current server
+    private(set) var musicFolders: [SubsonicMusicFolder] = []
+    
+    /// Currently selected music folder (nil = all folders)
+    private(set) var currentMusicFolder: SubsonicMusicFolder? {
+        didSet {
+            UserDefaults.standard.set(currentMusicFolder?.id, forKey: "SubsonicCurrentMusicFolderID")
+            NotificationCenter.default.post(name: Self.musicFolderDidChangeNotification, object: self)
+        }
+    }
     
     // MARK: - Connection State
     
@@ -248,13 +262,26 @@ class SubsonicManager {
         do {
             _ = try await client.ping()
             
+            // Fetch music folders before setting state so the UI has them immediately
+            let folders = (try? await client.fetchMusicFolders()) ?? []
+            
             await MainActor.run {
                 self.currentServer = server
                 self.serverClient = client
                 self.connectionState = .connected
+                
+                self.musicFolders = folders
+                
+                // Auto-select saved folder, or leave nil (all folders)
+                if let savedId = UserDefaults.standard.string(forKey: "SubsonicCurrentMusicFolderID"),
+                   let savedFolder = folders.first(where: { $0.id == savedId }) {
+                    self.currentMusicFolder = savedFolder
+                } else {
+                    self.currentMusicFolder = nil
+                }
             }
             
-            NSLog("SubsonicManager: Connected to '%@'", server.name)
+            NSLog("SubsonicManager: Connected to '%@' (%d music folder(s))", server.name, folders.count)
             
             // Preload library content in background
             await preloadLibraryContent()
@@ -282,7 +309,10 @@ class SubsonicManager {
         serverClient = nil
         connectionState = .disconnected
         clearCachedContent()
+        musicFolders = []
+        currentMusicFolder = nil
         UserDefaults.standard.removeObject(forKey: "SubsonicCurrentServerID")
+        UserDefaults.standard.removeObject(forKey: "SubsonicCurrentMusicFolderID")
     }
     
     // MARK: - Library Preloading
@@ -305,10 +335,12 @@ class SubsonicManager {
         
         NSLog("SubsonicManager: Starting library content preload")
         
+        let folderId = await MainActor.run { currentMusicFolder?.id }
+        
         do {
-            // Fetch artists and albums in parallel
-            async let artistsTask = client.fetchAllArtists()
-            async let albumsTask = client.fetchAllAlbums()
+            // Fetch artists and albums in parallel, filtered by music folder if selected
+            async let artistsTask = client.fetchAllArtists(musicFolderId: folderId)
+            async let albumsTask = client.fetchAllAlbums(musicFolderId: folderId)
             async let playlistsTask = client.fetchPlaylists()
             
             let (artists, albums, playlists) = try await (artistsTask, albumsTask, playlistsTask)
@@ -342,6 +374,26 @@ class SubsonicManager {
         isContentPreloaded = false
     }
     
+    // MARK: - Music Folder Selection
+    
+    /// Select a music folder to filter library content
+    func selectMusicFolder(_ folder: SubsonicMusicFolder) {
+        currentMusicFolder = folder
+        clearCachedContent()
+        Task {
+            await preloadLibraryContent()
+        }
+    }
+    
+    /// Clear music folder filter (show all folders)
+    func clearMusicFolderSelection() {
+        currentMusicFolder = nil
+        clearCachedContent()
+        Task {
+            await preloadLibraryContent()
+        }
+    }
+    
     // MARK: - Content Fetching
     
     /// Fetch artists (uses cache if available)
@@ -349,9 +401,15 @@ class SubsonicManager {
         if isContentPreloaded && !cachedArtists.isEmpty {
             return cachedArtists
         }
-        
+
         guard let client = serverClient else { return [] }
-        return try await client.fetchAllArtists()
+        return try await client.fetchAllArtists(musicFolderId: currentMusicFolder?.id)
+    }
+
+    /// Fetch all artists across all music folders (no folder filter, bypasses cache)
+    func fetchArtistsUnfiltered() async throws -> [SubsonicArtist] {
+        guard let client = serverClient else { return [] }
+        return try await client.fetchAllArtists(musicFolderId: nil)
     }
     
     /// Fetch albums (uses cache if available)
@@ -361,7 +419,7 @@ class SubsonicManager {
         }
         
         guard let client = serverClient else { return [] }
-        return try await client.fetchAllAlbums()
+        return try await client.fetchAllAlbums(musicFolderId: currentMusicFolder?.id)
     }
     
     /// Fetch playlists (uses cache if available)

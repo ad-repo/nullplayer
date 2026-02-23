@@ -480,17 +480,13 @@ class ModernSkinRenderer {
         
         context.saveGState()
         
-        // Multi-pass glow for warm neon effect (EQ style)
-        if skin.config.glow.enabled {
-            // Wide outer bloom
-            context.setShadow(offset: .zero, blur: 8 * scaleFactor * glowMultiplier,
-                              color: color.withAlphaComponent(0.5).cgColor)
-        }
-        
-        context.setFillColor(color.cgColor)
-        
-        // Colon: two small rounded squares
+        // Colon: two small rounded squares (active only, no ghost)
         if char == ":" {
+            if skin.config.glow.enabled {
+                context.setShadow(offset: .zero, blur: 8 * scaleFactor * glowMultiplier,
+                                  color: color.withAlphaComponent(0.5).cgColor)
+            }
+            context.setFillColor(color.cgColor)
             let dotSize = rect.width * 0.35
             let dotX = rect.midX - dotSize / 2
             let radius = dotSize * 0.2
@@ -502,8 +498,13 @@ class ModernSkinRenderer {
             return
         }
         
-        // Minus: just the middle segment
+        // Minus: just the middle segment (active only, no ghost)
         if char == "-" {
+            if skin.config.glow.enabled {
+                context.setShadow(offset: .zero, blur: 8 * scaleFactor * glowMultiplier,
+                                  color: color.withAlphaComponent(0.5).cgColor)
+            }
+            context.setFillColor(color.cgColor)
             fillRoundedSegment(NSRect(x: rect.minX + gap,
                                        y: rect.midY - segT / 2,
                                        width: rect.width - gap * 2,
@@ -546,41 +547,20 @@ class ModernSkinRenderer {
         let botVEnd = midY - gap
         let hInset = segT * 0.5  // horizontal segments inset from vertical edges
         
-        // Segment a (top horizontal)
-        if segs[0] {
-            fillRoundedSegment(NSRect(x: x + hInset, y: topVEnd,
-                                       width: w - hInset * 2, height: segT), context: context)
+        // Draw active segments with glow
+        if skin.config.glow.enabled {
+            context.setShadow(offset: .zero, blur: 8 * scaleFactor * glowMultiplier,
+                              color: color.withAlphaComponent(0.5).cgColor)
         }
-        // Segment b (top-right vertical)
-        if segs[1] {
-            fillRoundedSegment(NSRect(x: x + w - segT, y: topVStart,
-                                       width: segT, height: topVEnd - topVStart), context: context)
-        }
-        // Segment c (bottom-right vertical)
-        if segs[2] {
-            fillRoundedSegment(NSRect(x: x + w - segT, y: botVStart,
-                                       width: segT, height: botVEnd - botVStart), context: context)
-        }
-        // Segment d (bottom horizontal)
-        if segs[3] {
-            fillRoundedSegment(NSRect(x: x + hInset, y: y,
-                                       width: w - hInset * 2, height: segT), context: context)
-        }
-        // Segment e (bottom-left vertical)
-        if segs[4] {
-            fillRoundedSegment(NSRect(x: x, y: botVStart,
-                                       width: segT, height: botVEnd - botVStart), context: context)
-        }
-        // Segment f (top-left vertical)
-        if segs[5] {
-            fillRoundedSegment(NSRect(x: x, y: topVStart,
-                                       width: segT, height: topVEnd - topVStart), context: context)
-        }
-        // Segment g (middle horizontal)
-        if segs[6] {
-            fillRoundedSegment(NSRect(x: x + hInset, y: midY - segT / 2,
-                                       width: w - hInset * 2, height: segT), context: context)
-        }
+        context.setFillColor(color.cgColor)
+        
+        if segs[0] { fillRoundedSegment(NSRect(x: x + hInset, y: topVEnd, width: w - hInset * 2, height: segT), context: context) }
+        if segs[1] { fillRoundedSegment(NSRect(x: x + w - segT, y: topVStart, width: segT, height: topVEnd - topVStart), context: context) }
+        if segs[2] { fillRoundedSegment(NSRect(x: x + w - segT, y: botVStart, width: segT, height: botVEnd - botVStart), context: context) }
+        if segs[3] { fillRoundedSegment(NSRect(x: x + hInset, y: y, width: w - hInset * 2, height: segT), context: context) }
+        if segs[4] { fillRoundedSegment(NSRect(x: x, y: botVStart, width: segT, height: botVEnd - botVStart), context: context) }
+        if segs[5] { fillRoundedSegment(NSRect(x: x, y: topVStart, width: segT, height: topVEnd - topVStart), context: context) }
+        if segs[6] { fillRoundedSegment(NSRect(x: x + hInset, y: midY - segT / 2, width: w - hInset * 2, height: segT), context: context) }
         
         context.restoreGState()
     }
@@ -682,7 +662,7 @@ class ModernSkinRenderer {
         // Thumb -- small dot at the current position, uses gradient end color if provided
         let thumbColor = gradient?.1 ?? skin.primaryColor
         let thumbDiameter: CGFloat = 5 * scaleFactor
-        let thumbX = scaledTrack.minX + fillWidth - thumbDiameter / 2
+        let thumbX = scaledTrack.minX + (scaledTrack.width - thumbDiameter) * min(max(fillFraction, 0), 1)
         let thumbY = scaledTrack.midY - thumbDiameter / 2
         let thumbRect = NSRect(x: thumbX, y: thumbY, width: thumbDiameter, height: thumbDiameter)
         
@@ -857,6 +837,9 @@ class ModernSkinRenderer {
         let scaledR = scaledRect(rect)
         let barCount = min(levels.count, 8)
         guard barCount > 0 else { return }
+        
+        // Recessed panel background behind the bars
+        drawInsetPanelScaled(scaledR, context: context)
         
         let barWidth = scaledR.width / CGFloat(barCount) - 1 * scaleFactor
         let gap = 1 * scaleFactor
@@ -1042,24 +1025,36 @@ class ModernSkinRenderer {
         attributedString.draw(at: point)
     }
     
+    // MARK: - Shared Panel Drawing
+    
+    /// Draw a subtle recessed inset panel — dark fill with faint border.
+    /// Accepts base (unscaled) coordinates. Used for the time display and spectrum area.
+    func drawInsetPanel(in rect: NSRect, context: CGContext) {
+        drawInsetPanelScaled(scaledRect(rect), context: context)
+    }
+    
+    /// Same as drawInsetPanel but accepts an already-scaled rect (used from drawFallback).
+    private func drawInsetPanelScaled(_ scaledR: NSRect, context: CGContext) {
+        context.saveGState()
+        let corner = 2 * scaleFactor
+        let path = CGPath(roundedRect: scaledR, cornerWidth: corner, cornerHeight: corner, transform: nil)
+        context.setFillColor(skin.surfaceColor.withAlphaComponent(0.8).cgColor)
+        context.addPath(path)
+        context.fillPath()
+        context.setStrokeColor(skin.borderColor.withAlphaComponent(0.3).cgColor)
+        context.setLineWidth(0.5 * scaleFactor)
+        context.addPath(path)
+        context.strokePath()
+        context.restoreGState()
+    }
+    
     // MARK: - Programmatic Fallback Drawing
     
     private func drawFallback(_ id: String, state: String, in rect: NSRect, context: CGContext) {
         // Default fallback: filled rect with surface color and optional border
         switch id {
         case "marquee_bg":
-            // Dark recessed panel
-            context.saveGState()
-            context.setFillColor(skin.surfaceColor.withAlphaComponent(0.8).cgColor)
-            let path = CGPath(roundedRect: rect, cornerWidth: 2 * scaleFactor, cornerHeight: 2 * scaleFactor, transform: nil)
-            context.addPath(path)
-            context.fillPath()
-            // Inner border
-            context.setStrokeColor(skin.borderColor.withAlphaComponent(0.3).cgColor)
-            context.setLineWidth(0.5 * scaleFactor)
-            context.addPath(path)
-            context.strokePath()
-            context.restoreGState()
+            drawInsetPanelScaled(rect, context: context)
             
         case _ where id.hasPrefix("btn_"):
             // Already handled by specific draw methods

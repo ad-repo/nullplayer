@@ -526,7 +526,8 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var peakHoldPositions: [Float] = []  // Peak hold position per column (0-1) - Enhanced mode
     nonisolated(unsafe) private var ultraPeakPositions: [Float] = []  // Peak positions for Ultra mode (separate to avoid resize conflicts)
     nonisolated(unsafe) private var cellBrightness: [[Float]] = []   // Brightness per cell [column][row]
-    private let ledRowCount = 16  // Number of LED rows in matrix (Enhanced mode)
+    private let ledRowCount = 24  // Maximum LED rows in matrix (Enhanced mode)
+    nonisolated(unsafe) private var effectiveLedRowCount = 24  // Adaptive row count — fewer rows for small views to avoid sub-pixel cells
     private let ultraLedRowCount = 64  // Ultra high resolution
     private let ultraBarCount = 512  // Maximum fidelity
     
@@ -971,7 +972,7 @@ class SpectrumAnalyzerView: NSView {
         guard let device = device else { return }
         
         let maxColumns = 512  // Enough for Ultra mode's 512 bars
-        let maxRows = 16
+        let maxRows = 32     // Enough headroom for Enhanced mode row count increases
         let maxCells = maxColumns * maxRows
         
         // Ultra mode has more rows (64) for ultra high resolution
@@ -1249,7 +1250,13 @@ class SpectrumAnalyzerView: NSView {
         guard frameSkipCounter & 1 == 0 else { return }
         
         guard isRendering, let metalLayer = metalLayer else { return }
-        
+
+        // Adaptive row count: avoid sub-pixel cells in small views (e.g. main window spectrum is 18pt tall).
+        // At 2x retina, 18pt = 36px. With 24 rows that's only 1.4px/cell → sub-pixel midline artifact.
+        // Use at least 5px per cell; cap at ledRowCount for large windows.
+        let scaledH = Float(bounds.height * metalLayer.contentsScale)
+        effectiveLedRowCount = max(4, min(ledRowCount, Int(scaledH / 5.0)))
+
         // Non-blocking check for semaphore slot - if GPU is backed up, skip frame immediately
         // This prevents frame accumulation and keeps the display responsive
         guard inFlightSemaphore.wait(timeout: .now()) == .success else {
@@ -1396,7 +1403,7 @@ class SpectrumAnalyzerView: NSView {
             }
             
             // Each cell is 6 vertices, total cells = columns * rows
-            let vertexCount = localBarCount * ledRowCount * 6
+            let vertexCount = localBarCount * effectiveLedRowCount * 6
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
             
         case .ultra:
@@ -2054,7 +2061,7 @@ class SpectrumAnalyzerView: NSView {
         
         for col in 0..<min(colCount, displaySpectrum.count) {
             let currentLevel = displaySpectrum[col]
-            let currentRow = Int(currentLevel * Float(ledRowCount))
+            let currentRow = Int(currentLevel * Float(effectiveLedRowCount))
             
             // Physics-based peak animation (gravity + bounce)
             if currentLevel > peakHoldPositions[col] {
@@ -2083,7 +2090,7 @@ class SpectrumAnalyzerView: NSView {
             // Two-phase cell fade for warm glow trail effect
             // Phase 1 (bright → warmGlowThreshold): slow fade, cells linger with warm glow
             // Phase 2 (warmGlowThreshold → 0): faster fade, cells quickly go dark
-            for row in 0..<ledRowCount {
+            for row in 0..<effectiveLedRowCount {
                 let targetBrightness: Float = row < currentRow ? 1.0 : 0.0
                 let current = cellBrightness[col][row]
                 
@@ -2251,18 +2258,20 @@ class SpectrumAnalyzerView: NSView {
         
         switch localQualityMode {
         case .enhanced:
-            // Calculate cell dimensions for Enhanced mode (16 rows)
-            let cellSpacing: Float = 2.0 * Float(scale)
-            let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
-            let cellWidth = Float(localBarWidth * scale) - 1.0
-            
+            // Derive cell width directly from viewport so bars always fill the full width.
+            // barWidth is floor()'d by the view so barCount*barWidth < scaledWidth; using
+            // scaledWidth/barCount avoids the right-side gap entirely.
+            let cellSpacing: Float = 0.0
+            let cellHeight = (scaledHeight - 2.0) / Float(effectiveLedRowCount)  // 2px top margin so peaks aren't clipped
+            let cellWidth = scaledWidth / Float(localBarCount)
+
             // Update params buffer
             if let buffer = paramsBuffer {
                 let ptr = buffer.contents().bindMemory(to: LEDParams.self, capacity: 1)
                 ptr.pointee = LEDParams(
                     viewportSize: SIMD2<Float>(scaledWidth, scaledHeight),
                     columnCount: Int32(localBarCount),
-                    rowCount: Int32(ledRowCount),
+                    rowCount: Int32(effectiveLedRowCount),
                     cellWidth: cellWidth,
                     cellHeight: cellHeight,
                     cellSpacing: cellSpacing,
@@ -2272,13 +2281,13 @@ class SpectrumAnalyzerView: NSView {
                     brightnessBoost: brightnessBoost
                 )
             }
-            
+
             // Update cell brightness buffer
             if let buffer = cellBrightnessBuffer {
-                let ptr = buffer.contents().bindMemory(to: Float.self, capacity: localBarCount * ledRowCount)
+                let ptr = buffer.contents().bindMemory(to: Float.self, capacity: localBarCount * effectiveLedRowCount)
                 for col in 0..<localBarCount {
-                    for row in 0..<ledRowCount {
-                        let index = col * ledRowCount + row
+                    for row in 0..<effectiveLedRowCount {
+                        let index = col * effectiveLedRowCount + row
                         if col < localCellBrightness.count && row < localCellBrightness[col].count {
                             ptr[index] = localCellBrightness[col][row]
                         } else {

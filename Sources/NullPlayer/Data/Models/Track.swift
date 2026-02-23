@@ -30,10 +30,16 @@ struct Track: Identifiable, Equatable {
     
     /// Jellyfin item ID for scrobbling (nil for non-Jellyfin tracks)
     let jellyfinId: String?
-    
+
     /// Jellyfin server ID to identify which server the track belongs to
     let jellyfinServerId: String?
-    
+
+    /// Emby item ID for scrobbling (nil for non-Emby tracks)
+    let embyId: String?
+
+    /// Emby server ID to identify which server the track belongs to
+    let embyServerId: String?
+
     /// Artwork identifier for casting (Plex thumb path or Subsonic coverArt ID)
     let artworkThumb: String?
     
@@ -167,6 +173,8 @@ struct Track: Identifiable, Equatable {
         self.subsonicServerId = nil
         self.jellyfinId = nil     // Local files don't have Jellyfin IDs
         self.jellyfinServerId = nil
+        self.embyId = nil         // Local files don't have Emby IDs
+        self.embyServerId = nil
         self.artworkThumb = nil   // Local files use embedded artwork
         
         // Detect media type by checking for video tracks in the asset
@@ -190,6 +198,8 @@ struct Track: Identifiable, Equatable {
          subsonicServerId: String? = nil,
          jellyfinId: String? = nil,
          jellyfinServerId: String? = nil,
+         embyId: String? = nil,
+         embyServerId: String? = nil,
          artworkThumb: String? = nil,
          mediaType: MediaType = .audio,
          genre: String? = nil,
@@ -208,6 +218,8 @@ struct Track: Identifiable, Equatable {
         self.subsonicServerId = subsonicServerId
         self.jellyfinId = jellyfinId
         self.jellyfinServerId = jellyfinServerId
+        self.embyId = embyId
+        self.embyServerId = embyServerId
         self.artworkThumb = artworkThumb
         self.mediaType = mediaType
         self.genre = genre

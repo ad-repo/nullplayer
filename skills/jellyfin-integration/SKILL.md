@@ -31,7 +31,7 @@ All requests include header: `Authorization: MediaBrowser Client="NullPlayer", D
 
 ## Library Browsing
 
-- **Music libraries**: `GET /Users/{userId}/Views` (filter where `CollectionType == "music"`)
+- **All libraries/views**: `GET /Users/{userId}/Views` — returns all views with no `CollectionType` filtering. Both `fetchMusicLibraries()` and `fetchVideoLibraries()` call this same endpoint and return the full unfiltered list so every library is visible in the selector.
 - **Artists**: `GET /Artists/AlbumArtists?parentId={libId}&userId={userId}&Recursive=true&SortBy=SortName`
 - **Albums**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=MusicAlbum&Recursive=true`
 - **Artist albums**: `GET /Users/{userId}/Items?AlbumArtistIds={artistId}&IncludeItemTypes=MusicAlbum`
@@ -41,7 +41,7 @@ All requests include header: `Authorization: MediaBrowser Client="NullPlayer", D
 
 ## Video Browsing
 
-- **Video libraries**: `GET /Users/{userId}/Views` (filter `CollectionType == "movies"` or `"tvshows"`)
+- **Video libraries**: same `GET /Users/{userId}/Views` endpoint — no filtering by `CollectionType`
 - **Movies**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=Movie&MediaTypes=Video`
   - `MediaTypes=Video` excludes non-video files
 - **Series**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=Series`
@@ -114,20 +114,36 @@ Jellyfin tracks in the playlist are identified by:
 - Tracks pause/resume state with `IsPaused` flag
 - Uses ticks (1 tick = 100ns, `seconds × 10_000_000`) for Jellyfin API
 
-## Music Library Selection
+## Library Selection
 
-Unlike Subsonic (which has a single library), Jellyfin can have multiple music libraries. The `JellyfinManager` handles this:
-- `musicLibraries: [JellyfinMusicLibrary]` — all available music libraries
-- `currentMusicLibrary: JellyfinMusicLibrary?` — currently selected library
-- Auto-selects if only one library exists
+Jellyfin can have multiple libraries of any type. `JellyfinManager` maintains separate current selections for music and video content.
+
+### Music Library Selection
+- `musicLibraries: [JellyfinMusicLibrary]` — all server views (unfiltered)
+- `currentMusicLibrary: JellyfinMusicLibrary?` — nil means "all libraries"
+- `selectMusicLibrary(_ library:)` — set specific library, clears cache, triggers preload
+- `clearMusicLibrarySelection()` — resets to nil (all libraries), clears cache, triggers preload
+- Posts `musicLibraryDidChangeNotification` from `currentMusicLibrary` `didSet`
 - Persisted via `JellyfinCurrentMusicLibraryID` UserDefaults key
+- Auto-selection on connect: saved ID → auto-select if only one library → nil (all)
 
-## Video Library Selection
+### Video Library Selection
+- `videoLibraries: [JellyfinMusicLibrary]` — all server views (unfiltered)
+- `currentMovieLibrary: JellyfinMusicLibrary?` — nil means "all libraries"
+- `currentShowLibrary: JellyfinMusicLibrary?` — nil means "all libraries"
+- `selectMovieLibrary(_ library: JellyfinMusicLibrary?)` — accepts nil to clear
+- `selectShowLibrary(_ library: JellyfinMusicLibrary?)` — accepts nil to clear
+- Posts `videoLibraryDidChangeNotification` from both `didSet` observers
+- Persisted via `JellyfinCurrentMovieLibraryID` / `JellyfinCurrentShowLibraryID`
+- Auto-selection on connect: saved ID → hint by `collectionType` ("movies"/"tvshows") → single library fallback
 
-- `videoLibraries: [JellyfinMusicLibrary]` — all movie/tvshow libraries
-- `currentMovieLibrary: JellyfinMusicLibrary?` — selected movie library
-- `currentShowLibrary: JellyfinMusicLibrary?` — selected TV show library
-- Auto-selection priority: saved UserDefaults ID → match by `collectionType` → single library fallback
+### Library Browser UI
+The status bar "Lib:" zone is **browse-mode-aware**:
+- Music tabs (Artists/Albums/Tracks/Plists) → shows `currentMusicLibrary`, click opens music library menu
+- Movies tab → shows `currentMovieLibrary`, click opens video library menu
+- Shows tab → shows `currentShowLibrary`, click opens video library menu
+- "All" is shown and selectable when no specific library is chosen
+- Notifications: browser observes `musicLibraryDidChangeNotification` and `videoLibraryDidChangeNotification` and reloads relevant cached content
 
 ## Artist Expansion Performance
 
@@ -170,7 +186,7 @@ Jellyfin credentials are stored using `KeychainHelper`:
 ## State Persistence
 
 - Current server ID: `JellyfinCurrentServerID` (UserDefaults)
-- Current music library ID: `JellyfinCurrentMusicLibraryID` (UserDefaults)
-- Current movie library ID: `JellyfinCurrentMovieLibraryID` (UserDefaults)
-- Current show library ID: `JellyfinCurrentShowLibraryID` (UserDefaults)
+- Current music library ID: `JellyfinCurrentMusicLibraryID` (UserDefaults) — nil = all libraries
+- Current movie library ID: `JellyfinCurrentMovieLibraryID` (UserDefaults) — nil = all libraries
+- Current show library ID: `JellyfinCurrentShowLibraryID` (UserDefaults) — nil = all libraries
 - Playlist tracks with `jellyfinId`/`jellyfinServerId` are saved/restored by `AppStateManager`

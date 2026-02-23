@@ -26,8 +26,12 @@ class JellyfinPlaybackReporter {
     private let minimumPlayPercentage: Double = 0.50
     private let maximumPlayTimeForScrobble: TimeInterval = 240  // 4 minutes
     
-    /// Debounce timer for position updates
-    private var updateTimer: Timer?
+    /// Throttle interval for progress reports (matches Jellyfin's timeline update interval)
+    private let progressReportInterval: TimeInterval = 10.0
+    private var lastProgressReportDate: Date?
+    
+    /// Last known playback position, updated each updatePlayback tick
+    private var lastKnownPosition: TimeInterval = 0
     
     // MARK: - Initialization
     
@@ -44,6 +48,8 @@ class JellyfinPlaybackReporter {
         trackDuration = duration
         hasReportedNowPlaying = false
         hasScrobbled = false
+        lastProgressReportDate = nil
+        lastKnownPosition = 0
         
         NSLog("JellyfinPlaybackReporter: Track started - ID: %@, duration: %.0fs", trackId, duration)
         
@@ -60,8 +66,15 @@ class JellyfinPlaybackReporter {
             return
         }
         
-        // Report progress to server
-        reportProgress(position: position)
+        // Track position for pause/stop reporting
+        lastKnownPosition = position
+        
+        // Throttle progress reports to every 10 seconds
+        if lastProgressReportDate == nil ||
+           Date().timeIntervalSince(lastProgressReportDate!) >= progressReportInterval {
+            lastProgressReportDate = Date()
+            reportProgress(position: position)
+        }
         
         // Check if we should scrobble
         checkForScrobble(position: position)
@@ -79,9 +92,8 @@ class JellyfinPlaybackReporter {
         trackDuration = 0
         hasReportedNowPlaying = false
         hasScrobbled = false
-        
-        updateTimer?.invalidate()
-        updateTimer = nil
+        lastProgressReportDate = nil
+        lastKnownPosition = 0
         
         NSLog("JellyfinPlaybackReporter: Track stopped")
     }
@@ -95,7 +107,7 @@ class JellyfinPlaybackReporter {
             Task {
                 do {
                     // Report paused state (positionTicks with isPaused=true)
-                    let ticks = Int64(trackDuration * 10_000_000)
+                    let ticks = Int64(self.lastKnownPosition * 10_000_000)
                     try await client.reportPlaybackProgress(itemId: trackId, positionTicks: ticks, isPaused: true)
                 } catch {
                     NSLog("JellyfinPlaybackReporter: Failed to report pause: %@", error.localizedDescription)
@@ -107,6 +119,8 @@ class JellyfinPlaybackReporter {
     
     /// Called when track resumes from pause
     func trackResumed() {
+        // Reset throttle so the next updatePlayback tick reports position immediately
+        lastProgressReportDate = nil
         // Report now playing again after resume
         if !hasScrobbled {
             reportNowPlaying()
@@ -164,7 +178,7 @@ class JellyfinPlaybackReporter {
             return
         }
         
-        let positionTicks = Int64(trackDuration * 10_000_000)
+        let positionTicks = Int64(lastKnownPosition * 10_000_000)
         
         Task {
             do {

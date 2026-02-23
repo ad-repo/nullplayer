@@ -1,0 +1,78 @@
+{
+    "meta": {
+        "name": "IndustrialSignal",
+        "author": "NullPlayer",
+        "version": "1.0",
+        "description": "Industrial steel skin with gunmetal surfaces and restrained signal-red accents"
+    },
+    "titleText": {
+        "mode": "image",
+        "charSpacing": 2,
+        "charHeight": 10,
+        "alignment": "center",
+        "tintColor": "#d14343"
+    },
+    "palette": {
+        "primary": "#b0b6bb",
+        "secondary": "#8a8f94",
+        "accent": "#d14343",
+        "highlight": "#e6e6e6",
+        "background": "#141516",
+        "surface": "#1d1f21",
+        "text": "#d9d9d9",
+        "textDim": "#7a7f84",
+        "positive": "#4caf50",
+        "negative": "#d14343",
+        "warning": "#e0a800",
+        "border": "#3a3d40"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 10,
+        "bodySize": 11,
+        "smallSize": 7,
+        "timeSize": 24
+    },
+    "background": {
+        "grid": {
+            "color": "#3a3d40",
+            "spacing": 18,
+            "angle": 75,
+            "opacity": 0.025,
+            "perspective": true
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 4,
+        "intensity": 0.25,
+        "threshold": 0.7
+    },
+    "window": {
+        "borderWidth": 1.5,
+        "borderColor": "#3a3d40",
+        "cornerRadius": 0,
+        "seamlessDocking": 1.0
+    },
+    "elements": {
+        "titlebar": { "color": "#1d1f21" },
+        "marquee_bg": { "color": "#181a1c" },
+        "info_cast": { "color": "#d14343" },
+        "spectrum_area": { "color": "#8a8f94" },
+        "seek_fill": { "color": "#d14343" },
+        "spectrum_titlebar": { "color": "#1d1f21" },
+        "playlist_titlebar": { "color": "#1d1f21" },
+        "eq_titlebar": { "color": "#1d1f21" },
+        "library_titlebar": { "color": "#1d1f21" },
+        "projectm_titlebar": { "color": "#1d1f21" }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 3.0,
+            "minValue": 0.4,
+            "maxValue": 1.0
+        }
+    }
+}

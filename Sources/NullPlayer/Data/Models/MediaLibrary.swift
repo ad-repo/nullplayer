@@ -166,6 +166,88 @@ struct Artist: Identifiable, Hashable {
     }
 }
 
+/// Represents a local video file (movie) in the library
+struct LocalVideo: Identifiable, Codable {
+    let id: UUID
+    let url: URL
+    var title: String
+    var year: Int?
+    var duration: TimeInterval
+    var fileSize: Int64
+    var dateAdded: Date
+
+    init(url: URL) {
+        self.id = UUID()
+        self.url = url
+        self.title = url.deletingPathExtension().lastPathComponent
+        self.duration = 0
+        self.fileSize = 0
+        self.dateAdded = Date()
+    }
+
+    var formattedDuration: String {
+        let totalSeconds = Int(duration)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, totalSeconds % 60)
+        }
+        return String(format: "%d:%02d", minutes, totalSeconds % 60)
+    }
+}
+
+/// Represents a local TV episode in the library
+struct LocalEpisode: Identifiable, Codable {
+    let id: UUID
+    let url: URL
+    var title: String
+    var showTitle: String
+    var seasonNumber: Int      // Defaults to 1 if unknown
+    var episodeNumber: Int?
+    var duration: TimeInterval
+    var fileSize: Int64
+    var dateAdded: Date
+
+    init(url: URL, showTitle: String, seasonNumber: Int = 1, episodeNumber: Int? = nil) {
+        self.id = UUID()
+        self.url = url
+        self.title = url.deletingPathExtension().lastPathComponent
+        self.showTitle = showTitle
+        self.seasonNumber = seasonNumber
+        self.episodeNumber = episodeNumber
+        self.duration = 0
+        self.fileSize = 0
+        self.dateAdded = Date()
+    }
+
+    var formattedDuration: String {
+        let totalSeconds = Int(duration)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, totalSeconds % 60)
+        }
+        return String(format: "%d:%02d", minutes, totalSeconds % 60)
+    }
+}
+
+/// A season within a local TV show (derived grouping, not persisted directly)
+struct LocalSeason {
+    let number: Int
+    var episodes: [LocalEpisode]
+}
+
+/// A TV show grouping in the local library (derived, not persisted directly)
+struct LocalShow: Identifiable {
+    let id: String  // show title used as stable key
+    let title: String
+    var seasons: [LocalSeason]
+
+    var episodeCount: Int {
+        seasons.reduce(0) { $0 + $1.episodes.count }
+    }
+}
+
 /// Sort options for library browsing
 enum LibrarySortOption: String, CaseIterable, Codable {
     case title = "Title"
@@ -209,6 +291,16 @@ class MediaLibrary {
     
     /// Watch folders for automatic scanning (guarded by dataQueue)
     private var watchFolders: [URL] = []
+
+    /// All local video files (movies) (guarded by dataQueue)
+    private var movies: [LocalVideo] = []
+
+    /// All local TV episodes (guarded by dataQueue)
+    private var episodes: [LocalEpisode] = []
+
+    /// URL-path index for quick video lookup (guarded by dataQueue)
+    private var moviesByPath: [String: LocalVideo] = [:]
+    private var episodesByPath: [String: LocalEpisode] = [:]
     
     /// Library file location
     private let libraryURL: URL
@@ -247,7 +339,32 @@ class MediaLibrary {
     var watchFoldersSnapshot: [URL] {
         dataQueue.sync { watchFolders }
     }
-    
+
+    var moviesSnapshot: [LocalVideo] {
+        dataQueue.sync { movies }
+    }
+
+    var episodesSnapshot: [LocalEpisode] {
+        dataQueue.sync { episodes }
+    }
+
+    /// Returns all TV shows derived by grouping episodes by show title → season → episode number.
+    func allShows() -> [LocalShow] {
+        let snapshot = dataQueue.sync { episodes }
+        var grouped: [String: [Int: [LocalEpisode]]] = [:]
+        for ep in snapshot {
+            grouped[ep.showTitle, default: [:]][ep.seasonNumber, default: []].append(ep)
+        }
+        return grouped.map { showTitle, seasonMap in
+            let seasons = seasonMap.sorted { $0.key < $1.key }.map { num, eps in
+                LocalSeason(number: num, episodes: eps.sorted {
+                    ($0.episodeNumber ?? 0) < ($1.episodeNumber ?? 0)
+                })
+            }
+            return LocalShow(id: showTitle, title: showTitle, seasons: seasons)
+        }.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
     // MARK: - Library Management
     
     /// Add a single track to the library (quick validates file before adding)
@@ -413,6 +530,17 @@ class MediaLibrary {
         saveLibrary()
     }
     
+    /// Adds individual video files to the library (movies or episodes based on classification).
+    func addVideoFiles(urls: [URL]) {
+        for url in urls {
+            scanVideoFile(at: url)
+        }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: nil)
+        }
+        saveLibrary()
+    }
+
     /// Scan a folder for audio files
     func scanFolder(_ url: URL, recursive: Bool = true) {
         guard !isScanning else { return }
@@ -424,31 +552,55 @@ class MediaLibrary {
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            
+
             let fileManager = FileManager.default
             let audioExtensions = Set(["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac", "wma"])
-            
-            var urls: [URL] = []
-            
+            let videoExtensions = AudioFileValidator.supportedVideoExtensions
+
+            var audioURLs: [URL] = []
+            var videoURLs: [URL] = []
+
             if recursive {
                 if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey]) {
                     while let fileURL = enumerator.nextObject() as? URL {
-                        if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
-                            urls.append(fileURL)
+                        let ext = fileURL.pathExtension.lowercased()
+                        if audioExtensions.contains(ext) {
+                            audioURLs.append(fileURL)
+                        } else if videoExtensions.contains(ext) {
+                            videoURLs.append(fileURL)
                         }
                     }
                 }
             } else {
                 if let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
-                    urls = contents.filter { audioExtensions.contains($0.pathExtension.lowercased()) }
+                    for fileURL in contents {
+                        let ext = fileURL.pathExtension.lowercased()
+                        if audioExtensions.contains(ext) {
+                            audioURLs.append(fileURL)
+                        } else if videoExtensions.contains(ext) {
+                            videoURLs.append(fileURL)
+                        }
+                    }
                 }
             }
-            
-            let total = urls.count
-            for (index, fileURL) in urls.enumerated() {
+
+            let total = audioURLs.count + videoURLs.count
+            var processed = 0
+
+            for fileURL in audioURLs {
                 self.addTrack(url: fileURL)
-                
-                let progress = Double(index + 1) / Double(total)
+                processed += 1
+                let progress = Double(processed) / Double(max(total, 1))
+                DispatchQueue.main.async {
+                    self.scanProgress = progress
+                    NotificationCenter.default.post(name: Self.scanProgressNotification, object: progress)
+                }
+            }
+
+            for fileURL in videoURLs {
+                self.scanVideoFile(at: fileURL)
+                processed += 1
+                let progress = Double(processed) / Double(max(total, 1))
                 DispatchQueue.main.async {
                     self.scanProgress = progress
                     NotificationCenter.default.post(name: Self.scanProgressNotification, object: progress)
@@ -604,8 +756,122 @@ class MediaLibrary {
         return result
     }
     
+    // MARK: - Video File Scanning
+
+    /// Scan a single video file, classify it as a movie or TV episode, and add it to the library.
+    /// Classification priority: iTunes TV atoms → SxxExx filename pattern → parent "Season N" folder → movie.
+    private func scanVideoFile(at url: URL) {
+        let path = url.path
+
+        // Skip already-indexed files
+        guard dataQueue.sync(execute: { moviesByPath[path] == nil && episodesByPath[path] == nil }) else { return }
+
+        let asset = AVAsset(url: url)
+        let duration = CMTimeGetSeconds(asset.duration)
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int64 ?? 0
+
+        var titleFromMetadata: String? = nil
+        var yearFromMetadata: Int? = nil
+        var tvShowName: String? = nil
+        var tvSeasonNumber: Int? = nil
+        var tvEpisodeNumber: Int? = nil
+
+        // Common metadata for title and year (works across MP4, MOV, MKV, etc.)
+        for format in asset.availableMetadataFormats {
+            for item in asset.metadata(forFormat: format) {
+                guard let commonKey = item.commonKey else { continue }
+                switch commonKey {
+                case .commonKeyTitle:
+                    if let val = item.stringValue, !val.isEmpty, titleFromMetadata == nil {
+                        titleFromMetadata = val
+                    }
+                case .commonKeyCreationDate:
+                    if let yearStr = item.stringValue, let year = Int(yearStr.prefix(4)), yearFromMetadata == nil {
+                        yearFromMetadata = year
+                    }
+                default: break
+                }
+            }
+        }
+
+        // iTunes TV atoms: tvsh (show), tvsn (season), tves (episode number), tven (episode title)
+        for item in asset.metadata(forFormat: .iTunesMetadata) {
+            guard let key = item.key as? String else { continue }
+            switch key {
+            case "tvsh": tvShowName = item.stringValue
+            case "tvsn": tvSeasonNumber = item.numberValue?.intValue
+            case "tves": tvEpisodeNumber = item.numberValue?.intValue
+            case "tven": if titleFromMetadata == nil { titleFromMetadata = item.stringValue }
+            default: break
+            }
+        }
+
+        let filename = url.deletingPathExtension().lastPathComponent
+
+        // Filename pattern: "Show Name S01E02", "Show.Name.S01E02", "Show_Name_s1e3", etc.
+        if tvShowName == nil {
+            let sePattern = #"^(.+?)[.\s_\-]+[Ss](\d{1,2})[Ee](\d{1,2})"#
+            if let regex = try? NSRegularExpression(pattern: sePattern),
+               let match = regex.firstMatch(in: filename, range: NSRange(filename.startIndex..., in: filename)),
+               let showRange = Range(match.range(at: 1), in: filename),
+               let sRange   = Range(match.range(at: 2), in: filename),
+               let eRange   = Range(match.range(at: 3), in: filename) {
+                tvShowName = String(filename[showRange])
+                    .replacingOccurrences(of: ".", with: " ")
+                    .trimmingCharacters(in: .whitespaces)
+                tvSeasonNumber = Int(filename[sRange])
+                tvEpisodeNumber = Int(filename[eRange])
+            }
+        }
+
+        // Folder structure: parent is "Season 1" / "S01" → grandparent is the show name
+        if tvShowName == nil {
+            let parentName = url.deletingLastPathComponent().lastPathComponent
+            let grandparentName = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+            let seasonPattern = #"^[Ss]eason\s*(\d+)$|^[Ss](\d{1,2})$"#
+            if let regex = try? NSRegularExpression(pattern: seasonPattern),
+               let match = regex.firstMatch(in: parentName, range: NSRange(parentName.startIndex..., in: parentName)),
+               !grandparentName.isEmpty {
+                if let r = Range(match.range(at: 1), in: parentName), !parentName[r].isEmpty {
+                    tvSeasonNumber = Int(parentName[r]) ?? 1
+                } else if let r = Range(match.range(at: 2), in: parentName) {
+                    tvSeasonNumber = Int(parentName[r]) ?? 1
+                } else {
+                    tvSeasonNumber = 1
+                }
+                tvShowName = grandparentName
+            }
+        }
+
+        // Classify and store
+        if let showTitle = tvShowName, !showTitle.isEmpty {
+            var episode = LocalEpisode(url: url, showTitle: showTitle,
+                                       seasonNumber: tvSeasonNumber ?? 1,
+                                       episodeNumber: tvEpisodeNumber)
+            episode.title = titleFromMetadata ?? filename
+            episode.duration = duration
+            episode.fileSize = fileSize
+            dataQueue.sync {
+                guard episodesByPath[path] == nil else { return }
+                episodes.append(episode)
+                episodesByPath[path] = episode
+            }
+        } else {
+            var movie = LocalVideo(url: url)
+            movie.title = titleFromMetadata ?? filename
+            movie.year = yearFromMetadata
+            movie.duration = duration
+            movie.fileSize = fileSize
+            dataQueue.sync {
+                guard moviesByPath[path] == nil else { return }
+                movies.append(movie)
+                moviesByPath[path] = movie
+            }
+        }
+    }
+
     // MARK: - Metadata Parsing
-    
+
     /// Parse metadata for a track using AVFoundation
     private func parseMetadata(for track: inout LibraryTrack) {
         let asset = AVAsset(url: track.url)
@@ -695,7 +961,7 @@ class MediaLibrary {
     // MARK: - Persistence
     
     private func saveLibrary() {
-        let data = dataQueue.sync { LibraryData(tracks: tracks, watchFolders: watchFolders) }
+        let data = dataQueue.sync { LibraryData(tracks: tracks, watchFolders: watchFolders, movies: movies, episodes: episodes) }
         
         do {
             let encoder = JSONEncoder()
@@ -717,12 +983,16 @@ class MediaLibrary {
             dataQueue.sync {
                 tracks = libraryData.tracks
                 watchFolders = libraryData.watchFolders
-                
-                // Rebuild index
+                movies = libraryData.movies
+                episodes = libraryData.episodes
+
+                // Rebuild indices
                 tracksByPath.removeAll()
-                for track in tracks {
-                    tracksByPath[track.url.path] = track
-                }
+                for track in tracks { tracksByPath[track.url.path] = track }
+                moviesByPath.removeAll()
+                for movie in movies { moviesByPath[movie.url.path] = movie }
+                episodesByPath.removeAll()
+                for episode in episodes { episodesByPath[episode.url.path] = episode }
             }
         } catch {
             print("Failed to load library: \(error)")
@@ -810,12 +1080,16 @@ class MediaLibrary {
         dataQueue.sync {
             tracks = libraryData.tracks
             watchFolders = libraryData.watchFolders
-            
-            // Rebuild index
+            movies = libraryData.movies
+            episodes = libraryData.episodes
+
+            // Rebuild indices
             tracksByPath.removeAll()
-            for track in tracks {
-                tracksByPath[track.url.path] = track
-            }
+            for track in tracks { tracksByPath[track.url.path] = track }
+            moviesByPath.removeAll()
+            for movie in movies { moviesByPath[movie.url.path] = movie }
+            episodesByPath.removeAll()
+            for episode in episodes { episodesByPath[episode.url.path] = episode }
         }
         
         notifyChange()
@@ -903,6 +1177,24 @@ class MediaLibrary {
 private struct LibraryData: Codable {
     let tracks: [LibraryTrack]
     let watchFolders: [URL]
+    let movies: [LocalVideo]
+    let episodes: [LocalEpisode]
+
+    init(tracks: [LibraryTrack], watchFolders: [URL], movies: [LocalVideo], episodes: [LocalEpisode]) {
+        self.tracks = tracks
+        self.watchFolders = watchFolders
+        self.movies = movies
+        self.episodes = episodes
+    }
+
+    // Backwards-compatible: existing library.json files lack movies/episodes keys
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tracks = try container.decode([LibraryTrack].self, forKey: .tracks)
+        watchFolders = try container.decode([URL].self, forKey: .watchFolders)
+        movies = try container.decodeIfPresent([LocalVideo].self, forKey: .movies) ?? []
+        episodes = try container.decodeIfPresent([LocalEpisode].self, forKey: .episodes) ?? []
+    }
 }
 
 // MARK: - Library Errors

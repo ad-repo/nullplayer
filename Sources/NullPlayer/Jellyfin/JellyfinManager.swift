@@ -13,6 +13,8 @@ class JellyfinManager {
     static let serversDidChangeNotification = Notification.Name("JellyfinServersDidChange")
     static let connectionStateDidChangeNotification = Notification.Name("JellyfinConnectionStateDidChange")
     static let libraryContentDidPreloadNotification = Notification.Name("JellyfinLibraryContentDidPreload")
+    static let musicLibraryDidChangeNotification = Notification.Name("JellyfinMusicLibraryDidChange")
+    static let videoLibraryDidChangeNotification = Notification.Name("JellyfinVideoLibraryDidChange")
     
     // MARK: - Server State
     
@@ -51,6 +53,7 @@ class JellyfinManager {
     private(set) var currentMusicLibrary: JellyfinMusicLibrary? {
         didSet {
             UserDefaults.standard.set(currentMusicLibrary?.id, forKey: "JellyfinCurrentMusicLibraryID")
+            NotificationCenter.default.post(name: Self.musicLibraryDidChangeNotification, object: self)
         }
     }
     
@@ -63,6 +66,7 @@ class JellyfinManager {
     private(set) var currentMovieLibrary: JellyfinMusicLibrary? {
         didSet {
             UserDefaults.standard.set(currentMovieLibrary?.id, forKey: "JellyfinCurrentMovieLibraryID")
+            NotificationCenter.default.post(name: Self.videoLibraryDidChangeNotification, object: self)
         }
     }
     
@@ -70,6 +74,7 @@ class JellyfinManager {
     private(set) var currentShowLibrary: JellyfinMusicLibrary? {
         didSet {
             UserDefaults.standard.set(currentShowLibrary?.id, forKey: "JellyfinCurrentShowLibraryID")
+            NotificationCenter.default.post(name: Self.videoLibraryDidChangeNotification, object: self)
         }
     }
     
@@ -380,27 +385,32 @@ class JellyfinManager {
     func selectMusicLibrary(_ library: JellyfinMusicLibrary) {
         currentMusicLibrary = library
         clearCachedContent()
-        
-        // Reload content for new library
         Task {
             await preloadLibraryContent()
         }
     }
     
-    /// Select a movie library
-    func selectMovieLibrary(_ library: JellyfinMusicLibrary) {
-        currentMovieLibrary = library
-        cachedMovies = []
-        
-        NSLog("JellyfinManager: Selected movie library '%@'", library.name)
+    /// Clear music library selection (show all libraries)
+    func clearMusicLibrarySelection() {
+        currentMusicLibrary = nil
+        clearCachedContent()
+        Task {
+            await preloadLibraryContent()
+        }
     }
     
-    /// Select a TV show library
-    func selectShowLibrary(_ library: JellyfinMusicLibrary) {
+    /// Select a movie library (pass nil to show all)
+    func selectMovieLibrary(_ library: JellyfinMusicLibrary?) {
+        currentMovieLibrary = library
+        cachedMovies = []
+        NSLog("JellyfinManager: Selected movie library '%@'", library?.name ?? "all")
+    }
+    
+    /// Select a TV show library (pass nil to show all)
+    func selectShowLibrary(_ library: JellyfinMusicLibrary?) {
         currentShowLibrary = library
         cachedShows = []
-        
-        NSLog("JellyfinManager: Selected show library '%@'", library.name)
+        NSLog("JellyfinManager: Selected show library '%@'", library?.name ?? "all")
     }
     
     // MARK: - Library Preloading
@@ -433,24 +443,20 @@ class JellyfinManager {
             
             let (artists, albums, playlists) = try await (artistsTask, albumsTask, playlistsTask)
             
-            // Also preload movies and shows if video libraries are configured
+            // Also preload movies and shows
             var movies: [JellyfinMovie] = []
             var shows: [JellyfinShow] = []
-            
-            if let movieLibId = currentMovieLibrary?.id {
-                do {
-                    movies = try await client.fetchMovies(libraryId: movieLibId)
-                } catch {
-                    NSLog("JellyfinManager: Movie preload failed: %@", error.localizedDescription)
-                }
+
+            do {
+                movies = try await client.fetchMovies(libraryId: currentMovieLibrary?.id)
+            } catch {
+                NSLog("JellyfinManager: Movie preload failed: %@", error.localizedDescription)
             }
-            
-            if let showLibId = currentShowLibrary?.id {
-                do {
-                    shows = try await client.fetchShows(libraryId: showLibId)
-                } catch {
-                    NSLog("JellyfinManager: Show preload failed: %@", error.localizedDescription)
-                }
+
+            do {
+                shows = try await client.fetchShows(libraryId: currentShowLibrary?.id)
+            } catch {
+                NSLog("JellyfinManager: Show preload failed: %@", error.localizedDescription)
             }
             
             await MainActor.run {
@@ -493,9 +499,15 @@ class JellyfinManager {
         if isContentPreloaded && !cachedArtists.isEmpty {
             return cachedArtists
         }
-        
+
         guard let client = serverClient else { return [] }
         return try await client.fetchAllArtists(libraryId: currentMusicLibrary?.id)
+    }
+
+    /// Fetch all artists across all music libraries (no library filter, bypasses cache)
+    func fetchArtistsUnfiltered() async throws -> [JellyfinArtist] {
+        guard let client = serverClient else { return [] }
+        return try await client.fetchAllArtists(libraryId: nil)
     }
     
     /// Fetch albums (uses cache if available)
@@ -540,20 +552,20 @@ class JellyfinManager {
             return cachedMovies
         }
         
-        guard let client = serverClient, let libraryId = currentMovieLibrary?.id else { return [] }
-        let movies = try await client.fetchMovies(libraryId: libraryId)
+        guard let client = serverClient else { return [] }
+        let movies = try await client.fetchMovies(libraryId: currentMovieLibrary?.id)
         await MainActor.run { self.cachedMovies = movies }
         return movies
     }
-    
+
     /// Fetch TV shows (uses cache if available)
     func fetchShows() async throws -> [JellyfinShow] {
         if isContentPreloaded && !cachedShows.isEmpty {
             return cachedShows
         }
-        
-        guard let client = serverClient, let libraryId = currentShowLibrary?.id else { return [] }
-        let shows = try await client.fetchShows(libraryId: libraryId)
+
+        guard let client = serverClient else { return [] }
+        let shows = try await client.fetchShows(libraryId: currentShowLibrary?.id)
         await MainActor.run { self.cachedShows = shows }
         return shows
     }

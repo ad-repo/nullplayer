@@ -1,6 +1,6 @@
 # NullPlayer
 
-### A free, open-source music player for macOS, featuring modern Plex and Sonos integration.
+### A free, open-source music player for macOS, featuring modern Plex, Jellyfin, Emby, and Sonos integration.
 
 ###  This is a clean room project is not affiliated with classic skin, classic skin LLC, Radionomy Group or anyone else.
 
@@ -9,9 +9,11 @@
 
 ## Features
 
-- A Brand new library browser window for Plex, Jellyfin, Navidrome/Subsonic, and local library files
+- A Brand new library browser window for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local library files
 - Plex Media Server integration with PIN-based authentication
 - Plex music and video streaming and playlist support
+- Jellyfin media server integration with music and video streaming, scrobbling, and library browsing
+- Emby media server integration with music and video streaming, scrobbling, and library browsing
 - ProjectM visualizations with 100 included. Users can download more
 - Just like PlexAmp, sonic similarity supportuing radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
@@ -35,7 +37,7 @@
 - IMDB integration
 - Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
 - AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
-- Cast local files, Navidrome/Subsonic streams, and internet radio to Sonos
+- Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
 - macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
 - [Discord Music Presence](https://github.com/ungive/discord-music-presence) support
 

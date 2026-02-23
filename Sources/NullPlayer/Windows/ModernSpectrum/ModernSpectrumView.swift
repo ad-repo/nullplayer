@@ -41,7 +41,10 @@ class ModernSpectrumView: NSView {
     
     // MARK: - Layout Constants
     
-    private var titleBarHeight: CGFloat { WindowManager.shared.hideTitleBars ? borderWidth : ModernSkinElements.spectrumTitleBarHeight }
+    private var titleBarHeight: CGFloat {
+        let hide = WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode
+        return hide ? borderWidth : ModernSkinElements.spectrumTitleBarHeight
+    }
     private var borderWidth: CGFloat { ModernSkinElements.spectrumBorderWidth }
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
@@ -156,8 +159,8 @@ class ModernSpectrumView: NSView {
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
         
-        // Draw title bar (unless hidden)
-        if !WindowManager.shared.hideTitleBars {
+        // Draw title bar (unless hidden by docking)
+        if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             // Draw title bar with spectrum prefix (handles per-window titlebar image + title text)
             renderer.drawTitleBar(in: ModernSkinElements.spectrumTitleBar.defaultRect, title: "NULLPLAYER ANALYZER", prefix: "spectrum_", context: context)
             
@@ -198,6 +201,7 @@ class ModernSpectrumView: NSView {
         if newEdges != adjacentEdges {
             adjacentEdges = newEdges
             needsDisplay = true
+            needsLayout = true
         }
     }
     
@@ -255,7 +259,7 @@ class ModernSpectrumView: NSView {
     }
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars {
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             return point.y >= bounds.height - 6  // invisible drag zone
         }
         // Title bar minus close button area
@@ -265,7 +269,7 @@ class ModernSpectrumView: NSView {
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
-        if WindowManager.shared.hideTitleBars { return false }
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
         let closeRect = renderer.scaledRect(ModernSkinElements.spectrumBtnClose.defaultRect)
         // Expand hit area slightly for usability
         let hitRect = closeRect.insetBy(dx: -4, dy: -4)
@@ -273,6 +277,17 @@ class ModernSpectrumView: NSView {
     }
     
     // MARK: - Mouse Events
+    
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // When title bars are hidden, intercept clicks that would go to the spectrum
+        // analyzer subview so ModernSpectrumView.mouseDown handles them for drag-to-undock
+        if WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode {
+            if super.hitTest(point) == spectrumAnalyzerView {
+                return self
+            }
+        }
+        return super.hitTest(point)
+    }
     
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
@@ -316,11 +331,11 @@ class ModernSpectrumView: NSView {
         }
         
         // Content area - window dragging
-        // When title bars are hidden, all drags allow undocking (no visual title bar distinction)
+        // When title bar is hidden (docked + HT on), all drags allow undocking
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.hideTitleBars)
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.effectiveHideTitleBars(for: window))
         }
     }
     

@@ -50,8 +50,7 @@ class ModernMarqueeLayer: CALayer {
     
     private var scrollOffset: CGFloat = 0
     private var textWidth: CGFloat = 0
-    private var displayLink: CVDisplayLink?
-    private var lastTimestamp: TimeInterval = 0
+    private var scrollTimer: Timer?
     private var isPaused = false
     private var needsTextRender = true
     private var cachedTextImage: CGImage?
@@ -211,49 +210,24 @@ class ModernMarqueeLayer: CALayer {
     private func startScrolling() {
         guard !isScrolling else { return }
         isScrolling = true
-        lastTimestamp = CACurrentMediaTime()
-        
-        var link: CVDisplayLink?
-        CVDisplayLinkCreateWithActiveCGDisplays(&link)
-        guard let displayLink = link else { return }
-        
-        self.displayLink = displayLink
-        
-        let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, context -> CVReturn in
-            guard let context = context else { return kCVReturnError }
-            let layer = Unmanaged<ModernMarqueeLayer>.fromOpaque(context).takeUnretainedValue()
-            
-            let now = CACurrentMediaTime()
-            let dt = now - layer.lastTimestamp
-            layer.lastTimestamp = now
-            
-            guard !layer.isPaused else { return kCVReturnSuccess }
-            
-            // Update scroll offset on the display link thread, apply position on main
-            let newOffset = layer.scrollOffset + layer.scrollSpeed * CGFloat(dt)
-            let loopWidth = layer.textWidth + layer.scrollGap
-            layer.scrollOffset = loopWidth > 0 ? newOffset.truncatingRemainder(dividingBy: loopWidth) : 0
-            
-            DispatchQueue.main.async {
-                layer.applyScrollPosition()
-            }
-            
-            return kCVReturnSuccess
+
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self = self, !self.isPaused else { return }
+            let loopWidth = self.textWidth + self.scrollGap
+            guard loopWidth > 0 else { return }
+            self.scrollOffset += self.scrollSpeed / 30.0
+            self.scrollOffset = self.scrollOffset.truncatingRemainder(dividingBy: loopWidth)
+            self.applyScrollPosition()
         }
-        
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        CVDisplayLinkSetOutputCallback(displayLink, callback, selfPtr)
-        CVDisplayLinkStart(displayLink)
+        RunLoop.main.add(timer, forMode: .common)
+        scrollTimer = timer
     }
     
     private func stopScrolling() {
         guard isScrolling else { return }
         isScrolling = false
-        
-        if let link = displayLink {
-            CVDisplayLinkStop(link)
-            displayLink = nil
-        }
+        scrollTimer?.invalidate()
+        scrollTimer = nil
     }
     
     /// Apply the current scroll offset to the content layer position (main thread only)
@@ -300,7 +274,6 @@ class ModernMarqueeLayer: CALayer {
     
     func resumeScrolling() {
         isPaused = false
-        lastTimestamp = CACurrentMediaTime()
     }
     
     // MARK: - Configuration from Skin
