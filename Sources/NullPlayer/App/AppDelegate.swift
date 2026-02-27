@@ -217,7 +217,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
         
-        appMenu.addItem(withTitle: "About NullPlayer", action: #selector(showAbout), keyEquivalent: "")
+        appMenu.addItem(withTitle: BundleHelper.appVersion, action: #selector(showAbout), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Quit NullPlayer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         

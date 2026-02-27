@@ -634,12 +634,11 @@ class ModernMainWindowView: NSView {
             let start = min(logStart, binCount - 1)
             let end = min(logEnd, binCount)
             
-            // Take the peak value in this range
-            var peak: Float = 0
-            for j in start..<end {
-                peak = max(peak, levels[j])
-            }
-            downsampled[i] = peak
+            // Average across the range — peak-of-peak causes bars to pin high
+            // since adaptive normalization already compresses toward 1.0.
+            var sum: Float = 0
+            for j in start..<end { sum += levels[j] }
+            downsampled[i] = end > start ? sum / Float(end - start) : 0
         }
         
         self.spectrumLevels = downsampled
@@ -757,8 +756,7 @@ class ModernMainWindowView: NSView {
             if metalOverlay == nil {
                 let specRect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
                 let overlay = SpectrumAnalyzerView(frame: specRect)
-                overlay.bassAttenuation = 0.5
-                
+
                 // Set spectrum colors from modern skin
                 if let skin = ModernSkinEngine.shared.currentSkin {
                     overlay.spectrumColors = skin.spectrumColors()

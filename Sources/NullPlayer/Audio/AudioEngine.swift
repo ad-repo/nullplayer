@@ -775,31 +775,22 @@ class AudioEngine {
                 let startBin = max(1, Int(startFreq / binWidth))
                 let endBin = max(startBin, min(fftSize / 2 - 1, Int(endFreq / binWidth)))
                 
-                var totalPower: Float = 0
-                let binCount = Float(endBin - startBin + 1)
+                // Peak aggregation per band (BeSpec approach).
+                // RMS averaging dilutes treble: a high-freq band with 80 mostly-empty bins
+                // averages to near zero. Peak picks the loudest component, giving treble
+                // equal standing with bass.
+                var peakMag: Float = 0
                 for bin in startBin...endBin {
-                    totalPower += fftMagnitudes[bin] * fftMagnitudes[bin]  // Sum power (mag²)
+                    if fftMagnitudes[bin] > peakMag { peakMag = fftMagnitudes[bin] }
                 }
-                
-                // Use RMS (average power) to preserve detail in high frequencies
-                // Then scale by sqrt(bandwidth) to compensate for pink noise
-                let avgPower = totalPower / max(binCount, 1)
-                let rmsMag = sqrt(avgPower)
-                
-                // Apply bandwidth compensation for pink noise flatness
-                // Higher bands cover more Hz, so boost proportionally
-                let bandwidthHz = endFreq - startFreq
-                let refBandwidth: Float = 20.0   // Lower ref = more high freq boost
-                let bandwidthScale = pow(bandwidthHz / refBandwidth, 0.6)  // Steeper curve for highs
-                let scaledMag = rmsMag * bandwidthScale
-                
-                // Convert to dB (20 * log10 for magnitude)
-                let dB = 20.0 * log10(max(scaledMag, 1e-10))
-                
-                // Map dB range to 0-1 display range
-                // For 2048-pt FFT, ~12dB higher than 512-pt (matches streaming)
-                let ceiling: Float = 40.0    // dB level that maps to 100%
-                let floor: Float = 0.0       // dB level that maps to 0%
+
+                // BeSpec calibration: HANN_CORRECTION (2.0) × energy-preserving FFT scale (1/√N).
+                let bespecFactor: Float = 2.0 / sqrt(Float(fftSize))
+                let calibratedMag = peakMag * bespecFactor
+                let dB = 20.0 * log10(max(calibratedMag, 1e-10))
+
+                let ceiling: Float = 0.0
+                let floor: Float = -20.0
                 let normalized = (dB - floor) / (ceiling - floor)
                 
                 fftNewSpectrum[band] = max(0, min(1.0, normalized))
