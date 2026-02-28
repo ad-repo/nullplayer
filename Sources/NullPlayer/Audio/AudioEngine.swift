@@ -1563,6 +1563,23 @@ class AudioEngine {
     
     /// Start cast playback time tracking (called when cast playback begins)
     /// Note: Prefer initializeCastPlayback() for new casts to avoid flash on slow networks
+    /// Scan forward from currentIndex for the first Sonos-compatible track.
+    /// Updates currentIndex and returns the track, or nil if none found.
+    func advanceToFirstSonosCompatibleTrack() -> Track? {
+        var idx = currentIndex + 1
+        while idx < playlist.count {
+            let candidate = playlist[idx]
+            if CastManager.isSonosCompatible(candidate) {
+                currentIndex = idx
+                return candidate
+            }
+            NSLog("AudioEngine: Skipping '%@' (%@) — not supported by Sonos",
+                  candidate.title, candidate.url.pathExtension)
+            idx += 1
+        }
+        return nil
+    }
+
     func startCastPlayback(from position: TimeInterval = 0) {
         castStartPosition = position
         castPlaybackStartDate = Date()
@@ -1859,8 +1876,17 @@ class AudioEngine {
         
         if repeatEnabled {
             if shuffleEnabled {
-                // Repeat mode + shuffle: pick a random track
-                currentIndex = Int.random(in: 0..<playlist.count)
+                // Repeat mode + shuffle: pick a random track, skipping Sonos-incompatible formats
+                let isSonos = CastManager.shared.isCastingToSonos
+                var attempts = 0
+                repeat {
+                    currentIndex = Int.random(in: 0..<playlist.count)
+                    attempts += 1
+                } while isSonos && !CastManager.isSonosCompatible(playlist[currentIndex]) && attempts < playlist.count
+                if isSonos && !CastManager.isSonosCompatible(playlist[currentIndex]) {
+                    Task { await CastManager.shared.stopCasting() }
+                    return
+                }
             }
             // Cast the same or new random track
             let track = playlist[currentIndex]
@@ -1891,8 +1917,17 @@ class AudioEngine {
             }
         } else if !playlist.isEmpty {
             if shuffleEnabled {
-                // Shuffle without repeat: pick random track and continue
-                currentIndex = Int.random(in: 0..<playlist.count)
+                // Shuffle without repeat: pick random track, skipping Sonos-incompatible formats
+                let isSonos = CastManager.shared.isCastingToSonos
+                var attempts = 0
+                repeat {
+                    currentIndex = Int.random(in: 0..<playlist.count)
+                    attempts += 1
+                } while isSonos && !CastManager.isSonosCompatible(playlist[currentIndex]) && attempts < playlist.count
+                if isSonos && !CastManager.isSonosCompatible(playlist[currentIndex]) {
+                    Task { await CastManager.shared.stopCasting() }
+                    return
+                }
                 let track = playlist[currentIndex]
                 let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
                 
@@ -1920,8 +1955,20 @@ class AudioEngine {
                     }
                 }
             } else if currentIndex < playlist.count - 1 {
-                // More tracks to play - advance
+                // More tracks to play — advance, skipping Sonos-incompatible formats
                 currentIndex += 1
+                let isSonos = CastManager.shared.isCastingToSonos
+                while currentIndex < playlist.count {
+                    if !isSonos || CastManager.isSonosCompatible(playlist[currentIndex]) { break }
+                    NSLog("AudioEngine: Skipping '%@' (%@) — not supported by Sonos",
+                          playlist[currentIndex].title,
+                          playlist[currentIndex].url.pathExtension)
+                    currentIndex += 1
+                }
+                guard currentIndex < playlist.count else {
+                    Task { await CastManager.shared.stopCasting() }
+                    return
+                }
                 let track = playlist[currentIndex]
                 let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
                 

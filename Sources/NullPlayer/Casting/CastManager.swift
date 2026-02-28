@@ -209,6 +209,11 @@ class CastManager {
     var isCasting: Bool {
         activeSession?.state == .casting
     }
+
+    /// True when the current cast target is a Sonos device.
+    var isCastingToSonos: Bool {
+        activeSession?.device.type == .sonos
+    }
     
     /// Whether video casting is currently active (as opposed to audio casting)
     private(set) var isVideoCasting: Bool = false
@@ -624,11 +629,22 @@ class CastManager {
         guard let track = engine.currentTrack else {
             throw CastError.noTrackPlaying
         }
-        
+
         // Capture current position before casting
-        let currentPosition = await MainActor.run { engine.currentTime }
-        
-        try await castTrack(track, to: device, startPosition: currentPosition)
+        var currentPosition = await MainActor.run { engine.currentTime }
+
+        // For Sonos, advance past the current track if it is an unsupported format
+        var trackToUse = track
+        if device.type == .sonos && !Self.isSonosCompatible(track) {
+            let compatible = await MainActor.run { engine.advanceToFirstSonosCompatibleTrack() }
+            guard let compatible else {
+                throw CastError.playbackFailed("No tracks in the playlist are supported by Sonos")
+            }
+            trackToUse = compatible
+            currentPosition = 0
+        }
+
+        try await castTrack(trackToUse, to: device, startPosition: currentPosition)
     }
     
     /// Cast a specific track to a device
@@ -1683,7 +1699,50 @@ class CastManager {
     static func detectAudioContentType(for url: URL) -> String {
         detectAudioContentType(forExtension: url.pathExtension)
     }
-    
+
+    // MARK: - Sonos Format Compatibility
+
+    /// Extensions that Sonos hardware cannot decode regardless of resolution.
+    /// ALAC: decoder absent on S1 devices. AIFF: not in Sonos's UPnP supported-format list.
+    static let sonosUnsupportedExtensions: Set<String> = ["alac", "aiff", "aif"]
+
+    /// Sonos S1 fails above 48 kHz PCM; use as conservative safe limit.
+    static let sonosMaxSampleRate: Int = 48000
+
+    /// Lossless extensions that require the sample-rate check.
+    private static let sonosLosslessExtensions: Set<String> = ["flac", "wav"]
+
+    /// Map common audio MIME types to their extension equivalent for format checking.
+    private static func contentTypeToExtension(_ ct: String) -> String {
+        switch ct {
+        case "audio/x-aiff", "audio/aiff":  return "aiff"
+        case "audio/alac", "audio/x-alac":  return "alac"
+        case "audio/flac", "audio/x-flac":  return "flac"
+        case "audio/wav", "audio/x-wav":    return "wav"
+        default:                            return ""
+        }
+    }
+
+    /// Returns false if the track format is known to be unsupported by Sonos.
+    /// Falls back to `track.contentType` when the URL has no file extension
+    /// (e.g. server-streamed tracks from Subsonic/Jellyfin/Emby/Plex).
+    static func isSonosCompatible(_ track: Track) -> Bool {
+        var ext = track.url.pathExtension.lowercased()
+
+        if ext.isEmpty, let ct = track.contentType {
+            ext = contentTypeToExtension(ct)
+        }
+
+        if sonosUnsupportedExtensions.contains(ext) { return false }
+
+        if sonosLosslessExtensions.contains(ext),
+           let sr = track.sampleRate, sr > sonosMaxSampleRate {
+            return false
+        }
+
+        return true
+    }
+
     // MARK: - Sonos Radio URI (Fix 10)
     
     /// Convert HTTP radio stream URL to Sonos x-rincon-mp3radio:// scheme for better buffering
