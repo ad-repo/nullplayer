@@ -295,6 +295,7 @@ Sources/NullPlayer/
 - **Sonos radio URI scheme**: For MP3 internet radio streams cast to Sonos, use `x-rincon-mp3radio://` instead of `http://`. This uses Sonos's internal radio buffering which is more resilient. Only applies to MP3 radio, not AAC/OGG.
 - **Sonos UPnP Error 701**: "Transition Not Available" - the most common Sonos SOAP error. Returned as HTTP 500 with `<errorCode>701</errorCode>` in body. Don't blindly retry -- poll `getTransportState()` until transport is ready (STOPPED/PLAYING/PAUSED_PLAYBACK), then retry.
 - **Sonos Connection Security (firmware 85.0+)**: Users can disable UPnP or enable Authentication in Sonos app settings. Both break SOAP control. On 401/403, show a specific error message about Connection Security settings.
+- **Sonos format compatibility — two-tier check**: `CastManager.isSonosCompatible` has strict (default) and permissive (`allowUnknownSampleRate: true`) modes. _Scan/positioning_ functions (`advanceToFirstSonosCompatibleTrack`, all skip loops in `castTrackDidFinish`) MUST use `allowUnknownSampleRate: true` — they run before the sample rate is fetched. _Cast_ functions (`castCurrentTrack`, `castNewTrack`) fetch the SR first, then call strict mode as the final verdict. Using strict mode in a scan loop silently skips all nil-SR FLAC tracks (e.g. Plex) without ever attempting a fetch.
 
 ## Testing
 

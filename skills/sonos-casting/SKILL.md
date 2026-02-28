@@ -327,6 +327,35 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 
 **Supported formats:** MP3 (320kbps), AAC/HE-AAC (320kbps), FLAC (24-bit, 48kHz), ALAC (24-bit), WAV/AIFF (16-bit), OGG Vorbis (320kbps).
 
+## Format Compatibility and Auto-Skip
+
+### Two-Tier Compatibility Check
+
+`CastManager.isSonosCompatible(_:allowUnknownSampleRate:)` has two modes:
+
+- **Strict (default)**: nil sample rate on a lossless track → incompatible. Used as the _final_ verdict in `castCurrentTrack` and `castNewTrack` after the sample rate has been fetched.
+- **Permissive** (`allowUnknownSampleRate: true`): nil sample rate → pass through. Used in _scan/positioning_ functions that advance the playlist index before casting begins.
+
+Always-incompatible formats (regardless of sample rate): `alac`, `aiff`, `aif`.
+Lossless formats requiring the sample-rate check: `flac`, `wav` — rejected above 48 kHz.
+
+### Scan Functions Use Permissive Mode
+
+Functions that advance the playlist index use `allowUnknownSampleRate: true` because they run _before_ the sample rate is known:
+
+| Function | Location | Mode |
+|----------|----------|------|
+| `advanceToFirstSonosCompatibleTrack()` | `AudioEngine.swift` | permissive |
+| Skip loops in `castTrackDidFinish()` — sequential, shuffle, shuffle+repeat | `AudioEngine.swift` | permissive |
+
+### Cast Functions Are the Final Authority
+
+`castCurrentTrack` and `castNewTrack` in `CastManager.swift` fetch the actual sample rate from the Plex API for lossless tracks with nil SR, then call strict `isSonosCompatible`. If a track fails there, `advanceToFirstSonosCompatibleTrack()` is called again to find the next candidate.
+
+### Design Principle
+
+> Scan functions only reject _definitively_ incompatible formats (ALAC, AIFF, known >48 kHz SR). They pass nil-SR lossless tracks through so the cast function can fetch and decide. Never use strict mode in a skip/scan loop — it causes Plex FLAC tracks with nil SR to be skipped silently without a fetch attempt.
+
 ## Troubleshooting
 
 ### Devices Not Found

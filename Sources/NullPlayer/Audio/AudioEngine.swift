@@ -1569,8 +1569,9 @@ class AudioEngine {
         var idx = currentIndex + 1
         while idx < playlist.count {
             let candidate = playlist[idx]
-            if CastManager.isSonosCompatible(candidate) {
+            if CastManager.isSonosCompatible(candidate, allowUnknownSampleRate: true) {
                 currentIndex = idx
+                currentTrack = candidate
                 return candidate
             }
             NSLog("AudioEngine: Skipping '%@' (%@) — not supported by Sonos",
@@ -1882,8 +1883,8 @@ class AudioEngine {
                 repeat {
                     currentIndex = Int.random(in: 0..<playlist.count)
                     attempts += 1
-                } while isSonos && !CastManager.isSonosCompatible(playlist[currentIndex]) && attempts < playlist.count
-                if isSonos && !CastManager.isSonosCompatible(playlist[currentIndex]) {
+                } while isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) && attempts < playlist.count
+                if isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) {
                     Task { await CastManager.shared.stopCasting() }
                     return
                 }
@@ -1923,8 +1924,8 @@ class AudioEngine {
                 repeat {
                     currentIndex = Int.random(in: 0..<playlist.count)
                     attempts += 1
-                } while isSonos && !CastManager.isSonosCompatible(playlist[currentIndex]) && attempts < playlist.count
-                if isSonos && !CastManager.isSonosCompatible(playlist[currentIndex]) {
+                } while isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) && attempts < playlist.count
+                if isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) {
                     Task { await CastManager.shared.stopCasting() }
                     return
                 }
@@ -1959,7 +1960,7 @@ class AudioEngine {
                 currentIndex += 1
                 let isSonos = CastManager.shared.isCastingToSonos
                 while currentIndex < playlist.count {
-                    if !isSonos || CastManager.isSonosCompatible(playlist[currentIndex]) { break }
+                    if !isSonos || CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) { break }
                     NSLog("AudioEngine: Skipping '%@' (%@) — not supported by Sonos",
                           playlist[currentIndex].title,
                           playlist[currentIndex].url.pathExtension)
