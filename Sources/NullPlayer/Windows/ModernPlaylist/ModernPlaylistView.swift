@@ -81,7 +81,7 @@ class ModernPlaylistView: NSView {
     private var itemHeight: CGFloat { ModernSkinElements.playlistItemHeight }
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
-    private var adjacentEdges: AdjacentEdges = []
+    private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     
     // MARK: - Initialization
     
@@ -144,6 +144,7 @@ class ModernPlaylistView: NSView {
         
         // Load artwork for currently playing track (if any)
         loadArtwork(for: WindowManager.shared.audioEngine.currentTrack)
+        updateCornerMask()
     }
     
     deinit {
@@ -277,11 +278,11 @@ class ModernPlaylistView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
         // Draw window background
-        renderer.drawWindowBackground(in: bounds, context: context)
-        
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
+
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
-        
+
         // Draw title bar (unless hidden by docking)
         if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER PLAYLIST", prefix: "playlist_", context: context)
@@ -307,19 +308,21 @@ class ModernPlaylistView: NSView {
     
     /// Base rects in the 275x116 coordinate space (renderer scales them)
     private var titleBarBaseRect: NSRect {
-        // Title bar is at top; we calculate in unscaled base space
         let scale = ModernSkinElements.scaleFactor
-        return NSRect(x: 0, y: (bounds.height / scale) - 14, width: 275, height: 14)
+        let tbh = ModernSkinElements.titleBarBaseHeight
+        return NSRect(x: 0, y: (bounds.height / scale) - tbh, width: 275, height: tbh)
     }
-    
+
     private var closeBtnBaseRect: NSRect {
         let scale = ModernSkinElements.scaleFactor
-        return NSRect(x: 261, y: (bounds.height / scale) - 12, width: 10, height: 10)
+        let tbh = ModernSkinElements.titleBarBaseHeight
+        return NSRect(x: 261, y: (bounds.height / scale) - tbh / 2 - 5, width: 10, height: 10)
     }
-    
+
     private var shadeBtnBaseRect: NSRect {
         let scale = ModernSkinElements.scaleFactor
-        return NSRect(x: 249, y: (bounds.height / scale) - 12, width: 10, height: 10)
+        let tbh = ModernSkinElements.titleBarBaseHeight
+        return NSRect(x: 249, y: (bounds.height / scale) - tbh / 2 - 5, width: 10, height: 10)
     }
     
     // MARK: - Track List Drawing
@@ -706,6 +709,7 @@ class ModernPlaylistView: NSView {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
         updateCurrentTrackTextWidth()
+        updateCornerMask()
         needsDisplay = true
     }
     
@@ -1549,8 +1553,29 @@ class ModernPlaylistView: NSView {
     }
     
     // MARK: - Layout
-    
+
     override func layout() {
         super.layout()
+        updateCornerMask()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        layer?.isOpaque = false
+        updateCornerMask()
+    }
+
+    private func updateCornerMask() {
+        guard let layer = self.layer else { return }
+        let cornerRadius = (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()).config.window.cornerRadius ?? 0
+        layer.cornerRadius = cornerRadius
+        layer.masksToBounds = cornerRadius > 0
+        guard cornerRadius > 0 else { return }
+        var masked: CACornerMask = []
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
+        layer.maskedCorners = masked
     }
 }

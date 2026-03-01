@@ -27,7 +27,11 @@
         "negative": "#b85c4a",
         "warning": "#8aa6b3",
 
-        "border": "#239b63"
+        "border": "#239b63",
+        "timeColor": "#aeb6bf",
+        "marqueeColor": "#aeb6bf",
+        "dataColor": "#aeb6bf",
+        "eqMid": "#aeb6bf"
     },
     "fonts": {
         "primaryName": "DepartureMono-Regular",
@@ -55,7 +59,7 @@
     "window": {
         "borderWidth": 1.5,
         "borderColor": "#1f7a56",
-        "cornerRadius": 0,
+        "cornerRadius": 6,
         "seamlessDocking": 1.0
     },
     "elements": {

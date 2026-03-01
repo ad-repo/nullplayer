@@ -332,12 +332,6 @@ class MainWindowView: NSView {
         let overlay = SpectrumAnalyzerView(frame: .zero)
         // Mark as embedded BEFORE setting qualityMode to prevent UserDefaults contamination
         overlay.isEmbedded = true
-        // Use main window's own normalization key to avoid cross-contamination with spectrum window
-        overlay.normalizationUserDefaultsKey = "mainWindowNormalizationMode"
-        // Boost brightness for the small main window visualization area
-        overlay.brightnessBoost = 2.0
-        // Attenuate bass to prevent it overwhelming the tiny display
-        overlay.bassAttenuation = 0.5
         // Set quality mode based on current main window vis mode
         if let qualityMode = mainVisMode.spectrumQualityMode {
             overlay.qualityMode = qualityMode

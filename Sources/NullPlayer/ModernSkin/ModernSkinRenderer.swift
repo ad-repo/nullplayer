@@ -32,6 +32,33 @@ class ModernSkinRenderer {
         self.scaleFactor = scaleFactor
         self.glowMultiplier = skin.elementGlowMultiplier
     }
+
+    // MARK: - Corner Path Helper
+
+    /// Returns a CGPath for `rect` rounded only at corners NOT touching `adjacentEdges`.
+    private func makeRoundedCornerPath(rect: CGRect, radius: CGFloat, adjacentEdges: AdjacentEdges) -> CGPath {
+        guard radius > 0 else { return CGPath(rect: rect, transform: nil) }
+        // Each corner is square if EITHER neighboring edge is adjacent
+        let rBL: CGFloat = (adjacentEdges.contains(.bottom) || adjacentEdges.contains(.left))  ? 0 : radius
+        let rBR: CGFloat = (adjacentEdges.contains(.bottom) || adjacentEdges.contains(.right)) ? 0 : radius
+        let rTR: CGFloat = (adjacentEdges.contains(.top)    || adjacentEdges.contains(.right)) ? 0 : radius
+        let rTL: CGFloat = (adjacentEdges.contains(.top)    || adjacentEdges.contains(.left))  ? 0 : radius
+        if rBL == 0 && rBR == 0 && rTR == 0 && rTL == 0 { return CGPath(rect: rect, transform: nil) }
+
+        let path = CGMutablePath()
+        // Clockwise from bottom-left (Core Graphics Y-up coordinate space)
+        path.move(to: CGPoint(x: rect.minX + rBL, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - rBR, y: rect.minY))
+        if rBR > 0 { path.addArc(center: CGPoint(x: rect.maxX - rBR, y: rect.minY + rBR), radius: rBR, startAngle: -.pi/2, endAngle: 0, clockwise: false) }
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - rTR))
+        if rTR > 0 { path.addArc(center: CGPoint(x: rect.maxX - rTR, y: rect.maxY - rTR), radius: rTR, startAngle: 0, endAngle: .pi/2, clockwise: false) }
+        path.addLine(to: CGPoint(x: rect.minX + rTL, y: rect.maxY))
+        if rTL > 0 { path.addArc(center: CGPoint(x: rect.minX + rTL, y: rect.maxY - rTL), radius: rTL, startAngle: .pi/2, endAngle: .pi, clockwise: false) }
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + rBL))
+        if rBL > 0 { path.addArc(center: CGPoint(x: rect.minX + rBL, y: rect.minY + rBL), radius: rBL, startAngle: .pi, endAngle: 3 * .pi / 2, clockwise: false) }
+        path.closeSubpath()
+        return path
+    }
     
     // MARK: - Generic Element Drawing
     
@@ -54,14 +81,21 @@ class ModernSkinRenderer {
     // MARK: - Specialized Drawing
     
     /// Draw the window background
-    func drawWindowBackground(in bounds: NSRect, context: CGContext) {
-        // Fill with background color
+    func drawWindowBackground(in bounds: NSRect, context: CGContext, adjacentEdges: AdjacentEdges = []) {
+        let cornerRadius = skin.config.window.cornerRadius ?? 0
+        if cornerRadius > 0 {
+            let clipPath = makeRoundedCornerPath(rect: bounds, radius: cornerRadius, adjacentEdges: adjacentEdges)
+            context.saveGState()
+            context.addPath(clipPath)
+            context.clip()
+        }
         context.setFillColor(skin.backgroundColor.cgColor)
         context.fill(bounds)
-        
-        // Draw background image if available
         if let bgImage = skin.backgroundImage {
             drawImage(bgImage, in: bounds, context: context)
+        }
+        if cornerRadius > 0 {
+            context.restoreGState()
         }
     }
     
@@ -87,7 +121,7 @@ class ModernSkinRenderer {
         }
         
         let borderRect = bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
-        let path = CGPath(roundedRect: borderRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, adjacentEdges: adjacentEdges)
         
         // Glow effect (draw border slightly larger and blurred behind)
         if skin.config.glow.enabled {
@@ -1036,7 +1070,7 @@ class ModernSkinRenderer {
     /// Same as drawInsetPanel but accepts an already-scaled rect (used from drawFallback).
     private func drawInsetPanelScaled(_ scaledR: NSRect, context: CGContext) {
         context.saveGState()
-        let corner = 2 * scaleFactor
+        let corner = 4 * scaleFactor
         let path = CGPath(roundedRect: scaledR, cornerWidth: corner, cornerHeight: corner, transform: nil)
         context.setFillColor(skin.surfaceColor.withAlphaComponent(0.8).cgColor)
         context.addPath(path)

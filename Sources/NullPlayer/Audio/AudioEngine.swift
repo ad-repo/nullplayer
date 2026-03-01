@@ -775,31 +775,22 @@ class AudioEngine {
                 let startBin = max(1, Int(startFreq / binWidth))
                 let endBin = max(startBin, min(fftSize / 2 - 1, Int(endFreq / binWidth)))
                 
-                var totalPower: Float = 0
-                let binCount = Float(endBin - startBin + 1)
+                // Peak aggregation per band (BeSpec approach).
+                // RMS averaging dilutes treble: a high-freq band with 80 mostly-empty bins
+                // averages to near zero. Peak picks the loudest component, giving treble
+                // equal standing with bass.
+                var peakMag: Float = 0
                 for bin in startBin...endBin {
-                    totalPower += fftMagnitudes[bin] * fftMagnitudes[bin]  // Sum power (mag²)
+                    if fftMagnitudes[bin] > peakMag { peakMag = fftMagnitudes[bin] }
                 }
-                
-                // Use RMS (average power) to preserve detail in high frequencies
-                // Then scale by sqrt(bandwidth) to compensate for pink noise
-                let avgPower = totalPower / max(binCount, 1)
-                let rmsMag = sqrt(avgPower)
-                
-                // Apply bandwidth compensation for pink noise flatness
-                // Higher bands cover more Hz, so boost proportionally
-                let bandwidthHz = endFreq - startFreq
-                let refBandwidth: Float = 20.0   // Lower ref = more high freq boost
-                let bandwidthScale = pow(bandwidthHz / refBandwidth, 0.6)  // Steeper curve for highs
-                let scaledMag = rmsMag * bandwidthScale
-                
-                // Convert to dB (20 * log10 for magnitude)
-                let dB = 20.0 * log10(max(scaledMag, 1e-10))
-                
-                // Map dB range to 0-1 display range
-                // For 2048-pt FFT, ~12dB higher than 512-pt (matches streaming)
-                let ceiling: Float = 40.0    // dB level that maps to 100%
-                let floor: Float = 0.0       // dB level that maps to 0%
+
+                // BeSpec calibration: HANN_CORRECTION (2.0) × energy-preserving FFT scale (1/√N).
+                let bespecFactor: Float = 2.0 / sqrt(Float(fftSize))
+                let calibratedMag = peakMag * bespecFactor
+                let dB = 20.0 * log10(max(calibratedMag, 1e-10))
+
+                let ceiling: Float = 0.0
+                let floor: Float = -20.0
                 let normalized = (dB - floor) / (ceiling - floor)
                 
                 fftNewSpectrum[band] = max(0, min(1.0, normalized))
@@ -1572,6 +1563,24 @@ class AudioEngine {
     
     /// Start cast playback time tracking (called when cast playback begins)
     /// Note: Prefer initializeCastPlayback() for new casts to avoid flash on slow networks
+    /// Scan forward from currentIndex for the first Sonos-compatible track.
+    /// Updates currentIndex and returns the track, or nil if none found.
+    func advanceToFirstSonosCompatibleTrack() -> Track? {
+        var idx = currentIndex + 1
+        while idx < playlist.count {
+            let candidate = playlist[idx]
+            if CastManager.isSonosCompatible(candidate, allowUnknownSampleRate: true) {
+                currentIndex = idx
+                currentTrack = candidate
+                return candidate
+            }
+            NSLog("AudioEngine: Skipping '%@' (%@) — not supported by Sonos",
+                  candidate.title, candidate.url.pathExtension)
+            idx += 1
+        }
+        return nil
+    }
+
     func startCastPlayback(from position: TimeInterval = 0) {
         castStartPosition = position
         castPlaybackStartDate = Date()
@@ -1868,8 +1877,17 @@ class AudioEngine {
         
         if repeatEnabled {
             if shuffleEnabled {
-                // Repeat mode + shuffle: pick a random track
-                currentIndex = Int.random(in: 0..<playlist.count)
+                // Repeat mode + shuffle: pick a random track, skipping Sonos-incompatible formats
+                let isSonos = CastManager.shared.isCastingToSonos
+                var attempts = 0
+                repeat {
+                    currentIndex = Int.random(in: 0..<playlist.count)
+                    attempts += 1
+                } while isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) && attempts < playlist.count
+                if isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) {
+                    Task { await CastManager.shared.stopCasting() }
+                    return
+                }
             }
             // Cast the same or new random track
             let track = playlist[currentIndex]
@@ -1900,8 +1918,17 @@ class AudioEngine {
             }
         } else if !playlist.isEmpty {
             if shuffleEnabled {
-                // Shuffle without repeat: pick random track and continue
-                currentIndex = Int.random(in: 0..<playlist.count)
+                // Shuffle without repeat: pick random track, skipping Sonos-incompatible formats
+                let isSonos = CastManager.shared.isCastingToSonos
+                var attempts = 0
+                repeat {
+                    currentIndex = Int.random(in: 0..<playlist.count)
+                    attempts += 1
+                } while isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) && attempts < playlist.count
+                if isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) {
+                    Task { await CastManager.shared.stopCasting() }
+                    return
+                }
                 let track = playlist[currentIndex]
                 let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
                 
@@ -1929,8 +1956,20 @@ class AudioEngine {
                     }
                 }
             } else if currentIndex < playlist.count - 1 {
-                // More tracks to play - advance
+                // More tracks to play — advance, skipping Sonos-incompatible formats
                 currentIndex += 1
+                let isSonos = CastManager.shared.isCastingToSonos
+                while currentIndex < playlist.count {
+                    if !isSonos || CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) { break }
+                    NSLog("AudioEngine: Skipping '%@' (%@) — not supported by Sonos",
+                          playlist[currentIndex].title,
+                          playlist[currentIndex].url.pathExtension)
+                    currentIndex += 1
+                }
+                guard currentIndex < playlist.count else {
+                    Task { await CastManager.shared.stopCasting() }
+                    return
+                }
                 let track = playlist[currentIndex]
                 let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
                 

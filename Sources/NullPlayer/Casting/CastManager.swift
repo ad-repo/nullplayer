@@ -209,6 +209,11 @@ class CastManager {
     var isCasting: Bool {
         activeSession?.state == .casting
     }
+
+    /// True when the current cast target is a Sonos device.
+    var isCastingToSonos: Bool {
+        activeSession?.device.type == .sonos
+    }
     
     /// Whether video casting is currently active (as opposed to audio casting)
     private(set) var isVideoCasting: Bool = false
@@ -624,11 +629,42 @@ class CastManager {
         guard let track = engine.currentTrack else {
             throw CastError.noTrackPlaying
         }
-        
+
         // Capture current position before casting
-        let currentPosition = await MainActor.run { engine.currentTime }
-        
-        try await castTrack(track, to: device, startPosition: currentPosition)
+        var currentPosition = await MainActor.run { engine.currentTime }
+
+        // For Sonos, advance past incompatible tracks using a fetch-and-verify loop
+        var trackToUse = track
+        if device.type == .sonos {
+            var fetchedSR: Int? = nil
+            if trackToUse.sampleRate == nil, let rk = trackToUse.plexRatingKey {
+                let ext = trackToUse.url.pathExtension.lowercased()
+                if Self.sonosLosslessExtensions.contains(ext) {
+                    fetchedSR = await PlexManager.shared.fetchSampleRate(for: rk)
+                    NSLog("CastManager: castCurrentTrack fetched sample rate for '%@': %@",
+                          trackToUse.title, fetchedSR.map { "\($0) Hz" } ?? "nil")
+                }
+            }
+            while !Self.isSonosCompatible(trackToUse, sampleRateOverride: fetchedSR) {
+                let next = await MainActor.run { engine.advanceToFirstSonosCompatibleTrack() }
+                guard let next else {
+                    throw CastError.playbackFailed("No tracks in the playlist are supported by Sonos")
+                }
+                trackToUse = next
+                currentPosition = 0
+                fetchedSR = nil
+                if trackToUse.sampleRate == nil, let rk = trackToUse.plexRatingKey {
+                    let ext = trackToUse.url.pathExtension.lowercased()
+                    if Self.sonosLosslessExtensions.contains(ext) {
+                        fetchedSR = await PlexManager.shared.fetchSampleRate(for: rk)
+                        NSLog("CastManager: castCurrentTrack fetched sample rate for '%@': %@",
+                              trackToUse.title, fetchedSR.map { "\($0) Hz" } ?? "nil")
+                    }
+                }
+            }
+        }
+
+        try await castTrack(trackToUse, to: device, startPosition: currentPosition)
     }
     
     /// Cast a specific track to a device
@@ -725,7 +761,33 @@ class CastManager {
         guard let session = activeSession else {
             throw CastError.sessionNotActive
         }
-        
+
+        // For Sonos: if format is unsupported, advance to the next compatible track
+        if session.device.type == .sonos {
+            // Fetch missing sample rate for lossless Plex tracks (Plex API may omit Stream details)
+            var fetchedSampleRate: Int? = nil
+            if track.sampleRate == nil, let ratingKey = track.plexRatingKey {
+                let ext = track.url.pathExtension.lowercased()
+                if Self.sonosLosslessExtensions.contains(ext) {
+                    fetchedSampleRate = await PlexManager.shared.fetchSampleRate(for: ratingKey)
+                    NSLog("CastManager: castNewTrack fetched sample rate for '%@': %@",
+                          track.title, fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
+                }
+            }
+            if !Self.isSonosCompatible(track, sampleRateOverride: fetchedSampleRate) {
+                let engine = WindowManager.shared.audioEngine
+                NSLog("CastManager: castNewTrack '%@' (%@) not supported by Sonos — finding next compatible track",
+                      track.title, track.url.pathExtension)
+                let compatible = await MainActor.run { engine.advanceToFirstSonosCompatibleTrack() }
+                guard let compatible else {
+                    await stopCasting()
+                    return
+                }
+                try await castNewTrack(compatible)
+                return
+            }
+        }
+
         // Check if this is a local file (needs loading state due to async registration)
         let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
         
@@ -1683,7 +1745,57 @@ class CastManager {
     static func detectAudioContentType(for url: URL) -> String {
         detectAudioContentType(forExtension: url.pathExtension)
     }
-    
+
+    // MARK: - Sonos Format Compatibility
+
+    /// Extensions that Sonos hardware cannot decode regardless of resolution.
+    /// ALAC: decoder absent on S1 devices. AIFF: not in Sonos's UPnP supported-format list.
+    /// WavPack (.wv): unsupported codec on all Sonos hardware.
+    static let sonosUnsupportedExtensions: Set<String> = ["alac", "aiff", "aif", "wv"]
+
+    /// Sonos S1 fails above 48 kHz PCM; use as conservative safe limit.
+    static let sonosMaxSampleRate: Int = 48000
+
+    /// Lossless extensions that require the sample-rate check.
+    private static let sonosLosslessExtensions: Set<String> = ["flac", "wav"]
+
+    /// Map common audio MIME types to their extension equivalent for format checking.
+    private static func contentTypeToExtension(_ ct: String) -> String {
+        switch ct {
+        case "audio/x-aiff", "audio/aiff":  return "aiff"
+        case "audio/alac", "audio/x-alac":  return "alac"
+        case "audio/flac", "audio/x-flac":  return "flac"
+        case "audio/wav", "audio/x-wav":    return "wav"
+        default:                            return ""
+        }
+    }
+
+    /// Returns false if the track format is known to be unsupported by Sonos.
+    /// Falls back to `track.contentType` when the URL has no file extension
+    /// (e.g. server-streamed tracks from Subsonic/Jellyfin/Emby/Plex).
+    static func isSonosCompatible(_ track: Track, sampleRateOverride: Int? = nil,
+                                   allowUnknownSampleRate: Bool = false) -> Bool {
+        var ext = track.url.pathExtension.lowercased()
+
+        if ext.isEmpty, let ct = track.contentType {
+            ext = contentTypeToExtension(ct)
+        }
+
+        if sonosUnsupportedExtensions.contains(ext) { return false }
+
+        if sonosLosslessExtensions.contains(ext) {
+            let effectiveSampleRate = sampleRateOverride ?? track.sampleRate
+            if let sr = effectiveSampleRate {
+                if sr > sonosMaxSampleRate { return false }
+            } else if !allowUnknownSampleRate {
+                return false  // nil SR in strict mode → block
+            }
+            // nil SR + allowUnknownSampleRate → pass through (let caller fetch and verify)
+        }
+
+        return true
+    }
+
     // MARK: - Sonos Radio URI (Fix 10)
     
     /// Convert HTTP radio stream URL to Sonos x-rincon-mp3radio:// scheme for better buffering

@@ -281,7 +281,9 @@ class WindowManager {
     
     func togglePlaylist() {
         if let controller = playlistWindowController, controller.window?.isVisible == true {
+            let closingFrame = controller.window!.frame
             controller.window?.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
         } else {
             showPlaylist()
         }
@@ -320,7 +322,9 @@ class WindowManager {
     
     func toggleEqualizer() {
         if let controller = equalizerWindowController, controller.window?.isVisible == true {
+            let closingFrame = controller.window!.frame
             controller.window?.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
         } else {
             showEqualizer()
         }
@@ -384,6 +388,46 @@ class WindowManager {
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
     }
     
+    /// After a center-stack window is hidden, slide up any visible sub-windows that
+    /// were docked below it (directly or transitively). Only windows within
+    /// `dockThreshold` of the closing window's bottom edge are moved.
+    private func slideUpWindowsBelow(closingFrame: NSRect) {
+        let subWindows = [equalizerWindowController?.window,
+                          playlistWindowController?.window,
+                          spectrumWindowController?.window].compactMap { $0 }
+
+        // BFS: find windows directly docked below closingFrame, then those below them
+        var toMove: [NSWindow] = []
+        var frontier: [NSRect] = [closingFrame]
+
+        while !frontier.isEmpty {
+            let referenceFrame = frontier.removeFirst()
+            for win in subWindows {
+                guard win.isVisible, !toMove.contains(win) else { continue }
+                // win's top (maxY) should be near referenceFrame's bottom (minY)
+                let vertGap = abs(win.frame.maxY - referenceFrame.minY)
+                let horizOverlap = win.frame.minX < referenceFrame.maxX && win.frame.maxX > referenceFrame.minX
+                if vertGap <= dockThreshold && horizOverlap {
+                    toMove.append(win)
+                    frontier.append(win.frame)
+                }
+            }
+        }
+
+        guard !toMove.isEmpty else { return }
+
+        isSnappingWindow = true
+        defer { isSnappingWindow = false }
+
+        for win in toMove {
+            var frame = win.frame
+            frame.origin.y += closingFrame.height
+            win.setFrame(frame, display: true, animate: false)
+        }
+
+        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+    }
+
     /// Show local media library (redirects to unified browser in local mode)
     func showMediaLibrary() {
         // Redirect to unified browser - it handles both Plex and local files
@@ -1089,9 +1133,11 @@ class WindowManager {
     
     func toggleSpectrum() {
         if let controller = spectrumWindowController, controller.window?.isVisible == true {
+            let closingFrame = controller.window!.frame
             // Stop rendering before hiding to save CPU (orderOut doesn't trigger windowWillClose)
             controller.stopRenderingForHide()
             controller.window?.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
         } else {
             showSpectrum()
         }
@@ -1335,7 +1381,7 @@ class WindowManager {
         var nextY = mainFrame.minY
         
         // EQ window - position below main window
-        if let eqWindow = equalizerWindowController?.window, eqWindow.isVisible {
+        if let eqWindow = equalizerWindowController?.window {
             let eqTargetSize: NSSize
             if isModernUIEnabled {
                 eqTargetSize = ModernSkinElements.eqWindowSize
@@ -1346,41 +1392,49 @@ class WindowManager {
             let eqAdjustedSize = eqTargetSize
             eqWindow.minSize = eqAdjustedSize
             eqWindow.maxSize = eqAdjustedSize
-            let eqFrame = NSRect(
-                x: mainFrame.minX,
-                y: nextY - eqAdjustedSize.height,
-                width: eqAdjustedSize.width,
-                height: eqAdjustedSize.height
-            )
-            eqWindow.setFrame(eqFrame, display: true, animate: true)
-            nextY = eqFrame.minY
+            if eqWindow.isVisible {
+                let eqFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - eqAdjustedSize.height,
+                    width: eqAdjustedSize.width,
+                    height: eqAdjustedSize.height
+                )
+                eqWindow.setFrame(eqFrame, display: true, animate: true)
+                nextY = eqFrame.minY
+            } else {
+                eqWindow.setContentSize(eqAdjustedSize)
+            }
         }
         
         // Playlist - position below EQ (or main if no EQ)
-        if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible {
+        if let playlistWindow = playlistWindowController?.window {
             let baseMinSize: NSSize = isModernUIEnabled ? ModernSkinElements.playlistMinSize : Skin.playlistMinSize
             let minHeight = baseMinSize.height * (isModernUIEnabled ? 1.0 : scale)
-            
+
             let targetWidth = mainFrame.width
             playlistWindow.minSize = NSSize(width: targetWidth, height: minHeight)
             playlistWindow.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
-            
+
             // Scale height proportionally
             let currentFrame = playlistWindow.frame
             let newHeight = max(minHeight, currentFrame.height * (isDoubleSize ? 2.0 : 0.5))
-            
-            let playlistFrame = NSRect(
-                x: mainFrame.minX,
-                y: nextY - newHeight,
-                width: targetWidth,
-                height: newHeight
-            )
-            playlistWindow.setFrame(playlistFrame, display: true, animate: true)
-            nextY = playlistFrame.minY
+
+            if playlistWindow.isVisible {
+                let playlistFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - newHeight,
+                    width: targetWidth,
+                    height: newHeight
+                )
+                playlistWindow.setFrame(playlistFrame, display: true, animate: true)
+                nextY = playlistFrame.minY
+            } else {
+                playlistWindow.setContentSize(NSSize(width: targetWidth, height: newHeight))
+            }
         }
         
         // Spectrum window - position below playlist (or previous window)
-        if let spectrumWindow = spectrumWindowController?.window, spectrumWindow.isVisible {
+        if let spectrumWindow = spectrumWindowController?.window {
             let spectrumTargetSize: NSSize
             if isModernUIEnabled {
                 spectrumTargetSize = ModernSkinElements.spectrumWindowSize
@@ -1391,14 +1445,18 @@ class WindowManager {
             let spectrumAdjustedSize = spectrumTargetSize
             spectrumWindow.minSize = spectrumAdjustedSize
             spectrumWindow.maxSize = spectrumAdjustedSize
-            let spectrumFrame = NSRect(
-                x: mainFrame.minX,
-                y: nextY - spectrumAdjustedSize.height,
-                width: spectrumAdjustedSize.width,
-                height: spectrumAdjustedSize.height
-            )
-            spectrumWindow.setFrame(spectrumFrame, display: true, animate: true)
-            nextY = spectrumFrame.minY
+            if spectrumWindow.isVisible {
+                let spectrumFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - spectrumAdjustedSize.height,
+                    width: spectrumAdjustedSize.width,
+                    height: spectrumAdjustedSize.height
+                )
+                spectrumWindow.setFrame(spectrumFrame, display: true, animate: true)
+                nextY = spectrumFrame.minY
+            } else {
+                spectrumWindow.setContentSize(spectrumAdjustedSize)
+            }
         }
         
         // Side windows - match the vertical stack height and reposition

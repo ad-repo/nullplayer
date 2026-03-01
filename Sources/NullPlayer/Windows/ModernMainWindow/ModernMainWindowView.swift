@@ -78,8 +78,8 @@ class ModernMainWindowView: NSView {
     private var mainTrackingArea: NSTrackingArea?
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
-    private var adjacentEdges: AdjacentEdges = []
-    
+    private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -94,7 +94,7 @@ class ModernMainWindowView: NSView {
     
     private func commonInit() {
         wantsLayer = true
-        layer?.isOpaque = true
+        layer?.isOpaque = false
         
         // Initialize with current skin or fallback
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
@@ -124,6 +124,10 @@ class ModernMainWindowView: NSView {
         // Observe window layout changes for seamless docked borders
         NotificationCenter.default.addObserver(self, selector: #selector(windowLayoutDidChange),
                                                 name: .windowLayoutDidChange, object: nil)
+
+        // Observe main window vis mode changes from context menu
+        NotificationCenter.default.addObserver(self, selector: #selector(mainVisSettingsChanged),
+                                                name: NSNotification.Name("MainWindowVisChanged"), object: nil)
         
         // Set accessibility
         setAccessibilityIdentifier("ModernMainWindowView")
@@ -131,6 +135,7 @@ class ModernMainWindowView: NSView {
         
         // Restore saved visualization mode
         restoreVisMode()
+        updateCornerMask()
     }
     
     deinit {
@@ -176,10 +181,31 @@ class ModernMainWindowView: NSView {
     }
     
     // MARK: - Layout
-    
+
     override func layout() {
         super.layout()
         gridLayer?.frame = bounds
+        updateCornerMask()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        layer?.isOpaque = false
+        updateCornerMask()
+    }
+
+    private func updateCornerMask() {
+        guard let layer = self.layer else { return }
+        let cornerRadius = (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()).config.window.cornerRadius ?? 0
+        layer.cornerRadius = cornerRadius
+        layer.masksToBounds = cornerRadius > 0
+        guard cornerRadius > 0 else { return }
+        var masked: CACornerMask = []
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
+        layer.maskedCorners = masked
     }
     
     // MARK: - Tracking Areas (cursor hover)
@@ -237,7 +263,7 @@ class ModernMainWindowView: NSView {
         // 1. Window background + border -- clip to dirtyRect to avoid full-bounds fill
         context.saveGState()
         context.clip(to: dirtyRect)
-        renderer.drawWindowBackground(in: windowBounds, context: context)
+        renderer.drawWindowBackground(in: windowBounds, context: context, adjacentEdges: adjacentEdges)
         renderer.drawWindowBorder(in: windowBounds, context: context, adjacentEdges: adjacentEdges)
         context.restoreGState()
         
@@ -254,7 +280,7 @@ class ModernMainWindowView: NSView {
         let timeStatusRegion = timeScaled.union(statusScaled)
         if dirtyRect.intersects(timeStatusRegion) {
             // Recessed panel behind time digits and status indicator
-            renderer.drawInsetPanel(in: NSRect(x: 6, y: 60, width: 84, height: 38), context: context)
+            renderer.drawInsetPanel(in: NSRect(x: 6, y: 60, width: 84, height: 34), context: context)
             drawTimeDisplay(context: context)
             let state = effectivePlaybackState()
             renderer.drawStatusIndicator(state, in: ModernSkinElements.statusPlay.defaultRect, context: context)
@@ -307,7 +333,7 @@ class ModernMainWindowView: NSView {
     /// Draw compact shade mode: single strip with title, scrolling track name, and controls
     private func drawShadeMode(in bounds: NSRect, context: CGContext) {
         // Background
-        renderer.drawWindowBackground(in: bounds, context: context)
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
         
         // In shade mode, draw a compact horizontal layout in the available space
@@ -634,12 +660,11 @@ class ModernMainWindowView: NSView {
             let start = min(logStart, binCount - 1)
             let end = min(logEnd, binCount)
             
-            // Take the peak value in this range
-            var peak: Float = 0
-            for j in start..<end {
-                peak = max(peak, levels[j])
-            }
-            downsampled[i] = peak
+            // Average across the range — peak-of-peak causes bars to pin high
+            // since adaptive normalization already compresses toward 1.0.
+            var sum: Float = 0
+            for j in start..<end { sum += levels[j] }
+            downsampled[i] = end > start ? sum / Float(end - start) : 0
         }
         
         self.spectrumLevels = downsampled
@@ -655,6 +680,7 @@ class ModernMainWindowView: NSView {
         setupGridBackground(skin: skin)
         marqueeLayer.configure(with: skin)
         updateMarqueeForMode()
+        updateCornerMask()
         
         // Reposition metal overlay to match new scale
         if let overlay = metalOverlay {
@@ -757,17 +783,34 @@ class ModernMainWindowView: NSView {
             if metalOverlay == nil {
                 let specRect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
                 let overlay = SpectrumAnalyzerView(frame: specRect)
-                overlay.bassAttenuation = 0.5
-                
+                overlay.isEmbedded = true  // prevent contamination of "spectrumQualityMode" UserDefaults
+                overlay.wantsLayer = true
+                overlay.layer?.cornerRadius = 4 * scale
+                overlay.layer?.masksToBounds = true
+
                 // Set spectrum colors from modern skin
                 if let skin = ModernSkinEngine.shared.currentSkin {
                     overlay.spectrumColors = skin.spectrumColors()
                 }
-                
+
+                // Load mode-specific settings from main-window-specific keys
+                if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+                   let style = FlameStyle(rawValue: savedStyle) { overlay.flameStyle = style }
+                if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+                   let intensity = FlameIntensity(rawValue: savedIntensity) { overlay.flameIntensity = intensity }
+                if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle"),
+                   let style = LightningStyle(rawValue: savedStyle) { overlay.lightningStyle = style }
+                if let savedScheme = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme"),
+                   let scheme = MatrixColorScheme(rawValue: savedScheme) { overlay.matrixColorScheme = scheme }
+                if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
+                   let intensity = MatrixIntensity(rawValue: savedIntensity) { overlay.matrixIntensity = intensity }
+                if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
+                   let mode = SpectrumDecayMode(rawValue: savedDecay) { overlay.decayMode = mode }
+
                 addSubview(overlay)
                 metalOverlay = overlay
             }
-            
+
             if let qualityMode = mainVisMode.spectrumQualityMode {
                 metalOverlay?.qualityMode = qualityMode
             }
@@ -795,6 +838,36 @@ class ModernMainWindowView: NSView {
         }
     }
     
+    @objc private func mainVisSettingsChanged() {
+        if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
+           let mode = MainWindowVisMode(rawValue: savedMode) {
+            if let qualityMode = mode.spectrumQualityMode,
+               !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
+                return
+            }
+            if mode != mainVisMode {
+                mainVisMode = mode
+            }
+        }
+        if let overlay = metalOverlay {
+            if let qualityMode = mainVisMode.spectrumQualityMode {
+                overlay.qualityMode = qualityMode
+            }
+            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+               let style = FlameStyle(rawValue: savedStyle) { overlay.flameStyle = style }
+            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+               let intensity = FlameIntensity(rawValue: savedIntensity) { overlay.flameIntensity = intensity }
+            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle"),
+               let style = LightningStyle(rawValue: savedStyle) { overlay.lightningStyle = style }
+            if let savedScheme = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme"),
+               let scheme = MatrixColorScheme(rawValue: savedScheme) { overlay.matrixColorScheme = scheme }
+            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
+               let intensity = MatrixIntensity(rawValue: savedIntensity) { overlay.matrixIntensity = intensity }
+            if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
+               let mode = SpectrumDecayMode(rawValue: savedDecay) { overlay.decayMode = mode }
+        }
+    }
+
     // MARK: - Hit Testing
     
     /// Scale and convert a point from view coordinates to base coordinates

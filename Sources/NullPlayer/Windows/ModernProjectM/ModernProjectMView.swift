@@ -70,7 +70,7 @@ class ModernProjectMView: NSView {
     private var borderWidth: CGFloat { ModernSkinElements.projectMBorderWidth }
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
-    private var adjacentEdges: AdjacentEdges = []
+    private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     
     // MARK: - Initialization
     
@@ -139,6 +139,7 @@ class ModernProjectMView: NSView {
         
         // Set initial audio active state
         updateAudioActiveState()
+        updateCornerMask()
     }
     
     deinit {
@@ -208,8 +209,8 @@ class ModernProjectMView: NSView {
         }
         
         // Draw window background
-        renderer.drawWindowBackground(in: bounds, context: context)
-        
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
+
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
         
@@ -220,8 +221,9 @@ class ModernProjectMView: NSView {
             let baseWidth = bounds.width / scale
             let baseHeight = bounds.height / scale
             
-            let titleBarRect = NSRect(x: 0, y: baseHeight - 14, width: baseWidth, height: 14)
-            let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - 12, width: 10, height: 10)
+            let tbh = ModernSkinElements.titleBarBaseHeight
+            let titleBarRect = NSRect(x: 0, y: baseHeight - tbh, width: baseWidth, height: tbh)
+            let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - tbh / 2 - 5, width: 10, height: 10)
             
             // Draw title bar with projectm prefix (handles per-window titlebar image + title text)
             renderer.drawTitleBar(in: titleBarRect, title: "projectM", prefix: "projectm_", context: context)
@@ -243,6 +245,7 @@ class ModernProjectMView: NSView {
     func skinDidChange() {
         let skin = resolveCurrentSkin()
         renderer = ModernSkinRenderer(skin: skin)
+        updateCornerMask()
         needsDisplay = true
     }
     
@@ -819,5 +822,26 @@ class ModernProjectMView: NSView {
     override func layout() {
         super.layout()
         updateVisualizationFrame()
+        updateCornerMask()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        layer?.isOpaque = false
+        updateCornerMask()
+    }
+
+    private func updateCornerMask() {
+        guard let layer = self.layer else { return }
+        let cornerRadius = (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()).config.window.cornerRadius ?? 0
+        layer.cornerRadius = cornerRadius
+        layer.masksToBounds = cornerRadius > 0
+        guard cornerRadius > 0 else { return }
+        var masked: CACornerMask = []
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
+        layer.maskedCorners = masked
     }
 }

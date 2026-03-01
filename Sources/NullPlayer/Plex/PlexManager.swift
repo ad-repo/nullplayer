@@ -756,6 +756,16 @@ class PlexManager {
     var streamingHeaders: [String: String]? {
         serverClient?.streamingHeaders
     }
+
+    /// Fetch the audio sample rate for a track via its rating key.
+    /// Returns nil if unavailable (network error, server not connected, etc.)
+    func fetchSampleRate(for ratingKey: String) async -> Int? {
+        guard let client = serverClient,
+              let track = try? await client.fetchTrackDetails(trackID: ratingKey) else {
+            return nil
+        }
+        return track.media.first?.audioSampleRate
+    }
     
     // MARK: - Track Conversion
     

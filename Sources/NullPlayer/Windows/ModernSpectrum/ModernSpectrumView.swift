@@ -48,7 +48,7 @@ class ModernSpectrumView: NSView {
     private var borderWidth: CGFloat { ModernSkinElements.spectrumBorderWidth }
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
-    private var adjacentEdges: AdjacentEdges = []
+    private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     
     // MARK: - Initialization
     
@@ -98,6 +98,7 @@ class ModernSpectrumView: NSView {
         setAccessibilityIdentifier("modernSpectrumView")
         setAccessibilityRole(.group)
         setAccessibilityLabel("NullPlayer Analyzer")
+        updateCornerMask()
     }
     
     deinit {
@@ -154,8 +155,8 @@ class ModernSpectrumView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
         // Draw window background
-        renderer.drawWindowBackground(in: bounds, context: context)
-        
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
+
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
         
@@ -184,6 +185,7 @@ class ModernSpectrumView: NSView {
         renderer = ModernSkinRenderer(skin: skin)
         updateSpectrumColors()
         spectrumAnalyzerView?.skinDidChange()
+        updateCornerMask()
         needsDisplay = true
     }
     
@@ -681,9 +683,30 @@ class ModernSpectrumView: NSView {
     }
     
     // MARK: - Layout
-    
+
     override func layout() {
         super.layout()
         updateSpectrumFrame()
+        updateCornerMask()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        layer?.isOpaque = false
+        updateCornerMask()
+    }
+
+    private func updateCornerMask() {
+        guard let layer = self.layer else { return }
+        let cornerRadius = (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()).config.window.cornerRadius ?? 0
+        layer.cornerRadius = cornerRadius
+        layer.masksToBounds = cornerRadius > 0
+        guard cornerRadius > 0 else { return }
+        var masked: CACornerMask = []
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
+        layer.maskedCorners = masked
     }
 }

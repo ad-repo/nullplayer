@@ -1,0 +1,105 @@
+{
+    "meta": {
+        "name": "SakuraMinimal",
+        "author": "NullPlayer",
+        "version": "1.0",
+        "description": "Minimal pale-pink UI with near-white panels, subtle sakura accents, and high-contrast time text"
+    },
+    "titleText": {
+        "mode": "image",
+        "charSpacing": 2,
+        "charHeight": 10,
+        "alignment": "center",
+        "tintColor": "#ff6b9a"
+    },
+    "palette": {
+        "primary": "#ffd6e4",
+        "secondary": "#ffc2d8",
+        "accent": "#ff6b9a",
+        "highlight": "#ffffff",
+        "background": "#fff9fb",
+        "surface": "#fff0f5",
+        "text": "#4a2335",
+        "textDim": "#a8798e",
+        "positive": "#ff9fbd",
+        "negative": "#e44c82",
+        "warning": "#ffc6da",
+        "border": "#f0c5d7",
+        "timeColor": "#6b1b3f",
+        "marqueeColor": "#ff6b9a",
+        "dataColor": "#ff6b9a",
+        "eqMid": "#ffc2d8"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 10,
+        "bodySize": 11,
+        "smallSize": 7,
+        "timeSize": 24
+    },
+    "background": {
+        "grid": {
+            "color": "#f0c5d7",
+            "spacing": 18,
+            "angle": 75,
+            "opacity": 0.03,
+            "perspective": true
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 4,
+        "intensity": 0.25,
+        "threshold": 0.7
+    },
+    "window": {
+        "borderWidth": 1.5,
+        "borderColor": "#f0c5d7",
+        "cornerRadius": 6,
+        "seamlessDocking": 1.0
+    },
+    "elements": {
+        "titlebar": {
+            "color": "#fff0f5"
+        },
+        "marquee_bg": {
+            "color": "#fff6f9"
+        },
+        "info_cast": {
+            "color": "#ff6b9a"
+        },
+        "spectrum_area": {
+            "color": "#ffc2d8"
+        },
+        "seek_fill": {
+            "color": "#ff6b9a"
+        },
+        "spectrum_titlebar": {
+            "color": "#fff0f5"
+        },
+        "playlist_titlebar": {
+            "color": "#fff0f5"
+        },
+        "eq_titlebar": {
+            "color": "#fff0f5"
+        },
+        "library_titlebar": {
+            "color": "#fff0f5"
+        },
+        "projectm_titlebar": {
+            "color": "#fff0f5"
+        },
+        "projectm_titlebar": {
+            "color": "#fff0f5"
+        }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 3.4,
+            "minValue": 0.4,
+            "maxValue": 1.0
+        }
+    }
+}

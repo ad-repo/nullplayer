@@ -38,7 +38,7 @@
     },
     "window": {
         "borderWidth": 1,
-        "cornerRadius": 0,
+        "cornerRadius": 6,
         "seamlessDocking": 0.8
     }
 }
