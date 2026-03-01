@@ -274,6 +274,8 @@ Sources/NullPlayer/
   cb.commit()
   ```
 - **Spectrum shader availability**: Use `SpectrumAnalyzerView.isShaderAvailable(for:)` to check if a mode's shader file exists before switching to it. This static method works without a view instance and should be used when restoring modes from UserDefaults and when building menus. The instance method `isPipelineAvailable(for:)` checks the actual compiled pipeline and is used after `setupMetal()`
+- **NSTextField background**: Setting `backgroundColor` on an `NSTextField` has no visible effect unless `drawsBackground = true` is also set. Always pair them — missing this causes the custom color to be silently ignored (e.g. light text invisible on white in light mode)
+- **Edit panel input fields**: Editable `NSTextField` inputs use black text on white background — not the window's dark theme colors. Read-only labels and window chrome may follow the dark theme
 - **No Spotify/Apple/Amazon**: These integrations are explicitly not accepted
 - **Plex API filter operators**: `URLQueryItem` will URL-encode operators like `>=`, `<=` which breaks Plex filtering. Build URLs manually for filter params. Note: Plex only supports `>=`, `<=`, `=`, `!=` operators - **NOT `<` or `>`** (use `<=` with value-1 instead):
   ```swift
