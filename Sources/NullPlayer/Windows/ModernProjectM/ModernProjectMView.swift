@@ -221,8 +221,9 @@ class ModernProjectMView: NSView {
             let baseWidth = bounds.width / scale
             let baseHeight = bounds.height / scale
             
-            let titleBarRect = NSRect(x: 0, y: baseHeight - 14, width: baseWidth, height: 14)
-            let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - 12, width: 10, height: 10)
+            let tbh = ModernSkinElements.titleBarBaseHeight
+            let titleBarRect = NSRect(x: 0, y: baseHeight - tbh, width: baseWidth, height: tbh)
+            let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - tbh / 2 - 5, width: 10, height: 10)
             
             // Draw title bar with projectm prefix (handles per-window titlebar image + title text)
             renderer.drawTitleBar(in: titleBarRect, title: "projectM", prefix: "projectm_", context: context)

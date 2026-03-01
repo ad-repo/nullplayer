@@ -276,7 +276,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(wrappingLabelWithString: "Classic skin player for Plex and Sonos")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "A modern music player for digital music collections")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
@@ -291,7 +291,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 20
         
         // Credits
-        let thanksLabel = NSTextField(labelWithString: "Thanks to Nullsoft and Plex")
+        let thanksLabel = NSTextField(labelWithString: "Thanks to the users")
         thanksLabel.font = NSFont.systemFont(ofSize: 14)
         thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         thanksLabel.alignment = .center
@@ -341,7 +341,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= buttonHeight + 12
         
         // Disclaimer
-        let disclaimerLabel = NSTextField(wrappingLabelWithString: "This is an open-source project")
+        let disclaimerLabel = NSTextField(wrappingLabelWithString: "This is a clean room open source project")
         disclaimerLabel.font = NSFont.systemFont(ofSize: 10)
         disclaimerLabel.textColor = NSColor(white: 0.4, alpha: 1.0)
         disclaimerLabel.alignment = .center

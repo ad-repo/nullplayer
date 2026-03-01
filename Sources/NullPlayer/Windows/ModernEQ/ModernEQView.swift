@@ -389,15 +389,18 @@ class ModernEQView: NSView {
     
     /// Base rects in the 275x116 coordinate space (renderer scales them)
     private var titleBarBaseRect: NSRect {
-        return NSRect(x: 0, y: (bounds.height / scale) - 14, width: 275, height: 14)
+        let tbh = ModernSkinElements.titleBarBaseHeight
+        return NSRect(x: 0, y: (bounds.height / scale) - tbh, width: 275, height: tbh)
     }
-    
+
     private var closeBtnBaseRect: NSRect {
-        return NSRect(x: 261, y: (bounds.height / scale) - 12, width: 10, height: 10)
+        let tbh = ModernSkinElements.titleBarBaseHeight
+        return NSRect(x: 261, y: (bounds.height / scale) - tbh / 2 - 5, width: 10, height: 10)
     }
-    
+
     private var shadeBtnBaseRect: NSRect {
-        return NSRect(x: 249, y: (bounds.height / scale) - 12, width: 10, height: 10)
+        let tbh = ModernSkinElements.titleBarBaseHeight
+        return NSRect(x: 249, y: (bounds.height / scale) - tbh / 2 - 5, width: 10, height: 10)
     }
     
     // MARK: - EQ Content Drawing

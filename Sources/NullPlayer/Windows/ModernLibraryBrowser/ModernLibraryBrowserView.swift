@@ -689,12 +689,13 @@ class ModernLibraryBrowserView: NSView {
         // Draw title bar
         if true {
             // Title bar at TOP in base space
-            let titleBarRect = NSRect(x: 0, y: baseHeight - 14, width: baseWidth, height: 14)
+            let tbh = ModernSkinElements.titleBarBaseHeight
+            let titleBarRect = NSRect(x: 0, y: baseHeight - tbh, width: baseWidth, height: tbh)
             renderer.drawTitleBar(in: titleBarRect, title: "NULLPLAYER LIBRARY", prefix: "library_", context: context)
-            
+
             // Close and shade buttons in title bar (base space)
-            let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - 12, width: 10, height: 10)
-            let shadeBtnRect = NSRect(x: baseWidth - 26, y: baseHeight - 12, width: 10, height: 10)
+            let closeBtnRect = NSRect(x: baseWidth - 14, y: baseHeight - tbh / 2 - 5, width: 10, height: 10)
+            let shadeBtnRect = NSRect(x: baseWidth - 26, y: baseHeight - tbh / 2 - 5, width: 10, height: 10)
             let closeState = pressedButton == .close ? "pressed" : "normal"
             let shadeState = pressedButton == .shade ? "pressed" : "normal"
             renderer.drawWindowControlButton("library_btn_close", state: closeState, in: closeBtnRect, context: context)

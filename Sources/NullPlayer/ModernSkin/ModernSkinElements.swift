@@ -50,18 +50,21 @@ enum ModernSkinElements {
     
     static let windowBackground = Element("window_background", NSRect(x: 0, y: 0, width: 275, height: 116))
     static let windowBorder = Element("window_border", NSRect(x: 0, y: 0, width: 275, height: 116))
-    
-    // MARK: - Title Bar (top 14px)
-    
-    static let titleBar = Element("titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
-    static let titleBarText = Element("titlebar_text", NSRect(x: 50, y: 102, width: 175, height: 14))
-    
+
+    /// Title bar height in base coordinates (all modern windows)
+    static let titleBarBaseHeight: CGFloat = 18
+
+    // MARK: - Title Bar (top 18px)
+
+    static let titleBar = Element("titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
+    static let titleBarText = Element("titlebar_text", NSRect(x: 50, y: 98, width: 175, height: 18))
+
     /// Window control buttons (right side of title bar)
-    static let btnClose = Element("btn_close", NSRect(x: 261, y: 104, width: 10, height: 10),
+    static let btnClose = Element("btn_close", NSRect(x: 261, y: 102, width: 10, height: 10),
                                   states: ["normal", "pressed"])
-    static let btnMinimize = Element("btn_minimize", NSRect(x: 237, y: 104, width: 10, height: 10),
+    static let btnMinimize = Element("btn_minimize", NSRect(x: 237, y: 102, width: 10, height: 10),
                                      states: ["normal", "pressed"])
-    static let btnShade = Element("btn_shade", NSRect(x: 249, y: 104, width: 10, height: 10),
+    static let btnShade = Element("btn_shade", NSRect(x: 249, y: 102, width: 10, height: 10),
                                   states: ["normal", "pressed"])
     
     // MARK: - Time Display (left side)
@@ -162,7 +165,7 @@ enum ModernSkinElements {
     static var playlistShadeHeight: CGFloat { 18 * scaleFactor }
     
     /// Playlist window title bar height
-    static var playlistTitleBarHeight: CGFloat { 14 * scaleFactor }
+    static var playlistTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
     /// Playlist window bottom bar height (ADD/REM/SEL/MISC/LIST buttons)
     static var playlistBottomBarHeight: CGFloat { 20 * scaleFactor }
@@ -174,14 +177,14 @@ enum ModernSkinElements {
     static var playlistItemHeight: CGFloat { 15 * scaleFactor }
     
     /// Playlist title bar element (per-window skinning)
-    static let playlistTitleBar = Element("playlist_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
-    
+    static let playlistTitleBar = Element("playlist_titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
+
     /// Playlist close button
-    static let playlistBtnClose = Element("playlist_btn_close", NSRect(x: 261, y: 104, width: 10, height: 10),
+    static let playlistBtnClose = Element("playlist_btn_close", NSRect(x: 261, y: 102, width: 10, height: 10),
                                           states: ["normal", "pressed"])
-    
+
     /// Playlist shade button
-    static let playlistBtnShade = Element("playlist_btn_shade", NSRect(x: 249, y: 104, width: 10, height: 10),
+    static let playlistBtnShade = Element("playlist_btn_shade", NSRect(x: 249, y: 102, width: 10, height: 10),
                                           states: ["normal", "pressed"])
     
     // MARK: - EQ Window
@@ -198,20 +201,20 @@ enum ModernSkinElements {
     static var eqShadeHeight: CGFloat { 18 * scaleFactor }
     
     /// EQ window title bar height
-    static var eqTitleBarHeight: CGFloat { 14 * scaleFactor }
+    static var eqTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
     /// EQ window border width
     static var eqBorderWidth: CGFloat { 3 * scaleFactor }
     
     /// EQ title bar element (per-window skinning)
-    static let eqTitleBar = Element("eq_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
-    
+    static let eqTitleBar = Element("eq_titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
+
     /// EQ close button
-    static let eqBtnClose = Element("eq_btn_close", NSRect(x: 261, y: 104, width: 10, height: 10),
+    static let eqBtnClose = Element("eq_btn_close", NSRect(x: 261, y: 102, width: 10, height: 10),
                                     states: ["normal", "pressed"])
-    
+
     /// EQ shade button
-    static let eqBtnShade = Element("eq_btn_shade", NSRect(x: 249, y: 104, width: 10, height: 10),
+    static let eqBtnShade = Element("eq_btn_shade", NSRect(x: 249, y: 102, width: 10, height: 10),
                                     states: ["normal", "pressed"])
     
     // MARK: - Spectrum Window
@@ -228,7 +231,7 @@ enum ModernSkinElements {
     static var spectrumShadeHeight: CGFloat { 18 * scaleFactor }
     
     /// Spectrum window title bar height
-    static var spectrumTitleBarHeight: CGFloat { 14 * scaleFactor }
+    static var spectrumTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
     /// Spectrum window border width
     static var spectrumBorderWidth: CGFloat { 3 * scaleFactor }
@@ -237,10 +240,10 @@ enum ModernSkinElements {
     static let spectrumBarCount = 84
     
     /// Spectrum window title bar (same base geometry as main title bar, allows per-window skinning)
-    static let spectrumTitleBar = Element("spectrum_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
-    
+    static let spectrumTitleBar = Element("spectrum_titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
+
     /// Spectrum window close button (allows per-window skinning)
-    static let spectrumBtnClose = Element("spectrum_btn_close", NSRect(x: 261, y: 104, width: 10, height: 10),
+    static let spectrumBtnClose = Element("spectrum_btn_close", NSRect(x: 261, y: 102, width: 10, height: 10),
                                           states: ["normal", "pressed"])
     
     // MARK: - ProjectM Visualization Window
@@ -257,16 +260,16 @@ enum ModernSkinElements {
     static var projectMShadeHeight: CGFloat { 18 * scaleFactor }
     
     /// ProjectM window title bar height
-    static var projectMTitleBarHeight: CGFloat { 14 * scaleFactor }
+    static var projectMTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
     /// ProjectM window border width
     static var projectMBorderWidth: CGFloat { 3 * scaleFactor }
     
     /// ProjectM window title bar (per-window skinning)
-    static let projectMTitleBar = Element("projectm_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
-    
+    static let projectMTitleBar = Element("projectm_titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
+
     /// ProjectM window close button (per-window skinning)
-    static let projectMBtnClose = Element("projectm_btn_close", NSRect(x: 256, y: 104, width: 10, height: 10),
+    static let projectMBtnClose = Element("projectm_btn_close", NSRect(x: 256, y: 102, width: 10, height: 10),
                                           states: ["normal", "pressed"])
     
     // MARK: - Library Browser Window
@@ -283,20 +286,20 @@ enum ModernSkinElements {
     static var libraryShadeHeight: CGFloat { 18 * scaleFactor }
     
     /// Library browser title bar height
-    static var libraryTitleBarHeight: CGFloat { 14 * scaleFactor }
+    static var libraryTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
     /// Library browser border width
     static var libraryBorderWidth: CGFloat { 3 * scaleFactor }
     
     /// Library browser title bar (per-window skinning)
-    static let libraryTitleBar = Element("library_titlebar", NSRect(x: 0, y: 102, width: 275, height: 14))
-    
+    static let libraryTitleBar = Element("library_titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
+
     /// Library browser close button
-    static let libraryBtnClose = Element("library_btn_close", NSRect(x: 256, y: 104, width: 10, height: 10),
+    static let libraryBtnClose = Element("library_btn_close", NSRect(x: 256, y: 102, width: 10, height: 10),
                                          states: ["normal", "pressed"])
-    
+
     /// Library browser shade button
-    static let libraryBtnShade = Element("library_btn_shade", NSRect(x: 244, y: 104, width: 10, height: 10),
+    static let libraryBtnShade = Element("library_btn_shade", NSRect(x: 244, y: 102, width: 10, height: 10),
                                          states: ["normal", "pressed"])
     
     // MARK: - All Elements
