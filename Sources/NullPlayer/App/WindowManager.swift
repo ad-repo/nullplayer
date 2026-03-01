@@ -281,7 +281,9 @@ class WindowManager {
     
     func togglePlaylist() {
         if let controller = playlistWindowController, controller.window?.isVisible == true {
+            let closingFrame = controller.window!.frame
             controller.window?.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
         } else {
             showPlaylist()
         }
@@ -320,7 +322,9 @@ class WindowManager {
     
     func toggleEqualizer() {
         if let controller = equalizerWindowController, controller.window?.isVisible == true {
+            let closingFrame = controller.window!.frame
             controller.window?.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
         } else {
             showEqualizer()
         }
@@ -384,6 +388,46 @@ class WindowManager {
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
     }
     
+    /// After a center-stack window is hidden, slide up any visible sub-windows that
+    /// were docked below it (directly or transitively). Only windows within
+    /// `dockThreshold` of the closing window's bottom edge are moved.
+    private func slideUpWindowsBelow(closingFrame: NSRect) {
+        let subWindows = [equalizerWindowController?.window,
+                          playlistWindowController?.window,
+                          spectrumWindowController?.window].compactMap { $0 }
+
+        // BFS: find windows directly docked below closingFrame, then those below them
+        var toMove: [NSWindow] = []
+        var frontier: [NSRect] = [closingFrame]
+
+        while !frontier.isEmpty {
+            let referenceFrame = frontier.removeFirst()
+            for win in subWindows {
+                guard win.isVisible, !toMove.contains(win) else { continue }
+                // win's top (maxY) should be near referenceFrame's bottom (minY)
+                let vertGap = abs(win.frame.maxY - referenceFrame.minY)
+                let horizOverlap = win.frame.minX < referenceFrame.maxX && win.frame.maxX > referenceFrame.minX
+                if vertGap <= dockThreshold && horizOverlap {
+                    toMove.append(win)
+                    frontier.append(win.frame)
+                }
+            }
+        }
+
+        guard !toMove.isEmpty else { return }
+
+        isSnappingWindow = true
+        defer { isSnappingWindow = false }
+
+        for win in toMove {
+            var frame = win.frame
+            frame.origin.y += closingFrame.height
+            win.setFrame(frame, display: true, animate: false)
+        }
+
+        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+    }
+
     /// Show local media library (redirects to unified browser in local mode)
     func showMediaLibrary() {
         // Redirect to unified browser - it handles both Plex and local files
@@ -1089,9 +1133,11 @@ class WindowManager {
     
     func toggleSpectrum() {
         if let controller = spectrumWindowController, controller.window?.isVisible == true {
+            let closingFrame = controller.window!.frame
             // Stop rendering before hiding to save CPU (orderOut doesn't trigger windowWillClose)
             controller.stopRenderingForHide()
             controller.window?.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
         } else {
             showSpectrum()
         }
