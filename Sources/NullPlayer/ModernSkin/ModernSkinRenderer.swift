@@ -1070,7 +1070,7 @@ class ModernSkinRenderer {
     /// Same as drawInsetPanel but accepts an already-scaled rect (used from drawFallback).
     private func drawInsetPanelScaled(_ scaledR: NSRect, context: CGContext) {
         context.saveGState()
-        let corner = 2 * scaleFactor
+        let corner = 4 * scaleFactor
         let path = CGPath(roundedRect: scaledR, cornerWidth: corner, cornerHeight: corner, transform: nil)
         context.setFillColor(skin.surfaceColor.withAlphaComponent(0.8).cgColor)
         context.addPath(path)

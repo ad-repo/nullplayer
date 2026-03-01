@@ -71,7 +71,7 @@ enum ModernSkinElements {
     
     /// Time display area -- region for 7-segment LED digits (to the right of status indicator)
     /// Width 76: max readout "199:59" is 3×12 + colon 5 + 2×12 + 5 gaps = 70px → 3px padding each side
-    static let timeDisplay = Element("time_display", NSRect(x: 14, y: 68, width: 76, height: 26))
+    static let timeDisplay = Element("time_display", NSRect(x: 14, y: 64, width: 76, height: 26))
     
     /// Individual time digits -- 7-segment LED style
     static let timeDigitSize = NSSize(width: 12, height: 20)
@@ -80,7 +80,7 @@ enum ModernSkinElements {
     // MARK: - Marquee / Info Panel (right side)
     
     /// Marquee display area (right side of upper display)
-    static let marqueeBackground = Element("marquee_bg", NSRect(x: 93, y: 60, width: 176, height: 38))
+    static let marqueeBackground = Element("marquee_bg", NSRect(x: 93, y: 60, width: 176, height: 34))
     
     /// Info labels row (below marquee text, inside marquee panel)
     /// Layout: [bitrate] [samplerate] [bpm] [stereo/mono] [casting]
@@ -98,10 +98,10 @@ enum ModernSkinElements {
     // MARK: - Status Indicator (left of time display)
     
     /// Play/pause/stop status indicator (small icon to the left of time digits)
-    /// y:76 centers the 10px icon in the time panel (panel center y:80.5)
-    static let statusPlay = Element("status_play", NSRect(x: 6, y: 76, width: 8, height: 10))
-    static let statusPause = Element("status_pause", NSRect(x: 6, y: 76, width: 8, height: 10))
-    static let statusStop = Element("status_stop", NSRect(x: 6, y: 76, width: 8, height: 10))
+    /// y:72 centers the 10px icon in the time panel (panel center y:77)
+    static let statusPlay = Element("status_play", NSRect(x: 6, y: 72, width: 8, height: 10))
+    static let statusPause = Element("status_pause", NSRect(x: 6, y: 72, width: 8, height: 10))
+    static let statusStop = Element("status_stop", NSRect(x: 6, y: 72, width: 8, height: 10))
     
     /// Mini spectrum analyzer area (to the left of status)
     static let spectrumArea = Element("spectrum_area", NSRect(x: 6, y: 39, width: 84, height: 18),

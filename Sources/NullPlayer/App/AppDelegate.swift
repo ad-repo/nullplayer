@@ -276,7 +276,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback media player for digital media collections")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback media player for personal collections")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
@@ -291,7 +291,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 20
         
         // Credits
-        let thanksLabel = NSTextField(labelWithString: "Thanks to the people who starred this project on github")
+        let thanksLabel = NSTextField(labelWithString: "Please ⭐ star ⭐ nullPlayer on github")
         thanksLabel.font = NSFont.systemFont(ofSize: 14)
         thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         thanksLabel.alignment = .center

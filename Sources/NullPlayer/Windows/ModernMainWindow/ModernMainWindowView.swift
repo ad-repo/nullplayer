@@ -280,7 +280,7 @@ class ModernMainWindowView: NSView {
         let timeStatusRegion = timeScaled.union(statusScaled)
         if dirtyRect.intersects(timeStatusRegion) {
             // Recessed panel behind time digits and status indicator
-            renderer.drawInsetPanel(in: NSRect(x: 6, y: 60, width: 84, height: 38), context: context)
+            renderer.drawInsetPanel(in: NSRect(x: 6, y: 60, width: 84, height: 34), context: context)
             drawTimeDisplay(context: context)
             let state = effectivePlaybackState()
             renderer.drawStatusIndicator(state, in: ModernSkinElements.statusPlay.defaultRect, context: context)
@@ -784,6 +784,9 @@ class ModernMainWindowView: NSView {
                 let specRect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
                 let overlay = SpectrumAnalyzerView(frame: specRect)
                 overlay.isEmbedded = true  // prevent contamination of "spectrumQualityMode" UserDefaults
+                overlay.wantsLayer = true
+                overlay.layer?.cornerRadius = 4 * scale
+                overlay.layer?.masksToBounds = true
 
                 // Set spectrum colors from modern skin
                 if let skin = ModernSkinEngine.shared.currentSkin {
