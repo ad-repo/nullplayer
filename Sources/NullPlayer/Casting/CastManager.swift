@@ -1750,7 +1750,8 @@ class CastManager {
 
     /// Extensions that Sonos hardware cannot decode regardless of resolution.
     /// ALAC: decoder absent on S1 devices. AIFF: not in Sonos's UPnP supported-format list.
-    static let sonosUnsupportedExtensions: Set<String> = ["alac", "aiff", "aif"]
+    /// WavPack (.wv): unsupported codec on all Sonos hardware.
+    static let sonosUnsupportedExtensions: Set<String> = ["alac", "aiff", "aif", "wv"]
 
     /// Sonos S1 fails above 48 kHz PCM; use as conservative safe limit.
     static let sonosMaxSampleRate: Int = 48000
