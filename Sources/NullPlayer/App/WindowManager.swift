@@ -1381,7 +1381,7 @@ class WindowManager {
         var nextY = mainFrame.minY
         
         // EQ window - position below main window
-        if let eqWindow = equalizerWindowController?.window, eqWindow.isVisible {
+        if let eqWindow = equalizerWindowController?.window {
             let eqTargetSize: NSSize
             if isModernUIEnabled {
                 eqTargetSize = ModernSkinElements.eqWindowSize
@@ -1392,41 +1392,49 @@ class WindowManager {
             let eqAdjustedSize = eqTargetSize
             eqWindow.minSize = eqAdjustedSize
             eqWindow.maxSize = eqAdjustedSize
-            let eqFrame = NSRect(
-                x: mainFrame.minX,
-                y: nextY - eqAdjustedSize.height,
-                width: eqAdjustedSize.width,
-                height: eqAdjustedSize.height
-            )
-            eqWindow.setFrame(eqFrame, display: true, animate: true)
-            nextY = eqFrame.minY
+            if eqWindow.isVisible {
+                let eqFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - eqAdjustedSize.height,
+                    width: eqAdjustedSize.width,
+                    height: eqAdjustedSize.height
+                )
+                eqWindow.setFrame(eqFrame, display: true, animate: true)
+                nextY = eqFrame.minY
+            } else {
+                eqWindow.setContentSize(eqAdjustedSize)
+            }
         }
         
         // Playlist - position below EQ (or main if no EQ)
-        if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible {
+        if let playlistWindow = playlistWindowController?.window {
             let baseMinSize: NSSize = isModernUIEnabled ? ModernSkinElements.playlistMinSize : Skin.playlistMinSize
             let minHeight = baseMinSize.height * (isModernUIEnabled ? 1.0 : scale)
-            
+
             let targetWidth = mainFrame.width
             playlistWindow.minSize = NSSize(width: targetWidth, height: minHeight)
             playlistWindow.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
-            
+
             // Scale height proportionally
             let currentFrame = playlistWindow.frame
             let newHeight = max(minHeight, currentFrame.height * (isDoubleSize ? 2.0 : 0.5))
-            
-            let playlistFrame = NSRect(
-                x: mainFrame.minX,
-                y: nextY - newHeight,
-                width: targetWidth,
-                height: newHeight
-            )
-            playlistWindow.setFrame(playlistFrame, display: true, animate: true)
-            nextY = playlistFrame.minY
+
+            if playlistWindow.isVisible {
+                let playlistFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - newHeight,
+                    width: targetWidth,
+                    height: newHeight
+                )
+                playlistWindow.setFrame(playlistFrame, display: true, animate: true)
+                nextY = playlistFrame.minY
+            } else {
+                playlistWindow.setContentSize(NSSize(width: targetWidth, height: newHeight))
+            }
         }
         
         // Spectrum window - position below playlist (or previous window)
-        if let spectrumWindow = spectrumWindowController?.window, spectrumWindow.isVisible {
+        if let spectrumWindow = spectrumWindowController?.window {
             let spectrumTargetSize: NSSize
             if isModernUIEnabled {
                 spectrumTargetSize = ModernSkinElements.spectrumWindowSize
@@ -1437,14 +1445,18 @@ class WindowManager {
             let spectrumAdjustedSize = spectrumTargetSize
             spectrumWindow.minSize = spectrumAdjustedSize
             spectrumWindow.maxSize = spectrumAdjustedSize
-            let spectrumFrame = NSRect(
-                x: mainFrame.minX,
-                y: nextY - spectrumAdjustedSize.height,
-                width: spectrumAdjustedSize.width,
-                height: spectrumAdjustedSize.height
-            )
-            spectrumWindow.setFrame(spectrumFrame, display: true, animate: true)
-            nextY = spectrumFrame.minY
+            if spectrumWindow.isVisible {
+                let spectrumFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - spectrumAdjustedSize.height,
+                    width: spectrumAdjustedSize.width,
+                    height: spectrumAdjustedSize.height
+                )
+                spectrumWindow.setFrame(spectrumFrame, display: true, animate: true)
+                nextY = spectrumFrame.minY
+            } else {
+                spectrumWindow.setContentSize(spectrumAdjustedSize)
+            }
         }
         
         // Side windows - match the vertical stack height and reposition
