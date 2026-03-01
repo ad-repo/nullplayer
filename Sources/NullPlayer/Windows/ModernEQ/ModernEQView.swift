@@ -56,7 +56,7 @@ class ModernEQView: NSView {
     private var glowMultiplier: CGFloat = 1.0
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
-    private var adjacentEdges: AdjacentEdges = []
+    private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     
     // MARK: - Layout Constants
     
@@ -173,6 +173,7 @@ class ModernEQView: NSView {
         setAccessibilityIdentifier("modernEqualizerView")
         setAccessibilityRole(.group)
         setAccessibilityLabel("Equalizer")
+        updateCornerMask()
     }
     
     deinit {
@@ -358,11 +359,11 @@ class ModernEQView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
         // Draw window background
-        renderer.drawWindowBackground(in: bounds, context: context)
-        
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
+
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
-        
+
         // Draw title bar (unless hidden by docking)
         if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER EQUALIZER", prefix: "eq_", context: context)
@@ -855,6 +856,7 @@ class ModernEQView: NSView {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
         glowMultiplier = skin.elementGlowMultiplier
+        updateCornerMask()
         needsDisplay = true
     }
     
@@ -1178,8 +1180,29 @@ class ModernEQView: NSView {
     }
     
     // MARK: - Layout
-    
+
     override func layout() {
         super.layout()
+        updateCornerMask()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        layer?.isOpaque = false
+        updateCornerMask()
+    }
+
+    private func updateCornerMask() {
+        guard let layer = self.layer else { return }
+        let cornerRadius = (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()).config.window.cornerRadius ?? 0
+        layer.cornerRadius = cornerRadius
+        layer.masksToBounds = cornerRadius > 0
+        guard cornerRadius > 0 else { return }
+        var masked: CACornerMask = []
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
+        layer.maskedCorners = masked
     }
 }

@@ -52,7 +52,7 @@
     "window": {
         "borderWidth": 1.5,
         "borderColor": "#3a3d40",
-        "cornerRadius": 0,
+        "cornerRadius": 6,
         "seamlessDocking": 1.0
     },
     "elements": {

@@ -409,7 +409,7 @@ class ModernLibraryBrowserView: NSView {
     }()
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
-    private var adjacentEdges: AdjacentEdges = []
+    private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     
     // Button/drag state
     private var pressedButton: LibraryBrowserButtonType?
@@ -609,6 +609,7 @@ class ModernLibraryBrowserView: NSView {
         setAccessibilityIdentifier("modernLibraryBrowserView")
         setAccessibilityRole(.group)
         setAccessibilityLabel("Library Browser")
+        updateCornerMask()
     }
     
     deinit {
@@ -617,11 +618,31 @@ class ModernLibraryBrowserView: NSView {
         stopServerNameScroll()
         stopVisualizerTimer()
     }
-    
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        layer?.isOpaque = false
+        updateCornerMask()
+    }
+
     // MARK: - Current Skin Helper
     
     private func currentSkin() -> ModernSkin {
         return ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
+    }
+
+    private func updateCornerMask() {
+        guard let layer = self.layer else { return }
+        let cornerRadius = currentSkin().config.window.cornerRadius ?? 0
+        layer.cornerRadius = cornerRadius
+        layer.masksToBounds = cornerRadius > 0
+        guard cornerRadius > 0 else { return }
+        var masked: CACornerMask = []
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
+        layer.maskedCorners = masked
     }
     
     // MARK: - Drawing
@@ -635,7 +656,7 @@ class ModernLibraryBrowserView: NSView {
         
         if isShadeMode {
             // Draw shade mode
-            renderer.drawWindowBackground(in: bounds, context: context)
+            renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
             renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
             
             // Draw title text centered (using renderer for image text support)
@@ -656,7 +677,7 @@ class ModernLibraryBrowserView: NSView {
         }
         
         // Normal mode - bottom-left origin (no coordinate flipping)
-        renderer.drawWindowBackground(in: bounds, context: context)
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
         
         // Title bar, close, shade buttons use base (unscaled) coordinates
@@ -4729,6 +4750,7 @@ class ModernLibraryBrowserView: NSView {
     @objc private func modernSkinDidChange() {
         let skin = currentSkin()
         renderer = ModernSkinRenderer(skin: skin)
+        updateCornerMask()
         needsDisplay = true
     }
     

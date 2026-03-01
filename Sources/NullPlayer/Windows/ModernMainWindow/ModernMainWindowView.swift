@@ -78,8 +78,8 @@ class ModernMainWindowView: NSView {
     private var mainTrackingArea: NSTrackingArea?
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
-    private var adjacentEdges: AdjacentEdges = []
-    
+    private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -94,7 +94,7 @@ class ModernMainWindowView: NSView {
     
     private func commonInit() {
         wantsLayer = true
-        layer?.isOpaque = true
+        layer?.isOpaque = false
         
         // Initialize with current skin or fallback
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
@@ -131,6 +131,7 @@ class ModernMainWindowView: NSView {
         
         // Restore saved visualization mode
         restoreVisMode()
+        updateCornerMask()
     }
     
     deinit {
@@ -176,10 +177,31 @@ class ModernMainWindowView: NSView {
     }
     
     // MARK: - Layout
-    
+
     override func layout() {
         super.layout()
         gridLayer?.frame = bounds
+        updateCornerMask()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        layer?.isOpaque = false
+        updateCornerMask()
+    }
+
+    private func updateCornerMask() {
+        guard let layer = self.layer else { return }
+        let cornerRadius = (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()).config.window.cornerRadius ?? 0
+        layer.cornerRadius = cornerRadius
+        layer.masksToBounds = cornerRadius > 0
+        guard cornerRadius > 0 else { return }
+        var masked: CACornerMask = []
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
+        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
+        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
+        layer.maskedCorners = masked
     }
     
     // MARK: - Tracking Areas (cursor hover)
@@ -237,7 +259,7 @@ class ModernMainWindowView: NSView {
         // 1. Window background + border -- clip to dirtyRect to avoid full-bounds fill
         context.saveGState()
         context.clip(to: dirtyRect)
-        renderer.drawWindowBackground(in: windowBounds, context: context)
+        renderer.drawWindowBackground(in: windowBounds, context: context, adjacentEdges: adjacentEdges)
         renderer.drawWindowBorder(in: windowBounds, context: context, adjacentEdges: adjacentEdges)
         context.restoreGState()
         
@@ -307,7 +329,7 @@ class ModernMainWindowView: NSView {
     /// Draw compact shade mode: single strip with title, scrolling track name, and controls
     private func drawShadeMode(in bounds: NSRect, context: CGContext) {
         // Background
-        renderer.drawWindowBackground(in: bounds, context: context)
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
         
         // In shade mode, draw a compact horizontal layout in the available space
@@ -654,6 +676,7 @@ class ModernMainWindowView: NSView {
         setupGridBackground(skin: skin)
         marqueeLayer.configure(with: skin)
         updateMarqueeForMode()
+        updateCornerMask()
         
         // Reposition metal overlay to match new scale
         if let overlay = metalOverlay {
