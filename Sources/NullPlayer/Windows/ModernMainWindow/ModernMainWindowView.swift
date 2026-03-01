@@ -124,6 +124,10 @@ class ModernMainWindowView: NSView {
         // Observe window layout changes for seamless docked borders
         NotificationCenter.default.addObserver(self, selector: #selector(windowLayoutDidChange),
                                                 name: .windowLayoutDidChange, object: nil)
+
+        // Observe main window vis mode changes from context menu
+        NotificationCenter.default.addObserver(self, selector: #selector(mainVisSettingsChanged),
+                                                name: NSNotification.Name("MainWindowVisChanged"), object: nil)
         
         // Set accessibility
         setAccessibilityIdentifier("ModernMainWindowView")
@@ -779,16 +783,31 @@ class ModernMainWindowView: NSView {
             if metalOverlay == nil {
                 let specRect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
                 let overlay = SpectrumAnalyzerView(frame: specRect)
+                overlay.isEmbedded = true  // prevent contamination of "spectrumQualityMode" UserDefaults
 
                 // Set spectrum colors from modern skin
                 if let skin = ModernSkinEngine.shared.currentSkin {
                     overlay.spectrumColors = skin.spectrumColors()
                 }
-                
+
+                // Load mode-specific settings from main-window-specific keys
+                if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+                   let style = FlameStyle(rawValue: savedStyle) { overlay.flameStyle = style }
+                if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+                   let intensity = FlameIntensity(rawValue: savedIntensity) { overlay.flameIntensity = intensity }
+                if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle"),
+                   let style = LightningStyle(rawValue: savedStyle) { overlay.lightningStyle = style }
+                if let savedScheme = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme"),
+                   let scheme = MatrixColorScheme(rawValue: savedScheme) { overlay.matrixColorScheme = scheme }
+                if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
+                   let intensity = MatrixIntensity(rawValue: savedIntensity) { overlay.matrixIntensity = intensity }
+                if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
+                   let mode = SpectrumDecayMode(rawValue: savedDecay) { overlay.decayMode = mode }
+
                 addSubview(overlay)
                 metalOverlay = overlay
             }
-            
+
             if let qualityMode = mainVisMode.spectrumQualityMode {
                 metalOverlay?.qualityMode = qualityMode
             }
@@ -816,6 +835,36 @@ class ModernMainWindowView: NSView {
         }
     }
     
+    @objc private func mainVisSettingsChanged() {
+        if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
+           let mode = MainWindowVisMode(rawValue: savedMode) {
+            if let qualityMode = mode.spectrumQualityMode,
+               !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
+                return
+            }
+            if mode != mainVisMode {
+                mainVisMode = mode
+            }
+        }
+        if let overlay = metalOverlay {
+            if let qualityMode = mainVisMode.spectrumQualityMode {
+                overlay.qualityMode = qualityMode
+            }
+            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+               let style = FlameStyle(rawValue: savedStyle) { overlay.flameStyle = style }
+            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+               let intensity = FlameIntensity(rawValue: savedIntensity) { overlay.flameIntensity = intensity }
+            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle"),
+               let style = LightningStyle(rawValue: savedStyle) { overlay.lightningStyle = style }
+            if let savedScheme = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme"),
+               let scheme = MatrixColorScheme(rawValue: savedScheme) { overlay.matrixColorScheme = scheme }
+            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
+               let intensity = MatrixIntensity(rawValue: savedIntensity) { overlay.matrixIntensity = intensity }
+            if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
+               let mode = SpectrumDecayMode(rawValue: savedDecay) { overlay.decayMode = mode }
+        }
+    }
+
     // MARK: - Hit Testing
     
     /// Scale and convert a point from view coordinates to base coordinates
