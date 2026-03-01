@@ -217,9 +217,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
         
-        appMenu.addItem(withTitle: BundleHelper.appVersion, action: #selector(showAbout), keyEquivalent: "")
+        appMenu.addItem(
+            withTitle: "nullPlayer-\(BundleHelper.appVersion ?? "Unknown")",
+            action: #selector(showAbout),
+            keyEquivalent: ""
+        )        
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Quit NullPlayer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit nullPlayer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         
         NSApplication.shared.mainMenu = mainMenu
     }
@@ -237,7 +241,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "About NullPlayer"
+        window.title = "About nullPlayer"
         window.isMovableByWindowBackground = true
         window.center()
         
@@ -258,7 +262,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= iconSize + 16
         
         // App name
-        let nameLabel = NSTextField(labelWithString: "NullPlayer")
+        let nameLabel = NSTextField(labelWithString: "nullPlayer")
         nameLabel.font = NSFont.systemFont(ofSize: 28, weight: .bold)
         nameLabel.textColor = .white
         nameLabel.alignment = .center
@@ -276,7 +280,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback media player for personal collections")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback player for modern personal media setups")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
@@ -291,7 +295,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 20
         
         // Credits
-        let thanksLabel = NSTextField(labelWithString: "Please ⭐ star ⭐ nullPlayer on github")
+        let thanksLabel = NSTextField(labelWithString: "Please add a ⭐star⭐ and file \n bugs and feature requests on my github")
         thanksLabel.font = NSFont.systemFont(ofSize: 14)
         thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         thanksLabel.alignment = .center
