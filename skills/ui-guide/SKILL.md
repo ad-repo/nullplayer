@@ -432,6 +432,7 @@ The Spectrum Analyzer participates in the docking system alongside Main, EQ, and
 - Docks and moves with the window group when dragged
 - Opens below the current vertical stack (Main → EQ → Playlist → Spectrum)
 - State (visibility and position) saved with "Remember State on Quit"
+- **Center stack collapse**: hiding a stack window (EQ, Playlist, Spectrum) slides windows below it up by the closed window's height. Implemented via `slideUpWindowsBelow(closingFrame:)` in `WindowManager`. The closing frame must be captured BEFORE `orderOut`.
 
 ### Key Files
 

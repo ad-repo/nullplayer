@@ -224,6 +224,7 @@ Sources/NullPlayer/
   - Multi-monitor: Screen edge snapping is skipped if it would cause docked windows to end up on different screens
   - `Snap to Default` centers main window on its current screen (not always the primary display)
   - Coordinated minimize: uses `addChildWindow`/`removeChildWindow` in `windowWillMiniaturize`/`windowDidDeminiaturize` to temporarily make docked windows children of the main window so they animate into the dock together. Child relationships are removed on restore so windows remain independent for normal docking/dragging
+  - **Center stack collapse**: `slideUpWindowsBelow(closingFrame:)` in `WindowManager` slides docked windows up when a stack window is hidden. Called from `toggleEqualizer/Playlist/Spectrum` — capture the frame BEFORE `orderOut`, then call it. Uses BFS over `dockThreshold`-adjacent windows (by vertical gap + horizontal overlap). Must set `isSnappingWindow = true` during moves to prevent the docking feedback loop.
 - **Hide Title Bars mode** (modern UI only): `hideTitleBars` UserDefaults preference hides skinned title bars on all windows. Only available in modern UI mode — the getter returns `false` when classic mode is active, and the menu item is hidden. Key implementation details:
   - Each view's `titleBarHeight` computed property returns `borderWidth` (not 0) when hidden, preserving the top border line
   - `toggleHideTitleBars()` must adjust `minSize`/`maxSize` constraints BEFORE resizing (EQ has `maxSize = minSize`)
