@@ -301,7 +301,11 @@ class MediaLibrary {
     /// URL-path index for quick video lookup (guarded by dataQueue)
     private var moviesByPath: [String: LocalVideo] = [:]
     private var episodesByPath: [String: LocalEpisode] = [:]
-    
+
+    /// Album and artist ratings keyed by id (guarded by dataQueue)
+    private var albumRatings: [String: Int] = [:]   // Key: album.id ("artist|album")
+    private var artistRatings: [String: Int] = [:]  // Key: artist.id (artist name)
+
     /// Library file location
     private let libraryURL: URL
     
@@ -501,6 +505,103 @@ class MediaLibrary {
         }
     }
     
+    func albumRating(for albumId: String) -> Int? {
+        dataQueue.sync { albumRatings[albumId] }
+    }
+
+    func artistRating(for artistId: String) -> Int? {
+        dataQueue.sync { artistRatings[artistId] }
+    }
+
+    func setAlbumRating(albumId: String, rating: Int?) {
+        dataQueue.sync {
+            if let rating = rating { albumRatings[albumId] = rating }
+            else { albumRatings.removeValue(forKey: albumId) }
+        }
+        saveLibrary()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: nil)
+        }
+    }
+
+    func setArtistRating(artistId: String, rating: Int?) {
+        dataQueue.sync {
+            if let rating = rating { artistRatings[artistId] = rating }
+            else { artistRatings.removeValue(forKey: artistId) }
+        }
+        saveLibrary()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: nil)
+        }
+    }
+
+    /// Update a track's metadata in the library (in-app only, no file write-back)
+    func updateTrack(_ track: LibraryTrack) {
+        var didUpdate = false
+        dataQueue.sync {
+            guard let index = tracks.firstIndex(where: { $0.id == track.id }) else { return }
+            tracks[index] = track; tracksByPath[track.url.path] = track; didUpdate = true
+        }
+        if didUpdate { notifyChange(); saveLibrary() }
+    }
+
+    /// Update a movie's metadata in the library (in-app only, no file write-back)
+    func updateMovie(_ movie: LocalVideo) {
+        dataQueue.sync {
+            guard let index = movies.firstIndex(where: { $0.id == movie.id }) else { return }
+            movies[index] = movie; moviesByPath[movie.url.path] = movie
+        }
+        notifyChange(); saveLibrary()
+    }
+
+    /// Update an episode's metadata in the library (in-app only, no file write-back)
+    func updateEpisode(_ episode: LocalEpisode) {
+        dataQueue.sync {
+            guard let index = episodes.firstIndex(where: { $0.id == episode.id }) else { return }
+            episodesByPath.removeValue(forKey: episodes[index].url.path)
+            episodes[index] = episode; episodesByPath[episode.url.path] = episode
+        }
+        notifyChange(); saveLibrary()
+    }
+
+    /// Remove a movie from the library (file is not deleted)
+    func removeMovie(_ movie: LocalVideo) {
+        dataQueue.sync {
+            movies.removeAll { $0.id == movie.id }
+            moviesByPath.removeValue(forKey: movie.url.path)
+        }
+        notifyChange(); saveLibrary()
+    }
+
+    /// Remove an episode from the library (file is not deleted)
+    func removeEpisode(_ episode: LocalEpisode) {
+        dataQueue.sync {
+            episodes.removeAll { $0.id == episode.id }
+            episodesByPath.removeValue(forKey: episode.url.path)
+        }
+        notifyChange(); saveLibrary()
+    }
+
+    /// Remove all episodes for a given show title from the library
+    func removeShow(title: String) {
+        dataQueue.sync {
+            let toRemove = episodes.filter { $0.showTitle == title }
+            toRemove.forEach { episodesByPath.removeValue(forKey: $0.url.path) }
+            episodes.removeAll { $0.showTitle == title }
+        }
+        notifyChange(); saveLibrary()
+    }
+
+    /// Remove all episodes for a given season of a show from the library
+    func removeSeason(showTitle: String, seasonNumber: Int) {
+        dataQueue.sync {
+            let toRemove = episodes.filter { $0.showTitle == showTitle && $0.seasonNumber == seasonNumber }
+            toRemove.forEach { episodesByPath.removeValue(forKey: $0.url.path) }
+            episodes.removeAll { $0.showTitle == showTitle && $0.seasonNumber == seasonNumber }
+        }
+        notifyChange(); saveLibrary()
+    }
+
     /// Find a library track by its file URL
     func findTrack(byURL url: URL) -> LibraryTrack? {
         dataQueue.sync { tracksByPath[url.path] }
@@ -961,7 +1062,10 @@ class MediaLibrary {
     // MARK: - Persistence
     
     private func saveLibrary() {
-        let data = dataQueue.sync { LibraryData(tracks: tracks, watchFolders: watchFolders, movies: movies, episodes: episodes) }
+        let data = dataQueue.sync {
+            LibraryData(tracks: tracks, watchFolders: watchFolders, movies: movies,
+                        episodes: episodes, albumRatings: albumRatings, artistRatings: artistRatings)
+        }
         
         do {
             let encoder = JSONEncoder()
@@ -985,6 +1089,8 @@ class MediaLibrary {
                 watchFolders = libraryData.watchFolders
                 movies = libraryData.movies
                 episodes = libraryData.episodes
+                albumRatings = libraryData.albumRatings
+                artistRatings = libraryData.artistRatings
 
                 // Rebuild indices
                 tracksByPath.removeAll()
@@ -1179,21 +1285,25 @@ private struct LibraryData: Codable {
     let watchFolders: [URL]
     let movies: [LocalVideo]
     let episodes: [LocalEpisode]
+    let albumRatings: [String: Int]
+    let artistRatings: [String: Int]
 
-    init(tracks: [LibraryTrack], watchFolders: [URL], movies: [LocalVideo], episodes: [LocalEpisode]) {
-        self.tracks = tracks
-        self.watchFolders = watchFolders
-        self.movies = movies
-        self.episodes = episodes
+    init(tracks: [LibraryTrack], watchFolders: [URL], movies: [LocalVideo],
+         episodes: [LocalEpisode], albumRatings: [String: Int], artistRatings: [String: Int]) {
+        self.tracks = tracks; self.watchFolders = watchFolders
+        self.movies = movies; self.episodes = episodes
+        self.albumRatings = albumRatings; self.artistRatings = artistRatings
     }
 
-    // Backwards-compatible: existing library.json files lack movies/episodes keys
+    // Backwards-compatible: existing library.json files may lack newer keys
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         tracks = try container.decode([LibraryTrack].self, forKey: .tracks)
         watchFolders = try container.decode([URL].self, forKey: .watchFolders)
         movies = try container.decodeIfPresent([LocalVideo].self, forKey: .movies) ?? []
         episodes = try container.decodeIfPresent([LocalEpisode].self, forKey: .episodes) ?? []
+        albumRatings = try container.decodeIfPresent([String: Int].self, forKey: .albumRatings) ?? [:]
+        artistRatings = try container.decodeIfPresent([String: Int].self, forKey: .artistRatings) ?? [:]
     }
 }
 

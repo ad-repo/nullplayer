@@ -414,6 +414,10 @@ class ModernLibraryBrowserView: NSView {
     // Button/drag state
     private var pressedButton: LibraryBrowserButtonType?
     private var activeTagsPanel: TagsPanel?
+    private var activeEditTagsPanel: EditTagsPanel?
+    private var activeEditAlbumTagsPanel: EditAlbumTagsPanel?
+    private var activeEditVideoTagsPanel: EditVideoTagsPanel?
+    private struct SeasonRef { let season: LocalSeason; let showTitle: String }
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     private var isDraggingScrollbar = false
@@ -3344,10 +3348,13 @@ class ModernLibraryBrowserView: NSView {
             let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
             rateItem.submenu = rateMenu; menu.addItem(rateItem)
             menu.addItem(NSMenuItem.separator())
-            let tagsItem = NSMenuItem(title: "See Tags", action: #selector(contextMenuShowTags(_:)), keyEquivalent: "")
+            let tagsItem = NSMenuItem(title: "Edit Tags", action: #selector(contextMenuEditTags(_:)), keyEquivalent: "")
             tagsItem.target = self; tagsItem.representedObject = track; menu.addItem(tagsItem)
             let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuShowInFinder(_:)), keyEquivalent: "")
             finderItem.target = self; finderItem.representedObject = track; menu.addItem(finderItem)
+            menu.addItem(NSMenuItem.separator())
+            let removeTrackItem = NSMenuItem(title: "Remove from Library", action: #selector(contextMenuRemoveLocalTrack(_:)), keyEquivalent: "")
+            removeTrackItem.target = self; removeTrackItem.representedObject = track; menu.addItem(removeTrackItem)
         case .localAlbum(let album):
             let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayLocalAlbum(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = album; menu.addItem(playItem)
@@ -3357,6 +3364,13 @@ class ModernLibraryBrowserView: NSView {
             playNextItem.target = self; playNextItem.representedObject = album; menu.addItem(playNextItem)
             let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddLocalAlbumToQueue(_:)), keyEquivalent: "")
             queueItem.target = self; queueItem.representedObject = album; menu.addItem(queueItem)
+            menu.addItem(NSMenuItem.separator())
+            let rateAlbumItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateAlbumItem.submenu = buildRateSubmenuForLocalAlbum(albumId: album.id); menu.addItem(rateAlbumItem)
+            let editAlbumItem = NSMenuItem(title: "Edit Album Tags", action: #selector(contextMenuEditAlbumTags(_:)), keyEquivalent: "")
+            editAlbumItem.target = self; editAlbumItem.representedObject = album; menu.addItem(editAlbumItem)
+            let removeAlbumItem = NSMenuItem(title: "Remove Album from Library", action: #selector(contextMenuRemoveLocalAlbum(_:)), keyEquivalent: "")
+            removeAlbumItem.target = self; removeAlbumItem.representedObject = album; menu.addItem(removeAlbumItem)
         case .localArtist(let artist):
             let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayLocalArtist(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = artist; menu.addItem(playItem)
@@ -3366,6 +3380,11 @@ class ModernLibraryBrowserView: NSView {
             playNextItem.target = self; playNextItem.representedObject = artist; menu.addItem(playNextItem)
             let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddLocalArtistToQueue(_:)), keyEquivalent: "")
             queueItem.target = self; queueItem.representedObject = artist; menu.addItem(queueItem)
+            menu.addItem(NSMenuItem.separator())
+            let rateArtistItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateArtistItem.submenu = buildRateSubmenuForLocalArtist(artistId: artist.id); menu.addItem(rateArtistItem)
+            let removeArtistItem = NSMenuItem(title: "Remove Artist from Library", action: #selector(contextMenuRemoveLocalArtist(_:)), keyEquivalent: "")
+            removeArtistItem.target = self; removeArtistItem.representedObject = artist; menu.addItem(removeArtistItem)
         case .subsonicTrack(let song):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlaySubsonicSong(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = song; menu.addItem(playItem)
@@ -3583,12 +3602,23 @@ class ModernLibraryBrowserView: NSView {
             menu.addItem(NSMenuItem.separator())
             let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuShowLocalVideoInFinder(_:)), keyEquivalent: "")
             finderItem.target = self; finderItem.representedObject = movie.url as NSURL; menu.addItem(finderItem)
-        case .localShow:
+            menu.addItem(NSMenuItem.separator())
+            let editMovieItem = NSMenuItem(title: "Edit Tags", action: #selector(contextMenuEditVideoTags(_:)), keyEquivalent: "")
+            editMovieItem.target = self; editMovieItem.representedObject = movie; menu.addItem(editMovieItem)
+            let removeMovieItem = NSMenuItem(title: "Remove from Library", action: #selector(contextMenuRemoveLocalMovie(_:)), keyEquivalent: "")
+            removeMovieItem.target = self; removeMovieItem.representedObject = movie; menu.addItem(removeMovieItem)
+        case .localShow(let show):
             let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
-        case .localSeason:
+            menu.addItem(NSMenuItem.separator())
+            let removeShowItem = NSMenuItem(title: "Remove Show from Library", action: #selector(contextMenuRemoveLocalShow(_:)), keyEquivalent: "")
+            removeShowItem.target = self; removeShowItem.representedObject = show; menu.addItem(removeShowItem)
+        case .localSeason(let season, let showTitle):
             let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
+            menu.addItem(NSMenuItem.separator())
+            let removeSeasonItem = NSMenuItem(title: "Remove Season from Library", action: #selector(contextMenuRemoveLocalSeason(_:)), keyEquivalent: "")
+            removeSeasonItem.target = self; removeSeasonItem.representedObject = SeasonRef(season: season, showTitle: showTitle); menu.addItem(removeSeasonItem)
         case .localEpisode(let episode):
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalEpisode(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = episode; menu.addItem(playItem)
@@ -3609,6 +3639,11 @@ class ModernLibraryBrowserView: NSView {
             menu.addItem(NSMenuItem.separator())
             let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuShowLocalVideoInFinder(_:)), keyEquivalent: "")
             finderItem.target = self; finderItem.representedObject = episode.url as NSURL; menu.addItem(finderItem)
+            menu.addItem(NSMenuItem.separator())
+            let editEpItem = NSMenuItem(title: "Edit Tags", action: #selector(contextMenuEditVideoTags(_:)), keyEquivalent: "")
+            editEpItem.target = self; editEpItem.representedObject = episode; menu.addItem(editEpItem)
+            let removeEpItem = NSMenuItem(title: "Remove from Library", action: #selector(contextMenuRemoveLocalEpisode(_:)), keyEquivalent: "")
+            removeEpItem.target = self; removeEpItem.representedObject = episode; menu.addItem(removeEpItem)
         case .header: return
         }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
@@ -3790,6 +3825,82 @@ class ModernLibraryBrowserView: NSView {
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: tagsPanel, queue: .main) { [weak self] _ in
             self?.activeTagsPanel = nil
         }
+    }
+    @objc private func contextMenuEditTags(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        activeEditTagsPanel?.close()
+        let panel = EditTagsPanel(track: track)
+        panel.onSave = { [weak self] in self?.loadLocalData() }
+        activeEditTagsPanel = panel; panel.show()
+    }
+    @objc private func contextMenuEditAlbumTags(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? Album else { return }
+        activeEditAlbumTagsPanel?.close()
+        let panel = EditAlbumTagsPanel(album: album)
+        panel.onSave = { [weak self] in self?.loadLocalData() }
+        activeEditAlbumTagsPanel = panel; panel.show()
+    }
+    @objc private func contextMenuEditVideoTags(_ sender: NSMenuItem) {
+        let videoItem: EditVideoTagsPanel.VideoItem
+        if let movie = sender.representedObject as? LocalVideo { videoItem = .movie(movie) }
+        else if let ep = sender.representedObject as? LocalEpisode { videoItem = .episode(ep) }
+        else { return }
+        activeEditVideoTagsPanel?.close()
+        let panel = EditVideoTagsPanel(item: videoItem)
+        panel.onSave = { [weak self] in self?.loadLocalData() }
+        activeEditVideoTagsPanel = panel; panel.show()
+    }
+    @objc private func contextMenuRemoveLocalTrack(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        MediaLibrary.shared.removeTrack(track); loadLocalData()
+    }
+    @objc private func contextMenuRemoveLocalAlbum(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? Album else { return }
+        let count = album.tracks.count
+        let alert = NSAlert()
+        alert.messageText = "Remove \"\(album.name)\" from Library?"
+        alert.informativeText = "This will remove \(count) track\(count == 1 ? "" : "s"). Files will not be deleted."
+        alert.addButton(withTitle: "Remove"); alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        MediaLibrary.shared.removeTracks(urls: album.tracks.map { $0.url }); loadLocalData()
+    }
+    @objc private func contextMenuRemoveLocalArtist(_ sender: NSMenuItem) {
+        guard let artist = sender.representedObject as? Artist else { return }
+        let count = artist.trackCount
+        let alert = NSAlert()
+        alert.messageText = "Remove \"\(artist.name)\" from Library?"
+        alert.informativeText = "This will remove \(count) track\(count == 1 ? "" : "s"). Files will not be deleted."
+        alert.addButton(withTitle: "Remove"); alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        MediaLibrary.shared.removeTracks(urls: artist.albums.flatMap { $0.tracks }.map { $0.url }); loadLocalData()
+    }
+    @objc private func contextMenuRemoveLocalMovie(_ sender: NSMenuItem) {
+        guard let movie = sender.representedObject as? LocalVideo else { return }
+        MediaLibrary.shared.removeMovie(movie); loadLocalData()
+    }
+    @objc private func contextMenuRemoveLocalEpisode(_ sender: NSMenuItem) {
+        guard let episode = sender.representedObject as? LocalEpisode else { return }
+        MediaLibrary.shared.removeEpisode(episode); loadLocalData()
+    }
+    @objc private func contextMenuRemoveLocalShow(_ sender: NSMenuItem) {
+        guard let show = sender.representedObject as? LocalShow else { return }
+        let count = show.episodeCount
+        let alert = NSAlert()
+        alert.messageText = "Remove \"\(show.title)\" from Library?"
+        alert.informativeText = "This will remove \(count) episode\(count == 1 ? "" : "s"). Files will not be deleted."
+        alert.addButton(withTitle: "Remove"); alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        MediaLibrary.shared.removeShow(title: show.title); loadLocalData()
+    }
+    @objc private func contextMenuRemoveLocalSeason(_ sender: NSMenuItem) {
+        guard let ref = sender.representedObject as? SeasonRef else { return }
+        let count = ref.season.episodes.count
+        let alert = NSAlert()
+        alert.messageText = "Remove Season \(ref.season.number) of \"\(ref.showTitle)\" from Library?"
+        alert.informativeText = "This will remove \(count) episode\(count == 1 ? "" : "s"). Files will not be deleted."
+        alert.addButton(withTitle: "Remove"); alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        MediaLibrary.shared.removeSeason(showTitle: ref.showTitle, seasonNumber: ref.season.number); loadLocalData()
     }
     @objc private func contextMenuShowInFinder(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
@@ -5381,6 +5492,39 @@ class ModernLibraryBrowserView: NSView {
         return menu
     }
 
+    private func buildRateSubmenuForLocalAlbum(albumId: String) -> NSMenu {
+        let menu = NSMenu(title: "Rate")
+        let current = MediaLibrary.shared.albumRating(for: albumId)
+        for stars in 1...5 {
+            let rating = stars * 2
+            let filled = current != nil && current! >= rating - 1 && current! <= rating
+            let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+            let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocalAlbum(_:)), keyEquivalent: "")
+            item.target = self; item.tag = rating; item.representedObject = albumId
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+        let clearItem = NSMenuItem(title: "Clear Rating", action: #selector(contextMenuRateLocalAlbum(_:)), keyEquivalent: "")
+        clearItem.target = self; clearItem.tag = -1; clearItem.representedObject = albumId
+        menu.addItem(clearItem)
+        return menu
+    }
+
+    private func buildRateSubmenuForLocalArtist(artistId: String) -> NSMenu {
+        let menu = NSMenu(title: "Rate")
+        for stars in 1...5 {
+            let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+            let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocalArtist(_:)), keyEquivalent: "")
+            item.target = self; item.tag = stars * 2; item.representedObject = artistId
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+        let clearItem = NSMenuItem(title: "Clear Rating", action: #selector(contextMenuRateLocalArtist(_:)), keyEquivalent: "")
+        clearItem.target = self; clearItem.tag = -1; clearItem.representedObject = artistId
+        menu.addItem(clearItem)
+        return menu
+    }
+
     /// Build rate submenu for a local track
     private func buildRateSubmenuForLocal(trackId: UUID) -> NSMenu {
         let menu = NSMenu(title: "Rate")
@@ -5482,6 +5626,20 @@ class ModernLibraryBrowserView: NSView {
            libraryTrack.id == trackId {
             currentTrackRating = rating >= 0 ? rating : nil; needsDisplay = true
         }
+        needsDisplay = true
+    }
+
+    @objc private func contextMenuRateLocalAlbum(_ sender: NSMenuItem) {
+        guard let albumId = sender.representedObject as? String else { return }
+        let rating = sender.tag
+        MediaLibrary.shared.setAlbumRating(albumId: albumId, rating: rating >= 0 ? rating : nil)
+        needsDisplay = true
+    }
+
+    @objc private func contextMenuRateLocalArtist(_ sender: NSMenuItem) {
+        guard let artistId = sender.representedObject as? String else { return }
+        let rating = sender.tag
+        MediaLibrary.shared.setArtistRating(artistId: artistId, rating: rating >= 0 ? rating : nil)
         needsDisplay = true
     }
     
@@ -7520,7 +7678,13 @@ extension ModernDisplayItem {
         case .subsonicArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
         case .jellyfinArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
         case .embyArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
-        case .localArtist(let a): return column.id == "albums" ? String(a.albums.count) : ""
+        case .localArtist(let a):
+            if column.id == "albums" { return String(a.albums.count) }
+            if column.id == "rating" {
+                guard let r = MediaLibrary.shared.artistRating(for: a.id), r > 0 else { return "" }
+                let stars = r / 2; return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+            }
+            return ""
         default: return ""
         }
     }
@@ -7709,6 +7873,9 @@ extension ModernDisplayItem {
         switch column.id {
         case "year": return album.year.map { String($0) } ?? ""
         case "duration": return album.formattedDuration
+        case "rating":
+            guard let r = MediaLibrary.shared.albumRating(for: album.id), r > 0 else { return "" }
+            let stars = r / 2; return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
         default: return ""
         }
     }
