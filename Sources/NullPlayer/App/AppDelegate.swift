@@ -295,7 +295,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 20
         
         // Credits
-        let thanksLabel = NSTextField(labelWithString: "Please add a ⭐star⭐ and file \n bugs and feature requests on my github")
+        let thanksLabel = NSTextField(labelWithString: "Please add a ⭐star⭐ on github")
         thanksLabel.font = NSFont.systemFont(ofSize: 14)
         thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         thanksLabel.alignment = .center
