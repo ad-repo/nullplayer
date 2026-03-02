@@ -110,7 +110,28 @@ class LocalMediaServer {
             }
             return await self.handleStreamHeadRequest(request)
         }
-        
+
+        // Plex Radio History web page
+        await server.appendRoute("GET /radio-history") { _ in
+            let html = PlexRadioHistory.shared.generateHistoryHTML()
+            return HTTPResponse(
+                statusCode: .ok,
+                headers: [.contentType: "text/html; charset=utf-8"],
+                body: Data(html.utf8)
+            )
+        }
+
+        // API to delete a single history entry
+        await server.appendRoute("POST /radio-history/delete/*") { request in
+            let path = request.path
+            guard let idString = path.split(separator: "/").last,
+                  let id = Int64(idString) else {
+                return HTTPResponse(statusCode: .badRequest)
+            }
+            PlexRadioHistory.shared.removeEntry(id: id)
+            return HTTPResponse(statusCode: .ok)
+        }
+
         // Start server in background task
         serverTask = Task {
             do {

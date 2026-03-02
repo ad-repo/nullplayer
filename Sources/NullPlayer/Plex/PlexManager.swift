@@ -891,7 +891,7 @@ class PlexManager {
             
             let tracks = convertToTracks(plexTracks)
             NSLog("PlexManager: Track radio created with %d tracks", tracks.count)
-            return tracks
+            return PlexRadioHistory.shared.filterOutHistoryTracks(tracks)
         } catch {
             NSLog("PlexManager: Failed to create track radio: %@", error.localizedDescription)
             return []
@@ -918,7 +918,7 @@ class PlexManager {
             
             let tracks = convertToTracks(plexTracks)
             NSLog("PlexManager: Artist radio created with %d tracks", tracks.count)
-            return tracks
+            return PlexRadioHistory.shared.filterOutHistoryTracks(tracks)
         } catch {
             NSLog("PlexManager: Failed to create artist radio: %@", error.localizedDescription)
             return []
@@ -945,7 +945,7 @@ class PlexManager {
             
             let tracks = convertToTracks(plexTracks)
             NSLog("PlexManager: Album radio created with %d tracks", tracks.count)
-            return tracks
+            return PlexRadioHistory.shared.filterOutHistoryTracks(tracks)
         } catch {
             NSLog("PlexManager: Failed to create album radio: %@", error.localizedDescription)
             return []
@@ -1056,7 +1056,13 @@ class PlexManager {
         
         return result
     }
-    
+
+    /// Apply history filtering + artist variety filtering to radio tracks
+    private func applyRadioFilters(_ tracks: [Track], limit: Int, maxPerArtist: Int = RadioConfig.maxTracksPerArtist) -> [Track] {
+        let historyFiltered = PlexRadioHistory.shared.filterOutHistoryTracks(tracks)
+        return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: maxPerArtist)
+    }
+
     /// Get a seed track for sonic radio: currently playing Plex track, or random from library
     private func getSonicSeedTrackID() async -> String? {
         // Check if currently playing track is a Plex track
@@ -1109,7 +1115,7 @@ class PlexManager {
             let fetchLimit = limit * RadioConfig.overFetchMultiplier
             let plexTracks = try await client.createLibraryRadio(libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
-            let tracks = filterForArtistVariety(allTracks, limit: limit)
+            let tracks = applyRadioFilters(allTracks, limit: limit)
             NSLog("PlexManager: Library radio created with %d tracks", tracks.count)
             return tracks
         } catch {
@@ -1135,7 +1141,7 @@ class PlexManager {
             let plexTracks = try await client.createLibraryRadioSonic(trackID: seedTrackID, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
-            let tracks = filterForArtistVariety(allTracks, limit: limit, maxPerArtist: 1)
+            let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
             NSLog("PlexManager: Library radio (sonic) created with %d tracks", tracks.count)
             return tracks
         } catch {
@@ -1157,7 +1163,7 @@ class PlexManager {
             let fetchLimit = limit * RadioConfig.overFetchMultiplier
             let plexTracks = try await client.createGenreRadio(genre: genre, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
-            let tracks = filterForArtistVariety(allTracks, limit: limit)
+            let tracks = applyRadioFilters(allTracks, limit: limit)
             NSLog("PlexManager: Genre radio (%@) created with %d tracks", genre, tracks.count)
             return tracks
         } catch {
@@ -1183,7 +1189,7 @@ class PlexManager {
             let plexTracks = try await client.createGenreRadioSonic(genre: genre, trackID: seedTrackID, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
-            let tracks = filterForArtistVariety(allTracks, limit: limit, maxPerArtist: 1)
+            let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
             NSLog("PlexManager: Genre radio (sonic) (%@) created with %d tracks", genre, tracks.count)
             return tracks
         } catch {
@@ -1205,7 +1211,7 @@ class PlexManager {
             let fetchLimit = limit * RadioConfig.overFetchMultiplier
             let plexTracks = try await client.createDecadeRadio(startYear: startYear, endYear: endYear, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
-            let tracks = filterForArtistVariety(allTracks, limit: limit)
+            let tracks = applyRadioFilters(allTracks, limit: limit)
             NSLog("PlexManager: Decade radio (%d-%d) created with %d tracks", startYear, endYear, tracks.count)
             return tracks
         } catch {
@@ -1231,7 +1237,7 @@ class PlexManager {
             let plexTracks = try await client.createDecadeRadioSonic(startYear: startYear, endYear: endYear, trackID: seedTrackID, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
-            let tracks = filterForArtistVariety(allTracks, limit: limit, maxPerArtist: 1)
+            let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
             NSLog("PlexManager: Decade radio (sonic) (%d-%d) created with %d tracks", startYear, endYear, tracks.count)
             return tracks
         } catch {
@@ -1253,7 +1259,7 @@ class PlexManager {
             let fetchLimit = limit * RadioConfig.overFetchMultiplier
             let plexTracks = try await client.createHitsRadio(libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
-            let tracks = filterForArtistVariety(allTracks, limit: limit)
+            let tracks = applyRadioFilters(allTracks, limit: limit)
             NSLog("PlexManager: Hits radio created with %d tracks", tracks.count)
             return tracks
         } catch {
@@ -1279,7 +1285,7 @@ class PlexManager {
             let plexTracks = try await client.createHitsRadioSonic(trackID: seedTrackID, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
-            let tracks = filterForArtistVariety(allTracks, limit: limit, maxPerArtist: 1)
+            let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
             NSLog("PlexManager: Hits radio (sonic) created with %d tracks", tracks.count)
             return tracks
         } catch {
@@ -1301,7 +1307,7 @@ class PlexManager {
             let fetchLimit = limit * RadioConfig.overFetchMultiplier
             let plexTracks = try await client.createDeepCutsRadio(libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
-            let tracks = filterForArtistVariety(allTracks, limit: limit)
+            let tracks = applyRadioFilters(allTracks, limit: limit)
             NSLog("PlexManager: Deep cuts radio created with %d tracks", tracks.count)
             return tracks
         } catch {
@@ -1327,7 +1333,7 @@ class PlexManager {
             let plexTracks = try await client.createDeepCutsRadioSonic(trackID: seedTrackID, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
-            let tracks = filterForArtistVariety(allTracks, limit: limit, maxPerArtist: 1)
+            let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
             NSLog("PlexManager: Deep cuts radio (sonic) created with %d tracks", tracks.count)
             return tracks
         } catch {
@@ -1353,7 +1359,7 @@ class PlexManager {
             let fetchLimit = limit * RadioConfig.overFetchMultiplier
             let plexTracks = try await client.createRatingRadio(minRating: minRating, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
-            let tracks = filterForArtistVariety(allTracks, limit: limit)
+            let tracks = applyRadioFilters(allTracks, limit: limit)
             NSLog("PlexManager: Rating radio (%.1f+ stars) created with %d tracks", minRating / 2, tracks.count)
             return tracks
         } catch {
@@ -1383,7 +1389,7 @@ class PlexManager {
             let plexTracks = try await client.createRatingRadioSonic(minRating: minRating, trackID: seedTrackID, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
-            let tracks = filterForArtistVariety(allTracks, limit: limit, maxPerArtist: 1)
+            let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
             NSLog("PlexManager: Rating radio (sonic, %.1f+ stars) created with %d tracks", minRating / 2, tracks.count)
             return tracks
         } catch {

@@ -17,7 +17,8 @@
 - Navidrome/Subsonic server integration with scrobbling support
 - Local media library with metadata parsing, editing, library management
 - ProjectM visualizations with 100 included. Users can download more
-- Just like PlexAmp, sonic similarity supportuing radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
+- Sonic similarity radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
+- Plex radio track history with configurable exclusion rules. Stop the same songs from being added to your Plex radio stations
 - Sonos content filtering for unsupported lossless formats. Keeps the music playing by not sending unsupported encodings to Sonos.
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)

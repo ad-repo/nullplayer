@@ -1901,7 +1901,12 @@ class AudioEngine {
     private func castTrackDidFinish() {
         // Report track finished to Plex (natural end)
         PlexPlaybackReporter.shared.trackDidStop(at: duration, finished: true)
-        
+
+        // Record to Plex Radio history (track actually finished playing via cast)
+        if let finishedTrack = currentTrack, finishedTrack.plexRatingKey != nil {
+            PlexRadioHistory.shared.recordTrackPlayed(finishedTrack)
+        }
+
         // Prevent multiple calls
         castPlaybackStartDate = nil
         
@@ -2754,6 +2759,11 @@ class AudioEngine {
         // Report stop to Emby
         EmbyPlaybackReporter.shared.trackStopped()
 
+        // Record to Plex Radio history (track actually finished playing)
+        if let finishedTrack = currentTrack, finishedTrack.plexRatingKey != nil {
+            PlexRadioHistory.shared.recordTrackPlayed(finishedTrack)
+        }
+
         // Check if we have a gaplessly pre-scheduled next track (local files)
         if gaplessPlaybackEnabled && nextScheduledFile != nil && nextScheduledTrackIndex >= 0 {
             // Gapless transition - the next file is already scheduled
@@ -3169,6 +3179,11 @@ class AudioEngine {
         let activePlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
         activePlayer.volume = 1.0
         
+        // Record outgoing track to Plex Radio history (track finished via crossfade)
+        if let outgoingTrack = currentTrack, outgoingTrack.plexRatingKey != nil {
+            PlexRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+        }
+
         // Update state
         audioFile = nextFile
         currentIndex = nextIndex
@@ -3243,30 +3258,35 @@ class AudioEngine {
         // Restore primary player to master volume (crossfade ended at masterVolume * 1.0)
         streamingPlayer?.volume = volume
         
+        // Record outgoing track to Plex Radio history (track finished via streaming crossfade)
+        if let outgoingTrack = currentTrack, outgoingTrack.plexRatingKey != nil {
+            PlexRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+        }
+
         // Update state
         currentIndex = nextIndex
         currentTrack = playlist[nextIndex]
         _currentTime = 0
         lastReportedTime = 0
         playbackStartDate = Date()
-        
+
         // Reset crossfade state
         isCrossfading = false
         crossfadeTargetIndex = -1
-        
+
         // Notify delegate
         delegate?.audioEngineDidChangeTrack(currentTrack)
-        
+
         // Report to Plex/Subsonic
         if let track = currentTrack {
             PlexPlaybackReporter.shared.trackDidStart(track, at: 0)
-            
+
             if let subsonicId = track.subsonicId,
                let serverId = track.subsonicServerId,
                let trackDuration = track.duration {
                 SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
             }
-            
+
             // Report track start to Jellyfin
             if let jellyfinId = track.jellyfinId,
                let serverId = track.jellyfinServerId,

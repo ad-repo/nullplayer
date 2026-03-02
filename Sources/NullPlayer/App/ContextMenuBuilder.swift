@@ -374,9 +374,59 @@ class ContextMenuBuilder {
         artworkBgItem.target = MenuActions.shared
         artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
         optionsMenu.addItem(artworkBgItem)
-        
+
+        // Plex Radio History (only when Plex is connected)
+        if PlexManager.shared.isLinked {
+            optionsMenu.addItem(NSMenuItem.separator())
+
+            let historyItem = NSMenuItem(title: "Plex Radio History", action: nil, keyEquivalent: "")
+            let historyMenu = NSMenu()
+            historyMenu.autoenablesItems = false
+
+            // Retention interval submenu
+            let intervalItem = NSMenuItem(title: "History Interval", action: nil, keyEquivalent: "")
+            let intervalMenu = NSMenu()
+            intervalMenu.autoenablesItems = false
+
+            let currentInterval = PlexRadioHistory.shared.retentionInterval
+            for interval in PlexRadioHistoryInterval.allCases {
+                let item = NSMenuItem(
+                    title: interval.displayName,
+                    action: #selector(MenuActions.setPlexRadioHistoryInterval(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = MenuActions.shared
+                item.representedObject = interval.rawValue
+                item.state = currentInterval == interval ? .on : .off
+                intervalMenu.addItem(item)
+            }
+            intervalItem.submenu = intervalMenu
+            historyMenu.addItem(intervalItem)
+
+            historyMenu.addItem(NSMenuItem.separator())
+
+            let viewItem = NSMenuItem(
+                title: "View Radio History...",
+                action: #selector(MenuActions.viewPlexRadioHistory),
+                keyEquivalent: ""
+            )
+            viewItem.target = MenuActions.shared
+            historyMenu.addItem(viewItem)
+
+            let clearItem = NSMenuItem(
+                title: "Clear Radio History...",
+                action: #selector(MenuActions.clearPlexRadioHistory),
+                keyEquivalent: ""
+            )
+            clearItem.target = MenuActions.shared
+            historyMenu.addItem(clearItem)
+
+            historyItem.submenu = historyMenu
+            optionsMenu.addItem(historyItem)
+        }
+
         optionsMenu.addItem(NSMenuItem.separator())
-        
+
         optionsItem.submenu = optionsMenu
         return optionsItem
     }
@@ -2397,7 +2447,39 @@ class MenuActions: NSObject {
     @objc func toggleBrowserArtworkBackground() {
         WindowManager.shared.showBrowserArtworkBackground.toggle()
     }
-    
+
+    // MARK: - Plex Radio History
+
+    @objc func setPlexRadioHistoryInterval(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let interval = PlexRadioHistoryInterval(rawValue: rawValue) else { return }
+        PlexRadioHistory.shared.retentionInterval = interval
+    }
+
+    @objc func viewPlexRadioHistory() {
+        Task {
+            if !LocalMediaServer.shared.isRunning {
+                try? await LocalMediaServer.shared.start()
+            }
+            if let url = PlexRadioHistory.shared.historyPageURL {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    @objc func clearPlexRadioHistory() {
+        let alert = NSAlert()
+        alert.messageText = "Clear Radio History?"
+        alert.informativeText = "This will remove all Plex Radio track history. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            PlexRadioHistory.shared.clearHistory()
+        }
+    }
+
     // MARK: - Main Window Visualization Options
     
     @objc func setMainVisMode(_ sender: NSMenuItem) {
