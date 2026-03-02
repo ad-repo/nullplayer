@@ -44,15 +44,9 @@ class ModernPlaylistView: NSView {
     private var pendingTrackClick: (index: Int, event: NSEvent)?
     private var hasDraggedWindow = false
     
-    /// Display update timer for marquee scrolling and playback time updates
-    private var displayTimer: Timer?
-    
-    /// Marquee offset for scrolling current track title
-    private var marqueeOffset: CGFloat = 0
-    
-    /// Width of current track title text (for marquee wrapping)
-    private var currentTrackTextWidth: CGFloat = 0
-    
+    /// Bitmap-cached marquee sublayer for scrolling current track title
+    private var trackMarqueeLayer: ModernMarqueeLayer?
+
     /// Last known current track index (for detecting track changes)
     private var lastCurrentIndex: Int = -1
     
@@ -107,10 +101,19 @@ class ModernPlaylistView: NSView {
         
         // Register for drag and drop
         registerForDraggedTypes([.fileURL])
-        
-        // Start display timer
-        startDisplayTimer()
-        
+
+        // Create marquee sublayer for current track scrolling
+        // Note: layerContentsRedrawPolicy = .onSetNeedsDisplay means the marquee
+        // sublayer's position updates do NOT trigger draw() on this view. Sublayers
+        // composite ABOVE layer.contents (the CGContext-drawn bitmap), so the marquee
+        // renders on top of the track list background but we must skip drawing the
+        // title text in drawTrackList when the marquee is active to avoid overlap.
+        let marquee = ModernMarqueeLayer()
+        marquee.isHidden = true
+        layer?.addSublayer(marquee)
+        trackMarqueeLayer = marquee
+        configureMarqueeLayer()
+
         // Observe skin changes
         NotificationCenter.default.addObserver(self, selector: #selector(modernSkinDidChange),
                                                 name: ModernSkinEngine.skinDidChangeNotification, object: nil)
@@ -148,82 +151,93 @@ class ModernPlaylistView: NSView {
     }
     
     deinit {
-        displayTimer?.invalidate()
         artworkLoadTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
     
-    // MARK: - Setup
-    
-    
-    
-    // MARK: - Display Timer
-    
-    private func startDisplayTimer() {
-        displayTimer?.invalidate()
-        // 30Hz for smooth marquee scrolling (matching main window smoothness)
-        displayTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            self?.timerTick()
-        }
+    // MARK: - Marquee Layer
+
+    private func configureMarqueeLayer() {
+        guard let marquee = trackMarqueeLayer else { return }
+        let skin = renderer.skin
+        // Must use playlistFont (8pt default), NOT bodyFont (9pt) which configure(with:) would set
+        marquee.textFont = skin.playlistFont()
+        // Must use accentColor (magenta) to match current-track title color, NOT marqueeColor (yellow)
+        marquee.textColor = skin.accentColor
+        marquee.glowEnabled = false  // Track list text has no glow
+        marquee.scrollSpeed = 24.0   // Match original: ~24px/sec
+        marquee.scrollGap = 30.0     // Match original separatorWidth
     }
-    
-    private func stopDisplayTimer() {
-        displayTimer?.invalidate()
-        displayTimer = nil
-    }
-    
-    private func timerTick() {
+
+    private func updateMarqueeLayerPosition() {
+        guard let marquee = trackMarqueeLayer else { return }
         let engine = WindowManager.shared.audioEngine
         let currentIndex = engine.currentIndex
-        
-        // Check for track change
-        if currentIndex != lastCurrentIndex {
-            lastCurrentIndex = currentIndex
-            marqueeOffset = 0
-            updateCurrentTrackTextWidth()
-            // Auto-select and scroll to current track
-            if currentIndex >= 0 {
-                selectedIndices = [currentIndex]
-                selectionAnchor = currentIndex
-                scrollToSelection()
-            }
-        }
-        
-        // Advance marquee for current track
-        let separatorWidth: CGFloat = 30
-        if currentTrackTextWidth > 0 {
-            let listWidth = bounds.width - borderWidth * 2 - 8
-            if currentTrackTextWidth > listWidth * 0.7 {
-                marqueeOffset += 0.8  // ~24px/sec at 30Hz -- smooth sub-pixel scrolling
-                let cycleWidth = currentTrackTextWidth + separatorWidth
-                if marqueeOffset >= cycleWidth {
-                    marqueeOffset -= cycleWidth
-                }
-            }
-        }
-        
-        // Redraw for time display updates and marquee
-        if engine.state == .playing || marqueeOffset > 0 {
-            needsDisplay = true
-        }
-    }
-    
-    private func updateCurrentTrackTextWidth() {
-        let engine = WindowManager.shared.audioEngine
-        guard engine.currentIndex >= 0 && engine.currentIndex < engine.playlist.count else {
-            currentTrackTextWidth = 0
+        let tracks = engine.playlist
+
+        // Hide if no current track or in shade mode
+        guard currentIndex >= 0, currentIndex < tracks.count, !isShadeMode else {
+            marquee.isHidden = true
             return
         }
-        let track = engine.playlist[engine.currentIndex]
+
+        let listRect = calculateListArea()
+        guard listRect.width > 0, listRect.height > 0 else {
+            marquee.isHidden = true
+            return
+        }
+
+        // Calculate current track's Y position (same formula as drawTrackList)
+        let y = listRect.maxY - CGFloat(currentIndex + 1) * itemHeight + scrollOffset
+
+        // Hide if row is off-screen
+        if y + itemHeight < listRect.minY || y > listRect.maxY {
+            marquee.isHidden = true
+            return
+        }
+
+        let itemRect = NSRect(x: listRect.minX, y: y, width: listRect.width, height: itemHeight)
+
+        // Calculate title area (same geometry as drawTrackList)
+        let skin = renderer.skin
+        let font = skin.playlistFont()
+        let track = tracks[currentIndex]
+        let duration = track.duration ?? 0
+        let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
+        let titleAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: skin.accentColor]
+        let durationSize = NSAttributedString(string: durationStr, attributes: titleAttrs).size()
+        let durationX = itemRect.maxX - durationSize.width - 6
+        let titleX = itemRect.minX + 4
+        let titleMaxWidth = durationX - titleX - 8
+
+        // Check if text needs scrolling
+        let numberText = "\(currentIndex + 1). "
         let videoPrefix = track.mediaType == .video ? "[V] " : ""
-        let titleText = "\(engine.currentIndex + 1). \(videoPrefix)\(track.displayTitle)"
-        
-        let font = renderer.skin.smallLabelFont()
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        let size = NSAttributedString(string: titleText, attributes: attrs).size()
-        currentTrackTextWidth = size.width
+        let titleText = "\(videoPrefix)\(track.displayTitle)"
+        let fullText = numberText + titleText
+        let fullSize = NSAttributedString(string: fullText, attributes: titleAttrs).size()
+
+        if fullSize.width > titleMaxWidth {
+            // Position the marquee layer over the title area, clipped to listRect
+            let marqueeY = max(itemRect.minY, listRect.minY)
+            let marqueeMaxY = min(itemRect.maxY, listRect.maxY)
+            let marqueeRect = NSRect(x: titleX, y: marqueeY,
+                                      width: titleMaxWidth, height: marqueeMaxY - marqueeY)
+
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            marquee.frame = marqueeRect
+            marquee.isHidden = false
+            CATransaction.commit()
+
+            // Set text (ModernMarqueeLayer handles scroll detection internally)
+            marquee.text = fullText
+        } else {
+            // Text fits — no marquee needed, draw statically in drawTrackList
+            marquee.isHidden = true
+        }
     }
-    
+
     // MARK: - Notification Handlers
     
     @objc private func modernSkinDidChange() {
@@ -244,31 +258,53 @@ class ModernPlaylistView: NSView {
     }
     
     @objc private func windowDidMiniaturize(_ note: Notification) {
-        stopDisplayTimer()
+        trackMarqueeLayer?.pauseScrolling()
     }
-    
+
     @objc private func windowDidDeminiaturize(_ note: Notification) {
-        startDisplayTimer()
+        trackMarqueeLayer?.resumeScrolling()
     }
-    
+
     @objc private func windowDidChangeOcclusionState(_ note: Notification) {
         guard let window = window else { return }
         if window.occlusionState.contains(.visible) {
-            if displayTimer == nil { startDisplayTimer() }
+            trackMarqueeLayer?.resumeScrolling()
         } else {
-            stopDisplayTimer()
+            trackMarqueeLayer?.pauseScrolling()
         }
     }
-    
+
     @objc private func playbackStateDidChange(_ note: Notification) {
-        if WindowManager.shared.audioEngine.state == .playing {
-            if displayTimer == nil { startDisplayTimer() }
+        let isPlaying = WindowManager.shared.audioEngine.state == .playing
+        // Pause marquee scrolling when not playing (save CPU)
+        if isPlaying {
+            trackMarqueeLayer?.resumeScrolling()
+        } else {
+            trackMarqueeLayer?.pauseScrolling()
         }
         needsDisplay = true
     }
-    
+
     @objc private func handleTrackDidChange(_ note: Notification) {
-        loadArtwork(for: WindowManager.shared.audioEngine.currentTrack)
+        let engine = WindowManager.shared.audioEngine
+        let currentIndex = engine.currentIndex
+
+        // Update tracking state
+        lastCurrentIndex = currentIndex
+
+        // Auto-select and scroll to current track
+        if currentIndex >= 0 {
+            selectedIndices = [currentIndex]
+            selectionAnchor = currentIndex
+            scrollToSelection()
+        }
+
+        // Update artwork
+        loadArtwork(for: engine.currentTrack)
+
+        // Reconfigure and reposition marquee
+        updateMarqueeLayerPosition()
+
         needsDisplay = true
     }
     
@@ -429,18 +465,9 @@ class ModernPlaylistView: NSView {
             fullAttr.append(NSAttributedString(string: titleText, attributes: titleAttrs))
             let fullSize = fullAttr.size()
             
-            if isCurrent && fullSize.width > titleMaxWidth {
-                // Marquee scrolling for current track
-                let separatorWidth: CGFloat = 30
-                let separator = NSAttributedString(string: "     ", attributes: titleAttrs)
-                
-                // Draw two copies for seamless wrapping
-                let drawX1 = titleX - marqueeOffset
-                let drawX2 = drawX1 + fullSize.width + separatorWidth
-                
-                fullAttr.draw(at: NSPoint(x: drawX1, y: textY))
-                separator.draw(at: NSPoint(x: drawX1 + fullSize.width, y: textY))
-                fullAttr.draw(at: NSPoint(x: drawX2, y: textY))
+            if isCurrent && trackMarqueeLayer?.isHidden == false {
+                // Marquee layer handles the scrolling text — don't draw title here
+                // (layer composites above this CGContext content)
             } else {
                 fullAttr.draw(at: NSPoint(x: titleX, y: textY))
             }
@@ -708,7 +735,8 @@ class ModernPlaylistView: NSView {
     func skinDidChange() {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
-        updateCurrentTrackTextWidth()
+        configureMarqueeLayer()
+        updateMarqueeLayerPosition()
         updateCornerMask()
         needsDisplay = true
     }
@@ -719,14 +747,17 @@ class ModernPlaylistView: NSView {
         selectedIndices.removeAll()
         selectionAnchor = nil
         scrollOffset = 0
-        marqueeOffset = 0
         lastCurrentIndex = -1
-        updateCurrentTrackTextWidth()
+        // Reset marquee — playlist content changed, current track may be different
+        trackMarqueeLayer?.isHidden = true
+        trackMarqueeLayer?.text = ""
+        updateMarqueeLayerPosition()
         needsDisplay = true
     }
-    
+
     func setShadeMode(_ enabled: Bool) {
         isShadeMode = enabled
+        trackMarqueeLayer?.isHidden = enabled
         needsDisplay = true
     }
     
@@ -989,9 +1020,10 @@ class ModernPlaylistView: NSView {
         let tracks = WindowManager.shared.audioEngine.playlist
         let listRect = calculateListArea()
         let totalHeight = CGFloat(tracks.count) * itemHeight
-        
+
         if totalHeight > listRect.height {
             scrollOffset = max(0, min(totalHeight - listRect.height, scrollOffset - event.deltaY * 3))
+            updateMarqueeLayerPosition()
             needsDisplay = true
         }
     }
