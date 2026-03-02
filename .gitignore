@@ -55,6 +55,9 @@ skills/_build/
 tmp/
 *.tmp
 
+# Git worktrees
+.worktrees/
+
 # Binary frameworks (downloaded by scripts/bootstrap.sh)
 Frameworks/VLCKit.framework/
 Frameworks/libprojectM-4.dylib
