@@ -296,8 +296,28 @@ class AudioEngine {
     /// Flag to coalesce main queue PCM dispatches
     private var pendingPcmUpdate = false
     
+    // MARK: - Spectrum Consumer Tracking
+
+    /// Spectrum consumers — FFT is skipped entirely when this set is empty
+    private var spectrumConsumers = Set<String>()
+
+    /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
+    private var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+
+    func addSpectrumConsumer(_ id: String) {
+        spectrumConsumers.insert(id)
+        streamingPlayer?.spectrumNeeded = !spectrumConsumers.isEmpty
+    }
+
+    func removeSpectrumConsumer(_ id: String) {
+        spectrumConsumers.remove(id)
+        streamingPlayer?.spectrumNeeded = !spectrumConsumers.isEmpty
+    }
+
+    var spectrumNeeded: Bool { !spectrumConsumers.isEmpty }
+
     // MARK: - Pre-allocated FFT Buffers (Memory Optimization)
-    
+
     /// Pre-allocated buffers to avoid per-callback allocations
     private var fftSamples = [Float](repeating: 0, count: 2048)
     private var fftWindow = [Float](repeating: 0, count: 2048)
@@ -407,6 +427,14 @@ class AudioEngine {
             name: NSNotification.Name("SpectrumSettingsChanged"),
             object: nil
         )
+
+        // Keep cached isModernUIEnabled in sync when user toggles UI mode
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleModernUIChanged),
+            name: UserDefaults.didChangeNotification,
+            object: nil
+        )
         
         setupAudioEngine()
         setupEqualizer()
@@ -431,7 +459,11 @@ class AudioEngine {
             spectrumNormalizationMode = mode
         }
     }
-    
+
+    @objc private func handleModernUIChanged() {
+        isModernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+    }
+
     // MARK: - Setup
     
     private func setupAudioEngine() {
@@ -669,9 +701,10 @@ class AudioEngine {
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        guard spectrumNeeded else { return }
         guard let channelData = buffer.floatChannelData,
               let fftSetup = fftSetup else { return }
-        
+
         let frameCount = Int(buffer.frameLength)
         guard frameCount >= fftSize else { return }
         
@@ -694,7 +727,7 @@ class AudioEngine {
         }
         
         // Feed BPM detector with raw mono samples (before windowing) — modern UI only
-        if UserDefaults.standard.bool(forKey: "modernUIEnabled") {
+        if isModernUIEnabled {
             fftSamples.withUnsafeBufferPointer { ptr in
                 if let base = ptr.baseAddress {
                     bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
@@ -2612,6 +2645,8 @@ class AudioEngine {
         if streamingPlayer == nil {
             streamingPlayer = StreamingAudioPlayer()
             streamingPlayer?.delegate = self
+            streamingPlayer?.spectrumNeeded = spectrumNeeded
+            streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         }
         
         // Sync EQ settings from main EQ to streaming player
@@ -3201,6 +3236,8 @@ class AudioEngine {
         
         // Set delegate on new primary player
         streamingPlayer?.delegate = self
+        streamingPlayer?.spectrumNeeded = spectrumNeeded
+        streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         // crossfadeStreamingPlayer (old primary) already has nil delegate from above
         
         // Restore primary player to master volume (crossfade ended at masterVolume * 1.0)

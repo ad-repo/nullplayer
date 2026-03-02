@@ -32,6 +32,9 @@ class VisualizationGLView: NSOpenGLView {
     /// Whether rendering is currently active
     private(set) var isRendering = false
 
+    /// Track if rendering was stopped due to window occlusion (vs. idle)
+    private var stoppedDueToOcclusion: Bool = false
+
     /// Current visualization engine
     private var engine: VisualizationEngine?
 
@@ -553,13 +556,51 @@ class VisualizationGLView: NSOpenGLView {
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        
-        if window != nil {
-            // Start rendering when added to a window
+
+        if let window = window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeOcclusionState(_:)),
+                name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            NotificationCenter.default.addObserver(self, selector: #selector(windowDidMiniaturize(_:)),
+                name: NSWindow.didMiniaturizeNotification, object: window)
+            NotificationCenter.default.addObserver(self, selector: #selector(windowDidDeminiaturize(_:)),
+                name: NSWindow.didDeminiaturizeNotification, object: window)
             startRendering()
         } else {
-            // Stop rendering when removed from window
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didMiniaturizeNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didDeminiaturizeNotification, object: nil)
             stopRendering()
+        }
+    }
+
+    @objc private func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        if window?.occlusionState.contains(.visible) == true {
+            if stoppedDueToOcclusion {
+                stoppedDueToOcclusion = false
+                startRendering()
+            }
+        } else {
+            if isRendering {
+                stoppedDueToOcclusion = true
+                stopRendering()
+            }
+        }
+    }
+
+    @objc private func windowDidMiniaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        if isRendering {
+            stoppedDueToOcclusion = true
+            stopRendering()
+        }
+    }
+
+    @objc private func windowDidDeminiaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        if stoppedDueToOcclusion {
+            stoppedDueToOcclusion = false
+            startRendering()
         }
     }
     

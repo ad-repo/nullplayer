@@ -30,8 +30,13 @@ class StreamingAudioPlayer {
     
     /// Real-time BPM detector for tempo display
     let bpmDetector = BPMDetector()
-    
-    
+
+    /// Whether spectrum FFT should run — bridged from AudioEngine.spectrumNeeded
+    var spectrumNeeded: Bool = false
+
+    /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
+    var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
     private let fftSize: Int = 2048
@@ -372,7 +377,8 @@ class StreamingAudioPlayer {
         // Skip FFT processing when paused or stopped to save CPU
         // The frame filter still receives buffers but we don't need to process them
         guard state == .playing else { return }
-        
+        guard spectrumNeeded else { return }
+
         guard let channelData = buffer.floatChannelData,
               let fftSetup = fftSetup else { return }
         
@@ -419,7 +425,7 @@ class StreamingAudioPlayer {
         }
         
         // Feed BPM detector with raw mono samples (before windowing) — modern UI only
-        if UserDefaults.standard.bool(forKey: "modernUIEnabled") {
+        if isModernUIEnabled {
             fftSamples.withUnsafeBufferPointer { ptr in
                 if let base = ptr.baseAddress {
                     bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)

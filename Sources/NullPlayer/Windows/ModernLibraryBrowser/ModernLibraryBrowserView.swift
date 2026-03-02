@@ -5231,6 +5231,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func startVisualizerTimer() {
         visualizerTime = 0; silenceFrames = 0; visualizerTimer?.invalidate()
+        WindowManager.shared.audioEngine.addSpectrumConsumer("modernLibraryBrowserVisualizer")
         let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in self?.handleVisualizerTimerTick() }
         RunLoop.main.add(timer, forMode: .common); visualizerTimer = timer
         if visMode == .cycle { startCycleTimer() }
@@ -5265,6 +5266,7 @@ class ModernLibraryBrowserView: NSView {
     private func stopVisualizerTimer() {
         visualizerTimer?.invalidate(); visualizerTimer = nil
         cycleTimer?.invalidate(); cycleTimer = nil
+        WindowManager.shared.audioEngine.removeSpectrumConsumer("modernLibraryBrowserVisualizer")
     }
     
     private func startCycleTimer() {

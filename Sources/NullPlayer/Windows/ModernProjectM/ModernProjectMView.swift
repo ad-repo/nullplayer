@@ -115,7 +115,8 @@ class ModernProjectMView: NSView {
         ) { [weak self] notification in
             self?.handleSpectrumUpdate(notification)
         }
-        
+        WindowManager.shared.audioEngine.addSpectrumConsumer("modernProjectMView")
+
         // Subscribe to playback state changes (for idle/active visualization mode)
         playbackStateObserver = NotificationCenter.default.addObserver(
             forName: .audioPlaybackStateChanged,
@@ -153,6 +154,7 @@ class ModernProjectMView: NSView {
             NotificationCenter.default.removeObserver(observer)
         }
         NotificationCenter.default.removeObserver(self)
+        WindowManager.shared.audioEngine.removeSpectrumConsumer("modernProjectMView")
         stopPresetCycleTimer()
         visualizationGLView?.stopRendering()
     }

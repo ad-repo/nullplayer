@@ -224,7 +224,23 @@ class ModernSkinAnimation {
     private func updateColorCycleAnimation(_ anim: ActiveAnimation, duration: CGFloat) {
         // Value cycles 0 to 1 over duration
         anim.value = anim.time.truncatingRemainder(dividingBy: duration) / duration
-        
+
         onAnimationUpdate?(anim.elementId, anim.value)
+    }
+
+    // MARK: - Occlusion Handling
+
+    private var pausedForOcclusion = false
+
+    func pauseForOcclusion() {
+        guard isRunning else { return }
+        pausedForOcclusion = true
+        stopDisplayLink()
+    }
+
+    func resumeFromOcclusion() {
+        guard pausedForOcclusion else { return }
+        pausedForOcclusion = false
+        startDisplayLink()
     }
 }
