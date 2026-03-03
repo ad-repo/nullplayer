@@ -3783,10 +3783,20 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     @objc private func addWatchFolder() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
         panel.message = "Select a folder to add to your library"
-        if panel.runModal() == .OK, let url = panel.url {
-            MediaLibrary.shared.addWatchFolder(url); MediaLibrary.shared.scanFolder(url)
+
+        let folderDelegate = TopLevelFolderPickerDelegate()
+        panel.delegate = folderDelegate
+
+        withExtendedLifetime(folderDelegate) {
+            if panel.runModal() == .OK, let url = panel.url {
+                MediaLibrary.shared.addWatchFolder(url)
+                MediaLibrary.shared.scanFolder(url)
+            }
         }
     }
     @objc private func showAddRadioStationDialog() {

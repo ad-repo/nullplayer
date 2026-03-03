@@ -7333,14 +7333,19 @@ class PlexBrowserView: NSView {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.message = "Select a folder to add to your library"
-        
-        if panel.runModal() == .OK, let url = panel.url {
-            MediaLibrary.shared.addWatchFolder(url)
-            MediaLibrary.shared.scanFolder(url)
-            
-            // Switch to local source if not already
-            if case .plex = currentSource {
-                currentSource = .local
+
+        let folderDelegate = TopLevelFolderPickerDelegate()
+        panel.delegate = folderDelegate
+
+        withExtendedLifetime(folderDelegate) {
+            if panel.runModal() == .OK, let url = panel.url {
+                MediaLibrary.shared.addWatchFolder(url)
+                MediaLibrary.shared.scanFolder(url)
+
+                // Switch to local source if not already
+                if case .plex = currentSource {
+                    currentSource = .local
+                }
             }
         }
     }
