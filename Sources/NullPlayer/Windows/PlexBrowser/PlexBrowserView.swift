@@ -1059,6 +1059,7 @@ class PlexBrowserView: NSView {
         visualizerTime = 0
         silenceFrames = 0
         visualizerTimer?.invalidate()
+        WindowManager.shared.audioEngine.addSpectrumConsumer("plexBrowserVisualizer")
         // 30fps for smooth effects (reduced from 60fps for CPU efficiency - still looks great)
         // Use .common run loop mode so timer continues during context menu display
         let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
@@ -1174,6 +1175,7 @@ class PlexBrowserView: NSView {
         visualizerTimer = nil
         cycleTimer?.invalidate()
         cycleTimer = nil
+        WindowManager.shared.audioEngine.removeSpectrumConsumer("plexBrowserVisualizer")
     }
     
     /// Start cycle mode timer
@@ -7331,14 +7333,19 @@ class PlexBrowserView: NSView {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.message = "Select a folder to add to your library"
-        
-        if panel.runModal() == .OK, let url = panel.url {
-            MediaLibrary.shared.addWatchFolder(url)
-            MediaLibrary.shared.scanFolder(url)
-            
-            // Switch to local source if not already
-            if case .plex = currentSource {
-                currentSource = .local
+
+        let folderDelegate = TopLevelFolderPickerDelegate()
+        panel.delegate = folderDelegate
+
+        withExtendedLifetime(folderDelegate) {
+            if panel.runModal() == .OK, let url = panel.url {
+                MediaLibrary.shared.addWatchFolder(url)
+                MediaLibrary.shared.scanFolder(url)
+
+                // Switch to local source if not already
+                if case .plex = currentSource {
+                    currentSource = .local
+                }
             }
         }
     }

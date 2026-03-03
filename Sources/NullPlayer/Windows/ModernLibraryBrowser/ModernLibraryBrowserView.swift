@@ -1313,8 +1313,9 @@ class ModernLibraryBrowserView: NSView {
         
         guard visibleStart < visibleEnd else {
             context.restoreGState()
+            let alphabetHeight = listAreaHeight - (headerColumns != nil ? columnHeaderHeight : 0)
             let alphabetRect = NSRect(x: bounds.width - Layout.borderWidth - Layout.scrollbarWidth - alphabetWidth,
-                                     y: listAreaY, width: alphabetWidth, height: listAreaHeight)
+                                     y: listAreaY, width: alphabetWidth, height: alphabetHeight)
             drawAlphabetIndex(in: context, rect: alphabetRect, skin: skin)
             return
         }
@@ -1386,9 +1387,10 @@ class ModernLibraryBrowserView: NSView {
         
         context.restoreGState()
         
-        // Draw alphabet index
+        // Draw alphabet index (exclude column header zone so # appears below column headers)
+        let alphabetHeight = listAreaHeight - (headerColumns != nil ? columnHeaderHeight : 0)
         let alphabetRect = NSRect(x: bounds.width - Layout.borderWidth - Layout.scrollbarWidth - alphabetWidth,
-                                 y: listAreaY, width: alphabetWidth, height: listAreaHeight)
+                                 y: listAreaY, width: alphabetWidth, height: alphabetHeight)
         drawAlphabetIndex(in: context, rect: alphabetRect, skin: skin)
     }
     
@@ -2309,9 +2311,11 @@ class ModernLibraryBrowserView: NSView {
         var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
+        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let effectiveHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
         let alphabetX = bounds.width - Layout.borderWidth - Layout.scrollbarWidth - Layout.alphabetWidth
         return point.x >= alphabetX && point.x < alphabetX + Layout.alphabetWidth &&
-               point.y >= Layout.statusBarHeight && point.y < Layout.statusBarHeight + listHeight
+               point.y >= Layout.statusBarHeight && point.y < Layout.statusBarHeight + effectiveHeight
     }
     
     private func hitTestContentArea(at point: NSPoint) -> Bool {
@@ -2557,6 +2561,8 @@ class ModernLibraryBrowserView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         if hitTestColumnResize(at: point) != nil {
             NSCursor.resizeLeftRight.set()
+        } else if hitTestAlphabetIndex(at: point) {
+            NSCursor.pointingHand.set()
         } else {
             NSCursor.arrow.set()
         }
@@ -2666,12 +2672,14 @@ class ModernLibraryBrowserView: NSView {
         var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
-        
+        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let effectiveHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
+
         let itemTop = CGFloat(index) * itemHeight
         let itemBottom = itemTop + itemHeight
-        
+
         if itemTop < scrollOffset { scrollOffset = itemTop }
-        else if itemBottom > scrollOffset + listHeight { scrollOffset = itemBottom - listHeight }
+        else if itemBottom > scrollOffset + effectiveHeight { scrollOffset = itemBottom - effectiveHeight }
     }
 
     private func applyPendingArtistScroll() {
@@ -2893,13 +2901,16 @@ class ModernLibraryBrowserView: NSView {
         var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
-        
+        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let effectiveHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
+        let alphabetTopY = Layout.statusBarHeight + effectiveHeight
+
         // Bottom-left: # at top, Z at bottom
-        let relativeFromTop = contentTopY - point.y
+        let relativeFromTop = alphabetTopY - point.y
         let letterCount = CGFloat(alphabetLetters.count)
-        let letterHeight = listHeight / letterCount
+        let letterHeight = effectiveHeight / letterCount
         let letterIndex = Int(relativeFromTop / letterHeight)
-        
+
         guard letterIndex >= 0 && letterIndex < alphabetLetters.count else { return }
         scrollToLetter(alphabetLetters[letterIndex])
     }
@@ -2927,7 +2938,9 @@ class ModernLibraryBrowserView: NSView {
                 var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
                 if browseMode == .search { contentTopY -= Layout.searchBarHeight }
                 let listHeight = contentTopY - Layout.statusBarHeight
-                let maxScroll = max(0, CGFloat(displayItems.count) * itemHeight - listHeight)
+                let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+                let effectiveHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
+                let maxScroll = max(0, CGFloat(displayItems.count) * itemHeight - effectiveHeight)
                 scrollOffset = min(maxScroll, CGFloat(index) * itemHeight)
                 selectedIndices = [index]; needsDisplay = true; return
             }
@@ -3770,10 +3783,20 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     @objc private func addWatchFolder() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
         panel.message = "Select a folder to add to your library"
-        if panel.runModal() == .OK, let url = panel.url {
-            MediaLibrary.shared.addWatchFolder(url); MediaLibrary.shared.scanFolder(url)
+
+        let folderDelegate = TopLevelFolderPickerDelegate()
+        panel.delegate = folderDelegate
+
+        withExtendedLifetime(folderDelegate) {
+            if panel.runModal() == .OK, let url = panel.url {
+                MediaLibrary.shared.addWatchFolder(url)
+                MediaLibrary.shared.scanFolder(url)
+            }
         }
     }
     @objc private func showAddRadioStationDialog() {
@@ -5231,6 +5254,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func startVisualizerTimer() {
         visualizerTime = 0; silenceFrames = 0; visualizerTimer?.invalidate()
+        WindowManager.shared.audioEngine.addSpectrumConsumer("modernLibraryBrowserVisualizer")
         let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in self?.handleVisualizerTimerTick() }
         RunLoop.main.add(timer, forMode: .common); visualizerTimer = timer
         if visMode == .cycle { startCycleTimer() }
@@ -5265,6 +5289,7 @@ class ModernLibraryBrowserView: NSView {
     private func stopVisualizerTimer() {
         visualizerTimer?.invalidate(); visualizerTimer = nil
         cycleTimer?.invalidate(); cycleTimer = nil
+        WindowManager.shared.audioEngine.removeSpectrumConsumer("modernLibraryBrowserVisualizer")
     }
     
     private func startCycleTimer() {

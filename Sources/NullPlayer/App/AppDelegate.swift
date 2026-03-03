@@ -40,7 +40,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up audio engine delegate
         windowManager.audioEngine.delegate = self
-        
+        // Main window always shows a mini spectrum overlay — register as permanent consumer
+        windowManager.audioEngine.addSpectrumConsumer("mainWindowSpectrum")
+
         // Load skin from environment variable if set (for testing)
         if let skinPath = ProcessInfo.processInfo.environment["NULLPLAYER_SKIN"] {
             let skinURL = URL(fileURLWithPath: skinPath)
@@ -104,7 +106,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up audio engine delegate
         windowManager.audioEngine.delegate = self
-        
+        windowManager.audioEngine.addSpectrumConsumer("mainWindowSpectrum")
+
         // Use default skin for consistent test results
         // Don't load custom skins from environment in test mode
         

@@ -21,6 +21,9 @@ struct Track: Identifiable, Equatable {
     
     /// Plex rating key for play tracking (nil for local files)
     let plexRatingKey: String?
+
+    /// Plex server ID to identify which server the track belongs to
+    let plexServerId: String?
     
     /// Subsonic song ID for scrobbling (nil for non-Subsonic tracks)
     let subsonicId: String?
@@ -169,6 +172,7 @@ struct Track: Identifiable, Equatable {
         self.sampleRate = extractedSampleRate
         self.channels = extractedChannels
         self.plexRatingKey = nil  // Local files don't have Plex rating keys
+        self.plexServerId = nil
         self.subsonicId = nil     // Local files don't have Subsonic IDs
         self.subsonicServerId = nil
         self.jellyfinId = nil     // Local files don't have Jellyfin IDs
@@ -194,6 +198,7 @@ struct Track: Identifiable, Equatable {
          sampleRate: Int? = nil,
          channels: Int? = nil,
          plexRatingKey: String? = nil,
+         plexServerId: String? = nil,
          subsonicId: String? = nil,
          subsonicServerId: String? = nil,
          jellyfinId: String? = nil,
@@ -214,6 +219,7 @@ struct Track: Identifiable, Equatable {
         self.sampleRate = sampleRate
         self.channels = channels
         self.plexRatingKey = plexRatingKey
+        self.plexServerId = plexServerId
         self.subsonicId = subsonicId
         self.subsonicServerId = subsonicServerId
         self.jellyfinId = jellyfinId

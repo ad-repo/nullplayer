@@ -252,6 +252,60 @@ http://192.168.0.102:32400/library/parts/653835/1723508508/file.flac?X-Plex-Toke
 - **Sonic analysis enabled** on the music library
 - Tracks must be analyzed (check for `musicAnalysisVersion` attribute)
 
+## Plex Radio History
+
+Tracks played during Plex Radio sessions are recorded in a local SQLite database so they can be filtered out of future radio queues (preventing repeats) and viewed by the user.
+
+### Storage
+
+- **Database**: `~/Library/Application Support/NullPlayer/plex_radio_history.db`
+- **Table**: `plex_radio_history`
+- **Unique constraint**: `(plex_rating_key, plex_server_id)` — one record per track per server, upserted on each play (updates `played_at`)
+- **Indexes**: `played_at` (for retention cutoff queries), `normalized_key` (for fallback matching)
+
+### Deduplication / Normalized Key
+
+Radio library rescans can change a track's `ratingKey`. To still suppress known tracks, a `normalized_key` (`"artist|title"` lowercased, trimmed) is stored alongside the rating key. `filterOutHistoryTracks` does a two-pass filter:
+1. Match by `plexRatingKey` (exact)
+2. Match by `normalized_key` (fuzzy fallback)
+
+### Retention
+
+Configurable via `PlexRadioHistoryInterval` enum:
+
+| Value | Duration |
+|-------|----------|
+| `off` | Disabled (no filtering) |
+| `twoWeeks` | 2 weeks |
+| `oneMonth` | 1 month (default) |
+| `threeMonths` | 3 months |
+| `sixMonths` | 6 months |
+
+Stored in `UserDefaults` key `plexRadioHistoryInterval`. When `off`, `filterOutHistoryTracks` returns the input unchanged.
+
+### Recording
+
+`PlexRadioHistory.shared.recordTrackPlayed(_:)` is called from `AudioEngine` when a Plex track finishes — at natural track completion and during gapless crossfade. Uses `track.plexServerId` (set by `PlexManager.convertToTrack`), falling back to `PlexManager.shared.currentServer?.id`.
+
+### Filtering
+
+`PlexRadioHistory.shared.filterOutHistoryTracks(_:)` is called inside `PlexManager` when building radio queues — after fetching tracks from the Plex API, before returning them to the engine.
+
+### Context Menu (User UI)
+
+Under the Plex Radio context menu:
+- **History Retention** submenu — sets `retentionInterval` (Off / 2 Weeks / 1 Month / 3 Months / 6 Months)
+- **View Radio History** — opens `http://127.0.0.1:8765/radio-history` in the default browser
+- **Clear Radio History** — confirmation dialog, then `clearHistory()`
+
+### Web History Page
+
+Served by `LocalMediaServer` on port 8765. Routes:
+- `GET /radio-history` — returns HTML from `generateHistoryHTML()`
+- `POST /radio-history/delete/:id` — removes a single entry by `rowid`
+
+The page is a dark-themed sortable table (Track / Artist / Album / Track ID / Played). Each row has a **Remove** button that calls the delete endpoint via `fetch()`. No page reload needed.
+
 ## Key Source Files
 
 | File | Purpose |
@@ -261,6 +315,7 @@ http://192.168.0.102:32400/library/parts/653835/1723508508/file.flac?X-Plex-Toke
 | `Plex/PlexModels.swift` | Domain models (Server, Artist, Album, Track, etc.) |
 | `Plex/PlexPlaybackReporter.swift` | Audio scrobbling and "now playing" reporting |
 | `Plex/PlexVideoPlaybackReporter.swift` | Video scrobbling with periodic timeline updates |
+| `Plex/PlexRadioHistory.swift` | SQLite-backed play history for Plex Radio — recording, filtering, web UI |
 
 ## References
 

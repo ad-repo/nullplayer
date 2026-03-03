@@ -192,6 +192,23 @@ class ModernMainWindowView: NSView {
         super.viewDidMoveToWindow()
         layer?.isOpaque = false
         updateCornerMask()
+        // Register/unregister occlusion observer when window association changes
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        if let window = window {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeOcclusionState(_:)),
+                name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        }
+    }
+
+    @objc private func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        if window?.occlusionState.contains(.visible) == true {
+            ModernSkinEngine.shared.animationEngine.resumeFromOcclusion()
+            marqueeLayer.resumeScrolling()
+        } else {
+            ModernSkinEngine.shared.animationEngine.pauseForOcclusion()
+            marqueeLayer.pauseScrolling()
+        }
     }
 
     private func updateCornerMask() {

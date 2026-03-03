@@ -276,9 +276,12 @@ class CastManager {
     
     /// Discovery state
     private(set) var isDiscovering: Bool = false
-    
-    /// Discovery refresh timer
+
+    /// Discovery refresh timer (60s periodic device refresh while discovery is active)
     private var discoveryRefreshTimer: Timer?
+
+    /// Idle timeout timer — stops discovery 5 minutes after last cast menu open (if not casting)
+    private var discoveryIdleTimer: Timer?
     
     /// Generation counter for track casting - incremented on each castNewTrack call
     /// Used to detect and discard stale operations when user rapidly changes tracks
@@ -319,14 +322,6 @@ class CastManager {
     private let maxConsecutiveFailures = 3
     
     private init() {
-        // Start discovery automatically
-        startDiscovery()
-        
-        // Refresh discovery periodically (every 60 seconds)
-        discoveryRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.refreshDevices()
-        }
-        
         // Subscribe to Chromecast status updates for position syncing
         NotificationCenter.default.addObserver(
             self,
@@ -352,6 +347,7 @@ class CastManager {
     
     deinit {
         discoveryRefreshTimer?.invalidate()
+        discoveryIdleTimer?.invalidate()
         sonosPollingTimer?.invalidate()
         topologyRefreshTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
@@ -418,24 +414,51 @@ class CastManager {
     
     // MARK: - Discovery
     
-    /// Start discovering cast devices on the network
+    /// Start discovering cast devices on the network (lazy — called on demand when cast menu opens)
     func startDiscovery() {
-        guard !isDiscovering else { return }
-        
+        guard !isDiscovering else {
+            // Already discovering — reset idle timeout so discovery stays alive
+            resetDiscoveryIdleTimer()
+            return
+        }
+
         NSLog("CastManager: Starting device discovery...")
         isDiscovering = true
-        
+
         chromecastManager.startDiscovery()
         upnpManager.startDiscovery()
+
+        // Start periodic refresh if not already running
+        if discoveryRefreshTimer == nil {
+            discoveryRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+                self?.refreshDevices()
+            }
+        }
+
+        // Schedule idle timeout — stop discovery after 5 minutes if not casting
+        resetDiscoveryIdleTimer()
     }
-    
+
     /// Stop discovering devices
     func stopDiscovery() {
-        NSLog("CastManager: Stopping device discovery")
+        guard isDiscovering, !isCasting else { return }
+        NSLog("CastManager: Stopping device discovery (idle)")
         isDiscovering = false
-        
+
         chromecastManager.stopDiscovery()
         upnpManager.stopDiscovery()
+
+        discoveryRefreshTimer?.invalidate()
+        discoveryRefreshTimer = nil
+        discoveryIdleTimer?.invalidate()
+        discoveryIdleTimer = nil
+    }
+
+    private func resetDiscoveryIdleTimer() {
+        discoveryIdleTimer?.invalidate()
+        discoveryIdleTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in
+            self?.stopDiscovery()
+        }
     }
     
     /// Refresh device list (restart discovery)

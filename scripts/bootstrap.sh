@@ -13,15 +13,15 @@ RELEASE_TAG="deps-v2"
 
 # Framework definitions
 VLCKIT_FILE="VLCKit-macos.tar.gz"
-VLCKIT_SHA256="c59bbb9cfeb4b12b621a88eb6c5b3b5e65185026560be7bdf6b2e339a6855c70"
+VLCKIT_SHA256="b36a06d9169fba85101dae8264be24ab3d92c0f2976001524d60f79e8fdece93"
 VLCKIT_TARGET="Frameworks/VLCKit.framework"
 
 PROJECTM_FILE="libprojectM-4.1.6-macos.tar.gz"
-PROJECTM_SHA256="0bcdf100b837ec89101912dcd5bb21da4eae15902f136afa67140a0728aad0ee"
+PROJECTM_SHA256="c85addde0f7afb6132c619a6f081ef14fc806e1afbf3767ec04c9470e9c9a7b1"
 PROJECTM_TARGET="Frameworks/libprojectM-4.dylib"
 
 AUBIO_FILE="libaubio-macos.tar.gz"
-AUBIO_SHA256="37fa52b7c57bed321ce8148bdea19d129ee3ac876e644703cae838cc478a4045"
+AUBIO_SHA256="0fbcdfcea459e6f8278bfef134e4eddafad4a7764389bc6147428e59b25933d0"
 AUBIO_TARGET="Frameworks/libaubio.5.dylib"
 
 # Colors for output

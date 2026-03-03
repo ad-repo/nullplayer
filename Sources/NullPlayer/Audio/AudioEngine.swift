@@ -296,8 +296,28 @@ class AudioEngine {
     /// Flag to coalesce main queue PCM dispatches
     private var pendingPcmUpdate = false
     
+    // MARK: - Spectrum Consumer Tracking
+
+    /// Spectrum consumers — FFT is skipped entirely when this set is empty
+    private var spectrumConsumers = Set<String>()
+
+    /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
+    private var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+
+    func addSpectrumConsumer(_ id: String) {
+        spectrumConsumers.insert(id)
+        streamingPlayer?.spectrumNeeded = !spectrumConsumers.isEmpty
+    }
+
+    func removeSpectrumConsumer(_ id: String) {
+        spectrumConsumers.remove(id)
+        streamingPlayer?.spectrumNeeded = !spectrumConsumers.isEmpty
+    }
+
+    var spectrumNeeded: Bool { !spectrumConsumers.isEmpty }
+
     // MARK: - Pre-allocated FFT Buffers (Memory Optimization)
-    
+
     /// Pre-allocated buffers to avoid per-callback allocations
     private var fftSamples = [Float](repeating: 0, count: 2048)
     private var fftWindow = [Float](repeating: 0, count: 2048)
@@ -407,6 +427,14 @@ class AudioEngine {
             name: NSNotification.Name("SpectrumSettingsChanged"),
             object: nil
         )
+
+        // Keep cached isModernUIEnabled in sync when user toggles UI mode
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleModernUIChanged),
+            name: UserDefaults.didChangeNotification,
+            object: nil
+        )
         
         setupAudioEngine()
         setupEqualizer()
@@ -431,7 +459,11 @@ class AudioEngine {
             spectrumNormalizationMode = mode
         }
     }
-    
+
+    @objc private func handleModernUIChanged() {
+        isModernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+    }
+
     // MARK: - Setup
     
     private func setupAudioEngine() {
@@ -669,9 +701,10 @@ class AudioEngine {
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        guard spectrumNeeded else { return }
         guard let channelData = buffer.floatChannelData,
               let fftSetup = fftSetup else { return }
-        
+
         let frameCount = Int(buffer.frameLength)
         guard frameCount >= fftSize else { return }
         
@@ -694,7 +727,7 @@ class AudioEngine {
         }
         
         // Feed BPM detector with raw mono samples (before windowing) — modern UI only
-        if UserDefaults.standard.bool(forKey: "modernUIEnabled") {
+        if isModernUIEnabled {
             fftSamples.withUnsafeBufferPointer { ptr in
                 if let base = ptr.baseAddress {
                     bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
@@ -1868,7 +1901,12 @@ class AudioEngine {
     private func castTrackDidFinish() {
         // Report track finished to Plex (natural end)
         PlexPlaybackReporter.shared.trackDidStop(at: duration, finished: true)
-        
+
+        // Record to Plex Radio history (track actually finished playing via cast)
+        if let finishedTrack = currentTrack, finishedTrack.plexRatingKey != nil {
+            PlexRadioHistory.shared.recordTrackPlayed(finishedTrack)
+        }
+
         // Prevent multiple calls
         castPlaybackStartDate = nil
         
@@ -2203,6 +2241,18 @@ class AudioEngine {
         delegate?.audioEngineDidChangePlaylist()
     }
     
+    /// Select a track by index for display without loading or playing it.
+    /// Used during state restoration when the real stream URL is pending an async fetch.
+    func selectTrackForDisplay(at index: Int) {
+        guard index >= 0 && index < playlist.count else { return }
+        currentIndex = index
+        currentTrack = playlist[index]
+        state = .stopped
+        _currentTime = 0
+        lastReportedTime = 0
+        delegate?.audioEngineDidChangeTrack(currentTrack)
+    }
+
     /// Replace a track at a specific index without affecting playback.
     /// Used to swap placeholder tracks with fully-resolved streaming tracks
     /// during state restoration.
@@ -2387,7 +2437,13 @@ class AudioEngine {
         defer { isLoadingTrack = false }
         
         let track = playlist[index]
-        
+
+        // Skip about:blank placeholder tracks — streaming URL not yet resolved via async fetch
+        if track.url.absoluteString == "about:blank" {
+            NSLog("loadTrack: skipping placeholder track '%@' — waiting for async URL fetch", track.title ?? "")
+            return
+        }
+
         // Route video tracks to the video player
         if track.mediaType == .video {
             NSLog("AudioEngine: Routing video track to video player: %@", track.title)
@@ -2612,6 +2668,8 @@ class AudioEngine {
         if streamingPlayer == nil {
             streamingPlayer = StreamingAudioPlayer()
             streamingPlayer?.delegate = self
+            streamingPlayer?.spectrumNeeded = spectrumNeeded
+            streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         }
         
         // Sync EQ settings from main EQ to streaming player
@@ -2718,6 +2776,11 @@ class AudioEngine {
 
         // Report stop to Emby
         EmbyPlaybackReporter.shared.trackStopped()
+
+        // Record to Plex Radio history (track actually finished playing)
+        if let finishedTrack = currentTrack, finishedTrack.plexRatingKey != nil {
+            PlexRadioHistory.shared.recordTrackPlayed(finishedTrack)
+        }
 
         // Check if we have a gaplessly pre-scheduled next track (local files)
         if gaplessPlaybackEnabled && nextScheduledFile != nil && nextScheduledTrackIndex >= 0 {
@@ -3134,6 +3197,11 @@ class AudioEngine {
         let activePlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
         activePlayer.volume = 1.0
         
+        // Record outgoing track to Plex Radio history (track finished via crossfade)
+        if let outgoingTrack = currentTrack, outgoingTrack.plexRatingKey != nil {
+            PlexRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+        }
+
         // Update state
         audioFile = nextFile
         currentIndex = nextIndex
@@ -3201,35 +3269,42 @@ class AudioEngine {
         
         // Set delegate on new primary player
         streamingPlayer?.delegate = self
+        streamingPlayer?.spectrumNeeded = spectrumNeeded
+        streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         // crossfadeStreamingPlayer (old primary) already has nil delegate from above
         
         // Restore primary player to master volume (crossfade ended at masterVolume * 1.0)
         streamingPlayer?.volume = volume
         
+        // Record outgoing track to Plex Radio history (track finished via streaming crossfade)
+        if let outgoingTrack = currentTrack, outgoingTrack.plexRatingKey != nil {
+            PlexRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+        }
+
         // Update state
         currentIndex = nextIndex
         currentTrack = playlist[nextIndex]
         _currentTime = 0
         lastReportedTime = 0
         playbackStartDate = Date()
-        
+
         // Reset crossfade state
         isCrossfading = false
         crossfadeTargetIndex = -1
-        
+
         // Notify delegate
         delegate?.audioEngineDidChangeTrack(currentTrack)
-        
+
         // Report to Plex/Subsonic
         if let track = currentTrack {
             PlexPlaybackReporter.shared.trackDidStart(track, at: 0)
-            
+
             if let subsonicId = track.subsonicId,
                let serverId = track.subsonicServerId,
                let trackDuration = track.duration {
                 SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
             }
-            
+
             // Report track start to Jellyfin
             if let jellyfinId = track.jellyfinId,
                let serverId = track.jellyfinServerId,

@@ -65,6 +65,7 @@ class SpectrumView: NSView {
         ) { [weak self] notification in
             self?.handleSpectrumUpdate(notification)
         }
+        WindowManager.shared.audioEngine.addSpectrumConsumer("spectrumView")
     }
     
     private func setupSpectrumAnalyzerView() {
@@ -109,6 +110,7 @@ class SpectrumView: NSView {
         if let observer = spectrumObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        WindowManager.shared.audioEngine.removeSpectrumConsumer("spectrumView")
     }
     
     // MARK: - Accessibility

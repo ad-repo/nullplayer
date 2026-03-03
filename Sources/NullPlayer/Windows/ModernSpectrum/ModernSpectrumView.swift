@@ -81,7 +81,8 @@ class ModernSpectrumView: NSView {
         ) { [weak self] notification in
             self?.handleSpectrumUpdate(notification)
         }
-        
+        WindowManager.shared.audioEngine.addSpectrumConsumer("modernSpectrumView")
+
         // Observe skin changes
         NotificationCenter.default.addObserver(self, selector: #selector(modernSkinDidChange),
                                                 name: ModernSkinEngine.skinDidChangeNotification, object: nil)
@@ -106,6 +107,7 @@ class ModernSpectrumView: NSView {
             NotificationCenter.default.removeObserver(observer)
         }
         NotificationCenter.default.removeObserver(self)
+        WindowManager.shared.audioEngine.removeSpectrumConsumer("modernSpectrumView")
     }
     
     // MARK: - Setup

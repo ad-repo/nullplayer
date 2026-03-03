@@ -9,16 +9,20 @@
 
 ## Features
 
-- A Brand new library browser window for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local library files
+- Library browser window for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local library files
 - Plex Media Server integration with PIN-based authentication
 - Plex music and video streaming and playlist support
 - Jellyfin media server integration with music and video streaming, scrobbling, and library browsing
 - Emby media server integration with music and video streaming, scrobbling, and library browsing
+- Navidrome/Subsonic server integration with scrobbling support
+- Local media library with metadata parsing, editing, library management
 - ProjectM visualizations with 100 included. Users can download more
-- Just like PlexAmp, sonic similarity supportuing radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
+- Sonic similarity radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
+- Plex radio track history with configurable exclusion rules. Stop the same songs from being added to your Plex radio stations
+- Sonos content filtering for unsupported lossless formats. Keeps the music playing by not sending unsupported encodings to Sonos.
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
-- Support for classic Winamp skin skins (.wsz files)
-- New Modern V2 UI user skin system
+- Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
+- Modern V2 UI skin system, many v2 skins included. Open format, users can easily make new v2 skins via json
 - Original Spenctrum analysis visualization system
 - Album art visualization system with user selected effects
 - Main player, Playlist editor, and 10-band Equalizer windows
@@ -28,11 +32,7 @@
 - Gapless playback for seamless track transitions
 - Sweet Fades (crossfade) with configurable fade duration
 - Volume normalization for consistent loudness
-- Local media library with metadata parsing
-- Local media library backup and restore
 - Media Drag and drop support
-- Navidrome/Subsonic server integration with scrobbling support
-- Jellyfin server integration with full support
 - Album/Cover/Movie art browser with visualizations
 - IMDB integration
 - Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
