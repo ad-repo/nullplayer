@@ -2665,7 +2665,7 @@ final class NullPlayerTests: XCTestCase {
     }
     
     func testJellyfinMusicLibraryCreation() {
-        let library = JellyfinMusicLibrary(id: "lib-1", name: "Music")
+        let library = JellyfinMusicLibrary(id: "lib-1", name: "Music", collectionType: "music")
         XCTAssertEqual(library.id, "lib-1")
         XCTAssertEqual(library.name, "Music")
     }
