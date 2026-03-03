@@ -801,11 +801,12 @@ class PlexManager {
             sampleRate: sampleRate,
             channels: channels,
             plexRatingKey: plexTrack.id,  // Store rating key for play tracking
+            plexServerId: currentServer?.id,
             artworkThumb: plexTrack.thumb,
             genre: plexTrack.genre
         )
     }
-    
+
     /// Convert multiple Plex tracks to AudioEngine-compatible Tracks
     func convertToTracks(_ plexTracks: [PlexTrack]) -> [Track] {
         plexTracks.compactMap { convertToTrack($0) }
@@ -828,11 +829,12 @@ class PlexManager {
             sampleRate: movie.media.first?.audioSampleRate,
             channels: movie.media.first?.audioChannels,
             plexRatingKey: movie.id,
+            plexServerId: currentServer?.id,
             artworkThumb: movie.thumb,
             mediaType: .video
         )
     }
-    
+
     /// Convert a Plex episode to an AudioEngine-compatible Track (video type)
     func convertToTrack(_ episode: PlexEpisode) -> Track? {
         guard let streamURL = streamURL(for: episode) else {
@@ -854,11 +856,12 @@ class PlexManager {
             sampleRate: episode.media.first?.audioSampleRate,
             channels: episode.media.first?.audioChannels,
             plexRatingKey: episode.id,
+            plexServerId: currentServer?.id,
             artworkThumb: episode.thumb,
             mediaType: .video
         )
     }
-    
+
     /// Convert multiple Plex movies to AudioEngine-compatible Tracks
     func convertToTracks(_ movies: [PlexMovie]) -> [Track] {
         movies.compactMap { convertToTrack($0) }

@@ -2247,6 +2247,9 @@ class AudioEngine {
         guard index >= 0 && index < playlist.count else { return }
         currentIndex = index
         currentTrack = playlist[index]
+        state = .stopped
+        _currentTime = 0
+        lastReportedTime = 0
         delegate?.audioEngineDidChangeTrack(currentTrack)
     }
 

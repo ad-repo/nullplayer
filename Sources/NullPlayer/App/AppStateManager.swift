@@ -85,7 +85,7 @@ class AppStateManager {
         var contentType: String?
         
         /// Create from a Track
-        static func from(_ track: Track, plexServerId: String?) -> SavedTrack {
+        static func from(_ track: Track) -> SavedTrack {
             if track.url.isFileURL {
                 return SavedTrack(
                     localURL: track.url.absoluteString,
@@ -97,7 +97,7 @@ class AppStateManager {
             } else if let plexKey = track.plexRatingKey {
                 return SavedTrack(
                     plexRatingKey: plexKey,
-                    plexServerId: plexServerId,
+                    plexServerId: track.plexServerId,
                     title: track.title,
                     artist: track.artist,
                     album: track.album,
@@ -505,7 +505,7 @@ class AppStateManager {
             
             // Playback state - save all tracks with metadata for restoration
             playlistTracks: engine.playlist.map { track in
-                SavedTrack.from(track, plexServerId: PlexManager.shared.currentServer?.id)
+                SavedTrack.from(track)
             },
             currentTrackIndex: engine.currentIndex,
             playbackPosition: engine.currentTime,
@@ -892,9 +892,9 @@ class AppStateManager {
         let hasStreamingTracks = !plexIndicesToFetch.isEmpty || !subsonicIndicesToFetch.isEmpty || !jellyfinIndicesToFetch.isEmpty || !embyIndicesToFetch.isEmpty
         if hasStreamingTracks {
             let savedCurrentIndex = adjustedIndex
-            Task {
+            Task.detached { [self] in
                 var replacements: [(Track, Int)] = []  // (realTrack, playlistIndex)
-                
+
                 // Fetch Plex tracks
                 if !plexIndicesToFetch.isEmpty, let client = await waitForPlexClient() {
                     for (savedTrack, playlistIndex) in plexIndicesToFetch {
@@ -1044,6 +1044,8 @@ class AppStateManager {
             try? await Task.sleep(nanoseconds: 250_000_000) // poll every 0.25s
             if let client = PlexManager.shared.serverClient { return client }
         }
+        // One final check in case client connected during the last sleep window
+        if let client = PlexManager.shared.serverClient { return client }
         NSLog("AppStateManager: Plex did not connect within %.0fs — skipping Plex track restoration", timeout)
         return nil
     }

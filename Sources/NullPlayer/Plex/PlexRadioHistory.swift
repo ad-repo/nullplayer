@@ -136,7 +136,7 @@ class PlexRadioHistory {
         guard let db = db,
               let ratingKey = track.plexRatingKey else { return }
 
-        let serverId = PlexManager.shared.currentServer?.id ?? ""
+        let serverId = track.plexServerId ?? PlexManager.shared.currentServer?.id ?? ""
         let nKey = PlexRadioHistory.normalizedKey(title: track.title, artist: track.artist)
         let playedAt = Date().timeIntervalSince1970
 
