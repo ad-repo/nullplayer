@@ -859,21 +859,33 @@ class AppStateManager {
             adjustedIndex -= skippedBefore
         }
         
+        // Determine if the current track is a streaming placeholder (real URL not yet available)
+        let currentIsPlaceholder = plexIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
+            || subsonicIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
+            || jellyfinIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
+            || embyIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
+
         // Select the current track (load it without playing)
         if adjustedIndex >= 0 && adjustedIndex < allTracks.count {
-            // Use playTrack to load the track, then immediately pause
-            engine.playTrack(at: adjustedIndex)
-            engine.pause()
-            
-            // Seek to saved position after a brief delay to let the track load
-            let savedPosition = state.playbackPosition
-            if savedPosition > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    engine.seek(to: savedPosition)
-                    NSLog("AppStateManager: Seeked to saved position: %.1fs", savedPosition)
+            if currentIsPlaceholder {
+                // Placeholder — show metadata in UI but defer actual load until async fetch replaces it
+                engine.selectTrackForDisplay(at: adjustedIndex)
+                NSLog("AppStateManager: Current track is a streaming placeholder, deferring load")
+            } else {
+                // Local file or radio — load immediately then pause
+                engine.playTrack(at: adjustedIndex)
+                engine.pause()
+
+                // Seek to saved position after a brief delay to let the track load
+                let savedPosition = state.playbackPosition
+                if savedPosition > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        engine.seek(to: savedPosition)
+                        NSLog("AppStateManager: Seeked to saved position: %.1fs", savedPosition)
+                    }
                 }
+                NSLog("AppStateManager: Selected track at index %d", adjustedIndex)
             }
-            NSLog("AppStateManager: Selected track at index %d", adjustedIndex)
         }
         
         // Fetch streaming tracks asynchronously and replace placeholders
@@ -884,7 +896,7 @@ class AppStateManager {
                 var replacements: [(Track, Int)] = []  // (realTrack, playlistIndex)
                 
                 // Fetch Plex tracks
-                if !plexIndicesToFetch.isEmpty, let client = PlexManager.shared.serverClient {
+                if !plexIndicesToFetch.isEmpty, let client = await waitForPlexClient() {
                     for (savedTrack, playlistIndex) in plexIndicesToFetch {
                         if let ratingKey = savedTrack.plexRatingKey {
                             do {
@@ -1022,7 +1034,20 @@ class AppStateManager {
     }
     
     // MARK: - Helpers
-    
+
+    /// Wait up to `timeout` seconds for Plex to connect and return its serverClient.
+    private func waitForPlexClient(timeout: TimeInterval = 15) async -> PlexServerClient? {
+        if let client = PlexManager.shared.serverClient { return client }
+        NSLog("AppStateManager: Waiting for Plex connection to restore streaming tracks...")
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 250_000_000) // poll every 0.25s
+            if let client = PlexManager.shared.serverClient { return client }
+        }
+        NSLog("AppStateManager: Plex did not connect within %.0fs — skipping Plex track restoration", timeout)
+        return nil
+    }
+
     /// Get the custom skin path if a non-default skin is loaded
     private func getCustomSkinPath() -> String? {
         // Return the currently loaded custom skin path tracked by WindowManager

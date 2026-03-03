@@ -2241,6 +2241,15 @@ class AudioEngine {
         delegate?.audioEngineDidChangePlaylist()
     }
     
+    /// Select a track by index for display without loading or playing it.
+    /// Used during state restoration when the real stream URL is pending an async fetch.
+    func selectTrackForDisplay(at index: Int) {
+        guard index >= 0 && index < playlist.count else { return }
+        currentIndex = index
+        currentTrack = playlist[index]
+        delegate?.audioEngineDidChangeTrack(currentTrack)
+    }
+
     /// Replace a track at a specific index without affecting playback.
     /// Used to swap placeholder tracks with fully-resolved streaming tracks
     /// during state restoration.
@@ -2425,7 +2434,13 @@ class AudioEngine {
         defer { isLoadingTrack = false }
         
         let track = playlist[index]
-        
+
+        // Skip about:blank placeholder tracks — streaming URL not yet resolved via async fetch
+        if track.url.absoluteString == "about:blank" {
+            NSLog("loadTrack: skipping placeholder track '%@' — waiting for async URL fetch", track.title ?? "")
+            return
+        }
+
         // Route video tracks to the video player
         if track.mediaType == .video {
             NSLog("AudioEngine: Routing video track to video player: %@", track.title)
