@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "name": "ForgedTitanium",
+    "author": "NullPlayer",
+    "version": "1.1",
+    "description": "Industrial steel/titanium theme with graphite depth, brushed nickel surfaces, and neutral metal analyzer tones"
+  },
+  "titleText": {
+    "mode": "image",
+    "charSpacing": 2,
+    "charHeight": 10,
+    "alignment": "center",
+    "tintColor": "#E5E5E5"
+  },
+  "palette": {
+    "primary": "#BFC3C7",
+    "secondary": "#8C9196",
+    "accent": "#D6D9DD",
+    "highlight": "#F2F2F2",
+    "background": "#0E0F11",
+    "surface": "#1A1C1F",
+    "text": "#E8E8E8",
+    "textDim": "#9A9EA3",
+    "positive": "#9AD1A3",
+    "negative": "#D46A6A",
+    "warning": "#C8A84A",
+    "border": "#2F3338",
+    "timeColor": "#DADADA",
+    "marqueeColor": "#C9CDD1",
+    "dataColor": "#C4C8CC",
+    "eqMid": "#9FA4A9"
+  },
+  "fonts": {
+    "primaryName": "DepartureMono-Regular",
+    "fallbackName": "Menlo",
+    "titleSize": 10,
+    "bodySize": 11,
+    "smallSize": 7,
+    "timeSize": 24
+  },
+  "background": {
+    "grid": {
+      "color": "#5E6368",
+      "spacing": 22,
+      "angle": 75,
+      "opacity": 0.025,
+      "perspective": true
+    }
+  },
+  "glow": {
+    "enabled": true,
+    "radius": 4,
+    "intensity": 0.25,
+    "threshold": 0.65
+  },
+  "window": {
+    "borderWidth": 1.6,
+    "borderColor": "#2F3338",
+    "cornerRadius": 6,
+    "seamlessDocking": 1.0
+  },
+  "elements": {
+    "titlebar": { "color": "#1C1E21" },
+    "marquee_bg": { "color": "#16181B" },
+    "info_cast": { "color": "#D6D9DD" },
+
+    "spectrum_area": { "color": "#AEB3B8" },
+    "seek_fill": { "color": "#C9CDD1" },
+
+    "spectrum_titlebar": { "color": "#1C1E21" },
+    "playlist_titlebar": { "color": "#1C1E21" },
+    "eq_titlebar": { "color": "#1C1E21" },
+    "library_titlebar": { "color": "#1C1E21" },
+    "projectm_titlebar": { "color": "#1C1E21" }
+  },
+  "animations": {
+    "seek_fill": {
+      "type": "glow",
+      "duration": 3.0,
+      "minValue": 0.45,
+      "maxValue": 0.85
+    }
+  }
+}
