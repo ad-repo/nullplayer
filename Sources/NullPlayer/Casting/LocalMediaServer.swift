@@ -113,7 +113,10 @@ class LocalMediaServer {
         }
 
         // Plex Radio History web page
-        await server.appendRoute("GET /radio-history") { _ in
+        await server.appendRoute("GET /radio-history") { [weak self] request in
+            guard self?.isLoopbackRequest(request) == true else {
+                return HTTPResponse(statusCode: .forbidden)
+            }
             let html = PlexRadioHistory.shared.generateHistoryHTML()
             return HTTPResponse(
                 statusCode: .ok,
@@ -123,7 +126,10 @@ class LocalMediaServer {
         }
 
         // API to delete a single history entry
-        await server.appendRoute("POST /radio-history/delete/*") { request in
+        await server.appendRoute("POST /radio-history/delete/*") { [weak self] request in
+            guard self?.isLoopbackRequest(request) == true else {
+                return HTTPResponse(statusCode: .forbidden)
+            }
             let path = request.path
             guard let idString = path.split(separator: "/").last,
                   let id = Int64(idString) else {
@@ -134,13 +140,19 @@ class LocalMediaServer {
         }
 
         // Subsonic Radio History
-        await server.appendRoute("GET /subsonic-radio-history") { _ in
+        await server.appendRoute("GET /subsonic-radio-history") { [weak self] request in
+            guard self?.isLoopbackRequest(request) == true else {
+                return HTTPResponse(statusCode: .forbidden)
+            }
             let html = SubsonicRadioHistory.shared.generateHistoryHTML()
             return HTTPResponse(statusCode: .ok,
                                 headers: [.contentType: "text/html; charset=utf-8"],
                                 body: Data(html.utf8))
         }
-        await server.appendRoute("POST /subsonic-radio-history/delete/*") { request in
+        await server.appendRoute("POST /subsonic-radio-history/delete/*") { [weak self] request in
+            guard self?.isLoopbackRequest(request) == true else {
+                return HTTPResponse(statusCode: .forbidden)
+            }
             let path = request.path
             guard let idString = path.split(separator: "/").last, let id = Int64(idString) else {
                 return HTTPResponse(statusCode: .badRequest)
@@ -150,13 +162,19 @@ class LocalMediaServer {
         }
 
         // Jellyfin Radio History
-        await server.appendRoute("GET /jellyfin-radio-history") { _ in
+        await server.appendRoute("GET /jellyfin-radio-history") { [weak self] request in
+            guard self?.isLoopbackRequest(request) == true else {
+                return HTTPResponse(statusCode: .forbidden)
+            }
             let html = JellyfinRadioHistory.shared.generateHistoryHTML()
             return HTTPResponse(statusCode: .ok,
                                 headers: [.contentType: "text/html; charset=utf-8"],
                                 body: Data(html.utf8))
         }
-        await server.appendRoute("POST /jellyfin-radio-history/delete/*") { request in
+        await server.appendRoute("POST /jellyfin-radio-history/delete/*") { [weak self] request in
+            guard self?.isLoopbackRequest(request) == true else {
+                return HTTPResponse(statusCode: .forbidden)
+            }
             let path = request.path
             guard let idString = path.split(separator: "/").last, let id = Int64(idString) else {
                 return HTTPResponse(statusCode: .badRequest)
@@ -166,13 +184,19 @@ class LocalMediaServer {
         }
 
         // Emby Radio History
-        await server.appendRoute("GET /emby-radio-history") { _ in
+        await server.appendRoute("GET /emby-radio-history") { [weak self] request in
+            guard self?.isLoopbackRequest(request) == true else {
+                return HTTPResponse(statusCode: .forbidden)
+            }
             let html = EmbyRadioHistory.shared.generateHistoryHTML()
             return HTTPResponse(statusCode: .ok,
                                 headers: [.contentType: "text/html; charset=utf-8"],
                                 body: Data(html.utf8))
         }
-        await server.appendRoute("POST /emby-radio-history/delete/*") { request in
+        await server.appendRoute("POST /emby-radio-history/delete/*") { [weak self] request in
+            guard self?.isLoopbackRequest(request) == true else {
+                return HTTPResponse(statusCode: .forbidden)
+            }
             let path = request.path
             guard let idString = path.split(separator: "/").last, let id = Int64(idString) else {
                 return HTTPResponse(statusCode: .badRequest)
@@ -182,13 +206,19 @@ class LocalMediaServer {
         }
 
         // Local Radio History
-        await server.appendRoute("GET /local-radio-history") { _ in
+        await server.appendRoute("GET /local-radio-history") { [weak self] request in
+            guard self?.isLoopbackRequest(request) == true else {
+                return HTTPResponse(statusCode: .forbidden)
+            }
             let html = LocalRadioHistory.shared.generateHistoryHTML()
             return HTTPResponse(statusCode: .ok,
                                 headers: [.contentType: "text/html; charset=utf-8"],
                                 body: Data(html.utf8))
         }
-        await server.appendRoute("POST /local-radio-history/delete/*") { request in
+        await server.appendRoute("POST /local-radio-history/delete/*") { [weak self] request in
+            guard self?.isLoopbackRequest(request) == true else {
+                return HTTPResponse(statusCode: .forbidden)
+            }
             let path = request.path
             guard let idString = path.split(separator: "/").last, let id = Int64(idString) else {
                 return HTTPResponse(statusCode: .badRequest)
@@ -782,6 +812,21 @@ class LocalMediaServer {
         }
     }
     
+    /// Returns true only when the request originates from the local loopback interface.
+    /// Checks remoteAddress directly (not remoteIPAddress) to avoid X-Forwarded-For spoofing.
+    private func isLoopbackRequest(_ request: HTTPRequest) -> Bool {
+        switch request.remoteAddress {
+        case .ip4(let ip, _):
+            return ip == "127.0.0.1"
+        case .ip6(let ip, _):
+            return ip == "::1"
+        case .unix:
+            return true  // Unix socket connections are always local
+        case .none:
+            return false
+        }
+    }
+
     /// Detect content type from file extension
     private func contentType(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
