@@ -580,4 +580,243 @@ class SubsonicManager {
     func convertToTracks(_ songs: [SubsonicSong]) -> [Track] {
         songs.compactMap { convertToTrack($0) }
     }
+
+    // MARK: - Radio
+
+    func getGenres() async -> [String] {
+        guard let client = serverClient else { return [] }
+        do {
+            return try await client.getGenres()
+        } catch {
+            NSLog("SubsonicManager: Failed to fetch genres: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createLibraryRadio(limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let fetchLimit = limit * 3
+            let songs = try await client.getRandomSongs(size: fetchLimit, genre: nil, fromYear: nil, toYear: nil, musicFolderId: currentMusicFolder?.id)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit)
+        } catch {
+            NSLog("SubsonicManager: Failed to create library radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createLibraryRadioSimilar(limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        let seedId: String?
+        if let currentTrack = WindowManager.shared.audioEngine.currentTrack, let id = currentTrack.subsonicId {
+            seedId = id
+        } else {
+            do {
+                let seeds = try await client.getRandomSongs(size: 1, musicFolderId: currentMusicFolder?.id)
+                seedId = seeds.first?.id
+            } catch { seedId = nil }
+        }
+        guard let id = seedId else {
+            NSLog("SubsonicManager: Cannot create library radio (similar) - no seed track")
+            return []
+        }
+        do {
+            let songs = try await client.getSimilarSongs(id: id, count: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("SubsonicManager: Failed to create library radio (similar): %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createGenreRadio(genre: String, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let songs = try await client.getSongsByGenre(genre: genre, count: limit * 3, offset: 0, musicFolderId: currentMusicFolder?.id)
+            let allTracks = songs.compactMap { convertToTrack($0) }.shuffled()
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit)
+        } catch {
+            NSLog("SubsonicManager: Failed to create genre radio (%@): %@", genre, error.localizedDescription)
+            return []
+        }
+    }
+
+    func createGenreRadioSimilar(genre: String, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        let seedId: String?
+        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.subsonicId {
+            seedId = id
+        } else {
+            do {
+                let seeds = try await client.getSongsByGenre(genre: genre, count: 1, offset: 0, musicFolderId: currentMusicFolder?.id)
+                seedId = seeds.first?.id
+            } catch { seedId = nil }
+        }
+        guard let id = seedId else { return await createGenreRadio(genre: genre, limit: limit) }
+        do {
+            let songs = try await client.getSimilarSongs(id: id, count: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("SubsonicManager: Failed to create genre radio similar: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createDecadeRadio(start: Int, end: Int, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let songs = try await client.getRandomSongs(size: limit * 3, fromYear: start, toYear: end, musicFolderId: currentMusicFolder?.id)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit)
+        } catch {
+            NSLog("SubsonicManager: Failed to create decade radio (%d-%d): %@", start, end, error.localizedDescription)
+            return []
+        }
+    }
+
+    func createDecadeRadioSimilar(start: Int, end: Int, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        let seedId: String?
+        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.subsonicId {
+            seedId = id
+        } else {
+            do {
+                let seeds = try await client.getRandomSongs(size: 1, fromYear: start, toYear: end, musicFolderId: currentMusicFolder?.id)
+                seedId = seeds.first?.id
+            } catch { seedId = nil }
+        }
+        guard let id = seedId else { return await createDecadeRadio(start: start, end: end, limit: limit) }
+        do {
+            let songs = try await client.getSimilarSongs(id: id, count: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("SubsonicManager: Failed to create decade radio similar: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createRatingRadio(limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let starred = try await client.fetchStarred()
+            let allTracks = starred.songs.compactMap { convertToTrack($0) }.shuffled()
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit)
+        } catch {
+            NSLog("SubsonicManager: Failed to create rating radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createRatingRadioSimilar(limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        let seedId: String?
+        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.subsonicId {
+            seedId = id
+        } else {
+            do {
+                let starred = try await client.fetchStarred()
+                seedId = starred.songs.randomElement()?.id
+            } catch { seedId = nil }
+        }
+        guard let id = seedId else { return await createRatingRadio(limit: limit) }
+        do {
+            let songs = try await client.getSimilarSongs(id: id, count: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("SubsonicManager: Failed to create rating radio similar: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createTrackRadio(from track: Track, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient, let trackId = track.subsonicId else { return [] }
+        do {
+            let songs = try await client.getSimilarSongs(id: trackId, count: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("SubsonicManager: Failed to create track radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createArtistRadio(artistId: String, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let songs = try await client.getSimilarSongs(id: artistId, count: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("SubsonicManager: Failed to create artist radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createAlbumRadio(albumId: String, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let songs = try await client.getSimilarSongs(id: albumId, count: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("SubsonicManager: Failed to create album radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    // MARK: - Radio Helpers
+
+    private func filterForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = 2) -> [Track] {
+        var result: [Track] = []
+        var artistCounts: [String: Int] = [:]
+        for track in tracks {
+            let artist = track.artist?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "unknown"
+            let currentCount = artistCounts[artist, default: 0]
+            if currentCount < maxPerArtist {
+                result.append(track)
+                artistCounts[artist] = currentCount + 1
+                if result.count >= limit { break }
+            }
+        }
+        return spreadArtistTracks(result)
+    }
+
+    private func spreadArtistTracks(_ tracks: [Track]) -> [Track] {
+        guard tracks.count > 2 else { return tracks }
+        var result: [Track] = []
+        var remaining = tracks
+        var lastArtist: String? = nil
+        while !remaining.isEmpty {
+            let nextIndex = remaining.firstIndex { track in
+                let artist = track.artist?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "unknown"
+                return artist != lastArtist
+            }
+            if let index = nextIndex {
+                let track = remaining.remove(at: index)
+                lastArtist = track.artist?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "unknown"
+                result.append(track)
+            } else {
+                let track = remaining.removeFirst()
+                lastArtist = track.artist?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "unknown"
+                result.append(track)
+            }
+        }
+        return result
+    }
 }

@@ -501,6 +501,44 @@ struct PlaylistDTO: Decodable {
     }
 }
 
+// MARK: - Radio Response DTOs
+
+struct SubsonicRandomSongsResponse: Decodable {
+    let randomSongs: RandomSongsContainer?
+    struct RandomSongsContainer: Decodable {
+        let song: [SongDTO]?
+    }
+}
+
+struct SubsonicSimilarSongsResponse: Decodable {
+    let similarSongs2: SimilarSongsContainer?
+    struct SimilarSongsContainer: Decodable {
+        let song: [SongDTO]?
+    }
+}
+
+struct SubsonicSongsByGenreResponse: Decodable {
+    let songsByGenre: SongsByGenreContainer?
+    struct SongsByGenreContainer: Decodable {
+        let song: [SongDTO]?
+    }
+}
+
+struct SubsonicGenresResponse: Decodable {
+    let genres: GenresContainer?
+    struct GenresContainer: Decodable {
+        let genre: [GenreDTO]?
+    }
+    struct GenreDTO: Decodable {
+        let value: String
+        let songCount: Int?
+        enum CodingKeys: String, CodingKey {
+            case value = "value"
+            case songCount
+        }
+    }
+}
+
 // MARK: - Date Parsing Helper
 
 /// Parse ISO 8601 date strings from Subsonic API

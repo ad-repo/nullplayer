@@ -132,6 +132,70 @@ class LocalMediaServer {
             return HTTPResponse(statusCode: .ok)
         }
 
+        // Subsonic Radio History
+        await server.appendRoute("GET /subsonic-radio-history") { _ in
+            let html = SubsonicRadioHistory.shared.generateHistoryHTML()
+            return HTTPResponse(statusCode: .ok,
+                                headers: [.contentType: "text/html; charset=utf-8"],
+                                body: Data(html.utf8))
+        }
+        await server.appendRoute("POST /subsonic-radio-history/delete/*") { request in
+            let path = request.path
+            guard let idString = path.split(separator: "/").last, let id = Int64(idString) else {
+                return HTTPResponse(statusCode: .badRequest)
+            }
+            SubsonicRadioHistory.shared.removeEntry(id: id)
+            return HTTPResponse(statusCode: .ok)
+        }
+
+        // Jellyfin Radio History
+        await server.appendRoute("GET /jellyfin-radio-history") { _ in
+            let html = JellyfinRadioHistory.shared.generateHistoryHTML()
+            return HTTPResponse(statusCode: .ok,
+                                headers: [.contentType: "text/html; charset=utf-8"],
+                                body: Data(html.utf8))
+        }
+        await server.appendRoute("POST /jellyfin-radio-history/delete/*") { request in
+            let path = request.path
+            guard let idString = path.split(separator: "/").last, let id = Int64(idString) else {
+                return HTTPResponse(statusCode: .badRequest)
+            }
+            JellyfinRadioHistory.shared.removeEntry(id: id)
+            return HTTPResponse(statusCode: .ok)
+        }
+
+        // Emby Radio History
+        await server.appendRoute("GET /emby-radio-history") { _ in
+            let html = EmbyRadioHistory.shared.generateHistoryHTML()
+            return HTTPResponse(statusCode: .ok,
+                                headers: [.contentType: "text/html; charset=utf-8"],
+                                body: Data(html.utf8))
+        }
+        await server.appendRoute("POST /emby-radio-history/delete/*") { request in
+            let path = request.path
+            guard let idString = path.split(separator: "/").last, let id = Int64(idString) else {
+                return HTTPResponse(statusCode: .badRequest)
+            }
+            EmbyRadioHistory.shared.removeEntry(id: id)
+            return HTTPResponse(statusCode: .ok)
+        }
+
+        // Local Radio History
+        await server.appendRoute("GET /local-radio-history") { _ in
+            let html = LocalRadioHistory.shared.generateHistoryHTML()
+            return HTTPResponse(statusCode: .ok,
+                                headers: [.contentType: "text/html; charset=utf-8"],
+                                body: Data(html.utf8))
+        }
+        await server.appendRoute("POST /local-radio-history/delete/*") { request in
+            let path = request.path
+            guard let idString = path.split(separator: "/").last, let id = Int64(idString) else {
+                return HTTPResponse(statusCode: .badRequest)
+            }
+            LocalRadioHistory.shared.removeEntry(id: id)
+            return HTTPResponse(statusCode: .ok)
+        }
+
         // Start server in background task
         serverTask = Task {
             do {

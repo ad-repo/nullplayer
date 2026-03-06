@@ -760,8 +760,116 @@ class JellyfinServerClient {
         NSLog("JellyfinServerClient: Reported playback stopped for %@", itemId)
     }
     
+    // MARK: - Radio API
+
+    func fetchRandomSongs(limit: Int, libraryId: String? = nil) async throws -> [JellyfinSong] {
+        var params = [
+            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "SortBy", value: "Random"),
+            URLQueryItem(name: "Limit", value: String(limit))
+        ]
+        if let libId = libraryId { params.append(URLQueryItem(name: "parentId", value: libId)) }
+        guard let request = buildRequest(path: "/Users/\(server.userId)/Items", params: params) else {
+            throw JellyfinClientError.invalidURL
+        }
+        let response: JellyfinQueryResult = try await performRequest(request)
+        return response.Items.compactMap { $0.toSong() as JellyfinSong? }
+    }
+
+    func fetchSongsByGenre(genre: String, limit: Int, libraryId: String? = nil) async throws -> [JellyfinSong] {
+        var params = [
+            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "SortBy", value: "Random"),
+            URLQueryItem(name: "Genres", value: genre),
+            URLQueryItem(name: "Limit", value: String(limit))
+        ]
+        if let libId = libraryId { params.append(URLQueryItem(name: "parentId", value: libId)) }
+        guard let request = buildRequest(path: "/Users/\(server.userId)/Items", params: params) else {
+            throw JellyfinClientError.invalidURL
+        }
+        let response: JellyfinQueryResult = try await performRequest(request)
+        return response.Items.compactMap { $0.toSong() as JellyfinSong? }
+    }
+
+    func fetchSongsByDecade(startYear: Int, endYear: Int, limit: Int, libraryId: String? = nil) async throws -> [JellyfinSong] {
+        var params = [
+            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "SortBy", value: "Random"),
+            URLQueryItem(name: "Years", value: (startYear...endYear).map { String($0) }.joined(separator: ",")),
+            URLQueryItem(name: "Limit", value: String(limit))
+        ]
+        if let libId = libraryId { params.append(URLQueryItem(name: "parentId", value: libId)) }
+        guard let request = buildRequest(path: "/Users/\(server.userId)/Items", params: params) else {
+            throw JellyfinClientError.invalidURL
+        }
+        let response: JellyfinQueryResult = try await performRequest(request)
+        return response.Items.compactMap { $0.toSong() as JellyfinSong? }
+    }
+
+    func fetchFavoriteSongs(limit: Int, libraryId: String? = nil) async throws -> [JellyfinSong] {
+        var params = [
+            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "SortBy", value: "Random"),
+            URLQueryItem(name: "Filters", value: "IsFavorite"),
+            URLQueryItem(name: "Limit", value: String(limit))
+        ]
+        if let libId = libraryId { params.append(URLQueryItem(name: "parentId", value: libId)) }
+        guard let request = buildRequest(path: "/Users/\(server.userId)/Items", params: params) else {
+            throw JellyfinClientError.invalidURL
+        }
+        let response: JellyfinQueryResult = try await performRequest(request)
+        return response.Items.compactMap { $0.toSong() as JellyfinSong? }
+    }
+
+    func fetchInstantMixForTrack(itemId: String, limit: Int) async throws -> [JellyfinSong] {
+        let params = [URLQueryItem(name: "Limit", value: String(limit)),
+                      URLQueryItem(name: "userId", value: server.userId)]
+        guard let request = buildRequest(path: "/Items/\(itemId)/InstantMix", params: params) else {
+            throw JellyfinClientError.invalidURL
+        }
+        let response: JellyfinQueryResult = try await performRequest(request)
+        return response.Items.compactMap { $0.toSong() as JellyfinSong? }
+    }
+
+    func fetchInstantMixForArtist(artistId: String, limit: Int) async throws -> [JellyfinSong] {
+        let params = [URLQueryItem(name: "Limit", value: String(limit)),
+                      URLQueryItem(name: "userId", value: server.userId)]
+        guard let request = buildRequest(path: "/Artists/\(artistId)/InstantMix", params: params) else {
+            throw JellyfinClientError.invalidURL
+        }
+        let response: JellyfinQueryResult = try await performRequest(request)
+        return response.Items.compactMap { $0.toSong() as JellyfinSong? }
+    }
+
+    func fetchInstantMixForAlbum(albumId: String, limit: Int) async throws -> [JellyfinSong] {
+        let params = [URLQueryItem(name: "Limit", value: String(limit)),
+                      URLQueryItem(name: "userId", value: server.userId)]
+        guard let request = buildRequest(path: "/Items/\(albumId)/InstantMix", params: params) else {
+            throw JellyfinClientError.invalidURL
+        }
+        let response: JellyfinQueryResult = try await performRequest(request)
+        return response.Items.compactMap { $0.toSong() as JellyfinSong? }
+    }
+
+    func fetchMusicGenres(libraryId: String? = nil) async throws -> [String] {
+        var params = [
+            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
+            URLQueryItem(name: "Recursive", value: "true")
+        ]
+        if let libId = libraryId { params.append(URLQueryItem(name: "parentId", value: libId)) }
+        guard let request = buildRequest(path: "/Genres", params: params) else {
+            throw JellyfinClientError.invalidURL
+        }
+        let response: JellyfinQueryResult = try await performRequest(request)
+        return response.Items.compactMap { $0.Name }.sorted()
+    }
+
     // MARK: - URL Generation
-    
+
     /// Generate a streaming URL for a song
     func streamURL(for song: JellyfinSong) -> URL? {
         streamURL(itemId: song.id)

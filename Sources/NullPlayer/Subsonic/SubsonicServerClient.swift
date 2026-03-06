@@ -588,8 +588,64 @@ class SubsonicServerClient {
         NSLog("SubsonicServerClient: Scrobbled song %@ (submission: %@)", id, submission ? "true" : "false")
     }
     
+    // MARK: - Radio API
+
+    func getRandomSongs(size: Int, genre: String? = nil, fromYear: Int? = nil, toYear: Int? = nil, musicFolderId: String? = nil) async throws -> [SubsonicSong] {
+        var params = [URLQueryItem(name: "size", value: String(size))]
+        if let genre = genre { params.append(URLQueryItem(name: "genre", value: genre)) }
+        if let fromYear = fromYear { params.append(URLQueryItem(name: "fromYear", value: String(fromYear))) }
+        if let toYear = toYear { params.append(URLQueryItem(name: "toYear", value: String(toYear))) }
+        if let folderId = musicFolderId { params.append(URLQueryItem(name: "musicFolderId", value: folderId)) }
+        guard let request = buildRequest(endpoint: "getRandomSongs", params: params) else {
+            throw SubsonicClientError.invalidURL
+        }
+        let response: SubsonicRandomSongsResponse = try await performRequest(request)
+        return response.randomSongs?.song?.map { $0.toSong() } ?? []
+    }
+
+    func getSimilarSongs(id: String, count: Int) async throws -> [SubsonicSong] {
+        let params = [
+            URLQueryItem(name: "id", value: id),
+            URLQueryItem(name: "count", value: String(count))
+        ]
+        guard let request = buildRequest(endpoint: "getSimilarSongs2", params: params) else {
+            throw SubsonicClientError.invalidURL
+        }
+        let response: SubsonicSimilarSongsResponse = try await performRequest(request)
+        return response.similarSongs2?.song?.map { $0.toSong() } ?? []
+    }
+
+    func getSongsByGenre(genre: String, count: Int, offset: Int = 0, musicFolderId: String? = nil) async throws -> [SubsonicSong] {
+        var params = [
+            URLQueryItem(name: "genre", value: genre),
+            URLQueryItem(name: "count", value: String(count)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ]
+        if let folderId = musicFolderId { params.append(URLQueryItem(name: "musicFolderId", value: folderId)) }
+        guard let request = buildRequest(endpoint: "getSongsByGenre", params: params) else {
+            throw SubsonicClientError.invalidURL
+        }
+        let response: SubsonicSongsByGenreResponse = try await performRequest(request)
+        return response.songsByGenre?.song?.map { $0.toSong() } ?? []
+    }
+
+    func getGenres() async throws -> [String] {
+        guard let request = buildRequest(endpoint: "getGenres") else {
+            throw SubsonicClientError.invalidURL
+        }
+        let response: SubsonicGenresResponse = try await performRequest(request)
+        return (response.genres?.genre ?? [])
+            .filter { ($0.songCount ?? 0) > 0 }
+            .map { $0.value }
+            .sorted()
+    }
+
+    func getStarred2Songs(musicFolderId: String? = nil) async throws -> [SubsonicSong] {
+        return try await fetchStarred().songs
+    }
+
     // MARK: - URL Generation
-    
+
     /// Generate a streaming URL for a song
     func streamURL(for song: SubsonicSong) -> URL? {
         streamURL(songId: song.id)
