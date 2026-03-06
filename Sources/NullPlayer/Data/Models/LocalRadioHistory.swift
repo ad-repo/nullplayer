@@ -130,6 +130,7 @@ class LocalRadioHistory {
     // MARK: - Record
 
     func recordTrackPlayed(_ track: Track) {
+        guard isEnabled else { return }
         guard let db = db else { return }
 
         let trackUrl = track.url.absoluteString
@@ -240,7 +241,7 @@ class LocalRadioHistory {
 
     // MARK: - Web
 
-    var historyPageURL: URL? { URL(string: "http://127.0.0.1:8765/local-radio-history") }
+    var historyPageURL: URL? { URL(string: "http://127.0.0.1:\(LocalMediaServer.httpPort)/local-radio-history") }
 
     func generateHistoryHTML() -> String {
         let entries = fetchHistory()
@@ -258,6 +259,7 @@ class LocalRadioHistory {
             let album = htmlEscape(entry.album ?? "—")
             let trackUrl = htmlEscape(entry.trackUrl)
             let date = htmlEscape(df.string(from: entry.playedAt))
+            let epochSort = entry.playedAt.timeIntervalSince1970
             let id = entry.id
             rows += """
             <tr id="row-\(id)">
@@ -265,7 +267,7 @@ class LocalRadioHistory {
               <td>\(artist)</td>
               <td>\(album)</td>
               <td class="track-id">\(trackUrl)</td>
-              <td>\(date)</td>
+              <td data-sort="\(epochSort)">\(date)</td>
               <td><button class="remove-btn" onclick="removeEntry(\(id))">Remove</button></td>
             </tr>
             """
@@ -326,8 +328,14 @@ class LocalRadioHistory {
           ths.forEach(function(th, i) { th.classList.remove('asc','desc'); });
           ths[col].classList.add(sortAsc ? 'asc' : 'desc');
           rows.sort(function(a, b) {
-            var aText = a.cells[col] ? a.cells[col].innerText : '';
-            var bText = b.cells[col] ? b.cells[col].innerText : '';
+            var aCell = a.cells[col], bCell = b.cells[col];
+            if (col === 4) {
+              var aVal = aCell ? parseFloat(aCell.dataset.sort) : 0;
+              var bVal = bCell ? parseFloat(bCell.dataset.sort) : 0;
+              return sortAsc ? aVal - bVal : bVal - aVal;
+            }
+            var aText = aCell ? aCell.innerText : '';
+            var bText = bCell ? bCell.innerText : '';
             return sortAsc ? aText.localeCompare(bText) : bText.localeCompare(aText);
           });
           rows.forEach(function(r) { tbody.appendChild(r); });

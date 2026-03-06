@@ -376,6 +376,8 @@ class ModernLibraryBrowserView: NSView {
     private var artworkTrackId: UUID?
     private var artworkLoadTask: Task<Void, Never>?
     private var artworkCyclingTask: Task<Void, Never>?
+    private var radioLoadTask: Task<Void, Never>?
+    private var radioPlayTask: Task<Void, Never>?
     private static let artworkCache = NSCache<NSString, NSImage>()
     private var artworkImages: [NSImage] = []
     private var artworkIndex: Int = 0
@@ -6777,28 +6779,37 @@ class ModernLibraryBrowserView: NSView {
     
     private func loadSubsonicRadioStations() {
         isLoading = true; errorMessage = nil; startLoadingAnimation(); needsDisplay = true
-        Task { @MainActor in
+        radioLoadTask?.cancel()
+        radioLoadTask = Task { @MainActor in
             let genres = await SubsonicManager.shared.getGenres()
+            guard !Task.isCancelled, browseMode == .radio, case .subsonic = currentSource else { return }
             buildSubsonicRadioStationItems(genres: genres)
             isLoading = false; stopLoadingAnimation(); needsDisplay = true
+            radioLoadTask = nil
         }
     }
 
     private func loadJellyfinRadioStations() {
         isLoading = true; errorMessage = nil; startLoadingAnimation(); needsDisplay = true
-        Task { @MainActor in
+        radioLoadTask?.cancel()
+        radioLoadTask = Task { @MainActor in
             let genres = await JellyfinManager.shared.getMusicGenres()
+            guard !Task.isCancelled, browseMode == .radio, case .jellyfin = currentSource else { return }
             buildJellyfinRadioStationItems(genres: genres)
             isLoading = false; stopLoadingAnimation(); needsDisplay = true
+            radioLoadTask = nil
         }
     }
 
     private func loadEmbyRadioStations() {
         isLoading = true; errorMessage = nil; startLoadingAnimation(); needsDisplay = true
-        Task { @MainActor in
+        radioLoadTask?.cancel()
+        radioLoadTask = Task { @MainActor in
             let genres = await EmbyManager.shared.getMusicGenres()
+            guard !Task.isCancelled, browseMode == .radio, case .emby = currentSource else { return }
             buildEmbyRadioStationItems(genres: genres)
             isLoading = false; stopLoadingAnimation(); needsDisplay = true
+            radioLoadTask = nil
         }
     }
 
@@ -7727,7 +7738,8 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func playSubsonicRadioStation(_ radioType: SubsonicRadioType) {
-        Task { @MainActor in
+        radioPlayTask?.cancel()
+        radioPlayTask = Task { @MainActor in
             var tracks: [Track] = []
             switch radioType {
             case .libraryRadio: tracks = await SubsonicManager.shared.createLibraryRadio()
@@ -7739,14 +7751,15 @@ class ModernLibraryBrowserView: NSView {
             case .starredRadio: tracks = await SubsonicManager.shared.createRatingRadio()
             case .starredSimilar: tracks = await SubsonicManager.shared.createRatingRadioSimilar()
             }
-            if !tracks.isEmpty {
-                let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
-            }
+            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
+            radioPlayTask = nil
         }
     }
 
     private func playJellyfinRadioStation(_ radioType: JellyfinRadioType) {
-        Task { @MainActor in
+        radioPlayTask?.cancel()
+        radioPlayTask = Task { @MainActor in
             var tracks: [Track] = []
             switch radioType {
             case .libraryRadio: tracks = await JellyfinManager.shared.createLibraryRadio()
@@ -7758,14 +7771,15 @@ class ModernLibraryBrowserView: NSView {
             case .favoritesRadio: tracks = await JellyfinManager.shared.createFavoritesRadio()
             case .favoritesInstantMix: tracks = await JellyfinManager.shared.createFavoritesRadioInstantMix()
             }
-            if !tracks.isEmpty {
-                let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
-            }
+            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
+            radioPlayTask = nil
         }
     }
 
     private func playEmbyRadioStation(_ radioType: EmbyRadioType) {
-        Task { @MainActor in
+        radioPlayTask?.cancel()
+        radioPlayTask = Task { @MainActor in
             var tracks: [Track] = []
             switch radioType {
             case .libraryRadio: tracks = await EmbyManager.shared.createLibraryRadio()
@@ -7777,9 +7791,9 @@ class ModernLibraryBrowserView: NSView {
             case .favoritesRadio: tracks = await EmbyManager.shared.createFavoritesRadio()
             case .favoritesInstantMix: tracks = await EmbyManager.shared.createFavoritesRadioInstantMix()
             }
-            if !tracks.isEmpty {
-                let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
-            }
+            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
+            radioPlayTask = nil
         }
     }
 

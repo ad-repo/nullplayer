@@ -425,8 +425,8 @@ class ContextMenuBuilder {
             optionsMenu.addItem(historyItem)
         }
 
-        // Subsonic Radio History (only when a server is connected)
-        if SubsonicManager.shared.currentServer != nil {
+        // Subsonic Radio History (shown whenever at least one server has been configured)
+        if !SubsonicManager.shared.servers.isEmpty {
             optionsMenu.addItem(NSMenuItem.separator())
 
             let historyItem = NSMenuItem(title: "Subsonic Radio History", action: nil, keyEquivalent: "")
@@ -460,8 +460,8 @@ class ContextMenuBuilder {
             optionsMenu.addItem(historyItem)
         }
 
-        // Jellyfin Radio History (only when a server is connected)
-        if JellyfinManager.shared.currentServer != nil {
+        // Jellyfin Radio History (shown whenever at least one server has been configured)
+        if !JellyfinManager.shared.servers.isEmpty {
             optionsMenu.addItem(NSMenuItem.separator())
 
             let historyItem = NSMenuItem(title: "Jellyfin Radio History", action: nil, keyEquivalent: "")
@@ -495,8 +495,8 @@ class ContextMenuBuilder {
             optionsMenu.addItem(historyItem)
         }
 
-        // Emby Radio History (only when a server is connected)
-        if EmbyManager.shared.currentServer != nil {
+        // Emby Radio History (shown whenever at least one server has been configured)
+        if !EmbyManager.shared.servers.isEmpty {
             optionsMenu.addItem(NSMenuItem.separator())
 
             let historyItem = NSMenuItem(title: "Emby Radio History", action: nil, keyEquivalent: "")
@@ -2630,7 +2630,16 @@ class MenuActions: NSObject {
 
     @objc func viewSubsonicRadioHistory() {
         Task {
-            if !LocalMediaServer.shared.isRunning { try? await LocalMediaServer.shared.start() }
+            if !LocalMediaServer.shared.isRunning {
+                do { try await LocalMediaServer.shared.start() } catch {
+                    await MainActor.run {
+                        let alert = NSAlert(); alert.messageText = "Could Not Open History"
+                        alert.informativeText = "The local history server failed to start: \(error.localizedDescription)"
+                        alert.alertStyle = .warning; alert.runModal()
+                    }
+                    return
+                }
+            }
             if let url = SubsonicRadioHistory.shared.historyPageURL { NSWorkspace.shared.open(url) }
         }
     }
@@ -2655,7 +2664,16 @@ class MenuActions: NSObject {
 
     @objc func viewJellyfinRadioHistory() {
         Task {
-            if !LocalMediaServer.shared.isRunning { try? await LocalMediaServer.shared.start() }
+            if !LocalMediaServer.shared.isRunning {
+                do { try await LocalMediaServer.shared.start() } catch {
+                    await MainActor.run {
+                        let alert = NSAlert(); alert.messageText = "Could Not Open History"
+                        alert.informativeText = "The local history server failed to start: \(error.localizedDescription)"
+                        alert.alertStyle = .warning; alert.runModal()
+                    }
+                    return
+                }
+            }
             if let url = JellyfinRadioHistory.shared.historyPageURL { NSWorkspace.shared.open(url) }
         }
     }
@@ -2680,7 +2698,16 @@ class MenuActions: NSObject {
 
     @objc func viewEmbyRadioHistory() {
         Task {
-            if !LocalMediaServer.shared.isRunning { try? await LocalMediaServer.shared.start() }
+            if !LocalMediaServer.shared.isRunning {
+                do { try await LocalMediaServer.shared.start() } catch {
+                    await MainActor.run {
+                        let alert = NSAlert(); alert.messageText = "Could Not Open History"
+                        alert.informativeText = "The local history server failed to start: \(error.localizedDescription)"
+                        alert.alertStyle = .warning; alert.runModal()
+                    }
+                    return
+                }
+            }
             if let url = EmbyRadioHistory.shared.historyPageURL { NSWorkspace.shared.open(url) }
         }
     }
@@ -2705,7 +2732,16 @@ class MenuActions: NSObject {
 
     @objc func viewLocalRadioHistory() {
         Task {
-            if !LocalMediaServer.shared.isRunning { try? await LocalMediaServer.shared.start() }
+            if !LocalMediaServer.shared.isRunning {
+                do { try await LocalMediaServer.shared.start() } catch {
+                    await MainActor.run {
+                        let alert = NSAlert(); alert.messageText = "Could Not Open History"
+                        alert.informativeText = "The local history server failed to start: \(error.localizedDescription)"
+                        alert.alertStyle = .warning; alert.runModal()
+                    }
+                    return
+                }
+            }
             if let url = LocalRadioHistory.shared.historyPageURL { NSWorkspace.shared.open(url) }
         }
     }

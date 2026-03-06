@@ -764,7 +764,8 @@ class EmbyManager {
     func createLibraryRadioInstantMix(limit: Int = 100) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.embyId {
+        if let current = WindowManager.shared.audioEngine.currentTrack,
+           let id = current.embyId, current.embyServerId == currentServer?.id {
             seedId = id
         } else {
             do {
@@ -800,7 +801,8 @@ class EmbyManager {
     func createGenreRadioInstantMix(genre: String, limit: Int = 100) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.embyId {
+        if let current = WindowManager.shared.audioEngine.currentTrack,
+           let id = current.embyId, current.embyServerId == currentServer?.id {
             seedId = id
         } else {
             do {
@@ -836,7 +838,8 @@ class EmbyManager {
     func createDecadeRadioInstantMix(start: Int, end: Int, limit: Int = 100) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.embyId {
+        if let current = WindowManager.shared.audioEngine.currentTrack,
+           let id = current.embyId, current.embyServerId == currentServer?.id {
             seedId = id
         } else {
             do {
@@ -872,7 +875,8 @@ class EmbyManager {
     func createFavoritesRadioInstantMix(limit: Int = 100) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.embyId {
+        if let current = WindowManager.shared.audioEngine.currentTrack,
+           let id = current.embyId, current.embyServerId == currentServer?.id {
             seedId = id
         } else {
             do {

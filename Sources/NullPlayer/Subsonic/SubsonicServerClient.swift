@@ -641,7 +641,15 @@ class SubsonicServerClient {
     }
 
     func getStarred2Songs(musicFolderId: String? = nil) async throws -> [SubsonicSong] {
-        return try await fetchStarred().songs
+        var params: [URLQueryItem] = []
+        if let folderId = musicFolderId {
+            params.append(URLQueryItem(name: "musicFolderId", value: folderId))
+        }
+        guard let request = buildRequest(endpoint: "getStarred2", params: params) else {
+            throw SubsonicClientError.invalidURL
+        }
+        let response: SubsonicStarredResponse = try await performRequest(request)
+        return response.starred2?.song?.map { $0.toSong() } ?? []
     }
 
     // MARK: - URL Generation

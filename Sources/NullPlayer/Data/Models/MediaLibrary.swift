@@ -1289,10 +1289,11 @@ class MediaLibrary {
 
     func createLocalArtistRadio(artist: String, limit: Int = 100) -> [Track] {
         let pool = tracksSnapshot
-            .filter { ($0.artist ?? $0.albumArtist ?? "").localizedCaseInsensitiveCompare(artist) == .orderedSame }
+            .filter { ($0.albumArtist ?? $0.artist ?? "").localizedCaseInsensitiveCompare(artist) == .orderedSame }
             .shuffled()
         let tracks = pool.map { $0.toTrack() }
-        return LocalRadioHistory.shared.filterOutHistoryTracks(tracks)
+        let filtered = LocalRadioHistory.shared.filterOutHistoryTracks(tracks)
+        return Array(filtered.prefix(limit))
     }
 
     private func filterLocalForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = 2) -> [Track] {

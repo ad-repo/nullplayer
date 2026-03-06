@@ -853,8 +853,9 @@ class EmbyServerClient {
 
     func fetchInstantMixForArtist(artistId: String, limit: Int) async throws -> [EmbySong] {
         let params = [URLQueryItem(name: "Limit", value: String(limit)),
-                      URLQueryItem(name: "userId", value: server.userId)]
-        guard let request = buildRequest(path: "/Artists/\(artistId)/InstantMix", params: params) else {
+                      URLQueryItem(name: "userId", value: server.userId),
+                      URLQueryItem(name: "ArtistIds", value: artistId)]
+        guard let request = buildRequest(path: "/Artists/InstantMix", params: params) else {
             throw EmbyClientError.invalidURL
         }
         let response: EmbyQueryResult = try await performRequest(request)

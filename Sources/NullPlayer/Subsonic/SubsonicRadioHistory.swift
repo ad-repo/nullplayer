@@ -133,6 +133,7 @@ class SubsonicRadioHistory {
     // MARK: - Record
 
     func recordTrackPlayed(_ track: Track) {
+        guard isEnabled else { return }
         guard let db = db,
               let trackId = track.subsonicId else { return }
 
@@ -168,10 +169,12 @@ class SubsonicRadioHistory {
             return tracks
         }
 
+        let serverId = SubsonicManager.shared.currentServer?.id ?? ""
+
         do {
             let rows = try db.prepare(
                 table.select(colTrackId, colNormalizedKey)
-                     .filter(colPlayedAt >= cutoff)
+                     .filter(colPlayedAt >= cutoff && colServerId == serverId)
             )
             var trackIds = Set<String>()
             var normalizedKeys = Set<String>()
@@ -181,18 +184,9 @@ class SubsonicRadioHistory {
             }
 
             return tracks.filter { track in
-                if let tid = track.subsonicId, trackIds.contains(tid) {
-                    NSLog("SubsonicRadioHistory: Filtered out '%@' by '%@' (track id match: %@)",
-                          track.title ?? "", track.artist ?? "", tid)
-                    return false
-                }
+                if let tid = track.subsonicId, trackIds.contains(tid) { return false }
                 let nk = SubsonicRadioHistory.normalizedKey(title: track.title, artist: track.artist)
-                if normalizedKeys.contains(nk) {
-                    NSLog("SubsonicRadioHistory: Filtered out '%@' by '%@' (normalized key match: %@)",
-                          track.title ?? "", track.artist ?? "", nk)
-                    return false
-                }
-                return true
+                return !normalizedKeys.contains(nk)
             }
         } catch {
             NSLog("SubsonicRadioHistory: Failed to query history for filtering: %@", error.localizedDescription)
@@ -245,7 +239,7 @@ class SubsonicRadioHistory {
 
     // MARK: - Web
 
-    var historyPageURL: URL? { URL(string: "http://127.0.0.1:8765/subsonic-radio-history") }
+    var historyPageURL: URL? { URL(string: "http://127.0.0.1:\(LocalMediaServer.httpPort)/subsonic-radio-history") }
 
     func generateHistoryHTML() -> String {
         let entries = fetchHistory()
@@ -263,6 +257,7 @@ class SubsonicRadioHistory {
             let album = htmlEscape(entry.album ?? "—")
             let trackId = htmlEscape(entry.trackId)
             let date = htmlEscape(df.string(from: entry.playedAt))
+            let epochSort = entry.playedAt.timeIntervalSince1970
             let id = entry.id
             rows += """
             <tr id="row-\(id)">
@@ -270,7 +265,7 @@ class SubsonicRadioHistory {
               <td>\(artist)</td>
               <td>\(album)</td>
               <td class="track-id">\(trackId)</td>
-              <td>\(date)</td>
+              <td data-sort="\(epochSort)">\(date)</td>
               <td><button class="remove-btn" onclick="removeEntry(\(id))">Remove</button></td>
             </tr>
             """
@@ -331,8 +326,14 @@ class SubsonicRadioHistory {
           ths.forEach(function(th, i) { th.classList.remove('asc','desc'); });
           ths[col].classList.add(sortAsc ? 'asc' : 'desc');
           rows.sort(function(a, b) {
-            var aText = a.cells[col] ? a.cells[col].innerText : '';
-            var bText = b.cells[col] ? b.cells[col].innerText : '';
+            var aCell = a.cells[col], bCell = b.cells[col];
+            if (col === 4) {
+              var aVal = aCell ? parseFloat(aCell.dataset.sort) : 0;
+              var bVal = bCell ? parseFloat(bCell.dataset.sort) : 0;
+              return sortAsc ? aVal - bVal : bVal - aVal;
+            }
+            var aText = aCell ? aCell.innerText : '';
+            var bText = bCell ? bCell.innerText : '';
             return sortAsc ? aText.localeCompare(bText) : bText.localeCompare(aText);
           });
           rows.forEach(function(r) { tbody.appendChild(r); });

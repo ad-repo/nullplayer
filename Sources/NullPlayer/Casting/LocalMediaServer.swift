@@ -27,7 +27,8 @@ class LocalMediaServer {
     private var registeredFiles: [String: URL] = [:]  // token -> file URL
     private var registeredStreams: [String: URL] = [:]  // token -> stream URL (for Subsonic/Jellyfin proxy)
     private var registeredStreamContentTypes: [String: String] = [:]  // token -> MIME content type hint
-    private let port: UInt16 = 8765
+    static let httpPort: UInt16 = 8765
+    private var port: UInt16 { Self.httpPort }
     private(set) var isRunning: Bool = false
     private var _localIPAddress: String?
     

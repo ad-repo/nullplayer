@@ -168,10 +168,12 @@ class JellyfinRadioHistory {
             return tracks
         }
 
+        let serverId = JellyfinManager.shared.currentServer?.id ?? ""
+
         do {
             let rows = try db.prepare(
                 table.select(colTrackId, colNormalizedKey)
-                     .filter(colPlayedAt >= cutoff)
+                     .filter(colPlayedAt >= cutoff && colServerId == serverId)
             )
             var trackIds = Set<String>()
             var normalizedKeys = Set<String>()
@@ -180,20 +182,14 @@ class JellyfinRadioHistory {
                 normalizedKeys.insert(row[colNormalizedKey])
             }
 
-            return tracks.filter { track in
-                if let tid = track.jellyfinId, trackIds.contains(tid) {
-                    NSLog("JellyfinRadioHistory: Filtered out '%@' by '%@' (track id match: %@)",
-                          track.title ?? "", track.artist ?? "", tid)
-                    return false
-                }
+            let originalCount = tracks.count
+            let result = tracks.filter { track in
+                if let tid = track.jellyfinId, trackIds.contains(tid) { return false }
                 let nk = JellyfinRadioHistory.normalizedKey(title: track.title, artist: track.artist)
-                if normalizedKeys.contains(nk) {
-                    NSLog("JellyfinRadioHistory: Filtered out '%@' by '%@' (normalized key match: %@)",
-                          track.title ?? "", track.artist ?? "", nk)
-                    return false
-                }
-                return true
+                return !normalizedKeys.contains(nk)
             }
+            NSLog("JellyfinRadioHistory: Filtered %d/%d tracks", originalCount - result.count, originalCount)
+            return result
         } catch {
             NSLog("JellyfinRadioHistory: Failed to query history for filtering: %@", error.localizedDescription)
             return tracks
@@ -245,7 +241,7 @@ class JellyfinRadioHistory {
 
     // MARK: - Web
 
-    var historyPageURL: URL? { URL(string: "http://127.0.0.1:8765/jellyfin-radio-history") }
+    var historyPageURL: URL? { URL(string: "http://127.0.0.1:\(LocalMediaServer.httpPort)/jellyfin-radio-history") }
 
     func generateHistoryHTML() -> String {
         let entries = fetchHistory()
@@ -263,6 +259,7 @@ class JellyfinRadioHistory {
             let album = htmlEscape(entry.album ?? "—")
             let trackId = htmlEscape(entry.trackId)
             let date = htmlEscape(df.string(from: entry.playedAt))
+            let epochSort = entry.playedAt.timeIntervalSince1970
             let id = entry.id
             rows += """
             <tr id="row-\(id)">
@@ -270,7 +267,7 @@ class JellyfinRadioHistory {
               <td>\(artist)</td>
               <td>\(album)</td>
               <td class="track-id">\(trackId)</td>
-              <td>\(date)</td>
+              <td data-sort="\(epochSort)">\(date)</td>
               <td><button class="remove-btn" onclick="removeEntry(\(id))">Remove</button></td>
             </tr>
             """
@@ -331,8 +328,14 @@ class JellyfinRadioHistory {
           ths.forEach(function(th, i) { th.classList.remove('asc','desc'); });
           ths[col].classList.add(sortAsc ? 'asc' : 'desc');
           rows.sort(function(a, b) {
-            var aText = a.cells[col] ? a.cells[col].innerText : '';
-            var bText = b.cells[col] ? b.cells[col].innerText : '';
+            var aCell = a.cells[col], bCell = b.cells[col];
+            if (col === 4) {
+              var aVal = aCell ? parseFloat(aCell.dataset.sort) : 0;
+              var bVal = bCell ? parseFloat(bCell.dataset.sort) : 0;
+              return sortAsc ? aVal - bVal : bVal - aVal;
+            }
+            var aText = aCell ? aCell.innerText : '';
+            var bText = bCell ? bCell.innerText : '';
             return sortAsc ? aText.localeCompare(bText) : bText.localeCompare(aText);
           });
           rows.forEach(function(r) { tbody.appendChild(r); });
