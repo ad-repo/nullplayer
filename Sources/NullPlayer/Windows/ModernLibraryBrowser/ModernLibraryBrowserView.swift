@@ -198,6 +198,8 @@ class ModernLibraryBrowserView: NSView {
         didSet { currentSort.save(); rebuildCurrentModeItems(); needsDisplay = true }
     }
     private var searchQuery: String = ""
+    private var typeAheadQuery: String = ""
+    private var typeAheadTimer: Timer?
     private var selectedIndices: Set<Int> = []
     private var scrollOffset: CGFloat = 0
     private var horizontalScrollOffset: CGFloat = 0
@@ -2648,6 +2650,58 @@ class ModernLibraryBrowserView: NSView {
             } else {
                 if let index = selectedIndices.first, index < displayItems.count { handleDoubleClick(on: displayItems[index]) }
             }
+        case 124: // Right Arrow — expand or move into first child
+            if let index = selectedIndices.first, index < displayItems.count {
+                let item = displayItems[index]
+                if item.hasChildren {
+                    if isExpanded(item) {
+                        // Move to first child
+                        let nextIdx = index + 1
+                        if nextIdx < displayItems.count {
+                            selectedIndices = [nextIdx]; ensureVisible(index: nextIdx); loadArtworkForSelection(); needsDisplay = true
+                        }
+                    } else {
+                        toggleExpand(item); needsDisplay = true
+                    }
+                }
+            }
+        case 123: // Left Arrow — collapse or jump to parent
+            if let index = selectedIndices.first, index < displayItems.count {
+                let item = displayItems[index]
+                if isExpanded(item) {
+                    toggleExpand(item); needsDisplay = true
+                } else if item.indentLevel > 0 {
+                    // Scan backward for parent (first item with indentLevel == current - 1, skipping .header)
+                    let parentLevel = item.indentLevel - 1
+                    var parentIdx: Int? = nil
+                    for i in stride(from: index - 1, through: 0, by: -1) {
+                        let candidate = displayItems[i]
+                        if case .header = candidate.type { continue }
+                        if candidate.indentLevel == parentLevel { parentIdx = i; break }
+                    }
+                    if let p = parentIdx {
+                        selectedIndices = [p]; ensureVisible(index: p); loadArtworkForSelection(); needsDisplay = true
+                    }
+                }
+            }
+        case 48: // Tab — cycle browse tabs
+            let allModes = ModernBrowseMode.allCases
+            if let currentIdx = allModes.firstIndex(of: browseMode) {
+                let shift = event.modifierFlags.contains(.shift)
+                let nextIdx = shift
+                    ? (currentIdx - 1 + allModes.count) % allModes.count
+                    : (currentIdx + 1) % allModes.count
+                browseMode = allModes[nextIdx]; selectedIndices.removeAll(); scrollOffset = 0
+                loadDataForCurrentMode()
+            }
+        case 49: // Space — play/pause
+            if WindowManager.shared.isVideoActivePlayback {
+                WindowManager.shared.toggleVideoPlayPause()
+            } else if WindowManager.shared.audioEngine.state == .playing {
+                WindowManager.shared.audioEngine.pause()
+            } else {
+                WindowManager.shared.audioEngine.play()
+            }
         case 125: // Down
             if let maxIndex = selectedIndices.max(), maxIndex < displayItems.count - 1 {
                 selectedIndices = [maxIndex + 1]; ensureVisible(index: maxIndex + 1); loadArtworkForSelection(); needsDisplay = true
@@ -2663,6 +2717,19 @@ class ModernLibraryBrowserView: NSView {
                 } else if chars.rangeOfCharacter(from: .alphanumerics) != nil ||
                           chars.rangeOfCharacter(from: .whitespaces) != nil {
                     searchQuery += chars; loadDataForCurrentMode()
+                }
+            } else if browseMode != .search, let chars = event.characters, !chars.isEmpty {
+                if event.keyCode == 53 { // Escape — clear type-ahead
+                    typeAheadQuery = ""; typeAheadTimer?.invalidate(); typeAheadTimer = nil; needsDisplay = true
+                } else if event.keyCode == 51 { // Backspace
+                    if !typeAheadQuery.isEmpty {
+                        typeAheadQuery.removeLast()
+                        jumpToTypeAhead()
+                    }
+                } else if chars.rangeOfCharacter(from: .alphanumerics) != nil ||
+                          chars.rangeOfCharacter(from: .whitespaces) != nil {
+                    typeAheadQuery += chars
+                    jumpToTypeAhead()
                 }
             }
         }
@@ -2680,6 +2747,18 @@ class ModernLibraryBrowserView: NSView {
 
         if itemTop < scrollOffset { scrollOffset = itemTop }
         else if itemBottom > scrollOffset + effectiveHeight { scrollOffset = itemBottom - effectiveHeight }
+    }
+
+    private func jumpToTypeAhead() {
+        let query = typeAheadQuery.lowercased()
+        guard !query.isEmpty else { return }
+        if let idx = displayItems.firstIndex(where: { $0.title.lowercased().hasPrefix(query) }) {
+            selectedIndices = [idx]; ensureVisible(index: idx); loadArtworkForSelection(); needsDisplay = true
+        }
+        typeAheadTimer?.invalidate()
+        typeAheadTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+            self?.typeAheadQuery = ""
+        }
     }
 
     private func applyPendingArtistScroll() {
@@ -4685,98 +4764,122 @@ class ModernLibraryBrowserView: NSView {
         switch item.type {
         case .track(let track):
             if let t = PlexManager.shared.convertToTrack(track) {
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent([t])
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent([t], startPlaybackIfEmpty: false)
             }
         case .localTrack(let track):
-            WindowManager.shared.audioEngine.insertTracksAfterCurrent([track.toTrack()])
+            WindowManager.shared.audioEngine.insertTracksAfterCurrent([track.toTrack()], startPlaybackIfEmpty: false)
         case .subsonicTrack(let song):
             if let track = SubsonicManager.shared.convertToTrack(song) {
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track], startPlaybackIfEmpty: false)
             }
         case .album(let album):
             Task { @MainActor in
                 if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(tracks))
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(tracks), startPlaybackIfEmpty: false)
                 }
             }
         case .localAlbum(let album):
-            WindowManager.shared.audioEngine.insertTracksAfterCurrent(album.tracks.map { $0.toTrack() })
+            WindowManager.shared.audioEngine.insertTracksAfterCurrent(album.tracks.map { $0.toTrack() }, startPlaybackIfEmpty: false)
         case .subsonicAlbum(let album):
             Task { @MainActor in
                 if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(songs.compactMap { SubsonicManager.shared.convertToTrack($0) }, startPlaybackIfEmpty: false)
                 }
             }
         case .artist(let artist):
             Task { @MainActor in
                 if let albums = try? await PlexManager.shared.fetchAlbums(forArtist: artist) {
                     var allTracks: [PlexTrack] = []
-                    for album in albums {
+                    for album in albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
                         if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
                             allTracks.append(contentsOf: tracks)
                         }
                     }
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(allTracks))
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(allTracks), startPlaybackIfEmpty: false)
                 }
             }
         case .localArtist(let artist):
             var allTracks: [Track] = []
-            for album in artist.albums { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
-            WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+            for album in artist.albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+            WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks, startPlaybackIfEmpty: false)
         case .subsonicArtist(let artist):
             Task { @MainActor in
                 if let albums = try? await SubsonicManager.shared.fetchAlbums(forArtist: artist) {
                     var allTracks: [Track] = []
-                    for album in albums {
+                    for album in albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
                         if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
                             allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
                         }
                     }
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks, startPlaybackIfEmpty: false)
                 }
             }
         case .jellyfinTrack(let song):
             if let track = JellyfinManager.shared.convertToTrack(song) {
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track], startPlaybackIfEmpty: false)
             }
         case .jellyfinAlbum(let album):
             Task { @MainActor in
                 if let songs = try? await JellyfinManager.shared.fetchSongs(forAlbum: album) {
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(JellyfinManager.shared.convertToTracks(songs))
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(JellyfinManager.shared.convertToTracks(songs), startPlaybackIfEmpty: false)
                 }
             }
         case .jellyfinArtist(let artist):
             Task { @MainActor in
                 if let albums = try? await JellyfinManager.shared.fetchAlbums(forArtist: artist) {
                     var allTracks: [Track] = []
-                    for album in albums {
+                    for album in albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
                         if let songs = try? await JellyfinManager.shared.fetchSongs(forAlbum: album) {
                             allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
                         }
                     }
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks, startPlaybackIfEmpty: false)
                 }
             }
         case .embyTrack(let song):
             if let track = EmbyManager.shared.convertToTrack(song) {
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
+                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track], startPlaybackIfEmpty: false)
             }
         case .embyAlbum(let album):
             Task { @MainActor in
                 if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(EmbyManager.shared.convertToTracks(songs))
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(EmbyManager.shared.convertToTracks(songs), startPlaybackIfEmpty: false)
                 }
             }
         case .embyArtist(let artist):
             Task { @MainActor in
                 if let albums = try? await EmbyManager.shared.fetchAlbums(forArtist: artist) {
                     var allTracks: [Track] = []
-                    for album in albums {
+                    for album in albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
                         if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
                             allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
                         }
                     }
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks, startPlaybackIfEmpty: false)
+                }
+            }
+        case .subsonicPlaylist(let playlist):
+            Task { @MainActor in
+                if let (_, songs) = try? await SubsonicManager.shared.serverClient?.fetchPlaylist(id: playlist.id) {
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(songs.compactMap { SubsonicManager.shared.convertToTrack($0) }, startPlaybackIfEmpty: false)
+                }
+            }
+        case .jellyfinPlaylist(let playlist):
+            Task { @MainActor in
+                if let (_, songs) = try? await JellyfinManager.shared.serverClient?.fetchPlaylist(id: playlist.id) {
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(JellyfinManager.shared.convertToTracks(songs), startPlaybackIfEmpty: false)
+                }
+            }
+        case .embyPlaylist(let playlist):
+            Task { @MainActor in
+                if let (_, songs) = try? await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlist.id) {
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(EmbyManager.shared.convertToTracks(songs), startPlaybackIfEmpty: false)
+                }
+            }
+        case .plexPlaylist(let playlist):
+            Task { @MainActor in
+                if let tracks = try? await PlexManager.shared.fetchPlaylistTracks(playlistID: playlist.id, smartContent: playlist.smart ? playlist.content : nil) {
+                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(tracks), startPlaybackIfEmpty: false)
                 }
             }
         default: break
@@ -4787,132 +4890,118 @@ class ModernLibraryBrowserView: NSView {
         guard let index = selectedIndices.first, index < displayItems.count else { return }
         let item = displayItems[index]
         let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        
+
         switch item.type {
         case .track(let track):
-            if let t = PlexManager.shared.convertToTrack(track) {
-                engine.appendTracks([t])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
+            if let t = PlexManager.shared.convertToTrack(track) { engine.appendTracks([t]) }
         case .localTrack(let track):
             engine.appendTracks([track.toTrack()])
-            if wasEmpty { engine.playTrack(at: 0) }
         case .subsonicTrack(let song):
-            if let track = SubsonicManager.shared.convertToTrack(song) {
-                engine.appendTracks([track])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
+            if let track = SubsonicManager.shared.convertToTrack(song) { engine.appendTracks([track]) }
         case .album(let album):
             Task { @MainActor in
                 if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
-                    let converted = PlexManager.shared.convertToTracks(tracks)
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(converted)
-                    if wasEmpty { engine.playTrack(at: 0) }
+                    engine.appendTracks(PlexManager.shared.convertToTracks(tracks))
                 }
             }
         case .localAlbum(let album):
-            let tracks = album.tracks.map { $0.toTrack() }
-            engine.appendTracks(tracks)
-            if wasEmpty { engine.playTrack(at: 0) }
+            engine.appendTracks(album.tracks.map { $0.toTrack() })
         case .subsonicAlbum(let album):
             Task { @MainActor in
                 if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
-                    let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(tracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
+                    engine.appendTracks(songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
                 }
             }
         case .artist(let artist):
             Task { @MainActor in
                 if let albums = try? await PlexManager.shared.fetchAlbums(forArtist: artist) {
                     var allTracks: [PlexTrack] = []
-                    for album in albums {
+                    for album in albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
                         if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
                             allTracks.append(contentsOf: tracks)
                         }
                     }
-                    let converted = PlexManager.shared.convertToTracks(allTracks)
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(converted)
-                    if wasEmpty { engine.playTrack(at: 0) }
+                    engine.appendTracks(PlexManager.shared.convertToTracks(allTracks))
                 }
             }
         case .localArtist(let artist):
             var allTracks: [Track] = []
-            for album in artist.albums { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+            for album in artist.albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
             engine.appendTracks(allTracks)
-            if wasEmpty { engine.playTrack(at: 0) }
         case .subsonicArtist(let artist):
             Task { @MainActor in
                 if let albums = try? await SubsonicManager.shared.fetchAlbums(forArtist: artist) {
                     var allTracks: [Track] = []
-                    for album in albums {
+                    for album in albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
                         if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
                             allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
                         }
                     }
-                    let wasEmpty = engine.playlist.isEmpty
                     engine.appendTracks(allTracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
                 }
             }
         case .jellyfinTrack(let song):
-            if let track = JellyfinManager.shared.convertToTrack(song) {
-                engine.appendTracks([track])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
+            if let track = JellyfinManager.shared.convertToTrack(song) { engine.appendTracks([track]) }
         case .jellyfinAlbum(let album):
             Task { @MainActor in
                 if let songs = try? await JellyfinManager.shared.fetchSongs(forAlbum: album) {
-                    let tracks = JellyfinManager.shared.convertToTracks(songs)
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(tracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
+                    engine.appendTracks(JellyfinManager.shared.convertToTracks(songs))
                 }
             }
         case .jellyfinArtist(let artist):
             Task { @MainActor in
                 if let albums = try? await JellyfinManager.shared.fetchAlbums(forArtist: artist) {
                     var allTracks: [Track] = []
-                    for album in albums {
+                    for album in albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
                         if let songs = try? await JellyfinManager.shared.fetchSongs(forAlbum: album) {
                             allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
                         }
                     }
-                    let wasEmpty = engine.playlist.isEmpty
                     engine.appendTracks(allTracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
                 }
             }
         case .embyTrack(let song):
-            if let track = EmbyManager.shared.convertToTrack(song) {
-                engine.appendTracks([track])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
+            if let track = EmbyManager.shared.convertToTrack(song) { engine.appendTracks([track]) }
         case .embyAlbum(let album):
             Task { @MainActor in
                 if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
-                    let tracks = EmbyManager.shared.convertToTracks(songs)
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(tracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
+                    engine.appendTracks(EmbyManager.shared.convertToTracks(songs))
                 }
             }
         case .embyArtist(let artist):
             Task { @MainActor in
                 if let albums = try? await EmbyManager.shared.fetchAlbums(forArtist: artist) {
                     var allTracks: [Track] = []
-                    for album in albums {
+                    for album in albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
                         if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
                             allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
                         }
                     }
-                    let wasEmpty = engine.playlist.isEmpty
                     engine.appendTracks(allTracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
+                }
+            }
+        case .subsonicPlaylist(let playlist):
+            Task { @MainActor in
+                if let (_, songs) = try? await SubsonicManager.shared.serverClient?.fetchPlaylist(id: playlist.id) {
+                    engine.appendTracks(songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
+                }
+            }
+        case .jellyfinPlaylist(let playlist):
+            Task { @MainActor in
+                if let (_, songs) = try? await JellyfinManager.shared.serverClient?.fetchPlaylist(id: playlist.id) {
+                    engine.appendTracks(JellyfinManager.shared.convertToTracks(songs))
+                }
+            }
+        case .embyPlaylist(let playlist):
+            Task { @MainActor in
+                if let (_, songs) = try? await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlist.id) {
+                    engine.appendTracks(EmbyManager.shared.convertToTracks(songs))
+                }
+            }
+        case .plexPlaylist(let playlist):
+            Task { @MainActor in
+                if let tracks = try? await PlexManager.shared.fetchPlaylistTracks(playlistID: playlist.id, smartContent: playlist.smart ? playlist.content : nil) {
+                    engine.appendTracks(PlexManager.shared.convertToTracks(tracks))
                 }
             }
         default: break

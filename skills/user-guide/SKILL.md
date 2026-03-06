@@ -217,10 +217,15 @@ Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix (double-click to cycle)
 
 ### Library Browser
 - **Enter**: Play Now (insert and play)
-- **Shift+Enter**: Play Next (insert after current)
-- **Option+Enter**: Add to Queue (append)
+- **Shift+Enter**: Play Next (insert after current, no auto-play if empty)
+- **Option+Enter**: Add to Queue (append, no auto-play if empty)
+- **Right Arrow**: Expand item (artists, albums, playlists, shows, seasons); if already expanded, move to first child
+- **Left Arrow**: Collapse expanded item; if not expanded, jump to parent item
+- **Tab / Shift+Tab**: Cycle forward/backward through tabs (Artists → Albums → Plists → Movies → Shows → Search → Radio)
+- **Space**: Play/Pause
+- **Type letters**: Jump to first matching item by name (type-ahead, clears after ~1s); Backspace removes last character, Escape clears immediately
 - **Cmd+F**: Focus search field
-- **Escape**: Clear search
+- **Escape**: Clear search (in search tab) or clear type-ahead buffer
 
 ## Data Storage
 
