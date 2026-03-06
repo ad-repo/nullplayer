@@ -432,7 +432,9 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Layout Constants (independent of classic skin)
     
     private struct Layout {
-        static var titleBarHeight: CGFloat { ModernSkinElements.libraryTitleBarHeight }
+        static var titleBarHeight: CGFloat {
+            WindowManager.shared.hideTitleBars ? Layout.borderWidth : ModernSkinElements.libraryTitleBarHeight
+        }
         static var tabBarHeight: CGFloat { 24 * ModernSkinElements.sizeMultiplier }
         static var serverBarHeight: CGFloat { 24 * ModernSkinElements.sizeMultiplier }
         static var searchBarHeight: CGFloat { 26 * ModernSkinElements.sizeMultiplier }
@@ -695,7 +697,7 @@ class ModernLibraryBrowserView: NSView {
         let baseHeight = bounds.height / scale
         
         // Draw title bar
-        if true {
+        if !WindowManager.shared.hideTitleBars {
             // Title bar at TOP in base space
             let tbh = ModernSkinElements.titleBarBaseHeight
             let titleBarRect = NSRect(x: 0, y: baseHeight - tbh, width: baseWidth, height: tbh)
@@ -2422,9 +2424,15 @@ class ModernLibraryBrowserView: NSView {
     
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        
-        // Double-click title bar for shade
-        if event.clickCount == 2 && hitTestTitleBar(at: point) {
+
+        // When HT is on, record drag start point early so mouseDragged can move the window
+        // from anywhere (title bar is hidden so there's no dedicated drag handle)
+        if WindowManager.shared.hideTitleBars && !isShadeMode {
+            windowDragStartPoint = event.locationInWindow
+        }
+
+        // Double-click title bar for shade (only when titlebar is visible)
+        if event.clickCount == 2 && hitTestTitleBar(at: point) && !WindowManager.shared.hideTitleBars {
             toggleShadeMode(); return
         }
         
@@ -2432,9 +2440,11 @@ class ModernLibraryBrowserView: NSView {
             handleShadeMouseDown(at: point, event: event); return
         }
         
-        // Window buttons (always check first)
-        if hitTestCloseButton(at: point) { pressedButton = .close; needsDisplay = true; return }
-        if hitTestShadeButton(at: point) { pressedButton = .shade; needsDisplay = true; return }
+        // Window buttons (only when titlebar is visible)
+        if !WindowManager.shared.hideTitleBars {
+            if hitTestCloseButton(at: point) { pressedButton = .close; needsDisplay = true; return }
+            if hitTestShadeButton(at: point) { pressedButton = .shade; needsDisplay = true; return }
+        }
         
         // Server bar (check before content area so ART/VIS/source buttons work)
         if hitTestServerBar(at: point) {
@@ -2521,7 +2531,13 @@ class ModernLibraryBrowserView: NSView {
             columnWidths[columnId] = max(minWidth, resizeStartWidth + deltaX)
             needsDisplay = true; return
         }
-        
+
+        // When HT is on, lazily start window drag on first mouseDragged (handles content-area drags)
+        if !isDraggingWindow && WindowManager.shared.hideTitleBars && !isShadeMode {
+            isDraggingWindow = true
+            if let window = window { WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true) }
+        }
+
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
             let deltaX = currentPoint.x - windowDragStartPoint.x
@@ -2537,7 +2553,10 @@ class ModernLibraryBrowserView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         
         if resizingColumnId != nil { resizingColumnId = nil; NSCursor.pop() }
-        if isDraggingWindow { isDraggingWindow = false }
+        if isDraggingWindow {
+            isDraggingWindow = false
+            if let window = window { WindowManager.shared.windowDidFinishDragging(window) }
+        }
         isDraggingScrollbar = false
         
         if isShadeMode { handleShadeMouseUp(at: point); return }

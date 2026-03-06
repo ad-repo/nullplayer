@@ -189,9 +189,10 @@ Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix (double-click to cycle)
 - **Classic UI**: requires a restart (dialog appears before any UI change)
 
 ### Hide Title Bars (Modern UI)
-- Toggle via context menu
-- Hides skinned title bars on all windows
-- Preserves border line
+- Toggle via context menu or HT button on the main window
+- **HT Off (default)**: EQ/Playlist/Spectrum hide titlebars when docked — this is always active, even with HT off
+- **HT On**: All 6 windows (main, EQ, playlist, spectrum, ProjectM, library browser) hide titlebars; content expands to fill the reclaimed space
+- Preserves the border line (titlebar area collapses to border width, not 0)
 
 ## Keyboard Shortcuts
 

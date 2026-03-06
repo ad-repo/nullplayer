@@ -81,9 +81,29 @@ class WindowManager {
     func toggleHideTitleBars() {
         guard isModernUIEnabled else { return }
         hideTitleBars = !hideTitleBars
-        for controller in [equalizerWindowController as? NSWindowController,
+
+        // Resize main window: when HT is on, main window shrinks by titleBarBaseHeight (base 275x116 → 275x98)
+        // anchor top-left so stacked windows below shift up naturally.
+        if let mainWindow = mainWindowController?.window {
+            let baseHeight: CGFloat = hideTitleBars
+                ? (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
+                : ModernSkinElements.baseMainSize.height * ModernSkinElements.scaleFactor
+            let newSize = NSSize(width: mainWindow.frame.width, height: baseHeight)
+            mainWindow.minSize = newSize
+            var frame = mainWindow.frame
+            let topY = frame.maxY
+            frame.size = newSize
+            frame.origin.y = topY - newSize.height
+            mainWindow.setFrame(frame, display: true, animate: false)
+        }
+
+        // Refresh all 6 window views
+        for controller in [mainWindowController as? NSWindowController,
+                           equalizerWindowController as? NSWindowController,
                            playlistWindowController as? NSWindowController,
-                           spectrumWindowController as? NSWindowController] {
+                           spectrumWindowController as? NSWindowController,
+                           projectMWindowController as? NSWindowController,
+                           plexBrowserWindowController as? NSWindowController] {
             if let view = controller?.window?.contentView {
                 view.needsDisplay = true
                 view.needsLayout = true
@@ -97,15 +117,27 @@ class WindowManager {
     }
     
     /// Returns true if the title bar should be hidden for the given window.
-    /// Only applies to EQ, Playlist, and Spectrum windows, and only when they are docked.
+    /// - Base behavior: EQ, Playlist, Spectrum always hide when docked.
+    /// - HT on: ALL windows hide titlebars regardless of docking.
     func effectiveHideTitleBars(for window: NSWindow?) -> Bool {
         guard let window else { return false }
-        guard isModernUIEnabled && hideTitleBars else { return false }
-        let isTargetWindow = window === equalizerWindowController?.window ||
-                             window === playlistWindowController?.window ||
-                             window === spectrumWindowController?.window
-        guard isTargetWindow else { return false }
-        return isWindowDocked(window)
+        guard isModernUIEnabled else { return false }
+
+        // Sub-windows always hide when docked (base behavior)
+        let isSubWindow = window === equalizerWindowController?.window ||
+                          window === playlistWindowController?.window ||
+                          window === spectrumWindowController?.window
+        if isSubWindow && isWindowDocked(window) {
+            return true
+        }
+
+        // When HT is on, ALL app windows hide titlebars
+        guard hideTitleBars else { return false }
+        let isAppWindow = window === mainWindowController?.window ||
+                          isSubWindow ||
+                          window === projectMWindowController?.window ||
+                          window === plexBrowserWindowController?.window
+        return isAppWindow
     }
     
     /// Playlist window controller (classic or modern, accessed via protocol)
@@ -234,6 +266,11 @@ class WindowManager {
                 mainWindowController = modern
             } else {
                 mainWindowController = MainWindowController()
+            }
+            // If HT is already active from UserDefaults, correct minSize before frame restore
+            if isModernUIEnabled && hideTitleBars, let mainWindow = mainWindowController?.window {
+                let htHeight = (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
+                mainWindow.minSize = NSSize(width: mainWindow.minSize.width, height: htHeight)
             }
         }
         mainWindowController?.showWindow(nil)
