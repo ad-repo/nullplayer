@@ -1902,9 +1902,15 @@ class AudioEngine {
         // Report track finished to Plex (natural end)
         PlexPlaybackReporter.shared.trackDidStop(at: duration, finished: true)
 
-        // Record to Plex Radio history (track actually finished playing via cast)
-        if let finishedTrack = currentTrack, finishedTrack.plexRatingKey != nil {
-            PlexRadioHistory.shared.recordTrackPlayed(finishedTrack)
+        // Record to radio history (track actually finished playing via cast)
+        if let finishedTrack = currentTrack {
+            Task.detached(priority: .utility) { [track = finishedTrack] in
+                if track.plexRatingKey != nil        { PlexRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.subsonicId != nil      { SubsonicRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.jellyfinId != nil      { JellyfinRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.embyId != nil          { EmbyRadioHistory.shared.recordTrackPlayed(track) }
+                else                                  { LocalRadioHistory.shared.recordTrackPlayed(track) }
+            }
         }
 
         // Prevent multiple calls
@@ -2777,9 +2783,15 @@ class AudioEngine {
         // Report stop to Emby
         EmbyPlaybackReporter.shared.trackStopped()
 
-        // Record to Plex Radio history (track actually finished playing)
-        if let finishedTrack = currentTrack, finishedTrack.plexRatingKey != nil {
-            PlexRadioHistory.shared.recordTrackPlayed(finishedTrack)
+        // Record to radio history (track actually finished playing)
+        if let finishedTrack = currentTrack {
+            Task.detached(priority: .utility) { [track = finishedTrack] in
+                if track.plexRatingKey != nil        { PlexRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.subsonicId != nil      { SubsonicRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.jellyfinId != nil      { JellyfinRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.embyId != nil          { EmbyRadioHistory.shared.recordTrackPlayed(track) }
+                else                                  { LocalRadioHistory.shared.recordTrackPlayed(track) }
+            }
         }
 
         // Check if we have a gaplessly pre-scheduled next track (local files)
@@ -3197,9 +3209,15 @@ class AudioEngine {
         let activePlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
         activePlayer.volume = 1.0
         
-        // Record outgoing track to Plex Radio history (track finished via crossfade)
-        if let outgoingTrack = currentTrack, outgoingTrack.plexRatingKey != nil {
-            PlexRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+        // Record outgoing track to radio history (track finished via crossfade)
+        if let outgoingTrack = currentTrack {
+            Task.detached(priority: .utility) { [track = outgoingTrack] in
+                if track.plexRatingKey != nil        { PlexRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.subsonicId != nil      { SubsonicRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.jellyfinId != nil      { JellyfinRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.embyId != nil          { EmbyRadioHistory.shared.recordTrackPlayed(track) }
+                else                                  { LocalRadioHistory.shared.recordTrackPlayed(track) }
+            }
         }
 
         // Update state
@@ -3276,9 +3294,15 @@ class AudioEngine {
         // Restore primary player to master volume (crossfade ended at masterVolume * 1.0)
         streamingPlayer?.volume = volume
         
-        // Record outgoing track to Plex Radio history (track finished via streaming crossfade)
-        if let outgoingTrack = currentTrack, outgoingTrack.plexRatingKey != nil {
-            PlexRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+        // Record outgoing track to radio history (track finished via streaming crossfade)
+        if let outgoingTrack = currentTrack {
+            Task.detached(priority: .utility) { [track = outgoingTrack] in
+                if track.plexRatingKey != nil        { PlexRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.subsonicId != nil      { SubsonicRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.jellyfinId != nil      { JellyfinRadioHistory.shared.recordTrackPlayed(track) }
+                else if track.embyId != nil          { EmbyRadioHistory.shared.recordTrackPlayed(track) }
+                else                                  { LocalRadioHistory.shared.recordTrackPlayed(track) }
+            }
         }
 
         // Update state

@@ -731,7 +731,7 @@ class MediaLibrary {
     func allArtists() -> [Artist] {
         var artistDict: [String: [LibraryTrack]] = [:]
         for track in tracksSnapshot {
-            let artistName = track.artist ?? "Unknown Artist"
+            let artistName = track.albumArtist ?? track.artist ?? "Unknown Artist"
             artistDict[artistName, default: []].append(track)
         }
         
@@ -805,8 +805,9 @@ class MediaLibrary {
         // Apply artist filter
         if !filter.artists.isEmpty {
             result = result.filter { track in
-                guard let artist = track.artist else { return false }
-                return filter.artists.contains(artist)
+                let artistName = track.albumArtist ?? track.artist
+                guard let artistName else { return false }
+                return filter.artists.contains(artistName)
             }
         }
         
@@ -1251,6 +1252,65 @@ class MediaLibrary {
     
     // MARK: - Helpers
     
+    // MARK: - Local Radio
+
+    func createLocalLibraryRadio(limit: Int = 100) -> [Track] {
+        let pool = tracksSnapshot.shuffled()
+        let tracks = pool.map { $0.toTrack() }
+        let historyFiltered = LocalRadioHistory.shared.filterOutHistoryTracks(tracks)
+        return filterLocalForArtistVariety(historyFiltered, limit: limit)
+    }
+
+    func createLocalGenreRadio(genre: String, limit: Int = 100) -> [Track] {
+        var filter = LibraryFilter()
+        filter.genres = Set([genre])
+        let pool = filteredTracks(filter: filter, sortBy: .title, ascending: true).shuffled()
+        let tracks = pool.map { $0.toTrack() }
+        let historyFiltered = LocalRadioHistory.shared.filterOutHistoryTracks(tracks)
+        return filterLocalForArtistVariety(historyFiltered, limit: limit)
+    }
+
+    func createLocalGenreRadioSimilar(seedTrack: Track?, genre: String, limit: Int = 100) -> [Track] {
+        return createLocalGenreRadio(genre: genre, limit: limit)
+    }
+
+    func createLocalDecadeRadio(start: Int, end: Int, limit: Int = 100) -> [Track] {
+        var filter = LibraryFilter()
+        filter.yearRange = start...end
+        let pool = filteredTracks(filter: filter, sortBy: .title, ascending: true).shuffled()
+        let tracks = pool.map { $0.toTrack() }
+        let historyFiltered = LocalRadioHistory.shared.filterOutHistoryTracks(tracks)
+        return filterLocalForArtistVariety(historyFiltered, limit: limit)
+    }
+
+    func createLocalDecadeRadioSimilar(start: Int, end: Int, seedTrack: Track?, limit: Int = 100) -> [Track] {
+        return createLocalDecadeRadio(start: start, end: end, limit: limit)
+    }
+
+    func createLocalArtistRadio(artist: String, limit: Int = 100) -> [Track] {
+        let pool = tracksSnapshot
+            .filter { ($0.albumArtist ?? $0.artist ?? "").localizedCaseInsensitiveCompare(artist) == .orderedSame }
+            .shuffled()
+        let tracks = pool.map { $0.toTrack() }
+        let filtered = LocalRadioHistory.shared.filterOutHistoryTracks(tracks)
+        return Array(filtered.prefix(limit))
+    }
+
+    private func filterLocalForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = 2) -> [Track] {
+        var result: [Track] = []
+        var artistCounts: [String: Int] = [:]
+        for track in tracks {
+            let artist = track.artist ?? ""
+            let count = artistCounts[artist] ?? 0
+            if count < maxPerArtist {
+                result.append(track)
+                artistCounts[artist] = count + 1
+            }
+            if result.count >= limit { break }
+        }
+        return result
+    }
+
     private func albumsForTracks(_ tracks: [LibraryTrack]) -> [Album] {
         var albumDict: [String: [LibraryTrack]] = [:]
         

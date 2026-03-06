@@ -425,6 +425,146 @@ class ContextMenuBuilder {
             optionsMenu.addItem(historyItem)
         }
 
+        // Subsonic Radio History (shown whenever at least one server has been configured)
+        if !SubsonicManager.shared.servers.isEmpty {
+            optionsMenu.addItem(NSMenuItem.separator())
+
+            let historyItem = NSMenuItem(title: "Subsonic Radio History", action: nil, keyEquivalent: "")
+            let historyMenu = NSMenu()
+            historyMenu.autoenablesItems = false
+
+            let intervalItem = NSMenuItem(title: "History Interval", action: nil, keyEquivalent: "")
+            let intervalMenu = NSMenu()
+            intervalMenu.autoenablesItems = false
+            let currentInterval = SubsonicRadioHistory.shared.retentionInterval
+            for interval in SubsonicRadioHistoryInterval.allCases {
+                let item = NSMenuItem(title: interval.displayName, action: #selector(MenuActions.setSubsonicRadioHistoryInterval(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = interval.rawValue
+                item.state = currentInterval == interval ? .on : .off
+                intervalMenu.addItem(item)
+            }
+            intervalItem.submenu = intervalMenu
+            historyMenu.addItem(intervalItem)
+            historyMenu.addItem(NSMenuItem.separator())
+
+            let viewItem = NSMenuItem(title: "View Radio History...", action: #selector(MenuActions.viewSubsonicRadioHistory), keyEquivalent: "")
+            viewItem.target = MenuActions.shared
+            historyMenu.addItem(viewItem)
+
+            let clearItem = NSMenuItem(title: "Clear Radio History...", action: #selector(MenuActions.clearSubsonicRadioHistory), keyEquivalent: "")
+            clearItem.target = MenuActions.shared
+            historyMenu.addItem(clearItem)
+
+            historyItem.submenu = historyMenu
+            optionsMenu.addItem(historyItem)
+        }
+
+        // Jellyfin Radio History (shown whenever at least one server has been configured)
+        if !JellyfinManager.shared.servers.isEmpty {
+            optionsMenu.addItem(NSMenuItem.separator())
+
+            let historyItem = NSMenuItem(title: "Jellyfin Radio History", action: nil, keyEquivalent: "")
+            let historyMenu = NSMenu()
+            historyMenu.autoenablesItems = false
+
+            let intervalItem = NSMenuItem(title: "History Interval", action: nil, keyEquivalent: "")
+            let intervalMenu = NSMenu()
+            intervalMenu.autoenablesItems = false
+            let currentInterval = JellyfinRadioHistory.shared.retentionInterval
+            for interval in JellyfinRadioHistoryInterval.allCases {
+                let item = NSMenuItem(title: interval.displayName, action: #selector(MenuActions.setJellyfinRadioHistoryInterval(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = interval.rawValue
+                item.state = currentInterval == interval ? .on : .off
+                intervalMenu.addItem(item)
+            }
+            intervalItem.submenu = intervalMenu
+            historyMenu.addItem(intervalItem)
+            historyMenu.addItem(NSMenuItem.separator())
+
+            let viewItem = NSMenuItem(title: "View Radio History...", action: #selector(MenuActions.viewJellyfinRadioHistory), keyEquivalent: "")
+            viewItem.target = MenuActions.shared
+            historyMenu.addItem(viewItem)
+
+            let clearItem = NSMenuItem(title: "Clear Radio History...", action: #selector(MenuActions.clearJellyfinRadioHistory), keyEquivalent: "")
+            clearItem.target = MenuActions.shared
+            historyMenu.addItem(clearItem)
+
+            historyItem.submenu = historyMenu
+            optionsMenu.addItem(historyItem)
+        }
+
+        // Emby Radio History (shown whenever at least one server has been configured)
+        if !EmbyManager.shared.servers.isEmpty {
+            optionsMenu.addItem(NSMenuItem.separator())
+
+            let historyItem = NSMenuItem(title: "Emby Radio History", action: nil, keyEquivalent: "")
+            let historyMenu = NSMenu()
+            historyMenu.autoenablesItems = false
+
+            let intervalItem = NSMenuItem(title: "History Interval", action: nil, keyEquivalent: "")
+            let intervalMenu = NSMenu()
+            intervalMenu.autoenablesItems = false
+            let currentInterval = EmbyRadioHistory.shared.retentionInterval
+            for interval in EmbyRadioHistoryInterval.allCases {
+                let item = NSMenuItem(title: interval.displayName, action: #selector(MenuActions.setEmbyRadioHistoryInterval(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = interval.rawValue
+                item.state = currentInterval == interval ? .on : .off
+                intervalMenu.addItem(item)
+            }
+            intervalItem.submenu = intervalMenu
+            historyMenu.addItem(intervalItem)
+            historyMenu.addItem(NSMenuItem.separator())
+
+            let viewItem = NSMenuItem(title: "View Radio History...", action: #selector(MenuActions.viewEmbyRadioHistory), keyEquivalent: "")
+            viewItem.target = MenuActions.shared
+            historyMenu.addItem(viewItem)
+
+            let clearItem = NSMenuItem(title: "Clear Radio History...", action: #selector(MenuActions.clearEmbyRadioHistory), keyEquivalent: "")
+            clearItem.target = MenuActions.shared
+            historyMenu.addItem(clearItem)
+
+            historyItem.submenu = historyMenu
+            optionsMenu.addItem(historyItem)
+        }
+
+        // Local Radio History
+        do {
+            optionsMenu.addItem(NSMenuItem.separator())
+
+            let historyItem = NSMenuItem(title: "Local Radio History", action: nil, keyEquivalent: "")
+            let historyMenu = NSMenu()
+            historyMenu.autoenablesItems = false
+
+            let intervalItem = NSMenuItem(title: "History Interval", action: nil, keyEquivalent: "")
+            let intervalMenu = NSMenu()
+            intervalMenu.autoenablesItems = false
+            let currentInterval = LocalRadioHistory.shared.retentionInterval
+            for interval in LocalRadioHistoryInterval.allCases {
+                let item = NSMenuItem(title: interval.displayName, action: #selector(MenuActions.setLocalRadioHistoryInterval(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = interval.rawValue
+                item.state = currentInterval == interval ? .on : .off
+                intervalMenu.addItem(item)
+            }
+            intervalItem.submenu = intervalMenu
+            historyMenu.addItem(intervalItem)
+            historyMenu.addItem(NSMenuItem.separator())
+
+            let viewItem = NSMenuItem(title: "View Radio History...", action: #selector(MenuActions.viewLocalRadioHistory), keyEquivalent: "")
+            viewItem.target = MenuActions.shared
+            historyMenu.addItem(viewItem)
+
+            let clearItem = NSMenuItem(title: "Clear Radio History...", action: #selector(MenuActions.clearLocalRadioHistory), keyEquivalent: "")
+            clearItem.target = MenuActions.shared
+            historyMenu.addItem(clearItem)
+
+            historyItem.submenu = historyMenu
+            optionsMenu.addItem(historyItem)
+        }
+
         optionsMenu.addItem(NSMenuItem.separator())
 
         optionsItem.submenu = optionsMenu
@@ -2480,8 +2620,144 @@ class MenuActions: NSObject {
         }
     }
 
+    // MARK: - Subsonic Radio History
+
+    @objc func setSubsonicRadioHistoryInterval(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let interval = SubsonicRadioHistoryInterval(rawValue: rawValue) else { return }
+        SubsonicRadioHistory.shared.retentionInterval = interval
+    }
+
+    @objc func viewSubsonicRadioHistory() {
+        Task {
+            if !LocalMediaServer.shared.isRunning {
+                do { try await LocalMediaServer.shared.start() } catch {
+                    await MainActor.run {
+                        let alert = NSAlert(); alert.messageText = "Could Not Open History"
+                        alert.informativeText = "The local history server failed to start: \(error.localizedDescription)"
+                        alert.alertStyle = .warning; alert.runModal()
+                    }
+                    return
+                }
+            }
+            if let url = SubsonicRadioHistory.shared.historyPageURL { NSWorkspace.shared.open(url) }
+        }
+    }
+
+    @objc func clearSubsonicRadioHistory() {
+        let alert = NSAlert()
+        alert.messageText = "Clear Radio History?"
+        alert.informativeText = "This will remove all Subsonic Radio track history. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn { SubsonicRadioHistory.shared.clearHistory() }
+    }
+
+    // MARK: - Jellyfin Radio History
+
+    @objc func setJellyfinRadioHistoryInterval(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let interval = JellyfinRadioHistoryInterval(rawValue: rawValue) else { return }
+        JellyfinRadioHistory.shared.retentionInterval = interval
+    }
+
+    @objc func viewJellyfinRadioHistory() {
+        Task {
+            if !LocalMediaServer.shared.isRunning {
+                do { try await LocalMediaServer.shared.start() } catch {
+                    await MainActor.run {
+                        let alert = NSAlert(); alert.messageText = "Could Not Open History"
+                        alert.informativeText = "The local history server failed to start: \(error.localizedDescription)"
+                        alert.alertStyle = .warning; alert.runModal()
+                    }
+                    return
+                }
+            }
+            if let url = JellyfinRadioHistory.shared.historyPageURL { NSWorkspace.shared.open(url) }
+        }
+    }
+
+    @objc func clearJellyfinRadioHistory() {
+        let alert = NSAlert()
+        alert.messageText = "Clear Radio History?"
+        alert.informativeText = "This will remove all Jellyfin Radio track history. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn { JellyfinRadioHistory.shared.clearHistory() }
+    }
+
+    // MARK: - Emby Radio History
+
+    @objc func setEmbyRadioHistoryInterval(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let interval = EmbyRadioHistoryInterval(rawValue: rawValue) else { return }
+        EmbyRadioHistory.shared.retentionInterval = interval
+    }
+
+    @objc func viewEmbyRadioHistory() {
+        Task {
+            if !LocalMediaServer.shared.isRunning {
+                do { try await LocalMediaServer.shared.start() } catch {
+                    await MainActor.run {
+                        let alert = NSAlert(); alert.messageText = "Could Not Open History"
+                        alert.informativeText = "The local history server failed to start: \(error.localizedDescription)"
+                        alert.alertStyle = .warning; alert.runModal()
+                    }
+                    return
+                }
+            }
+            if let url = EmbyRadioHistory.shared.historyPageURL { NSWorkspace.shared.open(url) }
+        }
+    }
+
+    @objc func clearEmbyRadioHistory() {
+        let alert = NSAlert()
+        alert.messageText = "Clear Radio History?"
+        alert.informativeText = "This will remove all Emby Radio track history. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn { EmbyRadioHistory.shared.clearHistory() }
+    }
+
+    // MARK: - Local Radio History
+
+    @objc func setLocalRadioHistoryInterval(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let interval = LocalRadioHistoryInterval(rawValue: rawValue) else { return }
+        LocalRadioHistory.shared.retentionInterval = interval
+    }
+
+    @objc func viewLocalRadioHistory() {
+        Task {
+            if !LocalMediaServer.shared.isRunning {
+                do { try await LocalMediaServer.shared.start() } catch {
+                    await MainActor.run {
+                        let alert = NSAlert(); alert.messageText = "Could Not Open History"
+                        alert.informativeText = "The local history server failed to start: \(error.localizedDescription)"
+                        alert.alertStyle = .warning; alert.runModal()
+                    }
+                    return
+                }
+            }
+            if let url = LocalRadioHistory.shared.historyPageURL { NSWorkspace.shared.open(url) }
+        }
+    }
+
+    @objc func clearLocalRadioHistory() {
+        let alert = NSAlert()
+        alert.messageText = "Clear Radio History?"
+        alert.informativeText = "This will remove all Local Radio track history. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn { LocalRadioHistory.shared.clearHistory() }
+    }
+
     // MARK: - Main Window Visualization Options
-    
+
     @objc func setMainVisMode(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? MainWindowVisMode else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: "mainWindowVisMode")

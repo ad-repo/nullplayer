@@ -729,4 +729,239 @@ class JellyfinManager {
     func convertToTracks(_ songs: [JellyfinSong]) -> [Track] {
         songs.compactMap { convertToTrack($0) }
     }
+
+    // MARK: - Radio
+
+    func getMusicGenres() async -> [String] {
+        guard let client = serverClient else { return [] }
+        do {
+            return try await client.fetchMusicGenres(libraryId: currentMusicLibrary?.id)
+        } catch {
+            NSLog("JellyfinManager: Failed to fetch genres: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createLibraryRadio(limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let songs = try await client.fetchRandomSongs(limit: limit * 3, libraryId: currentMusicLibrary?.id)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit)
+        } catch {
+            NSLog("JellyfinManager: Failed to create library radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createLibraryRadioInstantMix(limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        let seedId: String?
+        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.jellyfinId {
+            seedId = id
+        } else {
+            do {
+                let seeds = try await client.fetchRandomSongs(limit: 1, libraryId: currentMusicLibrary?.id)
+                seedId = seeds.first?.id
+            } catch { seedId = nil }
+        }
+        guard let id = seedId else { return await createLibraryRadio(limit: limit) }
+        do {
+            let songs = try await client.fetchInstantMixForTrack(itemId: id, limit: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("JellyfinManager: Failed to create library radio (instant mix): %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createGenreRadio(genre: String, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let songs = try await client.fetchSongsByGenre(genre: genre, limit: limit * 3, libraryId: currentMusicLibrary?.id)
+            let allTracks = songs.compactMap { convertToTrack($0) }.shuffled()
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit)
+        } catch {
+            NSLog("JellyfinManager: Failed to create genre radio (%@): %@", genre, error.localizedDescription)
+            return []
+        }
+    }
+
+    func createGenreRadioInstantMix(genre: String, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        let seedId: String?
+        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.jellyfinId {
+            seedId = id
+        } else {
+            do {
+                let seeds = try await client.fetchSongsByGenre(genre: genre, limit: 1, libraryId: currentMusicLibrary?.id)
+                seedId = seeds.first?.id
+            } catch { seedId = nil }
+        }
+        guard let id = seedId else { return await createGenreRadio(genre: genre, limit: limit) }
+        do {
+            let songs = try await client.fetchInstantMixForTrack(itemId: id, limit: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("JellyfinManager: Failed to create genre radio (instant mix): %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createDecadeRadio(start: Int, end: Int, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let songs = try await client.fetchSongsByDecade(startYear: start, endYear: end, limit: limit * 3, libraryId: currentMusicLibrary?.id)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit)
+        } catch {
+            NSLog("JellyfinManager: Failed to create decade radio (%d-%d): %@", start, end, error.localizedDescription)
+            return []
+        }
+    }
+
+    func createDecadeRadioInstantMix(start: Int, end: Int, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        let seedId: String?
+        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.jellyfinId {
+            seedId = id
+        } else {
+            do {
+                let seeds = try await client.fetchSongsByDecade(startYear: start, endYear: end, limit: 1, libraryId: currentMusicLibrary?.id)
+                seedId = seeds.first?.id
+            } catch { seedId = nil }
+        }
+        guard let id = seedId else { return await createDecadeRadio(start: start, end: end, limit: limit) }
+        do {
+            let songs = try await client.fetchInstantMixForTrack(itemId: id, limit: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("JellyfinManager: Failed to create decade radio (instant mix): %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createFavoritesRadio(limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let songs = try await client.fetchFavoriteSongs(limit: limit * 3, libraryId: currentMusicLibrary?.id)
+            let allTracks = songs.compactMap { convertToTrack($0) }.shuffled()
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit)
+        } catch {
+            NSLog("JellyfinManager: Failed to create favorites radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createFavoritesRadioInstantMix(limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        let seedId: String?
+        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.jellyfinId {
+            seedId = id
+        } else {
+            do {
+                let seeds = try await client.fetchFavoriteSongs(limit: 1, libraryId: currentMusicLibrary?.id)
+                seedId = seeds.first?.id
+            } catch { seedId = nil }
+        }
+        guard let id = seedId else { return await createFavoritesRadio(limit: limit) }
+        do {
+            let songs = try await client.fetchInstantMixForTrack(itemId: id, limit: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("JellyfinManager: Failed to create favorites radio (instant mix): %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createTrackRadio(from track: Track, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient, let trackId = track.jellyfinId else { return [] }
+        do {
+            let songs = try await client.fetchInstantMixForTrack(itemId: trackId, limit: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("JellyfinManager: Failed to create track radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createArtistRadio(artistId: String, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let songs = try await client.fetchInstantMixForArtist(artistId: artistId, limit: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("JellyfinManager: Failed to create artist radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    func createAlbumRadio(albumId: String, limit: Int = 100) async -> [Track] {
+        guard let client = serverClient else { return [] }
+        do {
+            let songs = try await client.fetchInstantMixForAlbum(albumId: albumId, limit: limit * 3)
+            let allTracks = songs.compactMap { convertToTrack($0) }
+            let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
+            return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
+        } catch {
+            NSLog("JellyfinManager: Failed to create album radio: %@", error.localizedDescription)
+            return []
+        }
+    }
+
+    // MARK: - Radio Helpers
+
+    private func filterForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = 2) -> [Track] {
+        var result: [Track] = []
+        var artistCounts: [String: Int] = [:]
+        for track in tracks {
+            let artist = track.artist?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "unknown"
+            let currentCount = artistCounts[artist, default: 0]
+            if currentCount < maxPerArtist {
+                result.append(track)
+                artistCounts[artist] = currentCount + 1
+                if result.count >= limit { break }
+            }
+        }
+        return spreadArtistTracks(result)
+    }
+
+    private func spreadArtistTracks(_ tracks: [Track]) -> [Track] {
+        guard tracks.count > 2 else { return tracks }
+        var result: [Track] = []
+        var remaining = tracks
+        var lastArtist: String? = nil
+        while !remaining.isEmpty {
+            let nextIndex = remaining.firstIndex { track in
+                let artist = track.artist?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "unknown"
+                return artist != lastArtist
+            }
+            if let index = nextIndex {
+                let track = remaining.remove(at: index)
+                lastArtist = track.artist?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "unknown"
+                result.append(track)
+            } else {
+                let track = remaining.removeFirst()
+                lastArtist = track.artist?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "unknown"
+                result.append(track)
+            }
+        }
+        return result
+    }
 }
