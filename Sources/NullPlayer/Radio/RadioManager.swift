@@ -3,6 +3,14 @@ import AppKit
 
 /// Singleton managing internet radio station connections and state
 class RadioManager {
+    private struct SomaChannelsResponse: Decodable {
+        let channels: [SomaChannel]
+    }
+
+    private struct SomaChannel: Decodable {
+        let id: String
+        let lastPlaying: String?
+    }
     
     // MARK: - Singleton
     
@@ -29,6 +37,8 @@ class RadioManager {
         didSet {
             if oldValue?.id != currentStation?.id {
                 currentStreamTitle = nil
+                currentSomaLastPlaying = nil
+                stopSomaMetadataPolling()
                 reconnectAttempts = 0
             }
         }
@@ -40,11 +50,19 @@ class RadioManager {
     private(set) var currentStreamTitle: String? {
         didSet {
             if oldValue != currentStreamTitle {
-                NotificationCenter.default.post(
-                    name: Self.streamMetadataDidChangeNotification,
-                    object: self,
-                    userInfo: currentStreamTitle.map { ["streamTitle": $0] }
-                )
+                publishStreamMetadataChangeIfNeeded()
+                if currentStreamTitle != nil {
+                    stopSomaMetadataPolling()
+                }
+            }
+        }
+    }
+
+    /// Fallback title from SomaFM channels API (`lastPlaying`) when ICY metadata is missing.
+    private(set) var currentSomaLastPlaying: String? {
+        didSet {
+            if oldValue != currentSomaLastPlaying {
+                publishStreamMetadataChangeIfNeeded()
             }
         }
     }
@@ -92,6 +110,15 @@ class RadioManager {
     
     /// Timer for reconnect delay
     private var reconnectTimer: Timer?
+
+    /// Poll timer for SomaFM metadata fallback when stream ICY metadata is unavailable.
+    private var somaMetadataTimer: Timer?
+
+    private var somaMetadataRequestInFlight = false
+    private var lastPublishedStreamTitle: String?
+
+    private let somaChannelsURL = URL(string: "https://somafm.com/channels.json")!
+    private let somaMetadataPollInterval: TimeInterval = 45
     
     /// Whether a manual stop was requested (don't auto-reconnect)
     private var manualStopRequested = false
@@ -100,6 +127,10 @@ class RadioManager {
     
     private let stationsKey = "RadioStations"
     private let deletedDefaultsKey = "RadioDeletedDefaults"
+    private static let defaultURLAliases: [String: String] = [
+        "https://wgbh-live.streamguys1.com/wgbh": "https://wgbh-live.streamguys1.com/wgbh.mp3",
+        "https://wgbh-live.streamguys1.com/wgbh.mp3": "https://wgbh-live.streamguys1.com/wgbh"
+    ]
     
     /// URLs of default stations the user has intentionally deleted (won't be re-added)
     private var deletedDefaultURLs: Set<String> {
@@ -113,7 +144,30 @@ class RadioManager {
     
     /// Check if a URL is a default station URL
     private func isDefaultStationURL(_ url: URL) -> Bool {
-        Self.defaultStations.contains { $0.url == url }
+        Self.defaultStations.contains { areEquivalentStationURLs($0.url, url) }
+    }
+
+    private func areEquivalentStationURLs(_ lhs: URL, _ rhs: URL) -> Bool {
+        if lhs == rhs { return true }
+        let left = lhs.absoluteString
+        let right = rhs.absoluteString
+        return Self.defaultURLAliases[left] == right || Self.defaultURLAliases[right] == left
+    }
+
+    /// Combined stream title used by UI: ICY metadata first, then Soma fallback.
+    private var effectiveStreamTitle: String? {
+        currentStreamTitle ?? currentSomaLastPlaying
+    }
+
+    private func publishStreamMetadataChangeIfNeeded() {
+        let streamTitle = effectiveStreamTitle
+        guard streamTitle != lastPublishedStreamTitle else { return }
+        lastPublishedStreamTitle = streamTitle
+        NotificationCenter.default.post(
+            name: Self.streamMetadataDidChangeNotification,
+            object: self,
+            userInfo: streamTitle.map { ["streamTitle": $0] }
+        )
     }
     
     // MARK: - Initialization
@@ -317,7 +371,7 @@ class RadioManager {
         ),
         RadioStation(
             name: "GBH Boston 89.7",
-            url: URL(string: "https://wgbh-live.streamguys1.com/wgbh")!,
+            url: URL(string: "https://wgbh-live.streamguys1.com/wgbh.mp3")!,
             genre: "NPR"
         ),
         
@@ -326,6 +380,192 @@ class RadioManager {
             name: "BBC World Service",
             url: URL(string: "http://stream.live.vc.bbcmedia.co.uk/bbc_world_service")!,
             genre: "News"
+        ),
+
+        // MARK: - Independent/Curated
+        RadioStation(
+            name: "NTS Radio 1",
+            url: URL(string: "https://stream-relay-geo.ntslive.net/stream")!,
+            genre: "Eclectic"
+        ),
+        RadioStation(
+            name: "NTS Radio 2",
+            url: URL(string: "https://stream-relay-geo.ntslive.net/stream2")!,
+            genre: "Eclectic"
+        ),
+        RadioStation(
+            name: "KEXP Seattle 90.3",
+            url: URL(string: "https://kexp-mp3-128.streamguys1.com/kexp128.mp3")!,
+            genre: "Rock"
+        ),
+        RadioStation(
+            name: "WFMU Freeform Radio",
+            url: URL(string: "https://stream0.wfmu.org/freeform-128k-primary.mp3")!,
+            genre: "Freeform"
+        ),
+        RadioStation(
+            name: "WFMU Rock 'n' Soul Radio",
+            url: URL(string: "https://stream0.wfmu.org/rocknsoul-primary.mp3")!,
+            genre: "Rock/Soul"
+        ),
+        RadioStation(
+            name: "WFMU Give the Drummer Radio",
+            url: URL(string: "https://stream0.wfmu.org/drummer-primary.mp3")!,
+            genre: "Eclectic"
+        ),
+        RadioStation(
+            name: "WFMU Sheena's Jungle Room",
+            url: URL(string: "https://stream0.wfmu.org/sheena-primary.mp3")!,
+            genre: "Exotica"
+        ),
+        RadioStation(
+            name: "dublab Los Angeles",
+            url: URL(string: "https://dublab.out.airtime.pro/dublab_a")!,
+            genre: "Eclectic"
+        ),
+        RadioStation(
+            name: "KCRW Eclectic24",
+            url: URL(string: "https://streams.kcrw.com/e24_mp3")!,
+            genre: "Eclectic"
+        ),
+        RadioStation(
+            name: "KCRW Simulcast",
+            url: URL(string: "https://streams.kcrw.com/kcrw_mp3")!,
+            genre: "Public Radio"
+        ),
+        RadioStation(
+            name: "KCRW News24",
+            url: URL(string: "https://streams.kcrw.com/news24_mp3")!,
+            genre: "News"
+        ),
+
+        // MARK: - Asian/Indian
+        RadioStation(
+            name: "AIR Vividh Bharati",
+            url: URL(string: "https://air.pc.cdn.bitgravity.com/air/live/pbaudio001/playlist.m3u8")!,
+            genre: "Indian"
+        ),
+        RadioStation(
+            name: "AIR FM Gold Delhi",
+            url: URL(string: "https://airhlspush.pc.cdn.bitgravity.com/httppush/hlspbaudio005/hlspbaudio00564kbps.m3u8")!,
+            genre: "Indian"
+        ),
+        RadioStation(
+            name: "All India Radio News 24x7",
+            url: URL(string: "https://airhlspush.pc.cdn.bitgravity.com/httppush/hlspbaudio002/hlspbaudio002_Auto.m3u8")!,
+            genre: "News"
+        ),
+        RadioStation(
+            name: "Radio Mirchi Hindi",
+            url: URL(string: "https://eu8.fastcast4u.com/proxy/clyedupq/stream")!,
+            genre: "Bollywood"
+        ),
+        RadioStation(
+            name: "Bollywood Gaane Purane",
+            url: URL(string: "https://stream.zeno.fm/6n6ewddtad0uv")!,
+            genre: "Bollywood"
+        ),
+        RadioStation(
+            name: "Hindi Retro",
+            url: URL(string: "https://stream.zeno.fm/v2zfmxef798uv")!,
+            genre: "Bollywood"
+        ),
+        RadioStation(
+            name: "Bombay Beats (1.FM)",
+            url: URL(string: "https://strmreg.1.fm/bombaybeats_mobile_mp3")!,
+            genre: "Bollywood"
+        ),
+        RadioStation(
+            name: "Tamil 80s Radio",
+            url: URL(string: "https://psrlive2.listenon.in/80?station=tamil80shitsradio")!,
+            genre: "Tamil"
+        ),
+        RadioStation(
+            name: "Mirchi Top 20",
+            url: URL(string: "https://drive.uber.radio/uber/bollywoodnow/icecast.audio")!,
+            genre: "Bollywood"
+        ),
+        RadioStation(
+            name: "Radio Schizoid Psy",
+            url: URL(string: "http://94.130.113.214:8000/schizoid")!,
+            genre: "Psytrance"
+        ),
+        RadioStation(
+            name: "Gensokyo Radio (JP)",
+            url: URL(string: "https://stream.gensokyoradio.net/1")!,
+            genre: "J-Pop/Anime"
+        ),
+        RadioStation(
+            name: "J1 HITS (JP)",
+            url: URL(string: "https://jenny.torontocast.com:2000/stream/J1HITS?_=184325")!,
+            genre: "J-Pop"
+        ),
+        RadioStation(
+            name: "J-Pop Sakura (JP)",
+            url: URL(string: "https://quincy.torontocast.com:2070/stream.mp3")!,
+            genre: "J-Pop"
+        ),
+        RadioStation(
+            name: "Big B Radio K-pop",
+            url: URL(string: "https://antares.dribbcast.com/proxy/kpop?mp=/s")!,
+            genre: "K-Pop"
+        ),
+
+        // MARK: - Thai Music
+        RadioStation(
+            name: "Cool Fahrenheit",
+            url: URL(string: "https://coolism-web.cdn.byteark.com/;stream/1")!,
+            genre: "Thai Pop"
+        ),
+        RadioStation(
+            name: "Flex 104.5",
+            url: URL(string: "https://streaming.flexconnect.net/voiceflex/voiceflex/playlist.m3u8")!,
+            genre: "Thai Pop"
+        ),
+        RadioStation(
+            name: "Smooth 105.5",
+            url: URL(string: "http://rstream.mcot.net:8000/fm1055")!,
+            genre: "Easy Listening"
+        ),
+        RadioStation(
+            name: "RequestRadio Dance",
+            url: URL(string: "https://cast.requestradio.in.th:850//stream/3")!,
+            genre: "Dance"
+        ),
+        RadioStation(
+            name: "RequestRadio Inter",
+            url: URL(string: "https://cast.requestradio.in.th:840//stream/3")!,
+            genre: "World"
+        ),
+        RadioStation(
+            name: "Lanna Radio",
+            url: URL(string: "https://inter.lannaradio.com/radio/8000/radio.mp3")!,
+            genre: "Thai"
+        ),
+        RadioStation(
+            name: "BKK.FM",
+            url: URL(string: "https://rsas.bkk.fm/radio")!,
+            genre: "Alternative"
+        ),
+        RadioStation(
+            name: "Chili Radio Thailand",
+            url: URL(string: "https://stream.chiliradio.app/chiliclassics")!,
+            genre: "Hits"
+        ),
+        RadioStation(
+            name: "MCOT Radio Chiangmai FM100.75",
+            url: URL(string: "https://live-org-01-cdn.mcot.net/RegionRadio/ChiangMai.stream_aac/playlist.m3u8")!,
+            genre: "Thai Pop"
+        ),
+        RadioStation(
+            name: "Talay 90.25 FM",
+            url: URL(string: "https://stream.talay.asia/talay")!,
+            genre: "Thai"
+        ),
+        RadioStation(
+            name: "106 Family News Radio",
+            url: URL(string: "https://radio11.plathong.net/7138/;stream.mp3")!,
+            genre: "Thai"
         ),
 
         // MARK: - Additional SomaFM channels (alphabetical append, March 2026)
@@ -508,11 +748,16 @@ class RadioManager {
         var added = 0
         for defaultStation in Self.defaultStations {
             // Skip if user previously deleted this default
-            if deleted.contains(defaultStation.url.absoluteString) {
+            let wasDeleted = deleted.contains { deletedURL in
+                deletedURL == defaultStation.url.absoluteString ||
+                Self.defaultURLAliases[deletedURL] == defaultStation.url.absoluteString ||
+                Self.defaultURLAliases[defaultStation.url.absoluteString] == deletedURL
+            }
+            if wasDeleted {
                 continue
             }
             // Check if station with same URL already exists
-            let exists = stations.contains { $0.url == defaultStation.url }
+            let exists = stations.contains { areEquivalentStationURLs($0.url, defaultStation.url) }
             if !exists {
                 stations.append(defaultStation)
                 added += 1
@@ -585,7 +830,7 @@ class RadioManager {
         }
     }
     
-    /// Resolve a playlist URL (.pls, .m3u) to get the actual stream URL
+    /// Resolve a playlist URL (.pls, .m3u, .m3u8) to get the actual stream URL
     private func resolvePlaylistURL(_ url: URL, completion: @escaping (URL?) -> Void) {
         NSLog("RadioManager: Resolving playlist URL: %@", url.absoluteString)
         
@@ -617,6 +862,32 @@ class RadioManager {
     private func parsePlaylistForStreamURL(_ content: String, sourceURL: URL) -> URL? {
         let lines = content.components(separatedBy: .newlines)
         let ext = sourceURL.pathExtension.lowercased()
+
+        // HLS manifests:
+        // - Master playlist: return first variant URL (can be relative path)
+        // - Media playlist: keep original manifest URL (stream client follows segments)
+        if ext == "m3u8" || content.contains("#EXTM3U") {
+            if content.uppercased().contains("#EXT-X-STREAM-INF") {
+                for (index, line) in lines.enumerated() {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    guard trimmed.uppercased().hasPrefix("#EXT-X-STREAM-INF") else { continue }
+
+                    var nextIndex = index + 1
+                    while nextIndex < lines.count {
+                        let candidate = lines[nextIndex].trimmingCharacters(in: .whitespaces)
+                        if candidate.isEmpty {
+                            nextIndex += 1
+                            continue
+                        }
+                        if candidate.hasPrefix("#") {
+                            break
+                        }
+                        return resolvedPlaylistEntryURL(candidate, sourceURL: sourceURL)
+                    }
+                }
+            }
+            return sourceURL
+        }
         
         // PLS format
         if ext == "pls" || content.lowercased().contains("[playlist]") {
@@ -625,7 +896,7 @@ class RadioManager {
                 if trimmed.lowercased().hasPrefix("file") {
                     if let equalIndex = trimmed.firstIndex(of: "=") {
                         let urlString = String(trimmed[trimmed.index(after: equalIndex)...])
-                        if let url = URL(string: urlString) {
+                        if let url = resolvedPlaylistEntryURL(urlString, sourceURL: sourceURL) {
                             return url
                         }
                     }
@@ -640,15 +911,36 @@ class RadioManager {
             if trimmed.isEmpty || trimmed.hasPrefix("#") {
                 continue
             }
-            // Check if it's a valid URL
-            if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
-                if let url = URL(string: trimmed) {
-                    return url
-                }
+            if let url = resolvedPlaylistEntryURL(trimmed, sourceURL: sourceURL) {
+                return url
             }
         }
         
         return nil
+    }
+
+    private func resolvedPlaylistEntryURL(_ entry: String, sourceURL: URL) -> URL? {
+        let trimmed = entry.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if trimmed.hasPrefix("//") {
+            return URL(string: "https:\(trimmed)")
+        }
+
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            return URL(string: trimmed)
+        }
+
+        if trimmed.contains("://") {
+            return URL(string: trimmed)
+        }
+
+        if let absolute = URL(string: trimmed, relativeTo: sourceURL)?.absoluteURL {
+            return absolute
+        }
+
+        let base = sourceURL.deletingLastPathComponent()
+        return URL(string: trimmed, relativeTo: base)?.absoluteURL
     }
     
     /// Stop radio playback
@@ -671,6 +963,7 @@ class RadioManager {
         guard currentStation != nil else { return }
         connectionState = .connected
         reconnectAttempts = 0
+        startSomaMetadataFallbackIfNeeded()
         NSLog("RadioManager: Stream connected")
     }
     
@@ -688,18 +981,60 @@ class RadioManager {
         
         connectionState = .connected
         reconnectAttempts = 0
+        startSomaMetadataFallbackIfNeeded()
         NSLog("RadioManager: Cast connected")
     }
     
     /// Called when stream metadata is received (ICY)
     func streamDidReceiveMetadata(_ metadata: [String: String]) {
-        // Extract stream title (format: "Artist - Song" or just station info)
-        if let streamTitle = metadata["StreamTitle"] ?? metadata["icy-name"] {
-            let trimmed = streamTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                currentStreamTitle = trimmed
-                NSLog("RadioManager: Stream title: %@", trimmed)
+        guard let station = currentStation else { return }
+        var candidates: [String] = []
+
+        // If artist and title arrive separately, combine them first.
+        if let artist = metadataValue("artist", in: metadata),
+           let title = metadataValue("title", in: metadata),
+           let normArtist = normalizeMetadataTitle(artist),
+           let normTitle = normalizeMetadataTitle(title) {
+            candidates.append("\(normArtist) - \(normTitle)")
+        }
+
+        // Prefer standard title fields.
+        let preferredKeys = [
+            "StreamTitle", "icy-title", "title", "song", "track",
+            "now_playing", "nowplaying", "np"
+        ]
+        for key in preferredKeys {
+            if let value = metadataValue(key, in: metadata),
+               let normalized = normalizeMetadataTitle(value) {
+                candidates.append(normalized)
             }
+        }
+
+        // Some streams embed StreamTitle in a larger metadata blob value.
+        for (_, rawValue) in metadata {
+            if let embedded = extractEmbeddedStreamTitle(from: rawValue),
+               let normalized = normalizeMetadataTitle(embedded) {
+                candidates.append(normalized)
+            }
+        }
+
+        var seen = Set<String>()
+        for candidate in candidates where seen.insert(candidate).inserted {
+            guard !isLikelyStationLabel(candidate, station: station) else { continue }
+            currentStreamTitle = candidate
+            NSLog("RadioManager: Stream title: %@", candidate)
+            return
+        }
+
+        // `icy-name` is usually a static station label. Only use it for non-Soma
+        // streams when it is clearly not the station name.
+        if somaChannelID(for: station) == nil,
+           let icyName = metadataValue("icy-name", in: metadata)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+           !icyName.isEmpty,
+           !isLikelyStationLabel(icyName, station: station) {
+            currentStreamTitle = icyName
+            NSLog("RadioManager: Stream title: %@", icyName)
         }
     }
     
@@ -759,6 +1094,154 @@ class RadioManager {
         reconnectTimer?.invalidate()
         reconnectTimer = nil
     }
+
+    // MARK: - SomaFM Metadata Fallback
+
+    private func somaChannelID(for station: RadioStation) -> String? {
+        let host = station.url.host?.lowercased() ?? ""
+        guard host.contains("somafm.com") else { return nil }
+
+        let leaf = station.url.lastPathComponent.lowercased()
+        guard !leaf.isEmpty else { return nil }
+
+        // PLS endpoints: /<id>.pls
+        if station.url.pathExtension.lowercased() == "pls" {
+            let channelID = station.url.deletingPathExtension().lastPathComponent.lowercased()
+            return channelID.isEmpty ? nil : channelID
+        }
+
+        // Stream endpoints: /<id>-128-mp3
+        if let dash = leaf.firstIndex(of: "-") {
+            let channelID = String(leaf[..<dash]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return channelID.isEmpty ? nil : channelID
+        }
+
+        let channelID = station.url.deletingPathExtension().lastPathComponent.lowercased()
+        return channelID.isEmpty ? nil : channelID
+    }
+
+    private func metadataValue(_ key: String, in metadata: [String: String]) -> String? {
+        metadata.first { $0.key.caseInsensitiveCompare(key) == .orderedSame }?.value
+    }
+
+    private func extractEmbeddedStreamTitle(from raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Parse `StreamTitle='Artist - Song';` payloads.
+        if let range = trimmed.range(of: "StreamTitle=", options: .caseInsensitive) {
+            let remainder = trimmed[range.upperBound...]
+            if let firstQuote = remainder.firstIndex(where: { $0 == "'" || $0 == "\"" }) {
+                let quote = remainder[firstQuote]
+                let contentStart = remainder.index(after: firstQuote)
+                if let endQuote = remainder[contentStart...].firstIndex(of: quote) {
+                    return String(remainder[contentStart..<endQuote])
+                }
+            }
+            return String(remainder).components(separatedBy: ";").first
+        }
+
+        return nil
+    }
+
+    private func normalizeMetadataTitle(_ raw: String) -> String? {
+        var title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+
+        if let embedded = extractEmbeddedStreamTitle(from: title) {
+            title = embedded.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if (title.hasPrefix("'") && title.hasSuffix("'")) ||
+            (title.hasPrefix("\"") && title.hasSuffix("\"")) {
+            title = String(title.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        guard !title.isEmpty else { return nil }
+
+        // Ignore placeholder/non-song values.
+        let lower = title.lowercased()
+        if lower == "unknown" || lower == "-" || lower == "n/a" {
+            return nil
+        }
+
+        return title
+    }
+
+    private func isLikelyStationLabel(_ value: String, station: RadioStation?) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return true }
+
+        if let stationName = station?.name,
+           normalized.caseInsensitiveCompare(stationName) == .orderedSame {
+            return true
+        }
+
+        let lower = normalized.lowercased()
+        if lower.hasPrefix("somafm") || lower.contains("somafm.com") {
+            return true
+        }
+
+        return false
+    }
+
+    private func startSomaMetadataFallbackIfNeeded() {
+        guard currentStreamTitle == nil else { return }
+        guard let station = currentStation, let channelID = somaChannelID(for: station) else {
+            stopSomaMetadataPolling()
+            currentSomaLastPlaying = nil
+            return
+        }
+
+        if somaMetadataTimer == nil {
+            somaMetadataTimer = Timer.scheduledTimer(withTimeInterval: somaMetadataPollInterval, repeats: true) { [weak self] _ in
+                guard let self = self,
+                      let station = self.currentStation,
+                      let channelID = self.somaChannelID(for: station) else {
+                    return
+                }
+                self.fetchSomaLastPlaying(channelID: channelID, stationID: station.id)
+            }
+        }
+
+        fetchSomaLastPlaying(channelID: channelID, stationID: station.id)
+    }
+
+    private func stopSomaMetadataPolling() {
+        somaMetadataTimer?.invalidate()
+        somaMetadataTimer = nil
+    }
+
+    private func fetchSomaLastPlaying(channelID: String, stationID: UUID) {
+        guard !somaMetadataRequestInFlight else { return }
+        somaMetadataRequestInFlight = true
+
+        URLSession.shared.dataTask(with: somaChannelsURL) { [weak self] data, _, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.somaMetadataRequestInFlight = false
+
+                guard error == nil, let data = data else {
+                    NSLog("RadioManager: Soma metadata fetch failed: %@", error?.localizedDescription ?? "unknown")
+                    return
+                }
+
+                guard let response = try? JSONDecoder().decode(SomaChannelsResponse.self, from: data) else {
+                    NSLog("RadioManager: Soma metadata decode failed")
+                    return
+                }
+
+                guard self.currentStation?.id == stationID else { return }
+
+                let nowPlaying = response.channels.first(where: { $0.id.caseInsensitiveCompare(channelID) == .orderedSame })?.lastPlaying?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                if self.currentStreamTitle == nil {
+                    self.currentSomaLastPlaying = (nowPlaying?.isEmpty == false) ? nowPlaying : nil
+                }
+            }
+        }.resume()
+    }
     
     // MARK: - Status Display
     
@@ -773,7 +1256,7 @@ class RadioManager {
             return "Connection failed: \(message)"
         case .connected:
             // Return stream title if available, otherwise station name
-            if let title = currentStreamTitle {
+            if let title = effectiveStreamTitle {
                 return title
             }
             return currentStation?.name

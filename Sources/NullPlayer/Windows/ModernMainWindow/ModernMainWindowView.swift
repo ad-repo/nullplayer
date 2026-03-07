@@ -125,6 +125,12 @@ class ModernMainWindowView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(windowLayoutDidChange),
                                                 name: .windowLayoutDidChange, object: nil)
 
+        // Observe radio metadata/connection updates for marquee now-playing text.
+        NotificationCenter.default.addObserver(self, selector: #selector(radioMetadataDidChange),
+                                                name: RadioManager.streamMetadataDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(radioConnectionStateDidChange),
+                                                name: RadioManager.connectionStateDidChangeNotification, object: nil)
+
         // Observe main window vis mode changes from context menu
         NotificationCenter.default.addObserver(self, selector: #selector(mainVisSettingsChanged),
                                                 name: NSNotification.Name("MainWindowVisChanged"), object: nil)
@@ -622,29 +628,19 @@ class ModernMainWindowView: NSView {
         self.videoTitle = nil
         self.currentBPM = nil  // Reset BPM for new track
         self.bpmMultiplierState = 2  // Reset multiplier for new track (default to 0.5x)
-        
-        if let track = track {
-            marqueeLayer.text = track.displayTitle.uppercased()
-        } else {
-            marqueeLayer.text = ""
-        }
-        
+        refreshMarqueeText()
         needsDisplay = true
     }
     
     func updateVideoTrackInfo(title: String) {
         self.videoTitle = title
-        marqueeLayer.text = title.uppercased()
+        refreshMarqueeText()
         needsDisplay = true
     }
     
     func clearVideoTrackInfo() {
         self.videoTitle = nil
-        if let track = currentTrack {
-            marqueeLayer.text = track.displayTitle.uppercased()
-        } else {
-            marqueeLayer.text = ""
-        }
+        refreshMarqueeText()
         needsDisplay = true
     }
     
@@ -698,6 +694,7 @@ class ModernMainWindowView: NSView {
         renderer = ModernSkinRenderer(skin: skin)
         setupGridBackground(skin: skin)
         marqueeLayer.configure(with: skin)
+        refreshMarqueeText()
         updateMarqueeForMode()
         updateCornerMask()
         
@@ -764,6 +761,37 @@ class ModernMainWindowView: NSView {
             adjacentEdges = newEdges
             needsDisplay = true
         }
+    }
+
+    @objc private func radioMetadataDidChange() {
+        guard RadioManager.shared.isActive else { return }
+        refreshMarqueeText()
+        needsDisplay = true
+    }
+
+    @objc private func radioConnectionStateDidChange() {
+        guard RadioManager.shared.isActive else { return }
+        refreshMarqueeText()
+        needsDisplay = true
+    }
+
+    private func marqueeDisplayText() -> String {
+        if let title = videoTitle {
+            return title
+        }
+
+        if RadioManager.shared.isActive {
+            if let status = RadioManager.shared.statusText, !status.isEmpty {
+                return status
+            }
+            return currentTrack?.displayTitle ?? "Radio"
+        }
+
+        return currentTrack?.displayTitle ?? ""
+    }
+
+    private func refreshMarqueeText() {
+        marqueeLayer.text = marqueeDisplayText().uppercased()
     }
     
     
