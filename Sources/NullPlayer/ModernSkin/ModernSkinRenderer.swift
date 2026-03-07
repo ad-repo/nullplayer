@@ -102,35 +102,126 @@ class ModernSkinRenderer {
         }
     }
     
+    private func normalizedSegments(_ segments: [ClosedRange<CGFloat>], limit: CGFloat) -> [ClosedRange<CGFloat>] {
+        guard limit > 0 else { return [] }
+        return segments.compactMap { interval in
+            let lower = max(0, min(limit, interval.lowerBound))
+            let upper = max(0, min(limit, interval.upperBound))
+            guard upper > lower else { return nil }
+            return lower...upper
+        }
+    }
+
+    private func fallbackOcclusionSegments(for bounds: NSRect, adjacentEdges: AdjacentEdges) -> EdgeOcclusionSegments {
+        guard !adjacentEdges.isEmpty else { return .empty }
+        let fullX: ClosedRange<CGFloat> = 0...bounds.width
+        let fullY: ClosedRange<CGFloat> = 0...bounds.height
+        return EdgeOcclusionSegments(
+            top: adjacentEdges.contains(.top) ? [fullX] : [],
+            bottom: adjacentEdges.contains(.bottom) ? [fullX] : [],
+            left: adjacentEdges.contains(.left) ? [fullY] : [],
+            right: adjacentEdges.contains(.right) ? [fullY] : []
+        )
+    }
+
+    private func edgeStripRects(for bounds: NSRect, segments: EdgeOcclusionSegments, thickness: CGFloat) -> [CGRect] {
+        guard thickness > 0 else { return [] }
+        var strips: [CGRect] = []
+
+        for interval in normalizedSegments(segments.top, limit: bounds.width) {
+            let width = interval.upperBound - interval.lowerBound
+            guard width > 0 else { continue }
+            strips.append(CGRect(x: bounds.minX + interval.lowerBound,
+                                 y: bounds.maxY - thickness,
+                                 width: width,
+                                 height: thickness))
+        }
+        for interval in normalizedSegments(segments.bottom, limit: bounds.width) {
+            let width = interval.upperBound - interval.lowerBound
+            guard width > 0 else { continue }
+            strips.append(CGRect(x: bounds.minX + interval.lowerBound,
+                                 y: bounds.minY,
+                                 width: width,
+                                 height: thickness))
+        }
+        for interval in normalizedSegments(segments.left, limit: bounds.height) {
+            let height = interval.upperBound - interval.lowerBound
+            guard height > 0 else { continue }
+            strips.append(CGRect(x: bounds.minX,
+                                 y: bounds.minY + interval.lowerBound,
+                                 width: thickness,
+                                 height: height))
+        }
+        for interval in normalizedSegments(segments.right, limit: bounds.height) {
+            let height = interval.upperBound - interval.lowerBound
+            guard height > 0 else { continue }
+            strips.append(CGRect(x: bounds.maxX - thickness,
+                                 y: bounds.minY + interval.lowerBound,
+                                 width: thickness,
+                                 height: height))
+        }
+        return strips
+    }
+
     /// Draw the window border with optional glow.
-    /// When `adjacentEdges` is non-empty and `seamlessDocking` > 0 in the skin config,
-    /// borders on those edges are faded or fully hidden to make docked windows look seamless.
-    func drawWindowBorder(in bounds: NSRect, context: CGContext, adjacentEdges: AdjacentEdges = [], sharpCorners: CACornerMask = []) {
+    /// When occlusion segments are present and `seamlessDocking` > 0,
+    /// border suppression is applied only on the joined edge intervals.
+    func drawWindowBorder(
+        in bounds: NSRect,
+        context: CGContext,
+        adjacentEdges: AdjacentEdges = [],
+        sharpCorners: CACornerMask = [],
+        occlusionSegments: EdgeOcclusionSegments = .empty
+    ) {
         let borderWidth = skin.config.window.borderWidth ?? 1.0
         let cornerRadius = skin.config.window.cornerRadius ?? 0
         let borderColor = skin.borderColor
         let backgroundOpacity = min(1.0, max(0.0, skin.config.window.opacity ?? 1.0))
         let seamless = min(1.0, max(0.0, skin.config.window.seamlessDocking ?? 0))
+        let glowRadius = (skin.config.glow.radius ?? 8.0)
 
-        context.saveGState()
-
-        // For full seamless (1.0), clip away adjacent edges entirely before drawing
-        if seamless >= 1.0 && !adjacentEdges.isEmpty {
-            var clipRect = bounds
-            if adjacentEdges.contains(.top)    { clipRect.size.height -= borderWidth }
-            if adjacentEdges.contains(.bottom) { clipRect.origin.y += borderWidth; clipRect.size.height -= borderWidth }
-            if adjacentEdges.contains(.left)   { clipRect.origin.x += borderWidth; clipRect.size.width -= borderWidth }
-            if adjacentEdges.contains(.right)  { clipRect.size.width -= borderWidth }
-            context.clip(to: clipRect)
-        }
+        let effectiveSegments = occlusionSegments.isEmpty
+            ? fallbackOcclusionSegments(for: bounds, adjacentEdges: adjacentEdges)
+            : occlusionSegments
 
         let borderRect = bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
         let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, sharpCorners: sharpCorners)
-        
-        // Glow effect (draw border slightly larger and blurred behind)
+
+        if seamless >= 1.0 && !effectiveSegments.isEmpty {
+            let stripThickness = max(borderWidth, borderWidth + glowRadius * 0.75)
+            let strips = edgeStripRects(for: bounds, segments: effectiveSegments, thickness: stripThickness)
+
+            context.saveGState()
+            if !strips.isEmpty {
+                let clipPath = CGMutablePath()
+                clipPath.addRect(bounds)
+                for strip in strips { clipPath.addRect(strip) }
+                context.addPath(clipPath)
+                context.clip(using: .evenOdd)
+            }
+
+            if skin.config.glow.enabled {
+                context.saveGState()
+                context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5).cgColor)
+                context.setStrokeColor(borderColor.cgColor)
+                context.setLineWidth(borderWidth)
+                context.addPath(path)
+                context.strokePath()
+                context.restoreGState()
+            }
+
+            context.setStrokeColor(borderColor.cgColor)
+            context.setLineWidth(borderWidth)
+            context.addPath(path)
+            context.strokePath()
+            context.restoreGState()
+            return
+        }
+
+        context.saveGState()
+
         if skin.config.glow.enabled {
             context.saveGState()
-            let glowRadius = skin.config.glow.radius ?? 8.0
             context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5).cgColor)
             context.setStrokeColor(borderColor.cgColor)
             context.setLineWidth(borderWidth)
@@ -138,33 +229,22 @@ class ModernSkinRenderer {
             context.strokePath()
             context.restoreGState()
         }
-        
-        // Actual border
+
         context.setStrokeColor(borderColor.cgColor)
         context.setLineWidth(borderWidth)
         context.addPath(path)
         context.strokePath()
-        
         context.restoreGState()
-        
-        // For partial seamless (0 < value < 1), overdraw adjacent edges
-        // with background color at seamlessDocking alpha to progressively fade them
-        if seamless > 0 && seamless < 1.0 && !adjacentEdges.isEmpty {
+
+        // For partial seamless (0 < value < 1), fade only the joined edge segments.
+        if seamless > 0 && seamless < 1.0 && !effectiveSegments.isEmpty {
             let bgColor = skin.backgroundColor
+            let strips = edgeStripRects(for: bounds, segments: effectiveSegments, thickness: borderWidth)
+            guard !strips.isEmpty else { return }
             context.saveGState()
             context.setFillColor(bgColor.withAlphaComponent(backgroundOpacity * seamless).cgColor)
-            let bw = borderWidth
-            if adjacentEdges.contains(.top) {
-                context.fill(CGRect(x: bounds.minX, y: bounds.maxY - bw, width: bounds.width, height: bw))
-            }
-            if adjacentEdges.contains(.bottom) {
-                context.fill(CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bw))
-            }
-            if adjacentEdges.contains(.left) {
-                context.fill(CGRect(x: bounds.minX, y: bounds.minY, width: bw, height: bounds.height))
-            }
-            if adjacentEdges.contains(.right) {
-                context.fill(CGRect(x: bounds.maxX - bw, y: bounds.minY, width: bw, height: bounds.height))
+            for strip in strips {
+                context.fill(strip)
             }
             context.restoreGState()
         }

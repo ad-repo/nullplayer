@@ -80,6 +80,7 @@ class ModernMainWindowView: NSView {
     /// Which edges are adjacent to another docked window (for seamless border rendering)
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
+    private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
 
     // MARK: - Initialization
     
@@ -285,7 +286,7 @@ class ModernMainWindowView: NSView {
         context.saveGState()
         context.clip(to: dirtyRect)
         renderer.drawWindowBackground(in: windowBounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
-        renderer.drawWindowBorder(in: windowBounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBorder(in: windowBounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
         context.restoreGState()
         
         // 2. Title bar -- only if not hidden and dirty rect overlaps
@@ -357,7 +358,7 @@ class ModernMainWindowView: NSView {
     private func drawShadeMode(in bounds: NSRect, context: CGContext) {
         // Background
         renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
-        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
 
         // In shade mode, draw a compact horizontal layout in the available space
         // The window is 18 base units tall (22.5px scaled)
@@ -756,9 +757,11 @@ class ModernMainWindowView: NSView {
         guard let window = window else { return }
         let newEdges = WindowManager.shared.computeAdjacentEdges(for: window)
         let newSharp = WindowManager.shared.computeSharpCorners(for: window)
-        if newEdges != adjacentEdges || newSharp != sharpCorners {
+        let newSegments = WindowManager.shared.computeEdgeOcclusionSegments(for: window)
+        if newEdges != adjacentEdges || newSharp != sharpCorners || newSegments != edgeOcclusionSegments {
             adjacentEdges = newEdges
             sharpCorners = newSharp
+            edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
     }

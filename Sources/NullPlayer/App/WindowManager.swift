@@ -15,6 +15,21 @@ enum TimeDisplayMode: String {
     case remaining
 }
 
+/// Joined edge intervals for seamless modern window border suppression.
+/// Top/bottom ranges are in local X coordinates; left/right ranges are in local Y coordinates.
+struct EdgeOcclusionSegments: Equatable {
+    var top: [ClosedRange<CGFloat>] = []
+    var bottom: [ClosedRange<CGFloat>] = []
+    var left: [ClosedRange<CGFloat>] = []
+    var right: [ClosedRange<CGFloat>] = []
+
+    static let empty = EdgeOcclusionSegments()
+
+    var isEmpty: Bool {
+        top.isEmpty && bottom.isEmpty && left.isEmpty && right.isEmpty
+    }
+}
+
 /// Manages all application windows and their interactions
 /// Handles window docking, snapping, and coordinated movement
 class WindowManager {
@@ -306,6 +321,7 @@ class WindowManager {
 
     /// Per-notification-cycle caches for adjacency/sharp-corners computation
     private var adjacencyCache: [ObjectIdentifier: AdjacentEdges] = [:]
+    private var edgeOcclusionSegmentsCache: [ObjectIdentifier: EdgeOcclusionSegments] = [:]
     private var sharpCornersCache: [ObjectIdentifier: CACornerMask] = [:]
 
     /// Windows that were attached as children for coordinated minimize (for restore)
@@ -2248,8 +2264,20 @@ class WindowManager {
     /// Post a windowLayoutDidChange notification, clearing per-cycle caches first.
     private func postLayoutChangeNotification() {
         adjacencyCache.removeAll(keepingCapacity: true)
+        edgeOcclusionSegmentsCache.removeAll(keepingCapacity: true)
         sharpCornersCache.removeAll(keepingCapacity: true)
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+    }
+
+    /// Compute joined edge intervals in window-local coordinates for modern seamless border rendering.
+    /// Uses a per-notification-cycle cache so multiple observers share one computation.
+    func computeEdgeOcclusionSegments(for window: NSWindow) -> EdgeOcclusionSegments {
+        guard isModernUIEnabled else { return .empty }
+        let key = ObjectIdentifier(window)
+        if let cached = edgeOcclusionSegmentsCache[key] { return cached }
+        let result = _computeEdgeOcclusionSegmentsImpl(for: window)
+        edgeOcclusionSegmentsCache[key] = result
+        return result
     }
 
     /// Compute which edges of a window are adjacent to another visible managed window.
@@ -2258,28 +2286,101 @@ class WindowManager {
         guard isModernUIEnabled else { return [] }
         let key = ObjectIdentifier(window)
         if let cached = adjacencyCache[key] { return cached }
-        let result = _computeAdjacentEdgesImpl(for: window)
+        let segments = computeEdgeOcclusionSegments(for: window)
+        let result = adjacentEdges(from: segments)
         adjacencyCache[key] = result
         return result
     }
 
-    private func _computeAdjacentEdgesImpl(for window: NSWindow) -> AdjacentEdges {
+    private func adjacentEdges(from segments: EdgeOcclusionSegments) -> AdjacentEdges {
         var edges: AdjacentEdges = []
+        if !segments.top.isEmpty { edges.insert(.top) }
+        if !segments.bottom.isEmpty { edges.insert(.bottom) }
+        if !segments.left.isEmpty { edges.insert(.left) }
+        if !segments.right.isEmpty { edges.insert(.right) }
+        return edges
+    }
+
+    private func _computeEdgeOcclusionSegmentsImpl(for window: NSWindow) -> EdgeOcclusionSegments {
         let frame = window.frame
-        for other in allWindows() where other !== window {
-            let of = other.frame
-            let hOverlap = frame.minX < of.maxX && frame.maxX > of.minX
-            let vOverlap = frame.minY < of.maxY && frame.maxY > of.minY
+        let otherFrames = allWindows().compactMap { other in
+            other === window ? nil : other.frame
+        }
+        return Self.computeEdgeOcclusionSegments(frame: frame, otherFrames: otherFrames, dockThreshold: dockThreshold)
+    }
+
+    /// Pure geometry helper for interval-based edge occlusion. Used by runtime logic and unit tests.
+    static func computeEdgeOcclusionSegments(frame: NSRect, otherFrames: [NSRect], dockThreshold: CGFloat) -> EdgeOcclusionSegments {
+        var top: [ClosedRange<CGFloat>] = []
+        var bottom: [ClosedRange<CGFloat>] = []
+        var left: [ClosedRange<CGFloat>] = []
+        var right: [ClosedRange<CGFloat>] = []
+
+        let width = frame.width
+        let height = frame.height
+
+        for other in otherFrames {
+            let hOverlapMin = max(frame.minX, other.minX)
+            let hOverlapMax = min(frame.maxX, other.maxX)
+            let hOverlap = hOverlapMax > hOverlapMin
+
+            let vOverlapMin = max(frame.minY, other.minY)
+            let vOverlapMax = min(frame.maxY, other.maxY)
+            let vOverlap = vOverlapMax > vOverlapMin
+
             if hOverlap {
-                if abs(frame.maxY - of.minY) <= dockThreshold { edges.insert(.top) }
-                if abs(frame.minY - of.maxY) <= dockThreshold { edges.insert(.bottom) }
+                if abs(frame.maxY - other.minY) <= dockThreshold {
+                    let start = max(0, hOverlapMin - frame.minX)
+                    let end = min(width, hOverlapMax - frame.minX)
+                    if end > start { top.append(start...end) }
+                }
+                if abs(frame.minY - other.maxY) <= dockThreshold {
+                    let start = max(0, hOverlapMin - frame.minX)
+                    let end = min(width, hOverlapMax - frame.minX)
+                    if end > start { bottom.append(start...end) }
+                }
             }
+
             if vOverlap {
-                if abs(frame.maxX - of.minX) <= dockThreshold { edges.insert(.right) }
-                if abs(frame.minX - of.maxX) <= dockThreshold { edges.insert(.left) }
+                if abs(frame.maxX - other.minX) <= dockThreshold {
+                    let start = max(0, vOverlapMin - frame.minY)
+                    let end = min(height, vOverlapMax - frame.minY)
+                    if end > start { right.append(start...end) }
+                }
+                if abs(frame.minX - other.maxX) <= dockThreshold {
+                    let start = max(0, vOverlapMin - frame.minY)
+                    let end = min(height, vOverlapMax - frame.minY)
+                    if end > start { left.append(start...end) }
+                }
             }
         }
-        return edges
+
+        return EdgeOcclusionSegments(
+            top: mergeOcclusionIntervals(top),
+            bottom: mergeOcclusionIntervals(bottom),
+            left: mergeOcclusionIntervals(left),
+            right: mergeOcclusionIntervals(right)
+        )
+    }
+
+    private static func mergeOcclusionIntervals(_ intervals: [ClosedRange<CGFloat>], epsilon: CGFloat = 0.5) -> [ClosedRange<CGFloat>] {
+        guard !intervals.isEmpty else { return [] }
+        let sorted = intervals.sorted { lhs, rhs in
+            if lhs.lowerBound == rhs.lowerBound { return lhs.upperBound < rhs.upperBound }
+            return lhs.lowerBound < rhs.lowerBound
+        }
+
+        var merged: [ClosedRange<CGFloat>] = [sorted[0]]
+        for interval in sorted.dropFirst() {
+            guard let last = merged.last else { continue }
+            if interval.lowerBound <= last.upperBound + epsilon {
+                let combined = last.lowerBound...max(last.upperBound, interval.upperBound)
+                merged[merged.count - 1] = combined
+            } else {
+                merged.append(interval)
+            }
+        }
+        return merged
     }
 
     /// Returns a CACornerMask indicating which corners should be sharp

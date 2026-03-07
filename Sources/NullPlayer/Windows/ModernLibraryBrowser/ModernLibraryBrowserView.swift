@@ -417,6 +417,7 @@ class ModernLibraryBrowserView: NSView {
     /// Which edges are adjacent to another docked window (for seamless border rendering)
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
+    private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
     
     // Button/drag state
     private var pressedButton: LibraryBrowserButtonType?
@@ -674,7 +675,7 @@ class ModernLibraryBrowserView: NSView {
         if isShadeMode {
             // Draw shade mode
             renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
-            renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+            renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
             
             // Draw title text centered (using renderer for image text support)
             let shadeScale = ModernSkinElements.scaleFactor
@@ -695,7 +696,7 @@ class ModernLibraryBrowserView: NSView {
         
         // Normal mode - bottom-left origin (no coordinate flipping)
         renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
-        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
         
         // Title bar, close, shade buttons use base (unscaled) coordinates
         // because the renderer's scaledRect() multiplies by scaleFactor
@@ -5334,9 +5335,11 @@ class ModernLibraryBrowserView: NSView {
         guard let window = window else { return }
         let newEdges = WindowManager.shared.computeAdjacentEdges(for: window)
         let newSharp = WindowManager.shared.computeSharpCorners(for: window)
-        if newEdges != adjacentEdges || newSharp != sharpCorners {
+        let newSegments = WindowManager.shared.computeEdgeOcclusionSegments(for: window)
+        if newEdges != adjacentEdges || newSharp != sharpCorners || newSegments != edgeOcclusionSegments {
             adjacentEdges = newEdges
             sharpCorners = newSharp
+            edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
     }

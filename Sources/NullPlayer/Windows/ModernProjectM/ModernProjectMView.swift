@@ -75,6 +75,7 @@ class ModernProjectMView: NSView {
     /// Which edges are adjacent to another docked window (for seamless border rendering)
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
+    private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
     
     // MARK: - Initialization
     
@@ -218,7 +219,7 @@ class ModernProjectMView: NSView {
         renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
 
         // Draw window border with glow (seamless docking suppresses adjacent edges)
-        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
         
         // Draw title bar -- always in shade mode, gated by HT otherwise
         if isShadeMode || !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
@@ -267,9 +268,11 @@ class ModernProjectMView: NSView {
         guard let window = window else { return }
         let newEdges = WindowManager.shared.computeAdjacentEdges(for: window)
         let newSharp = WindowManager.shared.computeSharpCorners(for: window)
-        if newEdges != adjacentEdges || newSharp != sharpCorners {
+        let newSegments = WindowManager.shared.computeEdgeOcclusionSegments(for: window)
+        if newEdges != adjacentEdges || newSharp != sharpCorners || newSegments != edgeOcclusionSegments {
             adjacentEdges = newEdges
             sharpCorners = newSharp
+            edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
     }
