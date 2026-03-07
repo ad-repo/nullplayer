@@ -132,6 +132,7 @@ class RadioManager {
         "https://wgbh-live.streamguys1.com/wgbh.mp3": "https://wgbh-live.streamguys1.com/wgbh"
     ]
     private let ratingsStore = RadioStationRatingsStore.shared
+    private let foldersStore = RadioStationFoldersStore.shared
     
     /// URLs of default stations the user has intentionally deleted (won't be re-added)
     private var deletedDefaultURLs: Set<String> {
@@ -197,6 +198,10 @@ class RadioManager {
     private func saveStations() {
         guard let data = try? JSONEncoder().encode(stations) else { return }
         UserDefaults.standard.set(data, forKey: stationsKey)
+    }
+
+    private func postStationsDidChange() {
+        NotificationCenter.default.post(name: Self.stationsDidChangeNotification, object: self)
     }
     
     /// Default stations to show for new users
@@ -1095,6 +1100,7 @@ class RadioManager {
             let oldURL = stations[index].url
             if oldURL != station.url {
                 moveRating(fromURL: oldURL, toURL: station.url)
+                foldersStore.moveStationURLReferences(from: oldURL, to: station.url)
             }
             stations[index] = station
             NSLog("RadioManager: Updated station '%@'", station.name)
@@ -1111,6 +1117,7 @@ class RadioManager {
             NSLog("RadioManager: Tracking deleted default station '%@'", station.name)
         }
         removeRating(for: station)
+        foldersStore.removeStationURLEverywhere(station.url)
         stations.removeAll { $0.id == station.id }
         NSLog("RadioManager: Removed station '%@'", station.name)
     }
@@ -1170,6 +1177,7 @@ class RadioManager {
     /// Set a station rating on a 0-5 scale (0 clears the rating).
     func setRating(_ rating: Int, for station: RadioStation) {
         ratingsStore.setRating(rating, for: station.url)
+        postStationsDidChange()
     }
 
     /// Move an existing rating from an old stream URL to a new URL.
@@ -1180,6 +1188,331 @@ class RadioManager {
     /// Remove a station's persisted rating.
     func removeRating(for station: RadioStation) {
         ratingsStore.removeRating(for: station.url)
+        postStationsDidChange()
+    }
+
+    // MARK: - Folder Organization
+
+    func userRadioFolders() -> [RadioUserFolder] {
+        foldersStore.folders()
+    }
+
+    @discardableResult
+    func createUserFolder(named name: String) -> RadioUserFolder? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if userRadioFolders().contains(where: { $0.name.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) {
+            return nil
+        }
+        let folder = foldersStore.createFolder(name: trimmed)
+        if folder != nil {
+            postStationsDidChange()
+        }
+        return folder
+    }
+
+    @discardableResult
+    func renameUserFolder(id: UUID, to name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if userRadioFolders().contains(where: { $0.id != id && $0.name.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) {
+            return false
+        }
+        let renamed = foldersStore.renameFolder(id: id, name: trimmed)
+        if renamed {
+            postStationsDidChange()
+        }
+        return renamed
+    }
+
+    @discardableResult
+    func deleteUserFolder(id: UUID) -> Bool {
+        let deleted = foldersStore.deleteFolder(id: id)
+        if deleted {
+            postStationsDidChange()
+        }
+        return deleted
+    }
+
+    @discardableResult
+    func addStation(_ station: RadioStation, toUserFolderID folderID: UUID) -> Bool {
+        let added = foldersStore.addStationURL(station.url, toFolder: folderID)
+        if added {
+            postStationsDidChange()
+        }
+        return added
+    }
+
+    @discardableResult
+    func removeStation(_ station: RadioStation, fromUserFolderID folderID: UUID) -> Bool {
+        let removed = foldersStore.removeStationURL(station.url, fromFolder: folderID)
+        if removed {
+            postStationsDidChange()
+        }
+        return removed
+    }
+
+    func userFolderIDs(containing station: RadioStation) -> Set<UUID> {
+        var ids = foldersStore.folderIDs(containing: station.url)
+        if let alias = Self.defaultURLAliases[station.url.absoluteString],
+           let aliasURL = URL(string: alias) {
+            ids.formUnion(foldersStore.folderIDs(containing: aliasURL))
+        }
+        return ids
+    }
+
+    func isStation(_ station: RadioStation, inUserFolderID folderID: UUID) -> Bool {
+        userFolderIDs(containing: station).contains(folderID)
+    }
+
+    func internetRadioFolderDescriptors() -> [RadioFolderDescriptor] {
+        let genres = availableGenres()
+        let regions = availableRegions()
+        let userFolders = userRadioFolders()
+
+        var result: [RadioFolderDescriptor] = [
+            RadioFolderDescriptor(
+                id: RadioFolderKind.allStations.id,
+                title: "All Stations",
+                kind: .allStations,
+                parentID: nil,
+                sortOrder: 10,
+                hasChildren: false
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.favorites.id,
+                title: "Favorites",
+                kind: .favorites,
+                parentID: nil,
+                sortOrder: 20,
+                hasChildren: false
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.topRated.id,
+                title: "Top Rated",
+                kind: .topRated,
+                parentID: nil,
+                sortOrder: 30,
+                hasChildren: false
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.unrated.id,
+                title: "Unrated",
+                kind: .unrated,
+                parentID: nil,
+                sortOrder: 40,
+                hasChildren: false
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.recentlyPlayed.id,
+                title: "Recently Played",
+                kind: .recentlyPlayed,
+                parentID: nil,
+                sortOrder: 50,
+                hasChildren: false
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.byGenre.id,
+                title: "By Genre",
+                kind: .byGenre,
+                parentID: nil,
+                sortOrder: 100,
+                hasChildren: !genres.isEmpty
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.byRegion.id,
+                title: "By Region",
+                kind: .byRegion,
+                parentID: nil,
+                sortOrder: 200,
+                hasChildren: !regions.isEmpty
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.userFoldersRoot.id,
+                title: "My Folders",
+                kind: .userFoldersRoot,
+                parentID: nil,
+                sortOrder: 300,
+                hasChildren: !userFolders.isEmpty
+            )
+        ]
+
+        for (index, genre) in genres.enumerated() {
+            result.append(
+                RadioFolderDescriptor(
+                    id: RadioFolderKind.genre(genre).id,
+                    title: genre,
+                    kind: .genre(genre),
+                    parentID: RadioFolderKind.byGenre.id,
+                    sortOrder: 1000 + index,
+                    hasChildren: false
+                )
+            )
+        }
+
+        for (index, region) in regions.enumerated() {
+            result.append(
+                RadioFolderDescriptor(
+                    id: RadioFolderKind.region(region).id,
+                    title: region,
+                    kind: .region(region),
+                    parentID: RadioFolderKind.byRegion.id,
+                    sortOrder: 2000 + index,
+                    hasChildren: false
+                )
+            )
+        }
+
+        for (index, folder) in userFolders.enumerated() {
+            result.append(
+                RadioFolderDescriptor(
+                    id: RadioFolderKind.manual(folder.id).id,
+                    title: folder.name,
+                    kind: .manual(folder.id),
+                    parentID: RadioFolderKind.userFoldersRoot.id,
+                    sortOrder: 3000 + index,
+                    hasChildren: false
+                )
+            )
+        }
+
+        return result
+    }
+
+    func stations(inFolder kind: RadioFolderKind) -> [RadioStation] {
+        switch kind {
+        case .allStations:
+            return stationsSortedByGenreAndName(stations)
+        case .favorites:
+            let filtered = stations.filter { rating(for: $0) >= 4 }
+            return stationsSortedByName(filtered)
+        case .topRated:
+            return stations
+                .map { ($0, rating(for: $0)) }
+                .filter { $0.1 > 0 }
+                .sorted {
+                    if $0.1 != $1.1 { return $0.1 > $1.1 }
+                    return $0.0.name.localizedCaseInsensitiveCompare($1.0.name) == .orderedAscending
+                }
+                .map(\.0)
+        case .unrated:
+            let filtered = stations.filter { rating(for: $0) == 0 }
+            return stationsSortedByName(filtered)
+        case .recentlyPlayed:
+            let history = foldersStore.lastPlayedTimestampsByURL()
+            return stations
+                .compactMap { station -> (RadioStation, Date)? in
+                    if let date = history[station.url.absoluteString] {
+                        return (station, date)
+                    }
+                    if let alias = Self.defaultURLAliases[station.url.absoluteString], let date = history[alias] {
+                        return (station, date)
+                    }
+                    return nil
+                }
+                .sorted { $0.1 > $1.1 }
+                .map(\.0)
+        case .genre(let genre):
+            let target = genre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let filtered = stations.filter { ($0.genre ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == target }
+            return stationsSortedByName(filtered)
+        case .region(let region):
+            let filtered = stations.filter { derivedRegion(for: $0) == region }
+            return stationsSortedByName(filtered)
+        case .manual(let folderID):
+            let urls = foldersStore.stationURLs(inFolder: folderID)
+            let filtered = stations.filter { station in
+                if urls.contains(station.url.absoluteString) { return true }
+                if let alias = Self.defaultURLAliases[station.url.absoluteString] {
+                    return urls.contains(alias)
+                }
+                return false
+            }
+            return stationsSortedByName(filtered)
+        case .byGenre, .byRegion, .userFoldersRoot:
+            return []
+        }
+    }
+
+    private func stationsSortedByName(_ items: [RadioStation]) -> [RadioStation] {
+        items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func stationsSortedByGenreAndName(_ items: [RadioStation]) -> [RadioStation] {
+        items.sorted { a, b in
+            let ga = a.genre ?? ""
+            let gb = b.genre ?? ""
+            if ga != gb {
+                if ga.isEmpty { return false }
+                if gb.isEmpty { return true }
+                return ga.localizedCaseInsensitiveCompare(gb) == .orderedAscending
+            }
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+    }
+
+    private func availableGenres() -> [String] {
+        let genres = Set(stations.compactMap { station -> String? in
+            let trimmed = (station.genre ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        })
+        return genres.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func availableRegions() -> [String] {
+        let regions = Set(stations.map { derivedRegion(for: $0) })
+        return regions.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func derivedRegion(for station: RadioStation) -> String {
+        let text = "\(station.name) \(station.genre ?? "") \(station.url.host ?? "")".lowercased()
+
+        if containsAny(text, [
+            "brazil", "argentina", "colombia", "chile", "peru", "ecuador",
+            "venezuela", "bolivia", "paraguay", "uruguay", "medellin",
+            "bogota", "santiago", "asuncion", "guayaquil", "la paz"
+        ]) {
+            return "South America"
+        }
+
+        if containsAny(text, [
+            "jamaica", "barbados", "trinidad", "caribbean", "dancehall", "soca"
+        ]) {
+            return "Caribbean"
+        }
+
+        if containsAny(text, [
+            "africa", "abidjan", "lagos", "dakar", "senegal", "ivoire", "afro"
+        ]) {
+            return "Africa"
+        }
+
+        if containsAny(text, [
+            "india", "hindi", "tamil", "thai", "japan", "k-pop", "kpop", "asia",
+            "bollywood", "bangkok", "korea", "gensokyo"
+        ]) {
+            return "Asia"
+        }
+
+        if containsAny(text, [
+            "london", "uk", "france", "germany", "spain", "italy", "netherlands",
+            "sweden", "norway", "belgium", "austria", "europe", "rtl2", "qmusic",
+            "orf", "studio brussel", "los 40", "capital fm"
+        ]) {
+            return "Europe"
+        }
+
+        if containsAny(text, [
+            "somafm", "npr", "kexp", "wgbh", "wfmu", "seattle", "new orleans", "boston"
+        ]) {
+            return "North America"
+        }
+
+        return "Global"
+    }
+
+    private func containsAny(_ haystack: String, _ needles: [String]) -> Bool {
+        needles.contains(where: { haystack.contains($0) })
     }
     
     // MARK: - Playback
@@ -1190,6 +1523,8 @@ class RadioManager {
         currentStation = station
         connectionState = .connecting
         reconnectAttempts = 0
+        foldersStore.recordPlayed(station.url)
+        postStationsDidChange()
         
         NSLog("RadioManager: Playing station '%@' at %@", station.name, station.url.absoluteString)
         

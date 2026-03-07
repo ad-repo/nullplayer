@@ -283,6 +283,13 @@ class ModernLibraryBrowserView: NSView {
     
     // Cached data - Radio
     private var cachedRadioStations: [RadioStation] = []
+    private var cachedRadioFolders: [RadioFolderDescriptor] = []
+    private var expandedRadioFolders: Set<String> = [
+        RadioFolderKind.byGenre.id,
+        RadioFolderKind.byRegion.id,
+        RadioFolderKind.userFoldersRoot.id
+    ]
+    private var selectedRadioFolderID: String = RadioFolderKind.allStations.id
     private var activeRadioStationSheet: AddRadioStationSheet?
     
     // Cached data - Video (Plex)
@@ -422,6 +429,13 @@ class ModernLibraryBrowserView: NSView {
     private var activeEditAlbumTagsPanel: EditAlbumTagsPanel?
     private var activeEditVideoTagsPanel: EditVideoTagsPanel?
     private struct SeasonRef { let season: LocalSeason; let showTitle: String }
+    private struct RadioFolderMembershipAction {
+        let station: RadioStation
+        let folderID: UUID
+    }
+    private struct RadioFolderRenameAction { let folderID: UUID }
+    private struct RadioFolderDeleteAction { let folderID: UUID }
+    private struct RadioFolderStationAction { let station: RadioStation }
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     private var isDraggingScrollbar = false
@@ -3148,6 +3162,32 @@ class ModernLibraryBrowserView: NSView {
             }
         }
 
+        if case .radioFolder(let folder) = item.type {
+            let indent = CGFloat(item.indentLevel) * 16
+            let inExpandZone = point.x < Layout.borderWidth + indent + 20
+
+            if folder.hasChildren && inExpandZone {
+                toggleExpand(item)
+                return
+            }
+
+            if folder.kind.isStationContainer && selectedRadioFolderID != folder.id {
+                selectedRadioFolderID = folder.id
+                buildRadioStationItems()
+            } else if folder.hasChildren && event.clickCount == 2 {
+                toggleExpand(item)
+                return
+            }
+
+            if let updatedIndex = displayItems.firstIndex(where: { $0.id == folder.id }) {
+                selectedIndices = [updatedIndex]
+            } else {
+                selectedIndices = [index]
+            }
+            needsDisplay = true
+            return
+        }
+
         if let clickedStar = hitTestInternetRadioRating(at: point, itemIndex: index),
            case .radioStation(let station) = item.type {
             let currentRating = RadioManager.shared.rating(for: station)
@@ -3379,6 +3419,8 @@ class ModernLibraryBrowserView: NSView {
         let menu = NSMenu()
         let addItem = NSMenuItem(title: "Add Station...", action: #selector(showAddRadioStationDialog), keyEquivalent: "")
         addItem.target = self; menu.addItem(addItem)
+        let addFolderItem = NSMenuItem(title: "New Folder...", action: #selector(showCreateRadioFolderDialog), keyEquivalent: "")
+        addFolderItem.target = self; menu.addItem(addFolderItem)
         menu.addItem(NSMenuItem.separator())
         let addDefaultsItem = NSMenuItem(title: "Add Missing Defaults", action: #selector(addMissingRadioDefaults), keyEquivalent: "")
         addDefaultsItem.target = self; menu.addItem(addDefaultsItem)
@@ -3386,6 +3428,60 @@ class ModernLibraryBrowserView: NSView {
         resetItem.target = self; menu.addItem(resetItem)
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
+    }
+
+    private func promptForRadioFolderName(
+        title: String,
+        message: String,
+        confirmTitle: String,
+        defaultValue: String = ""
+    ) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: confirmTitle)
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        textField.stringValue = defaultValue
+        alert.accessoryView = textField
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
+
+    private func buildRadioStationFoldersSubmenu(for station: RadioStation) -> NSMenu {
+        let submenu = NSMenu()
+        let folders = RadioManager.shared.userRadioFolders()
+        if folders.isEmpty {
+            let emptyItem = NSMenuItem(title: "No Folders", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            submenu.addItem(emptyItem)
+        } else {
+            for folder in folders {
+                let item = NSMenuItem(
+                    title: folder.name,
+                    action: #selector(contextMenuToggleStationFolderMembership(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = RadioFolderMembershipAction(station: station, folderID: folder.id)
+                item.state = RadioManager.shared.isStation(station, inUserFolderID: folder.id) ? .on : .off
+                submenu.addItem(item)
+            }
+        }
+
+        submenu.addItem(NSMenuItem.separator())
+        let newFolderItem = NSMenuItem(
+            title: "New Folder...",
+            action: #selector(contextMenuCreateRadioFolderAndAddStation(_:)),
+            keyEquivalent: ""
+        )
+        newFolderItem.target = self
+        newFolderItem.representedObject = RadioFolderStationAction(station: station)
+        submenu.addItem(newFolderItem)
+        return submenu
     }
     
     private func showVisualizerMenu(at event: NSEvent) {
@@ -3693,10 +3789,53 @@ class ModernLibraryBrowserView: NSView {
             let playItem = NSMenuItem(title: "Play Station", action: #selector(contextMenuPlayRadioStation(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = station; menu.addItem(playItem)
             menu.addItem(NSMenuItem.separator())
+            let foldersItem = NSMenuItem(title: "Folders", action: nil, keyEquivalent: "")
+            foldersItem.submenu = buildRadioStationFoldersSubmenu(for: station)
+            menu.addItem(foldersItem)
+            menu.addItem(NSMenuItem.separator())
             let editItem = NSMenuItem(title: "Edit Station...", action: #selector(contextMenuEditRadioStation(_:)), keyEquivalent: "")
             editItem.target = self; editItem.representedObject = station; menu.addItem(editItem)
             let deleteItem = NSMenuItem(title: "Delete Station", action: #selector(contextMenuDeleteRadioStation(_:)), keyEquivalent: "")
             deleteItem.target = self; deleteItem.representedObject = station; menu.addItem(deleteItem)
+        case .radioFolder(let folder):
+            if folder.kind.isStationContainer {
+                let setActiveItem = NSMenuItem(title: "Set Active Folder", action: #selector(contextMenuSetActiveRadioFolder(_:)), keyEquivalent: "")
+                setActiveItem.target = self
+                setActiveItem.representedObject = folder
+                setActiveItem.state = selectedRadioFolderID == folder.id ? .on : .off
+                menu.addItem(setActiveItem)
+            }
+            if folder.hasChildren {
+                let expandItem = NSMenuItem(
+                    title: expandedRadioFolders.contains(folder.id) ? "Collapse" : "Expand",
+                    action: #selector(contextMenuToggleExpand(_:)),
+                    keyEquivalent: ""
+                )
+                expandItem.target = self
+                expandItem.representedObject = item
+                menu.addItem(expandItem)
+            }
+            switch folder.kind {
+            case .manual(let folderID):
+                if !menu.items.isEmpty { menu.addItem(NSMenuItem.separator()) }
+                let renameItem = NSMenuItem(title: "Rename Folder...", action: #selector(contextMenuRenameRadioFolder(_:)), keyEquivalent: "")
+                renameItem.target = self
+                renameItem.representedObject = RadioFolderRenameAction(folderID: folderID)
+                menu.addItem(renameItem)
+
+                let deleteItem = NSMenuItem(title: "Delete Folder", action: #selector(contextMenuDeleteRadioFolder(_:)), keyEquivalent: "")
+                deleteItem.target = self
+                deleteItem.representedObject = RadioFolderDeleteAction(folderID: folderID)
+                menu.addItem(deleteItem)
+            case .userFoldersRoot:
+                if !menu.items.isEmpty { menu.addItem(NSMenuItem.separator()) }
+                let newFolderItem = NSMenuItem(title: "New Folder...", action: #selector(showCreateRadioFolderDialog), keyEquivalent: "")
+                newFolderItem.target = self
+                menu.addItem(newFolderItem)
+            default:
+                break
+            }
+            if menu.items.isEmpty { return }
         case .plexRadioStation:
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayPlexRadioStation(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
@@ -4020,6 +4159,22 @@ class ModernLibraryBrowserView: NSView {
             }
         }
     }
+    @objc private func showCreateRadioFolderDialog() {
+        guard let name = promptForRadioFolderName(
+            title: "New Folder",
+            message: "Enter a folder name for Internet Radio:",
+            confirmTitle: "Create"
+        ) else { return }
+        guard RadioManager.shared.createUserFolder(named: name) != nil else {
+            let alert = NSAlert()
+            alert.messageText = "Unable to Create Folder"
+            alert.informativeText = "Use a unique, non-empty folder name."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        loadRadioStations()
+    }
     @objc private func addMissingRadioDefaults() { RadioManager.shared.addMissingDefaults(); if case .radio = currentSource { loadRadioStations() } }
     @objc private func resetRadioToDefaults() {
         let alert = NSAlert(); alert.messageText = "Reset to Defaults"; alert.informativeText = "Replace all stations with defaults?"
@@ -4296,6 +4451,71 @@ class ModernLibraryBrowserView: NSView {
         let alert = NSAlert(); alert.messageText = "Delete '\(station.name)'?"; alert.alertStyle = .warning
         alert.addButton(withTitle: "Delete"); alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn { RadioManager.shared.removeStation(station); loadRadioStations() }
+    }
+    @objc private func contextMenuSetActiveRadioFolder(_ sender: NSMenuItem) {
+        guard let folder = sender.representedObject as? RadioFolderDescriptor else { return }
+        guard folder.kind.isStationContainer else { return }
+        selectedRadioFolderID = folder.id
+        rebuildCurrentModeItems()
+    }
+    @objc private func contextMenuRenameRadioFolder(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? RadioFolderRenameAction else { return }
+        guard let existing = RadioManager.shared.userRadioFolders().first(where: { $0.id == action.folderID }) else { return }
+        guard let name = promptForRadioFolderName(
+            title: "Rename Folder",
+            message: "Enter a new name:",
+            confirmTitle: "Rename",
+            defaultValue: existing.name
+        ) else { return }
+        guard RadioManager.shared.renameUserFolder(id: action.folderID, to: name) else {
+            let alert = NSAlert()
+            alert.messageText = "Unable to Rename Folder"
+            alert.informativeText = "Use a unique, non-empty folder name."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        loadRadioStations()
+    }
+    @objc private func contextMenuDeleteRadioFolder(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? RadioFolderDeleteAction else { return }
+        guard let existing = RadioManager.shared.userRadioFolders().first(where: { $0.id == action.folderID }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "Delete Folder?"
+        alert.informativeText = "Delete '\(existing.name)' and its station memberships?"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        _ = RadioManager.shared.deleteUserFolder(id: action.folderID)
+        loadRadioStations()
+    }
+    @objc private func contextMenuToggleStationFolderMembership(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? RadioFolderMembershipAction else { return }
+        if RadioManager.shared.isStation(action.station, inUserFolderID: action.folderID) {
+            _ = RadioManager.shared.removeStation(action.station, fromUserFolderID: action.folderID)
+        } else {
+            _ = RadioManager.shared.addStation(action.station, toUserFolderID: action.folderID)
+        }
+        loadRadioStations()
+    }
+    @objc private func contextMenuCreateRadioFolderAndAddStation(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? RadioFolderStationAction else { return }
+        guard let name = promptForRadioFolderName(
+            title: "New Folder",
+            message: "Create a folder and add '\(action.station.name)' to it:",
+            confirmTitle: "Create"
+        ) else { return }
+        guard let folder = RadioManager.shared.createUserFolder(named: name) else {
+            let alert = NSAlert()
+            alert.messageText = "Unable to Create Folder"
+            alert.informativeText = "Use a unique, non-empty folder name."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        _ = RadioManager.shared.addStation(action.station, toUserFolderID: folder.id)
+        loadRadioStations()
     }
     @objc private func contextMenuPlayPlexRadioStation(_ sender: NSMenuItem) {
         guard let item = sender.representedObject as? ModernDisplayItem,
@@ -5338,6 +5558,9 @@ class ModernLibraryBrowserView: NSView {
         cachedEmbyMovies = []; cachedEmbyShows = []
         embyShowSeasons = [:]; embySeasonEpisodes = [:]
         expandedEmbyShows = []; expandedEmbySeasons = []
+        cachedRadioStations = []
+        cachedRadioFolders = []
+        selectedRadioFolderID = RadioFolderKind.allStations.id
         searchResults = nil
     }
     
@@ -6325,8 +6548,16 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Radio Data Loading
     
     private func loadRadioStations() {
-        isLoading = false; errorMessage = nil; stopLoadingAnimation()
-        cachedRadioStations = RadioManager.shared.stations; buildRadioStationItems(); needsDisplay = true
+        isLoading = false
+        errorMessage = nil
+        stopLoadingAnimation()
+        cachedRadioStations = RadioManager.shared.stations
+        cachedRadioFolders = RadioManager.shared.internetRadioFolderDescriptors()
+        if !cachedRadioFolders.contains(where: { $0.id == selectedRadioFolderID && $0.kind.isStationContainer }) {
+            selectedRadioFolderID = RadioFolderKind.allStations.id
+        }
+        buildRadioStationItems()
+        needsDisplay = true
     }
     
     private func loadPlexRadioStations() {
@@ -6877,13 +7108,68 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func buildRadioStationItems() {
-        displayItems = cachedRadioStations.map {
-            ModernDisplayItem(id: $0.id.uuidString, title: $0.name, info: $0.genre, indentLevel: 0, hasChildren: false, type: .radioStation($0))
+        displayItems.removeAll()
+        cachedRadioFolders = RadioManager.shared.internetRadioFolderDescriptors()
+        if !cachedRadioFolders.contains(where: { $0.id == selectedRadioFolderID && $0.kind.isStationContainer }) {
+            selectedRadioFolderID = RadioFolderKind.allStations.id
         }
-        displayItems.sort { a, b in
-            let ga = a.info ?? "", gb = b.info ?? ""
-            if ga != gb { if ga.isEmpty { return false }; if gb.isEmpty { return true }; return ga.localizedCaseInsensitiveCompare(gb) == .orderedAscending }
-            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+
+        let childrenByParent = Dictionary(grouping: cachedRadioFolders.filter { $0.parentID != nil }) { $0.parentID! }
+        let roots = cachedRadioFolders
+            .filter { $0.parentID == nil }
+            .sorted { lhs, rhs in
+                if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+
+        for root in roots {
+            appendRadioFolderRow(root, level: 0, childrenByParent: childrenByParent)
+        }
+
+        let activeFolderKind = cachedRadioFolders
+            .first(where: { $0.id == selectedRadioFolderID && $0.kind.isStationContainer })?
+            .kind ?? .allStations
+
+        let stations = RadioManager.shared.stations(inFolder: activeFolderKind)
+        for station in stations {
+            displayItems.append(
+                ModernDisplayItem(
+                    id: station.id.uuidString,
+                    title: station.name,
+                    info: station.genre,
+                    indentLevel: 0,
+                    hasChildren: false,
+                    type: .radioStation(station)
+                )
+            )
+        }
+    }
+
+    private func appendRadioFolderRow(
+        _ folder: RadioFolderDescriptor,
+        level: Int,
+        childrenByParent: [String: [RadioFolderDescriptor]]
+    ) {
+        let isActive = folder.id == selectedRadioFolderID && folder.kind.isStationContainer
+        let folderInfo = isActive ? "Active" : (folder.kind.isSmart ? "Smart Folder" : "Folder")
+        displayItems.append(
+            ModernDisplayItem(
+                id: folder.id,
+                title: folder.title,
+                info: folderInfo,
+                indentLevel: level,
+                hasChildren: folder.hasChildren,
+                type: .radioFolder(folder)
+            )
+        )
+
+        guard folder.hasChildren, expandedRadioFolders.contains(folder.id) else { return }
+        let children = (childrenByParent[folder.id] ?? []).sorted { lhs, rhs in
+            if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
+        for child in children {
+            appendRadioFolderRow(child, level: level + 1, childrenByParent: childrenByParent)
         }
     }
     
@@ -7405,6 +7691,7 @@ class ModernLibraryBrowserView: NSView {
         case .embyShow(let s): return expandedEmbyShows.contains(s.id)
         case .embySeason(let s): return expandedEmbySeasons.contains(s.id)
         case .plexPlaylist(let p): return expandedPlexPlaylists.contains(p.id)
+        case .radioFolder(let folder): return expandedRadioFolders.contains(folder.id)
         default: return false
         }
     }
@@ -7688,6 +7975,17 @@ class ModernLibraryBrowserView: NSView {
                         catch { NSLog("Failed: \(error)") }
                     }; return
                 }
+            }
+        case .radioFolder(let folder):
+            if folder.hasChildren {
+                if expandedRadioFolders.contains(folder.id) {
+                    expandedRadioFolders.remove(folder.id)
+                } else {
+                    expandedRadioFolders.insert(folder.id)
+                }
+            }
+            if folder.kind.isStationContainer {
+                selectedRadioFolderID = folder.id
             }
         default: break
         }
@@ -7976,6 +8274,13 @@ class ModernLibraryBrowserView: NSView {
         case .embyEpisode(let e): playEmbyEpisode(e)
         case .plexPlaylist(let p): playPlexPlaylist(p)
         case .radioStation(let s): playRadioStation(s)
+        case .radioFolder(let folder):
+            if folder.hasChildren {
+                toggleExpand(item)
+            } else if folder.kind.isStationContainer {
+                selectedRadioFolderID = folder.id
+                rebuildCurrentModeItems()
+            }
         case .plexRadioStation(let r): playPlexRadioStation(r)
         case .subsonicRadioStation(let r): playSubsonicRadioStation(r)
         case .jellyfinRadioStation(let r): playJellyfinRadioStation(r)
@@ -8041,6 +8346,7 @@ private struct ModernDisplayItem {
         case embyEpisode(EmbyEpisode)
         case plexPlaylist(PlexPlaylist)
         case radioStation(RadioStation)
+        case radioFolder(RadioFolderDescriptor)
         case plexRadioStation(PlexRadioType)
         case subsonicRadioStation(SubsonicRadioType)
         case jellyfinRadioStation(JellyfinRadioType)
