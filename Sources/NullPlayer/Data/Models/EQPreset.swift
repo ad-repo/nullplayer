@@ -34,6 +34,12 @@ struct EQPreset: Identifiable, Codable {
     static let allPresets: [EQPreset] = [
         .flat, .imOld, .imYoung, .rock, .pop, .electronic, .hipHop, .jazz, .classical
     ]
+
+    /// Presets shown as compact toggle buttons in the modern EQ window (excludes I'm Old / I'm Young)
+    static let buttonPresets: [(preset: EQPreset, label: String)] = [
+        (.flat, "FLAT"), (.rock, "ROCK"), (.pop, "POP"),
+        (.electronic, "ELEC"), (.hipHop, "HIP"), (.jazz, "JAZZ"), (.classical, "CLSC")
+    ]
     
     // MARK: - Genre-Based Auto EQ Presets
     // Bands: 60Hz, 170Hz, 310Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz

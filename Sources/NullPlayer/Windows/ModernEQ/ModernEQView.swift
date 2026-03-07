@@ -4,7 +4,7 @@ import AppKit
 // MODERN EQ VIEW - Equalizer with modern skin chrome
 // =============================================================================
 // Renders a 10-band graphic equalizer with preamp, ON/OFF toggle, AUTO toggle,
-// PRESETS menu, EQ curve graph, and frequency labels using the modern skin system.
+// compact preset buttons, EQ curve graph, and frequency labels using the modern skin system.
 //
 // Color scale for sliders and graph curve:
 // - RED at top (+12dB boost)
@@ -41,6 +41,9 @@ class ModernEQView: NSView {
     
     /// Button being pressed (for visual feedback)
     private var pressedButton: String?
+
+    /// Active preset button index (index into EQPreset.buttonPresets), nil if none lit
+    private var activePresetIndex: Int? = nil
     
     /// Window dragging state
     private var isDraggingWindow = false
@@ -75,7 +78,7 @@ class ModernEQView: NSView {
     //
     // Visual layout (top to bottom on screen = high Y to low Y):
     //   title bar
-    //   [ON] [AUTO]  [PRESETS]   <- button row
+    //   [ON] [AUTO] [FLAT][ROCK][POP][ELEC][HIP][JAZZ][CLSC]  <- button row
     //   [--- EQ curve graph ---] <- full-width graph
     //   sliders (preamp + 10 bands)
     //   frequency labels
@@ -462,15 +465,22 @@ class ModernEQView: NSView {
                          rect: NSRect(x: autoX, y: btnY, width: autoWidth, height: btnHeight),
                          font: font, context: context)
         
-        // PRESETS button (right side)
-        let presetsWidth: CGFloat = 48 * scale
-        let presetsX = bounds.width - borderWidth - presetsWidth - 4 * scale
-        let isPresetsPressed = pressedButton == "eq_presets"
-        drawPushButton(label: "PRESETS", isPressed: isPresetsPressed,
-                       rect: NSRect(x: presetsX, y: btnY, width: presetsWidth, height: btnHeight),
-                       font: font, context: context)
-        
-        // EQ curve graph (between AUTO and PRESETS)
+        // Compact preset toggle buttons — stretched to fill remaining horizontal space
+        let presetStartX = autoX + autoWidth + 3 * scale
+        let presetEndX = bounds.width - borderWidth - 4 * scale
+        let presetTotalWidth = presetEndX - presetStartX
+        let presetCount = CGFloat(EQPreset.buttonPresets.count)
+        let presetBtnGap: CGFloat = 2 * scale
+        let presetBtnWidth = (presetTotalWidth - presetBtnGap * (presetCount - 1)) / presetCount
+        for (i, (_, label)) in EQPreset.buttonPresets.enumerated() {
+            let isActive = activePresetIndex == i
+            let presetX = presetStartX + CGFloat(i) * (presetBtnWidth + presetBtnGap)
+            drawToggleButton(label: label, isActive: isActive,
+                             rect: NSRect(x: presetX, y: btnY, width: presetBtnWidth, height: btnHeight),
+                             font: font, context: context)
+        }
+
+        // EQ curve graph
         drawEQGraph(context: context)
         
         // == 3. Frequency labels (bottom) ==
@@ -920,14 +930,6 @@ class ModernEQView: NSView {
         return rect.contains(point)
     }
     
-    /// Hit test PRESETS button
-    private func hitTestPresets(at point: NSPoint) -> Bool {
-        let presetsWidth: CGFloat = 48 * scale
-        let presetsX = bounds.width - borderWidth - presetsWidth - 4 * scale
-        let rect = NSRect(x: presetsX, y: buttonRowY, width: presetsWidth, height: btnHeight)
-        return rect.contains(point)
-    }
-    
     /// Hit test sliders. Returns -1 for preamp, 0-9 for bands, nil if miss.
     private func hitTestSlider(at point: NSPoint) -> Int? {
         // Check preamp
@@ -1003,6 +1005,10 @@ class ModernEQView: NSView {
             }
             
             if isAuto {
+                if !isEnabled {
+                    isEnabled = true
+                    WindowManager.shared.audioEngine.setEQEnabled(true)
+                }
                 applyAutoEQForCurrentTrack()
             }
             
@@ -1010,19 +1016,47 @@ class ModernEQView: NSView {
             return
         }
         
-        // PRESETS button (press-and-release)
-        if hitTestPresets(at: point) {
-            pressedButton = "eq_presets"
+        // Compact preset toggle buttons — same layout math as draw path
+        let presetStartX = borderWidth + 4 * scale + 26 * scale + 3 * scale + 34 * scale + 3 * scale
+        let presetEndX = bounds.width - borderWidth - 4 * scale
+        let presetTotalWidth = presetEndX - presetStartX
+        let presetCount = CGFloat(EQPreset.buttonPresets.count)
+        let presetBtnGap: CGFloat = 2 * scale
+        let presetBtnWidth = (presetTotalWidth - presetBtnGap * (presetCount - 1)) / presetCount
+        for (i, (preset, _)) in EQPreset.buttonPresets.enumerated() {
+            let x = presetStartX + CGFloat(i) * (presetBtnWidth + presetBtnGap)
+            let btnRect = NSRect(x: x, y: buttonRowY, width: presetBtnWidth, height: btnHeight)
+            if btnRect.contains(point) {
+                if activePresetIndex == i {
+                    activePresetIndex = nil
+                    applyPreset(.flat)
+                } else {
+                    activePresetIndex = i
+                    applyPreset(preset)
+                    if !isEnabled {
+                        isEnabled = true
+                        WindowManager.shared.audioEngine.setEQEnabled(true)
+                    }
+                }
+                needsDisplay = true
+                return
+            }
+        }
+
+        // Double-click slider area -> reset only that band/preamp
+        if event.clickCount == 2, let index = hitTestSlider(at: point) {
+            if index == -1 {
+                preamp = 0
+                WindowManager.shared.audioEngine.setPreamp(0)
+            } else {
+                bands[index] = 0
+                WindowManager.shared.audioEngine.setEQBand(index, gain: 0)
+            }
+            activePresetIndex = nil
             needsDisplay = true
             return
         }
-        
-        // Double-click slider area -> reset to flat
-        if event.clickCount == 2, hitTestSlider(at: point) != nil {
-            applyPreset(.flat)
-            return
-        }
-        
+
         // Sliders
         if let sliderIndex = hitTestSlider(at: point) {
             draggingSlider = sliderIndex
@@ -1112,8 +1146,6 @@ class ModernEQView: NSView {
                 if hitTestCloseButton(at: point) { window?.close() }
             case "eq_btn_shade":
                 if hitTestShadeButton(at: point) { toggleShadeMode() }
-            case "eq_presets":
-                if hitTestPresets(at: point) { showPresetsMenu(at: point) }
             default:
                 break
             }
@@ -1144,13 +1176,16 @@ class ModernEQView: NSView {
     
     private func updateSliderFromPoint(_ point: NSPoint) {
         guard let index = draggingSlider else { return }
-        
+
+        // Clear active preset highlight when user manually adjusts a slider
+        activePresetIndex = nil
+
         // Calculate value from Y position
         // sliderBottomY = -12dB, sliderTopY (sliderBottomY + sliderHeight) = +12dB
         let normalizedY = (point.y - sliderBottomY) / sliderHeight
         let clampedY = max(0, min(1, normalizedY))
         let value = Float(clampedY) * 24 - 12 // 0..1 -> -12..+12
-        
+
         if index == -1 {
             preamp = value
             WindowManager.shared.audioEngine.setPreamp(value)
@@ -1158,28 +1193,8 @@ class ModernEQView: NSView {
             bands[index] = value
             WindowManager.shared.audioEngine.setEQBand(index, gain: value)
         }
-        
+
         needsDisplay = true
-    }
-    
-    // MARK: - Presets Menu
-    
-    private func showPresetsMenu(at point: NSPoint) {
-        let menu = NSMenu()
-        
-        for preset in EQPreset.allPresets {
-            let item = NSMenuItem(title: preset.name, action: #selector(selectPreset(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = preset
-            menu.addItem(item)
-        }
-        
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-    
-    @objc private func selectPreset(_ sender: NSMenuItem) {
-        guard let preset = sender.representedObject as? EQPreset else { return }
-        applyPreset(preset)
     }
     
     // MARK: - Context Menu
