@@ -221,7 +221,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenuItem.submenu = appMenu
         
         appMenu.addItem(
-            withTitle: "nullPlayer-\(BundleHelper.appVersion ?? "Unknown")",
+            withTitle: "About nullPlayer",
             action: #selector(showAbout),
             keyEquivalent: ""
         )        
@@ -308,7 +308,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // sthanks
         let sthanksLabel = NSTextField(labelWithString: "Thanks to SpaXter25 for QE and PD help")
-        sthanksLabel.font = NSFont.systemFont(ofSize: 14)
+        sthanksLabel.font = NSFont.systemFont(ofSize: 12)
         sthanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         sthanksLabel.alignment = .center
         sthanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)

@@ -690,6 +690,394 @@ class RadioManager {
             name: "SomaFM Vaporwaves",
             url: URL(string: "https://ice5.somafm.com/vaporwaves-128-mp3")!,
             genre: "Electronic"
+        ),
+
+        // MARK: - African / Caribbean
+        RadioStation(
+            name: "Trace FM Cote d'Ivoire",
+            url: URL(string: "http://stream.trace.tv/trace_fm_ci-midfi.aac")!,
+            genre: "Afrobeats"
+        ),
+        RadioStation(
+            name: "Life Radio Cote d'Ivoire",
+            url: URL(string: "https://cast4.asurahosting.com/proxy/life/stream")!,
+            genre: "Afropop"
+        ),
+        RadioStation(
+            name: "Africa Radio Abidjan",
+            url: URL(string: "https://africaradio.ice.infomaniak.ch/abidjan128.mp3")!,
+            genre: "African"
+        ),
+        RadioStation(
+            name: "Dakar Musique",
+            url: URL(string: "http://listen.senemultimedia.net:8090/stream")!,
+            genre: "African"
+        ),
+        RadioStation(
+            name: "Radio Thiossane",
+            url: URL(string: "https://stream.radiothiossane.com/")!,
+            genre: "African/Traditional"
+        ),
+        RadioStation(
+            name: "East Africa Radio FM",
+            url: URL(string: "https://eatv.radioca.st/stream")!,
+            genre: "East African"
+        ),
+        RadioStation(
+            name: "LagosJump Radio",
+            url: URL(string: "https://radio.lagosjumpradio.com/listen/lagosjump_radio/radio.mp3")!,
+            genre: "Afrobeats"
+        ),
+        RadioStation(
+            name: "Softlife Afrofusion Radio",
+            url: URL(string: "https://eu4.fastcast4u.com/proxy/softlife?mp=/1")!,
+            genre: "Afrofusion"
+        ),
+        RadioStation(
+            name: "Irie FM Jamaica",
+            url: URL(string: "https://usa19.fastcast4u.com:7430/;")!,
+            genre: "Reggae"
+        ),
+        RadioStation(
+            name: "Jamaica Dancehall Radio",
+            url: URL(string: "https://stream.jamaicadancehallradio.com/listen/jamaica_dancehall_radio/radio.mp3")!,
+            genre: "Dancehall"
+        ),
+        RadioStation(
+            name: "VOB 92.9 FM Barbados",
+            url: URL(string: "https://ice66.securenetsystems.net/VOB929")!,
+            genre: "Soca/Caribbean"
+        ),
+        RadioStation(
+            name: "Q 100.7 FM Barbados",
+            url: URL(string: "http://108.178.16.190:8000/1007fm.mp3")!,
+            genre: "Reggae/Soca"
+        ),
+        RadioStation(
+            name: "Scorch Radio 101.1 FM",
+            url: URL(string: "https://stream.velalabs.co/scorch")!,
+            genre: "Soca"
+        ),
+        RadioStation(
+            name: "Bacchanal Radio",
+            url: URL(string: "https://c13.radioboss.fm:18470/stream")!,
+            genre: "Soca"
+        ),
+        RadioStation(
+            name: "Tambrin Radio 92.7",
+            url: URL(string: "https://ice42.securenetsystems.net/TAMBRIN")!,
+            genre: "Caribbean"
+        ),
+
+        // MARK: - South America
+        RadioStation(
+            name: "Radio Saudade FM 99.7",
+            url: URL(string: "https://playerservices.streamtheworld.com/api/livestream-redirect/SAUDADE_FMAAC.aac")!,
+            genre: "Classic Hits"
+        ),
+        RadioStation(
+            name: "Bossa Jazz Brasil",
+            url: URL(string: "https://centova5.transmissaodigital.com:20104/live")!,
+            genre: "Bossa Nova"
+        ),
+        RadioStation(
+            name: "Aspen 102.3",
+            url: URL(string: "https://playerservices.streamtheworld.com/api/livestream-redirect/ASPEN.mp3")!,
+            genre: "Classic Hits"
+        ),
+        RadioStation(
+            name: "Blue 100.7 FM",
+            url: URL(string: "https://playerservices.streamtheworld.com/api/livestream-redirect/BLUE_FM_100_7AAC.aac")!,
+            genre: "Classic Hits"
+        ),
+        RadioStation(
+            name: "Olimpica Stereo Medellin 104.9",
+            url: URL(string: "https://playerservices.streamtheworld.com/api/livestream-redirect/OLP_MEDELLINAAC.aac")!,
+            genre: "Salsa/Vallenato"
+        ),
+        RadioStation(
+            name: "Radioacktiva Bogota 97.9",
+            url: URL(string: "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO_ACTIVAAAC.aac")!,
+            genre: "Rock"
+        ),
+        RadioStation(
+            name: "Concierto Chile",
+            url: URL(string: "http://26643.live.streamtheworld.com/CONCIERTO_SC")!,
+            genre: "Pop/Rock"
+        ),
+        RadioStation(
+            name: "Radio Futuro Chile",
+            url: URL(string: "https://playerservices.streamtheworld.com/api/livestream-redirect/FUTURO_SC.mp3")!,
+            genre: "Rock"
+        ),
+        RadioStation(
+            name: "Radio RPP Noticias",
+            url: URL(string: "https://mdstrm.com/audio/5fab3416b5f9ef165cfab6e9/icecast.audio")!,
+            genre: "News"
+        ),
+        RadioStation(
+            name: "Canela Radio Guayaquil 90.5",
+            url: URL(string: "https://canelaradio.makrodigital.com/stream/canelaradioguayaquil")!,
+            genre: "Latin/Tropical"
+        ),
+        RadioStation(
+            name: "Diblu FM 88.9",
+            url: URL(string: "https://streamingecuador.net:9002/stream")!,
+            genre: "Sports/Talk"
+        ),
+        RadioStation(
+            name: "Rumba 98.1 FM Venezuela",
+            url: URL(string: "https://cast20.plugstreaming.com:2020/stream/r981/;")!,
+            genre: "Latin Pop"
+        ),
+        RadioStation(
+            name: "RocaFM Clasicos Caracas",
+            url: URL(string: "http://protostar.shoutca.st:8370/")!,
+            genre: "Oldies"
+        ),
+        RadioStation(
+            name: "Radio Fides La Paz",
+            url: URL(string: "http://192.95.23.89:6358/stream")!,
+            genre: "News"
+        ),
+        RadioStation(
+            name: "Rock and Pop Paraguay",
+            url: URL(string: "https://cp9.serverse.com/proxy/rockandpop/stream")!,
+            genre: "Rock/Pop"
+        ),
+        RadioStation(
+            name: "Radio ABC FM 98.5 Asuncion",
+            url: URL(string: "https://media.streambrothers.com:8350/stream")!,
+            genre: "Top 40"
+        ),
+        RadioStation(
+            name: "Clasica 650 AM Uruguay",
+            url: URL(string: "https://radios.iwstreaming.uy/8032/stream")!,
+            genre: "Classical"
+        ),
+
+        // MARK: - Additional Jazz
+        RadioStation(
+            name: "WWOZ New Orleans",
+            url: URL(string: "https://wwoz-sc.streamguys1.com/wwoz-hi.mp3")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "TSF Jazz",
+            url: URL(string: "https://tsfjazz.ice.infomaniak.ch/tsfjazz-high.mp3")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "Radio Swiss Jazz",
+            url: URL(string: "http://stream.srg-ssr.ch/m/rsj/mp3_128")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "ABC Jazz",
+            url: URL(string: "https://abc.streamguys1.com/live/abcjazz/icecast.audio")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "Jazz Radio France",
+            url: URL(string: "http://jazzradio.ice.infomaniak.ch/jazzradio-high.mp3")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "Jazz Radio Blues",
+            url: URL(string: "http://jazzblues.ice.infomaniak.ch/jazzblues-high.mp3")!,
+            genre: "Jazz/Blues"
+        ),
+        RadioStation(
+            name: "Jazz Radio Classic Jazz",
+            url: URL(string: "http://jazz-wr01.ice.infomaniak.ch/jazz-wr01-128.mp3")!,
+            genre: "Classic Jazz"
+        ),
+        RadioStation(
+            name: "Jazz Radio Latin Jazz",
+            url: URL(string: "http://jazz-wr09.ice.infomaniak.ch/jazz-wr09-128.mp3")!,
+            genre: "Latin Jazz"
+        ),
+        RadioStation(
+            name: "Jazz Radio Electro Swing",
+            url: URL(string: "http://jazz-wr04.ice.infomaniak.ch/jazz-wr04-128.mp3")!,
+            genre: "Electro Swing"
+        ),
+        RadioStation(
+            name: "Jazz Radio Manouche",
+            url: URL(string: "http://jazz-wr02.ice.infomaniak.ch/jazz-wr02-128.mp3")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "Jazz Radio Piano Jazz",
+            url: URL(string: "http://jzr-piano.ice.infomaniak.ch/jzr-piano.mp3")!,
+            genre: "Piano Jazz"
+        ),
+        RadioStation(
+            name: "Jazz Radio Only Women",
+            url: URL(string: "http://jazz-wr16.ice.infomaniak.ch/jazz-wr16-128.mp3")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "FIP Jazz",
+            url: URL(string: "http://icecast.radiofrance.fr/fipjazz-hifi.aac")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "1.FM Bay Smooth Jazz",
+            url: URL(string: "http://strm112.1.fm/smoothjazz_mobile_mp3")!,
+            genre: "Smooth Jazz"
+        ),
+        RadioStation(
+            name: "The Jazz Groove East",
+            url: URL(string: "http://east-mp3-128.streamthejazzgroove.com/stream")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "0 N Jazz Radio",
+            url: URL(string: "https://0n-jazz.radionetz.de/0n-jazz.aac")!,
+            genre: "Jazz"
+        ),
+        RadioStation(
+            name: "0 N Smooth Jazz",
+            url: URL(string: "https://0n-smoothjazz.radionetz.de/0n-smoothjazz.mp3")!,
+            genre: "Smooth Jazz"
+        ),
+
+        // MARK: - Top Europe
+        RadioStation(
+            name: "Capital FM London",
+            url: URL(string: "http://media-ice.musicradio.com/CapitalMP3")!,
+            genre: "Pop"
+        ),
+        RadioStation(
+            name: "Heart 80s UK",
+            url: URL(string: "https://media-ssl.musicradio.com/Heart80sMP3")!,
+            genre: "80s/Pop"
+        ),
+        RadioStation(
+            name: "RFM France",
+            url: URL(string: "https://stream.rfm.fr/rfm.mp3")!,
+            genre: "Pop"
+        ),
+        RadioStation(
+            name: "RTL2 France",
+            url: URL(string: "http://streamer-02.rtl.fr/rtl2-1-44-128")!,
+            genre: "Pop/Rock"
+        ),
+        RadioStation(
+            name: "Skyrock France",
+            url: URL(string: "http://icecast.skyrock.net/s/natio_mp3_128k")!,
+            genre: "Hip-Hop"
+        ),
+        RadioStation(
+            name: "SWR3 Germany",
+            url: URL(string: "https://liveradio.swr.de/sw282p3/swr3/play.mp3")!,
+            genre: "Pop/Rock"
+        ),
+        RadioStation(
+            name: "1LIVE Germany",
+            url: URL(string: "http://wdr-1live-live.icecast.wdr.de/wdr/1live/live/mp3/128/stream.mp3")!,
+            genre: "Top 40"
+        ),
+        RadioStation(
+            name: "Rock Antenne Germany",
+            url: URL(string: "http://mp3channels.webradio.rockantenne.de/rockantenne")!,
+            genre: "Rock"
+        ),
+        RadioStation(
+            name: "Oldie Antenne Germany",
+            url: URL(string: "https://s1-webradio.oldie-antenne.de/oldie-antenne?aw_0_1st.playerid=OldieAntenneWebPlayer")!,
+            genre: "Oldies"
+        ),
+        RadioStation(
+            name: "LOS 40 Spain",
+            url: URL(string: "https://playerservices.streamtheworld.com/api/livestream-redirect/Los40.mp3")!,
+            genre: "Top 40"
+        ),
+        RadioStation(
+            name: "Cadena 100 Spain",
+            url: URL(string: "http://cadena100-streamers-mp3.flumotion.com/cope/cadena100.mp3")!,
+            genre: "Pop"
+        ),
+        RadioStation(
+            name: "Rock FM Spain",
+            url: URL(string: "http://flucast31-h-cloud.flumotion.com/cope/rockfm-low.mp3")!,
+            genre: "Rock"
+        ),
+        RadioStation(
+            name: "Ibiza Global Radio",
+            url: URL(string: "http://ibizaglobalradio.streaming-pro.com:8024/")!,
+            genre: "Electronic"
+        ),
+        RadioStation(
+            name: "Virgin Radio Italia",
+            url: URL(string: "http://icecast.unitedradio.it/Virgin.mp3")!,
+            genre: "Pop/Rock"
+        ),
+        RadioStation(
+            name: "Radio 105 Italy",
+            url: URL(string: "http://icecast.unitedradio.it/Radio105.mp3")!,
+            genre: "Top 40"
+        ),
+        RadioStation(
+            name: "Radio Monte Carlo Italy",
+            url: URL(string: "http://icecast.unitedradio.it/RMC.mp3")!,
+            genre: "Adult Contemporary"
+        ),
+        RadioStation(
+            name: "Radio 538 Netherlands",
+            url: URL(string: "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO538.mp3")!,
+            genre: "Top 40"
+        ),
+        RadioStation(
+            name: "Qmusic Netherlands",
+            url: URL(string: "https://icecast-qmusicnl-cdp.triple-it.nl/Qmusic_nl_live_96.mp3")!,
+            genre: "Pop"
+        ),
+        RadioStation(
+            name: "SLAM Netherlands",
+            url: URL(string: "http://stream.slam.nl/slam")!,
+            genre: "Dance"
+        ),
+        RadioStation(
+            name: "Sky Radio Netherlands",
+            url: URL(string: "https://playerservices.streamtheworld.com/api/livestream-redirect/SKYRADIO.mp3")!,
+            genre: "Pop"
+        ),
+        RadioStation(
+            name: "RIX FM Sweden",
+            url: URL(string: "https://fm01-ice.stream.khz.se/fm01_mp3")!,
+            genre: "Pop"
+        ),
+        RadioStation(
+            name: "Mix Megapol Sweden",
+            url: URL(string: "https://live-bauerse-fm.sharp-stream.com/mixmegapol_instream_se_mp3")!,
+            genre: "Pop"
+        ),
+        RadioStation(
+            name: "NRK P3 Norway",
+            url: URL(string: "https://cdn0-47115-liveicecast0.dna.contentdelivery.net/p3_mp3_h")!,
+            genre: "Pop/Rock"
+        ),
+        RadioStation(
+            name: "Qmusic Belgium",
+            url: URL(string: "https://icecast-qmusicbe-cdp.triple-it.nl/qmusic.aac")!,
+            genre: "Pop"
+        ),
+        RadioStation(
+            name: "Studio Brussel",
+            url: URL(string: "http://icecast.vrtcdn.be/stubru-high.mp3")!,
+            genre: "Alternative/Pop"
+        ),
+        RadioStation(
+            name: "ORF Hitradio O3",
+            url: URL(string: "https://orf-live.ors-shoutcast.at/oe3-q2a")!,
+            genre: "Pop"
+        ),
+        RadioStation(
+            name: "FM4 Austria",
+            url: URL(string: "https://orf-live.ors-shoutcast.at/fm4-q2a")!,
+            genre: "Alternative"
         )
     ]
     
