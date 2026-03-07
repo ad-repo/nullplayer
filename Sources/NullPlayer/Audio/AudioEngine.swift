@@ -283,6 +283,9 @@ class AudioEngine {
     /// PCM sample rate for visualization timing
     private(set) var pcmSampleRate: Double = 44100
     
+    /// Reusable userInfo dict for PCM notifications (avoids per-callback allocation)
+    private var pcmUserInfo: [String: Any] = [:]
+
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
     private let fftSize: Int = 2048  // Match streaming FFT for consistent display
@@ -747,10 +750,12 @@ class AudioEngine {
         // Post notification for low-latency visualization (direct from audio tap)
         // Copy to avoid data races since we reuse the buffer
         let pcmCopy = Array(fftPcmSamples)
+        pcmUserInfo["pcm"] = pcmCopy
+        pcmUserInfo["sampleRate"] = bufferSampleRate
         NotificationCenter.default.post(
             name: .audioPCMDataUpdated,
             object: self,
-            userInfo: ["pcm": pcmCopy, "sampleRate": bufferSampleRate]
+            userInfo: pcmUserInfo
         )
         
         // Also store in property for legacy access - coalesce dispatches
@@ -3920,10 +3925,12 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         
         // Post notification for low-latency visualization
         // Use pcmData (not samples) to ensure consistency with stored property
+        pcmUserInfo["pcm"] = pcmData
+        pcmUserInfo["sampleRate"] = pcmSampleRate
         NotificationCenter.default.post(
             name: .audioPCMDataUpdated,
             object: self,
-            userInfo: ["pcm": pcmData, "sampleRate": pcmSampleRate]
+            userInfo: pcmUserInfo
         )
     }
     

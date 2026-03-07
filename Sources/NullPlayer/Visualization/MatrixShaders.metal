@@ -464,8 +464,9 @@ fragment float4 matrix_fragment(
         float glowAccum = 0.0;
         
         // Sample neighboring cells for glow bleeding
-        // Subtle: range 1, Intense: range 2
-        int glowRange = int(intensity);
+        // Cap at 1: range 2 (Intense) would sample 24 neighbors × rain_cell() per pixel,
+        // which is 3× more expensive than range 1 (8 neighbors) with negligible visual gain.
+        int glowRange = 1;
         for (int dy = -glowRange; dy <= glowRange; dy++) {
             for (int dx = -glowRange; dx <= glowRange; dx++) {
                 if (dx == 0 && dy == 0) continue;

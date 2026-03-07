@@ -300,7 +300,14 @@ class WindowManager {
     
     /// Flag to prevent feedback loop when snapping windows
     private var isSnappingWindow = false
-    
+
+    /// Time gate for drag layout notifications (throttle to ~30Hz)
+    private var lastDragLayoutNotificationTime: TimeInterval = 0
+
+    /// Per-notification-cycle caches for adjacency/sharp-corners computation
+    private var adjacencyCache: [ObjectIdentifier: AdjacentEdges] = [:]
+    private var sharpCornersCache: [ObjectIdentifier: CACornerMask] = [:]
+
     /// Windows that were attached as children for coordinated minimize (for restore)
     private var coordinatedMiniaturizedWindows: [NSWindow] = []
     
@@ -389,7 +396,7 @@ class WindowManager {
         playlistWindowController?.window?.makeKeyAndOrderFront(nil)
         applyAlwaysOnTopToWindow(playlistWindowController?.window)
         notifyMainWindowVisibilityChanged()
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
     }
 
     var isPlaylistVisible: Bool {
@@ -405,7 +412,7 @@ class WindowManager {
             showPlaylist()
         }
         notifyMainWindowVisibilityChanged()
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
         updateDockedChildWindows()
     }
     
@@ -431,7 +438,7 @@ class WindowManager {
         equalizerWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(equalizerWindowController?.window)
         notifyMainWindowVisibilityChanged()
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
     }
 
     var isEqualizerVisible: Bool {
@@ -447,7 +454,7 @@ class WindowManager {
             showEqualizer()
         }
         notifyMainWindowVisibilityChanged()
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
         updateDockedChildWindows()
     }
     
@@ -504,7 +511,7 @@ class WindowManager {
         isSnappingWindow = true
         window.setFrame(newFrame, display: true)
         isSnappingWindow = false
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
     }
     
     /// After a center-stack window is hidden, slide up any visible sub-windows that
@@ -544,7 +551,7 @@ class WindowManager {
             win.setFrame(frame, display: true, animate: false)
         }
 
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
     }
 
     /// Show local media library (redirects to unified browser in local mode)
@@ -617,7 +624,7 @@ class WindowManager {
                 }
             }
         }
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
     }
     
     var isPlexBrowserVisible: Bool {
@@ -651,7 +658,7 @@ class WindowManager {
         } else {
             showPlexBrowser()
         }
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
         updateDockedChildWindows()
     }
     
@@ -1182,7 +1189,7 @@ class WindowManager {
                 }
             }
         }
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
     }
     
     var isProjectMVisible: Bool {
@@ -1212,7 +1219,7 @@ class WindowManager {
         } else {
             showProjectM()
         }
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
         updateDockedChildWindows()
     }
     
@@ -1240,7 +1247,7 @@ class WindowManager {
         spectrumWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(spectrumWindowController?.window)
         notifyMainWindowVisibilityChanged()
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
     }
     
     var isSpectrumVisible: Bool {
@@ -1263,7 +1270,7 @@ class WindowManager {
             showSpectrum()
         }
         notifyMainWindowVisibilityChanged()
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
         updateDockedChildWindows()
     }
     
@@ -1779,7 +1786,7 @@ class WindowManager {
         if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
             videoWindow.center()
         }
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
     }
     
     // MARK: - Window Snapping & Docking
@@ -1821,7 +1828,7 @@ class WindowManager {
         dockedWindowsToMove.removeAll()
         dockedWindowOffsets.removeAll()
         dockedWindowOriginalOrigins.removeAll()
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        postLayoutChangeNotification()
         updateDockedChildWindows()
     }
     
@@ -1902,9 +1909,13 @@ class WindowManager {
             }
             isMovingDockedWindows = false
         }
-        
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
-        
+
+        let now = CACurrentMediaTime()
+        if now - lastDragLayoutNotificationTime >= 1.0 / 30.0 {
+            lastDragLayoutNotificationTime = now
+            postLayoutChangeNotification()
+        }
+
         return snappedOrigin
     }
     
@@ -2234,20 +2245,32 @@ class WindowManager {
         return touchingHorizontally || touchingVertically
     }
     
+    /// Post a windowLayoutDidChange notification, clearing per-cycle caches first.
+    private func postLayoutChangeNotification() {
+        adjacencyCache.removeAll(keepingCapacity: true)
+        sharpCornersCache.removeAll(keepingCapacity: true)
+        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+    }
+
     /// Compute which edges of a window are adjacent to another visible managed window.
-    /// Used by modern skin views to suppress borders on shared docked edges.
+    /// Uses a per-notification-cycle cache so multiple observers share one computation.
     func computeAdjacentEdges(for window: NSWindow) -> AdjacentEdges {
         guard isModernUIEnabled else { return [] }
+        let key = ObjectIdentifier(window)
+        if let cached = adjacencyCache[key] { return cached }
+        let result = _computeAdjacentEdgesImpl(for: window)
+        adjacencyCache[key] = result
+        return result
+    }
+
+    private func _computeAdjacentEdgesImpl(for window: NSWindow) -> AdjacentEdges {
         var edges: AdjacentEdges = []
         let frame = window.frame
         for other in allWindows() where other !== window {
             let of = other.frame
-            // Check horizontal overlap (for vertical adjacency: top/bottom)
             let hOverlap = frame.minX < of.maxX && frame.maxX > of.minX
-            // Check vertical overlap (for horizontal adjacency: left/right)
             let vOverlap = frame.minY < of.maxY && frame.maxY > of.minY
             if hOverlap {
-                // macOS Y: maxY is top, minY is bottom
                 if abs(frame.maxY - of.minY) <= dockThreshold { edges.insert(.top) }
                 if abs(frame.minY - of.maxY) <= dockThreshold { edges.insert(.bottom) }
             }
@@ -2258,11 +2281,20 @@ class WindowManager {
         }
         return edges
     }
-    
+
     /// Returns a CACornerMask indicating which corners should be sharp
     /// because an adjacent window actually reaches/covers that corner.
+    /// Uses a per-notification-cycle cache so multiple observers share one computation.
     func computeSharpCorners(for window: NSWindow) -> CACornerMask {
         guard isModernUIEnabled else { return [] }
+        let key = ObjectIdentifier(window)
+        if let cached = sharpCornersCache[key] { return cached }
+        let result = _computeSharpCornersImpl(for: window)
+        sharpCornersCache[key] = result
+        return result
+    }
+
+    private func _computeSharpCornersImpl(for window: NSWindow) -> CACornerMask {
         var sharp: CACornerMask = []
         let f = window.frame
         let t = dockThreshold
@@ -2272,23 +2304,23 @@ class WindowManager {
             let hOverlap = f.minX < o.maxX && f.maxX > o.minX
             // Window to the right
             if abs(f.maxX - o.minX) <= t && vOverlap {
-                if o.minY <= f.minY + t { sharp.insert(.layerMaxXMinYCorner) } // bottom-right
-                if o.maxY >= f.maxY - t { sharp.insert(.layerMaxXMaxYCorner) } // top-right
+                if o.minY <= f.minY + t { sharp.insert(.layerMaxXMinYCorner) }
+                if o.maxY >= f.maxY - t { sharp.insert(.layerMaxXMaxYCorner) }
             }
             // Window to the left
             if abs(f.minX - o.maxX) <= t && vOverlap {
-                if o.minY <= f.minY + t { sharp.insert(.layerMinXMinYCorner) } // bottom-left
-                if o.maxY >= f.maxY - t { sharp.insert(.layerMinXMaxYCorner) } // top-left
+                if o.minY <= f.minY + t { sharp.insert(.layerMinXMinYCorner) }
+                if o.maxY >= f.maxY - t { sharp.insert(.layerMinXMaxYCorner) }
             }
             // Window above (macOS Y-up: o.minY ≈ f.maxY)
             if abs(f.maxY - o.minY) <= t && hOverlap {
-                if o.minX <= f.minX + t { sharp.insert(.layerMinXMaxYCorner) } // top-left
-                if o.maxX >= f.maxX - t { sharp.insert(.layerMaxXMaxYCorner) } // top-right
+                if o.minX <= f.minX + t { sharp.insert(.layerMinXMaxYCorner) }
+                if o.maxX >= f.maxX - t { sharp.insert(.layerMaxXMaxYCorner) }
             }
             // Window below
             if abs(f.minY - o.maxY) <= t && hOverlap {
-                if o.minX <= f.minX + t { sharp.insert(.layerMinXMinYCorner) } // bottom-left
-                if o.maxX >= f.maxX - t { sharp.insert(.layerMaxXMinYCorner) } // bottom-right
+                if o.minX <= f.minX + t { sharp.insert(.layerMinXMinYCorner) }
+                if o.maxX >= f.maxX - t { sharp.insert(.layerMaxXMinYCorner) }
             }
         }
         return sharp

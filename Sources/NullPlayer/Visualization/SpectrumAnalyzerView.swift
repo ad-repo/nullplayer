@@ -1,3 +1,4 @@
+import Accelerate
 import MetalKit
 import os.lock
 
@@ -158,7 +159,11 @@ struct ElectricityParams {
     var beatIntensity: Float         // 4 bytes (offset 28)
     var dramaticIntensity: Float     // 4 bytes (offset 32) - rare dramatic strike
     var colorScheme: Int32 = 0       // 4 bytes (offset 36) - lightning color palette
-    var brightnessBoost: Float = 1.0 // 4 bytes (offset 40) → total 44
+    var brightnessBoost: Float = 1.0 // 4 bytes (offset 40)
+    var peak1Band: Float = 0.5       // 4 bytes (offset 44) - normalized position of loudest band
+    var peak1Energy: Float = 0.0     // 4 bytes (offset 48) - energy of loudest band
+    var peak2Band: Float = 0.3       // 4 bytes (offset 52) - normalized position of 2nd loudest band
+    var peak2Energy: Float = 0.0     // 4 bytes (offset 56) → total 60
 }
 
 /// Color scheme presets for Matrix mode
@@ -302,7 +307,7 @@ class SpectrumAnalyzerView: NSView {
         case .classic: return barPipelineState != nil
         case .enhanced: return ledPipelineState != nil
         case .ultra: return ultraPipelineState != nil
-        case .flame: return flamePropPipeline != nil && flameRenderPipeline != nil
+        case .flame: return flamePropPipeline != nil && flameBlurHPipeline != nil && flameRenderPipeline != nil
         case .cosmic: return cosmicRenderPipeline != nil
         case .electricity: return electricityRenderPipeline != nil
         case .matrix: return matrixRenderPipeline != nil
@@ -493,7 +498,10 @@ class SpectrumAnalyzerView: NSView {
     
     // Flame mode resources
     private var flamePropPipeline: MTLComputePipelineState?
-    private var flameRenderPipeline: MTLRenderPipelineState?
+    private var flameRenderPipeline: MTLRenderPipelineState?   // vertical blur + color pass
+    private var flameBlurHPipeline: MTLRenderPipelineState?    // horizontal blur pass
+    private var flameBlurTexture: MTLTexture?                  // intermediate r16Float texture
+    private var flameBlurLastDrawableSize: CGSize = .zero
     private var flameSimTextureA: MTLTexture?
     private var flameSimTextureB: MTLTexture?
     private var flameSpectrumBuffer: MTLBuffer?
@@ -561,6 +569,12 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var electricityDramaticLPF: Float = 0  // Slow-moving energy baseline for peak detection
     nonisolated(unsafe) private var electricityDramaticCooldown: Int = 0  // Frames until next dramatic strike allowed
     nonisolated(unsafe) private var renderLightningStyle: LightningStyle = .classic
+
+    /// Timestamp of last rendered frame, for 60Hz cap on high-refresh displays
+    private var lastFrameHostTime: UInt64 = 0
+
+    /// Cached normalization mode — updated when settings change, not read every frame
+    private var cachedIsAccurateNormalization: Bool = false
     
     // Matrix mode state
     nonisolated(unsafe) private var matrixSmoothBass: Float = 0
@@ -708,6 +722,9 @@ class SpectrumAnalyzerView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(handlePlaybackStateChange),
                                                name: .audioPlaybackStateChanged, object: nil)
         
+        // Initialize cached normalization mode
+        cachedIsAccurateNormalization = UserDefaults.standard.string(forKey: normalizationUserDefaultsKey) == SpectrumNormalizationMode.accurate.rawValue
+
         // Start rendering
         startRendering()
     }
@@ -796,10 +813,13 @@ class SpectrumAnalyzerView: NSView {
             }
         }
         
+        // Update cached normalization mode
+        cachedIsAccurateNormalization = UserDefaults.standard.string(forKey: normalizationUserDefaultsKey) == SpectrumNormalizationMode.accurate.rawValue
+
         // Note: We no longer reset state arrays on mode switch since pre-allocated
         // arrays handle all modes and the display naturally transitions. Resetting
         // was causing frame drops due to long lock hold times.
-        
+
         // Just reset idle tracking to ensure rendering continues smoothly
         dataLock.withLock {
             idleFrameCount = 0
@@ -1097,9 +1117,16 @@ class SpectrumAnalyzerView: NSView {
                 flamePropPipeline = try device.makeComputePipelineState(function: fn)
             }
             if let vf = lib.makeFunction(name: "flame_vertex"),
-               let ff = lib.makeFunction(name: "flame_fragment") {
+               let hf = lib.makeFunction(name: "flame_blur_h") {
                 let d = MTLRenderPipelineDescriptor()
-                d.vertexFunction = vf; d.fragmentFunction = ff
+                d.vertexFunction = vf; d.fragmentFunction = hf
+                d.colorAttachments[0].pixelFormat = .r16Float  // single-channel intermediate
+                flameBlurHPipeline = try device.makeRenderPipelineState(descriptor: d)
+            }
+            if let vf = lib.makeFunction(name: "flame_vertex"),
+               let vf2 = lib.makeFunction(name: "flame_blur_v") {
+                let d = MTLRenderPipelineDescriptor()
+                d.vertexFunction = vf; d.fragmentFunction = vf2
                 d.colorAttachments[0].pixelFormat = .bgra8Unorm
                 d.colorAttachments[0].isBlendingEnabled = true
                 d.colorAttachments[0].rgbBlendOperation = .add
@@ -1299,7 +1326,18 @@ class SpectrumAnalyzerView: NSView {
     /// Called by display link at 60Hz
     /// Note: This is internal (not private) so the display link callback can access it
     func render() {
-        
+        // Throttle to 60Hz on high-refresh-rate displays
+        let hostTime = mach_absolute_time()
+        if lastFrameHostTime != 0 {
+            var timebase = mach_timebase_info_data_t()
+            mach_timebase_info(&timebase)
+            let elapsedNs = (hostTime - lastFrameHostTime) * UInt64(timebase.numer) / UInt64(timebase.denom)
+            if elapsedNs < 14_000_000 { // < 14ms = above ~71fps, skip this frame
+                return
+            }
+        }
+        lastFrameHostTime = hostTime
+
         guard isRendering, let metalLayer = metalLayer else { return }
 
         // Adaptive row count: avoid sub-pixel cells in small views (e.g. main window spectrum is 18pt tall).
@@ -1523,9 +1561,22 @@ class SpectrumAnalyzerView: NSView {
         // Creating an encoder without calling endEncoding() leaves the command buffer in an invalid state.
         guard let cb = commandQueue?.makeCommandBuffer(),
               let simA = flameSimTextureA, let simB = flameSimTextureB,
-              let computePL = flamePropPipeline, let renderPL = flameRenderPipeline else {
+              let computePL = flamePropPipeline,
+              let blurHPL = flameBlurHPipeline, let renderPL = flameRenderPipeline else {
             inFlightSemaphore.signal(); return
         }
+        // Create or resize the intermediate r16Float horizontal-blur texture
+        let drawableW = drawable.texture.width
+        let drawableH = drawable.texture.height
+        let drawableSize = CGSize(width: drawableW, height: drawableH)
+        if flameBlurTexture == nil || flameBlurLastDrawableSize != drawableSize {
+            let td = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .r16Float, width: drawableW, height: drawableH, mipmapped: false)
+            td.usage = [.shaderRead, .renderTarget]; td.storageMode = .private
+            flameBlurTexture = device?.makeTexture(descriptor: td)
+            flameBlurLastDrawableSize = drawableSize
+        }
+        guard let blurTex = flameBlurTexture else { inFlightSemaphore.signal(); return }
         var localSpectrum: [Float] = []; var localStyle: FlameStyle = .inferno; var localTime: Float = 0
         var localIntensity: FlameIntensity = .mellow
         dataLock.withLock {
@@ -1578,13 +1629,24 @@ class SpectrumAnalyzerView: NSView {
             enc.setBuffer(flameSpectrumBuffer, offset: 0, index: 1)
             enc.dispatchThreadgroups(tgs, threadsPerThreadgroup: tgSize); enc.endEncoding()
         }
-        let rpd = MTLRenderPassDescriptor()
-        rpd.colorAttachments[0].texture = drawable.texture
-        rpd.colorAttachments[0].loadAction = .clear; rpd.colorAttachments[0].storeAction = .store
-        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
-            enc.setRenderPipelineState(renderPL)
+        // Pass 2: horizontal blur (fire grid → intermediate r16Float texture)
+        let rpdH = MTLRenderPassDescriptor()
+        rpdH.colorAttachments[0].texture = blurTex
+        rpdH.colorAttachments[0].loadAction = .dontCare; rpdH.colorAttachments[0].storeAction = .store
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpdH) {
+            enc.setRenderPipelineState(blurHPL)
             enc.setFragmentTexture(writeTex, index: 0)
+            enc.setFragmentBuffer(flameParamsBuffer, offset: 0, index: 0)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6); enc.endEncoding()
+        }
+        // Pass 3: vertical blur + color mapping (intermediate → drawable)
+        let rpdV = MTLRenderPassDescriptor()
+        rpdV.colorAttachments[0].texture = drawable.texture
+        rpdV.colorAttachments[0].loadAction = .clear; rpdV.colorAttachments[0].storeAction = .store
+        rpdV.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpdV) {
+            enc.setRenderPipelineState(renderPL)
+            enc.setFragmentTexture(blurTex, index: 0)
             enc.setFragmentBuffer(flameParamsBuffer, offset: 0, index: 0)
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6); enc.endEncoding()
         }
@@ -1777,7 +1839,28 @@ class SpectrumAnalyzerView: NSView {
                 p[i] = val
             }
         }
-        
+
+        // Find top 2 spectrum peaks on CPU (avoids per-pixel scan in shader)
+        var peak1Band: Float = 0.5
+        var peak1Energy: Float = 0.0
+        var peak2Band: Float = 0.3
+        var peak2Energy: Float = 0.0
+        let specCount = localSpectrum.count
+        if specCount > 0 {
+            for i in 0..<specCount {
+                let e = localSpectrum[i]
+                if e > peak1Energy {
+                    peak2Energy = peak1Energy
+                    peak2Band = peak1Band
+                    peak1Energy = e
+                    peak1Band = Float(i) / Float(specCount - 1)
+                } else if e > peak2Energy {
+                    peak2Energy = e
+                    peak2Band = Float(i) / Float(specCount - 1)
+                }
+            }
+        }
+
         // Update electricity params
         let viewport = drawableViewportSize(drawable)
         let totalE = (electricitySmoothBass + electricitySmoothMid + electricitySmoothTreble) / 3.0
@@ -1795,7 +1878,11 @@ class SpectrumAnalyzerView: NSView {
                 beatIntensity: electricityBeatIntensity,
                 dramaticIntensity: electricityDramaticIntensity,
                 colorScheme: localColorScheme,
-                brightnessBoost: brightnessBoost
+                brightnessBoost: brightnessBoost,
+                peak1Band: peak1Band,
+                peak1Energy: peak1Energy,
+                peak2Band: peak2Band,
+                peak2Energy: peak2Energy
             )
         }
         
@@ -1967,7 +2054,7 @@ class SpectrumAnalyzerView: NSView {
         let ultraOutputCount = ultraBarCount
         
         // Check normalization mode - Accurate uses full height for max dynamic range
-        let isAccurateMode = UserDefaults.standard.string(forKey: normalizationUserDefaultsKey) == SpectrumNormalizationMode.accurate.rawValue
+        let isAccurateMode = cachedIsAccurateNormalization
         
         // Scale factor: Accurate mode uses full height, others leave headroom for peaks
         let displayScale: Float = isAccurateMode ? 1.0 : 0.95
@@ -2244,29 +2331,40 @@ class SpectrumAnalyzerView: NSView {
                 ultraPeakPositions[col] = max(0, min(1.0, ultraPeakPositions[col]))
             }
             
-            // Smooth per-cell brightness with gradient bar top and exponential decay
-            for row in 0..<rowCount {
-                let rowNorm = Float(row) / rowCountF
-                let current = ultraCellBrightness[col][row]
-                
-                if rowNorm < currentLevel - gradientZone {
-                    // Well below bar top - instant full brightness (no smoothing here,
-                    // smoothing in the interior causes visible pulsing from audio jitter)
-                    ultraCellBrightness[col][row] = 1.0
-                } else if rowNorm < currentLevel {
-                    // Gradient zone at bar top - smooth ramp for soft edge
+            // Smooth per-cell brightness with gradient bar top and exponential decay.
+            // Uses pointer-direct access + vDSP to minimise bounds-check overhead and
+            // SIMD-accelerate the decay multiply over the above-bar rows.
+            ultraCellBrightness[col].withUnsafeMutableBufferPointer { ptr in
+                let base = ptr.baseAddress!
+                let count = ptr.count
+
+                // Integer row boundaries (clamped to valid range)
+                let litEndRow  = max(0, min(count, Int((currentLevel - gradientZone) * rowCountF)))
+                let gradEndRow = max(0, min(count, Int(currentLevel * rowCountF)))
+
+                // Below gradient zone: fill with 1.0 (vDSP_vfill = vectorised store)
+                if litEndRow > 0 {
+                    var one: Float = 1.0
+                    vDSP_vfill(&one, base, 1, vDSP_Length(litEndRow))
+                }
+
+                // Gradient zone (~3 rows): soft ramp, take max with decayed value
+                for row in litEndRow..<gradEndRow {
+                    let rowNorm = Float(row) / rowCountF
                     let t = (currentLevel - rowNorm) / gradientZone
                     let target = 0.4 + 0.6 * t
-                    ultraCellBrightness[col][row] = max(target, current * decayMultiplier)
-                } else {
-                    // Above bar - smooth exponential decay
-                    ultraCellBrightness[col][row] = current * decayMultiplier
+                    base[row] = max(target, base[row] * decayMultiplier)
                 }
-                
-                // Clean floor to avoid sub-perceptual ghost values
-                if ultraCellBrightness[col][row] < 0.003 {
-                    ultraCellBrightness[col][row] = 0
+
+                // Above bar: vectorised exponential decay via vDSP_vsmul
+                let aboveCount = count - gradEndRow
+                if aboveCount > 0 {
+                    var dm = decayMultiplier
+                    vDSP_vsmul(base + gradEndRow, 1, &dm, base + gradEndRow, 1, vDSP_Length(aboveCount))
                 }
+
+                // Floor cleanup: zero sub-perceptual ghost values
+                for i in 0..<count where base[i] < 0.003 { base[i] = 0 }
             }
         }
     }

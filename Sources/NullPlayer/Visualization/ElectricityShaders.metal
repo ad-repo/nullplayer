@@ -20,6 +20,10 @@ struct ElectricityParams {
     float dramaticIntensity;  // Rare dramatic strike (JWST-style, slow decay)
     int colorScheme;          // 0=classic, 1=plasma, 2=matrix, 3=ember, 4=arctic
     float brightnessBoost;    // Brightness multiplier (1.0 = default, >1.0 = brighter)
+    float peak1Band;          // Normalized position (0.0-1.0) of loudest band
+    float peak1Energy;        // Energy of loudest band
+    float peak2Band;          // Normalized position (0.0-1.0) of 2nd loudest band
+    float peak2Energy;        // Energy of 2nd loudest band
 };
 
 // MARK: - Noise
@@ -555,46 +559,35 @@ fragment float4 electricity_fragment(
     
     float dramaticSuppress = 1.0 - smoothstep(0.0, 0.1, dramatic);
     
-    int peakBands[2] = {-1, -1};
-    float peakVals[2] = {0, 0};
-    float peakThreshold = max(0.26, 0.56 - energy * 0.35);
-    
-    for (int b = 1; b < 74; b++) {
-        float val = spectrum[b];
-        if (val < peakThreshold) continue;
-        if (val >= spectrum[b - 1] && val >= spectrum[b + 1]) {
-            for (int s = 0; s < 2; s++) {
-                if (val > peakVals[s]) {
-                    for (int k = 1; k > s; k--) {
-                        peakBands[k] = peakBands[k - 1];
-                        peakVals[k] = peakVals[k - 1];
-                    }
-                    peakBands[s] = b;
-                    peakVals[s] = val;
-                    break;
-                }
-            }
-        }
-    }
-    
+    float peak1Energy = params.peak1Energy;
+    float peak1Freq = params.peak1Band;
+    float peak2Energy = params.peak2Energy;
+    float peak2Freq = params.peak2Band;
+
     float3 totalBolt = float3(0.0);
-    
-    for (int pi = 0; pi < 2; pi++) {
-        if (peakBands[pi] < 0) continue;
-        
-        float peakVal = peakVals[pi];
-        float bandNorm = float(peakBands[pi]) / 74.0;
-        
+
+    {
+        float peakVal = peak1Energy;
+        float bandNorm = peak1Freq;
         float originX = (bandNorm - 0.5) * aspect * 0.85;
         float2 origin = float2(originX, 0.5);
-        
-        float burstSeed = float(peakBands[pi]) * 0.137 + float(pi) * 3.7;
+        float burstSeed = bandNorm * 54.0 + 0.0 * 3.7;
         float burstEnergy = clamp(peakVal * 1.5, 0.0, 1.0);
-        float rankScale = (pi == 0) ? 1.0 : 0.35;
-        
         float3 burst = lightning_burst(centered, origin, burstSeed,
                                        burstEnergy, aspect, t, cs);
-        totalBolt += burst * rankScale * dramaticSuppress;
+        totalBolt += burst * 1.0 * dramaticSuppress;
+    }
+
+    {
+        float peakVal = peak2Energy;
+        float bandNorm = peak2Freq;
+        float originX = (bandNorm - 0.5) * aspect * 0.85;
+        float2 origin = float2(originX, 0.5);
+        float burstSeed = bandNorm * 54.0 + 1.0 * 3.7;
+        float burstEnergy = clamp(peakVal * 1.5, 0.0, 1.0);
+        float3 burst = lightning_burst(centered, origin, burstSeed,
+                                       burstEnergy, aspect, t, cs);
+        totalBolt += burst * 0.35 * dramaticSuppress;
     }
     
     // ================================================================
