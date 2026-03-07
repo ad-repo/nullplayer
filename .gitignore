@@ -54,6 +54,7 @@ skills/_build/
 # Temporary files
 tmp/
 *.tmp
+TASKS.md
 
 # Git worktrees
 .worktrees/
