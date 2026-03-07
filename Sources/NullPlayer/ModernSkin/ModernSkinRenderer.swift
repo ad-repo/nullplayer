@@ -176,26 +176,6 @@ class ModernSkinRenderer {
         return strips
     }
 
-    private func redrawWindowBackground(in bounds: NSRect, context: CGContext, strips: [CGRect], opacity: CGFloat) {
-        guard !strips.isEmpty else { return }
-        context.saveGState()
-        context.setBlendMode(.copy)
-        let clipPath = CGMutablePath()
-        for strip in strips { clipPath.addRect(strip) }
-        context.addPath(clipPath)
-        context.clip()
-
-        context.saveGState()
-        context.setAlpha(opacity)
-        context.setFillColor(skin.backgroundColor.cgColor)
-        context.fill(bounds)
-        if let bgImage = skin.backgroundImage {
-            drawImage(bgImage, in: bounds, context: context)
-        }
-        context.restoreGState()
-        context.restoreGState()
-    }
-
     /// Draw the window border with optional glow.
     /// When occlusion segments are present and `seamlessDocking` > 0,
     /// border suppression is applied only on the joined edge intervals.
@@ -221,33 +201,45 @@ class ModernSkinRenderer {
         let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, sharpCorners: sharpCorners)
 
         if seamless >= 1.0 && !effectiveSegments.isEmpty {
-            // Draw normally, then repaint only joined edge strips to avoid clip-boundary artifacts.
+            // Draw border/glow in an isolated layer, then clear only joined seam strips.
+            // This avoids clip artifacts and preserves underlying background design.
+            let stripThickness = borderWidth + (skin.config.glow.enabled
+                ? max(0.45, min(1.0, glowRadius * 0.12))
+                : 0.25)
+            let strips = edgeStripRects(
+                for: bounds,
+                segments: effectiveSegments,
+                thickness: stripThickness,
+                endpointPadding: max(0.4, borderWidth * 0.4)
+            )
+
             if skin.config.glow.enabled {
-                context.saveGState()
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
                 context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5).cgColor)
                 context.setStrokeColor(borderColor.cgColor)
                 context.setLineWidth(borderWidth)
                 context.addPath(path)
                 context.strokePath()
-                context.restoreGState()
+            } else {
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
             }
 
+            context.setShadow(offset: .zero, blur: 0, color: nil)
             context.setStrokeColor(borderColor.cgColor)
             context.setLineWidth(borderWidth)
             context.addPath(path)
             context.strokePath()
 
-            // Keep suppression band tight so we hide seam/caps without darkening interior chrome.
-            let stripThickness = borderWidth + (skin.config.glow.enabled
-                ? max(0.3, min(0.7, glowRadius * 0.08))
-                : 0.2)
-            let strips = edgeStripRects(
-                for: bounds,
-                segments: effectiveSegments,
-                thickness: stripThickness,
-                endpointPadding: max(0.35, borderWidth * 0.3)
-            )
-            redrawWindowBackground(in: bounds, context: context, strips: strips, opacity: backgroundOpacity)
+            if !strips.isEmpty {
+                context.saveGState()
+                context.setBlendMode(.clear)
+                for strip in strips {
+                    context.fill(strip)
+                }
+                context.restoreGState()
+            }
+
+            context.endTransparencyLayer()
             return
         }
 
