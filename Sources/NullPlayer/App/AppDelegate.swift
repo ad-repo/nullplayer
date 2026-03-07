@@ -283,7 +283,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback player for modern personal media setups")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback player for modern personal setups")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
@@ -307,7 +307,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 36
 
         // sthanks
-        let sthanksLabel = NSTextField(labelWithString: "Thanks to SpaXter25 for QE and PD help")
+        let sthanksLabel = NSTextField(labelWithString: "Thanks to u/SpaXter25 for QE and PD")
         sthanksLabel.font = NSFont.systemFont(ofSize: 12)
         sthanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         sthanksLabel.alignment = .center
