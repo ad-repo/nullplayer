@@ -1361,8 +1361,9 @@ class ModernMainWindowView: NSView {
                 super.keyDown(with: event)
             }
         }
+        setNeedsDisplay(bounds)
     }
-    
+
     // MARK: - Context Menu
     
     override func menu(for event: NSEvent) -> NSMenu? {
