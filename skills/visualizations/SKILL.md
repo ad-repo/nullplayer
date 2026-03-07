@@ -268,7 +268,7 @@ Participates in docking system with Main, EQ, and Playlist:
 - Mids (bands 16-49): Increases flame sway and motion
 - Treble (bands 50-74): Adds ember sparks
 
-**Technical**: 128x96 simulation grid with per-column propagation. 11x11 Gaussian blur. Compute + render pass at 60 FPS.
+**Technical**: 128x96 simulation grid with per-column propagation. Two-pass separable Gaussian blur (11H + 11V = 22 samples/pixel vs 121 for a single-pass 11×11). Three Metal passes: compute (propagation), render (horizontal blur → r16Float intermediate), render (vertical blur + color mapping → drawable). 60 FPS.
 
 ### JWST Mode Details
 
@@ -315,7 +315,7 @@ Iconic falling digital rain from The Matrix.
 - Beat pulse (bass hits flash white)
 - Dramatic awakening (sweep-down on major peaks)
 
-**Technical**: Single render pass with hash-based segment patterns, multi-stream rain simulation. 60 FPS.
+**Technical**: Single render pass with hash-based segment patterns, multi-stream rain simulation. Phosphor glow samples 8 neighbors (glowRange capped to 1 for both Subtle and Intense). 60 FPS.
 
 ### Responsiveness Modes
 
