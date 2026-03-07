@@ -366,34 +366,50 @@ class ModernEQView: NSView {
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let mainOpacity = renderer.skin.resolvedOpacity(for: .mainWindow)
         
         // Draw window background
-        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBackground(
+            in: bounds,
+            context: context,
+            adjacentEdges: adjacentEdges,
+            sharpCorners: sharpCorners,
+            backgroundOpacity: mainOpacity.background
+        )
 
         // Draw window border with glow (seamless docking suppresses adjacent edges)
-        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
+        renderer.drawWindowBorder(
+            in: bounds,
+            context: context,
+            adjacentEdges: adjacentEdges,
+            sharpCorners: sharpCorners,
+            occlusionSegments: edgeOcclusionSegments,
+            borderOpacity: mainOpacity.border
+        )
 
         // Draw title bar (unless hidden by docking)
-        if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
-            renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER EQUALIZER", prefix: "eq_", context: context)
+        withContextAlpha(mainOpacity.content, context: context) {
+            if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
+                renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER EQUALIZER", prefix: "eq_", context: context)
+                
+                // Draw close button
+                let closeState = (pressedButton == "eq_btn_close") ? "pressed" : "normal"
+                renderer.drawWindowControlButton("eq_btn_close", state: closeState,
+                                                 in: closeBtnBaseRect, context: context)
+                
+                // Draw shade button
+                let shadeState = (pressedButton == "eq_btn_shade") ? "pressed" : "normal"
+                renderer.drawWindowControlButton("eq_btn_shade", state: shadeState,
+                                                 in: shadeBtnBaseRect, context: context)
+            }
             
-            // Draw close button
-            let closeState = (pressedButton == "eq_btn_close") ? "pressed" : "normal"
-            renderer.drawWindowControlButton("eq_btn_close", state: closeState,
-                                             in: closeBtnBaseRect, context: context)
+            if isShadeMode {
+                return
+            }
             
-            // Draw shade button
-            let shadeState = (pressedButton == "eq_btn_shade") ? "pressed" : "normal"
-            renderer.drawWindowControlButton("eq_btn_shade", state: shadeState,
-                                             in: shadeBtnBaseRect, context: context)
+            // Draw EQ content
+            drawEQContent(in: context)
         }
-        
-        if isShadeMode {
-            return
-        }
-        
-        // Draw EQ content
-        drawEQContent(in: context)
     }
     
     /// Base rects in the 275x116 coordinate space (renderer scales them)
@@ -418,6 +434,8 @@ class ModernEQView: NSView {
         let skin = renderer.skin
         let font = skin.eqLabelFont()
         let tinyFont = skin.eqValueFont()
+        let faderOpacity = skin.resolvedOpacity(for: .eqFaderBackground)
+        let curveOpacity = skin.resolvedOpacity(for: .curveBackground)
         
         // == 1. Sliders (clip so glow doesn't bleed up) ==
         let preampCenterX = preampX + sliderWidth / 2
@@ -426,7 +444,7 @@ class ModernEQView: NSView {
         context.clip(to: NSRect(x: 0, y: 0, width: bounds.width, height: sliderTopY))
         
         // Preamp slider
-        drawSlider(index: -1, x: preampX, context: context)
+        drawSlider(index: -1, x: preampX, opacityStyle: faderOpacity, context: context)
         
         // Separator line between preamp and bands
         let sepX = bandStartX - 5 * scale
@@ -443,7 +461,7 @@ class ModernEQView: NSView {
         // 10 band sliders
         for i in 0..<10 {
             let x = bandStartX + CGFloat(i) * bandSpacing
-            drawSlider(index: i, x: x, context: context)
+            drawSlider(index: i, x: x, opacityStyle: faderOpacity, context: context)
         }
         
         context.restoreGState() // end slider clip
@@ -481,7 +499,7 @@ class ModernEQView: NSView {
         }
 
         // EQ curve graph
-        drawEQGraph(context: context)
+        drawEQGraph(opacityStyle: curveOpacity, context: context)
         
         // == 3. Frequency labels (bottom) ==
         // PRE dB value under preamp
@@ -515,6 +533,14 @@ class ModernEQView: NSView {
             context.restoreGState()
         }
         str.draw(at: origin)
+    }
+
+    private func withContextAlpha(_ alpha: CGFloat, context: CGContext, draw: () -> Void) {
+        let resolvedAlpha = min(1.0, max(0.0, alpha))
+        context.saveGState()
+        context.setAlpha(resolvedAlpha)
+        draw()
+        context.restoreGState()
     }
     
     // MARK: - Toggle/Push Button Drawing
@@ -595,7 +621,8 @@ class ModernEQView: NSView {
     
     // MARK: - Slider Drawing
     
-    private func drawSlider(index: Int, x: CGFloat, context: CGContext) {
+    /// Uses `window.areaOpacity.eqFaderBackground` channels.
+    private func drawSlider(index: Int, x: CGFloat, opacityStyle: ResolvedAreaOpacityStyle, context: CGContext) {
         let value = index == -1 ? preamp : bands[index]
         let skin = renderer.skin
         
@@ -607,123 +634,134 @@ class ModernEQView: NSView {
         
         // Track background - deep black
         context.saveGState()
-        context.setFillColor(NSColor(calibratedWhite: 0.03, alpha: 1.0).cgColor)
+        context.setFillColor(NSColor(calibratedWhite: 0.03, alpha: opacityStyle.background).cgColor)
         context.fill(trackRect)
+        if opacityStyle.border > 0 {
+            context.setStrokeColor(skin.borderColor.withAlphaComponent(opacityStyle.border).cgColor)
+            context.setLineWidth(max(0.5, 0.5 * scale))
+            context.stroke(trackRect)
+        }
         context.restoreGState()
-        
-        // Colored fill from center to thumb
-        let fillAmount = abs(value)
-        if fillAmount > 0.3 {
-            let fillRect: NSRect
-            if value >= 0 {
-                fillRect = NSRect(x: x, y: centerY, width: sliderWidth, height: thumbY - centerY)
-            } else {
-                fillRect = NSRect(x: x, y: thumbY, width: sliderWidth, height: centerY - thumbY)
+
+        withContextAlpha(opacityStyle.content, context: context) {
+            // Colored fill from center to thumb
+            let fillAmount = abs(value)
+            if fillAmount > 0.3 {
+                let fillRect: NSRect
+                if value >= 0 {
+                    fillRect = NSRect(x: x, y: centerY, width: sliderWidth, height: thumbY - centerY)
+                } else {
+                    fillRect = NSRect(x: x, y: thumbY, width: sliderWidth, height: centerY - thumbY)
+                }
+                
+                // Wide outer bloom
+                context.saveGState()
+                context.setShadow(offset: .zero, blur: 10 * scale * glowMultiplier,
+                                  color: fillColor.withAlphaComponent(0.5).cgColor)
+                context.setFillColor(fillColor.withAlphaComponent(0.4).cgColor)
+                context.fill(fillRect)
+                context.restoreGState()
+                
+                // Inner fill
+                context.saveGState()
+                context.setFillColor(fillColor.withAlphaComponent(0.5).cgColor)
+                context.fill(fillRect)
+                context.restoreGState()
+                
+                // Hot neon center line through fill
+                let lineX = x + sliderWidth / 2
+                context.saveGState()
+                context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier,
+                                  color: fillColor.withAlphaComponent(1.0).cgColor)
+                context.setStrokeColor(fillColor.withAlphaComponent(0.9).cgColor)
+                context.setLineWidth(2.0)
+                context.move(to: CGPoint(x: lineX, y: fillRect.minY))
+                context.addLine(to: CGPoint(x: lineX, y: fillRect.maxY))
+                context.strokePath()
+                // Second pass for extra brightness
+                context.setShadow(offset: .zero, blur: 2 * scale * glowMultiplier,
+                                  color: NSColor.white.withAlphaComponent(0.4).cgColor)
+                context.setStrokeColor(fillColor.withAlphaComponent(0.7).cgColor)
+                context.setLineWidth(1.0)
+                context.move(to: CGPoint(x: lineX, y: fillRect.minY))
+                context.addLine(to: CGPoint(x: lineX, y: fillRect.maxY))
+                context.strokePath()
+                context.restoreGState()
             }
             
-            // Wide outer bloom
+            // Center line (0 dB) - subtle glow
             context.saveGState()
-            context.setShadow(offset: .zero, blur: 10 * scale * glowMultiplier,
-                              color: fillColor.withAlphaComponent(0.5).cgColor)
-            context.setFillColor(fillColor.withAlphaComponent(0.4).cgColor)
-            context.fill(fillRect)
+            context.setShadow(offset: .zero, blur: 3 * scale * glowMultiplier,
+                              color: skin.primaryColor.withAlphaComponent(0.3).cgColor)
+            context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.35).cgColor)
+            context.setLineWidth(0.5)
+            context.move(to: CGPoint(x: trackRect.minX, y: centerY))
+            context.addLine(to: CGPoint(x: trackRect.maxX, y: centerY))
+            context.strokePath()
             context.restoreGState()
             
-            // Inner fill
+            // === THUMB - the big glowing indicator ===
+            let thumbHeight: CGFloat = 4 * scale
+            let thumbOverhang: CGFloat = 3 * scale
+            let thumbRect = NSRect(x: x - thumbOverhang, y: thumbY - thumbHeight / 2,
+                                   width: sliderWidth + thumbOverhang * 2, height: thumbHeight)
+            
+            // Massive outer bloom
             context.saveGState()
-            context.setFillColor(fillColor.withAlphaComponent(0.5).cgColor)
-            context.fill(fillRect)
+            context.setShadow(offset: .zero, blur: 12 * scale * glowMultiplier,
+                              color: fillColor.withAlphaComponent(0.8).cgColor)
+            context.setFillColor(fillColor.cgColor)
+            context.fill(thumbRect)
             context.restoreGState()
             
-            // Hot neon center line through fill
-            let lineX = x + sliderWidth / 2
+            // Second bloom pass for intensity
             context.saveGState()
-            context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier,
-                              color: fillColor.withAlphaComponent(1.0).cgColor)
-            context.setStrokeColor(fillColor.withAlphaComponent(0.9).cgColor)
-            context.setLineWidth(2.0)
-            context.move(to: CGPoint(x: lineX, y: fillRect.minY))
-            context.addLine(to: CGPoint(x: lineX, y: fillRect.maxY))
-            context.strokePath()
-            // Second pass for extra brightness
-            context.setShadow(offset: .zero, blur: 2 * scale * glowMultiplier,
-                              color: NSColor.white.withAlphaComponent(0.4).cgColor)
-            context.setStrokeColor(fillColor.withAlphaComponent(0.7).cgColor)
-            context.setLineWidth(1.0)
-            context.move(to: CGPoint(x: lineX, y: fillRect.minY))
-            context.addLine(to: CGPoint(x: lineX, y: fillRect.maxY))
-            context.strokePath()
+            context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
+                              color: fillColor.withAlphaComponent(0.9).cgColor)
+            context.setFillColor(fillColor.cgColor)
+            context.fill(thumbRect)
+            context.restoreGState()
+            
+            // Solid thumb
+            context.saveGState()
+            context.setFillColor(fillColor.cgColor)
+            context.fill(thumbRect)
+            context.restoreGState()
+            
+            // White-hot center highlight
+            let hotLine = NSRect(x: thumbRect.minX + 2, y: thumbRect.midY - 0.5,
+                                 width: thumbRect.width - 4, height: 1.0)
+            context.saveGState()
+            context.setFillColor(NSColor.white.withAlphaComponent(0.6).cgColor)
+            context.fill(hotLine)
             context.restoreGState()
         }
-        
-        // Center line (0 dB) - subtle glow
-        context.saveGState()
-        context.setShadow(offset: .zero, blur: 3 * scale * glowMultiplier,
-                          color: skin.primaryColor.withAlphaComponent(0.3).cgColor)
-        context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.35).cgColor)
-        context.setLineWidth(0.5)
-        context.move(to: CGPoint(x: trackRect.minX, y: centerY))
-        context.addLine(to: CGPoint(x: trackRect.maxX, y: centerY))
-        context.strokePath()
-        context.restoreGState()
-        
-        // === THUMB - the big glowing indicator ===
-        let thumbHeight: CGFloat = 4 * scale
-        let thumbOverhang: CGFloat = 3 * scale
-        let thumbRect = NSRect(x: x - thumbOverhang, y: thumbY - thumbHeight / 2,
-                               width: sliderWidth + thumbOverhang * 2, height: thumbHeight)
-        
-        // Massive outer bloom
-        context.saveGState()
-        context.setShadow(offset: .zero, blur: 12 * scale * glowMultiplier,
-                          color: fillColor.withAlphaComponent(0.8).cgColor)
-        context.setFillColor(fillColor.cgColor)
-        context.fill(thumbRect)
-        context.restoreGState()
-        
-        // Second bloom pass for intensity
-        context.saveGState()
-        context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
-                          color: fillColor.withAlphaComponent(0.9).cgColor)
-        context.setFillColor(fillColor.cgColor)
-        context.fill(thumbRect)
-        context.restoreGState()
-        
-        // Solid thumb
-        context.saveGState()
-        context.setFillColor(fillColor.cgColor)
-        context.fill(thumbRect)
-        context.restoreGState()
-        
-        // White-hot center highlight
-        let hotLine = NSRect(x: thumbRect.minX + 2, y: thumbRect.midY - 0.5,
-                             width: thumbRect.width - 4, height: 1.0)
-        context.saveGState()
-        context.setFillColor(NSColor.white.withAlphaComponent(0.6).cgColor)
-        context.fill(hotLine)
-        context.restoreGState()
     }
     
     // MARK: - EQ Graph Drawing
     
-    private func drawEQGraph(context: CGContext) {
+    /// Uses `window.areaOpacity.curveBackground` channels.
+    private func drawEQGraph(opacityStyle: ResolvedAreaOpacityStyle, context: CGContext) {
         let rect = graphRect
         let skin = renderer.skin
         
         // Dark recessed background
         context.saveGState()
-        context.setFillColor(NSColor(calibratedWhite: 0.01, alpha: 1.0).cgColor)
+        context.setFillColor(NSColor(calibratedWhite: 0.01, alpha: opacityStyle.background).cgColor)
         context.fill(rect)
         context.restoreGState()
         
         // Glowing border
-        context.saveGState()
-        context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
-                          color: skin.accentColor.withAlphaComponent(0.3).cgColor)
-        context.setStrokeColor(skin.accentColor.withAlphaComponent(0.4).cgColor)
-        context.setLineWidth(1.0)
-        context.stroke(rect)
-        context.restoreGState()
+        withContextAlpha(opacityStyle.border, context: context) {
+            context.saveGState()
+            context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
+                              color: skin.accentColor.withAlphaComponent(0.3).cgColor)
+            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.4).cgColor)
+            context.setLineWidth(1.0)
+            context.stroke(rect)
+            context.restoreGState()
+        }
+        guard opacityStyle.content > 0 else { return }
         
         // Always draw the curve (even when flat it shows the center line as the curve)
         let insetRect = rect.insetBy(dx: 2, dy: 2)
@@ -756,69 +794,71 @@ class ModernEQView: NSView {
         fillPath.addLine(to: CGPoint(x: points.first!.x, y: rect.midY))
         fillPath.closeSubpath()
         
-        context.saveGState()
-        context.clip(to: rect)
-        context.addPath(fillPath)
-        context.clip()
-        context.setFillColor(skin.accentColor.withAlphaComponent(0.3).cgColor)
-        context.fill(rect)
-        context.restoreGState()
-        
-        // Curve - wide glow
-        context.saveGState()
-        context.clip(to: rect)
-        context.setShadow(offset: .zero, blur: 8 * scale * glowMultiplier,
-                          color: skin.accentColor.withAlphaComponent(0.8).cgColor)
-        context.setStrokeColor(skin.accentColor.withAlphaComponent(0.8).cgColor)
-        context.setLineWidth(2.5 * scale)
-        context.setLineJoin(.round)
-        context.setLineCap(.round)
-        context.addPath(curvePath)
-        context.strokePath()
-        context.restoreGState()
-        
-        // Curve - bright core
-        context.saveGState()
-        context.clip(to: rect)
-        context.setStrokeColor(skin.accentColor.cgColor)
-        context.setLineWidth(1.5 * scale)
-        context.setLineJoin(.round)
-        context.setLineCap(.round)
-        context.addPath(curvePath)
-        context.strokePath()
-        context.restoreGState()
-        
-        // White-hot center of curve
-        context.saveGState()
-        context.clip(to: rect)
-        context.setStrokeColor(NSColor.white.withAlphaComponent(0.4).cgColor)
-        context.setLineWidth(0.5 * scale)
-        context.setLineJoin(.round)
-        context.setLineCap(.round)
-        context.addPath(curvePath)
-        context.strokePath()
-        context.restoreGState()
-        
-        // Glowing dots at each band point
-        for point in points {
-            let dotR: CGFloat = 2.5 * scale
-            let dotRect = NSRect(x: point.x - dotR, y: point.y - dotR,
-                                 width: dotR * 2, height: dotR * 2)
+        withContextAlpha(opacityStyle.content, context: context) {
             context.saveGState()
             context.clip(to: rect)
-            context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
-                              color: skin.accentColor.withAlphaComponent(0.9).cgColor)
-            context.setFillColor(skin.accentColor.cgColor)
-            context.fillEllipse(in: dotRect)
+            context.addPath(fillPath)
+            context.clip()
+            context.setFillColor(skin.accentColor.withAlphaComponent(0.3).cgColor)
+            context.fill(rect)
             context.restoreGState()
             
-            // White center
-            let innerDot = dotRect.insetBy(dx: dotR * 0.4, dy: dotR * 0.4)
+            // Curve - wide glow
             context.saveGState()
             context.clip(to: rect)
-            context.setFillColor(NSColor.white.withAlphaComponent(0.8).cgColor)
-            context.fillEllipse(in: innerDot)
+            context.setShadow(offset: .zero, blur: 8 * scale * glowMultiplier,
+                              color: skin.accentColor.withAlphaComponent(0.8).cgColor)
+            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.8).cgColor)
+            context.setLineWidth(2.5 * scale)
+            context.setLineJoin(.round)
+            context.setLineCap(.round)
+            context.addPath(curvePath)
+            context.strokePath()
             context.restoreGState()
+            
+            // Curve - bright core
+            context.saveGState()
+            context.clip(to: rect)
+            context.setStrokeColor(skin.accentColor.cgColor)
+            context.setLineWidth(1.5 * scale)
+            context.setLineJoin(.round)
+            context.setLineCap(.round)
+            context.addPath(curvePath)
+            context.strokePath()
+            context.restoreGState()
+            
+            // White-hot center of curve
+            context.saveGState()
+            context.clip(to: rect)
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.4).cgColor)
+            context.setLineWidth(0.5 * scale)
+            context.setLineJoin(.round)
+            context.setLineCap(.round)
+            context.addPath(curvePath)
+            context.strokePath()
+            context.restoreGState()
+            
+            // Glowing dots at each band point
+            for point in points {
+                let dotR: CGFloat = 2.5 * scale
+                let dotRect = NSRect(x: point.x - dotR, y: point.y - dotR,
+                                     width: dotR * 2, height: dotR * 2)
+                context.saveGState()
+                context.clip(to: rect)
+                context.setShadow(offset: .zero, blur: 6 * scale * glowMultiplier,
+                                  color: skin.accentColor.withAlphaComponent(0.9).cgColor)
+                context.setFillColor(skin.accentColor.cgColor)
+                context.fillEllipse(in: dotRect)
+                context.restoreGState()
+                
+                // White center
+                let innerDot = dotRect.insetBy(dx: dotR * 0.4, dy: dotR * 0.4)
+                context.saveGState()
+                context.clip(to: rect)
+                context.setFillColor(NSColor.white.withAlphaComponent(0.8).cgColor)
+                context.fillEllipse(in: innerDot)
+                context.restoreGState()
+            }
         }
     }
     

@@ -1,5 +1,21 @@
 import AppKit
 
+enum ModernOpacityArea: CaseIterable {
+    case mainWindow
+    case timeDisplay
+    case trackDisplay
+    case volumeArea
+    case spectrumArea
+    case eqFaderBackground
+    case curveBackground
+}
+
+struct ResolvedAreaOpacityStyle: Equatable {
+    let background: CGFloat
+    let border: CGFloat
+    let content: CGFloat
+}
+
 /// A fully loaded modern skin with config, resolved images, and fallback rendering data.
 /// This is the runtime representation of a skin, ready for rendering.
 class ModernSkin {
@@ -128,6 +144,44 @@ class ModernSkin {
             return NSColor.from(hex: colorHex)
         }
         return textColor
+    }
+
+    // MARK: - Opacity Resolution
+
+    /// Resolve area-specific opacity channels from `window.areaOpacity`,
+    /// falling back to `window.opacity` when an area/channel is omitted.
+    func resolvedOpacity(for area: ModernOpacityArea) -> ResolvedAreaOpacityStyle {
+        let fallback = clampedOpacity(config.window.opacity)
+        let areaStyle = areaOpacityStyle(for: area)
+        return ResolvedAreaOpacityStyle(
+            background: clampedOpacity(areaStyle?.background ?? fallback),
+            border: clampedOpacity(areaStyle?.border ?? fallback),
+            content: clampedOpacity(areaStyle?.content ?? fallback)
+        )
+    }
+
+    private func areaOpacityStyle(for area: ModernOpacityArea) -> AreaOpacityStyle? {
+        let areaOpacity = config.window.areaOpacity
+        switch area {
+        case .mainWindow:
+            return areaOpacity?.mainWindow
+        case .timeDisplay:
+            return areaOpacity?.timeDisplay
+        case .trackDisplay:
+            return areaOpacity?.trackDisplay
+        case .volumeArea:
+            return areaOpacity?.volumeArea
+        case .spectrumArea:
+            return areaOpacity?.spectrumArea
+        case .eqFaderBackground:
+            return areaOpacity?.eqFaderBackground
+        case .curveBackground:
+            return areaOpacity?.curveBackground
+        }
+    }
+
+    private func clampedOpacity(_ value: CGFloat) -> CGFloat {
+        min(1.0, max(0.0, value))
     }
     
     /// Get resolved rect for an element, applying any config overrides

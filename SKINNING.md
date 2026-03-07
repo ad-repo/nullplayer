@@ -262,14 +262,23 @@ The `elementBlur` multiplier scales the glow halos on individual UI elements (se
 
 **Performance note**: Glow uses Metal GPU shaders. Set `"enabled": false` if you want maximum performance or a flat aesthetic.
 
-### Window Chrome
+### Window Chrome (Modern UI)
 
 ```json
 "window": {
     "borderWidth": 1,
     "borderColor": "#00ffcc",
     "cornerRadius": 8,
-    "opacity": 0.94
+    "opacity": 1.0,
+    "areaOpacity": {
+        "mainWindow": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "timeDisplay": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "trackDisplay": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "volumeArea": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "spectrumArea": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "eqFaderBackground": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "curveBackground": { "background": 1.0, "border": 1.0, "content": 1.0 }
+    }
 }
 ```
 
@@ -279,7 +288,72 @@ The `elementBlur` multiplier scales the glow halos on individual UI elements (se
 | `borderColor` | Border color (defaults to palette `border` or `primary`) |
 | `cornerRadius` | Rounded corner radius (0 = square corners) |
 | `scale` | UI scale factor (default 1.25). Smaller = more compact, larger = bigger UI |
-| `opacity` | Window background opacity (0.0-1.0, default 1.0). Applies to background fill + background image |
+| `opacity` | Base opacity for modern window chrome. **Required** |
+| `areaOpacity` | Per-area opacity overrides for modern windows. Missing areas/channels fall back to `window.opacity` |
+
+`areaOpacity` is modern-skin-only and currently applies to these 7 regions:
+
+| Area Key | Region |
+|-----|-------------|
+| `mainWindow` | Main window background, border, and main content pass |
+| `timeDisplay` | Time display panel (digits/status area) |
+| `trackDisplay` | Track/marquee info panel |
+| `volumeArea` | Volume panel + slider content |
+| `spectrumArea` | Mini spectrum panel + bars |
+| `eqFaderBackground` | EQ slider track background + slider foreground |
+| `curveBackground` | EQ curve graph background + graph foreground |
+
+Each area style supports:
+- `background`: panel/background layer opacity
+- `border`: border/stroke layer opacity
+- `content`: foreground text/icons/bars/curve layer opacity
+
+Opaque built-in style example:
+
+```json
+"window": {
+    "borderWidth": 1.5,
+    "borderColor": "#00ffcc",
+    "cornerRadius": 6,
+    "opacity": 1.0,
+    "seamlessDocking": 1.0,
+    "areaOpacity": {
+        "mainWindow": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "timeDisplay": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "trackDisplay": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "volumeArea": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "spectrumArea": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "eqFaderBackground": { "background": 1.0, "border": 1.0, "content": 1.0 },
+        "curveBackground": { "background": 1.0, "border": 1.0, "content": 1.0 }
+    }
+}
+```
+
+Glass style example:
+
+```json
+"window": {
+    "borderWidth": 1,
+    "borderColor": "#d3fff1",
+    "cornerRadius": 14,
+    "opacity": 0.52,
+    "seamlessDocking": 1.0,
+    "areaOpacity": {
+        "mainWindow": { "background": 0.52, "border": 0.52, "content": 0.52 },
+        "timeDisplay": { "background": 0.52, "border": 0.52, "content": 0.52 },
+        "trackDisplay": { "background": 0.52, "border": 0.52, "content": 0.52 },
+        "volumeArea": { "background": 0.52, "border": 0.52, "content": 0.52 },
+        "spectrumArea": { "background": 0.52, "border": 0.52, "content": 0.52 },
+        "eqFaderBackground": { "background": 0.52, "border": 0.52, "content": 0.52 },
+        "curveBackground": { "background": 0.52, "border": 0.52, "content": 0.52 }
+    }
+}
+```
+
+Migration notes:
+- Existing skins must define `window.opacity`; if omitted, `skin.json` decode fails and the skin will not load.
+- `window.areaOpacity` is optional. If omitted, all 7 regions use `window.opacity`.
+- Within an area object, missing `background`, `border`, or `content` also fall back to `window.opacity`.
 
 ### Marquee (Scrolling Title Text)
 

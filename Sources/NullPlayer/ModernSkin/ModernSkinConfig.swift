@@ -138,8 +138,31 @@ struct WindowConfig: Codable {
     let borderColor: String?
     let cornerRadius: CGFloat?
     let scale: CGFloat?        // UI scale factor (defaults to 1.25)
-    let opacity: CGFloat?      // Window background opacity 0.0-1.0 (defaults to 1.0)
+    let opacity: CGFloat       // Window background opacity 0.0-1.0 (required)
     let seamlessDocking: CGFloat?  // 0.0 (full borders) to 1.0 (fully hidden on docked edges). Default 0.
+    let areaOpacity: AreaOpacityConfig? // Optional per-area opacity overrides
+}
+
+/// Per-area opacity styles for Modern UI regions.
+/// Missing areas/channels fall back to `window.opacity`.
+struct AreaOpacityConfig: Codable, Equatable {
+    let mainWindow: AreaOpacityStyle?
+    let timeDisplay: AreaOpacityStyle?
+    let trackDisplay: AreaOpacityStyle?
+    let volumeArea: AreaOpacityStyle?
+    let spectrumArea: AreaOpacityStyle?
+    let eqFaderBackground: AreaOpacityStyle?
+    let curveBackground: AreaOpacityStyle?
+}
+
+/// Opacity channels for a UI area.
+/// - background: panel/background fills
+/// - border: border strokes/glow around that area
+/// - content: text/icons/bars/foreground content in that area
+struct AreaOpacityStyle: Codable, Equatable {
+    let background: CGFloat?
+    let border: CGFloat?
+    let content: CGFloat?
 }
 
 struct MarqueeConfig: Codable {

@@ -60,7 +60,44 @@
         "borderColor": "#ffb8c4",
         "cornerRadius": 14,
         "opacity": 0.5,
-        "seamlessDocking": 1.0
+        "seamlessDocking": 1.0,
+        "areaOpacity": {
+            "mainWindow": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "timeDisplay": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "trackDisplay": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "volumeArea": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "spectrumArea": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "eqFaderBackground": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "curveBackground": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            }
+        }
     },
     "marquee": {
         "scrollSpeed": 28,

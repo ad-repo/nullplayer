@@ -63,26 +63,33 @@ class ModernSkinRenderer {
     
     /// Draw an element by ID and state into the given rect.
     /// Uses skin image if available, otherwise falls back to programmatic rendering.
-    func drawElement(_ id: String, state: String = "normal", in rect: NSRect, context: CGContext) {
+    func drawElement(_ id: String, state: String = "normal", in rect: NSRect, contentOpacity: CGFloat = 1.0, context: CGContext) {
         // Scale the rect
         let scaledRect = scaledRect(rect)
+        let resolvedOpacity = min(1.0, max(0.0, contentOpacity))
         
         // Try image first
         if let image = skin.image(for: id, state: state) {
-            drawImage(image, in: scaledRect, context: context)
+            drawImage(image, in: scaledRect, context: context, fraction: resolvedOpacity)
             return
         }
         
         // Programmatic fallback
-        drawFallback(id, state: state, in: scaledRect, context: context)
+        drawFallback(id, state: state, in: scaledRect, contentOpacity: resolvedOpacity, context: context)
     }
     
     // MARK: - Specialized Drawing
     
     /// Draw the window background
-    func drawWindowBackground(in bounds: NSRect, context: CGContext, adjacentEdges: AdjacentEdges = [], sharpCorners: CACornerMask = []) {
+    func drawWindowBackground(
+        in bounds: NSRect,
+        context: CGContext,
+        adjacentEdges: AdjacentEdges = [],
+        sharpCorners: CACornerMask = [],
+        backgroundOpacity: CGFloat? = nil
+    ) {
         let cornerRadius = skin.config.window.cornerRadius ?? 0
-        let backgroundOpacity = min(1.0, max(0.0, skin.config.window.opacity ?? 1.0))
+        let resolvedBackgroundOpacity = min(1.0, max(0.0, backgroundOpacity ?? skin.config.window.opacity))
         if cornerRadius > 0 {
             let clipPath = makeRoundedCornerPath(rect: bounds, radius: cornerRadius, sharpCorners: sharpCorners)
             context.saveGState()
@@ -90,7 +97,7 @@ class ModernSkinRenderer {
             context.clip()
         }
         context.saveGState()
-        context.setAlpha(backgroundOpacity)
+        context.setAlpha(resolvedBackgroundOpacity)
         context.setFillColor(skin.backgroundColor.cgColor)
         context.fill(bounds)
         if let bgImage = skin.backgroundImage {
@@ -184,12 +191,14 @@ class ModernSkinRenderer {
         context: CGContext,
         adjacentEdges: AdjacentEdges = [],
         sharpCorners: CACornerMask = [],
-        occlusionSegments: EdgeOcclusionSegments = .empty
+        occlusionSegments: EdgeOcclusionSegments = .empty,
+        borderOpacity: CGFloat? = nil
     ) {
         let borderWidth = skin.config.window.borderWidth ?? 1.0
         let cornerRadius = skin.config.window.cornerRadius ?? 0
-        let borderColor = skin.borderColor
-        let backgroundOpacity = min(1.0, max(0.0, skin.config.window.opacity ?? 1.0))
+        let resolvedBorderOpacity = min(1.0, max(0.0, borderOpacity ?? skin.config.window.opacity))
+        let borderColor = skin.borderColor.withAlphaComponent(resolvedBorderOpacity)
+        let backgroundOpacity = min(1.0, max(0.0, skin.config.window.opacity))
         let seamless = min(1.0, max(0.0, skin.config.window.seamlessDocking ?? 0))
         let glowRadius = (skin.config.glow.radius ?? 8.0)
 
@@ -215,7 +224,7 @@ class ModernSkinRenderer {
 
             if skin.config.glow.enabled {
                 context.beginTransparencyLayer(auxiliaryInfo: nil)
-                context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5).cgColor)
+                context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5 * resolvedBorderOpacity).cgColor)
                 context.setStrokeColor(borderColor.cgColor)
                 context.setLineWidth(borderWidth)
                 context.addPath(path)
@@ -247,7 +256,7 @@ class ModernSkinRenderer {
 
         if skin.config.glow.enabled {
             context.saveGState()
-            context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5).cgColor)
+            context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5 * resolvedBorderOpacity).cgColor)
             context.setStrokeColor(borderColor.cgColor)
             context.setLineWidth(borderWidth)
             context.addPath(path)
@@ -975,19 +984,33 @@ class ModernSkinRenderer {
         context.restoreGState()
     }
     
-    /// Draw the mini spectrum bars
-    func drawMiniSpectrum(_ levels: [Float], in rect: NSRect, context: CGContext) {
+    /// Draw the mini spectrum bars.
+    /// Opacity channels are provided by callers from `window.areaOpacity.spectrumArea`.
+    func drawMiniSpectrum(
+        _ levels: [Float],
+        in rect: NSRect,
+        panelBackgroundOpacity: CGFloat = 1.0,
+        panelBorderOpacity: CGFloat = 1.0,
+        contentOpacity: CGFloat = 1.0,
+        context: CGContext
+    ) {
         let scaledR = scaledRect(rect)
         let barCount = min(levels.count, 8)
         guard barCount > 0 else { return }
         
         // Recessed panel background behind the bars
-        drawInsetPanelScaled(scaledR, context: context)
+        drawInsetPanelScaled(
+            scaledR,
+            context: context,
+            backgroundOpacity: panelBackgroundOpacity,
+            borderOpacity: panelBorderOpacity
+        )
         
         let barWidth = scaledR.width / CGFloat(barCount) - 1 * scaleFactor
         let gap = 1 * scaleFactor
         
         context.saveGState()
+        context.setAlpha(min(1.0, max(0.0, contentOpacity)))
         
         for i in 0..<barCount {
             let level = CGFloat(min(max(levels[i], 0), 1))
@@ -1137,10 +1160,10 @@ class ModernSkinRenderer {
     }
     
     /// Draw an NSImage into a CGContext
-    private func drawImage(_ image: NSImage, in rect: NSRect, context: CGContext) {
+    private func drawImage(_ image: NSImage, in rect: NSRect, context: CGContext, fraction: CGFloat = 1.0) {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
+        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: fraction)
         NSGraphicsContext.restoreGraphicsState()
     }
     
@@ -1171,20 +1194,38 @@ class ModernSkinRenderer {
     // MARK: - Shared Panel Drawing
     
     /// Draw a subtle recessed inset panel — dark fill with faint border.
+    /// Callers map these opacity channels from area-specific `window.areaOpacity.*` settings.
     /// Accepts base (unscaled) coordinates. Used for the time display and spectrum area.
-    func drawInsetPanel(in rect: NSRect, context: CGContext) {
-        drawInsetPanelScaled(scaledRect(rect), context: context)
+    func drawInsetPanel(
+        in rect: NSRect,
+        backgroundOpacity: CGFloat = 1.0,
+        borderOpacity: CGFloat = 1.0,
+        context: CGContext
+    ) {
+        drawInsetPanelScaled(
+            scaledRect(rect),
+            context: context,
+            backgroundOpacity: backgroundOpacity,
+            borderOpacity: borderOpacity
+        )
     }
     
     /// Same as drawInsetPanel but accepts an already-scaled rect (used from drawFallback).
-    private func drawInsetPanelScaled(_ scaledR: NSRect, context: CGContext) {
+    private func drawInsetPanelScaled(
+        _ scaledR: NSRect,
+        context: CGContext,
+        backgroundOpacity: CGFloat = 1.0,
+        borderOpacity: CGFloat = 1.0
+    ) {
         context.saveGState()
+        let resolvedBackgroundOpacity = min(1.0, max(0.0, backgroundOpacity))
+        let resolvedBorderOpacity = min(1.0, max(0.0, borderOpacity))
         let corner = 4 * scaleFactor
         let path = CGPath(roundedRect: scaledR, cornerWidth: corner, cornerHeight: corner, transform: nil)
-        context.setFillColor(skin.surfaceColor.withAlphaComponent(0.8).cgColor)
+        context.setFillColor(skin.surfaceColor.withAlphaComponent(resolvedBackgroundOpacity).cgColor)
         context.addPath(path)
         context.fillPath()
-        context.setStrokeColor(skin.borderColor.withAlphaComponent(0.3).cgColor)
+        context.setStrokeColor(skin.borderColor.withAlphaComponent(resolvedBorderOpacity).cgColor)
         context.setLineWidth(0.5 * scaleFactor)
         context.addPath(path)
         context.strokePath()
@@ -1193,11 +1234,11 @@ class ModernSkinRenderer {
     
     // MARK: - Programmatic Fallback Drawing
     
-    private func drawFallback(_ id: String, state: String, in rect: NSRect, context: CGContext) {
+    private func drawFallback(_ id: String, state: String, in rect: NSRect, contentOpacity: CGFloat, context: CGContext) {
         // Default fallback: filled rect with surface color and optional border
         switch id {
         case "marquee_bg":
-            drawInsetPanelScaled(rect, context: context)
+            drawInsetPanelScaled(rect, context: context, backgroundOpacity: contentOpacity, borderOpacity: contentOpacity)
             
         case _ where id.hasPrefix("btn_"):
             // Already handled by specific draw methods

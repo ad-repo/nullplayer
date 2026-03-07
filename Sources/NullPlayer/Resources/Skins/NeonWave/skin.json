@@ -58,7 +58,44 @@
         "borderColor": "#00ffcc",
         "cornerRadius": 6,
         "opacity": 1,
-        "seamlessDocking": 1.0
+        "seamlessDocking": 1.0,
+        "areaOpacity": {
+            "mainWindow": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "timeDisplay": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "trackDisplay": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "volumeArea": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "spectrumArea": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "eqFaderBackground": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "curveBackground": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            }
+        }
     },
     "elements": {
         "titlebar": {
