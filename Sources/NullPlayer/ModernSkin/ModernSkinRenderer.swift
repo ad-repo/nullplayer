@@ -124,43 +124,76 @@ class ModernSkinRenderer {
         )
     }
 
-    private func edgeStripRects(for bounds: NSRect, segments: EdgeOcclusionSegments, thickness: CGFloat) -> [CGRect] {
+    private func edgeStripRects(
+        for bounds: NSRect,
+        segments: EdgeOcclusionSegments,
+        thickness: CGFloat,
+        endpointPadding: CGFloat = 0
+    ) -> [CGRect] {
         guard thickness > 0 else { return [] }
         var strips: [CGRect] = []
 
         for interval in normalizedSegments(segments.top, limit: bounds.width) {
-            let width = interval.upperBound - interval.lowerBound
+            let lower = max(0, interval.lowerBound - endpointPadding)
+            let upper = min(bounds.width, interval.upperBound + endpointPadding)
+            let width = upper - lower
             guard width > 0 else { continue }
-            strips.append(CGRect(x: bounds.minX + interval.lowerBound,
+            strips.append(CGRect(x: bounds.minX + lower,
                                  y: bounds.maxY - thickness,
                                  width: width,
                                  height: thickness))
         }
         for interval in normalizedSegments(segments.bottom, limit: bounds.width) {
-            let width = interval.upperBound - interval.lowerBound
+            let lower = max(0, interval.lowerBound - endpointPadding)
+            let upper = min(bounds.width, interval.upperBound + endpointPadding)
+            let width = upper - lower
             guard width > 0 else { continue }
-            strips.append(CGRect(x: bounds.minX + interval.lowerBound,
+            strips.append(CGRect(x: bounds.minX + lower,
                                  y: bounds.minY,
                                  width: width,
                                  height: thickness))
         }
         for interval in normalizedSegments(segments.left, limit: bounds.height) {
-            let height = interval.upperBound - interval.lowerBound
+            let lower = max(0, interval.lowerBound - endpointPadding)
+            let upper = min(bounds.height, interval.upperBound + endpointPadding)
+            let height = upper - lower
             guard height > 0 else { continue }
             strips.append(CGRect(x: bounds.minX,
-                                 y: bounds.minY + interval.lowerBound,
+                                 y: bounds.minY + lower,
                                  width: thickness,
                                  height: height))
         }
         for interval in normalizedSegments(segments.right, limit: bounds.height) {
-            let height = interval.upperBound - interval.lowerBound
+            let lower = max(0, interval.lowerBound - endpointPadding)
+            let upper = min(bounds.height, interval.upperBound + endpointPadding)
+            let height = upper - lower
             guard height > 0 else { continue }
             strips.append(CGRect(x: bounds.maxX - thickness,
-                                 y: bounds.minY + interval.lowerBound,
+                                 y: bounds.minY + lower,
                                  width: thickness,
                                  height: height))
         }
         return strips
+    }
+
+    private func redrawWindowBackground(in bounds: NSRect, context: CGContext, strips: [CGRect], opacity: CGFloat) {
+        guard !strips.isEmpty else { return }
+        context.saveGState()
+        context.setBlendMode(.copy)
+        let clipPath = CGMutablePath()
+        for strip in strips { clipPath.addRect(strip) }
+        context.addPath(clipPath)
+        context.clip()
+
+        context.saveGState()
+        context.setAlpha(opacity)
+        context.setFillColor(skin.backgroundColor.cgColor)
+        context.fill(bounds)
+        if let bgImage = skin.backgroundImage {
+            drawImage(bgImage, in: bounds, context: context)
+        }
+        context.restoreGState()
+        context.restoreGState()
     }
 
     /// Draw the window border with optional glow.
@@ -188,18 +221,7 @@ class ModernSkinRenderer {
         let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, sharpCorners: sharpCorners)
 
         if seamless >= 1.0 && !effectiveSegments.isEmpty {
-            let stripThickness = max(borderWidth, borderWidth + glowRadius * 0.75)
-            let strips = edgeStripRects(for: bounds, segments: effectiveSegments, thickness: stripThickness)
-
-            context.saveGState()
-            if !strips.isEmpty {
-                let clipPath = CGMutablePath()
-                clipPath.addRect(bounds)
-                for strip in strips { clipPath.addRect(strip) }
-                context.addPath(clipPath)
-                context.clip(using: .evenOdd)
-            }
-
+            // Draw normally, then repaint only joined edge strips to avoid clip-boundary artifacts.
             if skin.config.glow.enabled {
                 context.saveGState()
                 context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5).cgColor)
@@ -214,7 +236,18 @@ class ModernSkinRenderer {
             context.setLineWidth(borderWidth)
             context.addPath(path)
             context.strokePath()
-            context.restoreGState()
+
+            // Keep suppression band tight so we hide seam/caps without darkening interior chrome.
+            let stripThickness = borderWidth + (skin.config.glow.enabled
+                ? max(0.3, min(0.7, glowRadius * 0.08))
+                : 0.2)
+            let strips = edgeStripRects(
+                for: bounds,
+                segments: effectiveSegments,
+                thickness: stripThickness,
+                endpointPadding: max(0.35, borderWidth * 0.3)
+            )
+            redrawWindowBackground(in: bounds, context: context, strips: strips, opacity: backgroundOpacity)
             return
         }
 
