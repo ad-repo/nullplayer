@@ -66,7 +66,10 @@ class ModernProjectMView: NSView {
     
     // MARK: - Layout Constants
     
-    private var titleBarHeight: CGFloat { ModernSkinElements.projectMTitleBarHeight }
+    private var titleBarHeight: CGFloat {
+        let hide = WindowManager.shared.effectiveHideTitleBars(for: self.window)
+        return hide ? borderWidth : ModernSkinElements.projectMTitleBarHeight
+    }
     private var borderWidth: CGFloat { ModernSkinElements.projectMBorderWidth }
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
@@ -216,8 +219,8 @@ class ModernProjectMView: NSView {
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
         
-        // Draw title bar
-        if true {
+        // Draw title bar -- always in shade mode, gated by HT otherwise
+        if isShadeMode || !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             // Compute title bar and button rects dynamically in base space
             // (window is larger than the 275x116 base, so we can't use fixed element rects)
             let baseWidth = bounds.width / scale
@@ -378,7 +381,8 @@ class ModernProjectMView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         
         // Check for double-click on title bar to toggle shade mode
-        if event.clickCount == 2 && hitTestTitleBar(at: point) {
+        if event.clickCount == 2 && hitTestTitleBar(at: point) &&
+           !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             toggleShadeMode()
             return
         }
@@ -388,8 +392,9 @@ class ModernProjectMView: NSView {
             return
         }
         
-        // Check close button
-        if hitTestCloseButton(at: point) {
+        // Check close button (only when titlebar is visible)
+        if !WindowManager.shared.effectiveHideTitleBars(for: self.window) &&
+           hitTestCloseButton(at: point) {
             pressedButton = "projectm_btn_close"
             needsDisplay = true
             return
@@ -405,11 +410,13 @@ class ModernProjectMView: NSView {
             return
         }
         
-        // Content area - window dragging (title bar always visible, so no undocking from content)
+        // Content area - window dragging
+        // When titlebar is hidden, pass fromTitleBar: true so drags can undock
         isDraggingWindow = true
         windowDragStartPoint = event.locationInWindow
         if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: false)
+            let hideTitleBar = WindowManager.shared.effectiveHideTitleBars(for: self.window)
+            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: hideTitleBar)
         }
     }
     

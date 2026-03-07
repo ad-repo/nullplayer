@@ -284,11 +284,13 @@ class ModernMainWindowView: NSView {
         renderer.drawWindowBorder(in: windowBounds, context: context, adjacentEdges: adjacentEdges)
         context.restoreGState()
         
-        // 2. Title bar -- only if dirty rect overlaps
-        let titleScaled = scaledRect(ModernSkinElements.titleBar.defaultRect)
-        if dirtyRect.intersects(titleScaled) {
-            renderer.drawTitleBar(in: ModernSkinElements.titleBar.defaultRect, title: "NULLPLAYER", context: context)
-            drawWindowControls(context: context)
+        // 2. Title bar -- only if not hidden and dirty rect overlaps
+        if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
+            let titleScaled = scaledRect(ModernSkinElements.titleBar.defaultRect)
+            if dirtyRect.intersects(titleScaled) {
+                renderer.drawTitleBar(in: ModernSkinElements.titleBar.defaultRect, title: "NULLPLAYER", context: context)
+                drawWindowControls(context: context)
+            }
         }
         
         // 3. Time display + status indicator
@@ -945,11 +947,13 @@ class ModernMainWindowView: NSView {
         var hitTargets: [(String, NSRect)] = []
         
         // Window controls
-        hitTargets.append(contentsOf: [
-            ("btn_close", ModernSkinElements.btnClose.defaultRect),
-            ("btn_minimize", ModernSkinElements.btnMinimize.defaultRect),
-            ("btn_shade", ModernSkinElements.btnShade.defaultRect),
-        ])
+        if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
+            hitTargets.append(contentsOf: [
+                ("btn_close", ModernSkinElements.btnClose.defaultRect),
+                ("btn_minimize", ModernSkinElements.btnMinimize.defaultRect),
+                ("btn_shade", ModernSkinElements.btnShade.defaultRect),
+            ])
+        }
         
         hitTargets.append(contentsOf: [
             // Transport
@@ -1007,7 +1011,7 @@ class ModernMainWindowView: NSView {
             }
             let base = basePoint(from: point)
             let isTitleBarDblClick = ModernSkinElements.titleBar.defaultRect.contains(base)
-            if isTitleBarDblClick {
+            if isTitleBarDblClick && !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
                 controller?.toggleShadeMode()
                 updateMarqueeForMode()
                 return
@@ -1058,9 +1062,10 @@ class ModernMainWindowView: NSView {
             isDraggingWindow = true
             dragStartPoint = event.locationInWindow
             
-            // Determine if dragging from title bar
+            // When titlebar is hidden, all drags can undock (fromTitleBar: true)
             let base = basePoint(from: point)
-            let isTitleBar = ModernSkinElements.titleBar.defaultRect.contains(base)
+            let hideTitleBar = WindowManager.shared.effectiveHideTitleBars(for: self.window)
+            let isTitleBar = hideTitleBar || ModernSkinElements.titleBar.defaultRect.contains(base)
             if let window = window {
                 WindowManager.shared.windowWillStartDragging(window, fromTitleBar: isTitleBar)
             }
