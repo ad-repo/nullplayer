@@ -375,15 +375,19 @@ class ContextMenuBuilder {
         artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
         optionsMenu.addItem(artworkBgItem)
 
+        // Group all source-specific radio history entries under one parent item.
+        optionsMenu.addItem(NSMenuItem.separator())
+
+        let radioHistoryItem = NSMenuItem(title: "Radio History", action: nil, keyEquivalent: "")
+        let radioHistoryMenu = NSMenu()
+        radioHistoryMenu.autoenablesItems = false
+
         // Plex Radio History (only when Plex is connected)
         if PlexManager.shared.isLinked {
-            optionsMenu.addItem(NSMenuItem.separator())
-
-            let historyItem = NSMenuItem(title: "Plex Radio History", action: nil, keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "Plex", action: nil, keyEquivalent: "")
             let historyMenu = NSMenu()
             historyMenu.autoenablesItems = false
 
-            // Retention interval submenu
             let intervalItem = NSMenuItem(title: "History Interval", action: nil, keyEquivalent: "")
             let intervalMenu = NSMenu()
             intervalMenu.autoenablesItems = false
@@ -402,7 +406,6 @@ class ContextMenuBuilder {
             }
             intervalItem.submenu = intervalMenu
             historyMenu.addItem(intervalItem)
-
             historyMenu.addItem(NSMenuItem.separator())
 
             let viewItem = NSMenuItem(
@@ -422,14 +425,12 @@ class ContextMenuBuilder {
             historyMenu.addItem(clearItem)
 
             historyItem.submenu = historyMenu
-            optionsMenu.addItem(historyItem)
+            radioHistoryMenu.addItem(historyItem)
         }
 
         // Subsonic Radio History (shown whenever at least one server has been configured)
         if !SubsonicManager.shared.servers.isEmpty {
-            optionsMenu.addItem(NSMenuItem.separator())
-
-            let historyItem = NSMenuItem(title: "Subsonic Radio History", action: nil, keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "Subsonic", action: nil, keyEquivalent: "")
             let historyMenu = NSMenu()
             historyMenu.autoenablesItems = false
 
@@ -457,14 +458,12 @@ class ContextMenuBuilder {
             historyMenu.addItem(clearItem)
 
             historyItem.submenu = historyMenu
-            optionsMenu.addItem(historyItem)
+            radioHistoryMenu.addItem(historyItem)
         }
 
         // Jellyfin Radio History (shown whenever at least one server has been configured)
         if !JellyfinManager.shared.servers.isEmpty {
-            optionsMenu.addItem(NSMenuItem.separator())
-
-            let historyItem = NSMenuItem(title: "Jellyfin Radio History", action: nil, keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "Jellyfin", action: nil, keyEquivalent: "")
             let historyMenu = NSMenu()
             historyMenu.autoenablesItems = false
 
@@ -492,14 +491,12 @@ class ContextMenuBuilder {
             historyMenu.addItem(clearItem)
 
             historyItem.submenu = historyMenu
-            optionsMenu.addItem(historyItem)
+            radioHistoryMenu.addItem(historyItem)
         }
 
         // Emby Radio History (shown whenever at least one server has been configured)
         if !EmbyManager.shared.servers.isEmpty {
-            optionsMenu.addItem(NSMenuItem.separator())
-
-            let historyItem = NSMenuItem(title: "Emby Radio History", action: nil, keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "Emby", action: nil, keyEquivalent: "")
             let historyMenu = NSMenu()
             historyMenu.autoenablesItems = false
 
@@ -527,14 +524,12 @@ class ContextMenuBuilder {
             historyMenu.addItem(clearItem)
 
             historyItem.submenu = historyMenu
-            optionsMenu.addItem(historyItem)
+            radioHistoryMenu.addItem(historyItem)
         }
 
         // Local Radio History
         do {
-            optionsMenu.addItem(NSMenuItem.separator())
-
-            let historyItem = NSMenuItem(title: "Local Radio History", action: nil, keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "Local", action: nil, keyEquivalent: "")
             let historyMenu = NSMenu()
             historyMenu.autoenablesItems = false
 
@@ -562,8 +557,11 @@ class ContextMenuBuilder {
             historyMenu.addItem(clearItem)
 
             historyItem.submenu = historyMenu
-            optionsMenu.addItem(historyItem)
+            radioHistoryMenu.addItem(historyItem)
         }
+
+        radioHistoryItem.submenu = radioHistoryMenu
+        optionsMenu.addItem(radioHistoryItem)
 
         optionsMenu.addItem(NSMenuItem.separator())
 
