@@ -290,6 +290,7 @@ extension ModernProjectMWindowController: NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         projectMView.needsDisplay = true
         projectMView.updateVisualizationFrame()
+        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
     }
     
     func windowWillClose(_ notification: Notification) {

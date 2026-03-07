@@ -758,6 +758,13 @@ class ModernPlaylistView: NSView {
     func setShadeMode(_ enabled: Bool) {
         isShadeMode = enabled
         trackMarqueeLayer?.isHidden = enabled
+        if !enabled {
+            // Clamp scroll offset to valid range after window resize
+            let listRect = calculateListArea()
+            let totalContentHeight = CGFloat(WindowManager.shared.audioEngine.playlist.count) * itemHeight
+            let maxScroll = max(0, totalContentHeight - listRect.height)
+            scrollOffset = max(0, min(maxScroll, scrollOffset))
+        }
         needsDisplay = true
     }
     

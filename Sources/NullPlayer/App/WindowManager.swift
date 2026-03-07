@@ -194,7 +194,7 @@ class WindowManager {
     private let dockThreshold: CGFloat = 20
     
     /// Undock threshold - how far you need to drag a window to break it free from the group
-    private let undockThreshold: CGFloat = 30
+    private let undockThreshold: CGFloat = 10
     
     /// Track which window is currently being dragged
     private var draggingWindow: NSWindow?
@@ -326,6 +326,7 @@ class WindowManager {
         }
         notifyMainWindowVisibilityChanged()
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        updateDockedChildWindows()
     }
     
     func showEqualizer(at restoredFrame: NSRect? = nil) {
@@ -367,6 +368,7 @@ class WindowManager {
         }
         notifyMainWindowVisibilityChanged()
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        updateDockedChildWindows()
     }
     
     /// Position a sub-window (EQ, Playlist, or Spectrum) in the vertical stack.
@@ -570,6 +572,7 @@ class WindowManager {
             showPlexBrowser()
         }
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        updateDockedChildWindows()
     }
     
     /// Show the Plex account linking sheet
@@ -1130,6 +1133,7 @@ class WindowManager {
             showProjectM()
         }
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        updateDockedChildWindows()
     }
     
     // MARK: - Spectrum Analyzer Window
@@ -1180,6 +1184,7 @@ class WindowManager {
         }
         notifyMainWindowVisibilityChanged()
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        updateDockedChildWindows()
     }
     
     // MARK: - Debug Window
@@ -1705,7 +1710,7 @@ class WindowManager {
         draggingWindow = window
         dragStartOrigin = window.frame.origin
         isTitleBarDrag = fromTitleBar
-        
+
         // Find all windows that are docked to this window
         dockedWindowsToMove = findDockedWindows(to: window)
         
@@ -1728,6 +1733,7 @@ class WindowManager {
         dockedWindowsToMove.removeAll()
         dockedWindowOffsets.removeAll()
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        updateDockedChildWindows()
     }
     
     /// Safely apply snapped position to a window without triggering feedback loop
@@ -1749,7 +1755,15 @@ class WindowManager {
         if isMovingDockedWindows && dockedWindowsToMove.contains(where: { $0 === window }) {
             return newOrigin
         }
-        
+
+        // If this window is a child of the currently-dragging window, AppKit moved it
+        // automatically as part of the parent's setFrameOrigin — don't treat it as an
+        // independent drag or we'll corrupt the drag state (draggingWindow, offsets).
+        if let dragging = draggingWindow, dragging !== window,
+           dragging.childWindows?.contains(window) == true {
+            return newOrigin
+        }
+
         // If this is a new drag, find docked windows
         if draggingWindow !== window {
             windowWillStartDragging(window)
@@ -1771,10 +1785,15 @@ class WindowManager {
         // Apply snap to screen edges and other windows
         let snappedOrigin = applySnapping(for: window, to: newOrigin)
         
-        // Move all docked windows using stored offsets (prevents drift during fast movement)
+        // Move all docked windows using stored offsets (prevents drift during fast movement).
+        // Child windows of the dragging window are skipped here — AppKit will move them
+        // synchronously when the parent's setFrameOrigin is called, which keeps them
+        // in the same display frame as the parent and prevents visual tearing.
         if !dockedWindowsToMove.isEmpty {
+            let childWindowIds = Set(window.childWindows?.map { ObjectIdentifier($0) } ?? [])
             isMovingDockedWindows = true
             for dockedWindow in dockedWindowsToMove {
+                guard !childWindowIds.contains(ObjectIdentifier(dockedWindow)) else { continue }
                 if let offset = dockedWindowOffsets[ObjectIdentifier(dockedWindow)] {
                     // Use stored offset from drag start to maintain exact relative position
                     let newDockedOrigin = NSPoint(
@@ -2055,10 +2074,10 @@ class WindowManager {
         
         // Apply best snaps
         if let hSnap = bestHorizontalSnap {
-            snappedX = hSnap.value
+            snappedX = round(hSnap.value)
         }
         if let vSnap = bestVerticalSnap {
-            snappedY = vSnap.value
+            snappedY = round(vSnap.value)
         }
         
         return NSPoint(x: snappedX, y: snappedY)
@@ -2181,6 +2200,28 @@ class WindowManager {
     
     // MARK: - Coordinated Miniaturize
     
+    /// Update persistent child window relationships so docked windows follow the
+    /// main window when it moves across macOS Spaces.
+    func updateDockedChildWindows() {
+        guard let mainWindow = mainWindowController?.window else { return }
+        let docked = findDockedWindows(to: mainWindow)
+
+        // Remove children that are no longer docked
+        for child in mainWindow.childWindows ?? [] {
+            if !docked.contains(child) {
+                mainWindow.removeChildWindow(child)
+            }
+        }
+
+        // Add newly docked children
+        let existingChildren = Set(mainWindow.childWindows?.map { ObjectIdentifier($0) } ?? [])
+        for window in docked {
+            if !existingChildren.contains(ObjectIdentifier(window)) {
+                mainWindow.addChildWindow(window, ordered: .above)
+            }
+        }
+    }
+
     /// Temporarily attach all docked windows as child windows of the main window
     /// so they animate together into the dock as a group.
     /// Called from windowWillMiniaturize (before the animation starts).
@@ -2188,7 +2229,10 @@ class WindowManager {
         let docked = findDockedWindows(to: mainWindow)
         coordinatedMiniaturizedWindows = docked
         for window in docked {
-            mainWindow.addChildWindow(window, ordered: .above)
+            // Only add if not already a child window
+            if !(mainWindow.childWindows?.contains(window) ?? false) {
+                mainWindow.addChildWindow(window, ordered: .above)
+            }
         }
     }
     
@@ -2200,6 +2244,8 @@ class WindowManager {
             mainWindow.removeChildWindow(window)
         }
         coordinatedMiniaturizedWindows.removeAll()
+        // Reinstate persistent docked-child relationships for Spaces following
+        updateDockedChildWindows()
     }
     
     // MARK: - State Persistence

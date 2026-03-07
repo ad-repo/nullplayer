@@ -1058,16 +1058,15 @@ class ModernMainWindowView: NSView {
             // Invalidate only the area of the pressed element
             invalidateElement(element)
         } else {
-            // Window dragging (title bar or background)
-            isDraggingWindow = true
-            dragStartPoint = event.locationInWindow
-            
-            // When titlebar is hidden, all drags can undock (fromTitleBar: true)
             let base = basePoint(from: point)
             let hideTitleBar = WindowManager.shared.effectiveHideTitleBars(for: self.window)
             let isTitleBar = hideTitleBar || ModernSkinElements.titleBar.defaultRect.contains(base)
-            if let window = window {
-                WindowManager.shared.windowWillStartDragging(window, fromTitleBar: isTitleBar)
+            if isTitleBar {
+                isDraggingWindow = true
+                dragStartPoint = event.locationInWindow
+                if let window = window {
+                    WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+                }
             }
         }
     }

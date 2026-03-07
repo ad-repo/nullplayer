@@ -148,6 +148,7 @@ extension ModernPlaylistWindowController: NSWindowDelegate {
     
     func windowDidResize(_ notification: Notification) {
         playlistView.needsDisplay = true
+        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
     }
     
     func windowDidBecomeKey(_ notification: Notification) {

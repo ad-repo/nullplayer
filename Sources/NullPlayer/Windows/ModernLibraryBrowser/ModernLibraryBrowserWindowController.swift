@@ -31,7 +31,8 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
         
         // Enable multi-edge resizing (all edges + corners)
         window.allowedResizeEdges = [.left, .right, .top, .bottom]
-        
+        window.titleBarHeight = ModernSkinElements.titleBarBaseHeight * ModernSkinElements.scaleFactor
+
         self.init(window: window)
         
         setupWindow()
@@ -169,6 +170,7 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
 extension ModernLibraryBrowserWindowController: NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         browserView.needsDisplay = true
+        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
     }
     
     func windowDidBecomeKey(_ notification: Notification) {

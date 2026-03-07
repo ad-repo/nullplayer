@@ -13,6 +13,11 @@ class BorderlessWindow: NSWindow {
     
     /// Edges that allow resize dragging. Empty (default) = no resize allowed.
     var allowedResizeEdges: Set<ResizeEdge> = []
+
+    /// Height of the title bar area in window coordinates. Clicks in this zone
+    /// are passed through to the view for drag handling instead of being intercepted
+    /// by edge resize detection.
+    var titleBarHeight: CGFloat = 0
     
     /// Available resize edges
     enum ResizeEdge {
@@ -94,6 +99,10 @@ class BorderlessWindow: NSWindow {
         switch event.type {
         case .leftMouseDown:
             let windowPoint = event.locationInWindow
+            // Don't intercept if click is in title bar area (drag takes priority over resize)
+            if titleBarHeight > 0 && windowPoint.y > frame.height - titleBarHeight {
+                break  // fall through to super.sendEvent(event)
+            }
             let edges = detectResizeEdges(at: windowPoint)
             if !edges.isEmpty {
                 isResizing = true

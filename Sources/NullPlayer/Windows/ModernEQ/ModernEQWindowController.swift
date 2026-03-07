@@ -134,7 +134,12 @@ extension ModernEQWindowController: NSWindowDelegate {
         let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: newOrigin)
     }
-    
+
+    func windowDidResize(_ notification: Notification) {
+        eqView.needsDisplay = true
+        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
         eqView.needsDisplay = true
         WindowManager.shared.bringAllWindowsToFront()

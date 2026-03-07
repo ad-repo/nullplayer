@@ -152,8 +152,28 @@ extension ModernSpectrumWindowController: NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         spectrumView.needsDisplay = true
         spectrumView.updateSpectrumFrame()
+        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
     }
-    
+
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        spectrumView.needsDisplay = true
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        spectrumView.needsDisplay = true
+        spectrumView.updateSpectrumFrame()
+    }
+
+    func windowWillExitFullScreen(_ notification: Notification) {
+        spectrumView.needsDisplay = true
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        spectrumView.needsDisplay = true
+        spectrumView.updateSpectrumFrame()
+        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+    }
+
     func windowWillClose(_ notification: Notification) {
         // Stop rendering when window closes
         spectrumView.stopRendering()
