@@ -129,7 +129,8 @@ MyPaletteSkin/
         "borderWidth": 1,
         "borderColor": "#00ffcc",
         "cornerRadius": 8,
-        "scale": 1.25
+        "scale": 1.25,
+        "opacity": 0.94
     }
 }
 ```
@@ -267,7 +268,8 @@ The `elementBlur` multiplier scales the glow halos on individual UI elements (se
 "window": {
     "borderWidth": 1,
     "borderColor": "#00ffcc",
-    "cornerRadius": 8
+    "cornerRadius": 8,
+    "opacity": 0.94
 }
 ```
 
@@ -277,6 +279,7 @@ The `elementBlur` multiplier scales the glow halos on individual UI elements (se
 | `borderColor` | Border color (defaults to palette `border` or `primary`) |
 | `cornerRadius` | Rounded corner radius (0 = square corners) |
 | `scale` | UI scale factor (default 1.25). Smaller = more compact, larger = bigger UI |
+| `opacity` | Window background opacity (0.0-1.0, default 1.0). Applies to background fill + background image |
 
 ### Marquee (Scrolling Title Text)
 

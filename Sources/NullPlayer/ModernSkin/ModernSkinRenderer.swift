@@ -83,17 +83,21 @@ class ModernSkinRenderer {
     /// Draw the window background
     func drawWindowBackground(in bounds: NSRect, context: CGContext, adjacentEdges: AdjacentEdges = []) {
         let cornerRadius = skin.config.window.cornerRadius ?? 0
+        let backgroundOpacity = min(1.0, max(0.0, skin.config.window.opacity ?? 1.0))
         if cornerRadius > 0 {
             let clipPath = makeRoundedCornerPath(rect: bounds, radius: cornerRadius, adjacentEdges: adjacentEdges)
             context.saveGState()
             context.addPath(clipPath)
             context.clip()
         }
+        context.saveGState()
+        context.setAlpha(backgroundOpacity)
         context.setFillColor(skin.backgroundColor.cgColor)
         context.fill(bounds)
         if let bgImage = skin.backgroundImage {
             drawImage(bgImage, in: bounds, context: context)
         }
+        context.restoreGState()
         if cornerRadius > 0 {
             context.restoreGState()
         }
@@ -106,6 +110,7 @@ class ModernSkinRenderer {
         let borderWidth = skin.config.window.borderWidth ?? 1.0
         let cornerRadius = skin.config.window.cornerRadius ?? 0
         let borderColor = skin.borderColor
+        let backgroundOpacity = min(1.0, max(0.0, skin.config.window.opacity ?? 1.0))
         let seamless = min(1.0, max(0.0, skin.config.window.seamlessDocking ?? 0))
         
         context.saveGState()
@@ -148,7 +153,7 @@ class ModernSkinRenderer {
         if seamless > 0 && seamless < 1.0 && !adjacentEdges.isEmpty {
             let bgColor = skin.backgroundColor
             context.saveGState()
-            context.setFillColor(bgColor.withAlphaComponent(seamless).cgColor)
+            context.setFillColor(bgColor.withAlphaComponent(backgroundOpacity * seamless).cgColor)
             let bw = borderWidth
             if adjacentEdges.contains(.top) {
                 context.fill(CGRect(x: bounds.minX, y: bounds.maxY - bw, width: bounds.width, height: bw))

@@ -39,6 +39,7 @@
     "window": {
         "borderWidth": 1,
         "cornerRadius": 6,
+        "opacity": 1,
         "seamlessDocking": 0.8
     }
 }

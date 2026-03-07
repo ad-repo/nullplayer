@@ -57,6 +57,7 @@
         "borderWidth": 1.5,
         "borderColor": "#f0c5d7",
         "cornerRadius": 6,
+        "opacity": 1,
         "seamlessDocking": 1.0
     },
     "elements": {

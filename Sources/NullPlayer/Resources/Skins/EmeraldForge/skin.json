@@ -60,6 +60,7 @@
         "borderWidth": 1.5,
         "borderColor": "#1f7a56",
         "cornerRadius": 6,
+        "opacity": 1,
         "seamlessDocking": 1.0
     },
     "elements": {
