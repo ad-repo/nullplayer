@@ -267,8 +267,8 @@ class WindowManager {
     private let snapThreshold: CGFloat = 15
     
     /// Docking threshold - windows closer than this are considered docked
-    /// Should be >= snapThreshold to ensure snapped windows are detected as docked
-    private let dockThreshold: CGFloat = 20
+    /// Should be small (≤2) so only truly touching windows are grouped
+    private let dockThreshold: CGFloat = 2
     
     /// Undock threshold - how far you need to drag a window to break it free from the group
     private let undockThreshold: CGFloat = 10
