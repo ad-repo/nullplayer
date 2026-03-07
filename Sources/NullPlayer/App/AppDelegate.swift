@@ -236,7 +236,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAbout() {
         // Create custom About window
         let windowWidth: CGFloat = 340
-        let windowHeight: CGFloat = 480
+        let windowHeight: CGFloat = 516
         
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
@@ -298,12 +298,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 20
         
         // Credits
-        let thanksLabel = NSTextField(labelWithString: "Please add a ⭐star⭐ on github")
+        let thanksLabel = NSTextField(labelWithString: "Please add a ⭐ star ⭐ on github")
         thanksLabel.font = NSFont.systemFont(ofSize: 14)
         thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         thanksLabel.alignment = .center
         thanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
         contentView.addSubview(thanksLabel)
+        y -= 36
+
+        // sthanks
+        let sthanksLabel = NSTextField(labelWithString: "Thanks to SpaXter25 for QE and PD help")
+        sthanksLabel.font = NSFont.systemFont(ofSize: 14)
+        sthanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
+        sthanksLabel.alignment = .center
+        sthanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
+        contentView.addSubview(sthanksLabel)
         y -= 36
         
         // Buttons (3 on one row)
@@ -348,7 +357,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= buttonHeight + 12
         
         // Disclaimer
-        let disclaimerLabel = NSTextField(wrappingLabelWithString: "This is a clean room open source project")
+        let disclaimerLabel = NSTextField(wrappingLabelWithString: "This is a clean room project")
         disclaimerLabel.font = NSFont.systemFont(ofSize: 10)
         disclaimerLabel.textColor = NSColor(white: 0.4, alpha: 1.0)
         disclaimerLabel.alignment = .center

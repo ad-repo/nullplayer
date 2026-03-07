@@ -291,6 +291,9 @@ class WindowManager {
     /// Store relative offsets of docked windows from the dragging window's origin
     /// This prevents drift during fast movement by maintaining exact relative positions
     private var dockedWindowOffsets: [ObjectIdentifier: NSPoint] = [:]
+
+    /// Store absolute origins of docked windows at drag start, for position restoration on undock
+    private var dockedWindowOriginalOrigins: [ObjectIdentifier: NSPoint] = [:]
     
     /// Flag to prevent feedback loop when moving docked windows programmatically
     private var isMovingDockedWindows = false
@@ -1804,6 +1807,12 @@ class WindowManager {
             )
             dockedWindowOffsets[ObjectIdentifier(dockedWindow)] = offset
         }
+
+        // Also store absolute origins so we can restore positions if the window undocks
+        dockedWindowOriginalOrigins.removeAll()
+        for dockedWindow in dockedWindowsToMove {
+            dockedWindowOriginalOrigins[ObjectIdentifier(dockedWindow)] = dockedWindow.frame.origin
+        }
     }
     
     /// Called when a window drag ends
@@ -1811,6 +1820,7 @@ class WindowManager {
         draggingWindow = nil
         dockedWindowsToMove.removeAll()
         dockedWindowOffsets.removeAll()
+        dockedWindowOriginalOrigins.removeAll()
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
         updateDockedChildWindows()
     }
@@ -1855,9 +1865,17 @@ class WindowManager {
         if !isMainWindow && isTitleBarDrag && !dockedWindowsToMove.isEmpty {
             let dragDistance = hypot(newOrigin.x - dragStartOrigin.x, newOrigin.y - dragStartOrigin.y)
             if dragDistance > undockThreshold {
-                // Break the dock - this window now moves alone
+                // Restore co-moved windows to their original positions before breaking the dock
+                isMovingDockedWindows = true
+                for dockedWindow in dockedWindowsToMove {
+                    if let origin = dockedWindowOriginalOrigins[ObjectIdentifier(dockedWindow)] {
+                        dockedWindow.setFrameOrigin(origin)
+                    }
+                }
+                isMovingDockedWindows = false
                 dockedWindowsToMove.removeAll()
                 dockedWindowOffsets.removeAll()
+                dockedWindowOriginalOrigins.removeAll()
             }
         }
         
