@@ -168,6 +168,19 @@ func streamingPlayerDidFinishPlaying() {
 - **Disabled by default** to preserve original audio quality
 - Transparent limiter (threshold: -1 dB) prevents clipping
 
+### Modern EQ UI Controls
+
+| Control | Behavior |
+|---------|----------|
+| ON toggle | Enable/disable EQ |
+| AUTO toggle | Apply genre-based preset for current track; auto-enables EQ if off |
+| FLAT ROCK POP ELEC HIP JAZZ CLSC buttons | Apply preset and highlight active button; auto-enables EQ if off; clicking active button deactivates (applies flat, no highlight) |
+| Drag a fader | Adjust band/preamp; clears active preset highlight |
+| Double-click a fader | Reset that band only to 0 dB (not all bands) |
+| Double-click preamp | Reset preamp only to 0 dB |
+
+Preset buttons stretch to fill all remaining horizontal space after the AUTO button.
+
 ### EQ Synchronization
 
 When EQ settings change, both pipelines are updated:

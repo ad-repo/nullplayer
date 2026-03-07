@@ -144,9 +144,11 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 ### Equalizer
 - 10-band graphic EQ (-12dB to +12dB per band)
 - Preamp control
-- Presets (Flat, i'm old, i'm young, Rock, Pop, Jazz, Classical, etc.)
-- Auto EQ (genre-based automatic presets)
 - Anti-clipping limiter
+- **Modern UI**: 7 compact preset toggle buttons in the button row (FLAT, ROCK, POP, ELEC, HIP, JAZZ, CLSC); clicking a preset auto-enables EQ if off; clicking the active preset deactivates it (reverts to flat); dragging any fader clears the active preset
+- **Modern UI**: double-click a fader to reset that band only to 0 dB; double-click preamp to reset preamp only
+- **Modern UI**: AUTO button applies genre-based preset for the current track and auto-enables EQ if off
+- **Classic UI**: PRESETS dropdown with all presets including "I'm Old" / "I'm Young"
 
 ### Playback Options
 - **Gapless Playback**: Seamless track transitions (local files)
