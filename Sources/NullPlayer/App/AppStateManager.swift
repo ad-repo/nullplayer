@@ -526,7 +526,7 @@ class AppStateManager {
             modernSkinName: UserDefaults.standard.string(forKey: "modernSkinName"),
             selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
             browserBrowseMode: browserBrowseMode,
-            savedInModernMode: wm.isModernUIEnabled
+            savedInModernMode: wm.isRunningModernUI
         )
         
         // Encode and save
@@ -617,6 +617,7 @@ class AppStateManager {
     private func applySettingsState(_ state: AppState) {
         let wm = WindowManager.shared
         let engine = wm.audioEngine
+        let runningModernMode = wm.isRunningModernUI
         
         NSLog("AppStateManager: Restoring settings state - volume: %.2f", state.volume)
         
@@ -656,7 +657,7 @@ class AppStateManager {
         }
         
         // Restore modern skin name (if saved and modern UI is active)
-        if wm.isModernUIEnabled, let modernSkin = state.modernSkinName {
+        if runningModernMode, let modernSkin = state.modernSkinName {
             UserDefaults.standard.set(modernSkin, forKey: "modernSkinName")
             // ModernSkinEngine.loadPreferredSkin() is called in AppDelegate before state restore,
             // but we set the UserDefaults value here so subsequent launches use it
@@ -670,11 +671,11 @@ class AppStateManager {
         // Check if the saved state's UI mode matches the current mode.
         // If mismatched (e.g. saved in modern, now running classic), skip window frame
         // restoration since the windows have different sizes and constraints.
-        let modeMatches = state.savedInModernMode == wm.isModernUIEnabled
+        let modeMatches = state.savedInModernMode == runningModernMode
         if !modeMatches {
             NSLog("AppStateManager: UI mode changed (saved=%@, current=%@) - skipping window frame restoration",
                   state.savedInModernMode ? "modern" : "classic",
-                  wm.isModernUIEnabled ? "modern" : "classic")
+                  runningModernMode ? "modern" : "classic")
         }
         
         // Restore window frames (only if mode matches)
@@ -742,6 +743,10 @@ class AppStateManager {
                     }
                 }
             }
+
+            // One-time self-heal for classic sessions affected by cross-mode frame contamination:
+            // if EQ/playlist are still docked below main but widths differ, normalize to main width.
+            self.repairClassicDockedStackWidthsIfNeeded()
         }
         
         NSLog("AppStateManager: Settings state restored (eqAutoEnabled: %d, doubleSize: %d)", state.eqAutoEnabled ? 1 : 0, state.isDoubleSize ? 1 : 0)
@@ -1027,10 +1032,95 @@ class AppStateManager {
                 window.setFrame(frame, display: true)
             }
         }
+
+        // Modern HT sessions may contain stale full-height frames from older runs.
+        // Normalize immediately so launch never reserves titlebar space in HT mode.
+        if wm.isRunningModernUI {
+            wm.normalizeModernMainWindowForHTIfNeeded()
+        }
         
         // Note: Playlist, EQ, Browser, and ProjectM frames are passed directly to their
         // show methods in applyState() since those windows are created lazily and don't
         // exist yet when this function is called.
+    }
+
+    /// Repair classic-mode docked stack geometry if corrupted by cross-mode frame restore.
+    /// Applies only to clearly docked EQ/playlist windows directly below main.
+    private func repairClassicDockedStackWidthsIfNeeded() {
+        let wm = WindowManager.shared
+        guard !wm.isRunningModernUI else { return }
+        guard let mainWindow = wm.mainWindowController?.window else { return }
+
+        let scale: CGFloat = wm.isDoubleSize ? 2.0 : 1.0
+        let minMainHeight = Skin.mainWindowSize.height * scale
+        let widthEpsilon: CGFloat = 0.5
+        let gapEpsilon: CGFloat = 1.0
+        let dockThreshold: CGFloat = 20
+        var repaired = false
+
+        var mainFrame = mainWindow.frame
+        if mainFrame.height + widthEpsilon < minMainHeight {
+            let topY = mainFrame.maxY
+            mainFrame.size.height = minMainHeight
+            mainFrame.origin.y = topY - minMainHeight
+            mainWindow.setFrame(mainFrame, display: true)
+            mainFrame = mainWindow.frame
+            repaired = true
+            NSLog("AppStateManager: Repaired classic main window height to %.1f", minMainHeight)
+        }
+
+        func isClearlyDockedBelow(_ upper: NSWindow, _ lower: NSWindow) -> Bool {
+            let upperFrame = upper.frame
+            let lowerFrame = lower.frame
+            let verticalGap = abs(lowerFrame.maxY - upperFrame.minY)
+            let horizontalOverlap = lowerFrame.minX < upperFrame.maxX && lowerFrame.maxX > upperFrame.minX
+            let leftAligned = abs(lowerFrame.minX - upperFrame.minX) <= dockThreshold
+            return verticalGap <= dockThreshold && horizontalOverlap && leftAligned
+        }
+
+        func normalizeWidthToMain(_ window: NSWindow) {
+            let current = window.frame
+            guard abs(current.width - mainFrame.width) > widthEpsilon || abs(current.minX - mainFrame.minX) > widthEpsilon else {
+                return
+            }
+            let topY = current.maxY
+            let newFrame = NSRect(x: mainFrame.minX,
+                                  y: topY - current.height,
+                                  width: mainFrame.width,
+                                  height: current.height)
+            window.setFrame(newFrame, display: true)
+            repaired = true
+        }
+
+        func snapBelow(_ upper: NSWindow, _ lower: NSWindow) {
+            let upperFrame = upper.frame
+            let lowerFrame = lower.frame
+            let dy = upperFrame.minY - lowerFrame.maxY
+            guard abs(dy) > gapEpsilon else { return }
+            lower.setFrameOrigin(NSPoint(x: lowerFrame.origin.x, y: lowerFrame.origin.y + dy))
+            repaired = true
+        }
+
+        var eqDockedToMain = false
+        if let eqWindow = wm.equalizerWindowController?.window, eqWindow.isVisible {
+            eqDockedToMain = isClearlyDockedBelow(mainWindow, eqWindow)
+            if eqDockedToMain {
+                normalizeWidthToMain(eqWindow)
+                snapBelow(mainWindow, eqWindow)
+            }
+        }
+
+        if let playlistWindow = wm.playlistWindowController?.window, playlistWindow.isVisible {
+            let anchor = (eqDockedToMain ? wm.equalizerWindowController?.window : mainWindow) ?? mainWindow
+            if isClearlyDockedBelow(anchor, playlistWindow) {
+                normalizeWidthToMain(playlistWindow)
+                snapBelow(anchor, playlistWindow)
+            }
+        }
+
+        if repaired {
+            NSLog("AppStateManager: Repaired classic docked stack width(s) to match main window")
+        }
     }
     
     // MARK: - Helpers

@@ -70,16 +70,48 @@ class WindowManager {
         get { UserDefaults.standard.bool(forKey: "modernUIEnabled") }
         set { UserDefaults.standard.set(newValue, forKey: "modernUIEnabled") }
     }
+
+    /// Runtime UI mode inferred from the active main window controller.
+    /// Falls back to the persisted preference before controllers exist.
+    var isRunningModernUI: Bool {
+        if let controller = mainWindowController {
+            if controller is ModernMainWindowController { return true }
+            if controller is MainWindowController { return false }
+        }
+        return isModernUIEnabled
+    }
     
     /// Whether title bars are hidden on all windows (only applies in modern UI mode)
     var hideTitleBars: Bool {
-        get { isModernUIEnabled && UserDefaults.standard.bool(forKey: "hideTitleBars") }
+        get { isRunningModernUI && UserDefaults.standard.bool(forKey: "hideTitleBars") }
         set { UserDefaults.standard.set(newValue, forKey: "hideTitleBars") }
+    }
+
+    /// Ensure modern main window uses compact HT height when HT is enabled.
+    /// Keeps the top edge fixed so startup/restore does not leave an empty titlebar gap.
+    @discardableResult
+    func normalizeModernMainWindowForHTIfNeeded(_ explicitWindow: NSWindow? = nil) -> CGFloat {
+        guard isRunningModernUI, hideTitleBars else { return 0 }
+        guard let mainWindow = explicitWindow ?? mainWindowController?.window else { return 0 }
+
+        let targetHeight = (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
+        mainWindow.minSize = NSSize(width: mainWindow.minSize.width, height: targetHeight)
+
+        var frame = mainWindow.frame
+        let oldOriginY = frame.origin.y
+        guard abs(frame.height - targetHeight) > 0.5 else { return 0 }
+
+        let topY = frame.maxY
+        frame.size.height = targetHeight
+        frame.origin.y = topY - targetHeight
+        mainWindow.setFrame(frame, display: true)
+
+        return frame.origin.y - oldOriginY
     }
     
     /// Toggle hide title bars mode (modern UI only). Sub-windows only hide their title bar when docked.
     func toggleHideTitleBars() {
-        guard isModernUIEnabled else { return }
+        guard isRunningModernUI else { return }
         hideTitleBars = !hideTitleBars
 
         // Resize main window: when HT is on, main window shrinks by titleBarBaseHeight (base 275x116 → 275x98)
@@ -166,7 +198,7 @@ class WindowManager {
     /// - HT on: ALL windows hide titlebars regardless of docking.
     func effectiveHideTitleBars(for window: NSWindow?) -> Bool {
         guard let window else { return false }
-        guard isModernUIEnabled else { return false }
+        guard isRunningModernUI else { return false }
 
         // Sub-windows always hide when docked (base behavior)
         let isSubWindow = window === equalizerWindowController?.window ||
@@ -313,11 +345,10 @@ class WindowManager {
             } else {
                 mainWindowController = MainWindowController()
             }
-            // If HT is already active from UserDefaults, correct minSize before frame restore
-            if isModernUIEnabled && hideTitleBars, let mainWindow = mainWindowController?.window {
-                let htHeight = (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
-                mainWindow.minSize = NSSize(width: mainWindow.minSize.width, height: htHeight)
-            }
+        }
+        // Enforce HT compact height on both first show and subsequent re-shows.
+        if isRunningModernUI {
+            normalizeModernMainWindowForHTIfNeeded()
         }
         mainWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(mainWindowController?.window)
@@ -1428,10 +1459,12 @@ class WindowManager {
     
     /// Apply double size scaling to all windows
     private func applyDoubleSize() {
+        let runningModernMode = isRunningModernUI
+
         // For modern UI, set the sizeMultiplier so all ModernSkinElements computed
         // sizes (window sizes, title bar heights, border widths, etc.) reflect 2x.
         // This must happen BEFORE reading any ModernSkinElements sizes.
-        if isModernUIEnabled {
+        if runningModernMode {
             ModernSkinElements.sizeMultiplier = isDoubleSize ? 2.0 : 1.0
         }
         
@@ -1440,14 +1473,14 @@ class WindowManager {
         // Get main window position as anchor point
         guard let mainWindow = mainWindowController?.window else { return }
         
-        // Store old main window frame for calculating relative positions
-        let oldMainFrame = mainWindow.frame
-        
         // For modern UI, sizes already include the multiplier via scaleFactor.
         // For classic UI, sizes are base sizes that need explicit * scale.
         let mainTargetSize: NSSize
-        if isModernUIEnabled {
-            mainTargetSize = ModernSkinElements.mainWindowSize
+        if runningModernMode {
+            let fullHeight = ModernSkinElements.baseMainSize.height * ModernSkinElements.scaleFactor
+            let compactHeight = (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
+            let targetHeight = hideTitleBars ? compactHeight : fullHeight
+            mainTargetSize = NSSize(width: ModernSkinElements.mainWindowSize.width, height: targetHeight)
         } else {
             mainTargetSize = NSSize(width: Skin.mainWindowSize.width * scale,
                                     height: Skin.mainWindowSize.height * scale)
@@ -1471,7 +1504,7 @@ class WindowManager {
         // EQ window - position below main window
         if let eqWindow = equalizerWindowController?.window {
             let eqTargetSize: NSSize
-            if isModernUIEnabled {
+            if runningModernMode {
                 eqTargetSize = ModernSkinElements.eqWindowSize
             } else {
                 eqTargetSize = NSSize(width: Skin.eqWindowSize.width * scale,
@@ -1496,8 +1529,8 @@ class WindowManager {
         
         // Playlist - position below EQ (or main if no EQ)
         if let playlistWindow = playlistWindowController?.window {
-            let baseMinSize: NSSize = isModernUIEnabled ? ModernSkinElements.playlistMinSize : Skin.playlistMinSize
-            let minHeight = baseMinSize.height * (isModernUIEnabled ? 1.0 : scale)
+            let baseMinSize: NSSize = runningModernMode ? ModernSkinElements.playlistMinSize : Skin.playlistMinSize
+            let minHeight = baseMinSize.height * (runningModernMode ? 1.0 : scale)
 
             let targetWidth = mainFrame.width
             playlistWindow.minSize = NSSize(width: targetWidth, height: minHeight)
@@ -1524,7 +1557,7 @@ class WindowManager {
         // Spectrum window - position below playlist (or previous window)
         if let spectrumWindow = spectrumWindowController?.window {
             let spectrumTargetSize: NSSize
-            if isModernUIEnabled {
+            if runningModernMode {
                 spectrumTargetSize = ModernSkinElements.spectrumWindowSize
             } else {
                 spectrumTargetSize = NSSize(width: Skin.mainWindowSize.width * scale,

@@ -2402,16 +2402,20 @@ class MenuActions: NSObject {
     
     @objc func loadDefaultClassicSkin() {
         let wm = WindowManager.shared
+        let previousSkinPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath")
         // Clear the last used skin so the bundled default loads
         UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
         
-        if wm.isModernUIEnabled {
+        if wm.isRunningModernUI {
             // Switch to classic mode with default skin on next launch
-            wm.isModernUIEnabled = false
-            if !showRestartAlert() {
-                // User cancelled — revert
-                wm.isModernUIEnabled = true
-                UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+            if !showRestartAlert(beforeRelaunch: {
+                wm.isModernUIEnabled = false
+            }) {
+                if let previousSkinPath = previousSkinPath {
+                    UserDefaults.standard.set(previousSkinPath, forKey: "lastClassicSkinPath")
+                } else {
+                    UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+                }
             }
         } else {
             // Already in classic mode - load bundled default skin now
@@ -2446,12 +2450,12 @@ class MenuActions: NSObject {
         let previousSkinPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath")
         UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
         
-        if wm.isModernUIEnabled {
+        if wm.isRunningModernUI {
             // Switch to classic mode and load this skin on next launch
-            wm.isModernUIEnabled = false
-            if !showRestartAlert() {
+            if !showRestartAlert(beforeRelaunch: {
+                wm.isModernUIEnabled = false
+            }) {
                 // User cancelled — revert
-                wm.isModernUIEnabled = true
                 if let previousSkinPath = previousSkinPath {
                     UserDefaults.standard.set(previousSkinPath, forKey: "lastClassicSkinPath")
                 } else {
@@ -2474,12 +2478,12 @@ class MenuActions: NSObject {
         let previousSkinName = UserDefaults.standard.string(forKey: "modernSkinName")
         UserDefaults.standard.set(name, forKey: "modernSkinName")
         
-        if !wm.isModernUIEnabled {
+        if !wm.isRunningModernUI {
             // Switch to modern mode — skin will load on next launch
-            wm.isModernUIEnabled = true
-            if !showRestartAlert() {
+            if !showRestartAlert(beforeRelaunch: {
+                wm.isModernUIEnabled = true
+            }) {
                 // User cancelled — revert
-                wm.isModernUIEnabled = false
                 if let previousSkinName = previousSkinName {
                     UserDefaults.standard.set(previousSkinName, forKey: "modernSkinName")
                 } else {
@@ -2499,25 +2503,26 @@ class MenuActions: NSObject {
     // MARK: - UI Mode Switching
     
     @objc func setClassicMode() {
-        WindowManager.shared.isModernUIEnabled = false
-        if !showRestartAlert() {
-            // User cancelled — revert
-            WindowManager.shared.isModernUIEnabled = true
-        }
+        let wm = WindowManager.shared
+        guard wm.isRunningModernUI else { return }
+        _ = showRestartAlert(beforeRelaunch: {
+            wm.isModernUIEnabled = false
+        })
     }
     
     @objc func setModernMode() {
-        WindowManager.shared.isModernUIEnabled = true
-        if !showRestartAlert() {
-            // User cancelled — revert
-            WindowManager.shared.isModernUIEnabled = false
-        }
+        let wm = WindowManager.shared
+        guard !wm.isRunningModernUI else { return }
+        _ = showRestartAlert(beforeRelaunch: {
+            wm.isModernUIEnabled = true
+        })
     }
     
     /// Shows a restart confirmation alert. Returns `true` if the user confirmed and the app is restarting.
     @discardableResult
     private func showRestartAlert(
-        informativeText: String = "NullPlayer needs to restart to apply the UI mode change. Restart now?"
+        informativeText: String = "NullPlayer needs to restart to apply the UI mode change. Restart now?",
+        beforeRelaunch: (() -> Void)? = nil
     ) -> Bool {
         let alert = NSAlert()
         alert.messageText = "Restart Required"
@@ -2529,6 +2534,7 @@ class MenuActions: NSObject {
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             // User confirmed — relaunch the app
+            beforeRelaunch?()
             relaunchApp()
             return true
         }
