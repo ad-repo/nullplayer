@@ -357,7 +357,7 @@ fragment float4 cosmic_fragment(
     float peakVals[2] = {0, 0};
     
     // Dynamic threshold: quiet = very high (sparse), loud = lower (more frequent)
-    float peakThreshold = max(0.12, 0.40 - energy * 0.9);
+    float peakThreshold = max(0.20, 0.52 - energy * 0.6);
     
     for (int b = 1; b < 74; b++) {
         float val = spectrum[b];
@@ -395,13 +395,13 @@ fragment float4 cosmic_fragment(
         float fade = exp(-cyclePos * 4.0);
         
         // Each flare is an event — but controlled glow
-        float fIntensity = peakVal * (0.6 + seed * 0.5) * fade;
-        float fSize = 0.4 + seed * 1.2 + peakVal * 1.5;
+        float fIntensity = peakVal * (0.35 + seed * 0.25) * fade;
+        float fSize = 0.3 + seed * 0.8 + peakVal * 1.0;
         float fAngle = seed * 3.14159;
         
         // Vivid colors at full blast
         float3 fCol = jwst_star_color(seed + float(fi) * 0.23);
-        fCol *= 1.6;  // Extra brightness punch
+        fCol *= 1.1;  // Calmer flare color intensity
         
         float2 fDelta = flareUV - fpos;
         color += jwst_flare(fDelta, fIntensity, fSize, fAngle, fCol) * (1.0 - flareSuppress);
@@ -417,7 +417,7 @@ fragment float4 cosmic_fragment(
         float giantAngle = sin(fs * 0.3) * 0.4;  // Locked rotation
         float2 gDelta = flareUV - giantPos;
         float3 gCol = jwst_star_color(fract(fs * 0.05 + 0.55));  // Locked color
-        color += jwst_flare(gDelta, params.flareIntensity * 1.5, 3.5, giantAngle, gCol);
+        color += jwst_flare(gDelta, params.flareIntensity * 1.0, 2.7, giantAngle, gCol);
     }
 
     // ================================================================
@@ -425,7 +425,7 @@ fragment float4 cosmic_fragment(
     // ================================================================
 
     // Gentle beat glow
-    color *= 1.0 + beat * 0.06;
+    color *= 1.0 + beat * 0.035;
 
     // Saturation lift with energy
     float3 lum = float3(dot(color, float3(0.299, 0.587, 0.114)));

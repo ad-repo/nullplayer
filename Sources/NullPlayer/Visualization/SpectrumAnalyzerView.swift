@@ -333,6 +333,11 @@ class SpectrumAnalyzerView: NSView {
             dataLock.withLock {
                 renderQualityMode = mode
             }
+            // Heavy fullscreen shader modes can stall at Retina-scale pixel counts.
+            // Keep drawable scale in sync with the active mode.
+            DispatchQueue.main.async { [weak self] in
+                self?.syncMetalLayerScaleAndSize()
+            }
             // Note: Don't change semaphore at runtime - it causes crashes when GPU work is in-flight
         }
     }
@@ -852,8 +857,8 @@ class SpectrumAnalyzerView: NSView {
         metalLayer.device = device
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.framebufferOnly = true
-        metalLayer.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
         metalLayer.frame = bounds
+        syncMetalLayerScaleAndSize()
         // CRITICAL: Limit drawable pool size to prevent unbounded memory growth
         // Without this, CAMetalLayer can create unlimited drawables during continuous rendering
         metalLayer.maximumDrawableCount = 3
@@ -871,6 +876,50 @@ class SpectrumAnalyzerView: NSView {
         
         // Create buffers
         setupBuffers()
+    }
+    
+    /// Returns the exact viewport size (in pixels) for the current drawable.
+    /// Prefer drawable texture dimensions over view bounds so fullscreen resizes
+    /// never use stale viewport values in fragment shaders.
+    private func drawableViewportSize(_ drawable: CAMetalDrawable?) -> SIMD2<Float> {
+        if let drawable {
+            return SIMD2<Float>(Float(drawable.texture.width), Float(drawable.texture.height))
+        }
+        let scale = metalLayer?.contentsScale ?? 2.0
+        return SIMD2<Float>(
+            Float(max(1, bounds.width * scale)),
+            Float(max(1, bounds.height * scale))
+        )
+    }
+    
+    /// Preferred layer scale for current mode/size.
+    /// Caps scale for heavy fullscreen shader modes to keep frame times stable.
+    private func preferredMetalContentsScale() -> CGFloat {
+        let baseScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        let isCustomFullscreenWindow = window?.level == .screenSaver
+        guard isCustomFullscreenWindow else { return baseScale }
+        
+        switch qualityMode {
+        case .electricity:
+            // Lightning is fragment-heavy at fullscreen sizes.
+            return 1.0
+        case .cosmic, .matrix:
+            // Slight cap keeps these smooth while preserving detail.
+            return min(baseScale, 1.25)
+        default:
+            return baseScale
+        }
+    }
+    
+    /// Keep CAMetalLayer scale and drawable size synchronized with bounds/mode.
+    private func syncMetalLayerScaleAndSize() {
+        guard let metalLayer = metalLayer else { return }
+        let scale = preferredMetalContentsScale()
+        metalLayer.contentsScale = scale
+        metalLayer.drawableSize = CGSize(
+            width: max(1, bounds.width * scale),
+            height: max(1, bounds.height * scale)
+        )
     }
     
     private func setupPipeline() {
@@ -1495,12 +1544,12 @@ class SpectrumAnalyzerView: NSView {
                 p[i] = val
             }
         }
-        let scale = metalLayer?.contentsScale ?? 2.0
+        let viewport = drawableViewportSize(drawable)
         if let buf = flameParamsBuffer {
             let p = buf.contents().bindMemory(to: FlameParams.self, capacity: 1)
             p.pointee = FlameParams(
                 gridSize: SIMD2<Float>(Float(flameGridWidth), Float(flameGridHeight)),
-                viewportSize: SIMD2<Float>(Float(bounds.width * scale), Float(bounds.height * scale)),
+                viewportSize: viewport,
                 time: localTime, dt: 1.0 / 60.0,
                 bassEnergy: flameSmoothBass, midEnergy: flameSmoothMid, trebleEnergy: flameSmoothTreble,
                 buoyancy: localStyle.buoyancy, cooling: localStyle.cooling, turbulence: localStyle.turbulence,
@@ -1561,11 +1610,11 @@ class SpectrumAnalyzerView: NSView {
             cosmicSmoothMid += (mid - cosmicSmoothMid) * (mid > cosmicSmoothMid ? 0.3 : 0.08)
             cosmicSmoothTreble += (treble - cosmicSmoothTreble) * (treble > cosmicSmoothTreble ? 0.3 : 0.08)
             
-            // Beat detection: bass spike above smoothed level
-            if bass > cosmicSmoothBass + 0.12 {
-                cosmicBeatIntensity = min(1.0, cosmicBeatIntensity + 0.5)
+            // Beat detection: keep JWST calmer (smaller, less frequent pulse boosts)
+            if bass > cosmicSmoothBass + 0.16 {
+                cosmicBeatIntensity = min(0.5, cosmicBeatIntensity + 0.22)
             }
-            cosmicBeatIntensity *= 0.92
+            cosmicBeatIntensity *= 0.88
             
             // Rare big flare: only on strong peaks, with long cooldown
             // While active, suppresses all small flares — the giant owns the screen
@@ -1581,15 +1630,14 @@ class SpectrumAnalyzerView: NSView {
             cosmicFlareLPF += (instantEnergy - cosmicFlareLPF) * 0.02  // Very slow follower
             let flareDelta = instantEnergy - cosmicFlareLPF
             
-            if flareDelta > 0.10 && cosmicFlareCooldown == 0 && cosmicFlareIntensity < 0.05 {
+            if flareDelta > 0.15 && cosmicFlareCooldown == 0 && cosmicFlareIntensity < 0.05 {
                 // Energy spike above low-pass baseline — fire the giant
-                cosmicFlareIntensity = 1.0
+                cosmicFlareIntensity = 0.7
                 cosmicFlareScrollSnapshot = cosmicScrollOffset
-                cosmicFlareCooldown = 420  // ~7 seconds cooldown at 60fps
+                cosmicFlareCooldown = 720  // ~12 seconds cooldown at 60fps
             }
-            // Very slow decay: ~5.5 seconds to fade from 1.0 to ~0.05
-            // 0.991^330 ≈ 0.05 → 330 frames = 5.5 seconds
-            cosmicFlareIntensity *= 0.991
+            // Slightly faster decay to reduce dominant flare persistence
+            cosmicFlareIntensity *= 0.986
             
             // Accumulate scroll distance based on music intensity
             // Gentle drift always, slightly faster when loud — chill ride through space
@@ -1600,12 +1648,12 @@ class SpectrumAnalyzerView: NSView {
         }
         
         // Update cosmic params (no spectrum buffer — pure atmospheric mode)
-        let scale = metalLayer?.contentsScale ?? 2.0
+        let viewport = drawableViewportSize(drawable)
         let totalE = (cosmicSmoothBass + cosmicSmoothMid + cosmicSmoothTreble) / 3.0
         if let buf = cosmicParamsBuffer {
             let p = buf.contents().bindMemory(to: CosmicParams.self, capacity: 1)
             p.pointee = CosmicParams(
-                viewportSize: SIMD2<Float>(Float(bounds.width * scale), Float(bounds.height * scale)),
+                viewportSize: viewport,
                 time: localTime,
                 scrollOffset: localScroll,
                 bassEnergy: cosmicSmoothBass,
@@ -1683,11 +1731,11 @@ class SpectrumAnalyzerView: NSView {
             electricitySmoothMid += (mid - electricitySmoothMid) * (mid > electricitySmoothMid ? 0.2 : 0.06)
             electricitySmoothTreble += (treble - electricitySmoothTreble) * (treble > electricitySmoothTreble ? 0.2 : 0.06)
             
-            // Beat detection: gentle
-            if bass > electricitySmoothBass + 0.14 {
-                electricityBeatIntensity = min(0.6, electricityBeatIntensity + 0.25)
+            // Beat detection: calmer pulse behavior
+            if bass > electricitySmoothBass + 0.18 {
+                electricityBeatIntensity = min(0.35, electricityBeatIntensity + 0.14)
             }
-            electricityBeatIntensity *= 0.94
+            electricityBeatIntensity *= 0.90
             
             // Dramatic strike detection — JWST-style rare event with long cooldown
             // LPF tracks slow-moving energy baseline, dramatic fires on spikes above it
@@ -1698,14 +1746,13 @@ class SpectrumAnalyzerView: NSView {
             electricityDramaticLPF += (instantEnergy - electricityDramaticLPF) * 0.02  // Very slow follower
             let dramaticDelta = instantEnergy - electricityDramaticLPF
             
-            if dramaticDelta > 0.10 && electricityDramaticCooldown == 0 && electricityDramaticIntensity < 0.05 {
+            if dramaticDelta > 0.14 && electricityDramaticCooldown == 0 && electricityDramaticIntensity < 0.05 {
                 // Energy spike above baseline — fire dramatic strike
-                electricityDramaticIntensity = 1.0
-                electricityDramaticCooldown = 480  // ~8 seconds cooldown at 60fps
+                electricityDramaticIntensity = 0.75
+                electricityDramaticCooldown = 720  // ~12 seconds cooldown at 60fps
             }
-            // Very slow decay: ~5 seconds to fade (like JWST giant flare)
-            // 0.991^300 ≈ 0.05
-            electricityDramaticIntensity *= 0.991
+            // Faster decay for less persistent dramatic activity
+            electricityDramaticIntensity *= 0.986
         }
         
         // Update spectrum buffer (reuse flameSpectrumBuffer like cosmic does)
@@ -1722,14 +1769,14 @@ class SpectrumAnalyzerView: NSView {
         }
         
         // Update electricity params
-        let scale = metalLayer?.contentsScale ?? 2.0
+        let viewport = drawableViewportSize(drawable)
         let totalE = (electricitySmoothBass + electricitySmoothMid + electricitySmoothTreble) / 3.0
         if let buf = electricityParamsBuffer {
             let p = buf.contents().bindMemory(to: ElectricityParams.self, capacity: 1)
             var localColorScheme: Int32 = 0
             dataLock.withLock { localColorScheme = renderLightningStyle.colorScheme }
             p.pointee = ElectricityParams(
-                viewportSize: SIMD2<Float>(Float(bounds.width * scale), Float(bounds.height * scale)),
+                viewportSize: viewport,
                 time: localTime,
                 bassEnergy: electricitySmoothBass,
                 midEnergy: electricitySmoothMid,
@@ -1846,12 +1893,12 @@ class SpectrumAnalyzerView: NSView {
         }
         
         // Update matrix params
-        let scale = metalLayer?.contentsScale ?? 2.0
+        let viewport = drawableViewportSize(drawable)
         let totalE = (matrixSmoothBass + matrixSmoothMid + matrixSmoothTreble) / 3.0
         if let buf = matrixParamsBuffer {
             let p = buf.contents().bindMemory(to: MatrixParams.self, capacity: 1)
             p.pointee = MatrixParams(
-                viewportSize: SIMD2<Float>(Float(bounds.width * scale), Float(bounds.height * scale)),
+                viewportSize: viewport,
                 time: localTime,
                 bassEnergy: matrixSmoothBass,
                 midEnergy: matrixSmoothMid,
@@ -2585,13 +2632,13 @@ class SpectrumAnalyzerView: NSView {
     override func layout() {
         super.layout()
         metalLayer?.frame = bounds
-        metalLayer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        syncMetalLayerScaleAndSize()
     }
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
-            metalLayer?.contentsScale = window?.backingScaleFactor ?? 2.0
+            syncMetalLayerScaleAndSize()
             startRendering()
         } else {
             // Window closed - stop the display link to release CPU

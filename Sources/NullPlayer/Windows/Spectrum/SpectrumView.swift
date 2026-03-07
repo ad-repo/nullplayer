@@ -20,6 +20,9 @@ class SpectrumView: NSView {
     /// Shade mode state
     private(set) var isShadeMode = false
     
+    /// Fullscreen mode state (hides window chrome)
+    private(set) var isFullscreen = false
+    
     /// Button being pressed (for visual feedback)
     private var pressedButton: SkinRenderer.ProjectMButtonType?
     
@@ -91,6 +94,10 @@ class SpectrumView: NSView {
     }
     
     private func calculateContentArea() -> NSRect {
+        if isFullscreen {
+            return bounds
+        }
+        
         // Content area inside the chrome
         let titleHeight = WindowManager.shared.hideTitleBars ? CGFloat(0) : Layout.titleBarHeight
         let leftBorder = Layout.leftBorder
@@ -137,6 +144,13 @@ class SpectrumView: NSView {
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        // Native fullscreen: render visualization content edge-to-edge with no chrome.
+        if isFullscreen {
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(bounds)
+            return
+        }
         
         // Use current skin
         let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
@@ -189,6 +203,13 @@ class SpectrumView: NSView {
         needsDisplay = true
     }
     
+    func setFullscreen(_ enabled: Bool) {
+        isFullscreen = enabled
+        updateSpectrumFrame()
+        needsDisplay = true
+        needsLayout = true
+    }
+    
     func updateSpectrumFrame() {
         let contentArea = calculateContentArea()
         spectrumAnalyzerView?.frame = contentArea
@@ -216,6 +237,7 @@ class SpectrumView: NSView {
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
+        if isFullscreen { return false }
         if WindowManager.shared.hideTitleBars {
             // Invisible drag zone at the very top of the visible window
             return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
@@ -225,6 +247,7 @@ class SpectrumView: NSView {
     }
     
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
+        if isFullscreen { return false }
         if WindowManager.shared.hideTitleBars { return false }
         let titleHeight = Layout.titleBarHeight
         let closeRect = NSRect(x: bounds.width - 25, y: 0, width: 25, height: titleHeight)
@@ -238,6 +261,10 @@ class SpectrumView: NSView {
     }
     
     override func mouseDown(with event: NSEvent) {
+        if isFullscreen {
+            return
+        }
+        
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
         
@@ -299,6 +326,10 @@ class SpectrumView: NSView {
     }
     
     override func mouseDragged(with event: NSEvent) {
+        if isFullscreen {
+            return
+        }
+        
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
             let deltaX = currentPoint.x - windowDragStartPoint.x
@@ -314,6 +345,12 @@ class SpectrumView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
+        if isFullscreen {
+            isDraggingWindow = false
+            pressedButton = nil
+            return
+        }
+        
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
         
@@ -374,13 +411,13 @@ class SpectrumView: NSView {
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 53: // Escape - close window or exit fullscreen
-            if window?.styleMask.contains(.fullScreen) == true {
-                window?.toggleFullScreen(nil)
+            if isFullscreen {
+                controller?.toggleFullscreen()
             } else {
                 window?.close()
             }
         case 3: // F key - toggle fullscreen
-            window?.toggleFullScreen(nil)
+            controller?.toggleFullscreen()
         case 123: // Left arrow - previous style (flame/lightning/matrix mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
                 cycleFlameStyle(forward: false)
@@ -564,7 +601,7 @@ class SpectrumView: NSView {
         menu.addItem(NSMenuItem.separator())
         
         // Fullscreen toggle
-        let isFullscreen = window?.styleMask.contains(.fullScreen) ?? false
+        let isFullscreen = controller?.isFullscreen ?? false
         let fullscreenItem = NSMenuItem(
             title: isFullscreen ? "Exit Full Screen" : "Enter Full Screen",
             action: #selector(toggleFullScreen(_:)),
@@ -584,7 +621,7 @@ class SpectrumView: NSView {
     }
     
     @objc private func toggleFullScreen(_ sender: Any?) {
-        window?.toggleFullScreen(sender)
+        controller?.toggleFullscreen()
     }
     
     @objc private func setQualityMode(_ sender: NSMenuItem) {

@@ -26,6 +26,9 @@ class ModernSpectrumView: NSView {
     /// Shade mode state
     private(set) var isShadeMode = false
     
+    /// Fullscreen mode state (hides window chrome)
+    private(set) var isFullscreen = false
+    
     /// Button being pressed (for visual feedback)
     private var pressedButton: String?
     
@@ -38,6 +41,11 @@ class ModernSpectrumView: NSView {
     
     /// Scale factor for hit testing (computed to track double-size changes)
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
+    
+    /// Whether the window is currently in fullscreen mode.
+    private var isWindowFullscreen: Bool {
+        isFullscreen
+    }
     
     // MARK: - Layout Constants
     
@@ -138,6 +146,10 @@ class ModernSpectrumView: NSView {
     }
     
     private func calculateContentArea() -> NSRect {
+        if isWindowFullscreen {
+            return bounds
+        }
+        
         // Content area inside the chrome (standard macOS bottom-left coordinates)
         return NSRect(
             x: borderWidth,
@@ -156,6 +168,13 @@ class ModernSpectrumView: NSView {
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        // Native fullscreen: render visualization content edge-to-edge with no chrome.
+        if isWindowFullscreen {
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(bounds)
+            return
+        }
         
         // Draw window background
         renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
@@ -235,6 +254,14 @@ class ModernSpectrumView: NSView {
         needsDisplay = true
     }
     
+    func setFullscreen(_ enabled: Bool) {
+        isFullscreen = enabled
+        updateSpectrumFrame()
+        updateCornerMask()
+        needsDisplay = true
+        needsLayout = true
+    }
+    
     func updateSpectrumFrame() {
         let contentArea = calculateContentArea()
         spectrumAnalyzerView?.frame = contentArea
@@ -266,6 +293,7 @@ class ModernSpectrumView: NSView {
     }
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        if isWindowFullscreen { return false }
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             return point.y >= bounds.height - 6  // invisible drag zone
         }
@@ -276,6 +304,7 @@ class ModernSpectrumView: NSView {
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        if isWindowFullscreen { return false }
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
         let closeRect = renderer.scaledRect(ModernSkinElements.spectrumBtnClose.defaultRect)
         // Expand hit area slightly for usability
@@ -286,6 +315,10 @@ class ModernSpectrumView: NSView {
     // MARK: - Mouse Events
     
     override func hitTest(_ point: NSPoint) -> NSView? {
+        if isWindowFullscreen {
+            return super.hitTest(point)
+        }
+        
         // When title bars are hidden, intercept clicks that would go to the spectrum
         // analyzer subview so ModernSpectrumView.mouseDown handles them for drag-to-undock
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode {
@@ -301,6 +334,10 @@ class ModernSpectrumView: NSView {
     }
     
     override func mouseDown(with event: NSEvent) {
+        if isWindowFullscreen {
+            return
+        }
+        
         let point = convert(event.locationInWindow, from: nil)
         
         // Check for double-click on title bar to toggle shade mode
@@ -362,6 +399,10 @@ class ModernSpectrumView: NSView {
     }
     
     override func mouseDragged(with event: NSEvent) {
+        if isWindowFullscreen {
+            return
+        }
+        
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
             let deltaX = currentPoint.x - windowDragStartPoint.x
@@ -377,6 +418,12 @@ class ModernSpectrumView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
+        if isWindowFullscreen {
+            isDraggingWindow = false
+            pressedButton = nil
+            return
+        }
+        
         let point = convert(event.locationInWindow, from: nil)
         
         // End window dragging
@@ -426,13 +473,13 @@ class ModernSpectrumView: NSView {
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 53: // Escape - close window or exit fullscreen
-            if window?.styleMask.contains(.fullScreen) == true {
-                window?.toggleFullScreen(nil)
+            if isFullscreen {
+                controller?.toggleFullscreen()
             } else {
                 window?.close()
             }
         case 3: // F key - toggle fullscreen
-            window?.toggleFullScreen(nil)
+            controller?.toggleFullscreen()
         case 123: // Left arrow - previous style (flame/lightning/matrix mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
                 cycleFlameStyle(forward: false)
@@ -618,7 +665,7 @@ class ModernSpectrumView: NSView {
         menu.addItem(NSMenuItem.separator())
         
         // Fullscreen toggle
-        let isFullscreen = window?.styleMask.contains(.fullScreen) ?? false
+        let isFullscreen = controller?.isFullscreen ?? false
         let fullscreenItem = NSMenuItem(
             title: isFullscreen ? "Exit Full Screen" : "Enter Full Screen",
             action: #selector(toggleFullScreen(_:)),
@@ -640,7 +687,7 @@ class ModernSpectrumView: NSView {
     // MARK: - Menu Actions
     
     @objc private func toggleFullScreen(_ sender: Any?) {
-        window?.toggleFullScreen(sender)
+        controller?.toggleFullscreen()
     }
     
     @objc private func setQualityMode(_ sender: NSMenuItem) {
@@ -703,6 +750,15 @@ class ModernSpectrumView: NSView {
 
     private func updateCornerMask() {
         guard let layer = self.layer else { return }
+        
+        // Fullscreen should never clip to rounded corners.
+        if isWindowFullscreen {
+            layer.cornerRadius = 0
+            layer.masksToBounds = false
+            layer.maskedCorners = []
+            return
+        }
+        
         let cornerRadius = (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()).config.window.cornerRadius ?? 0
         layer.cornerRadius = cornerRadius
         layer.masksToBounds = cornerRadius > 0
