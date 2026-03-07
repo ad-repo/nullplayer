@@ -235,6 +235,10 @@ class ModernSpectrumView: NSView {
     
     private func handleSpectrumUpdate(_ notification: Notification) {
         guard !isShadeMode else { return }
+        guard let window = window,
+              window.isVisible,
+              !window.isMiniaturized,
+              window.occlusionState.contains(.visible) else { return }
         
         guard let userInfo = notification.userInfo,
               let spectrum = userInfo["spectrum"] as? [Float] else { return }

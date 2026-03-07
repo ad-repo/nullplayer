@@ -1203,7 +1203,16 @@ class SpectrumAnalyzerView: NSView {
 
     // MARK: - Display Link
     
+    /// Rendering should only run while this analyzer view is actually visible.
+    private func isRenderEligible() -> Bool {
+        guard let window = window else { return false }
+        guard window.isVisible, !window.isMiniaturized else { return false }
+        guard !isHiddenOrHasHiddenAncestor else { return false }
+        return window.occlusionState.contains(.visible)
+    }
+    
     private func startRendering() {
+        guard isRenderEligible() else { return }
         guard !isRendering else { return }
         isRendering = true
         
@@ -1220,6 +1229,7 @@ class SpectrumAnalyzerView: NSView {
         
         guard let displayLink = link else {
             NSLog("SpectrumAnalyzerView: Failed to create display link")
+            isRendering = false
             return
         }
         
@@ -2644,6 +2654,16 @@ class SpectrumAnalyzerView: NSView {
             // Window closed - stop the display link to release CPU
             stopRendering()
         }
+    }
+    
+    override func viewDidHide() {
+        super.viewDidHide()
+        stopRendering()
+    }
+    
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        startRendering()
     }
     
 }
