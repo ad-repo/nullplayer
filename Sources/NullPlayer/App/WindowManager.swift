@@ -284,7 +284,8 @@ class WindowManager {
     private func registerPreferenceDefaults() {
         UserDefaults.standard.register(defaults: [
             "timeDisplayMode": TimeDisplayMode.elapsed.rawValue,
-            "isAlwaysOnTop": false
+            "isAlwaysOnTop": false,
+            "hideTitleBars": true
         ])
     }
     
