@@ -284,12 +284,7 @@ class ModernLibraryBrowserView: NSView {
     // Cached data - Radio
     private var cachedRadioStations: [RadioStation] = []
     private var cachedRadioFolders: [RadioFolderDescriptor] = []
-    private var expandedRadioFolders: Set<String> = [
-        RadioFolderKind.byGenre.id,
-        RadioFolderKind.byRegion.id,
-        RadioFolderKind.userFoldersRoot.id
-    ]
-    private var selectedRadioFolderID: String = RadioFolderKind.allStations.id
+    private var expandedRadioFolders: Set<String> = []
     private var activeRadioStationSheet: AddRadioStationSheet?
     
     // Cached data - Video (Plex)
@@ -3169,10 +3164,7 @@ class ModernLibraryBrowserView: NSView {
                 return
             }
 
-            if folder.kind.isStationContainer && selectedRadioFolderID != folder.id {
-                selectedRadioFolderID = folder.id
-                buildRadioStationItems()
-            } else if folder.hasChildren && event.clickCount == 2 {
+            if folder.hasChildren && event.clickCount == 2 {
                 toggleExpand(item)
                 return
             }
@@ -3796,13 +3788,6 @@ class ModernLibraryBrowserView: NSView {
             let deleteItem = NSMenuItem(title: "Delete Station", action: #selector(contextMenuDeleteRadioStation(_:)), keyEquivalent: "")
             deleteItem.target = self; deleteItem.representedObject = station; menu.addItem(deleteItem)
         case .radioFolder(let folder):
-            if folder.kind.isStationContainer {
-                let setActiveItem = NSMenuItem(title: "Set Active Folder", action: #selector(contextMenuSetActiveRadioFolder(_:)), keyEquivalent: "")
-                setActiveItem.target = self
-                setActiveItem.representedObject = folder
-                setActiveItem.state = selectedRadioFolderID == folder.id ? .on : .off
-                menu.addItem(setActiveItem)
-            }
             if folder.hasChildren {
                 let expandItem = NSMenuItem(
                     title: expandedRadioFolders.contains(folder.id) ? "Collapse" : "Expand",
@@ -4449,12 +4434,6 @@ class ModernLibraryBrowserView: NSView {
         let alert = NSAlert(); alert.messageText = "Delete '\(station.name)'?"; alert.alertStyle = .warning
         alert.addButton(withTitle: "Delete"); alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn { RadioManager.shared.removeStation(station); loadRadioStations() }
-    }
-    @objc private func contextMenuSetActiveRadioFolder(_ sender: NSMenuItem) {
-        guard let folder = sender.representedObject as? RadioFolderDescriptor else { return }
-        guard folder.kind.isStationContainer else { return }
-        selectedRadioFolderID = folder.id
-        rebuildCurrentModeItems()
     }
     @objc private func contextMenuRenameRadioFolder(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioFolderRenameAction else { return }
@@ -5560,7 +5539,6 @@ class ModernLibraryBrowserView: NSView {
         expandedEmbyShows = []; expandedEmbySeasons = []
         cachedRadioStations = []
         cachedRadioFolders = []
-        selectedRadioFolderID = RadioFolderKind.allStations.id
         searchResults = nil
     }
     
@@ -6553,9 +6531,6 @@ class ModernLibraryBrowserView: NSView {
         stopLoadingAnimation()
         cachedRadioStations = RadioManager.shared.stations
         cachedRadioFolders = RadioManager.shared.internetRadioFolderDescriptors()
-        if !cachedRadioFolders.contains(where: { $0.id == selectedRadioFolderID && $0.kind.isStationContainer }) {
-            selectedRadioFolderID = RadioFolderKind.allStations.id
-        }
         buildRadioStationItems()
         needsDisplay = true
     }
@@ -7110,9 +7085,6 @@ class ModernLibraryBrowserView: NSView {
     private func buildRadioStationItems() {
         displayItems.removeAll()
         cachedRadioFolders = RadioManager.shared.internetRadioFolderDescriptors()
-        if !cachedRadioFolders.contains(where: { $0.id == selectedRadioFolderID && $0.kind.isStationContainer }) {
-            selectedRadioFolderID = RadioFolderKind.allStations.id
-        }
 
         let childrenByParent = Dictionary(grouping: cachedRadioFolders.filter { $0.parentID != nil }) { $0.parentID! }
         let roots = cachedRadioFolders
@@ -7125,24 +7097,6 @@ class ModernLibraryBrowserView: NSView {
         for root in roots {
             appendRadioFolderRow(root, level: 0, childrenByParent: childrenByParent)
         }
-
-        let activeFolderKind = cachedRadioFolders
-            .first(where: { $0.id == selectedRadioFolderID && $0.kind.isStationContainer })?
-            .kind ?? .allStations
-
-        let stations = RadioManager.shared.stations(inFolder: activeFolderKind)
-        for station in stations {
-            displayItems.append(
-                ModernDisplayItem(
-                    id: station.id.uuidString,
-                    title: station.name,
-                    info: station.genre,
-                    indentLevel: 0,
-                    hasChildren: false,
-                    type: .radioStation(station)
-                )
-            )
-        }
     }
 
     private func appendRadioFolderRow(
@@ -7150,13 +7104,11 @@ class ModernLibraryBrowserView: NSView {
         level: Int,
         childrenByParent: [String: [RadioFolderDescriptor]]
     ) {
-        let isActive = folder.id == selectedRadioFolderID && folder.kind.isStationContainer
-        let folderInfo = isActive ? "Active" : (folder.kind.isSmart ? "Smart Folder" : "Folder")
         displayItems.append(
             ModernDisplayItem(
                 id: folder.id,
                 title: folder.title,
-                info: folderInfo,
+                info: nil,
                 indentLevel: level,
                 hasChildren: folder.hasChildren,
                 type: .radioFolder(folder)
@@ -7164,6 +7116,22 @@ class ModernLibraryBrowserView: NSView {
         )
 
         guard folder.hasChildren, expandedRadioFolders.contains(folder.id) else { return }
+        if folder.kind.isStationContainer {
+            let stations = RadioManager.shared.stations(inFolder: folder.kind)
+            for station in stations {
+                displayItems.append(
+                    ModernDisplayItem(
+                        id: "radio-station-\(folder.id)-\(station.id.uuidString)",
+                        title: station.name,
+                        info: RadioManager.shared.normalizedGenre(for: station),
+                        indentLevel: level + 1,
+                        hasChildren: false,
+                        type: .radioStation(station)
+                    )
+                )
+            }
+            return
+        }
         let children = (childrenByParent[folder.id] ?? []).sorted { lhs, rhs in
             if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
@@ -7984,9 +7952,6 @@ class ModernLibraryBrowserView: NSView {
                     expandedRadioFolders.insert(folder.id)
                 }
             }
-            if folder.kind.isStationContainer {
-                selectedRadioFolderID = folder.id
-            }
         default: break
         }
         rebuildCurrentModeItems(); needsDisplay = true
@@ -8277,9 +8242,6 @@ class ModernLibraryBrowserView: NSView {
         case .radioFolder(let folder):
             if folder.hasChildren {
                 toggleExpand(item)
-            } else if folder.kind.isStationContainer {
-                selectedRadioFolderID = folder.id
-                rebuildCurrentModeItems()
             }
         case .plexRadioStation(let r): playPlexRadioStation(r)
         case .subsonicRadioStation(let r): playSubsonicRadioStation(r)
@@ -8570,7 +8532,7 @@ extension ModernDisplayItem {
         case .radioStation(let station):
             switch column.id {
             case "genre":
-                return station.genre ?? ""
+                return RadioManager.shared.normalizedGenre(for: station)
             case "rating":
                 return Self.formatStarRating(RadioManager.shared.rating(for: station))
             default:

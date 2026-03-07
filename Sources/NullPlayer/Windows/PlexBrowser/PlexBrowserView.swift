@@ -674,12 +674,7 @@ class PlexBrowserView: NSView {
     /// Cached data - Radio Stations
     private var cachedRadioStations: [RadioStation] = []
     private var cachedRadioFolders: [RadioFolderDescriptor] = []
-    private var expandedRadioFolders: Set<String> = [
-        RadioFolderKind.byGenre.id,
-        RadioFolderKind.byRegion.id,
-        RadioFolderKind.userFoldersRoot.id
-    ]
-    private var selectedRadioFolderID: String = RadioFolderKind.allStations.id
+    private var expandedRadioFolders: Set<String> = []
 
     private struct RadioFolderMembershipAction {
         let station: RadioStation
@@ -5157,7 +5152,6 @@ class PlexBrowserView: NSView {
         expandedEmbyShows = []; expandedEmbySeasons = []
         cachedRadioStations = []
         cachedRadioFolders = []
-        selectedRadioFolderID = RadioFolderKind.allStations.id
 
         searchResults = nil
     }
@@ -7582,10 +7576,7 @@ class PlexBrowserView: NSView {
                 toggleExpand(item)
                 return
             }
-            if folder.kind.isStationContainer && selectedRadioFolderID != folder.id {
-                selectedRadioFolderID = folder.id
-                buildRadioStationItems()
-            } else if folder.hasChildren && event.clickCount == 2 {
+            if folder.hasChildren && event.clickCount == 2 {
                 toggleExpand(item)
                 return
             }
@@ -8702,14 +8693,6 @@ class PlexBrowserView: NSView {
             menu.addItem(deleteItem)
 
         case .radioFolder(let folder):
-            if folder.kind.isStationContainer {
-                let setActiveItem = NSMenuItem(title: "Set Active Folder", action: #selector(contextMenuSetActiveRadioFolder(_:)), keyEquivalent: "")
-                setActiveItem.target = self
-                setActiveItem.representedObject = folder
-                setActiveItem.state = selectedRadioFolderID == folder.id ? .on : .off
-                menu.addItem(setActiveItem)
-            }
-
             if folder.hasChildren {
                 let expandItem = NSMenuItem(
                     title: expandedRadioFolders.contains(folder.id) ? "Collapse" : "Expand",
@@ -9057,13 +9040,6 @@ class PlexBrowserView: NSView {
             RadioManager.shared.removeStation(station)
             loadRadioStations()
         }
-    }
-
-    @objc private func contextMenuSetActiveRadioFolder(_ sender: NSMenuItem) {
-        guard let folder = sender.representedObject as? RadioFolderDescriptor else { return }
-        guard folder.kind.isStationContainer else { return }
-        selectedRadioFolderID = folder.id
-        rebuildCurrentModeItems()
     }
 
     @objc private func contextMenuRenameRadioFolder(_ sender: NSMenuItem) {
@@ -11534,9 +11510,6 @@ class PlexBrowserView: NSView {
         // Load stations from RadioManager
         cachedRadioStations = RadioManager.shared.stations
         cachedRadioFolders = RadioManager.shared.internetRadioFolderDescriptors()
-        if !cachedRadioFolders.contains(where: { $0.id == selectedRadioFolderID && $0.kind.isStationContainer }) {
-            selectedRadioFolderID = RadioFolderKind.allStations.id
-        }
         
         // Build display items for radio stations
         buildRadioStationItems()
@@ -11559,22 +11532,6 @@ class PlexBrowserView: NSView {
         for root in roots {
             appendRadioFolderRow(root, level: 0, childrenByParent: childrenByParent)
         }
-
-        let activeFolderKind = cachedRadioFolders
-            .first(where: { $0.id == selectedRadioFolderID && $0.kind.isStationContainer })?
-            .kind ?? .allStations
-        let stations = RadioManager.shared.stations(inFolder: activeFolderKind)
-
-        for station in stations {
-            displayItems.append(PlexDisplayItem(
-                id: station.id.uuidString,
-                title: station.name,
-                info: station.genre,
-                indentLevel: 0,
-                hasChildren: false,
-                type: .radioStation(station)
-            ))
-        }
     }
 
     private func appendRadioFolderRow(
@@ -11582,18 +11539,30 @@ class PlexBrowserView: NSView {
         level: Int,
         childrenByParent: [String: [RadioFolderDescriptor]]
     ) {
-        let isActive = folder.id == selectedRadioFolderID && folder.kind.isStationContainer
-        let folderInfo = isActive ? "Active" : (folder.kind.isSmart ? "Smart Folder" : "Folder")
         displayItems.append(PlexDisplayItem(
             id: folder.id,
             title: folder.title,
-            info: folderInfo,
+            info: nil,
             indentLevel: level,
             hasChildren: folder.hasChildren,
             type: .radioFolder(folder)
         ))
 
         guard folder.hasChildren, expandedRadioFolders.contains(folder.id) else { return }
+        if folder.kind.isStationContainer {
+            let stations = RadioManager.shared.stations(inFolder: folder.kind)
+            for station in stations {
+                displayItems.append(PlexDisplayItem(
+                    id: "radio-station-\(folder.id)-\(station.id.uuidString)",
+                    title: station.name,
+                    info: RadioManager.shared.normalizedGenre(for: station),
+                    indentLevel: level + 1,
+                    hasChildren: false,
+                    type: .radioStation(station)
+                ))
+            }
+            return
+        }
         let children = (childrenByParent[folder.id] ?? []).sorted { lhs, rhs in
             if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
@@ -13624,9 +13593,6 @@ class PlexBrowserView: NSView {
                     expandedRadioFolders.insert(folder.id)
                 }
             }
-            if folder.kind.isStationContainer {
-                selectedRadioFolderID = folder.id
-            }
             rebuildCurrentModeItems()
             
         default:
@@ -13863,9 +13829,6 @@ class PlexBrowserView: NSView {
         case .radioFolder(let folder):
             if folder.hasChildren {
                 toggleExpand(item)
-            } else if folder.kind.isStationContainer {
-                selectedRadioFolderID = folder.id
-                rebuildCurrentModeItems()
             }
             
         case .plexRadioStation(let radioType):
@@ -14815,7 +14778,7 @@ extension PlexDisplayItem {
     private func radioStationValue(_ station: RadioStation, for column: BrowserColumn) -> String {
         switch column.id {
         case "genre":
-            return station.genre ?? ""
+            return RadioManager.shared.normalizedGenre(for: station)
         case "rating":
             return Self.formatStarRating(RadioManager.shared.rating(for: station))
         default:

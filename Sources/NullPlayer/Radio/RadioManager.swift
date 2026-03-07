@@ -1269,6 +1269,9 @@ class RadioManager {
         let genres = availableGenres()
         let regions = availableRegions()
         let userFolders = userRadioFolders()
+        let hasStations: (RadioFolderKind) -> Bool = { [self] kind in
+            !stations(inFolder: kind).isEmpty
+        }
 
         var result: [RadioFolderDescriptor] = [
             RadioFolderDescriptor(
@@ -1277,7 +1280,7 @@ class RadioManager {
                 kind: .allStations,
                 parentID: nil,
                 sortOrder: 10,
-                hasChildren: false
+                hasChildren: hasStations(.allStations)
             ),
             RadioFolderDescriptor(
                 id: RadioFolderKind.favorites.id,
@@ -1285,7 +1288,7 @@ class RadioManager {
                 kind: .favorites,
                 parentID: nil,
                 sortOrder: 20,
-                hasChildren: false
+                hasChildren: hasStations(.favorites)
             ),
             RadioFolderDescriptor(
                 id: RadioFolderKind.topRated.id,
@@ -1293,7 +1296,7 @@ class RadioManager {
                 kind: .topRated,
                 parentID: nil,
                 sortOrder: 30,
-                hasChildren: false
+                hasChildren: hasStations(.topRated)
             ),
             RadioFolderDescriptor(
                 id: RadioFolderKind.unrated.id,
@@ -1301,7 +1304,7 @@ class RadioManager {
                 kind: .unrated,
                 parentID: nil,
                 sortOrder: 40,
-                hasChildren: false
+                hasChildren: hasStations(.unrated)
             ),
             RadioFolderDescriptor(
                 id: RadioFolderKind.recentlyPlayed.id,
@@ -1309,7 +1312,7 @@ class RadioManager {
                 kind: .recentlyPlayed,
                 parentID: nil,
                 sortOrder: 50,
-                hasChildren: false
+                hasChildren: hasStations(.recentlyPlayed)
             ),
             RadioFolderDescriptor(
                 id: RadioFolderKind.byGenre.id,
@@ -1345,7 +1348,7 @@ class RadioManager {
                     kind: .genre(genre),
                     parentID: RadioFolderKind.byGenre.id,
                     sortOrder: 1000 + index,
-                    hasChildren: false
+                    hasChildren: hasStations(.genre(genre))
                 )
             )
         }
@@ -1358,7 +1361,7 @@ class RadioManager {
                     kind: .region(region),
                     parentID: RadioFolderKind.byRegion.id,
                     sortOrder: 2000 + index,
-                    hasChildren: false
+                    hasChildren: hasStations(.region(region))
                 )
             )
         }
@@ -1371,7 +1374,7 @@ class RadioManager {
                     kind: .manual(folder.id),
                     parentID: RadioFolderKind.userFoldersRoot.id,
                     sortOrder: 3000 + index,
-                    hasChildren: false
+                    hasChildren: hasStations(.manual(folder.id))
                 )
             )
         }
@@ -1413,8 +1416,10 @@ class RadioManager {
                 .sorted { $0.1 > $1.1 }
                 .map(\.0)
         case .genre(let genre):
-            let target = genre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let filtered = stations.filter { ($0.genre ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == target }
+            let target = normalizeGenreLabel(genre)
+            let filtered = stations.filter {
+                normalizeGenreLabel($0.genre).localizedCaseInsensitiveCompare(target) == .orderedSame
+            }
             return stationsSortedByName(filtered)
         case .region(let region):
             let filtered = stations.filter { derivedRegion(for: $0) == region }
@@ -1440,22 +1445,26 @@ class RadioManager {
 
     private func stationsSortedByGenreAndName(_ items: [RadioStation]) -> [RadioStation] {
         items.sorted { a, b in
-            let ga = a.genre ?? ""
-            let gb = b.genre ?? ""
-            if ga != gb {
-                if ga.isEmpty { return false }
-                if gb.isEmpty { return true }
+            let ga = normalizeGenreLabel(a.genre)
+            let gb = normalizeGenreLabel(b.genre)
+            if ga.caseInsensitiveCompare(gb) != .orderedSame {
                 return ga.localizedCaseInsensitiveCompare(gb) == .orderedAscending
             }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         }
     }
 
+    func normalizedGenre(for station: RadioStation) -> String {
+        normalizeGenreLabel(station.genre)
+    }
+
+    private func normalizeGenreLabel(_ genre: String?) -> String {
+        let trimmed = (genre ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Unknown" : trimmed
+    }
+
     private func availableGenres() -> [String] {
-        let genres = Set(stations.compactMap { station -> String? in
-            let trimmed = (station.genre ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        })
+        let genres = Set(stations.map { normalizeGenreLabel($0.genre) })
         return genres.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
