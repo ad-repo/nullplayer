@@ -376,9 +376,26 @@ class RadioManager {
             genre: "NPR"
         ),
         RadioStation(
+            name: "WERS Boston 88.9",
+            url: URL(string: "http://marconi.emerson.edu:8000/wers")!,
+            genre: "NPR"
+        ),
+        RadioStation(
             name: "GBH Boston 89.7",
             url: URL(string: "https://wgbh-live.streamguys1.com/wgbh.mp3")!,
             genre: "NPR"
+        ),
+        RadioStation(
+            name: "WMBR Cambridge 88.1",
+            url: URL(string: "https://wmbr.org:8002/hi")!,
+            genre: "College Radio"
+        ),
+
+        // MARK: - Sports
+        RadioStation(
+            name: "98.5 The Sports Hub Boston",
+            url: URL(string: "https://playerservices.streamtheworld.com/api/livestream-redirect/WBZFM.mp3")!,
+            genre: "Sports"
         ),
         
         // MARK: - News
@@ -695,6 +712,58 @@ class RadioManager {
             name: "SomaFM Vaporwaves",
             url: URL(string: "https://ice5.somafm.com/vaporwaves-128-mp3")!,
             genre: "Electronic"
+        ),
+
+        // MARK: - Police / Scanner
+        RadioStation(
+            name: "Fairfax County Police, Fire and EMS",
+            url: URL(string: "https://broadcastify.cdnstream1.com/28326")!,
+            genre: "Scanner"
+        ),
+        RadioStation(
+            name: "Tucson Police Dispatch",
+            url: URL(string: "https://broadcastify.cdnstream1.com/22835")!,
+            genre: "Scanner"
+        ),
+        RadioStation(
+            name: "Rivercom Chelan / Douglas County Dispatch",
+            url: URL(string: "https://broadcastify.cdnstream1.com/24557")!,
+            genre: "Scanner"
+        ),
+        RadioStation(
+            name: "Madison County Sheriff, Fire and EMS, Anderson Police",
+            url: URL(string: "https://broadcastify.cdnstream1.com/24550")!,
+            genre: "Scanner"
+        ),
+        RadioStation(
+            name: "Jefferson County (NY) Police, Fire and EMS",
+            url: URL(string: "https://broadcastify.cdnstream1.com/6007")!,
+            genre: "Scanner"
+        ),
+        RadioStation(
+            name: "Pittsburgh Police, Fire and EMS",
+            url: URL(string: "https://broadcastify.cdnstream1.com/21738")!,
+            genre: "Scanner"
+        ),
+        RadioStation(
+            name: "Tillamook County Police EMS Radio",
+            url: URL(string: "https://broadcastify.cdnstream1.com/16984")!,
+            genre: "Scanner"
+        ),
+        RadioStation(
+            name: "Greater New Haven Police Department",
+            url: URL(string: "https://broadcastify.cdnstream1.com/8705")!,
+            genre: "Scanner"
+        ),
+        RadioStation(
+            name: "Travis County Law Enforcement",
+            url: URL(string: "http://audio1.radioreference.com/907330774")!,
+            genre: "Scanner"
+        ),
+        RadioStation(
+            name: "East Coast Reflector WB2JPQ",
+            url: URL(string: "https://broadcastify.cdnstream1.com/12560")!,
+            genre: "Scanner"
         ),
 
         // MARK: - African / Caribbean
