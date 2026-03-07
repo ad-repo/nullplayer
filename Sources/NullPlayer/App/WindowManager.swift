@@ -175,6 +175,25 @@ class WindowManager {
             for win in windowsBelow {
                 win.setFrameOrigin(NSPoint(x: win.frame.origin.x, y: win.frame.origin.y + dy))
             }
+            // Ensure center-stack windows follow HT compact/full sizing rules and remain flush.
+            let orderedBelow = windowsBelow.sorted { $0.frame.maxY > $1.frame.maxY }
+            var nextTop = frame.minY
+            let titleDelta = ModernSkinElements.titleBarBaseHeight * ModernSkinElements.scaleFactor
+            for win in orderedBelow {
+                guard let kind = centerStackWindowKind(for: win) else { continue }
+                applyCenterStackSizingConstraints(win, kind: kind)
+                var winFrame = win.frame
+                let targetHeight = targetCenterStackHeight(for: kind,
+                                                           currentHeight: winFrame.height,
+                                                           titleBarDelta: titleDelta,
+                                                           preservePlaylistContentHeight: true)
+                winFrame.size.width = frame.width
+                winFrame.size.height = targetHeight
+                winFrame.origin.x = frame.minX
+                winFrame.origin.y = nextTop - targetHeight
+                win.setFrame(winFrame, display: true, animate: false)
+                nextTop = winFrame.minY
+            }
             // Resize side windows (library browser, projectM) so their bottom follows the main
             // window's bottom. Their top (maxY) is anchored to the main window's top and must
             // not change — only height and origin.y are adjusted.
@@ -400,9 +419,13 @@ class WindowManager {
         
         // Position BEFORE showing (unless restoring from saved state)
         if let playlistWindow = playlistWindowController?.window {
+            applyCenterStackSizingConstraints(playlistWindow, kind: .playlist)
             if let frame = restoredFrame, frame != .zero {
-                playlistWindow.setFrame(frame, display: true)
+                playlistWindow.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .playlist), display: true)
             } else {
+                if isNewWindow {
+                    applyDefaultCenterStackFrameForCurrentHT(playlistWindow, kind: .playlist)
+                }
                 positionSubWindow(playlistWindow)
             }
             NSLog("showPlaylist: window frame = \(playlistWindow.frame)")
@@ -444,9 +467,13 @@ class WindowManager {
         
         // Position BEFORE showing (unless restoring from saved state)
         if let eqWindow = equalizerWindowController?.window {
+            applyCenterStackSizingConstraints(eqWindow, kind: .equalizer)
             if let frame = restoredFrame, frame != .zero {
-                eqWindow.setFrame(frame, display: true)
+                eqWindow.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .equalizer), display: true)
             } else {
+                if isNewWindow {
+                    applyDefaultCenterStackFrameForCurrentHT(eqWindow, kind: .equalizer)
+                }
                 positionSubWindow(eqWindow)
             }
         }
@@ -480,6 +507,10 @@ class WindowManager {
     private func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
         guard let mainWindow = mainWindowController?.window else { return }
         
+        if let kind = centerStackWindowKind(for: window) {
+            applyCenterStackSizingConstraints(window, kind: kind)
+        }
+
         let mainFrame = mainWindow.frame
         let newHeight = window.frame.size.height
         let newWidth = window.frame.size.width
@@ -599,7 +630,6 @@ class WindowManager {
         }
         plexBrowserWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
-        
         // Position window to match the vertical stack
         if let window = plexBrowserWindowController?.window {
             if isNewWindow, let frame = restoredFrame, frame != .zero {
@@ -627,9 +657,8 @@ class WindowManager {
                     window.setFrame(newFrame, display: true)
                 } else if let mainWindow = mainWindow {
                     // Use default height (4× main) when only main window is visible
-                    // Side window matches stack height, so use 4× actual main height
                     let mainFrame = mainWindow.frame
-                    let defaultHeight = mainFrame.height * 4
+                    let defaultHeight = defaultSideWindowHeight(mainFrame: mainFrame)
                     let newFrame = NSRect(
                         x: mainFrame.maxX,
                         y: mainFrame.maxY - defaultHeight,
@@ -1167,7 +1196,6 @@ class WindowManager {
         }
         projectMWindowController?.showWindow(nil)
         applyAlwaysOnTopToWindow(projectMWindowController?.window)
-        
         // Position window to match the vertical stack
         if let window = projectMWindowController?.window {
             if isNewWindow, let frame = restoredFrame, frame != .zero {
@@ -1192,9 +1220,8 @@ class WindowManager {
                     window.setFrame(newFrame, display: true)
                 } else if let mainWindow = mainWindow {
                     // Use default height (4× main) when only main window is visible
-                    // Side window matches stack height, so use 4× actual main height
                     let mainFrame = mainWindow.frame
-                    let defaultHeight = mainFrame.height * 4
+                    let defaultHeight = defaultSideWindowHeight(mainFrame: mainFrame)
                     let newFrame = NSRect(
                         x: mainFrame.minX - window.frame.width,
                         y: mainFrame.maxY - defaultHeight,
@@ -1253,9 +1280,13 @@ class WindowManager {
         
         // Position BEFORE showing (unless restoring from saved state)
         if let window = spectrumWindowController?.window {
+            applyCenterStackSizingConstraints(window, kind: .spectrum)
             if let frame = restoredFrame, frame != .zero {
-                window.setFrame(frame, display: true)
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .spectrum), display: true)
             } else {
+                if isNewWindow {
+                    applyDefaultCenterStackFrameForCurrentHT(window, kind: .spectrum)
+                }
                 positionSubWindow(window)
             }
         }
@@ -1531,7 +1562,7 @@ class WindowManager {
         if let eqWindow = equalizerWindowController?.window {
             let eqTargetSize: NSSize
             if runningModernMode {
-                eqTargetSize = ModernSkinElements.eqWindowSize
+                eqTargetSize = NSSize(width: mainFrame.width, height: expectedMainHeightForCurrentHT(mainWindowController?.window))
             } else {
                 eqTargetSize = NSSize(width: Skin.eqWindowSize.width * scale,
                                       height: Skin.eqWindowSize.height * scale)
@@ -1556,7 +1587,9 @@ class WindowManager {
         // Playlist - position below EQ (or main if no EQ)
         if let playlistWindow = playlistWindowController?.window {
             let baseMinSize: NSSize = runningModernMode ? ModernSkinElements.playlistMinSize : Skin.playlistMinSize
-            let minHeight = baseMinSize.height * (runningModernMode ? 1.0 : scale)
+            let minHeight = runningModernMode
+                ? expectedMainHeightForCurrentHT(mainWindowController?.window)
+                : baseMinSize.height * scale
 
             let targetWidth = mainFrame.width
             playlistWindow.minSize = NSSize(width: targetWidth, height: minHeight)
@@ -1584,7 +1617,7 @@ class WindowManager {
         if let spectrumWindow = spectrumWindowController?.window {
             let spectrumTargetSize: NSSize
             if runningModernMode {
-                spectrumTargetSize = ModernSkinElements.spectrumWindowSize
+                spectrumTargetSize = NSSize(width: mainFrame.width, height: expectedMainHeightForCurrentHT(mainWindowController?.window))
             } else {
                 spectrumTargetSize = NSSize(width: Skin.mainWindowSize.width * scale,
                                             height: Skin.mainWindowSize.height * scale)
@@ -1696,6 +1729,111 @@ class WindowManager {
         }
         
         return NSRect(x: x, y: round(bottomY), width: width, height: round(topY) - round(bottomY))
+    }
+
+    private enum CenterStackWindowKind {
+        case equalizer
+        case playlist
+        case spectrum
+    }
+
+    private func centerStackWindowKind(for window: NSWindow) -> CenterStackWindowKind? {
+        if window === equalizerWindowController?.window { return .equalizer }
+        if window === playlistWindowController?.window { return .playlist }
+        if window === spectrumWindowController?.window { return .spectrum }
+        return nil
+    }
+
+    private func fullMainHeightForCurrentScale() -> CGFloat {
+        ModernSkinElements.baseMainSize.height * ModernSkinElements.scaleFactor
+    }
+
+    private func compactMainHeightForCurrentScale() -> CGFloat {
+        (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
+    }
+
+    private func targetCenterStackHeight(for kind: CenterStackWindowKind,
+                                         currentHeight: CGFloat,
+                                         titleBarDelta: CGFloat,
+                                         preservePlaylistContentHeight: Bool) -> CGFloat {
+        let target = expectedMainHeightForCurrentHT(mainWindowController?.window)
+        guard kind == .playlist else { return target }
+        guard preservePlaylistContentHeight else { return target }
+        let adjusted = hideTitleBars ? (currentHeight - titleBarDelta) : (currentHeight + titleBarDelta)
+        return max(target, adjusted)
+    }
+
+    private func applyCenterStackSizingConstraints(_ window: NSWindow, kind: CenterStackWindowKind) {
+        guard isRunningModernUI, let mainWindow = mainWindowController?.window else { return }
+        let targetWidth = mainWindow.frame.width
+        let targetHeight = expectedMainHeightForCurrentHT(mainWindow)
+        switch kind {
+        case .equalizer, .spectrum:
+            window.minSize = NSSize(width: targetWidth, height: targetHeight)
+            window.maxSize = NSSize(width: targetWidth, height: targetHeight)
+        case .playlist:
+            window.minSize = NSSize(width: targetWidth, height: targetHeight)
+            window.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
+        }
+    }
+
+    private func applyDefaultCenterStackFrameForCurrentHT(_ window: NSWindow, kind: CenterStackWindowKind) {
+        guard isRunningModernUI, let mainWindow = mainWindowController?.window else { return }
+        var frame = window.frame
+        let topY = frame.maxY
+        frame.size.width = mainWindow.frame.width
+        frame.size.height = targetCenterStackHeight(for: kind,
+                                                    currentHeight: frame.height,
+                                                    titleBarDelta: 0,
+                                                    preservePlaylistContentHeight: false)
+        frame.origin.y = topY - frame.size.height
+        frame.origin.x = mainWindow.frame.minX
+        window.setFrame(frame, display: true)
+    }
+
+    private func normalizedCenterStackRestoredFrame(_ frame: NSRect, kind: CenterStackWindowKind) -> NSRect {
+        guard isRunningModernUI else { return frame }
+        var normalized = frame
+        if let mainWindow = mainWindowController?.window {
+            normalized.origin.x = mainWindow.frame.minX
+            normalized.size.width = mainWindow.frame.width
+        }
+
+        let topY = normalized.maxY
+        let target = expectedMainHeightForCurrentHT(mainWindowController?.window)
+        switch kind {
+        case .equalizer, .spectrum:
+            normalized.size.height = target
+        case .playlist:
+            let full = fullMainHeightForCurrentScale()
+            let compact = compactMainHeightForCurrentScale()
+            let tol: CGFloat = 1
+            if hideTitleBars && abs(normalized.height - full) <= tol {
+                normalized.size.height = compact
+            } else if !hideTitleBars && abs(normalized.height - compact) <= tol {
+                normalized.size.height = full
+            } else {
+                normalized.size.height = max(target, normalized.height)
+            }
+        }
+        normalized.origin.y = topY - normalized.size.height
+        return normalized
+    }
+
+    /// Expected main-window frame height for the current HT setting.
+    /// For modern UI this is schema-driven and not inferred from potentially stale frame geometry.
+    private func expectedMainHeightForCurrentHT(_ mainWindow: NSWindow?) -> CGFloat {
+        guard isRunningModernUI else { return mainWindow?.frame.height ?? 0 }
+        let full = fullMainHeightForCurrentScale()
+        let compact = compactMainHeightForCurrentScale()
+        return hideTitleBars ? compact : full
+    }
+
+    /// Default side-window height when only the main window is visible.
+    /// Must track HT compact/full main height in modern UI.
+    private func defaultSideWindowHeight(mainFrame: NSRect) -> CGFloat {
+        guard isRunningModernUI else { return mainFrame.height * 4 }
+        return expectedMainHeightForCurrentHT(mainWindowController?.window) * 4
     }
     
     /// Reset all windows to their default positions

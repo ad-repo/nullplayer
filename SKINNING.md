@@ -288,6 +288,7 @@ The `elementBlur` multiplier scales the glow halos on individual UI elements (se
 | `borderColor` | Border color (defaults to palette `border` or `primary`) |
 | `cornerRadius` | Rounded corner radius (0 = square corners) |
 | `scale` | UI scale factor (default 1.25). Smaller = more compact, larger = bigger UI |
+| `seamlessDocking` | 0.0-1.0 joined-edge seam suppression for docked modern windows |
 | `opacity` | Base opacity for modern window chrome. **Required** |
 | `areaOpacity` | Per-area opacity overrides for modern windows. Missing areas/channels fall back to `window.opacity` |
 
@@ -307,6 +308,8 @@ Each area style supports:
 - `background`: panel/background layer opacity
 - `border`: border/stroke layer opacity
 - `content`: foreground text/icons/bars/curve layer opacity
+
+When `seamlessDocking` is greater than `0`, docked modern windows suppress joined-edge shadows to keep interior seams faint instead of dark.
 
 Opaque built-in style example:
 

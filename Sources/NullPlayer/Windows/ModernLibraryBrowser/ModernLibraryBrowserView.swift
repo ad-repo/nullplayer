@@ -5336,6 +5336,12 @@ class ModernLibraryBrowserView: NSView {
         let newEdges = WindowManager.shared.computeAdjacentEdges(for: window)
         let newSharp = WindowManager.shared.computeSharpCorners(for: window)
         let newSegments = WindowManager.shared.computeEdgeOcclusionSegments(for: window)
+        let seamless = min(1.0, max(0.0, ModernSkinEngine.shared.currentSkin?.config.window.seamlessDocking ?? 0))
+        let shouldHaveShadow = !(seamless > 0 && !newEdges.isEmpty)
+        if window.hasShadow != shouldHaveShadow {
+            window.hasShadow = shouldHaveShadow
+            window.invalidateShadow()
+        }
         if newEdges != adjacentEdges || newSharp != sharpCorners || newSegments != edgeOcclusionSegments {
             adjacentEdges = newEdges
             sharpCorners = newSharp

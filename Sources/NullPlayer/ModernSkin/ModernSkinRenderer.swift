@@ -198,7 +198,6 @@ class ModernSkinRenderer {
         let cornerRadius = skin.config.window.cornerRadius ?? 0
         let resolvedBorderOpacity = min(1.0, max(0.0, borderOpacity ?? skin.config.window.opacity))
         let borderColor = skin.borderColor.withAlphaComponent(resolvedBorderOpacity)
-        let backgroundOpacity = min(1.0, max(0.0, skin.config.window.opacity))
         let seamless = min(1.0, max(0.0, skin.config.window.seamlessDocking ?? 0))
         let glowRadius = (skin.config.glow.radius ?? 8.0)
 
@@ -209,50 +208,8 @@ class ModernSkinRenderer {
         let borderRect = bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
         let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, sharpCorners: sharpCorners)
 
-        if seamless >= 1.0 && !effectiveSegments.isEmpty {
-            // Draw border/glow in an isolated layer, then clear only joined seam strips.
-            // This avoids clip artifacts and preserves underlying background design.
-            let stripThickness = borderWidth + (skin.config.glow.enabled
-                ? max(0.45, min(1.0, glowRadius * 0.12))
-                : 0.25)
-            let strips = edgeStripRects(
-                for: bounds,
-                segments: effectiveSegments,
-                thickness: stripThickness,
-                endpointPadding: max(0.4, borderWidth * 0.4)
-            )
-
-            if skin.config.glow.enabled {
-                context.beginTransparencyLayer(auxiliaryInfo: nil)
-                context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5 * resolvedBorderOpacity).cgColor)
-                context.setStrokeColor(borderColor.cgColor)
-                context.setLineWidth(borderWidth)
-                context.addPath(path)
-                context.strokePath()
-            } else {
-                context.beginTransparencyLayer(auxiliaryInfo: nil)
-            }
-
-            context.setShadow(offset: .zero, blur: 0, color: nil)
-            context.setStrokeColor(borderColor.cgColor)
-            context.setLineWidth(borderWidth)
-            context.addPath(path)
-            context.strokePath()
-
-            if !strips.isEmpty {
-                context.saveGState()
-                context.setBlendMode(.clear)
-                for strip in strips {
-                    context.fill(strip)
-                }
-                context.restoreGState()
-            }
-
-            context.endTransparencyLayer()
-            return
-        }
-
         context.saveGState()
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
 
         if skin.config.glow.enabled {
             context.saveGState()
@@ -268,20 +225,33 @@ class ModernSkinRenderer {
         context.setLineWidth(borderWidth)
         context.addPath(path)
         context.strokePath()
-        context.restoreGState()
 
-        // For partial seamless (0 < value < 1), fade only the joined edge segments.
-        if seamless > 0 && seamless < 1.0 && !effectiveSegments.isEmpty {
-            let bgColor = skin.backgroundColor
-            let strips = edgeStripRects(for: bounds, segments: effectiveSegments, thickness: borderWidth)
-            guard !strips.isEmpty else { return }
-            context.saveGState()
-            context.setFillColor(bgColor.withAlphaComponent(backgroundOpacity * seamless).cgColor)
-            for strip in strips {
-                context.fill(strip)
+        // Suppress only joined edge segments by subtracting from the border-only
+        // transparency layer. This keeps interior seams nearly invisible without
+        // repainting/darkening the content beneath.
+        if seamless > 0 && !effectiveSegments.isEmpty {
+            let stripThickness = borderWidth + (skin.config.glow.enabled
+                ? max(0.65, min(1.5, glowRadius * 0.16))
+                : 0.35)
+            let strips = edgeStripRects(
+                for: bounds,
+                segments: effectiveSegments,
+                thickness: stripThickness,
+                endpointPadding: max(0.45, borderWidth * 0.4)
+            )
+            if !strips.isEmpty {
+                context.saveGState()
+                context.setBlendMode(.destinationOut)
+                context.setFillColor(NSColor.black.withAlphaComponent(seamless).cgColor)
+                for strip in strips {
+                    context.fill(strip)
+                }
+                context.restoreGState()
             }
-            context.restoreGState()
         }
+
+        context.endTransparencyLayer()
+        context.restoreGState()
     }
     
     /// Draw the title bar with per-window prefix support and three-tier text fallback.
