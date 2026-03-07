@@ -92,9 +92,54 @@ class WindowManager {
             mainWindow.minSize = newSize
             var frame = mainWindow.frame
             let topY = frame.maxY
+            let oldOriginY = frame.origin.y
             frame.size = newSize
             frame.origin.y = topY - newSize.height
+            let dy = frame.origin.y - oldOriginY
+
+            // Find sub-windows stacked below the main window (below-only BFS, same pattern as
+            // slideUpWindowsBelow). Library browser and ProjectM are side-docked and must NOT
+            // be moved — only the main window's bottom changes, its top is anchored.
+            let subWindows = [equalizerWindowController?.window,
+                              playlistWindowController?.window,
+                              spectrumWindowController?.window].compactMap { $0 }
+            var windowsBelow: [NSWindow] = []
+            var frontier: [NSRect] = [mainWindow.frame]
+            while !frontier.isEmpty {
+                let ref = frontier.removeFirst()
+                for win in subWindows {
+                    guard win.isVisible, !windowsBelow.contains(win) else { continue }
+                    let vGap = abs(win.frame.maxY - ref.minY)
+                    let hOverlap = win.frame.minX < ref.maxX && win.frame.maxX > ref.minX
+                    if vGap <= dockThreshold && hOverlap {
+                        windowsBelow.append(win)
+                        frontier.append(win.frame)
+                    }
+                }
+            }
+
+            // Suppress windowDidMove → windowWillMove side-effects during programmatic resize.
+            // Without this, windowWillMove either uses stale offsets (leaving draggingWindow set
+            // from a prior HT toggle) or computes fresh offsets relative to the post-resize origin
+            // (which leaves every docked window at its pre-move position, creating a gap).
+            isSnappingWindow = true
             mainWindow.setFrame(frame, display: true, animate: false)
+            // Move below-stacked windows by the same Y delta so they stay flush against the main.
+            for win in windowsBelow {
+                win.setFrameOrigin(NSPoint(x: win.frame.origin.x, y: win.frame.origin.y + dy))
+            }
+            // Resize side windows (library browser, projectM) so their bottom follows the main
+            // window's bottom. Their top (maxY) is anchored to the main window's top and must
+            // not change — only height and origin.y are adjusted.
+            for win in [plexBrowserWindowController?.window, projectMWindowController?.window].compactMap({ $0 }) {
+                guard win.isVisible else { continue }
+                let newOriginY = win.frame.origin.y + dy
+                let newHeight = win.frame.height - dy
+                win.setFrame(NSRect(x: win.frame.origin.x, y: newOriginY,
+                                    width: win.frame.width, height: newHeight),
+                             display: true, animate: false)
+            }
+            isSnappingWindow = false
         }
 
         // Refresh all 6 window views
