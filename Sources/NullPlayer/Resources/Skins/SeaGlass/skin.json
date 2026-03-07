@@ -1,29 +1,29 @@
 {
     "meta": {
-        "name": "smooth-glass",
+        "name": "SeaGlass",
         "author": "NullPlayer",
         "version": "1.0",
-        "description": "Frosted glass skin with bright edge highlights, soft bloom, and deep translucency"
+        "description": "Green sea-glass skin with cool translucency, mint highlights, and soft marine glow"
     },
     "palette": {
-        "primary": "#d4efff",
-        "secondary": "#addcff",
-        "accent": "#edf8ff",
-        "highlight": "#ffffff",
-        "background": "#121c28",
-        "surface": "#243244",
-        "text": "#f2fbff",
-        "textDim": "#93adbf",
-        "positive": "#8fffc9",
-        "negative": "#ff9fab",
-        "warning": "#ffd18a",
-        "border": "#e6f5ff",
-        "timeColor": "#f8fdff",
-        "marqueeColor": "#f3fbff",
-        "dataColor": "#edf8ff",
-        "eqLow": "#9ce5ff",
-        "eqMid": "#caf1ff",
-        "eqHigh": "#f3fcff"
+        "primary": "#8ef2d2",
+        "secondary": "#66d8b4",
+        "accent": "#baf9e6",
+        "highlight": "#e5fff6",
+        "background": "#0f1e1d",
+        "surface": "#1d3532",
+        "text": "#e8fff8",
+        "textDim": "#8fb3aa",
+        "positive": "#9fffd7",
+        "negative": "#ff9ea7",
+        "warning": "#ffd38a",
+        "border": "#c9ffee",
+        "timeColor": "#f1fffb",
+        "marqueeColor": "#ddfff4",
+        "dataColor": "#c7ffeb",
+        "eqLow": "#6be7bf",
+        "eqMid": "#95f3d3",
+        "eqHigh": "#cffff1"
     },
     "fonts": {
         "primaryName": "DepartureMono-Regular",
@@ -40,26 +40,26 @@
     },
     "background": {
         "grid": {
-            "color": "#eef9ff",
+            "color": "#d7fff1",
             "spacing": 34,
             "angle": 78,
-            "opacity": 0.02,
+            "opacity": 0.025,
             "perspective": false
         }
     },
     "glow": {
         "enabled": true,
         "radius": 12,
-        "intensity": 0.28,
-        "threshold": 0.78,
-        "color": "#e8f6ff",
-        "elementBlur": 0.5
+        "intensity": 0.3,
+        "threshold": 0.76,
+        "color": "#b8ffe7",
+        "elementBlur": 0.52
     },
     "window": {
         "borderWidth": 1,
-        "borderColor": "#eaf7ff",
+        "borderColor": "#d3fff1",
         "cornerRadius": 14,
-        "opacity": 0.54,
+        "opacity": 0.52,
         "seamlessDocking": 1.0
     },
     "marquee": {
@@ -68,42 +68,42 @@
     },
     "elements": {
         "titlebar": {
-            "color": "#2c3c50"
+            "color": "#274742"
         },
         "spectrum_titlebar": {
-            "color": "#2c3c50"
+            "color": "#274742"
         },
         "playlist_titlebar": {
-            "color": "#2c3c50"
+            "color": "#274742"
         },
         "eq_titlebar": {
-            "color": "#2c3c50"
+            "color": "#274742"
         },
         "library_titlebar": {
-            "color": "#2c3c50"
+            "color": "#274742"
         },
         "projectm_titlebar": {
-            "color": "#2c3c50"
+            "color": "#274742"
         },
         "marquee_bg": {
-            "color": "#28384b"
+            "color": "#223f3a"
         },
         "spectrum_area": {
-            "color": "#e7f8ff"
+            "color": "#b8ffe7"
         },
         "seek_fill": {
-            "color": "#e7f8ff"
+            "color": "#b8ffe7"
         },
         "info_cast": {
-            "color": "#e7f8ff"
+            "color": "#b8ffe7"
         }
     },
     "animations": {
         "seek_fill": {
             "type": "glow",
-            "duration": 3.2,
+            "duration": 3.0,
             "minValue": 0.5,
-            "maxValue": 0.95
+            "maxValue": 0.98
         }
     }
 }

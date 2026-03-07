@@ -45,7 +45,11 @@ class ModernSkinEngine {
         let preferredName = UserDefaults.standard.string(forKey: skinNameKey)
         
         if let name = preferredName {
-            if loadSkin(named: name) {
+            let resolvedName = resolvedSkinName(for: name)
+            if resolvedName != name {
+                UserDefaults.standard.set(resolvedName, forKey: skinNameKey)
+            }
+            if loadSkin(named: resolvedName) {
                 return
             }
         }
@@ -66,10 +70,11 @@ class ModernSkinEngine {
     /// Load a skin by name (searches bundled and user skins)
     @discardableResult
     func loadSkin(named name: String) -> Bool {
+        let resolvedName = resolvedSkinName(for: name)
         let available = loader.availableSkins()
         
-        guard let skinInfo = available.first(where: { $0.name == name }) else {
-            NSLog("ModernSkinEngine: Skin '%@' not found", name)
+        guard let skinInfo = available.first(where: { $0.name == resolvedName }) else {
+            NSLog("ModernSkinEngine: Skin '%@' not found", resolvedName)
             return false
         }
         
@@ -80,14 +85,14 @@ class ModernSkinEngine {
             } else {
                 currentSkin = try loader.load(from: skinInfo.path)
             }
-            currentSkinName = name
-            UserDefaults.standard.set(name, forKey: skinNameKey)
+            currentSkinName = resolvedName
+            UserDefaults.standard.set(resolvedName, forKey: skinNameKey)
             configureSkinDependencies()
             notifySkinChanged()
-            NSLog("ModernSkinEngine: Loaded skin '%@'", name)
+            NSLog("ModernSkinEngine: Loaded skin '%@'", resolvedName)
             return true
         } catch {
-            NSLog("ModernSkinEngine: Failed to load skin '%@': %@", name, error.localizedDescription)
+            NSLog("ModernSkinEngine: Failed to load skin '%@': %@", resolvedName, error.localizedDescription)
             return false
         }
     }
@@ -176,5 +181,13 @@ class ModernSkinEngine {
     
     private func notifySkinChanged() {
         NotificationCenter.default.post(name: Self.skinDidChangeNotification, object: self)
+    }
+
+    private func resolvedSkinName(for name: String) -> String {
+        switch name {
+        case "smooth-glass": return "SmoothGlass"
+        case "blood-glass": return "BloodGlass"
+        default: return name
+        }
     }
 }
