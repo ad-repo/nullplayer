@@ -321,6 +321,51 @@ class PlexBrowserView: NSView {
             columnsForItem(item) != nil
         }
     }
+
+    private var hasInternetRadioColumns: Bool {
+        guard case .radio = currentSource, browseMode == .radio else { return false }
+        return displayItems.contains {
+            if case .radioStation = $0.type { return true }
+            return false
+        }
+    }
+
+    private func isInternetRadioItem(_ item: PlexDisplayItem) -> Bool {
+        guard case .radio = currentSource, browseMode == .radio else { return false }
+        if case .radioStation = item.type { return true }
+        return false
+    }
+
+    private func headerColumnsForCurrentContent() -> [BrowserColumn]? {
+        if hasInternetRadioColumns {
+            return BrowserColumn.internetRadioColumns
+        }
+        if displayItems.contains(where: {
+            switch $0.type {
+            case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack: return true
+            default: return false
+            }
+        }) {
+            return BrowserColumn.trackColumns
+        }
+        if displayItems.contains(where: {
+            switch $0.type {
+            case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum: return true
+            default: return false
+            }
+        }) {
+            return BrowserColumn.albumColumns
+        }
+        if displayItems.contains(where: {
+            switch $0.type {
+            case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist: return true
+            default: return false
+            }
+        }) {
+            return BrowserColumn.artistColumns
+        }
+        return nil
+    }
     
     /// Get columns for a specific item (nil = use simple list rendering)
     private func columnsForItem(_ item: PlexDisplayItem) -> [BrowserColumn]? {
@@ -333,6 +378,11 @@ class PlexBrowserView: NSView {
             // Only show columns for top-level artists (not nested under search results)
             if item.indentLevel == 0 {
                 return BrowserColumn.artistColumns
+            }
+            return nil
+        case .radioStation:
+            if isInternetRadioItem(item) {
+                return BrowserColumn.internetRadioColumns
             }
             return nil
         default:
@@ -417,19 +467,7 @@ class PlexBrowserView: NSView {
             }
         }
         
-        // Find the column definition
-        let column: BrowserColumn?
-        if let c = BrowserColumn.trackColumns.first(where: { $0.id == sortColumnId }) {
-            column = c
-        } else if let c = BrowserColumn.albumColumns.first(where: { $0.id == sortColumnId }) {
-            column = c
-        } else if let c = BrowserColumn.artistColumns.first(where: { $0.id == sortColumnId }) {
-            column = c
-        } else {
-            column = nil
-        }
-        
-        guard let sortColumn = column else {
+        guard let sortColumn = BrowserColumn.findColumn(id: sortColumnId) else {
             needsDisplay = true
             return
         }
@@ -2552,32 +2590,7 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Determine which columns to show in header (priority: tracks > albums > artists)
-        let headerColumns: [BrowserColumn]?
-        if displayItems.contains(where: { 
-            switch $0.type { 
-            case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true 
-            default: return false 
-            }
-        }) {
-            headerColumns = BrowserColumn.trackColumns
-        } else if displayItems.contains(where: {
-            switch $0.type {
-            case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true
-            default: return false
-            }
-        }) {
-            headerColumns = BrowserColumn.albumColumns
-        } else if displayItems.contains(where: {
-            switch $0.type {
-            case .artist, .subsonicArtist, .localArtist, .jellyfinArtist: return true
-            default: return false
-            }
-        }) {
-            headerColumns = BrowserColumn.artistColumns
-        } else {
-            headerColumns = nil
-        }
+        let headerColumns = headerColumnsForCurrentContent()
         
         // Draw column headers BEFORE clipping (so they stay fixed)
         var contentListY = listY
@@ -2727,7 +2740,10 @@ class PlexBrowserView: NSView {
                         .font: NSFont.systemFont(ofSize: 9)
                     ]
                     let infoSize = info.size(withAttributes: infoAttrs)
-                    info.draw(at: NSPoint(x: itemRect.maxX - infoSize.width - 4, y: itemRect.midY - infoSize.height / 2),
+                    let infoX = browseMode == .radio
+                        ? (itemRect.midX - infoSize.width / 2)
+                        : (itemRect.maxX - infoSize.width - 4)
+                    info.draw(at: NSPoint(x: infoX, y: itemRect.midY - infoSize.height / 2),
                              withAttributes: infoAttrs)
                 }
                 
@@ -2779,6 +2795,8 @@ class PlexBrowserView: NSView {
         var x = rect.minX + 4 - horizontalScrollOffset
         for (index, column) in columns.enumerated() {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns)
+            let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
+                (hasInternetRadioColumns && column.id == "rating")
             
             // Check if this column is the sort column
             let isSortColumn = columnSortId == column.id
@@ -2791,8 +2809,7 @@ class PlexBrowserView: NSView {
             let textSize = column.title.size(withAttributes: attrs)
             let textY = rect.minY + (columnHeaderHeight - textSize.height) / 2
             
-            // Left aligned
-            let textX = x + 4
+            let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4)
             column.title.draw(at: NSPoint(x: textX, y: textY), withAttributes: attrs)
             
             // Draw sort indicator if this is the sorted column
@@ -2854,6 +2871,8 @@ class PlexBrowserView: NSView {
         for column in columns {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns)
             let value = item.columnValue(for: column)
+            let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
+                (isInternetRadioItem(item) && column.id == "rating")
             
             // Title column uses normal color/font, others use dim color/smaller font
             let color = column.id == "title" ? textColor : dimColor
@@ -2867,8 +2886,7 @@ class PlexBrowserView: NSView {
             let textSize = value.size(withAttributes: attrs)
             let textY = rect.minY + (rect.height - textSize.height) / 2
             
-            // All left aligned with padding
-            let textX = x + 4
+            let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4)
             let maxTextWidth = width - 8  // Padding on both sides
             
             // Draw with truncation if needed
@@ -6124,9 +6142,57 @@ class PlexBrowserView: NSView {
         
         return nil
     }
+
+    private func hitTestInternetRadioRating(at skinPoint: NSPoint, itemIndex: Int) -> Int? {
+        guard hasInternetRadioColumns, itemIndex >= 0, itemIndex < displayItems.count else { return nil }
+        let item = displayItems[itemIndex]
+        guard case .radioStation = item.type, let columns = columnsForItem(item) else { return nil }
+
+        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
+        if browseMode == .search {
+            listY += Layout.searchBarHeight
+        }
+        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        var contentY = listY
+        if hasColumns {
+            contentY += columnHeaderHeight
+        }
+
+        let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
+        let contentHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
+        let listRect = NSRect(
+            x: Layout.leftBorder,
+            y: contentY,
+            width: originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth,
+            height: contentHeight
+        )
+
+        let rowY = contentY + CGFloat(itemIndex) * itemHeight - scrollOffset
+        let rowRect = NSRect(x: listRect.minX, y: rowY, width: listRect.width, height: itemHeight)
+        guard rowRect.contains(skinPoint) else { return nil }
+
+        let indent = CGFloat(item.indentLevel) * 16
+        let availableWidth = rowRect.width - indent
+        var x = rowRect.minX + indent + 4 - horizontalScrollOffset
+        for column in columns {
+            let width = widthForColumn(column, availableWidth: availableWidth, columns: columns)
+            if column.id == "rating" {
+                let cellRect = NSRect(x: x, y: rowRect.minY, width: width, height: rowRect.height)
+                guard cellRect.contains(skinPoint) else { return nil }
+                let innerWidth = max(1, cellRect.width - 8)
+                let clampedX = min(max(skinPoint.x, cellRect.minX + 4), cellRect.maxX - 4)
+                let normalized = (clampedX - (cellRect.minX + 4)) / innerWidth
+                let star = min(5, max(1, Int(normalized * 5.0) + 1))
+                return star
+            }
+            x += width
+        }
+        return nil
+    }
     
     /// Check if point hits a column resize handle (returns column id to resize)
     private func hitTestColumnResize(at skinPoint: NSPoint) -> String? {
+        if hasInternetRadioColumns { return nil }
         // Only applies when columns are shown
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return nil }
@@ -6142,19 +6208,7 @@ class PlexBrowserView: NSView {
         
         guard headerRect.contains(skinPoint) else { return nil }
         
-        // Determine which columns to check (priority: tracks > albums > artists)
-        let columns: [BrowserColumn]
-        if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
-        }) {
-            columns = BrowserColumn.trackColumns
-        } else if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
-        }) {
-            columns = BrowserColumn.albumColumns
-        } else {
-            columns = BrowserColumn.artistColumns
-        }
+        guard let columns = headerColumnsForCurrentContent() else { return nil }
         
         // Check if near a column separator (within 4 pixels)
         var x = headerRect.minX + 4
@@ -6198,19 +6252,7 @@ class PlexBrowserView: NSView {
             return nil
         }
         
-        // Determine which columns to check (priority: tracks > albums > artists)
-        let columns: [BrowserColumn]
-        if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
-        }) {
-            columns = BrowserColumn.trackColumns
-        } else if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
-        }) {
-            columns = BrowserColumn.albumColumns
-        } else {
-            columns = BrowserColumn.artistColumns
-        }
+        guard let columns = headerColumnsForCurrentContent() else { return nil }
         
         // Find which column was clicked
         var x = headerRect.minX + 4
@@ -7439,6 +7481,16 @@ class PlexBrowserView: NSView {
     
     private func handleListClick(at index: Int, event: NSEvent, skinPoint: NSPoint) {
         let item = displayItems[index]
+
+        if let clickedStar = hitTestInternetRadioRating(at: skinPoint, itemIndex: index),
+           case .radioStation(let station) = item.type {
+            let currentRating = RadioManager.shared.rating(for: station)
+            let targetRating = currentRating == clickedStar ? 0 : clickedStar
+            RadioManager.shared.setRating(targetRating, for: station)
+            selectedIndices = [index]
+            needsDisplay = true
+            return
+        }
         
         // Handle expand/collapse
         if item.hasChildren {
@@ -14158,12 +14210,18 @@ private struct BrowserColumn {
     static let artistColumns: [BrowserColumn] = [
         .title, .albums, .genre
     ]
+
+    /// Fixed columns shown for Internet Radio source.
+    static let internetRadioColumns: [BrowserColumn] = [
+        .title, .genre, .rating
+    ]
     
     /// Find a column by ID across all column types
     static func findColumn(id: String) -> BrowserColumn? {
         if let c = trackColumns.first(where: { $0.id == id }) { return c }
         if let c = albumColumns.first(where: { $0.id == id }) { return c }
         if let c = artistColumns.first(where: { $0.id == id }) { return c }
+        if let c = internetRadioColumns.first(where: { $0.id == id }) { return c }
         return nil
     }
 }
@@ -14203,6 +14261,8 @@ extension PlexDisplayItem {
             return jellyfinAlbumValue(album, for: column)
         case .jellyfinArtist(let artist):
             return jellyfinArtistValue(artist, for: column)
+        case .radioStation(let station):
+            return radioStationValue(station, for: column)
         default:
             return ""
         }
@@ -14457,6 +14517,19 @@ extension PlexDisplayItem {
             return ""
         }
     }
+
+    // MARK: - Internet Radio Values
+
+    private func radioStationValue(_ station: RadioStation, for column: BrowserColumn) -> String {
+        switch column.id {
+        case "genre":
+            return station.genre ?? ""
+        case "rating":
+            return Self.formatStarRating(RadioManager.shared.rating(for: station))
+        default:
+            return ""
+        }
+    }
     
     // MARK: - Formatting Helpers
     
@@ -14485,5 +14558,10 @@ extension PlexDisplayItem {
         let stars = Int(rating / 2.0)  // Plex uses 0-10 scale, convert to 0-5 stars
         let empty = 5 - stars
         return String(repeating: "★", count: stars) + String(repeating: "☆", count: empty)
+    }
+
+    private static func formatStarRating(_ rating: Int) -> String {
+        let clamped = min(5, max(0, rating))
+        return String(repeating: "★", count: clamped) + String(repeating: "☆", count: 5 - clamped)
     }
 }

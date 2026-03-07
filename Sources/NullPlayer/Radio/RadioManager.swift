@@ -131,6 +131,7 @@ class RadioManager {
         "https://wgbh-live.streamguys1.com/wgbh": "https://wgbh-live.streamguys1.com/wgbh.mp3",
         "https://wgbh-live.streamguys1.com/wgbh.mp3": "https://wgbh-live.streamguys1.com/wgbh"
     ]
+    private let ratingsStore = RadioStationRatingsStore.shared
     
     /// URLs of default stations the user has intentionally deleted (won't be re-added)
     private var deletedDefaultURLs: Set<String> {
@@ -703,6 +704,10 @@ class RadioManager {
     /// Update an existing station
     func updateStation(_ station: RadioStation) {
         if let index = stations.firstIndex(where: { $0.id == station.id }) {
+            let oldURL = stations[index].url
+            if oldURL != station.url {
+                moveRating(fromURL: oldURL, toURL: station.url)
+            }
             stations[index] = station
             NSLog("RadioManager: Updated station '%@'", station.name)
         }
@@ -717,6 +722,7 @@ class RadioManager {
             deletedDefaultURLs = deleted
             NSLog("RadioManager: Tracking deleted default station '%@'", station.name)
         }
+        removeRating(for: station)
         stations.removeAll { $0.id == station.id }
         NSLog("RadioManager: Removed station '%@'", station.name)
     }
@@ -764,6 +770,28 @@ class RadioManager {
             }
         }
         NSLog("RadioManager: Added %d missing default stations (skipped %d deleted)", added, deleted.count)
+    }
+
+    // MARK: - Station Ratings
+
+    /// Return a station rating on a 0-5 scale (0 = unrated).
+    func rating(for station: RadioStation) -> Int {
+        ratingsStore.rating(for: station.url)
+    }
+
+    /// Set a station rating on a 0-5 scale (0 clears the rating).
+    func setRating(_ rating: Int, for station: RadioStation) {
+        ratingsStore.setRating(rating, for: station.url)
+    }
+
+    /// Move an existing rating from an old stream URL to a new URL.
+    func moveRating(fromURL oldURL: URL, toURL newURL: URL) {
+        ratingsStore.moveRating(from: oldURL, to: newURL)
+    }
+
+    /// Remove a station's persisted rating.
+    func removeRating(for station: RadioStation) {
+        ratingsStore.removeRating(for: station.url)
     }
     
     // MARK: - Playback

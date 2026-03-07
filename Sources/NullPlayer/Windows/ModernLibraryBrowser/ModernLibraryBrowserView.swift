@@ -1264,23 +1264,7 @@ class ModernLibraryBrowserView: NSView {
             return
         }
         
-        // Determine header columns
-        let headerColumns: [ModernBrowserColumn]?
-        if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
-        }) {
-            headerColumns = ModernBrowserColumn.trackColumns
-        } else if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
-        }) {
-            headerColumns = ModernBrowserColumn.albumColumns
-        } else if displayItems.contains(where: {
-            switch $0.type { case .artist, .subsonicArtist, .localArtist, .jellyfinArtist: return true; default: return false }
-        }) {
-            headerColumns = ModernBrowserColumn.artistColumns
-        } else {
-            headerColumns = nil
-        }
+        let headerColumns = headerColumnsForCurrentContent()
         
         // Draw column headers
         var contentListY = listAreaY
@@ -1385,7 +1369,10 @@ class ModernLibraryBrowserView: NSView {
                         .font: smallFont
                     ]
                     let infoSize = info.size(withAttributes: infoAttrs)
-                    info.draw(at: NSPoint(x: itemRect.maxX - infoSize.width - 4, y: itemRect.midY - infoSize.height / 2),
+                    let infoX = browseMode == .radio
+                        ? (itemRect.midX - infoSize.width / 2)
+                        : (itemRect.maxX - infoSize.width - 4)
+                    info.draw(at: NSPoint(x: infoX, y: itemRect.midY - infoSize.height / 2),
                              withAttributes: infoAttrs)
                 }
             }
@@ -1418,6 +1405,8 @@ class ModernLibraryBrowserView: NSView {
         for (index, column) in columns.enumerated() {
             let width = widthForColumn(column, availableWidth: rect.width, columns: columns)
             let isSortColumn = columnSortId == column.id
+            let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
+                (hasInternetRadioColumns && column.id == "rating")
             
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: headerFont,
@@ -1426,7 +1415,7 @@ class ModernLibraryBrowserView: NSView {
             
             let textSize = column.title.size(withAttributes: attrs)
             let textY = rect.minY + (columnHeaderHeight - textSize.height) / 2
-            let textX = x + 4
+            let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4)
             column.title.draw(at: NSPoint(x: textX, y: textY), withAttributes: attrs)
             
             if isSortColumn {
@@ -1473,6 +1462,8 @@ class ModernLibraryBrowserView: NSView {
         for column in columns {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns)
             let value = item.columnValue(for: column)
+            let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
+                (isInternetRadioItem(item) && column.id == "rating")
             
             let color = column.id == "title" ? textColor : dimColor
             let useFont = column.id == "title" ? font : smallFont
@@ -1480,7 +1471,7 @@ class ModernLibraryBrowserView: NSView {
             let attrs: [NSAttributedString.Key: Any] = [.font: useFont, .foregroundColor: color]
             let textSize = value.size(withAttributes: attrs)
             let textY = rect.minY + (rect.height - textSize.height) / 2
-            let textX = x + 4
+            let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4)
             let maxTextWidth = width - 8
             
             let drawRect = NSRect(x: textX, y: textY, width: maxTextWidth, height: textSize.height)
@@ -1961,6 +1952,42 @@ class ModernLibraryBrowserView: NSView {
     private var hasColumnContent: Bool {
         displayItems.contains { columnsForItem($0) != nil }
     }
+
+    private var hasInternetRadioColumns: Bool {
+        guard case .radio = currentSource, browseMode == .radio else { return false }
+        return displayItems.contains {
+            if case .radioStation = $0.type { return true }
+            return false
+        }
+    }
+
+    private func isInternetRadioItem(_ item: ModernDisplayItem) -> Bool {
+        guard case .radio = currentSource, browseMode == .radio else { return false }
+        if case .radioStation = item.type { return true }
+        return false
+    }
+
+    private func headerColumnsForCurrentContent() -> [ModernBrowserColumn]? {
+        if hasInternetRadioColumns {
+            return ModernBrowserColumn.internetRadioColumns
+        }
+        if displayItems.contains(where: {
+            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
+        }) {
+            return ModernBrowserColumn.trackColumns
+        }
+        if displayItems.contains(where: {
+            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
+        }) {
+            return ModernBrowserColumn.albumColumns
+        }
+        if displayItems.contains(where: {
+            switch $0.type { case .artist, .subsonicArtist, .localArtist, .jellyfinArtist: return true; default: return false }
+        }) {
+            return ModernBrowserColumn.artistColumns
+        }
+        return nil
+    }
     
     private func columnsForItem(_ item: ModernDisplayItem) -> [ModernBrowserColumn]? {
         switch item.type {
@@ -1980,6 +2007,11 @@ class ModernLibraryBrowserView: NSView {
                 return ModernBrowserColumn.allArtistColumns
                     .filter { visible.contains($0.id) }
                     .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
+            }
+            return nil
+        case .radioStation:
+            if isInternetRadioItem(item) {
+                return ModernBrowserColumn.internetRadioColumns
             }
             return nil
         default:
@@ -2057,6 +2089,9 @@ class ModernLibraryBrowserView: NSView {
     
     /// Returns the currently visible columns based on what type of items are displayed
     private func currentVisibleColumns() -> [ModernBrowserColumn] {
+        if hasInternetRadioColumns {
+            return ModernBrowserColumn.internetRadioColumns
+        }
         if displayItems.contains(where: {
             switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
         }) {
@@ -2075,6 +2110,7 @@ class ModernLibraryBrowserView: NSView {
     
     /// Returns all possible columns for the given column category (for the right-click menu)
     private func allColumnsForCurrentView() -> [ModernBrowserColumn] {
+        if hasInternetRadioColumns { return ModernBrowserColumn.internetRadioColumns }
         if displayItems.contains(where: {
             switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
         }) { return ModernBrowserColumn.allTrackColumns }
@@ -2312,6 +2348,48 @@ class ModernLibraryBrowserView: NSView {
         }
         return nil
     }
+
+    private func hitTestInternetRadioRating(at point: NSPoint, itemIndex: Int) -> Int? {
+        guard hasInternetRadioColumns, itemIndex >= 0, itemIndex < displayItems.count else { return nil }
+        let item = displayItems[itemIndex]
+        guard case .radioStation = item.type, let columns = columnsForItem(item) else { return nil }
+
+        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        if browseMode == .search { contentTopY -= Layout.searchBarHeight }
+        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        if hasColumns { contentTopY -= columnHeaderHeight }
+
+        let contentBottomY = Layout.statusBarHeight
+        let alphabetWidth = Layout.alphabetWidth
+        let listRect = NSRect(
+            x: Layout.borderWidth,
+            y: contentBottomY,
+            width: bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - alphabetWidth,
+            height: contentTopY - contentBottomY
+        )
+
+        let itemTopY = listRect.maxY - CGFloat(itemIndex) * itemHeight + scrollOffset
+        let rowRect = NSRect(x: listRect.minX, y: itemTopY - itemHeight, width: listRect.width, height: itemHeight)
+        guard rowRect.contains(point) else { return nil }
+
+        let indent = CGFloat(item.indentLevel) * 16
+        let availableWidth = rowRect.width - indent
+        var x = rowRect.minX + indent + 4 - horizontalScrollOffset
+        for column in columns {
+            let width = widthForColumn(column, availableWidth: availableWidth, columns: columns)
+            if column.id == "rating" {
+                let cellRect = NSRect(x: x, y: rowRect.minY, width: width, height: rowRect.height)
+                guard cellRect.contains(point) else { return nil }
+                let innerWidth = max(1, cellRect.width - 8)
+                let clampedX = min(max(point.x, cellRect.minX + 4), cellRect.maxX - 4)
+                let normalized = (clampedX - (cellRect.minX + 4)) / innerWidth
+                let star = min(5, max(1, Int(normalized * 5.0) + 1))
+                return star
+            }
+            x += width
+        }
+        return nil
+    }
     
     private func hitTestAlphabetIndex(at point: NSPoint) -> Bool {
         var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
@@ -2334,6 +2412,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestColumnResize(at point: NSPoint) -> String? {
+        if hasInternetRadioColumns { return nil }
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return nil }
         
@@ -3069,6 +3148,16 @@ class ModernLibraryBrowserView: NSView {
             }
         }
 
+        if let clickedStar = hitTestInternetRadioRating(at: point, itemIndex: index),
+           case .radioStation(let station) = item.type {
+            let currentRating = RadioManager.shared.rating(for: station)
+            let targetRating = currentRating == clickedStar ? 0 : clickedStar
+            RadioManager.shared.setRating(targetRating, for: station)
+            selectedIndices = [index]
+            needsDisplay = true
+            return
+        }
+
         if item.hasChildren {
             let indent = CGFloat(item.indentLevel) * 16
             let inExpandZone = point.x < Layout.borderWidth + indent + 20
@@ -3333,6 +3422,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func showColumnConfigMenu(at event: NSEvent) {
+        if hasInternetRadioColumns { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
         
@@ -3358,6 +3448,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func currentVisibleColumnIds() -> [String] {
+        if hasInternetRadioColumns { return ModernBrowserColumn.internetRadioColumns.map { $0.id } }
         if displayItems.contains(where: {
             switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
         }) { return visibleTrackColumnIds }
@@ -8127,6 +8218,7 @@ private struct ModernBrowserColumn {
     static let defaultTrackColumnIds: [String] = ["trackNum", "title", "artist", "album", "year", "genre", "duration", "bitrate", "size", "rating", "plays"]
     static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
     static let defaultArtistColumnIds: [String] = ["title", "albums", "genre"]
+    static let internetRadioColumns: [ModernBrowserColumn] = [.title, .genre, .rating]
     
     // Legacy arrays kept for backwards compatibility with sort lookup
     static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .year, .genre, .duration, .bitrate, .size, .rating, .playCount]
@@ -8137,6 +8229,7 @@ private struct ModernBrowserColumn {
         if let c = allTrackColumns.first(where: { $0.id == id }) { return c }
         if let c = allAlbumColumns.first(where: { $0.id == id }) { return c }
         if let c = allArtistColumns.first(where: { $0.id == id }) { return c }
+        if let c = internetRadioColumns.first(where: { $0.id == id }) { return c }
         return nil
     }
 }
@@ -8168,6 +8261,15 @@ extension ModernDisplayItem {
                 let stars = r / 2; return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             }
             return ""
+        case .radioStation(let station):
+            switch column.id {
+            case "genre":
+                return station.genre ?? ""
+            case "rating":
+                return Self.formatStarRating(RadioManager.shared.rating(for: station))
+            default:
+                return ""
+            }
         default: return ""
         }
     }
@@ -8382,6 +8484,11 @@ extension ModernDisplayItem {
         guard let rating = rating, rating > 0 else { return "" }
         let stars = Int(rating / 2.0); let empty = 5 - stars
         return String(repeating: "★", count: stars) + String(repeating: "☆", count: empty)
+    }
+
+    private static func formatStarRating(_ rating: Int) -> String {
+        let clamped = min(5, max(0, rating))
+        return String(repeating: "★", count: clamped) + String(repeating: "☆", count: 5 - clamped)
     }
     
     static func formatSampleRate(_ hz: Int) -> String {
