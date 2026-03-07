@@ -79,6 +79,7 @@ class ModernMainWindowView: NSView {
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
+    private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
 
     // MARK: - Initialization
     
@@ -223,14 +224,11 @@ class ModernMainWindowView: NSView {
         layer.cornerRadius = cornerRadius
         layer.masksToBounds = cornerRadius > 0
         guard cornerRadius > 0 else { return }
-        var masked: CACornerMask = []
-        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
-        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
-        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
-        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
-        layer.maskedCorners = masked
+        let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
+                                         .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        layer.maskedCorners = allCorners.subtracting(sharpCorners)
     }
-    
+
     // MARK: - Tracking Areas (cursor hover)
     
     override func updateTrackingAreas() {
@@ -286,8 +284,8 @@ class ModernMainWindowView: NSView {
         // 1. Window background + border -- clip to dirtyRect to avoid full-bounds fill
         context.saveGState()
         context.clip(to: dirtyRect)
-        renderer.drawWindowBackground(in: windowBounds, context: context, adjacentEdges: adjacentEdges)
-        renderer.drawWindowBorder(in: windowBounds, context: context, adjacentEdges: adjacentEdges)
+        renderer.drawWindowBackground(in: windowBounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBorder(in: windowBounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
         context.restoreGState()
         
         // 2. Title bar -- only if not hidden and dirty rect overlaps
@@ -358,9 +356,9 @@ class ModernMainWindowView: NSView {
     /// Draw compact shade mode: single strip with title, scrolling track name, and controls
     private func drawShadeMode(in bounds: NSRect, context: CGContext) {
         // Background
-        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
-        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
-        
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+
         // In shade mode, draw a compact horizontal layout in the available space
         // The window is 18 base units tall (22.5px scaled)
         // Layout: [unshade btn] [title text / marquee] [close btn]
@@ -757,8 +755,10 @@ class ModernMainWindowView: NSView {
     @objc private func windowLayoutDidChange() {
         guard let window = window else { return }
         let newEdges = WindowManager.shared.computeAdjacentEdges(for: window)
-        if newEdges != adjacentEdges {
+        let newSharp = WindowManager.shared.computeSharpCorners(for: window)
+        if newEdges != adjacentEdges || newSharp != sharpCorners {
             adjacentEdges = newEdges
+            sharpCorners = newSharp
             needsDisplay = true
         }
     }

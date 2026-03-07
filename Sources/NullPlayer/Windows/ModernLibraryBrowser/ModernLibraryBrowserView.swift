@@ -421,6 +421,7 @@ class ModernLibraryBrowserView: NSView {
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
+    private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
     
     // Button/drag state
     private var pressedButton: LibraryBrowserButtonType?
@@ -661,12 +662,9 @@ class ModernLibraryBrowserView: NSView {
         layer.cornerRadius = cornerRadius
         layer.masksToBounds = cornerRadius > 0
         guard cornerRadius > 0 else { return }
-        var masked: CACornerMask = []
-        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
-        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
-        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
-        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
-        layer.maskedCorners = masked
+        let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
+                                         .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        layer.maskedCorners = allCorners.subtracting(sharpCorners)
     }
     
     // MARK: - Drawing
@@ -680,8 +678,8 @@ class ModernLibraryBrowserView: NSView {
         
         if isShadeMode {
             // Draw shade mode
-            renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
-            renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
+            renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+            renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
             
             // Draw title text centered (using renderer for image text support)
             let shadeScale = ModernSkinElements.scaleFactor
@@ -701,8 +699,8 @@ class ModernLibraryBrowserView: NSView {
         }
         
         // Normal mode - bottom-left origin (no coordinate flipping)
-        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
-        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
         
         // Title bar, close, shade buttons use base (unscaled) coordinates
         // because the renderer's scaledRect() multiplies by scaleFactor
@@ -5356,12 +5354,14 @@ class ModernLibraryBrowserView: NSView {
     @objc private func windowLayoutDidChange() {
         guard let window = window else { return }
         let newEdges = WindowManager.shared.computeAdjacentEdges(for: window)
-        if newEdges != adjacentEdges {
+        let newSharp = WindowManager.shared.computeSharpCorners(for: window)
+        if newEdges != adjacentEdges || newSharp != sharpCorners {
             adjacentEdges = newEdges
+            sharpCorners = newSharp
             needsDisplay = true
         }
     }
-    
+
     func skinDidChange() { modernSkinDidChange() }
     
     func setShadeMode(_ enabled: Bool) { isShadeMode = enabled; needsDisplay = true }

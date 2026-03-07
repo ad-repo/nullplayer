@@ -35,14 +35,13 @@ class ModernSkinRenderer {
 
     // MARK: - Corner Path Helper
 
-    /// Returns a CGPath for `rect` rounded only at corners NOT touching `adjacentEdges`.
-    private func makeRoundedCornerPath(rect: CGRect, radius: CGFloat, adjacentEdges: AdjacentEdges) -> CGPath {
+    /// Returns a CGPath for `rect` rounded only at corners NOT in `sharpCorners`.
+    private func makeRoundedCornerPath(rect: CGRect, radius: CGFloat, sharpCorners: CACornerMask) -> CGPath {
         guard radius > 0 else { return CGPath(rect: rect, transform: nil) }
-        // Each corner is square if EITHER neighboring edge is adjacent
-        let rBL: CGFloat = (adjacentEdges.contains(.bottom) || adjacentEdges.contains(.left))  ? 0 : radius
-        let rBR: CGFloat = (adjacentEdges.contains(.bottom) || adjacentEdges.contains(.right)) ? 0 : radius
-        let rTR: CGFloat = (adjacentEdges.contains(.top)    || adjacentEdges.contains(.right)) ? 0 : radius
-        let rTL: CGFloat = (adjacentEdges.contains(.top)    || adjacentEdges.contains(.left))  ? 0 : radius
+        let rBL: CGFloat = sharpCorners.contains(.layerMinXMinYCorner) ? 0 : radius
+        let rBR: CGFloat = sharpCorners.contains(.layerMaxXMinYCorner) ? 0 : radius
+        let rTR: CGFloat = sharpCorners.contains(.layerMaxXMaxYCorner) ? 0 : radius
+        let rTL: CGFloat = sharpCorners.contains(.layerMinXMaxYCorner) ? 0 : radius
         if rBL == 0 && rBR == 0 && rTR == 0 && rTL == 0 { return CGPath(rect: rect, transform: nil) }
 
         let path = CGMutablePath()
@@ -81,11 +80,11 @@ class ModernSkinRenderer {
     // MARK: - Specialized Drawing
     
     /// Draw the window background
-    func drawWindowBackground(in bounds: NSRect, context: CGContext, adjacentEdges: AdjacentEdges = []) {
+    func drawWindowBackground(in bounds: NSRect, context: CGContext, adjacentEdges: AdjacentEdges = [], sharpCorners: CACornerMask = []) {
         let cornerRadius = skin.config.window.cornerRadius ?? 0
         let backgroundOpacity = min(1.0, max(0.0, skin.config.window.opacity ?? 1.0))
         if cornerRadius > 0 {
-            let clipPath = makeRoundedCornerPath(rect: bounds, radius: cornerRadius, adjacentEdges: adjacentEdges)
+            let clipPath = makeRoundedCornerPath(rect: bounds, radius: cornerRadius, sharpCorners: sharpCorners)
             context.saveGState()
             context.addPath(clipPath)
             context.clip()
@@ -106,15 +105,15 @@ class ModernSkinRenderer {
     /// Draw the window border with optional glow.
     /// When `adjacentEdges` is non-empty and `seamlessDocking` > 0 in the skin config,
     /// borders on those edges are faded or fully hidden to make docked windows look seamless.
-    func drawWindowBorder(in bounds: NSRect, context: CGContext, adjacentEdges: AdjacentEdges = []) {
+    func drawWindowBorder(in bounds: NSRect, context: CGContext, adjacentEdges: AdjacentEdges = [], sharpCorners: CACornerMask = []) {
         let borderWidth = skin.config.window.borderWidth ?? 1.0
         let cornerRadius = skin.config.window.cornerRadius ?? 0
         let borderColor = skin.borderColor
         let backgroundOpacity = min(1.0, max(0.0, skin.config.window.opacity ?? 1.0))
         let seamless = min(1.0, max(0.0, skin.config.window.seamlessDocking ?? 0))
-        
+
         context.saveGState()
-        
+
         // For full seamless (1.0), clip away adjacent edges entirely before drawing
         if seamless >= 1.0 && !adjacentEdges.isEmpty {
             var clipRect = bounds
@@ -124,9 +123,9 @@ class ModernSkinRenderer {
             if adjacentEdges.contains(.right)  { clipRect.size.width -= borderWidth }
             context.clip(to: clipRect)
         }
-        
+
         let borderRect = bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
-        let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, adjacentEdges: adjacentEdges)
+        let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, sharpCorners: sharpCorners)
         
         // Glow effect (draw border slightly larger and blurred behind)
         if skin.config.glow.enabled {

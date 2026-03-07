@@ -2259,6 +2259,41 @@ class WindowManager {
         return edges
     }
     
+    /// Returns a CACornerMask indicating which corners should be sharp
+    /// because an adjacent window actually reaches/covers that corner.
+    func computeSharpCorners(for window: NSWindow) -> CACornerMask {
+        guard isModernUIEnabled else { return [] }
+        var sharp: CACornerMask = []
+        let f = window.frame
+        let t = dockThreshold
+        for other in allWindows() where other !== window {
+            let o = other.frame
+            let vOverlap = f.minY < o.maxY && f.maxY > o.minY
+            let hOverlap = f.minX < o.maxX && f.maxX > o.minX
+            // Window to the right
+            if abs(f.maxX - o.minX) <= t && vOverlap {
+                if o.minY <= f.minY + t { sharp.insert(.layerMaxXMinYCorner) } // bottom-right
+                if o.maxY >= f.maxY - t { sharp.insert(.layerMaxXMaxYCorner) } // top-right
+            }
+            // Window to the left
+            if abs(f.minX - o.maxX) <= t && vOverlap {
+                if o.minY <= f.minY + t { sharp.insert(.layerMinXMinYCorner) } // bottom-left
+                if o.maxY >= f.maxY - t { sharp.insert(.layerMinXMaxYCorner) } // top-left
+            }
+            // Window above (macOS Y-up: o.minY ≈ f.maxY)
+            if abs(f.maxY - o.minY) <= t && hOverlap {
+                if o.minX <= f.minX + t { sharp.insert(.layerMinXMaxYCorner) } // top-left
+                if o.maxX >= f.maxX - t { sharp.insert(.layerMaxXMaxYCorner) } // top-right
+            }
+            // Window below
+            if abs(f.minY - o.maxY) <= t && hOverlap {
+                if o.minX <= f.minX + t { sharp.insert(.layerMinXMinYCorner) } // bottom-left
+                if o.maxX >= f.maxX - t { sharp.insert(.layerMaxXMinYCorner) } // bottom-right
+            }
+        }
+        return sharp
+    }
+
     /// Get all managed windows
     private func allWindows() -> [NSWindow] {
         var windows: [NSWindow] = []
