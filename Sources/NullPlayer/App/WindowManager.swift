@@ -1468,7 +1468,7 @@ class WindowManager {
         // sizes (window sizes, title bar heights, border widths, etc.) reflect 2x.
         // This must happen BEFORE reading any ModernSkinElements sizes.
         if runningModernMode {
-            ModernSkinElements.sizeMultiplier = isDoubleSize ? 2.0 : 1.0
+            ModernSkinElements.sizeMultiplier = isDoubleSize ? 1.5 : 1.0
         }
         
         let scale: CGFloat = isDoubleSize ? 2.0 : 1.0

@@ -573,11 +573,11 @@ class ModernMainWindowView: NSView {
         let startX = leftEdge
         
         let buttonDefs: [(String, String, Bool)] = [
-            ("btn_2x", "2X", WindowManager.shared.isDoubleSize),
-            ("btn_ht", "HT", WindowManager.shared.hideTitleBars),
             ("btn_shuffle", "SH", audioEngine.shuffleEnabled),
             ("btn_repeat", "RP", audioEngine.repeatEnabled),
             ("btn_cast", "CA", CastManager.shared.isCasting),
+            ("btn_2x", "XL", WindowManager.shared.isDoubleSize),
+            ("btn_ht", "HT", WindowManager.shared.hideTitleBars),
             ("btn_projectm", "pM", WindowManager.shared.isProjectMVisible),
             ("btn_eq", "EQ", WindowManager.shared.isEqualizerVisible),
             ("btn_playlist", "PL", WindowManager.shared.isPlaylistVisible),
@@ -998,7 +998,7 @@ class ModernMainWindowView: NSView {
             let rightEdge: CGFloat = 269
             let bw: CGFloat = 16
             let bs = (rightEdge - leftEdge - 10 * bw) / 9
-            let ids = ["btn_2x", "btn_ht", "btn_shuffle", "btn_repeat", "btn_cast",
+            let ids = ["btn_shuffle", "btn_repeat", "btn_cast", "btn_2x", "btn_ht",
                        "btn_projectm", "btn_eq", "btn_playlist", "btn_spectrum", "btn_library"]
             for (i, id) in ids.enumerated() {
                 hitTargets.append((id, NSRect(x: leftEdge + CGFloat(i) * (bw + bs), y: 42, width: bw, height: 14)))
