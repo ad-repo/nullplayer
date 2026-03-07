@@ -293,10 +293,10 @@ Stored in `UserDefaults` key `plexRadioHistoryInterval`. When `off`, `filterOutH
 
 ### Context Menu (User UI)
 
-Under the Plex Radio context menu:
-- **History Retention** submenu — sets `retentionInterval` (Off / 2 Weeks / 1 Month / 3 Months / 6 Months)
-- **View Radio History** — opens `http://127.0.0.1:8765/radio-history` in the default browser
-- **Clear Radio History** — confirmation dialog, then `clearHistory()`
+Under Playback Options → **Radio History**:
+- **Plex History Retention** submenu — sets `retentionInterval` (Off / 2 Weeks / 1 Month / 3 Months / 6 Months)
+- **View Plex Radio History** — opens `http://127.0.0.1:8765/radio-history` in the default browser
+- **Clear Plex Radio History** — confirmation dialog, then `clearHistory()`
 
 ### Web History Page
 

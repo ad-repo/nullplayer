@@ -17,8 +17,8 @@
 - Navidrome/Subsonic server integration with scrobbling support
 - Local media library with metadata parsing, editing, library management
 - ProjectM visualizations with 100 included. Users can download more
-- Sonic similarity radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
-- Plex radio track history with configurable exclusion rules. Stop the same songs from being added to your Plex radio stations
+- Sonic similarity radio stations populated by Plex APIs (Library, Genre, Decade, Hits, Deep Cuts, and rating-based presets)
+- Unified `Radio History` submenu with per-source repeat filtering controls (Plex, Subsonic/Navidrome, Jellyfin, Emby, Local)
 - Sonos content filtering for unsupported lossless formats. Keeps the music playing by not sending unsupported encodings to Sonos.
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
@@ -35,7 +35,8 @@
 - Media Drag and drop support
 - Album/Cover/Movie art browser with visualizations
 - IMDB integration
-- Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
+- Internet radio (Shoutcast/Icecast) with a large bundled global station catalog, live metadata (ICY + SomaFM fallback), and auto-reconnect
+- Internet radio smart/manual folders with persistent 5-star station ratings
 - AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
 - macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
@@ -156,6 +157,4 @@ This project is open source and uses the following licensed components:
 
 - **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
 - **libprojectM** (LGPL-2.1) - ProjectM visualizations
-
-
 

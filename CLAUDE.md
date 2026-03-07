@@ -99,7 +99,7 @@ Skills contain detailed technical documentation. Key skills include:
 - **user-guide**: Features, menus, keyboard shortcuts
 - **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations (Plex, Jellyfin, Navidrome/Subsonic, Emby)
 - **sonos-casting**, **chromecast-casting**: Casting protocols
-- **radio-streaming**: Internet radio support
+- **radio-streaming**: Internet radio + library radio support (metadata, folders, ratings, history)
 - **visualizations**: Album art and ProjectM
 - **testing**: UI testing workflows
 - **non-retina-fixes**: Display artifact fixes
@@ -113,7 +113,7 @@ Sources/NullPlayer/
 ├── App/              # AppDelegate, WindowManager, menus, MainWindowProviding protocol
 ├── Audio/            # AudioEngine, StreamingAudioPlayer, EQ
 ├── Casting/          # Chromecast, Sonos, DLNA casting
-├── Radio/            # Internet radio (Shoutcast/Icecast) support
+├── Radio/            # Internet radio (stations, metadata fallback, ratings, folders)
 ├── Skin/             # Classic .wsz skin loading and rendering
 ├── ModernSkin/       # Modern skin engine (independent of classic system)
 ├── Windows/          # All window views (MainWindow, ModernMainWindow, ModernSpectrum, ModernPlaylist, ModernEQ, ModernProjectM, ModernLibraryBrowser, Playlist, EQ, etc.)
@@ -139,7 +139,7 @@ Sources/NullPlayer/
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
 | Jellyfin | `Jellyfin/JellyfinManager.swift`, `Jellyfin/JellyfinServerClient.swift`, `Jellyfin/JellyfinModels.swift`, `Jellyfin/JellyfinPlaybackReporter.swift` |
 | Emby | `Emby/EmbyManager.swift`, `Emby/EmbyServerClient.swift`, `Emby/EmbyModels.swift`, `Emby/EmbyPlaybackReporter.swift`, `Emby/EmbyVideoPlaybackReporter.swift` |
-| Radio | `Radio/RadioManager.swift`, `Data/Models/RadioStation.swift`, `Windows/Radio/AddRadioStationSheet.swift` |
+| Radio | `Radio/RadioManager.swift`, `Radio/RadioStationRatingsStore.swift`, `Radio/RadioFolderModels.swift`, `Radio/RadioStationFoldersStore.swift`, `Data/Models/RadioStation.swift`, `Windows/Radio/AddRadioStationSheet.swift` |
 | Casting | `Casting/CastManager.swift`, `Casting/CastProtocol.swift`, `Casting/ChromecastManager.swift`, `Casting/UPnPManager.swift`, `Casting/LocalMediaServer.swift`, `Casting/CastDevice.swift` |
 | App | `App/WindowManager.swift`, `App/AppStateManager.swift`, `App/ContextMenuBuilder.swift`, `App/MainWindowProviding.swift`, `App/SpectrumWindowProviding.swift`, `App/PlaylistWindowProviding.swift`, `App/EQWindowProviding.swift`, `App/ProjectMWindowProviding.swift`, `App/LibraryBrowserWindowProviding.swift` |
 
@@ -188,7 +188,7 @@ Sources/NullPlayer/
 
 ## Gotchas
 
-- **Remember State On Quit**: `AppStateManager` saves/restores complete session state (v2). Two-phase restoration: settings first (`restoreSettingsState` — skin, volume, EQ, windows, double size), then playlist (`restorePlaylistState` — tracks with ordering preserved, current track index, seek position). Streaming tracks (Plex/Subsonic/Jellyfin/Emby) are loaded as placeholder `Track` objects with saved metadata, then replaced asynchronously via `engine.replaceTrack(at:with:)`. Radio tracks are saved via `SavedTrack.radioURL`. Many other settings (visualization modes, browser columns, radio stations, hide title bars) persist independently via UserDefaults and are NOT part of `AppState`. When adding new state: if it's a preference that should always persist, use UserDefaults directly; if it's session state that should only persist when "Remember State" is enabled, add it to the `AppState` struct with `decodeIfPresent` defaults
+- **Remember State On Quit**: `AppStateManager` saves/restores complete session state (v2). Two-phase restoration: settings first (`restoreSettingsState` — skin, volume, EQ, windows, double size), then playlist (`restorePlaylistState` — tracks with ordering preserved, current track index, seek position). Streaming tracks (Plex/Subsonic/Jellyfin/Emby) are loaded as placeholder `Track` objects with saved metadata, then replaced asynchronously via `engine.replaceTrack(at:with:)`. Radio tracks are saved via `SavedTrack.radioURL`. Many other settings (visualization modes, browser columns, radio stations, hide title bars) persist independently via UserDefaults and are NOT part of `AppState`. Internet radio station ratings/folders/play-history persistence is SQLite-backed and URL-keyed (`radio_station_ratings.db`, `radio_station_folders.db`) and also not part of `AppState`. When adding new state: if it's a preference that should always persist, use UserDefaults directly; if it's session state that should only persist when "Remember State" is enabled, add it to the `AppState` struct with `decodeIfPresent` defaults
 - **Modern main window layout split**: The time panel's visual boundary is hardcoded as a `drawInsetPanel` call in `ModernMainWindowView.swift` `draw()` — it is NOT an element in `ModernSkinElements`. The display panel uses `marqueeBackground` from `ModernSkinElements`. When adjusting time-panel geometry, update **both** the `drawInsetPanel` rect in `ModernMainWindowView.swift` and the dependent element rects (`timeDisplay`, `statusPlay/Pause/Stop`) in `ModernSkinElements.swift`.
 - **Modern skin system is completely independent**: Files in `ModernSkin/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, and `Windows/ModernLibraryBrowser/` must NEVER import or reference anything from `Skin/` or `Windows/MainWindow/`. The coupling points are only: `AppDelegate` (mode selection), `WindowManager` (via `MainWindowProviding`, `SpectrumWindowProviding`, `PlaylistWindowProviding`, `EQWindowProviding`, `ProjectMWindowProviding`, and `LibraryBrowserWindowProviding` protocols), and shared infrastructure (`AudioEngine`, `Track`, `PlaybackState`)
 - **UI mode switching requires restart**: The `modernUIEnabled` UserDefaults preference selects which `MainWindowProviding` implementation `WindowManager` creates. Changing it at runtime shows a "Restart / Cancel" confirmation dialog — choosing Restart relaunches the app automatically, choosing Cancel reverts the preference
@@ -246,6 +246,8 @@ Sources/NullPlayer/
 - **Sonos coordinator transfer**: When unchecking the coordinator while other rooms remain grouped, `CastManager.transferSonosCast()` saves session state, stops the old coordinator, casts to the new coordinator, and re-joins other rooms. Uses `UPnPManager.disconnectSession()` to clear the session without sending Stop (old coordinator already standalone). `stopCasting()` ungroups all member rooms before stopping to prevent stale group topology
 - **Subsonic→Sonos casting**: Uses LocalMediaServer proxy because Sonos can't handle URLs with query params (auth tokens). The proxy also handles localhost-bound Navidrome servers. Stream URLs omit `f=json` (only for API responses, not binary streams)
 - **Internet radio state management**: `loadTracks()` must use `stopLocalOnly()` instead of `stop()` when loading radio content - calling `stop()` triggers `RadioManager.stop()` which clears state and breaks auto-reconnect/metadata. The `isRadioContent` check detects radio by matching track URL with `currentStation.url`
+- **Internet radio metadata fallback**: `RadioManager` publishes `effectiveStreamTitle` (ICY `currentStreamTitle` first, SomaFM `currentSomaLastPlaying` fallback). UI should listen to `streamMetadataDidChangeNotification`, not raw ICY-only fields.
+- **Internet radio ratings/folders are URL-keyed**: Ratings and folder membership are keyed by station URL (not station UUID). `RadioManager.updateStation` must migrate URL references via `moveRating(fromURL:toURL:)` and `foldersStore.moveStationURLReferences(from:to:)`; `removeStation` must purge both stores.
 - **Radio playlist URL resolution**: When resolving `.pls`/`.m3u` URLs, check `CastManager.shared.isCasting` fresh inside the async callback, not captured before the network request (up to 10s timeout). User may start casting during resolution
 - **Video casting has TWO paths** - handle both in control logic:
   - **Player path**: Cast button in video player → `VideoPlayerWindowController.isCastingVideo`
@@ -318,7 +320,7 @@ Manual QA for UI/playback changes:
 - Subsonic/Navidrome streaming
 - Jellyfin streaming
 - Emby streaming
-- Internet radio (playback, auto-reconnect, ICY metadata display)
+- Internet radio (playback, auto-reconnect, metadata including Soma fallback, folder/rating UI behavior)
 - Multiple skins
 - Window snapping/docking
 - Visualizations
@@ -368,4 +370,3 @@ Common issues:
 - **Silent crash on receive**: Check Data slice indexing (use `startIndex`)
 - **Timeout waiting for transportId**: Check receive loop is processing buffer
 - **TLS errors**: Chromecast uses self-signed certs, must accept in verify block
-

@@ -1,6 +1,6 @@
 ---
 name: radio-streaming
-description: Internet radio, Shoutcast/Icecast protocols, auto-reconnect, ICY metadata, and casting. Also covers the Library Browser radio mode for Subsonic, Jellyfin, Emby, and local library (smart playlist generation, history filtering, history pages). Use when working on radio station playback, streaming metadata, auto-reconnect logic, radio casting, or library-source radio.
+description: Internet radio (Shoutcast/Icecast), metadata fallback, auto-reconnect, ratings/folder organization, and casting. Also covers Library Browser radio mode for Subsonic, Jellyfin, Emby, Plex, and local library (smart playlist generation, history filtering, history pages). Use when working on radio station playback, streaming metadata, auto-reconnect logic, radio organization UI, radio casting, or library-source radio.
 ---
 
 # Radio in NullPlayer
@@ -19,11 +19,18 @@ NullPlayer has two distinct radio systems:
 ```
 Sources/NullPlayer/
 ├── Radio/
-│   └── RadioManager.swift        # Singleton managing internet radio state
+│   ├── RadioManager.swift             # Singleton managing internet radio state
+│   ├── RadioStationRatingsStore.swift # SQLite-backed 0-5 ratings (URL-keyed)
+│   ├── RadioFolderModels.swift        # Folder descriptor/kind model
+│   └── RadioStationFoldersStore.swift # SQLite-backed folders + memberships + play history
 ├── Data/Models/
-│   └── RadioStation.swift        # Station data model
-└── Windows/Radio/
-    └── AddRadioStationSheet.swift # Add/edit station UI
+│   └── RadioStation.swift             # Station data model
+├── Windows/Radio/
+│   └── AddRadioStationSheet.swift     # Add/edit station UI
+├── Windows/ModernLibraryBrowser/
+│   └── ModernLibraryBrowserView.swift # Internet radio folder tree + rating column
+└── Windows/PlexBrowser/
+    └── PlexBrowserView.swift          # Internet radio folder tree + rating column
 ```
 
 ### RadioManager
@@ -32,7 +39,8 @@ Singleton (`RadioManager.shared`) that manages:
 - Station list (persisted to UserDefaults)
 - Current playing station
 - Connection state (disconnected/connecting/connected/reconnecting/failed)
-- ICY stream metadata (current song title)
+- Stream metadata (ICY + SomaFM fallback)
+- Internet-radio-only station ratings and folder organization
 - Auto-reconnect logic
 
 **Key Properties:**
@@ -40,14 +48,15 @@ Singleton (`RadioManager.shared`) that manages:
 var stations: [RadioStation]           // All saved stations
 var currentStation: RadioStation?      // Currently playing (nil if not radio)
 var currentStreamTitle: String?        // ICY metadata "Artist - Song"
+var currentSomaLastPlaying: String?    // SomaFM fallback metadata
 var connectionState: ConnectionState   // Current connection state
 var isActive: Bool                      // True if radio is playing
-var statusText: String?                 // Display text for marquee
+var statusText: String?                 // Marquee text (effective stream title)
 ```
 
 **Notifications:**
 - `stationsDidChangeNotification` — Station list modified
-- `streamMetadataDidChangeNotification` — ICY metadata received
+- `streamMetadataDidChangeNotification` — effective stream metadata changed (ICY first, Soma fallback second)
 - `connectionStateDidChangeNotification` — Connection state changed
 
 ### RadioStation Model
@@ -116,11 +125,19 @@ Radio stations often use `.pls`/`.m3u`/`.m3u8` playlist URLs. Always check `Cast
 
 Manual stop (user pressing Stop, loading non-radio content, switching stations) sets `manualStopRequested = true` and does **not** trigger reconnect.
 
-### ICY Metadata
+### Stream Metadata (ICY + Soma Fallback)
 
-`StreamingAudioPlayer` → `AudioEngine` → `RadioManager` → `streamMetadataDidChangeNotification` → marquee.
+Primary path:
+`StreamingAudioPlayer` → `AudioEngine` → `RadioManager.currentStreamTitle` → `streamMetadataDidChangeNotification`.
 
-Keys: `StreamTitle`, `StreamUrl`, `icy-name`, `icy-genre`.
+Fallback path:
+When ICY metadata is missing for SomaFM streams, `RadioManager` polls `https://somafm.com/channels.json` and maps channel `lastPlaying` into `currentSomaLastPlaying`.
+
+Published value is `effectiveStreamTitle`:
+1. `currentStreamTitle` (ICY)
+2. `currentSomaLastPlaying` (Soma fallback)
+
+UI should consume only `streamMetadataDidChangeNotification` and not assume ICY is always present.
 
 ### Casting Radio to Sonos
 
@@ -130,7 +147,39 @@ Keys: `StreamTitle`, `StreamUrl`, `icy-name`, `icy-genre`.
 
 ### Station Persistence
 
-Stored as JSON in UserDefaults key `"RadioStations"`. Default stations: SomaFM Groove Salad, Drone Zone, DEF CON Radio.
+Internet radio persistence is split by concern:
+
+- **Station list**: JSON in UserDefaults key `"RadioStations"` (expanded default catalog includes full SomaFM plus curated global stations, including African/Caribbean/South American/European/Indian/Thai and additional jazz streams)
+- **Ratings**: SQLite `~/Library/Application Support/NullPlayer/radio_station_ratings.db`, table `radio_station_ratings` (`station_url` PK, `rating` 0...5, `updated_at`)
+- **Folders/memberships/play history**: SQLite `~/Library/Application Support/NullPlayer/radio_station_folders.db`
+  - `radio_folders`
+  - `radio_station_folder_memberships` (folder ↔ station URL)
+  - `radio_station_play_history` (used for "Recently Played" smart folder)
+
+Ratings/folders are URL-keyed. If a station URL is edited, `RadioManager.updateStation` migrates rating and folder references to the new URL. Removing a station purges rating + folder membership + play history rows for that URL.
+
+### Internet Radio Organization (Folders + Ratings)
+
+Internet Radio now uses folder-tree organization in both `ModernLibraryBrowserView` and `PlexBrowserView`.
+
+Smart folders:
+- All Stations
+- Favorites (rating >= 4)
+- Top Rated
+- Unrated
+- Recently Played
+- By Genre (group + dynamic children)
+- By Region (group + dynamic children)
+
+Manual folders:
+- User-created folders under "My Folders"
+- Station membership is managed from station context menu (`Folders` submenu)
+
+Key behavior:
+- Rating is 0...5 stars (0 = unrated); clicking the same star again clears rating.
+- Rating column is shown for **Internet Radio station rows only**.
+- Genre column is centered for all radio sources.
+- Internet Radio context menu includes folder actions (create, rename, delete, set active, add/remove station membership).
 
 ---
 
@@ -154,8 +203,10 @@ Sources/NullPlayer/
 ├── Data/Models/
 │   ├── MediaLibrary.swift           # createLocalXxxRadio functions
 │   └── LocalRadioHistory.swift      # SQLite play history for local files
-└── Windows/ModernLibraryBrowser/
-    └── ModernLibraryBrowserView.swift  # Radio tab UI + RadioType enums
+├── Windows/ModernLibraryBrowser/
+│   └── ModernLibraryBrowserView.swift  # Radio tab UI + RadioType enums
+└── Windows/PlexBrowser/
+    └── PlexBrowserView.swift           # Classic/Plex browser radio tab UI + RadioType enums
 ```
 
 ### Radio Types (per source)
@@ -267,7 +318,7 @@ var historyPageURL: URL?                         // http://127.0.0.1:{httpPort}/
 
 Pages are generated as self-contained HTML with a sortable table. The Played column uses `data-sort="{epoch}"` for correct numeric sort (not locale string sort).
 
-Accessed via context menu: right-click → Options → *Source* Radio History → View Radio History...
+Accessed via context menu: right-click → Options → `Radio History` → source-specific entry.
 
 The context menu entry is shown whenever a server has **ever been configured** (not only while actively connected).
 
@@ -294,13 +345,21 @@ Standard radio: `maxPerArtist = 2`. Instant Mix / Similar: `maxPerArtist = 1` (m
 
 ### Library Browser Radio Tab
 
-The Library Browser's **Radio** browse mode (`ModernBrowseMode.radio`) shows:
+The browser Radio tab has two behaviors:
 
-- Each source's available radio stations as a flat list
-- Station names + category (Library, Genre, Decade, Favorites, Starred)
-- Double-click to play, loading animation while generating
+- **Internet Radio source (`currentSource == .radio`)**:
+  - Folder tree + active-folder station list
+  - Columns: `Title | Genre | Rating` for station rows
+  - Genre centered; rating centered
+  - Folder context actions + station folder-membership submenu
+- **Library radio sources (Plex/Subsonic/Jellyfin/Emby/Local)**:
+  - Source-specific generated radio stations (Library/Genre/Decade/etc.)
+  - Genre/category column centered in radio lists
+  - Double-click to generate and play queue
 
-Implemented in `ModernLibraryBrowserView`: `loadXxxRadioStations()` fetches genres → `buildXxxRadioStationItems()` populates `displayItems` → `playXxxRadioStation()` generates + loads the playlist.
+Implemented in both browser views:
+- `Windows/ModernLibraryBrowser/ModernLibraryBrowserView.swift`
+- `Windows/PlexBrowser/PlexBrowserView.swift`
 
 ### Main Window Marquee
 
@@ -316,9 +375,13 @@ Priority order:
 
 **Internet radio:**
 - [ ] Add station with direct stream URL and with .pls/.m3u URL
-- [ ] ICY metadata displays in marquee
+- [ ] Metadata displays in marquee (ICY when present, Soma fallback when ICY absent)
 - [ ] Stop → no auto-reconnect; disconnect network → auto-reconnect attempts
 - [ ] Cast to Sonos, time resets to 0:00
+- [ ] Folder tree renders in both Modern and Plex browsers
+- [ ] Create/rename/delete manual folder; station membership toggles correctly
+- [ ] Rating stars persist across relaunch; clicking selected star clears rating
+- [ ] Editing station URL migrates rating/folder membership
 
 **Library radio:**
 - [ ] Subsonic/Jellyfin/Emby radio tab loads genres and decade stations
@@ -326,6 +389,7 @@ Priority order:
 - [ ] After playing through tracks, history filters them out on next session
 - [ ] Rapid tab switches → no stale results applied
 - [ ] Double-click another station quickly → no duplicate playlist clears
+- [ ] Playback Options has a single `Radio History` submenu with source-specific entries
 - [ ] History menu visible after disconnecting server (not only while connected)
 - [ ] History page sorts Played column correctly (newest last when ↑)
 - [ ] Starred radio respects current music folder selection

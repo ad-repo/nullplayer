@@ -89,10 +89,15 @@ Modern UI adds: **2X** (Double Size), **HT** (Hide Title Bars), **CA** (Cast), *
 
 ### Internet Radio
 - Shoutcast/Icecast streaming
-- ICY metadata display
+- Live song metadata (ICY + SomaFM fallback when ICY is missing)
 - Auto-reconnect on disconnect
-- Station management
+- Large bundled global station catalog (including full SomaFM channel set)
+- Curated regional additions (African, Caribbean, South American, European, Indian, Thai) plus expanded jazz streams
+- Station management (add/edit/delete/import)
+- Internet-radio-only folder organization (smart folders + custom folders)
+- 5-star station ratings (persisted per station URL)
 - Casting to Sonos
+- Playback Options now groups all source histories under a single **Radio History** submenu
 
 ### Local Files
 Drag & drop or use File menu. Supports: MP3, M4A, AAC, WAV, AIFF, FLAC, OGG, ALAC
