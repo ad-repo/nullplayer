@@ -680,6 +680,14 @@ class PlexBrowserView: NSView {
         let station: RadioStation
         let folderID: UUID
     }
+    private struct RadioSmartGenreAction {
+        let station: RadioStation
+        let genre: String?
+    }
+    private struct RadioSmartRegionAction {
+        let station: RadioStation
+        let region: String?
+    }
     private struct RadioFolderRenameAction { let folderID: UUID }
     private struct RadioFolderDeleteAction { let folderID: UUID }
     private struct RadioFolderStationAction { let station: RadioStation }
@@ -7112,6 +7120,86 @@ class PlexBrowserView: NSView {
         submenu.addItem(newFolderItem)
         return submenu
     }
+
+    private func buildRadioStationSmartFoldersSubmenu(for station: RadioStation) -> NSMenu {
+        let submenu = NSMenu()
+
+        let genreItem = NSMenuItem(title: "By Genre", action: nil, keyEquivalent: "")
+        genreItem.submenu = buildRadioStationSmartGenreSubmenu(for: station)
+        submenu.addItem(genreItem)
+
+        let regionItem = NSMenuItem(title: "By Region", action: nil, keyEquivalent: "")
+        regionItem.submenu = buildRadioStationSmartRegionSubmenu(for: station)
+        submenu.addItem(regionItem)
+
+        return submenu
+    }
+
+    private func buildRadioStationSmartGenreSubmenu(for station: RadioStation) -> NSMenu {
+        let submenu = NSMenu()
+        let manager = RadioManager.shared
+        let baseGenre = (station.genre ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "Unknown"
+            : (station.genre ?? "Unknown").trimmingCharacters(in: .whitespacesAndNewlines)
+        let overrideGenre = manager.smartGenreOverride(for: station)
+        let effectiveGenre = manager.normalizedGenre(for: station)
+
+        let autoItem = NSMenuItem(
+            title: "Use Station Genre (\(baseGenre))",
+            action: #selector(contextMenuAssignStationSmartGenre(_:)),
+            keyEquivalent: ""
+        )
+        autoItem.target = self
+        autoItem.representedObject = RadioSmartGenreAction(station: station, genre: nil)
+        autoItem.state = overrideGenre == nil ? .on : .off
+        submenu.addItem(autoItem)
+        submenu.addItem(NSMenuItem.separator())
+
+        for genre in manager.smartGenreOptions(including: station) {
+            let item = NSMenuItem(
+                title: genre,
+                action: #selector(contextMenuAssignStationSmartGenre(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = RadioSmartGenreAction(station: station, genre: genre)
+            item.state = effectiveGenre.localizedCaseInsensitiveCompare(genre) == .orderedSame ? .on : .off
+            submenu.addItem(item)
+        }
+        return submenu
+    }
+
+    private func buildRadioStationSmartRegionSubmenu(for station: RadioStation) -> NSMenu {
+        let submenu = NSMenu()
+        let manager = RadioManager.shared
+        let baseRegion = manager.autoRegion(for: station)
+        let overrideRegion = manager.smartRegionOverride(for: station)
+        let effectiveRegion = manager.effectiveRegion(for: station)
+
+        let autoItem = NSMenuItem(
+            title: "Use Auto Region (\(baseRegion))",
+            action: #selector(contextMenuAssignStationSmartRegion(_:)),
+            keyEquivalent: ""
+        )
+        autoItem.target = self
+        autoItem.representedObject = RadioSmartRegionAction(station: station, region: nil)
+        autoItem.state = overrideRegion == nil ? .on : .off
+        submenu.addItem(autoItem)
+        submenu.addItem(NSMenuItem.separator())
+
+        for region in manager.smartRegionOptions(including: station) {
+            let item = NSMenuItem(
+                title: region,
+                action: #selector(contextMenuAssignStationSmartRegion(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = RadioSmartRegionAction(station: station, region: region)
+            item.state = effectiveRegion.localizedCaseInsensitiveCompare(region) == .orderedSame ? .on : .off
+            submenu.addItem(item)
+        }
+        return submenu
+    }
     
     @objc private func showAddRadioPlaylistDialog() {
         // Show a simple dialog to enter a playlist URL (.m3u, .pls)
@@ -8675,11 +8763,15 @@ class PlexBrowserView: NSView {
             menu.addItem(playItem)
             
             menu.addItem(NSMenuItem.separator())
-
+            
             let foldersItem = NSMenuItem(title: "Folders", action: nil, keyEquivalent: "")
             foldersItem.submenu = buildRadioStationFoldersSubmenu(for: station)
             menu.addItem(foldersItem)
 
+            let smartFoldersItem = NSMenuItem(title: "Smart Folders", action: nil, keyEquivalent: "")
+            smartFoldersItem.submenu = buildRadioStationSmartFoldersSubmenu(for: station)
+            menu.addItem(smartFoldersItem)
+            
             menu.addItem(NSMenuItem.separator())
             
             let editItem = NSMenuItem(title: "Edit Station...", action: #selector(contextMenuEditRadioStation(_:)), keyEquivalent: "")
@@ -9083,6 +9175,18 @@ class PlexBrowserView: NSView {
         } else {
             _ = RadioManager.shared.addStation(action.station, toUserFolderID: action.folderID)
         }
+        loadRadioStations()
+    }
+
+    @objc private func contextMenuAssignStationSmartGenre(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? RadioSmartGenreAction else { return }
+        _ = RadioManager.shared.setSmartGenreOverride(action.genre, for: action.station)
+        loadRadioStations()
+    }
+
+    @objc private func contextMenuAssignStationSmartRegion(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? RadioSmartRegionAction else { return }
+        _ = RadioManager.shared.setSmartRegionOverride(action.region, for: action.station)
         loadRadioStations()
     }
 

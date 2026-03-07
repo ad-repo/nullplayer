@@ -127,6 +127,8 @@ class RadioManager {
     
     private let stationsKey = "RadioStations"
     private let deletedDefaultsKey = "RadioDeletedDefaults"
+    private let smartGenreOverridesKey = "RadioSmartGenreOverrides"
+    private let smartRegionOverridesKey = "RadioSmartRegionOverrides"
     private static let defaultURLAliases: [String: String] = [
         "https://wgbh-live.streamguys1.com/wgbh": "https://wgbh-live.streamguys1.com/wgbh.mp3",
         "https://wgbh-live.streamguys1.com/wgbh.mp3": "https://wgbh-live.streamguys1.com/wgbh"
@@ -154,6 +156,84 @@ class RadioManager {
         let left = lhs.absoluteString
         let right = rhs.absoluteString
         return Self.defaultURLAliases[left] == right || Self.defaultURLAliases[right] == left
+    }
+
+    private var smartGenreOverrides: [String: String] {
+        get { UserDefaults.standard.dictionary(forKey: smartGenreOverridesKey) as? [String: String] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: smartGenreOverridesKey) }
+    }
+
+    private var smartRegionOverrides: [String: String] {
+        get { UserDefaults.standard.dictionary(forKey: smartRegionOverridesKey) as? [String: String] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: smartRegionOverridesKey) }
+    }
+
+    private func equivalentURLKeys(for url: URL) -> Set<String> {
+        var keys: Set<String> = [url.absoluteString]
+        if let alias = Self.defaultURLAliases[url.absoluteString] {
+            keys.insert(alias)
+        }
+        for (key, value) in Self.defaultURLAliases where value == url.absoluteString {
+            keys.insert(key)
+        }
+        return keys
+    }
+
+    private func normalizedOverrideLabel(_ value: String?) -> String? {
+        let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func overrideValue(for url: URL, in map: [String: String]) -> String? {
+        for key in equivalentURLKeys(for: url) {
+            if let value = normalizedOverrideLabel(map[key]) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func setOverrideValue(_ value: String?, for url: URL, in map: inout [String: String]) -> Bool {
+        let normalized = normalizedOverrideLabel(value)
+        let keys = equivalentURLKeys(for: url)
+        var changed = false
+        for key in keys {
+            let old = map[key]
+            if let normalized {
+                if old != normalized {
+                    map[key] = normalized
+                    changed = true
+                }
+            } else if map.removeValue(forKey: key) != nil {
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    private func clearSmartFolderOverrides(for url: URL) {
+        var genres = smartGenreOverrides
+        var regions = smartRegionOverrides
+        let genreChanged = setOverrideValue(nil, for: url, in: &genres)
+        let regionChanged = setOverrideValue(nil, for: url, in: &regions)
+        if genreChanged { smartGenreOverrides = genres }
+        if regionChanged { smartRegionOverrides = regions }
+    }
+
+    private func moveSmartFolderOverrides(from oldURL: URL, to newURL: URL) {
+        guard oldURL != newURL else { return }
+        let oldGenre = overrideValue(for: oldURL, in: smartGenreOverrides)
+        let oldRegion = overrideValue(for: oldURL, in: smartRegionOverrides)
+
+        var genres = smartGenreOverrides
+        var regions = smartRegionOverrides
+        _ = setOverrideValue(nil, for: oldURL, in: &genres)
+        _ = setOverrideValue(nil, for: oldURL, in: &regions)
+        _ = setOverrideValue(oldGenre, for: newURL, in: &genres)
+        _ = setOverrideValue(oldRegion, for: newURL, in: &regions)
+
+        smartGenreOverrides = genres
+        smartRegionOverrides = regions
     }
 
     /// Combined stream title used by UI: ICY metadata first, then Soma fallback.
@@ -1170,6 +1250,7 @@ class RadioManager {
             if oldURL != station.url {
                 moveRating(fromURL: oldURL, toURL: station.url)
                 foldersStore.moveStationURLReferences(from: oldURL, to: station.url)
+                moveSmartFolderOverrides(from: oldURL, to: station.url)
             }
             stations[index] = station
             NSLog("RadioManager: Updated station '%@'", station.name)
@@ -1187,6 +1268,7 @@ class RadioManager {
         }
         removeRating(for: station)
         foldersStore.removeStationURLEverywhere(station.url)
+        clearSmartFolderOverrides(for: station.url)
         stations.removeAll { $0.id == station.id }
         NSLog("RadioManager: Removed station '%@'", station.name)
     }
@@ -1207,6 +1289,8 @@ class RadioManager {
     func resetToDefaults() {
         // Clear the deleted defaults tracking so all defaults come back
         deletedDefaultURLs = []
+        smartGenreOverrides = [:]
+        smartRegionOverrides = [:]
         stations = Self.defaultStations
         NSLog("RadioManager: Reset to %d default stations", stations.count)
     }
@@ -1258,6 +1342,68 @@ class RadioManager {
     func removeRating(for station: RadioStation) {
         ratingsStore.removeRating(for: station.url)
         postStationsDidChange()
+    }
+
+    // MARK: - Smart Folder Overrides
+
+    func smartGenreOverride(for station: RadioStation) -> String? {
+        overrideValue(for: station.url, in: smartGenreOverrides)
+    }
+
+    func smartRegionOverride(for station: RadioStation) -> String? {
+        overrideValue(for: station.url, in: smartRegionOverrides)
+    }
+
+    func effectiveRegion(for station: RadioStation) -> String {
+        effectiveRegionLabel(for: station)
+    }
+
+    func autoRegion(for station: RadioStation) -> String {
+        derivedRegion(for: station)
+    }
+
+    @discardableResult
+    func setSmartGenreOverride(_ genre: String?, for station: RadioStation) -> Bool {
+        let base = normalizeGenreLabel(station.genre)
+        let target = normalizedOverrideLabel(genre)
+        var map = smartGenreOverrides
+        let changed = setOverrideValue(target == base ? nil : target, for: station.url, in: &map)
+        if changed {
+            smartGenreOverrides = map
+            postStationsDidChange()
+        }
+        return changed
+    }
+
+    @discardableResult
+    func setSmartRegionOverride(_ region: String?, for station: RadioStation) -> Bool {
+        let base = derivedRegion(for: station)
+        let target = normalizedOverrideLabel(region)
+        var map = smartRegionOverrides
+        let changed = setOverrideValue(target == base ? nil : target, for: station.url, in: &map)
+        if changed {
+            smartRegionOverrides = map
+            postStationsDidChange()
+        }
+        return changed
+    }
+
+    func smartGenreOptions(including station: RadioStation? = nil) -> [String] {
+        var labels = Set(availableGenres())
+        if let station {
+            labels.insert(normalizeGenreLabel(station.genre))
+            labels.insert(effectiveGenreLabel(for: station))
+        }
+        return labels.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    func smartRegionOptions(including station: RadioStation? = nil) -> [String] {
+        var labels = Set(availableRegions())
+        if let station {
+            labels.insert(derivedRegion(for: station))
+            labels.insert(effectiveRegionLabel(for: station))
+        }
+        return labels.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     // MARK: - Folder Organization
@@ -1487,11 +1633,11 @@ class RadioManager {
         case .genre(let genre):
             let target = normalizeGenreLabel(genre)
             let filtered = stations.filter {
-                normalizeGenreLabel($0.genre).localizedCaseInsensitiveCompare(target) == .orderedSame
+                effectiveGenreLabel(for: $0).localizedCaseInsensitiveCompare(target) == .orderedSame
             }
             return stationsSortedByName(filtered)
         case .region(let region):
-            let filtered = stations.filter { derivedRegion(for: $0) == region }
+            let filtered = stations.filter { effectiveRegionLabel(for: $0) == region }
             return stationsSortedByName(filtered)
         case .manual(let folderID):
             let urls = foldersStore.stationURLs(inFolder: folderID)
@@ -1514,8 +1660,8 @@ class RadioManager {
 
     private func stationsSortedByGenreAndName(_ items: [RadioStation]) -> [RadioStation] {
         items.sorted { a, b in
-            let ga = normalizeGenreLabel(a.genre)
-            let gb = normalizeGenreLabel(b.genre)
+            let ga = effectiveGenreLabel(for: a)
+            let gb = effectiveGenreLabel(for: b)
             if ga.caseInsensitiveCompare(gb) != .orderedSame {
                 return ga.localizedCaseInsensitiveCompare(gb) == .orderedAscending
             }
@@ -1524,7 +1670,15 @@ class RadioManager {
     }
 
     func normalizedGenre(for station: RadioStation) -> String {
-        normalizeGenreLabel(station.genre)
+        effectiveGenreLabel(for: station)
+    }
+
+    private func effectiveGenreLabel(for station: RadioStation) -> String {
+        smartGenreOverride(for: station) ?? normalizeGenreLabel(station.genre)
+    }
+
+    private func effectiveRegionLabel(for station: RadioStation) -> String {
+        smartRegionOverride(for: station) ?? derivedRegion(for: station)
     }
 
     private func normalizeGenreLabel(_ genre: String?) -> String {
@@ -1533,12 +1687,12 @@ class RadioManager {
     }
 
     private func availableGenres() -> [String] {
-        let genres = Set(stations.map { normalizeGenreLabel($0.genre) })
+        let genres = Set(stations.map { effectiveGenreLabel(for: $0) })
         return genres.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     private func availableRegions() -> [String] {
-        let regions = Set(stations.map { derivedRegion(for: $0) })
+        let regions = Set(stations.map { effectiveRegionLabel(for: $0) })
         return regions.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
@@ -1581,7 +1735,7 @@ class RadioManager {
         }
 
         if containsAny(text, [
-            "somafm", "npr", "kexp", "wgbh", "wfmu", "seattle", "new orleans", "boston"
+            "somafm", "npr", "kexp", "wgbh", "wfmu", "seattle", "new orleans", "boston", "cambridge", "massachusetts"
         ]) {
             return "North America"
         }
