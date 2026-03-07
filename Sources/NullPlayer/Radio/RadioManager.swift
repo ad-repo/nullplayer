@@ -133,6 +133,10 @@ class RadioManager {
         }
         stations = decoded
         NSLog("RadioManager: Loaded %d saved stations", stations.count)
+
+        // Ensure existing users receive newly added defaults while still honoring
+        // deleted-default tracking.
+        addMissingDefaults()
     }
     
     private func saveStations() {
@@ -322,6 +326,129 @@ class RadioManager {
             name: "BBC World Service",
             url: URL(string: "http://stream.live.vc.bbcmedia.co.uk/bbc_world_service")!,
             genre: "News"
+        ),
+
+        // MARK: - Additional SomaFM channels (alphabetical append, March 2026)
+        // Genre labels map to SomaFM feed genre first token, title-cased.
+        RadioStation(
+            name: "SomaFM Boot Liquor",
+            url: URL(string: "https://ice5.somafm.com/bootliquor-128-mp3")!,
+            genre: "Americana"
+        ),
+        RadioStation(
+            name: "SomaFM Chillits Radio",
+            url: URL(string: "https://ice5.somafm.com/chillits-128-mp3")!,
+            genre: "Chill"
+        ),
+        RadioStation(
+            name: "SomaFM cliqhop idm",
+            url: URL(string: "https://ice5.somafm.com/cliqhop-128-mp3")!,
+            genre: "Electronic"
+        ),
+        RadioStation(
+            name: "SomaFM Covers",
+            url: URL(string: "https://ice5.somafm.com/covers-128-mp3")!,
+            genre: "Eclectic"
+        ),
+        RadioStation(
+            name: "SomaFM Deep Space One",
+            url: URL(string: "https://ice5.somafm.com/deepspaceone-128-mp3")!,
+            genre: "Ambient"
+        ),
+        RadioStation(
+            name: "SomaFM Digitalis",
+            url: URL(string: "https://ice5.somafm.com/digitalis-128-mp3")!,
+            genre: "Electronic"
+        ),
+        RadioStation(
+            name: "SomaFM Folk Forward",
+            url: URL(string: "https://ice5.somafm.com/folkfwd-128-mp3")!,
+            genre: "Folk"
+        ),
+        RadioStation(
+            name: "SomaFM Groove Salad Classic",
+            url: URL(string: "https://ice5.somafm.com/gsclassic-128-mp3")!,
+            genre: "Ambient"
+        ),
+        RadioStation(
+            name: "SomaFM Heavyweight Reggae",
+            url: URL(string: "https://ice5.somafm.com/reggae-128-mp3")!,
+            genre: "Reggae"
+        ),
+        RadioStation(
+            name: "SomaFM Lush",
+            url: URL(string: "https://ice5.somafm.com/lush-128-mp3")!,
+            genre: "Electronic"
+        ),
+        RadioStation(
+            name: "SomaFM Mission Control",
+            url: URL(string: "https://ice5.somafm.com/missioncontrol-128-mp3")!,
+            genre: "Ambient"
+        ),
+        RadioStation(
+            name: "SomaFM n5MD Radio",
+            url: URL(string: "https://ice5.somafm.com/n5md-128-mp3")!,
+            genre: "Specials"
+        ),
+        RadioStation(
+            name: "SomaFM SF 10-33",
+            url: URL(string: "https://ice5.somafm.com/sf1033-128-mp3")!,
+            genre: "Ambient"
+        ),
+        RadioStation(
+            name: "SomaFM SF in SF",
+            url: URL(string: "https://ice5.somafm.com/sfinsf-128-mp3")!,
+            genre: "Spoken"
+        ),
+        RadioStation(
+            name: "SomaFM SF Police Scanner",
+            url: URL(string: "https://ice5.somafm.com/scanner-128-mp3")!,
+            genre: "Live"
+        ),
+        RadioStation(
+            name: "SomaFM Live",
+            url: URL(string: "https://ice5.somafm.com/live-128-mp3")!,
+            genre: "Live"
+        ),
+        RadioStation(
+            name: "SomaFM Specials",
+            url: URL(string: "https://ice5.somafm.com/specials-128-mp3")!,
+            genre: "Specials"
+        ),
+        RadioStation(
+            name: "SomaFM Space Station Soma",
+            url: URL(string: "https://ice5.somafm.com/spacestation-128-mp3")!,
+            genre: "Electronic"
+        ),
+        RadioStation(
+            name: "SomaFM Suburbs of Goa",
+            url: URL(string: "https://ice5.somafm.com/suburbsofgoa-128-mp3")!,
+            genre: "World"
+        ),
+        RadioStation(
+            name: "SomaFM Synphaera Radio",
+            url: URL(string: "https://ice5.somafm.com/synphaera-128-mp3")!,
+            genre: "Ambient"
+        ),
+        RadioStation(
+            name: "SomaFM The Dark Zone",
+            url: URL(string: "https://ice5.somafm.com/darkzone-128-mp3")!,
+            genre: "Ambient"
+        ),
+        RadioStation(
+            name: "SomaFM The In-Sound",
+            url: URL(string: "https://ice5.somafm.com/insound-128-mp3")!,
+            genre: "Pop"
+        ),
+        RadioStation(
+            name: "SomaFM Tiki Time",
+            url: URL(string: "https://ice5.somafm.com/tikitime-128-mp3")!,
+            genre: "Tiki"
+        ),
+        RadioStation(
+            name: "SomaFM Vaporwaves",
+            url: URL(string: "https://ice5.somafm.com/vaporwaves-128-mp3")!,
+            genre: "Electronic"
         )
     ]
     
