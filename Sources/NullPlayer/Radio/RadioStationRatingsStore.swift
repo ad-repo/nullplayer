@@ -22,7 +22,8 @@ final class RadioStationRatingsStore {
             return
         }
         let dir = appSupport.appendingPathComponent("NullPlayer")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
         let dbPath = dir.appendingPathComponent("radio_station_ratings.db").path
 
         do {

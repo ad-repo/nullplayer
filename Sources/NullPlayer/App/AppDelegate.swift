@@ -44,10 +44,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager.audioEngine.addSpectrumConsumer("mainWindowSpectrum")
 
         // Load skin from environment variable if set (for testing)
+        #if DEBUG
         if let skinPath = ProcessInfo.processInfo.environment["NULLPLAYER_SKIN"] {
             let skinURL = URL(fileURLWithPath: skinPath)
             windowManager.loadSkin(from: skinURL)
         }
+        #endif
         
         // Initialize modern skin engine if modern mode is enabled
         if windowManager.isModernUIEnabled {

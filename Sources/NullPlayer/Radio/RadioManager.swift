@@ -1836,6 +1836,12 @@ class RadioManager {
                 
                 // Parse the playlist content
                 let streamURL = self.parsePlaylistForStreamURL(content, sourceURL: url)
+                // Block SSRF: don't follow playlist redirects from public URLs to private IPs
+                if let resolved = streamURL, self.isPrivateIPRedirect(from: url, to: resolved) {
+                    NSLog("RadioManager: Blocked playlist redirect to private IP: %@", resolved.absoluteString)
+                    completion(nil)
+                    return
+                }
                 completion(streamURL)
             }
         }.resume()
@@ -1915,7 +1921,11 @@ class RadioManager {
         }
 
         if trimmed.contains("://") {
-            return URL(string: trimmed)
+            guard let url = URL(string: trimmed),
+                  ["http", "https", "rtsp", "rtmp", "mms", "icyx"].contains(url.scheme?.lowercased() ?? "") else {
+                return nil
+            }
+            return url
         }
 
         if let absolute = URL(string: trimmed, relativeTo: sourceURL)?.absoluteURL {
@@ -1926,6 +1936,22 @@ class RadioManager {
         return URL(string: trimmed, relativeTo: base)?.absoluteURL
     }
     
+    private func isPrivateIPRedirect(from sourceURL: URL, to resolvedURL: URL) -> Bool {
+        // Allow if source is already a local/private host (user-configured LAN radio)
+        guard let sourceHost = sourceURL.host, !isPrivateHost(sourceHost) else { return false }
+        guard let resolvedHost = resolvedURL.host else { return false }
+        return isPrivateHost(resolvedHost)
+    }
+
+    private func isPrivateHost(_ host: String) -> Bool {
+        let privateRanges = ["127.", "10.", "192.168.", "localhost"]
+        if privateRanges.contains(where: { host.hasPrefix($0) }) { return true }
+        // 172.16.0.0/12
+        if host.hasPrefix("172."), let second = host.split(separator: ".").dropFirst().first,
+           let octet = Int(second), (16...31).contains(octet) { return true }
+        return false
+    }
+
     /// Stop radio playback
     func stop() {
         manualStopRequested = true

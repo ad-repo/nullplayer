@@ -2569,11 +2569,14 @@ class MenuActions: NSObject {
         
         // Use a small delay so the current process can begin terminating
         // before the new instance tries to launch
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "sleep 0.5; open \"\(bundleURL.path)\""]
-        try? task.run()
-        
+        let bundlePath = bundleURL.path
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            task.arguments = [bundlePath]
+            try? task.run()
+        }
+
         NSApp.terminate(nil)
     }
     

@@ -43,7 +43,7 @@
     <dict>
         <key>NSAllowsLocalNetworking</key>
         <true/>
-        <key>NSAllowsArbitraryLoads</key>
+        <key>NSAllowsArbitraryLoadsForMedia</key>
         <true/>
     </dict>
     

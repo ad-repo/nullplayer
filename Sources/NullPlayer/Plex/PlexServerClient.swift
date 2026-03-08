@@ -753,8 +753,10 @@ class PlexServerClient {
             throw PlexServerError.invalidURL
         }
         
+        #if DEBUG
         NSLog("PlexServerClient: Final smart playlist URL: %@", finalURL.absoluteString)
-        
+        #endif
+
         var request = URLRequest(url: finalURL)
         for (key, value) in standardHeaders {
             request.setValue(value, forHTTPHeaderField: key)

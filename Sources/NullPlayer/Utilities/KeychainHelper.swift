@@ -12,7 +12,7 @@ class KeychainHelper {
     
     /// Set to true for production builds with proper code signing
     /// Set to false for development to avoid keychain permission prompts
-    private let useKeychain = false
+    private let useKeychain = true
     
     private init() {}
     
@@ -264,7 +264,16 @@ class KeychainHelper {
     
     private func getData(forKey key: String) -> Data? {
         if useKeychain {
-            return getDataKeychain(forKey: key)
+            // Migrate from UserDefaults if Keychain has no entry yet
+            if let keychainData = getDataKeychain(forKey: key) {
+                return keychainData
+            }
+            if let legacyData = getDataUserDefaults(forKey: key) {
+                _ = setDataKeychain(legacyData, forKey: key)
+                deleteUserDefaults(forKey: key)
+                return legacyData
+            }
+            return nil
         } else {
             return getDataUserDefaults(forKey: key)
         }
