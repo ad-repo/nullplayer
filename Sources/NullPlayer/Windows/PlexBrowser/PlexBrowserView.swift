@@ -1275,7 +1275,7 @@ class PlexBrowserView: NSView {
     /// Show the rating overlay
     private func showRatingOverlay() {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-              currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.url.isFileURL else { return }
+              canRateTrack(currentTrack) else { return }
         
         ratingOverlay.frame = bounds
         ratingOverlay.setRating(currentTrackRating ?? 0)
@@ -1294,7 +1294,7 @@ class PlexBrowserView: NSView {
     }
     
     /// Submit rating (debounced to prevent rapid API calls)
-    /// Supports Plex, Subsonic, and local file ratings
+    /// Supports Plex, Subsonic, Jellyfin, Emby, and local file ratings
     private func submitRating(_ rating: Int) {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { return }
         
@@ -1325,6 +1325,11 @@ class PlexBrowserView: NSView {
                     let jellyfinRating = rating * 10
                     try await JellyfinManager.shared.setRating(itemId: jellyfinId, rating: jellyfinRating)
                     NSLog("PlexBrowser: Rated Jellyfin track %@ with %d stars", jellyfinId, rating / 2)
+                } else if let embyId = currentTrack.embyId {
+                    // Emby: convert 0-10 to 0-100
+                    let embyRating = rating * 10
+                    try await EmbyManager.shared.setRating(itemId: embyId, rating: embyRating)
+                    NSLog("PlexBrowser: Rated Emby track %@ with %d stars", embyId, rating / 2)
                 } else if currentTrack.url.isFileURL {
                     // Local file: 0-10 scale in MediaLibrary
                     await MainActor.run {
@@ -1348,7 +1353,7 @@ class PlexBrowserView: NSView {
         }
     }
     
-    /// Fetch current track's rating from Plex, Subsonic, or local library
+    /// Fetch current track's rating from Plex, Subsonic, Jellyfin, Emby, or local library
     private func fetchCurrentTrackRating() {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
             currentTrackRating = nil
@@ -1397,6 +1402,20 @@ class PlexBrowserView: NSView {
                     NSLog("PlexBrowser: Failed to fetch Jellyfin track rating: %@", error.localizedDescription)
                 }
             }
+        } else if let embyId = currentTrack.embyId {
+            // Emby: fetch from server (0-100 scale, convert to 0-10)
+            Task {
+                do {
+                    if let song = try await EmbyManager.shared.serverClient?.fetchSong(id: embyId) {
+                        await MainActor.run {
+                            currentTrackRating = song.userRating.map { $0 / 10 }
+                            needsDisplay = true
+                        }
+                    }
+                } catch {
+                    NSLog("PlexBrowser: Failed to fetch Emby track rating: %@", error.localizedDescription)
+                }
+            }
         } else if currentTrack.url.isFileURL {
             // Local file: read from library (already 0-10 scale)
             if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
@@ -1408,6 +1427,14 @@ class PlexBrowserView: NSView {
         } else {
             currentTrackRating = nil
         }
+    }
+
+    private func canRateTrack(_ track: Track) -> Bool {
+        track.plexRatingKey != nil ||
+        track.subsonicId != nil ||
+        track.jellyfinId != nil ||
+        track.embyId != nil ||
+        track.url.isFileURL
     }
     
     /// Called when source changes
@@ -1803,7 +1830,7 @@ class PlexBrowserView: NSView {
             // Star rating (art-only mode) or item count (list mode)
             if isArtOnlyMode,
                let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-               currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.url.isFileURL {
+               canRateTrack(currentTrack) {
                 let starSize: CGFloat = 12
                 let starSpacing: CGFloat = 2
                 let totalStars = 5
@@ -1934,7 +1961,7 @@ class PlexBrowserView: NSView {
                 // Star rating (art-only mode) or item count (list mode)
                 if isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                   currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.url.isFileURL {
+                   canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
                     let starSpacing: CGFloat = 2
                     let totalStars = 5
@@ -2002,7 +2029,9 @@ class PlexBrowserView: NSView {
             if configuredServer != nil {
                 // Max width for server name (in characters)
                 let maxServerChars = 20
+                let maxLibraryChars = 10
                 let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
+                let maxLibraryWidth = CGFloat(maxLibraryChars) * scaledCharWidth
                 
                 // Server name right after "Source:"
                 let serverName = configuredServer?.name ?? "Select Server"
@@ -2016,6 +2045,28 @@ class PlexBrowserView: NSView {
                                      scrollOffset: serverNameScrollOffset,
                                      renderer: renderer, in: context)
                 }
+
+                // Library label and selected folder after server name
+                let libLabel = "Lib:"
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16
+                drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
+
+                let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4
+                let folderText = manager.currentMusicFolder?.name ?? "All"
+                let folderTextWidth = CGFloat(folderText.count) * scaledCharWidth
+
+                context.saveGState()
+                let libraryClipRect = NSRect(x: libraryX, y: textY, width: maxLibraryWidth, height: scaledCharHeight)
+                context.clip(to: libraryClipRect)
+                if folderTextWidth <= maxLibraryWidth {
+                    drawScaledWhiteSkinText(folderText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
+                } else {
+                    drawScrollingText(folderText, startX: libraryX, textY: textY,
+                                      availableWidth: maxLibraryWidth, scale: textScale,
+                                      scrollOffset: libraryNameScrollOffset,
+                                      renderer: renderer, in: context)
+                }
+                context.restoreGState()
                 
                 // Right side: F5 refresh label
                 let refreshText = "F5"
@@ -2052,7 +2103,7 @@ class PlexBrowserView: NSView {
                 // Star rating (art-only mode) or item count (list mode)
                 if isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                   currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.url.isFileURL {
+                   canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
                     let starSpacing: CGFloat = 2
                     let totalStars = 5
@@ -2101,7 +2152,9 @@ class PlexBrowserView: NSView {
             
             if configuredServer != nil {
                 let maxServerChars = 20
+                let maxLibraryChars = 10
                 let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
+                let maxLibraryWidth = CGFloat(maxLibraryChars) * scaledCharWidth
                 let serverName = configuredServer?.name ?? "Select Server"
                 let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
                 
@@ -2113,6 +2166,28 @@ class PlexBrowserView: NSView {
                                      scrollOffset: serverNameScrollOffset,
                                      renderer: renderer, in: context)
                 }
+
+                // Library label and selected library after server name
+                let libLabel = "Lib:"
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16
+                drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
+
+                let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4
+                let libraryText = jellyfinCurrentLibraryName
+                let libraryTextWidth = CGFloat(libraryText.count) * scaledCharWidth
+
+                context.saveGState()
+                let libraryClipRect = NSRect(x: libraryX, y: textY, width: maxLibraryWidth, height: scaledCharHeight)
+                context.clip(to: libraryClipRect)
+                if libraryTextWidth <= maxLibraryWidth {
+                    drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
+                } else {
+                    drawScrollingText(libraryText, startX: libraryX, textY: textY,
+                                      availableWidth: maxLibraryWidth, scale: textScale,
+                                      scrollOffset: libraryNameScrollOffset,
+                                      renderer: renderer, in: context)
+                }
+                context.restoreGState()
                 
                 let refreshText = "F5"
                 let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
@@ -2144,7 +2219,7 @@ class PlexBrowserView: NSView {
                 
                 if isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                   currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.url.isFileURL {
+                   canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
                     let starSpacing: CGFloat = 2
                     let totalStars = 5
@@ -2188,7 +2263,9 @@ class PlexBrowserView: NSView {
 
             if configuredServer != nil {
                 let maxServerChars = 20
+                let maxLibraryChars = 10
                 let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
+                let maxLibraryWidth = CGFloat(maxLibraryChars) * scaledCharWidth
                 let serverName = configuredServer?.name ?? "Select Server"
                 let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
 
@@ -2200,6 +2277,28 @@ class PlexBrowserView: NSView {
                                      scrollOffset: serverNameScrollOffset,
                                      renderer: renderer, in: context)
                 }
+
+                // Library label and selected library after server name
+                let libLabel = "Lib:"
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16
+                drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
+
+                let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4
+                let libraryText = embyCurrentLibraryName
+                let libraryTextWidth = CGFloat(libraryText.count) * scaledCharWidth
+
+                context.saveGState()
+                let libraryClipRect = NSRect(x: libraryX, y: textY, width: maxLibraryWidth, height: scaledCharHeight)
+                context.clip(to: libraryClipRect)
+                if libraryTextWidth <= maxLibraryWidth {
+                    drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
+                } else {
+                    drawScrollingText(libraryText, startX: libraryX, textY: textY,
+                                      availableWidth: maxLibraryWidth, scale: textScale,
+                                      scrollOffset: libraryNameScrollOffset,
+                                      renderer: renderer, in: context)
+                }
+                context.restoreGState()
 
                 let refreshText = "F5"
                 let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
@@ -2231,7 +2330,7 @@ class PlexBrowserView: NSView {
 
                 if isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                   currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
+                   canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
                     let starSpacing: CGFloat = 2
                     let totalStars = 5
@@ -4740,7 +4839,33 @@ class PlexBrowserView: NSView {
         loadingAnimationTimer = nil
         loadingAnimationFrame = 0
     }
-    
+
+    /// Returns the display name of the currently relevant Jellyfin library based on browse mode.
+    private var jellyfinCurrentLibraryName: String {
+        let manager = JellyfinManager.shared
+        switch browseMode {
+        case .movies:
+            return manager.currentMovieLibrary?.name ?? "All"
+        case .shows:
+            return manager.currentShowLibrary?.name ?? "All"
+        default:
+            return manager.currentMusicLibrary?.name ?? "All"
+        }
+    }
+
+    /// Returns the display name of the currently relevant Emby library based on browse mode.
+    private var embyCurrentLibraryName: String {
+        let manager = EmbyManager.shared
+        switch browseMode {
+        case .movies:
+            return manager.currentMovieLibrary?.name ?? "All"
+        case .shows:
+            return manager.currentShowLibrary?.name ?? "All"
+        default:
+            return manager.currentMusicLibrary?.name ?? "All"
+        }
+    }
+
     // MARK: - Server Name Scroll Animation
     
     private func startServerNameScroll() {
@@ -4771,8 +4896,77 @@ class PlexBrowserView: NSView {
     }
     
     private func updateServerNameScroll() {
-        let manager = PlexManager.shared
-        guard manager.isLinked else {
+        let charWidth = SkinElements.TextFont.charWidth
+        let textScale: CGFloat = 1.5
+        let scaledCharWidth = charWidth * textScale
+
+        let maxPlexServerWidth = CGFloat(12) * scaledCharWidth
+        let maxRemoteServerWidth = CGFloat(20) * scaledCharWidth
+        let maxLibraryWidth = CGFloat(10) * scaledCharWidth
+
+        let serverName: String
+        let libraryName: String
+        let serverWidth: CGFloat
+
+        switch currentSource {
+        case .plex(let serverId):
+            let manager = PlexManager.shared
+            let configuredServer = manager.servers.first(where: { $0.id == serverId })
+            let hasConfiguredServer = configuredServer != nil || manager.isLinked
+            guard hasConfiguredServer else {
+                if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
+                    serverNameScrollOffset = 0
+                    libraryNameScrollOffset = 0
+                    needsDisplay = true
+                }
+                return
+            }
+            serverName = configuredServer?.name ?? "Select Server"
+            libraryName = manager.currentLibrary?.title ?? "Select"
+            serverWidth = maxPlexServerWidth
+        case .subsonic(let serverId):
+            let manager = SubsonicManager.shared
+            let configuredServer = manager.servers.first(where: { $0.id == serverId })
+            guard configuredServer != nil else {
+                if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
+                    serverNameScrollOffset = 0
+                    libraryNameScrollOffset = 0
+                    needsDisplay = true
+                }
+                return
+            }
+            serverName = configuredServer?.name ?? "Select Server"
+            libraryName = manager.currentMusicFolder?.name ?? "All"
+            serverWidth = maxRemoteServerWidth
+        case .jellyfin(let serverId):
+            let manager = JellyfinManager.shared
+            let configuredServer = manager.servers.first(where: { $0.id == serverId })
+            guard configuredServer != nil else {
+                if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
+                    serverNameScrollOffset = 0
+                    libraryNameScrollOffset = 0
+                    needsDisplay = true
+                }
+                return
+            }
+            serverName = configuredServer?.name ?? "Select Server"
+            libraryName = jellyfinCurrentLibraryName
+            serverWidth = maxRemoteServerWidth
+        case .emby(let serverId):
+            let manager = EmbyManager.shared
+            let configuredServer = manager.servers.first(where: { $0.id == serverId })
+            guard configuredServer != nil else {
+                if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
+                    serverNameScrollOffset = 0
+                    libraryNameScrollOffset = 0
+                    needsDisplay = true
+                }
+                return
+            }
+            serverName = configuredServer?.name ?? "Select Server"
+            libraryName = embyCurrentLibraryName
+            serverWidth = maxRemoteServerWidth
+        case .local, .radio:
             if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
                 serverNameScrollOffset = 0
                 libraryNameScrollOffset = 0
@@ -4780,19 +4974,6 @@ class PlexBrowserView: NSView {
             }
             return
         }
-        
-        let charWidth = SkinElements.TextFont.charWidth
-        let textScale: CGFloat = 1.5
-        let scaledCharWidth = charWidth * textScale
-        
-        // Max widths for server and library names (matching drawServerBar)
-        let maxServerChars = 12
-        let maxLibraryChars = 10
-        let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
-        let maxLibraryWidth = CGFloat(maxLibraryChars) * scaledCharWidth
-        
-        let serverName = manager.currentServer?.name ?? "Select Server"
-        let libraryName = manager.currentLibrary?.title ?? "Select Library"
         
         // Reset scroll if names changed
         if serverName != lastServerName {
@@ -4808,7 +4989,7 @@ class PlexBrowserView: NSView {
         let libraryTextWidth = CGFloat(libraryName.count) * scaledCharWidth
         
         // Only scroll if text actually overflows - otherwise skip entirely
-        let serverNeedsScroll = serverTextWidth > maxServerWidth
+        let serverNeedsScroll = serverTextWidth > serverWidth
         let libraryNeedsScroll = libraryTextWidth > maxLibraryWidth
         
         // Early exit if nothing needs scrolling
@@ -6866,6 +7047,13 @@ class PlexBrowserView: NSView {
         } else if isArtOnlyMode && currentArtwork != nil && relativeX >= visZoneStart && relativeX <= visZoneEnd {
             // VIS button click (only in art-only mode with artwork)
             toggleVisualization()
+        } else if !rateButtonRect.isEmpty {
+            let rateRelativeStart = rateButtonRect.minX - Layout.leftBorder
+            let rateRelativeEnd = rateButtonRect.maxX - Layout.leftBorder
+            if relativeX >= rateRelativeStart && relativeX <= rateRelativeEnd {
+                showRatingOverlay()
+                return
+            }
         } else if case .local = currentSource {
             // Local mode - Source and +ADD on left
             let localNameWidth: CGFloat = 11 * charWidth  // "Local Files"
@@ -6887,17 +7075,6 @@ class PlexBrowserView: NSView {
             let libraryZoneStart = serverZoneEnd + 12  // includes "Lib:" label
             let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
             
-            // Check for RATE button click (in art-only mode with Plex track playing)
-            if !rateButtonRect.isEmpty {
-                let rateRelativeStart = rateButtonRect.minX - Layout.leftBorder
-                let rateRelativeEnd = rateButtonRect.maxX - Layout.leftBorder
-                if relativeX >= rateRelativeStart && relativeX <= rateRelativeEnd {
-                    // RATE button click - show rating overlay
-                    showRatingOverlay()
-                    return
-                }
-            }
-            
             if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd {
                 // Library dropdown click (includes label)
                 showLibraryMenu(at: event)
@@ -6906,22 +7083,60 @@ class PlexBrowserView: NSView {
                 showSourceMenu(at: event)
             }
         } else if case .subsonic = currentSource {
-            // Subsonic mode - Server name on left (no library selector)
+            // Subsonic mode - Server and folder selector on left
             let maxSubsonicServerChars = 20
             let maxSubsonicServerWidth = CGFloat(maxSubsonicServerChars) * charWidth
             let serverZoneEnd = sourcePrefix + maxSubsonicServerWidth
+            let maxLibraryChars = 10
+            let maxLibraryWidth = CGFloat(maxLibraryChars) * charWidth
+            let libLabelWidth: CGFloat = 4 * charWidth + 4  // "Lib:" + spacing
+            let libraryZoneStart = serverZoneEnd + 12
+            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
             
-            if relativeX < serverZoneEnd {
+            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd {
+                showSubsonicFolderMenu(at: event)
+            } else if relativeX < serverZoneEnd {
                 // Source/server area = source dropdown
                 showSourceMenu(at: event)
             }
         } else if case .jellyfin = currentSource {
-            // Jellyfin mode - Server name on left (no library selector)
+            // Jellyfin mode - Server and library selector on left
             let maxJellyfinServerChars = 20
             let maxJellyfinServerWidth = CGFloat(maxJellyfinServerChars) * charWidth
             let serverZoneEnd = sourcePrefix + maxJellyfinServerWidth
+            let maxLibraryChars = 10
+            let maxLibraryWidth = CGFloat(maxLibraryChars) * charWidth
+            let libLabelWidth: CGFloat = 4 * charWidth + 4  // "Lib:" + spacing
+            let libraryZoneStart = serverZoneEnd + 12
+            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
             
-            if relativeX < serverZoneEnd {
+            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd {
+                if browseMode.isVideoMode {
+                    showJellyfinVideoLibraryMenu(at: event)
+                } else {
+                    showJellyfinLibraryMenu(at: event)
+                }
+            } else if relativeX < serverZoneEnd {
+                showSourceMenu(at: event)
+            }
+        } else if case .emby = currentSource {
+            // Emby mode - Server and library selector on left
+            let maxEmbyServerChars = 20
+            let maxEmbyServerWidth = CGFloat(maxEmbyServerChars) * charWidth
+            let serverZoneEnd = sourcePrefix + maxEmbyServerWidth
+            let maxLibraryChars = 10
+            let maxLibraryWidth = CGFloat(maxLibraryChars) * charWidth
+            let libLabelWidth: CGFloat = 4 * charWidth + 4  // "Lib:" + spacing
+            let libraryZoneStart = serverZoneEnd + 12
+            let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
+
+            if relativeX >= libraryZoneStart && relativeX <= libraryZoneEnd {
+                if browseMode.isVideoMode {
+                    showEmbyVideoLibraryMenu(at: event)
+                } else {
+                    showEmbyLibraryMenu(at: event)
+                }
+            } else if relativeX < serverZoneEnd {
                 showSourceMenu(at: event)
             }
         } else if case .radio = currentSource {
@@ -7077,6 +7292,26 @@ class PlexBrowserView: NSView {
         } else {
             menu.addItem(NSMenuItem.separator())
             let addItem = NSMenuItem(title: "Add Jellyfin Server...", action: #selector(addJellyfinServer), keyEquivalent: "")
+            addItem.target = self
+            menu.addItem(addItem)
+        }
+
+        // Emby servers
+        let embyServers = EmbyManager.shared.servers
+        if !embyServers.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            for server in embyServers {
+                let serverItem = NSMenuItem(title: "🔵 \(server.name)", action: #selector(selectEmbyServer(_:)), keyEquivalent: "")
+                serverItem.target = self
+                serverItem.representedObject = server.id
+                if case .emby(let currentServerId) = currentSource, currentServerId == server.id {
+                    serverItem.state = .on
+                }
+                menu.addItem(serverItem)
+            }
+        } else {
+            menu.addItem(NSMenuItem.separator())
+            let addItem = NSMenuItem(title: "Add Emby Server...", action: #selector(addEmbyServer), keyEquivalent: "")
             addItem.target = self
             menu.addItem(addItem)
         }
@@ -7617,6 +7852,27 @@ class PlexBrowserView: NSView {
     
     @objc private func addJellyfinServer() {
         WindowManager.shared.showJellyfinLinkSheet()
+    }
+
+    @objc private func selectEmbyServer(_ sender: NSMenuItem) {
+        guard let serverId = sender.representedObject as? String else { return }
+        currentSource = .emby(serverId: serverId)
+
+        if let server = EmbyManager.shared.servers.first(where: { $0.id == serverId }) {
+            Task { @MainActor in
+                do {
+                    try await EmbyManager.shared.connect(to: server)
+                    reloadData()
+                } catch {
+                    errorMessage = error.localizedDescription
+                    needsDisplay = true
+                }
+            }
+        }
+    }
+
+    @objc private func addEmbyServer() {
+        WindowManager.shared.showEmbyLinkSheet()
     }
     
     @objc private func addWatchFolder() {
@@ -10700,6 +10956,142 @@ class PlexBrowserView: NSView {
         
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
+
+    private func showSubsonicFolderMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let folders = SubsonicManager.shared.musicFolders
+        let currentId = SubsonicManager.shared.currentMusicFolder?.id
+
+        let allItem = NSMenuItem(title: "All Folders", action: #selector(selectSubsonicMusicFolder(_:)), keyEquivalent: "")
+        allItem.target = self
+        allItem.representedObject = Optional<SubsonicMusicFolder>.none as Any
+        allItem.state = currentId == nil ? .on : .off
+        menu.addItem(allItem)
+
+        if !folders.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        for folder in folders {
+            let item = NSMenuItem(title: folder.name, action: #selector(selectSubsonicMusicFolder(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = folder
+            item.state = folder.id == currentId ? .on : .off
+            menu.addItem(item)
+        }
+
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private func showJellyfinLibraryMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let libraries = JellyfinManager.shared.musicLibraries
+        let currentId = JellyfinManager.shared.currentMusicLibrary?.id
+
+        let allItem = NSMenuItem(title: "All Libraries", action: #selector(selectJellyfinMusicLibrary(_:)), keyEquivalent: "")
+        allItem.target = self
+        allItem.representedObject = Optional<JellyfinMusicLibrary>.none as Any
+        allItem.state = currentId == nil ? .on : .off
+        menu.addItem(allItem)
+
+        if !libraries.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        for library in libraries {
+            let item = NSMenuItem(title: "\(library.name) (Music)", action: #selector(selectJellyfinMusicLibrary(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = library
+            item.state = library.id == currentId ? .on : .off
+            menu.addItem(item)
+        }
+
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private func showJellyfinVideoLibraryMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let libraries = JellyfinManager.shared.videoLibraries
+        let currentMovieId = JellyfinManager.shared.currentMovieLibrary?.id
+        let currentShowId = JellyfinManager.shared.currentShowLibrary?.id
+        let activeId = browseMode == .shows ? currentShowId : currentMovieId
+
+        let allItem = NSMenuItem(title: "All Libraries", action: #selector(selectJellyfinVideoLibraryFromBrowser(_:)), keyEquivalent: "")
+        allItem.target = self
+        allItem.representedObject = Optional<JellyfinMusicLibrary>.none as Any
+        allItem.state = activeId == nil ? .on : .off
+        menu.addItem(allItem)
+
+        if !libraries.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        for library in libraries {
+            let typeLabel = library.collectionType == "tvshows" ? "TV Shows" : "Movies"
+            let item = NSMenuItem(title: "\(library.name) (\(typeLabel))", action: #selector(selectJellyfinVideoLibraryFromBrowser(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = library
+            item.state = library.id == activeId ? .on : .off
+            menu.addItem(item)
+        }
+
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private func showEmbyLibraryMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let libraries = EmbyManager.shared.musicLibraries
+        let currentId = EmbyManager.shared.currentMusicLibrary?.id
+
+        let allItem = NSMenuItem(title: "All Libraries", action: #selector(selectEmbyMusicLibraryFromBrowser(_:)), keyEquivalent: "")
+        allItem.target = self
+        allItem.representedObject = Optional<EmbyMusicLibrary>.none as Any
+        allItem.state = currentId == nil ? .on : .off
+        menu.addItem(allItem)
+
+        if !libraries.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        for library in libraries {
+            let item = NSMenuItem(title: "\(library.name) (Music)", action: #selector(selectEmbyMusicLibraryFromBrowser(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = library
+            item.state = library.id == currentId ? .on : .off
+            menu.addItem(item)
+        }
+
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private func showEmbyVideoLibraryMenu(at event: NSEvent) {
+        let menu = NSMenu()
+        let libraries = EmbyManager.shared.videoLibraries
+        let currentMovieId = EmbyManager.shared.currentMovieLibrary?.id
+        let currentShowId = EmbyManager.shared.currentShowLibrary?.id
+        let activeId = browseMode == .shows ? currentShowId : currentMovieId
+
+        let allItem = NSMenuItem(title: "All Libraries", action: #selector(selectEmbyVideoLibraryFromBrowser(_:)), keyEquivalent: "")
+        allItem.target = self
+        allItem.representedObject = Optional<EmbyMusicLibrary>.none as Any
+        allItem.state = activeId == nil ? .on : .off
+        menu.addItem(allItem)
+
+        if !libraries.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        for library in libraries {
+            let typeLabel = library.collectionType == "tvshows" ? "TV Shows" : "Movies"
+            let item = NSMenuItem(title: "\(library.name) (\(typeLabel))", action: #selector(selectEmbyVideoLibraryFromBrowser(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = library
+            item.state = library.id == activeId ? .on : .off
+            menu.addItem(item)
+        }
+
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
     
     @objc private func selectServer(_ sender: NSMenuItem) {
         guard let serverID = sender.representedObject as? String,
@@ -10751,6 +11143,109 @@ class PlexBrowserView: NSView {
         expandedSeasons = []
         searchResults = nil
         
+        reloadData()
+    }
+
+    @objc private func selectSubsonicMusicFolder(_ sender: NSMenuItem) {
+        let folder = sender.representedObject as? SubsonicMusicFolder
+        if let folder = folder {
+            SubsonicManager.shared.selectMusicFolder(folder)
+        } else {
+            SubsonicManager.shared.clearMusicFolderSelection()
+        }
+
+        cachedSubsonicArtists = []
+        cachedSubsonicAlbums = []
+        cachedSubsonicPlaylists = []
+        expandedSubsonicArtists = []
+        expandedSubsonicAlbums = []
+        expandedSubsonicPlaylists = []
+        subsonicArtistAlbums = [:]
+        subsonicPlaylistTracks = [:]
+        subsonicAlbumSongs = [:]
+
+        reloadData()
+    }
+
+    @objc private func selectJellyfinMusicLibrary(_ sender: NSMenuItem) {
+        let library = sender.representedObject as? JellyfinMusicLibrary
+        if let library = library {
+            JellyfinManager.shared.selectMusicLibrary(library)
+        } else {
+            JellyfinManager.shared.clearMusicLibrarySelection()
+        }
+
+        cachedJellyfinArtists = []
+        cachedJellyfinAlbums = []
+        cachedJellyfinPlaylists = []
+        expandedJellyfinArtists = []
+        expandedJellyfinAlbums = []
+        expandedJellyfinPlaylists = []
+        jellyfinArtistAlbums = [:]
+        jellyfinPlaylistTracks = [:]
+        jellyfinAlbumSongs = [:]
+
+        reloadData()
+    }
+
+    @objc private func selectJellyfinVideoLibraryFromBrowser(_ sender: NSMenuItem) {
+        let library = sender.representedObject as? JellyfinMusicLibrary
+        if let library = library {
+            JellyfinManager.shared.selectMovieLibrary(library)
+            JellyfinManager.shared.selectShowLibrary(library)
+        } else {
+            JellyfinManager.shared.selectMovieLibrary(nil)
+            JellyfinManager.shared.selectShowLibrary(nil)
+        }
+
+        cachedJellyfinMovies = []
+        cachedJellyfinShows = []
+        jellyfinShowSeasons = [:]
+        jellyfinSeasonEpisodes = [:]
+        expandedJellyfinShows = []
+        expandedJellyfinSeasons = []
+
+        reloadData()
+    }
+
+    @objc private func selectEmbyMusicLibraryFromBrowser(_ sender: NSMenuItem) {
+        let library = sender.representedObject as? EmbyMusicLibrary
+        if let library = library {
+            EmbyManager.shared.selectMusicLibrary(library)
+        } else {
+            EmbyManager.shared.clearMusicLibrarySelection()
+        }
+
+        cachedEmbyArtists = []
+        cachedEmbyAlbums = []
+        cachedEmbyPlaylists = []
+        expandedEmbyArtists = []
+        expandedEmbyAlbums = []
+        expandedEmbyPlaylists = []
+        embyArtistAlbums = [:]
+        embyPlaylistTracks = [:]
+        embyAlbumSongs = [:]
+
+        reloadData()
+    }
+
+    @objc private func selectEmbyVideoLibraryFromBrowser(_ sender: NSMenuItem) {
+        let library = sender.representedObject as? EmbyMusicLibrary
+        if let library = library {
+            EmbyManager.shared.selectMovieLibrary(library)
+            EmbyManager.shared.selectShowLibrary(library)
+        } else {
+            EmbyManager.shared.selectMovieLibrary(nil)
+            EmbyManager.shared.selectShowLibrary(nil)
+        }
+
+        cachedEmbyMovies = []
+        cachedEmbyShows = []
+        embyShowSeasons = [:]
+        embySeasonEpisodes = [:]
+        expandedEmbyShows = []
+        expandedEmbySeasons = []
+
         reloadData()
     }
     
