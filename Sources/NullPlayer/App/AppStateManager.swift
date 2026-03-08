@@ -1051,7 +1051,7 @@ class AppStateManager {
         guard !wm.isRunningModernUI else { return }
         guard let mainWindow = wm.mainWindowController?.window else { return }
 
-        let scale: CGFloat = wm.isDoubleSize ? 2.0 : 1.0
+        let scale: CGFloat = wm.isDoubleSize ? 1.5 : 1.0
         let minMainHeight = Skin.mainWindowSize.height * scale
         let widthEpsilon: CGFloat = 0.5
         let gapEpsilon: CGFloat = 1.0

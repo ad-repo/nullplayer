@@ -60,7 +60,7 @@ class WindowManager {
         }
     }
     
-    /// Double size mode (2x scaling) - not persisted, always starts at 1x (both modern and classic UI)
+    /// Enlarged UI mode - not persisted, always starts at 1x (both modern and classic UI)
     var isDoubleSize: Bool = false {
         didSet {
             applyDoubleSize()
@@ -1514,18 +1514,20 @@ class WindowManager {
     
     // MARK: - Double Size
     
-    /// Apply double size scaling to all windows
+    /// Apply enlarged UI scaling to all windows
     private func applyDoubleSize() {
         let runningModernMode = isRunningModernUI
+        let classicScaleMultiplier: CGFloat = 1.5
+        let classicInverseScaleMultiplier: CGFloat = 1.0 / classicScaleMultiplier
 
         // For modern UI, set the sizeMultiplier so all ModernSkinElements computed
-        // sizes (window sizes, title bar heights, border widths, etc.) reflect 2x.
+        // sizes (window sizes, title bar heights, border widths, etc.) reflect the large mode.
         // This must happen BEFORE reading any ModernSkinElements sizes.
         if runningModernMode {
             ModernSkinElements.sizeMultiplier = isDoubleSize ? 1.5 : 1.0
         }
         
-        let scale: CGFloat = isDoubleSize ? 2.0 : 1.0
+        let scale: CGFloat = isDoubleSize ? classicScaleMultiplier : 1.0
         
         // Get main window position as anchor point
         guard let mainWindow = mainWindowController?.window else { return }
@@ -1597,7 +1599,10 @@ class WindowManager {
 
             // Scale height proportionally
             let currentFrame = playlistWindow.frame
-            let newHeight = max(minHeight, currentFrame.height * (isDoubleSize ? 2.0 : 0.5))
+            let heightScaleMultiplier: CGFloat = runningModernMode
+                ? (isDoubleSize ? 2.0 : 0.5)
+                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
 
             if playlistWindow.isVisible {
                 let playlistFrame = NSRect(
@@ -1644,8 +1649,10 @@ class WindowManager {
         let stackHeight = stackTopY - nextY
         
         if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
-            // Scale width: when going to 2x double it, when going to 1x halve it
-            let newWidth = isDoubleSize ? plexWindow.frame.width * 2.0 : plexWindow.frame.width / 2.0
+            let widthScaleMultiplier: CGFloat = runningModernMode
+                ? (isDoubleSize ? 2.0 : 0.5)
+                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let newWidth = plexWindow.frame.width * widthScaleMultiplier
             let plexFrame = NSRect(
                 x: mainFrame.maxX,
                 y: nextY,
@@ -1656,10 +1663,12 @@ class WindowManager {
         }
         
         if let projectMWindow = projectMWindowController?.window, projectMWindow.isVisible {
-            // Scale width: when going to 2x double it, when going to 1x halve it
-            let newWidth = isDoubleSize ? projectMWindow.frame.width * 2.0 : projectMWindow.frame.width / 2.0
+            let widthScaleMultiplier: CGFloat = runningModernMode
+                ? (isDoubleSize ? 2.0 : 0.5)
+                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let newWidth = projectMWindow.frame.width * widthScaleMultiplier
             let projectMFrame = NSRect(
-                x: mainFrame.minX - (isDoubleSize ? projectMWindow.frame.width * 2.0 : projectMWindow.frame.width / 2.0),
+                x: mainFrame.minX - (projectMWindow.frame.width * widthScaleMultiplier),
                 y: nextY,
                 width: newWidth,
                 height: stackHeight

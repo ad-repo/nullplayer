@@ -64,8 +64,9 @@ class ContextMenuBuilder {
             menu.addItem(hideTitleBars)
         }
         
-        // Double Size (both modern and classic UI)
-        let doubleSize = NSMenuItem(title: "Double Size", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
+        // Large UI in classic mode, Double Size in modern mode
+        let sizeToggleTitle = wm.isRunningModernUI ? "Double Size" : "Large UI"
+        let doubleSize = NSMenuItem(title: sizeToggleTitle, action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
         doubleSize.state = wm.isDoubleSize ? .on : .off
         menu.addItem(doubleSize)
