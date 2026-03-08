@@ -144,7 +144,8 @@ struct WindowConfig: Codable {
 }
 
 /// Per-area opacity styles for Modern UI regions.
-/// Missing areas/channels fall back to `window.opacity`.
+/// Channel values are multipliers (0..1) applied to `window.opacity`.
+/// Missing areas/channels default to multiplier `1.0`.
 struct AreaOpacityConfig: Codable, Equatable {
     let mainWindow: AreaOpacityStyle?
     let timeDisplay: AreaOpacityStyle?
@@ -159,6 +160,7 @@ struct AreaOpacityConfig: Codable, Equatable {
 /// - background: panel/background fills
 /// - border: border strokes/glow around that area
 /// - content: text/icons/bars/foreground content in that area
+/// Values are multiplier factors applied to `window.opacity`.
 struct AreaOpacityStyle: Codable, Equatable {
     let background: CGFloat?
     let border: CGFloat?

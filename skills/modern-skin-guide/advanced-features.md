@@ -238,6 +238,78 @@ When windows are docked, the `seamlessDocking` property controls shared-edge bor
 
 At 1.0, shared edges are clipped entirely, also removing glow effects on those edges.
 
+## Glass Skin Darkening and Seam Stability
+
+This section documents the March 2026 fix for modern glass skins where windows could become too dark or flicker over time, and docked interior edges could show dark seam lines.
+
+### Symptoms
+
+- Main and EQ glass windows appeared darker than expected.
+- Library window remained darker than main/EQ (inconsistent opacity behavior).
+- Timer-driven redraw regions (especially library chrome) could visually fluctuate.
+- Docked interior edges could show a dark 1px seam.
+
+### Root Causes
+
+1. **Alpha accumulation risk in partial redraws**  
+   Translucent background passes composited over existing pixels can drift darker when repeatedly redrawn in dirty regions.
+
+2. **Near-full docking interval gaps**  
+   Window docking geometry can produce occlusion intervals that are visually full-edge but numerically short by ~1-3 px, leaving tiny unsuppressed border slivers.
+
+3. **Area opacity semantics mismatch**  
+   Glass skins used:
+   - `window.opacity` around `0.5`
+   - `window.areaOpacity.*` around `0.8`
+   
+   Treating `areaOpacity` as absolute alpha made windows too opaque/dark. These channels are now interpreted as multipliers of `window.opacity`.
+
+4. **Library draw path inconsistency**  
+   `ModernLibraryBrowserView` did not apply resolved `mainWindow` area channels for background/border/content, so its appearance diverged from main/EQ.
+
+### Implementation
+
+- `ModernSkinRenderer.drawWindowBackground(...)`
+  - Uses `.copy` for the base background fill pass to make repeated redraws idempotent.
+
+- `ModernSkinRenderer.drawWindowBorder(...)`
+  - Normalizes near-full occlusion intervals before suppression.
+  - Merges close segment gaps and increases suppression strip coverage to remove tiny interior seam slivers.
+
+- `ModernSkin.resolvedOpacity(for:)`
+  - Area channels are resolved as:
+    - `resolved = clamp(window.opacity) * clamp(areaChannelOr1.0)`
+  - Missing area/channel defaults to multiplier `1.0`.
+
+- `ModernLibraryBrowserView.draw(_:)`
+  - Uses `skin.resolvedOpacity(for: .mainWindow)` and applies:
+    - `backgroundOpacity` in `drawWindowBackground(...)`
+    - `borderOpacity` in `drawWindowBorder(...)`
+    - `content` alpha around foreground chrome/content drawing
+
+### Files Changed
+
+- `Sources/NullPlayer/ModernSkin/ModernSkinRenderer.swift`
+- `Sources/NullPlayer/ModernSkin/ModernSkin.swift`
+- `Sources/NullPlayer/ModernSkin/ModernSkinConfig.swift`
+- `Sources/NullPlayer/Windows/ModernLibraryBrowser/ModernLibraryBrowserView.swift`
+- `Tests/NullPlayerTests/ModernSkinOpacityConfigTests.swift`
+
+### Regression Tests
+
+- `testWindowBackgroundDrawIsStableAcrossRepeatedRedraws`
+- `testSeamSuppressedBorderIsStableAcrossRepeatedRedraws`
+- `testAreaOpacityFallbackUsesWindowOpacityAndMultiplierSemantics`
+
+### Verification Command
+
+```bash
+DYLD_LIBRARY_PATH="/Users/ad/Projects/nullplayer/Frameworks" \
+/Applications/Xcode.app/Contents/Developer/usr/bin/xctest \
+  -XCTest ModernSkinOpacityConfigTests \
+  .build/arm64-apple-macosx/debug/NullPlayerPackageTests.xctest
+```
+
 ## Double Size (2x) Mode
 
 Toggle via the **2X** button on the main window or right-click context menu → **Double Size** (available in both modern and classic UI). Doubles all window dimensions and rendering scale.

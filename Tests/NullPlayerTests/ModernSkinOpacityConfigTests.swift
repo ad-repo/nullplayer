@@ -21,7 +21,7 @@ final class ModernSkinOpacityConfigTests: XCTestCase {
         XCTAssertThrowsError(try decodeConfig(from: json))
     }
 
-    func testAreaOpacityFallbackUsesWindowOpacity() throws {
+    func testAreaOpacityFallbackUsesWindowOpacityAndMultiplierSemantics() throws {
         let json = """
         {
             "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
@@ -47,7 +47,7 @@ final class ModernSkinOpacityConfigTests: XCTestCase {
         let skin = ModernSkin(config: config, bundlePath: nil)
 
         let timeStyle = skin.resolvedOpacity(for: .timeDisplay)
-        XCTAssertEqual(timeStyle.background, 0.2, accuracy: 0.0001)
+        XCTAssertEqual(timeStyle.background, 0.124, accuracy: 0.0001) // 0.62 * 0.2
         XCTAssertEqual(timeStyle.border, 0.62, accuracy: 0.0001)
         XCTAssertEqual(timeStyle.content, 0.62, accuracy: 0.0001)
 
@@ -120,7 +120,165 @@ final class ModernSkinOpacityConfigTests: XCTestCase {
         }
     }
 
+    func testWindowBackgroundDrawIsStableAcrossRepeatedRedraws() throws {
+        let json = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#123456", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": false },
+            "window": { "borderWidth": 1, "cornerRadius": 0, "opacity": 0.52 }
+        }
+        """
+
+        let config = try decodeConfig(from: json)
+        let skin = ModernSkin(config: config, bundlePath: nil)
+        let renderer = ModernSkinRenderer(skin: skin, scaleFactor: 1.0)
+
+        let width = 32
+        let height = 20
+        let bytesPerRow = width * 4
+        let totalBytes = bytesPerRow * height
+        let data = UnsafeMutablePointer<UInt8>.allocate(capacity: totalBytes)
+        data.initialize(repeating: 0, count: totalBytes)
+        defer { data.deallocate() }
+
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        guard let context = CGContext(
+            data: data,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo
+        ) else {
+            XCTFail("Failed to create bitmap context")
+            return
+        }
+
+        let bounds = NSRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
+        renderer.drawWindowBackground(in: bounds, context: context)
+        let first = rgbaPixel(x: width / 2, y: height / 2, data: data, bytesPerRow: bytesPerRow)
+
+        // Simulate timer-driven partial redraw of the same region.
+        context.saveGState()
+        context.clip(to: NSRect(x: 0, y: 0, width: 16, height: 20))
+        renderer.drawWindowBackground(in: bounds, context: context)
+        context.restoreGState()
+        let second = rgbaPixel(x: width / 4, y: height / 2, data: data, bytesPerRow: bytesPerRow)
+
+        assertChannelClose(first.r, second.r, tolerance: 1)
+        assertChannelClose(first.g, second.g, tolerance: 1)
+        assertChannelClose(first.b, second.b, tolerance: 1)
+        assertChannelClose(first.a, second.a, tolerance: 1)
+
+        // Guard against regressions where alpha keeps increasing after each redraw.
+        XCTAssertEqual(Int(first.a), Int(round(0.52 * 255.0)), accuracy: 1)
+    }
+
+    func testSeamSuppressedBorderIsStableAcrossRepeatedRedraws() throws {
+        let json = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#1a2a3a", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": false },
+            "window": {
+                "borderWidth": 1,
+                "cornerRadius": 6,
+                "opacity": 0.54,
+                "seamlessDocking": 1.0
+            }
+        }
+        """
+
+        let config = try decodeConfig(from: json)
+        let skin = ModernSkin(config: config, bundlePath: nil)
+        let renderer = ModernSkinRenderer(skin: skin, scaleFactor: 1.0)
+
+        let width = 96
+        let height = 56
+        let bytesPerRow = width * 4
+        let totalBytes = bytesPerRow * height
+        let data = UnsafeMutablePointer<UInt8>.allocate(capacity: totalBytes)
+        data.initialize(repeating: 0, count: totalBytes)
+        defer { data.deallocate() }
+
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        guard let context = CGContext(
+            data: data,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo
+        ) else {
+            XCTFail("Failed to create bitmap context")
+            return
+        }
+
+        let bounds = NSRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
+        let nearFullRightJoin = EdgeOcclusionSegments(
+            top: [],
+            bottom: [],
+            left: [],
+            right: [0...(CGFloat(height) - 1.2)]
+        )
+
+        renderer.drawWindowBackground(in: bounds, context: context)
+        renderer.drawWindowBorder(in: bounds, context: context, occlusionSegments: nearFullRightJoin)
+        let first = rgbaPixel(x: width - 1, y: height / 2, data: data, bytesPerRow: bytesPerRow)
+
+        context.saveGState()
+        context.clip(to: NSRect(x: CGFloat(width - 4), y: 0, width: 4, height: CGFloat(height)))
+        renderer.drawWindowBackground(in: bounds, context: context)
+        renderer.drawWindowBorder(in: bounds, context: context, occlusionSegments: nearFullRightJoin)
+        context.restoreGState()
+        let second = rgbaPixel(x: width - 1, y: height / 2, data: data, bytesPerRow: bytesPerRow)
+
+        assertChannelClose(first.r, second.r, tolerance: 1)
+        assertChannelClose(first.g, second.g, tolerance: 1)
+        assertChannelClose(first.b, second.b, tolerance: 1)
+        assertChannelClose(first.a, second.a, tolerance: 1)
+    }
+
     private func decodeConfig(from json: String) throws -> ModernSkinConfig {
         try JSONDecoder().decode(ModernSkinConfig.self, from: Data(json.utf8))
+    }
+
+    private func rgbaPixel(
+        x: Int,
+        y: Int,
+        data: UnsafeMutablePointer<UInt8>,
+        bytesPerRow: Int
+    ) -> (r: UInt8, g: UInt8, b: UInt8, a: UInt8) {
+        let offset = y * bytesPerRow + x * 4
+        return (
+            r: data[offset],
+            g: data[offset + 1],
+            b: data[offset + 2],
+            a: data[offset + 3]
+        )
+    }
+
+    private func assertChannelClose(
+        _ lhs: UInt8,
+        _ rhs: UInt8,
+        tolerance: UInt8,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let delta = abs(Int(lhs) - Int(rhs))
+        XCTAssertLessThanOrEqual(delta, Int(tolerance), file: file, line: line)
     }
 }

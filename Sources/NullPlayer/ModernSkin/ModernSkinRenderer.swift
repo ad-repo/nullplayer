@@ -97,9 +97,13 @@ class ModernSkinRenderer {
             context.clip()
         }
         context.saveGState()
+        // Use copy for the base fill so repeated partial redraws do not accumulate alpha.
+        // This keeps translucent modern backgrounds visually stable during timer-driven updates.
+        context.setBlendMode(.copy)
         context.setAlpha(resolvedBackgroundOpacity)
         context.setFillColor(skin.backgroundColor.cgColor)
         context.fill(bounds)
+        context.setBlendMode(.normal)
         if let bgImage = skin.backgroundImage {
             drawImage(bgImage, in: bounds, context: context)
         }
@@ -117,6 +121,49 @@ class ModernSkinRenderer {
             guard upper > lower else { return nil }
             return lower...upper
         }
+    }
+
+    private func mergedSegments(_ segments: [ClosedRange<CGFloat>], gapTolerance: CGFloat = 1.0) -> [ClosedRange<CGFloat>] {
+        guard !segments.isEmpty else { return [] }
+        let sorted = segments.sorted {
+            if $0.lowerBound == $1.lowerBound { return $0.upperBound < $1.upperBound }
+            return $0.lowerBound < $1.lowerBound
+        }
+        var merged: [ClosedRange<CGFloat>] = [sorted[0]]
+        for interval in sorted.dropFirst() {
+            guard let last = merged.last else { continue }
+            if interval.lowerBound <= last.upperBound + gapTolerance {
+                merged[merged.count - 1] = last.lowerBound...max(last.upperBound, interval.upperBound)
+            } else {
+                merged.append(interval)
+            }
+        }
+        return merged
+    }
+
+    private func normalizeNearFullEdgeCoverage(
+        _ segments: [ClosedRange<CGFloat>],
+        limit: CGFloat,
+        tolerance: CGFloat = 3.0
+    ) -> [ClosedRange<CGFloat>] {
+        let normalized = mergedSegments(normalizedSegments(segments, limit: limit))
+        guard !normalized.isEmpty, limit > 0 else { return normalized }
+        let covered = normalized.reduce(CGFloat(0)) { partial, interval in
+            partial + (interval.upperBound - interval.lowerBound)
+        }
+        if covered >= limit - tolerance {
+            return [0...limit]
+        }
+        return normalized
+    }
+
+    private func normalizeNearFullOcclusionSegments(for bounds: NSRect, segments: EdgeOcclusionSegments) -> EdgeOcclusionSegments {
+        EdgeOcclusionSegments(
+            top: normalizeNearFullEdgeCoverage(segments.top, limit: bounds.width),
+            bottom: normalizeNearFullEdgeCoverage(segments.bottom, limit: bounds.width),
+            left: normalizeNearFullEdgeCoverage(segments.left, limit: bounds.height),
+            right: normalizeNearFullEdgeCoverage(segments.right, limit: bounds.height)
+        )
     }
 
     private func fallbackOcclusionSegments(for bounds: NSRect, adjacentEdges: AdjacentEdges) -> EdgeOcclusionSegments {
@@ -201,9 +248,15 @@ class ModernSkinRenderer {
         let seamless = min(1.0, max(0.0, skin.config.window.seamlessDocking ?? 0))
         let glowRadius = (skin.config.glow.radius ?? 8.0)
 
-        let effectiveSegments = occlusionSegments.isEmpty
+        var effectiveSegments = occlusionSegments.isEmpty
             ? fallbackOcclusionSegments(for: bounds, adjacentEdges: adjacentEdges)
             : occlusionSegments
+
+        // Fractional window geometry (common with scaled modern skins) can leave
+        // tiny unsuppressed slivers on edges that are visually fully joined.
+        // Snap near-full coverage intervals to full-edge suppression to avoid
+        // dark interior seam lines between docked windows.
+        effectiveSegments = normalizeNearFullOcclusionSegments(for: bounds, segments: effectiveSegments)
 
         let borderRect = bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
         let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, sharpCorners: sharpCorners)
@@ -231,13 +284,13 @@ class ModernSkinRenderer {
         // repainting/darkening the content beneath.
         if seamless > 0 && !effectiveSegments.isEmpty {
             let stripThickness = borderWidth + (skin.config.glow.enabled
-                ? max(0.65, min(1.5, glowRadius * 0.16))
-                : 0.35)
+                ? max(0.85, min(1.8, glowRadius * 0.2))
+                : 0.85)
             let strips = edgeStripRects(
                 for: bounds,
                 segments: effectiveSegments,
                 thickness: stripThickness,
-                endpointPadding: max(0.45, borderWidth * 0.4)
+                endpointPadding: max(0.75, borderWidth * 0.9)
             )
             if !strips.isEmpty {
                 context.saveGState()

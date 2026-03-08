@@ -149,14 +149,15 @@ class ModernSkin {
     // MARK: - Opacity Resolution
 
     /// Resolve area-specific opacity channels from `window.areaOpacity`,
-    /// falling back to `window.opacity` when an area/channel is omitted.
+    /// treating per-area channels as multipliers of `window.opacity`.
+    /// Missing areas/channels default to multiplier `1.0`.
     func resolvedOpacity(for area: ModernOpacityArea) -> ResolvedAreaOpacityStyle {
-        let fallback = clampedOpacity(config.window.opacity)
+        let baseOpacity = clampedOpacity(config.window.opacity)
         let areaStyle = areaOpacityStyle(for: area)
         return ResolvedAreaOpacityStyle(
-            background: clampedOpacity(areaStyle?.background ?? fallback),
-            border: clampedOpacity(areaStyle?.border ?? fallback),
-            content: clampedOpacity(areaStyle?.content ?? fallback)
+            background: resolvedChannelOpacity(multiplier: areaStyle?.background, baseOpacity: baseOpacity),
+            border: resolvedChannelOpacity(multiplier: areaStyle?.border, baseOpacity: baseOpacity),
+            content: resolvedChannelOpacity(multiplier: areaStyle?.content, baseOpacity: baseOpacity)
         )
     }
 
@@ -182,6 +183,11 @@ class ModernSkin {
 
     private func clampedOpacity(_ value: CGFloat) -> CGFloat {
         min(1.0, max(0.0, value))
+    }
+
+    private func resolvedChannelOpacity(multiplier: CGFloat?, baseOpacity: CGFloat) -> CGFloat {
+        let m = clampedOpacity(multiplier ?? 1.0)
+        return clampedOpacity(baseOpacity * m)
     }
     
     /// Get resolved rect for an element, applying any config overrides

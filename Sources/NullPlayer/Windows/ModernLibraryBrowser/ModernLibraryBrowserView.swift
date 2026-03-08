@@ -680,12 +680,28 @@ class ModernLibraryBrowserView: NSView {
         
         let skin = currentSkin()
         let renderer = ModernSkinRenderer(skin: skin)
+        let mainOpacity = skin.resolvedOpacity(for: .mainWindow)
         
         if isShadeMode {
             // Draw shade mode
-            renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
-            renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
+            renderer.drawWindowBackground(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                backgroundOpacity: mainOpacity.background
+            )
+            renderer.drawWindowBorder(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                occlusionSegments: edgeOcclusionSegments,
+                borderOpacity: mainOpacity.border
+            )
             
+            context.saveGState()
+            context.setAlpha(mainOpacity.content)
             // Draw title text centered (using renderer for image text support)
             let shadeScale = ModernSkinElements.scaleFactor
             let titleRect = NSRect(x: 0, y: 0, width: bounds.width / shadeScale, height: bounds.height / shadeScale)
@@ -700,12 +716,29 @@ class ModernLibraryBrowserView: NSView {
             let shadeState = pressedButton == .shade ? "pressed" : "normal"
             renderer.drawWindowControlButton("library_btn_close", state: closeState, in: closeBtnRect, context: context)
             renderer.drawWindowControlButton("library_btn_shade", state: shadeState, in: shadeBtnRect, context: context)
+            context.restoreGState()
             return
         }
         
         // Normal mode - bottom-left origin (no coordinate flipping)
-        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
-        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
+        renderer.drawWindowBackground(
+            in: bounds,
+            context: context,
+            adjacentEdges: adjacentEdges,
+            sharpCorners: sharpCorners,
+            backgroundOpacity: mainOpacity.background
+        )
+        renderer.drawWindowBorder(
+            in: bounds,
+            context: context,
+            adjacentEdges: adjacentEdges,
+            sharpCorners: sharpCorners,
+            occlusionSegments: edgeOcclusionSegments,
+            borderOpacity: mainOpacity.border
+        )
+
+        context.saveGState()
+        context.setAlpha(mainOpacity.content)
         
         // Title bar, close, shade buttons use base (unscaled) coordinates
         // because the renderer's scaledRect() multiplies by scaleFactor
@@ -769,6 +802,7 @@ class ModernLibraryBrowserView: NSView {
         
         // Status bar text
         drawStatusBarText(in: context, skin: skin)
+        context.restoreGState()
     }
     
     // MARK: - Tab Bar Drawing (Modern Boxed Toggle Style)
