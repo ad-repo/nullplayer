@@ -267,6 +267,15 @@ class PlexBrowserView: NSView {
     
     /// Item height
     private let itemHeight: CGFloat = 18
+
+    /// Extra inset so top bar items don't sit against the window edges.
+    private let toolbarItemHorizontalEdgePadding: CGFloat = 5
+
+    /// Extra inset so tab labels don't sit against the window edges.
+    private let tabItemHorizontalEdgePadding: CGFloat = 5
+
+    /// Additional inset for right-edge controls/items only.
+    private let rightEdgeItemPaddingBoost: CGFloat = 6
     
     /// Height of column headers
     private let columnHeaderHeight: CGFloat = 18
@@ -1767,12 +1776,14 @@ class PlexBrowserView: NSView {
         let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
         let rawTextY = barRect.minY + (barRect.height - scaledCharHeight) / 2
         let textY = backingScale < 1.5 ? round(rawTextY) : rawTextY
+        let toolbarLeftInset = 4 + toolbarItemHorizontalEdgePadding
+        let toolbarRightInset = 8 + toolbarItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
         
         // Common prefix for all sources
         let prefix = "Source: "
-        drawScaledSkinText(prefix, at: NSPoint(x: barRect.minX + 4, y: textY), scale: textScale, renderer: renderer, in: context)
+        drawScaledSkinText(prefix, at: NSPoint(x: barRect.minX + toolbarLeftInset, y: textY), scale: textScale, renderer: renderer, in: context)
         let prefixWidth = CGFloat(prefix.count) * scaledCharWidth
-        let sourceNameStartX = barRect.minX + 4 + prefixWidth
+        let sourceNameStartX = barRect.minX + toolbarLeftInset + prefixWidth
         
         // rateButtonRect is set per-source below (stars drawn after VIS/ART/F5 positions are calculated)
         rateButtonRect = .zero
@@ -1791,7 +1802,7 @@ class PlexBrowserView: NSView {
             
             // Right side: F5 refresh label
             let refreshText = "F5"
-            let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+            let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             
             // In art-only mode, use tighter spacing for right side items
@@ -1922,7 +1933,7 @@ class PlexBrowserView: NSView {
                 
                 // Right side: F5 refresh label
                 let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 
                 // In art-only mode, use tighter spacing for right side items
@@ -2070,7 +2081,7 @@ class PlexBrowserView: NSView {
                 
                 // Right side: F5 refresh label
                 let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 
                 // ART toggle button (before F5) - only show if artwork available
@@ -2190,7 +2201,7 @@ class PlexBrowserView: NSView {
                 context.restoreGState()
                 
                 let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 
                 let artText = "ART"
@@ -2301,7 +2312,7 @@ class PlexBrowserView: NSView {
                 context.restoreGState()
 
                 let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
 
                 let artText = "ART"
@@ -2380,7 +2391,7 @@ class PlexBrowserView: NSView {
             
             // Right side: F5 refresh label
             let refreshText = "F5"
-            let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - 8
+            let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             
             // Item count
@@ -2464,13 +2475,16 @@ class PlexBrowserView: NSView {
         // Calculate sort indicator width (on the right)
         let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
-        
+        let tabLeftInset = tabItemHorizontalEdgePadding
+        let tabRightInset = tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
+        let tabsStartX = tabBarRect.minX + tabLeftInset
+
         // Draw tabs (leave room for sort indicator)
-        let tabsWidth = tabBarRect.width - sortWidth
+        let tabsWidth = tabBarRect.width - sortWidth - tabLeftInset - tabRightInset
         let tabWidth = tabsWidth / CGFloat(PlexBrowseMode.allCases.count)
         
         for (index, mode) in PlexBrowseMode.allCases.enumerated() {
-            let tabRect = NSRect(x: tabBarRect.minX + CGFloat(index) * tabWidth, y: tabBarY,
+            let tabRect = NSRect(x: tabsStartX + CGFloat(index) * tabWidth, y: tabBarY,
                                 width: tabWidth, height: Layout.tabBarHeight)
             
             let isSelected = mode == browseMode
@@ -2490,7 +2504,7 @@ class PlexBrowserView: NSView {
         }
         
         // Draw sort indicator on the right
-        let rawSortX = tabBarRect.maxX - sortWidth + 4
+        let rawSortX = tabBarRect.maxX - tabRightInset - sortWidth + 4
         let rawSortY = tabBarY + (Layout.tabBarHeight - scaledCharHeight) / 2
         let sortX = shouldRound ? round(rawSortX) : rawSortX
         let sortY = shouldRound ? round(rawSortY) : rawSortY
@@ -6334,11 +6348,13 @@ class PlexBrowserView: NSView {
         let scaledCharWidth = charWidth * textScale
         let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
+        let tabLeftInset = tabItemHorizontalEdgePadding
+        let tabRightInset = tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
 
         // Tabs area excludes sort indicator
-        let tabsWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - sortWidth
+        let tabsWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - sortWidth - tabLeftInset - tabRightInset
         let tabWidth = tabsWidth / CGFloat(PlexBrowseMode.allCases.count)
-        let relativeX = skinPoint.x - Layout.leftBorder
+        let relativeX = skinPoint.x - Layout.leftBorder - tabLeftInset
 
         if relativeX >= 0 && relativeX < tabsWidth {
             let index = Int(relativeX / tabWidth)
@@ -6358,9 +6374,10 @@ class PlexBrowserView: NSView {
         let scaledCharWidth = charWidth * textScale
         let sortText = "Sort"
         let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
+        let tabRightInset = tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
         
-        let sortX = originalWindowSize.width - Layout.rightBorder - sortWidth
-        return skinPoint.x >= sortX && skinPoint.x < originalWindowSize.width - Layout.rightBorder
+        let sortX = originalWindowSize.width - Layout.rightBorder - tabRightInset - sortWidth
+        return skinPoint.x >= sortX && skinPoint.x < originalWindowSize.width - Layout.rightBorder - tabRightInset
     }
     
     /// Check if point is in search bar
@@ -7017,13 +7034,14 @@ class PlexBrowserView: NSView {
         
         let charWidth = SkinElements.TextFont.charWidth * 1.5  // scaled
         let relativeX = skinPoint.x - Layout.leftBorder
+        let toolbarLeftInset = 4 + toolbarItemHorizontalEdgePadding
         
         // Use same spacing as drawing code - tighter in art-only mode
         let artModeSpacing: CGFloat = isArtOnlyMode ? 12 : 24
         let artModeVisSpacing: CGFloat = isArtOnlyMode ? 8 : 16
         
         // Right side zones (from right edge)
-        let refreshZoneStart = barWidth - 30  // F5 + padding
+        let refreshZoneStart = barWidth - 30 - toolbarItemHorizontalEdgePadding - rightEdgeItemPaddingBoost  // F5 + padding
         let artZoneEnd = refreshZoneStart - artModeSpacing
         let artZoneStart = artZoneEnd - (3 * charWidth)  // "ART" (3 chars)
         
@@ -7032,7 +7050,7 @@ class PlexBrowserView: NSView {
         let visZoneStart = visZoneEnd - (3 * charWidth)  // "VIS" (3 chars)
         
         // Calculate source zone width: "Source: " (8 chars)
-        let sourcePrefix: CGFloat = 8 * charWidth + 4
+        let sourcePrefix: CGFloat = 8 * charWidth + toolbarLeftInset
         
         // Max widths for server and library names
         let maxServerWidth: CGFloat = 12 * charWidth
