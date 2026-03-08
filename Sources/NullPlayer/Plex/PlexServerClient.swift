@@ -12,7 +12,7 @@ enum RadioConfig {
     static let defaultLimit = 100
     
     /// Maximum tracks per artist in a radio playlist (for variety)
-    static let maxTracksPerArtist = 2
+    static var maxTracksPerArtist: Int { RadioPlaybackOptions.maxTracksPerArtist }
     
     /// Multiplier for over-fetching to allow for artist deduplication
     static let overFetchMultiplier = 3

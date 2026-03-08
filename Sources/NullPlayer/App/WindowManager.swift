@@ -2534,10 +2534,16 @@ class WindowManager {
     }
 
     private func _computeSharpCornersImpl(for window: NSWindow) -> CACornerMask {
+        // Sharp corners apply only inside the center stack (main/EQ/playlist/spectrum).
+        // Side windows (library/projectM) keep rounded corners and do not force
+        // sharp corners on center-stack windows where they meet.
+        guard isDockableWindow(window) else { return [] }
+
         var sharp: CACornerMask = []
         let f = window.frame
         let t = dockThreshold
         for other in allWindows() where other !== window {
+            guard isDockableWindow(other) else { continue }
             let o = other.frame
             let vOverlap = f.minY < o.maxY && f.maxY > o.minY
             let hOverlap = f.minX < o.maxX && f.maxX > o.minX

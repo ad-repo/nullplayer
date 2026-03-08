@@ -1004,6 +1004,12 @@ class PlexManager {
     ///   - maxPerArtist: Maximum tracks allowed per artist (default from RadioConfig)
     /// - Returns: Filtered tracks with artist variety
     private func filterForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = RadioConfig.maxTracksPerArtist) -> [Track] {
+        if maxPerArtist <= RadioPlaybackOptions.unlimitedMaxTracksPerArtist {
+            let unfiltered = Array(tracks.prefix(limit))
+            NSLog("PlexManager: Artist variety filter disabled (unlimited) - input: %d, output: %d",
+                  tracks.count, unfiltered.count)
+            return unfiltered
+        }
         var result: [Track] = []
         var artistCounts: [String: Int] = [:]
         

@@ -323,6 +323,29 @@ class ContextMenuBuilder {
         shuffleItem.target = MenuActions.shared
         shuffleItem.state = engine.shuffleEnabled ? .on : .off
         optionsMenu.addItem(shuffleItem)
+
+        // Radio variety (applies to non-sonic radio generation across sources)
+        let radioArtistLimitItem = NSMenuItem(title: "Radio Max Tracks Per Artist", action: nil, keyEquivalent: "")
+        let radioArtistLimitMenu = NSMenu()
+        radioArtistLimitMenu.autoenablesItems = false
+        let currentRadioArtistLimit = RadioPlaybackOptions.maxTracksPerArtist
+        for limit in RadioPlaybackOptions.menuChoices {
+            let title: String
+            if limit == RadioPlaybackOptions.unlimitedMaxTracksPerArtist {
+                title = "Unlimited"
+            } else if limit == 1 {
+                title = "1 track"
+            } else {
+                title = "\(limit) tracks"
+            }
+            let item = NSMenuItem(title: title, action: #selector(MenuActions.setRadioMaxTracksPerArtist(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = limit
+            item.state = currentRadioArtistLimit == limit ? .on : .off
+            radioArtistLimitMenu.addItem(item)
+        }
+        radioArtistLimitItem.submenu = radioArtistLimitMenu
+        optionsMenu.addItem(radioArtistLimitItem)
         
         optionsMenu.addItem(NSMenuItem.separator())
         
@@ -2586,6 +2609,11 @@ class MenuActions: NSObject {
     @objc func setSweetFadeDuration(_ sender: NSMenuItem) {
         guard let duration = sender.representedObject as? Double else { return }
         WindowManager.shared.audioEngine.sweetFadeDuration = duration
+    }
+
+    @objc func setRadioMaxTracksPerArtist(_ sender: NSMenuItem) {
+        guard let maxTracks = sender.representedObject as? Int else { return }
+        RadioPlaybackOptions.maxTracksPerArtist = maxTracks
     }
     
     @objc func toggleBrowserArtworkBackground() {
