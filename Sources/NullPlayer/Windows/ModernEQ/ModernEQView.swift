@@ -526,7 +526,10 @@ class ModernEQView: NSView {
     
     private func drawGlowText(_ text: String, at center: NSPoint, font: NSFont,
                                color: NSColor, glow: Bool, context: CGContext) {
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: renderer.skin.applyTextOpacity(to: color)
+        ]
         let str = NSAttributedString(string: text, attributes: attrs)
         let size = str.size()
         let origin = NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2)
@@ -590,13 +593,19 @@ class ModernEQView: NSView {
             context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
                               color: color.withAlphaComponent(0.8).cgColor)
         }
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: color)
+        ]
         let str = NSAttributedString(string: label, attributes: attrs)
         let size = str.size()
         str.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
         context.restoreGState()
         if isActive { // second pass for crisp text
-            let attrs2: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+            let attrs2: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: skin.applyTextOpacity(to: color)
+            ]
             NSAttributedString(string: label, attributes: attrs2).draw(
                 at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
         }
@@ -619,7 +628,10 @@ class ModernEQView: NSView {
         context.stroke(rect)
         context.restoreGState()
         
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: color)
+        ]
         let str = NSAttributedString(string: label, attributes: attrs)
         let size = str.size()
         str.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))

@@ -284,9 +284,9 @@ class ModernMarqueeLayer: CALayer {
     /// Configure the marquee from a modern skin
     func configure(with skin: ModernSkin) {
         // Marquee color from skin palette (defaults to warm glowing yellow)
-        textColor = skin.marqueeColor
+        textColor = skin.applyTextOpacity(to: skin.marqueeColor)
         glowEnabled = skin.config.glow.enabled
-        glowColor = skin.marqueeColor
+        glowColor = skin.applyTextOpacity(to: skin.marqueeColor)
         glowMultiplier = skin.elementGlowMultiplier
         
         // Marquee scroll settings from skin config

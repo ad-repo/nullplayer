@@ -482,7 +482,7 @@ class ModernSkinRenderer {
                 // Font fallback for this single character
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: fallbackFont,
-                    .foregroundColor: tintColor ?? skin.textColor
+                    .foregroundColor: skin.applyTextOpacity(to: tintColor ?? skin.textColor)
                 ]
                 let charStr = NSAttributedString(string: String(glyph.char), attributes: attrs)
                 let charSize = charStr.size()
@@ -505,9 +505,10 @@ class ModernSkinRenderer {
     /// Draw title text using the system font (tier 3 fallback).
     private func drawTitleTextWithFont(_ title: String, in scaledR: NSRect, prefix: String = "", context: CGContext) {
         let titleFont = skin.titleBarFont()
+        let titleColor = skin.applyTextOpacity(to: skin.textColor)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: titleFont,
-            .foregroundColor: skin.textColor
+            .foregroundColor: titleColor
         ]
         let titleStr = NSAttributedString(string: title, attributes: attrs)
         let titleSize = titleStr.size()
@@ -528,7 +529,7 @@ class ModernSkinRenderer {
         // Draw title text
         let titleOrigin = NSPoint(x: drawX, y: textY)
         if skin.config.glow.enabled {
-            drawTextWithGlow(titleStr, at: titleOrigin, glowColor: skin.textColor, context: context)
+            drawTextWithGlow(titleStr, at: titleOrigin, glowColor: titleColor, context: context)
         } else {
             titleStr.draw(at: titleOrigin)
         }
@@ -897,7 +898,7 @@ class ModernSkinRenderer {
         
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: textColor
+            .foregroundColor: skin.applyTextOpacity(to: textColor)
         ]
         let str = NSAttributedString(string: labelText, attributes: attrs)
         let size = str.size()
@@ -907,7 +908,7 @@ class ModernSkinRenderer {
         )
         
         if isOn && skin.config.glow.enabled {
-            drawTextWithGlow(str, at: origin, glowColor: onColor, context: context)
+            drawTextWithGlow(str, at: origin, glowColor: skin.applyTextOpacity(to: onColor), context: context)
         } else {
             str.draw(at: origin)
         }
@@ -926,7 +927,7 @@ class ModernSkinRenderer {
         
         let attrs: [NSAttributedString.Key: Any] = [
             .font: drawFont,
-            .foregroundColor: drawColor,
+            .foregroundColor: skin.applyTextOpacity(to: drawColor),
             .paragraphStyle: style
         ]
         
@@ -941,13 +942,14 @@ class ModernSkinRenderer {
         let scaledR = scaledRect(rect)
         let drawFont = font ?? skin.smallLabelFont()
         let drawColor = color ?? skin.textColor
+        let resolvedTextColor = skin.applyTextOpacity(to: drawColor)
         
         let style = NSMutableParagraphStyle()
         style.alignment = alignment
         
         let attrs: [NSAttributedString.Key: Any] = [
             .font: drawFont,
-            .foregroundColor: drawColor,
+            .foregroundColor: resolvedTextColor,
             .paragraphStyle: style
         ]
         
@@ -956,7 +958,7 @@ class ModernSkinRenderer {
         // Draw with glow
         context.saveGState()
         context.setShadow(offset: .zero, blur: 3 * scaleFactor * glowMultiplier,
-                          color: drawColor.withAlphaComponent(0.7).cgColor)
+                          color: resolvedTextColor.withAlphaComponent(0.7).cgColor)
         str.draw(in: scaledR)
         context.restoreGState()
         str.draw(in: scaledR)
@@ -1160,7 +1162,7 @@ class ModernSkinRenderer {
             // Text label
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
-                .foregroundColor: color
+                .foregroundColor: skin.applyTextOpacity(to: color)
             ]
             let str = NSAttributedString(string: label, attributes: attrs)
             let size = str.size()

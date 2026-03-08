@@ -310,6 +310,43 @@ DYLD_LIBRARY_PATH="/Users/ad/Projects/nullplayer/Frameworks" \
   .build/arm64-apple-macosx/debug/NullPlayerPackageTests.xctest
 ```
 
+## Text-Only Opacity Channel (`window.textOpacity`)
+
+Modern skins support a dedicated text opacity multiplier that is independent from window/panel translucency:
+
+- `window.opacity`: background/border/content base alpha channels.
+- `window.areaOpacity.*`: per-area multipliers for those channels.
+- `window.textOpacity`: global multiplier for string text alpha only.
+
+### Why this exists
+
+Glass skins often need darker text for readability while keeping the same translucent window body.  
+`window.textOpacity` lets you tune text darkness without changing panel/background opacity.
+
+### Behavior
+
+- Optional field, range `0.0...1.0`, default `1.0`.
+- Applied only to modern string text drawing paths (`NSAttributedString` foreground colors).
+- Not applied to non-text rendering (fills, borders, strokes, icons, glow geometry).
+- Resolved as:
+  - `resolvedTextAlpha = clamp(inputTextAlpha) * clamp(window.textOpacity)`
+
+### Example
+
+```json
+"window": {
+    "opacity": 0.52,
+    "textOpacity": 0.8,
+    "areaOpacity": {
+        "mainWindow": { "background": 0.8, "border": 0.8, "content": 0.8 }
+    }
+}
+```
+
+With this configuration:
+- Window translucency remains driven by `window.opacity` and `areaOpacity`.
+- Text alpha is reduced to 80% of its original text color alpha.
+
 ## Double Size (2x) Mode
 
 Toggle via the **2X** button on the main window or right-click context menu → **Double Size** (available in both modern and classic UI). Doubles all window dimensions and rendering scale.

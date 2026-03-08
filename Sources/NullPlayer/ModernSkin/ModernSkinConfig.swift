@@ -139,6 +139,7 @@ struct WindowConfig: Codable {
     let cornerRadius: CGFloat?
     let scale: CGFloat?        // UI scale factor (defaults to 1.25)
     let opacity: CGFloat       // Window background opacity 0.0-1.0 (required)
+    let textOpacity: CGFloat?  // Global text opacity multiplier 0.0-1.0 (defaults to 1.0)
     let seamlessDocking: CGFloat?  // 0.0 (full borders) to 1.0 (fully hidden on docked edges). Default 0.
     let areaOpacity: AreaOpacityConfig? // Optional per-area opacity overrides
 }

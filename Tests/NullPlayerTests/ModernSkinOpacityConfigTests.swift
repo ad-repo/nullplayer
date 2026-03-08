@@ -21,6 +21,108 @@ final class ModernSkinOpacityConfigTests: XCTestCase {
         XCTAssertThrowsError(try decodeConfig(from: json))
     }
 
+    func testDecodeSucceedsWhenTextOpacityOmittedAndDefaultsToIdentity() throws {
+        let omittedJSON = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.62 }
+        }
+        """
+        let explicitOneJSON = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.62, "textOpacity": 1.0 }
+        }
+        """
+
+        let omittedConfig = try decodeConfig(from: omittedJSON)
+        XCTAssertNil(omittedConfig.window.textOpacity)
+        let omittedSkin = ModernSkin(config: omittedConfig, bundlePath: nil)
+        XCTAssertEqual(omittedSkin.textOpacityMultiplier, 1.0, accuracy: 0.0001)
+
+        let explicitConfig = try decodeConfig(from: explicitOneJSON)
+        let explicitSkin = ModernSkin(config: explicitConfig, bundlePath: nil)
+        XCTAssertEqual(explicitSkin.textOpacityMultiplier, 1.0, accuracy: 0.0001)
+
+        let baseColor = omittedSkin.textColor.withAlphaComponent(0.42)
+        XCTAssertEqual(
+            omittedSkin.applyTextOpacity(to: baseColor).alphaComponent,
+            explicitSkin.applyTextOpacity(to: baseColor).alphaComponent,
+            accuracy: 0.0001
+        )
+    }
+
+    func testTextOpacityMultiplierClampsAtBounds() throws {
+        let lowJSON = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.62, "textOpacity": -0.3 }
+        }
+        """
+        let highJSON = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.62, "textOpacity": 1.7 }
+        }
+        """
+
+        let lowSkin = ModernSkin(config: try decodeConfig(from: lowJSON), bundlePath: nil)
+        let highSkin = ModernSkin(config: try decodeConfig(from: highJSON), bundlePath: nil)
+
+        XCTAssertEqual(lowSkin.textOpacityMultiplier, 0.0, accuracy: 0.0001)
+        XCTAssertEqual(highSkin.textOpacityMultiplier, 1.0, accuracy: 0.0001)
+    }
+
+    func testApplyTextOpacityMultipliesAlpha() throws {
+        let json = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.62, "textOpacity": 0.5 }
+        }
+        """
+
+        let skin = ModernSkin(config: try decodeConfig(from: json), bundlePath: nil)
+        let input = skin.textColor.withAlphaComponent(0.8)
+        let output = skin.applyTextOpacity(to: input)
+
+        XCTAssertEqual(output.alphaComponent, 0.4, accuracy: 0.0001)
+    }
+
     func testAreaOpacityFallbackUsesWindowOpacityAndMultiplierSemantics() throws {
         let json = """
         {

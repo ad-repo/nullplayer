@@ -60,6 +60,7 @@
         "borderColor": "#ffb8c4",
         "cornerRadius": 14,
         "opacity": 0.5,
+        "textOpacity": 0.8,
         "seamlessDocking": 1.0,
         "areaOpacity": {
             "mainWindow": {

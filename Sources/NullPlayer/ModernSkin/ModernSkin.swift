@@ -189,6 +189,18 @@ class ModernSkin {
         let m = clampedOpacity(multiplier ?? 1.0)
         return clampedOpacity(baseOpacity * m)
     }
+
+    /// Global text opacity multiplier for modern string rendering.
+    /// Defaults to 1.0 when `window.textOpacity` is omitted.
+    var textOpacityMultiplier: CGFloat {
+        clampedOpacity(config.window.textOpacity ?? 1.0)
+    }
+
+    /// Apply global text opacity to a color used for string drawing.
+    func applyTextOpacity(to color: NSColor) -> NSColor {
+        let alpha = clampedOpacity(color.alphaComponent * textOpacityMultiplier)
+        return color.withAlphaComponent(alpha)
+    }
     
     /// Get resolved rect for an element, applying any config overrides
     func resolvedRect(for element: ModernSkinElements.Element) -> NSRect {

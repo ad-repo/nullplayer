@@ -165,7 +165,7 @@ class ModernPlaylistView: NSView {
         // Must use playlistFont (8pt default), NOT bodyFont (9pt) which configure(with:) would set
         marquee.textFont = skin.playlistFont()
         // Must use accentColor (magenta) to match current-track title color, NOT marqueeColor (yellow)
-        marquee.textColor = skin.accentColor
+        marquee.textColor = skin.applyTextOpacity(to: skin.accentColor)
         marquee.glowEnabled = false  // Track list text has no glow
         marquee.scrollSpeed = 24.0   // Match original: ~24px/sec
         marquee.scrollGap = 30.0     // Match original separatorWidth
@@ -206,7 +206,10 @@ class ModernPlaylistView: NSView {
         let track = tracks[currentIndex]
         let duration = track.duration ?? 0
         let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
-        let titleAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: skin.accentColor]
+        let titleAttrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: skin.accentColor)
+        ]
         let durationSize = NSAttributedString(string: durationStr, attributes: titleAttrs).size()
         let durationX = itemRect.maxX - durationSize.width - 6
         let titleX = itemRect.minX + 4
@@ -401,7 +404,7 @@ class ModernPlaylistView: NSView {
             // Draw empty playlist message
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
-                .foregroundColor: skin.textDimColor.withAlphaComponent(0.5)
+                .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor.withAlphaComponent(0.5))
             ]
             let msg = NSAttributedString(string: "Drop files here", attributes: attrs)
             let size = msg.size()
@@ -450,11 +453,11 @@ class ModernPlaylistView: NSView {
             
             let numberAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
-                .foregroundColor: numberColor
+                .foregroundColor: skin.applyTextOpacity(to: numberColor)
             ]
             let titleAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
-                .foregroundColor: titleColor
+                .foregroundColor: skin.applyTextOpacity(to: titleColor)
             ]
             
             // Draw duration right-aligned (uses title color)
@@ -520,7 +523,10 @@ class ModernPlaylistView: NSView {
             : String(format: "%d:%02d", mins, remainingSeconds % 60)
         
         let infoStr = "\(remainingTracks)/\(timeStr)"
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: renderer.skin.applyTextOpacity(to: color)
+        ]
         let attrStr = NSAttributedString(string: infoStr, attributes: attrs)
         let size = attrStr.size()
         

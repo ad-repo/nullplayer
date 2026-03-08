@@ -819,7 +819,10 @@ class ModernLibraryBrowserView: NSView {
         
         // Sort indicator width on right
         let sortText = "Sort"
-        let sortAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: skin.textDimColor]
+        let sortAttrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
+        ]
         let sortSize = sortText.size(withAttributes: sortAttrs)
         let sortWidth = sortSize.width + 16
         
@@ -868,7 +871,10 @@ class ModernLibraryBrowserView: NSView {
             context.stroke(rect)
         }
         
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: color)
+        ]
         let textSize = label.size(withAttributes: attrs)
         let textOrigin = NSPoint(x: rect.midX - textSize.width / 2,
                                   y: rect.midY - textSize.height / 2)
@@ -896,14 +902,23 @@ class ModernLibraryBrowserView: NSView {
         let textY = barRect.minY + (barRect.height - font.pointSize - 2 * m) / 2
         
         // Common prefix
-        let prefixAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: dimColor]
+        let prefixAttrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: dimColor)
+        ]
         let prefix = "Source: "
         prefix.draw(at: NSPoint(x: barRect.minX + 4 * m, y: textY), withAttributes: prefixAttrs)
         let prefixWidth = prefix.size(withAttributes: prefixAttrs).width
         let sourceNameStartX = barRect.minX + 4 * m + prefixWidth
         
-        let dataAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: dataColor]
-        let activeAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: accentColor]
+        let dataAttrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: dataColor)
+        ]
+        let activeAttrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: accentColor)
+        ]
         
         // Right side: F5 refresh label
         let refreshText = "F5"
@@ -1289,7 +1304,10 @@ class ModernLibraryBrowserView: NSView {
         let font = skin.smallFont?.withSize(9) ?? NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
         let displayText = searchQuery.isEmpty ? "Type to search..." : searchQuery
         let textColor = searchQuery.isEmpty ? skin.textDimColor : skin.textColor
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: textColor)
+        ]
         let textSize = displayText.size(withAttributes: attrs)
         let textY = searchRect.minY + (searchRect.height - textSize.height) / 2
         displayText.draw(at: NSPoint(x: searchRect.minX + 6, y: textY), withAttributes: attrs)
@@ -1396,7 +1414,7 @@ class ModernLibraryBrowserView: NSView {
                     let expanded = isExpanded(item)
                     let indicator = expanded ? "▼" : "▶"
                     let indicatorAttrs: [NSAttributedString.Key: Any] = [
-                        .foregroundColor: skin.textDimColor,
+                        .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor),
                         .font: skin.scaledSystemFont(size: 6.4)
                     ]
                     indicator.draw(at: NSPoint(x: textX - 12, y: itemRect.midY - 5), withAttributes: indicatorAttrs)
@@ -1405,7 +1423,7 @@ class ModernLibraryBrowserView: NSView {
                 // Main text
                 let textColor = isSelected ? skin.accentColor : skin.textColor
                 let attrs: [NSAttributedString.Key: Any] = [
-                    .foregroundColor: textColor,
+                    .foregroundColor: skin.applyTextOpacity(to: textColor),
                     .font: font
                 ]
                 let textRect = NSRect(x: textX, y: itemRect.minY + 2,
@@ -1416,7 +1434,7 @@ class ModernLibraryBrowserView: NSView {
                 if let info = item.info {
                     let infoColor = isSelected ? skin.accentColor : skin.textDimColor
                     let infoAttrs: [NSAttributedString.Key: Any] = [
-                        .foregroundColor: infoColor,
+                        .foregroundColor: skin.applyTextOpacity(to: infoColor),
                         .font: smallFont
                     ]
                     let infoSize = info.size(withAttributes: infoAttrs)
@@ -1461,7 +1479,7 @@ class ModernLibraryBrowserView: NSView {
             
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: headerFont,
-                .foregroundColor: isSortColumn ? sortedHeaderColor : headerColor
+                .foregroundColor: skin.applyTextOpacity(to: isSortColumn ? sortedHeaderColor : headerColor)
             ]
             
             let textSize = column.title.size(withAttributes: attrs)
@@ -1473,7 +1491,7 @@ class ModernLibraryBrowserView: NSView {
                 let indicator = columnSortAscending ? "▲" : "▼"
                 let indicatorAttrs: [NSAttributedString.Key: Any] = [
                     .font: skin.scaledSystemFont(size: 5.6),
-                    .foregroundColor: sortedHeaderColor
+                    .foregroundColor: skin.applyTextOpacity(to: sortedHeaderColor)
                 ]
                 indicator.draw(at: NSPoint(x: textX + textSize.width + 3, y: textY + 1), withAttributes: indicatorAttrs)
             }
@@ -1519,7 +1537,10 @@ class ModernLibraryBrowserView: NSView {
             let color = column.id == "title" ? textColor : dimColor
             let useFont = column.id == "title" ? font : smallFont
             
-            let attrs: [NSAttributedString.Key: Any] = [.font: useFont, .foregroundColor: color]
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: useFont,
+                .foregroundColor: skin.applyTextOpacity(to: color)
+            ]
             let textSize = value.size(withAttributes: attrs)
             let textY = rect.minY + (rect.height - textSize.height) / 2
             let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4)
@@ -1537,7 +1558,7 @@ class ModernLibraryBrowserView: NSView {
     private func drawNotLinkedState(in context: CGContext, listRect: NSRect, skin: ModernSkin) {
         let message = "Link your Plex account to browse your music library"
         let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: skin.textDimColor,
+            .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor),
             .font: NSFont.systemFont(ofSize: 12)
         ]
         let size = message.size(withAttributes: attrs)
@@ -1546,7 +1567,7 @@ class ModernLibraryBrowserView: NSView {
         
         let hint = "Click the server bar above to link"
         let hintAttrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: skin.warningColor,
+            .foregroundColor: skin.applyTextOpacity(to: skin.warningColor),
             .font: NSFont.systemFont(ofSize: 10)
         ]
         let hintSize = hint.size(withAttributes: hintAttrs)
@@ -1585,7 +1606,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func drawErrorState(in context: CGContext, message: String, listRect: NSRect, skin: ModernSkin) {
         let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: skin.textDimColor,
+            .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor),
             .font: NSFont.systemFont(ofSize: 11)
         ]
         let size = message.size(withAttributes: attrs)
@@ -1613,7 +1634,10 @@ class ModernLibraryBrowserView: NSView {
         }
         
         let font = skin.primaryFont?.withSize(10) ?? NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: skin.textDimColor]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
+        ]
         let textSize = message.size(withAttributes: attrs)
         let textX = listRect.midX - textSize.width / 2
         let textY = listRect.midY - textSize.height / 2
@@ -1648,7 +1672,10 @@ class ModernLibraryBrowserView: NSView {
         } else {
             let message = "No album art"
             let font = skin.primaryFont?.withSize(14) ?? NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: skin.textDimColor]
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
+            ]
             let textSize = message.size(withAttributes: attrs)
             message.draw(at: NSPoint(x: contentRect.midX - textSize.width / 2,
                                       y: contentRect.midY - textSize.height / 2), withAttributes: attrs)
@@ -1679,7 +1706,7 @@ class ModernLibraryBrowserView: NSView {
             let color = hasItems ? skin.accentColor : skin.textDimColor.withAlphaComponent(0.3)
             
             let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: color,
+                .foregroundColor: skin.applyTextOpacity(to: color),
                 .font: NSFont.boldSystemFont(ofSize: fontSize)
             ]
             let letterSize = letter.size(withAttributes: attrs)
