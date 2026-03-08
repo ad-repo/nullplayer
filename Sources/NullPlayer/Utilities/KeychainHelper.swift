@@ -10,9 +10,12 @@ class KeychainHelper {
     
     static let shared = KeychainHelper()
     
-    /// Set to true for production builds with proper code signing
-    /// Set to false for development to avoid keychain permission prompts
-    private let useKeychain = true
+    /// Only use Keychain when running as a signed .app bundle.
+    /// Raw binaries from `swift build` are unsigned and generate per-item
+    /// Keychain prompts. Falls back to UserDefaults in dev.
+    private var useKeychain: Bool {
+        return Bundle.main.bundlePath.hasSuffix(".app")
+    }
     
     private init() {}
     
