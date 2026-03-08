@@ -440,6 +440,11 @@ The Spectrum Analyzer participates in the docking system alongside Main, EQ, and
 |------|---------|
 | `Visualization/SpectrumAnalyzerView.swift` | Metal-based spectrum view component |
 | `Visualization/SpectrumShaders.metal` | GPU shaders for bar rendering |
+| `Visualization/FlameShaders.metal` | Fire mode shaders (compute + render) |
+| `Visualization/CosmicShaders.metal` | JWST mode shader |
+| `Visualization/ElectricityShaders.metal` | Lightning mode shader |
+| `Visualization/MatrixShaders.metal` | Matrix mode shader |
+| `Visualization/SnowShaders.metal` | Snow mode shader |
 | `Windows/Spectrum/SpectrumWindowController.swift` | Window controller |
 | `Windows/Spectrum/SpectrumView.swift` | Container view with skin chrome |
 
@@ -452,6 +457,9 @@ The Spectrum Analyzer participates in the docking system alongside Main, EQ, and
 | **Ultra** | Maximum fidelity seamless gradient with smooth exponential decay, perceptual gamma, and warm color trails |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues in 4 color styles |
 | **JWST** | Deep space flythrough with 3D star field, vivid JWST diffraction flares as intensity indicators, and rare giant flare events |
+| **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks and multiple color schemes |
+| **Matrix** | Falling digital rain with procedural glyphs and selectable color/intensity styles |
+| **Snow** | Audio-reactive layered snowfall with smooth flurry-to-blizzard intensity shifts |
 
 ### Decay/Responsiveness Modes
 
@@ -474,10 +482,14 @@ Controls how quickly spectrum bars fall after peaks:
 ### Context Menu
 
 Right-click on the spectrum window for:
-- **Mode** submenu - Switch between Winamp/Enhanced/Fire/JWST modes
+- **Mode** submenu - Switch between Winamp/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow modes
 - **Responsiveness** submenu - Adjust decay behavior
+- **Normalization** submenu - Choose Accurate/Adaptive/Dynamic scaling
 - **Flame Style** - Choose flame color preset (Fire mode only)
 - **Fire Intensity** - Choose Mellow or Intense reactivity (Fire mode only)
+- **Lightning Style** - Choose lightning palette (Lightning mode only)
+- **Matrix Color** - Choose matrix palette (Matrix mode only)
+- **Matrix Intensity** - Choose matrix reactivity profile (Matrix mode only)
 - **Close** - Close the window
 
 Settings are persisted across app restarts.
