@@ -538,9 +538,8 @@ class PlexBrowserView: NSView {
                 return ascending ? aStars < bStars : aStars > bStars
             }
             
-            // Default string comparison
-            let result = aVal.localizedCaseInsensitiveCompare(bVal)
-            return ascending ? result == .orderedAscending : result == .orderedDescending
+            // Default text comparison
+            return compareNameStrings(aVal, bVal, ascending: ascending)
         }
         
         // Put sorted items back at their original indices
@@ -11315,9 +11314,7 @@ class PlexBrowserView: NSView {
             return true
         }
         
-        let sortedPlaylists = uniquePlaylists.sorted { 
-            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending 
-        }
+        let sortedPlaylists = sortPlexPlaylists(uniquePlaylists)
         
         for playlist in sortedPlaylists {
             let isExpanded = expandedPlexPlaylists.contains(playlist.id)
@@ -11367,7 +11364,7 @@ class PlexBrowserView: NSView {
                     artistsByName[normalizedName] = artist
                 }
             }
-            let uniqueArtists = Array(artistsByName.values).sorted { $0.title.lowercased() < $1.title.lowercased() }
+            let uniqueArtists = sortPlexArtists(Array(artistsByName.values))
             
             displayItems.append(PlexDisplayItem(
                 id: "header-artists",
@@ -11394,7 +11391,7 @@ class PlexBrowserView: NSView {
                 
                 // Show albums if artist is expanded (use name-based lookup)
                 if isExpanded, let albums = artistAlbumsByName[normalizedName] {
-                    for album in albums {
+                    for album in sortPlexAlbums(albums) {
                         let albumExpanded = expandedAlbums.contains(album.id)
                         displayItems.append(PlexDisplayItem(
                             id: album.id,
@@ -11440,16 +11437,17 @@ class PlexBrowserView: NSView {
                     uniqueAlbums.append(album)
                 }
             }
+            let sortedAlbums = sortPlexAlbums(uniqueAlbums)
             
             displayItems.append(PlexDisplayItem(
                 id: "header-albums",
-                title: "Albums (\(uniqueAlbums.count))",
+                title: "Albums (\(sortedAlbums.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for album in uniqueAlbums {
+            for album in sortedAlbums {
                 let isExpanded = expandedAlbums.contains(album.id)
                 displayItems.append(PlexDisplayItem(
                     id: album.id,
@@ -11493,16 +11491,17 @@ class PlexBrowserView: NSView {
                     uniqueTracks.append(track)
                 }
             }
+            let sortedTracks = sortPlexTracks(uniqueTracks)
             
             displayItems.append(PlexDisplayItem(
                 id: "header-tracks",
-                title: "Tracks (\(uniqueTracks.count))",
+                title: "Tracks (\(sortedTracks.count))",
                 info: nil,
                 indentLevel: 0,
                 hasChildren: false,
                 type: .header
             ))
-            for track in uniqueTracks {
+            for track in sortedTracks {
                 displayItems.append(PlexDisplayItem(
                     id: track.id,
                     title: "\(track.grandparentTitle ?? "") - \(track.title)",
@@ -12021,10 +12020,10 @@ class PlexBrowserView: NSView {
     private func buildSubsonicArtistItems() {
         displayItems.removeAll()
         
-        let sortedArtists = cachedSubsonicArtists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let sortedArtists = sortSubsonicArtists(cachedSubsonicArtists)
         
         for artist in sortedArtists {
-            let albumCount = artist.albumCount ?? 0
+            let albumCount = artist.albumCount
             let info = albumCount > 0 ? "\(albumCount) album\(albumCount == 1 ? "" : "s")" : nil
             let isExpanded = expandedSubsonicArtists.contains(artist.id)
             
@@ -12040,7 +12039,7 @@ class PlexBrowserView: NSView {
             if isExpanded {
                 // Show albums for this artist
                 if let albums = subsonicArtistAlbums[artist.id] {
-                    for album in albums {
+                    for album in sortSubsonicAlbums(albums) {
                         let albumExpanded = expandedSubsonicAlbums.contains(album.id)
                         displayItems.append(PlexDisplayItem(
                             id: album.id,
@@ -12079,7 +12078,7 @@ class PlexBrowserView: NSView {
     /// Build display items for Subsonic albums
     private func buildSubsonicAlbumItems() {
         displayItems.removeAll()
-        for album in cachedSubsonicAlbums.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+        for album in sortSubsonicAlbums(cachedSubsonicAlbums) {
             let expanded = expandedSubsonicAlbums.contains(album.id)
             displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .subsonicAlbum(album)))
             if expanded, let songs = subsonicAlbumSongs[album.id] {
@@ -12093,9 +12092,7 @@ class PlexBrowserView: NSView {
     private func buildSubsonicPlaylistItems() {
         displayItems.removeAll()
         
-        let sortedPlaylists = cachedSubsonicPlaylists.sorted { 
-            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending 
-        }
+        let sortedPlaylists = sortSubsonicPlaylists(cachedSubsonicPlaylists)
         
         for playlist in sortedPlaylists {
             let isExpanded = expandedSubsonicPlaylists.contains(playlist.id)
@@ -12393,7 +12390,7 @@ class PlexBrowserView: NSView {
     private func buildJellyfinArtistItems() {
         displayItems.removeAll()
         
-        let sortedArtists = cachedJellyfinArtists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let sortedArtists = sortJellyfinArtists(cachedJellyfinArtists)
         
         for artist in sortedArtists {
             let albumCount = artist.albumCount
@@ -12411,7 +12408,7 @@ class PlexBrowserView: NSView {
             
             if isExpanded {
                 if let albums = jellyfinArtistAlbums[artist.id] {
-                    for album in albums {
+                    for album in sortJellyfinAlbums(albums) {
                         let albumExpanded = expandedJellyfinAlbums.contains(album.id)
                         displayItems.append(PlexDisplayItem(
                             id: album.id,
@@ -12448,7 +12445,7 @@ class PlexBrowserView: NSView {
     
     private func buildJellyfinAlbumItems() {
         displayItems.removeAll()
-        for album in cachedJellyfinAlbums.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+        for album in sortJellyfinAlbums(cachedJellyfinAlbums) {
             let expanded = expandedJellyfinAlbums.contains(album.id)
             displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .jellyfinAlbum(album)))
             if expanded, let songs = jellyfinAlbumSongs[album.id] {
@@ -12461,9 +12458,7 @@ class PlexBrowserView: NSView {
     private func buildJellyfinPlaylistItems() {
         displayItems.removeAll()
         
-        let sortedPlaylists = cachedJellyfinPlaylists.sorted {
-            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
+        let sortedPlaylists = sortJellyfinPlaylists(cachedJellyfinPlaylists)
         
         for playlist in sortedPlaylists {
             let isExpanded = expandedJellyfinPlaylists.contains(playlist.id)
@@ -12559,7 +12554,7 @@ class PlexBrowserView: NSView {
     private func buildEmbyArtistItems() {
         displayItems.removeAll()
 
-        let sortedArtists = cachedEmbyArtists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let sortedArtists = sortEmbyArtists(cachedEmbyArtists)
 
         for artist in sortedArtists {
             let albumCount = artist.albumCount
@@ -12577,7 +12572,7 @@ class PlexBrowserView: NSView {
 
             if isExpanded {
                 if let albums = embyArtistAlbums[artist.id] {
-                    for album in albums {
+                    for album in sortEmbyAlbums(albums) {
                         let albumExpanded = expandedEmbyAlbums.contains(album.id)
                         displayItems.append(PlexDisplayItem(
                             id: album.id,
@@ -12614,7 +12609,7 @@ class PlexBrowserView: NSView {
 
     private func buildEmbyAlbumItems() {
         displayItems.removeAll()
-        for album in cachedEmbyAlbums.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+        for album in sortEmbyAlbums(cachedEmbyAlbums) {
             let expanded = expandedEmbyAlbums.contains(album.id)
             displayItems.append(PlexDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .embyAlbum(album)))
             if expanded, let songs = embyAlbumSongs[album.id] {
@@ -12627,9 +12622,7 @@ class PlexBrowserView: NSView {
     private func buildEmbyPlaylistItems() {
         displayItems.removeAll()
 
-        let sortedPlaylists = cachedEmbyPlaylists.sorted {
-            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
+        let sortedPlaylists = sortEmbyPlaylists(cachedEmbyPlaylists)
 
         for playlist in sortedPlaylists {
             let isExpanded = expandedEmbyPlaylists.contains(playlist.id)
@@ -12761,31 +12754,35 @@ class PlexBrowserView: NSView {
     }
     
     // MARK: - Sorting Helpers
+
+    private func compareNameStrings(_ lhs: String, _ rhs: String, ascending: Bool) -> Bool {
+        LibraryTextSorter.areInOrder(lhs, rhs, ascending: ascending, ignoreLeadingArticles: true)
+    }
     
     private func sortArtists(_ artists: [Artist]) -> [Artist] {
         switch currentSort {
         case .nameAsc:
-            return artists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         case .nameDesc:
-            return artists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending }
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
         case .dateAddedDesc, .dateAddedAsc:
             // Artists don't have date added, fall back to name
-            return artists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         case .yearDesc, .yearAsc:
             // Artists don't have year, fall back to name
-            return artists.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         }
     }
     
     private func sortAlbums(_ albums: [Album]) -> [Album] {
         switch currentSort {
         case .nameAsc:
-            return albums.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         case .nameDesc:
-            return albums.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending }
+            return albums.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
         case .dateAddedDesc, .dateAddedAsc:
             // Albums don't have date added, fall back to name
-            return albums.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         case .yearDesc:
             return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
         case .yearAsc:
@@ -12796,9 +12793,9 @@ class PlexBrowserView: NSView {
     private func sortTracks(_ tracks: [LibraryTrack]) -> [LibraryTrack] {
         switch currentSort {
         case .nameAsc:
-            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
         case .nameDesc:
-            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending }
+            return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
         case .dateAddedDesc:
             return tracks.sorted { $0.dateAdded > $1.dateAdded }
         case .dateAddedAsc:
@@ -12815,25 +12812,25 @@ class PlexBrowserView: NSView {
     private func sortPlexArtists(_ artists: [PlexArtist]) -> [PlexArtist] {
         switch currentSort {
         case .nameAsc:
-            return artists.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            return artists.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
         case .nameDesc:
-            return artists.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending }
+            return artists.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
         case .dateAddedDesc:
             return artists.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
         case .dateAddedAsc:
             return artists.sorted { ($0.addedAt ?? .distantPast) < ($1.addedAt ?? .distantPast) }
         case .yearDesc, .yearAsc:
             // Artists don't have year, fall back to name
-            return artists.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            return artists.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
         }
     }
     
     private func sortPlexAlbums(_ albums: [PlexAlbum]) -> [PlexAlbum] {
         switch currentSort {
         case .nameAsc:
-            return albums.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            return albums.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
         case .nameDesc:
-            return albums.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending }
+            return albums.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
         case .dateAddedDesc:
             return albums.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
         case .dateAddedAsc:
@@ -12848,16 +12845,152 @@ class PlexBrowserView: NSView {
     private func sortPlexTracks(_ tracks: [PlexTrack]) -> [PlexTrack] {
         switch currentSort {
         case .nameAsc:
-            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
         case .nameDesc:
-            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending }
+            return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
         case .dateAddedDesc:
             return tracks.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
         case .dateAddedAsc:
             return tracks.sorted { ($0.addedAt ?? .distantPast) < ($1.addedAt ?? .distantPast) }
         case .yearDesc, .yearAsc:
             // Tracks don't have year directly, fall back to name
-            return tracks.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        }
+    }
+
+    private func sortPlexPlaylists(_ playlists: [PlexPlaylist]) -> [PlexPlaylist] {
+        switch currentSort {
+        case .nameAsc:
+            return playlists.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        case .nameDesc:
+            return playlists.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
+        case .dateAddedDesc:
+            return playlists.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
+        case .dateAddedAsc:
+            return playlists.sorted { ($0.addedAt ?? .distantPast) < ($1.addedAt ?? .distantPast) }
+        default:
+            return playlists.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        }
+    }
+
+    private func sortSubsonicArtists(_ artists: [SubsonicArtist]) -> [SubsonicArtist] {
+        switch currentSort {
+        case .nameAsc:
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc:
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default:
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortSubsonicAlbums(_ albums: [SubsonicAlbum]) -> [SubsonicAlbum] {
+        switch currentSort {
+        case .nameAsc:
+            return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc:
+            return albums.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        case .dateAddedDesc:
+            return albums.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+        case .dateAddedAsc:
+            return albums.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
+        case .yearDesc:
+            return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc:
+            return albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+
+    private func sortSubsonicPlaylists(_ playlists: [SubsonicPlaylist]) -> [SubsonicPlaylist] {
+        switch currentSort {
+        case .nameAsc:
+            return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc:
+            return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        case .dateAddedDesc:
+            return playlists.sorted { ($0.changed ?? $0.created ?? .distantPast) > ($1.changed ?? $1.created ?? .distantPast) }
+        case .dateAddedAsc:
+            return playlists.sorted { ($0.changed ?? $0.created ?? .distantPast) < ($1.changed ?? $1.created ?? .distantPast) }
+        default:
+            return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortJellyfinArtists(_ artists: [JellyfinArtist]) -> [JellyfinArtist] {
+        switch currentSort {
+        case .nameAsc:
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc:
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default:
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortJellyfinAlbums(_ albums: [JellyfinAlbum]) -> [JellyfinAlbum] {
+        switch currentSort {
+        case .nameAsc:
+            return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc:
+            return albums.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        case .dateAddedDesc:
+            return albums.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+        case .dateAddedAsc:
+            return albums.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
+        case .yearDesc:
+            return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc:
+            return albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+
+    private func sortJellyfinPlaylists(_ playlists: [JellyfinPlaylist]) -> [JellyfinPlaylist] {
+        switch currentSort {
+        case .nameAsc:
+            return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc:
+            return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default:
+            return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortEmbyArtists(_ artists: [EmbyArtist]) -> [EmbyArtist] {
+        switch currentSort {
+        case .nameAsc:
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc:
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default:
+            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortEmbyAlbums(_ albums: [EmbyAlbum]) -> [EmbyAlbum] {
+        switch currentSort {
+        case .nameAsc:
+            return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc:
+            return albums.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        case .dateAddedDesc:
+            return albums.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+        case .dateAddedAsc:
+            return albums.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
+        case .yearDesc:
+            return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc:
+            return albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+
+    private func sortEmbyPlaylists(_ playlists: [EmbyPlaylist]) -> [EmbyPlaylist] {
+        switch currentSort {
+        case .nameAsc:
+            return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc:
+            return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default:
+            return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         }
     }
     
@@ -12869,7 +13002,7 @@ class PlexBrowserView: NSView {
         let library = MediaLibrary.shared
         
         // Search artists
-        let matchingArtists = cachedLocalArtists.filter { $0.name.lowercased().contains(query) }
+        let matchingArtists = sortArtists(cachedLocalArtists.filter { $0.name.lowercased().contains(query) })
         if !matchingArtists.isEmpty {
             displayItems.append(PlexDisplayItem(
                 id: "header-local-artists",
@@ -12892,10 +13025,10 @@ class PlexBrowserView: NSView {
         }
         
         // Search albums
-        let matchingAlbums = cachedLocalAlbums.filter {
+        let matchingAlbums = sortAlbums(cachedLocalAlbums.filter {
             $0.name.lowercased().contains(query) ||
             ($0.artist?.lowercased().contains(query) ?? false)
-        }
+        })
         if !matchingAlbums.isEmpty {
             displayItems.append(PlexDisplayItem(
                 id: "header-local-albums",
@@ -12918,7 +13051,7 @@ class PlexBrowserView: NSView {
         }
         
         // Search tracks
-        let matchingTracks = library.search(query: searchQuery)
+        let matchingTracks = sortTracks(library.search(query: searchQuery))
         if !matchingTracks.isEmpty {
             displayItems.append(PlexDisplayItem(
                 id: "header-local-tracks",

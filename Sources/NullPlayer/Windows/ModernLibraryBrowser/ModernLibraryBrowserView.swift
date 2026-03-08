@@ -2220,10 +2220,7 @@ class ModernLibraryBrowserView: NSView {
                 let bStars = bVal.filter { $0 == "★" }.count
                 return ascending ? aStars < bStars : aStars > bStars
             }
-            let aSort = sortName(for: aVal)
-            let bSort = sortName(for: bVal)
-            let result = aSort.localizedCaseInsensitiveCompare(bSort)
-            return ascending ? result == .orderedAscending : result == .orderedDescending
+            return compareNameStrings(aVal, bVal, ascending: ascending)
         }
         
         for (sortedIndex, originalIndex) in sortableIndices.enumerated() {
@@ -3118,20 +3115,9 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func sortLetter(for title: String) -> String {
-        var sortTitle = title.uppercased()
-        for prefix in ["THE ", "AN ", "A "] {
-            if sortTitle.hasPrefix(prefix) { sortTitle = String(sortTitle.dropFirst(prefix.count)); break }
-        }
+        let sortTitle = LibraryTextSorter.normalized(title, ignoreLeadingArticles: true).uppercased()
         guard let firstChar = sortTitle.first else { return "#" }
         return firstChar.isLetter ? String(firstChar) : "#"
-    }
-    
-    private func sortName(for title: String) -> String {
-        let upper = title.uppercased()
-        for prefix in ["THE ", "AN ", "A "] {
-            if upper.hasPrefix(prefix) { return String(title.dropFirst(prefix.count)) }
-        }
-        return title
     }
     
     private func scrollToLetter(_ letter: String) {
@@ -7128,7 +7114,7 @@ class ModernLibraryBrowserView: NSView {
         let audio = cachedPlexPlaylists.filter { $0.isAudioPlaylist }
         var seen = Set<String>()
         let unique = audio.filter { let n = $0.title.lowercased(); if seen.contains(n) { return false }; seen.insert(n); return true }
-        for playlist in unique.sorted(by: { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }) {
+        for playlist in sortPlexPlaylists(unique) {
             let expanded = expandedPlexPlaylists.contains(playlist.id)
             displayItems.append(ModernDisplayItem(id: playlist.id, title: playlist.title, info: "\(playlist.leafCount) tracks", indentLevel: 0, hasChildren: playlist.leafCount > 0, type: .plexPlaylist(playlist)))
             if expanded, let tracks = plexPlaylistTracks[playlist.id] {
@@ -7140,17 +7126,20 @@ class ModernLibraryBrowserView: NSView {
     private func buildSearchItems() {
         displayItems.removeAll()
         guard let results = searchResults else { return }
-        if !results.artists.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(results.artists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for artist in results.artists { displayItems.append(ModernDisplayItem(id: artist.id, title: artist.title, info: nil, indentLevel: 1, hasChildren: true, type: .artist(artist))) }
+        let sortedArtists = sortPlexArtists(results.artists)
+        if !sortedArtists.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(sortedArtists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for artist in sortedArtists { displayItems.append(ModernDisplayItem(id: artist.id, title: artist.title, info: nil, indentLevel: 1, hasChildren: true, type: .artist(artist))) }
         }
-        if !results.albums.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(results.albums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for album in results.albums { displayItems.append(ModernDisplayItem(id: album.id, title: "\(album.parentTitle ?? "") - \(album.title)", info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .album(album))) }
+        let sortedAlbums = sortPlexAlbums(results.albums)
+        if !sortedAlbums.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(sortedAlbums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for album in sortedAlbums { displayItems.append(ModernDisplayItem(id: album.id, title: "\(album.parentTitle ?? "") - \(album.title)", info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .album(album))) }
         }
-        if !results.tracks.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(results.tracks.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for track in results.tracks { displayItems.append(ModernDisplayItem(id: track.id, title: "\(track.grandparentTitle ?? "") - \(track.title)", info: track.formattedDuration, indentLevel: 1, hasChildren: false, type: .track(track))) }
+        let sortedTracks = sortPlexTracks(results.tracks)
+        if !sortedTracks.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(sortedTracks.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for track in sortedTracks { displayItems.append(ModernDisplayItem(id: track.id, title: "\(track.grandparentTitle ?? "") - \(track.title)", info: track.formattedDuration, indentLevel: 1, hasChildren: false, type: .track(track))) }
         }
         if !results.movies.isEmpty {
             displayItems.append(ModernDisplayItem(id: "header-movies", title: "Movies (\(results.movies.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
@@ -7168,21 +7157,24 @@ class ModernLibraryBrowserView: NSView {
     private func buildSubsonicSearchItems() {
         displayItems.removeAll()
         guard let results = subsonicSearchResults else { return }
-        if !results.artists.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(results.artists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for artist in results.artists {
+        let sortedArtists = sortSubsonicArtists(results.artists)
+        if !sortedArtists.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(sortedArtists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for artist in sortedArtists {
                 displayItems.append(ModernDisplayItem(id: artist.id, title: artist.name, info: artist.albumCount > 0 ? "\(artist.albumCount) albums" : nil, indentLevel: 1, hasChildren: true, type: .subsonicArtist(artist)))
             }
         }
-        if !results.albums.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(results.albums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for album in results.albums {
+        let sortedAlbums = sortSubsonicAlbums(results.albums)
+        if !sortedAlbums.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(sortedAlbums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for album in sortedAlbums {
                 displayItems.append(ModernDisplayItem(id: album.id, title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .subsonicAlbum(album)))
             }
         }
-        if !results.songs.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(results.songs.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for song in results.songs {
+        let sortedSongs = sortSubsonicTracks(results.songs)
+        if !sortedSongs.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(sortedSongs.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for song in sortedSongs {
                 displayItems.append(ModernDisplayItem(id: song.id, title: song.title, info: formatDuration(song.duration), indentLevel: 1, hasChildren: false, type: .subsonicTrack(song)))
             }
         }
@@ -7191,21 +7183,24 @@ class ModernLibraryBrowserView: NSView {
     private func buildJellyfinSearchItems() {
         displayItems.removeAll()
         guard let results = jellyfinSearchResults else { return }
-        if !results.artists.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(results.artists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for artist in results.artists {
+        let sortedArtists = sortJellyfinArtists(results.artists)
+        if !sortedArtists.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(sortedArtists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for artist in sortedArtists {
                 displayItems.append(ModernDisplayItem(id: artist.id, title: artist.name, info: artist.albumCount > 0 ? "\(artist.albumCount) albums" : nil, indentLevel: 1, hasChildren: true, type: .jellyfinArtist(artist)))
             }
         }
-        if !results.albums.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(results.albums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for album in results.albums {
+        let sortedAlbums = sortJellyfinAlbums(results.albums)
+        if !sortedAlbums.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(sortedAlbums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for album in sortedAlbums {
                 displayItems.append(ModernDisplayItem(id: album.id, title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .jellyfinAlbum(album)))
             }
         }
-        if !results.songs.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(results.songs.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for song in results.songs {
+        let sortedSongs = sortJellyfinTracks(results.songs)
+        if !sortedSongs.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(sortedSongs.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for song in sortedSongs {
                 displayItems.append(ModernDisplayItem(id: song.id, title: song.title, info: formatDuration(song.duration), indentLevel: 1, hasChildren: false, type: .jellyfinTrack(song)))
             }
         }
@@ -7228,21 +7223,24 @@ class ModernLibraryBrowserView: NSView {
     private func buildEmbySearchItems() {
         displayItems.removeAll()
         guard let results = embySearchResults else { return }
-        if !results.artists.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(results.artists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for artist in results.artists {
+        let sortedArtists = sortEmbyArtists(results.artists)
+        if !sortedArtists.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-artists", title: "Artists (\(sortedArtists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for artist in sortedArtists {
                 displayItems.append(ModernDisplayItem(id: artist.id, title: artist.name, info: artist.albumCount > 0 ? "\(artist.albumCount) albums" : nil, indentLevel: 1, hasChildren: true, type: .embyArtist(artist)))
             }
         }
-        if !results.albums.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(results.albums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for album in results.albums {
+        let sortedAlbums = sortEmbyAlbums(results.albums)
+        if !sortedAlbums.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-albums", title: "Albums (\(sortedAlbums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for album in sortedAlbums {
                 displayItems.append(ModernDisplayItem(id: album.id, title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .embyAlbum(album)))
             }
         }
-        if !results.songs.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(results.songs.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for song in results.songs {
+        let sortedSongs = sortEmbyTracks(results.songs)
+        if !sortedSongs.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-tracks", title: "Tracks (\(sortedSongs.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for song in sortedSongs {
                 displayItems.append(ModernDisplayItem(id: song.id, title: song.title, info: formatDuration(song.duration), indentLevel: 1, hasChildren: false, type: .embyTrack(song)))
             }
         }
@@ -7486,17 +7484,17 @@ class ModernLibraryBrowserView: NSView {
         displayItems.removeAll()
         guard !searchQuery.isEmpty else { return }
         let query = searchQuery.lowercased()
-        let matchingArtists = cachedLocalArtists.filter { $0.name.lowercased().contains(query) }
+        let matchingArtists = sortArtists(cachedLocalArtists.filter { $0.name.lowercased().contains(query) })
         if !matchingArtists.isEmpty {
             displayItems.append(ModernDisplayItem(id: "header-local-artists", title: "Artists (\(matchingArtists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
             for a in matchingArtists { displayItems.append(ModernDisplayItem(id: "local-artist-\(a.id)", title: a.name, info: "\(a.albums.count) albums", indentLevel: 1, hasChildren: true, type: .localArtist(a))) }
         }
-        let matchingAlbums = cachedLocalAlbums.filter { $0.name.lowercased().contains(query) || ($0.artist?.lowercased().contains(query) ?? false) }
+        let matchingAlbums = sortAlbums(cachedLocalAlbums.filter { $0.name.lowercased().contains(query) || ($0.artist?.lowercased().contains(query) ?? false) })
         if !matchingAlbums.isEmpty {
             displayItems.append(ModernDisplayItem(id: "header-local-albums", title: "Albums (\(matchingAlbums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
             for a in matchingAlbums { displayItems.append(ModernDisplayItem(id: "local-album-\(a.id)", title: a.displayName, info: "\(a.tracks.count) tracks", indentLevel: 1, hasChildren: false, type: .localAlbum(a))) }
         }
-        let matchingTracks = MediaLibrary.shared.search(query: searchQuery)
+        let matchingTracks = sortTracks(MediaLibrary.shared.search(query: searchQuery))
         if !matchingTracks.isEmpty {
             displayItems.append(ModernDisplayItem(id: "header-local-tracks", title: "Tracks (\(matchingTracks.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
             for t in matchingTracks { displayItems.append(ModernDisplayItem(id: t.id.uuidString, title: t.displayTitle, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .localTrack(t))) }
@@ -7505,13 +7503,13 @@ class ModernLibraryBrowserView: NSView {
     
     private func buildLocalMovieItems() {
         displayItems = cachedLocalMovies
-            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            .sorted { compareNameStrings($0.title, $1.title, ascending: true) }
             .map { ModernDisplayItem(id: $0.id.uuidString, title: $0.title, info: $0.year.map { String($0) }, indentLevel: 0, hasChildren: false, type: .localMovie($0)) }
     }
 
     private func buildLocalShowItems() {
         displayItems.removeAll()
-        for show in cachedLocalShows.sorted(by: { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }) {
+        for show in cachedLocalShows.sorted(by: { compareNameStrings($0.title, $1.title, ascending: true) }) {
             let expanded = expandedLocalShows.contains(show.id)
             displayItems.append(ModernDisplayItem(id: "local-show-\(show.id)", title: show.title, info: "\(show.episodeCount) episodes", indentLevel: 0, hasChildren: true, type: .localShow(show)))
             if expanded {
@@ -7533,12 +7531,12 @@ class ModernLibraryBrowserView: NSView {
     // Subsonic items
     private func buildSubsonicArtistItems() {
         displayItems.removeAll()
-        for artist in cachedSubsonicArtists.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+        for artist in sortSubsonicArtists(cachedSubsonicArtists) {
             let info = artist.albumCount > 0 ? "\(artist.albumCount) albums" : nil
             let expanded = expandedSubsonicArtists.contains(artist.id)
             displayItems.append(ModernDisplayItem(id: artist.id, title: artist.name, info: info, indentLevel: 0, hasChildren: true, type: .subsonicArtist(artist)))
             if expanded, let albums = subsonicArtistAlbums[artist.id] {
-                for album in albums {
+                for album in sortSubsonicAlbums(albums) {
                     let albumExpanded = expandedSubsonicAlbums.contains(album.id)
                     displayItems.append(ModernDisplayItem(id: album.id, title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .subsonicAlbum(album)))
                     if albumExpanded, let songs = subsonicAlbumSongs[album.id] {
@@ -7553,7 +7551,7 @@ class ModernLibraryBrowserView: NSView {
 
     private func buildSubsonicAlbumItems() {
         displayItems.removeAll()
-        for album in cachedSubsonicAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+        for album in sortSubsonicAlbums(cachedSubsonicAlbums) {
             let expanded = expandedSubsonicAlbums.contains(album.id)
             displayItems.append(ModernDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .subsonicAlbum(album)))
             if expanded, let songs = subsonicAlbumSongs[album.id] {
@@ -7565,7 +7563,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func buildSubsonicPlaylistItems() {
         displayItems.removeAll()
-        for playlist in cachedSubsonicPlaylists.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+        for playlist in sortSubsonicPlaylists(cachedSubsonicPlaylists) {
             let expanded = expandedSubsonicPlaylists.contains(playlist.id)
             displayItems.append(ModernDisplayItem(id: playlist.id, title: playlist.name, info: "\(playlist.songCount) tracks", indentLevel: 0, hasChildren: playlist.songCount > 0, type: .subsonicPlaylist(playlist)))
             if expanded, let tracks = subsonicPlaylistTracks[playlist.id] {
@@ -7578,12 +7576,12 @@ class ModernLibraryBrowserView: NSView {
     
     private func buildJellyfinArtistItems() {
         displayItems.removeAll()
-        for artist in cachedJellyfinArtists.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+        for artist in sortJellyfinArtists(cachedJellyfinArtists) {
             let info = artist.albumCount > 0 ? "\(artist.albumCount) albums" : nil
             let expanded = expandedJellyfinArtists.contains(artist.id)
             displayItems.append(ModernDisplayItem(id: artist.id, title: artist.name, info: info, indentLevel: 0, hasChildren: true, type: .jellyfinArtist(artist)))
             if expanded, let albums = jellyfinArtistAlbums[artist.id] {
-                for album in albums {
+                for album in sortJellyfinAlbums(albums) {
                     let albumExpanded = expandedJellyfinAlbums.contains(album.id)
                     displayItems.append(ModernDisplayItem(id: album.id, title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .jellyfinAlbum(album)))
                     if albumExpanded, let songs = jellyfinAlbumSongs[album.id] {
@@ -7598,7 +7596,7 @@ class ModernLibraryBrowserView: NSView {
 
     private func buildJellyfinAlbumItems() {
         displayItems.removeAll()
-        for album in cachedJellyfinAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+        for album in sortJellyfinAlbums(cachedJellyfinAlbums) {
             let expanded = expandedJellyfinAlbums.contains(album.id)
             displayItems.append(ModernDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .jellyfinAlbum(album)))
             if expanded, let songs = jellyfinAlbumSongs[album.id] {
@@ -7610,7 +7608,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func buildJellyfinPlaylistItems() {
         displayItems.removeAll()
-        for playlist in cachedJellyfinPlaylists.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+        for playlist in sortJellyfinPlaylists(cachedJellyfinPlaylists) {
             let expanded = expandedJellyfinPlaylists.contains(playlist.id)
             displayItems.append(ModernDisplayItem(id: playlist.id, title: playlist.name, info: "\(playlist.songCount) tracks", indentLevel: 0, hasChildren: playlist.songCount > 0, type: .jellyfinPlaylist(playlist)))
             if expanded, let tracks = jellyfinPlaylistTracks[playlist.id] {
@@ -7623,12 +7621,12 @@ class ModernLibraryBrowserView: NSView {
 
     private func buildEmbyArtistItems() {
         displayItems.removeAll()
-        for artist in cachedEmbyArtists.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+        for artist in sortEmbyArtists(cachedEmbyArtists) {
             let info = artist.albumCount > 0 ? "\(artist.albumCount) albums" : nil
             let expanded = expandedEmbyArtists.contains(artist.id)
             displayItems.append(ModernDisplayItem(id: artist.id, title: artist.name, info: info, indentLevel: 0, hasChildren: true, type: .embyArtist(artist)))
             if expanded, let albums = embyArtistAlbums[artist.id] {
-                for album in albums {
+                for album in sortEmbyAlbums(albums) {
                     let albumExpanded = expandedEmbyAlbums.contains(album.id)
                     displayItems.append(ModernDisplayItem(id: album.id, title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .embyAlbum(album)))
                     if albumExpanded, let songs = embyAlbumSongs[album.id] {
@@ -7643,7 +7641,7 @@ class ModernLibraryBrowserView: NSView {
 
     private func buildEmbyAlbumItems() {
         displayItems.removeAll()
-        for album in cachedEmbyAlbums.sorted(by: { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }) {
+        for album in sortEmbyAlbums(cachedEmbyAlbums) {
             let expanded = expandedEmbyAlbums.contains(album.id)
             displayItems.append(ModernDisplayItem(id: album.id, title: "\(album.artist ?? "Unknown") - \(album.name)", info: album.year.map { String($0) }, indentLevel: 0, hasChildren: true, type: .embyAlbum(album)))
             if expanded, let songs = embyAlbumSongs[album.id] {
@@ -7655,7 +7653,7 @@ class ModernLibraryBrowserView: NSView {
 
     private func buildEmbyPlaylistItems() {
         displayItems.removeAll()
-        for playlist in cachedEmbyPlaylists.sorted(by: { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }) {
+        for playlist in sortEmbyPlaylists(cachedEmbyPlaylists) {
             let expanded = expandedEmbyPlaylists.contains(playlist.id)
             displayItems.append(ModernDisplayItem(id: playlist.id, title: playlist.name, info: "\(playlist.songCount) tracks", indentLevel: 0, hasChildren: playlist.songCount > 0, type: .embyPlaylist(playlist)))
             if expanded, let tracks = embyPlaylistTracks[playlist.id] {
@@ -7694,29 +7692,33 @@ class ModernLibraryBrowserView: NSView {
     }
     
     // MARK: - Sorting Helpers
+
+    private func compareNameStrings(_ lhs: String, _ rhs: String, ascending: Bool) -> Bool {
+        LibraryTextSorter.areInOrder(lhs, rhs, ascending: ascending, ignoreLeadingArticles: true)
+    }
     
     private func sortArtists(_ artists: [Artist]) -> [Artist] {
         switch currentSort {
-        case .nameAsc: return artists.sorted { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }
-        case .nameDesc: return artists.sorted { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedDescending }
-        default: return artists.sorted { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }
+        case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         }
     }
     
     private func sortAlbums(_ albums: [Album]) -> [Album] {
         switch currentSort {
-        case .nameAsc: return albums.sorted { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }
-        case .nameDesc: return albums.sorted { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedDescending }
+        case .nameAsc: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
         case .yearDesc: return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
         case .yearAsc: return albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
-        default: return albums.sorted { sortName(for: $0.name).localizedCaseInsensitiveCompare(sortName(for: $1.name)) == .orderedAscending }
+        default: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         }
     }
     
     private func sortTracks(_ tracks: [LibraryTrack]) -> [LibraryTrack] {
         switch currentSort {
-        case .nameAsc: return tracks.sorted { sortName(for: $0.title).localizedCaseInsensitiveCompare(sortName(for: $1.title)) == .orderedAscending }
-        case .nameDesc: return tracks.sorted { sortName(for: $0.title).localizedCaseInsensitiveCompare(sortName(for: $1.title)) == .orderedDescending }
+        case .nameAsc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        case .nameDesc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
         case .dateAddedDesc: return tracks.sorted { $0.dateAdded > $1.dateAdded }
         case .dateAddedAsc: return tracks.sorted { $0.dateAdded < $1.dateAdded }
         case .yearDesc: return tracks.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
@@ -7726,18 +7728,18 @@ class ModernLibraryBrowserView: NSView {
     
     private func sortPlexArtists(_ artists: [PlexArtist]) -> [PlexArtist] {
         switch currentSort {
-        case .nameAsc: return artists.sorted { sortName(for: $0.title).localizedCaseInsensitiveCompare(sortName(for: $1.title)) == .orderedAscending }
-        case .nameDesc: return artists.sorted { sortName(for: $0.title).localizedCaseInsensitiveCompare(sortName(for: $1.title)) == .orderedDescending }
+        case .nameAsc: return artists.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        case .nameDesc: return artists.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
         case .dateAddedDesc: return artists.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
         case .dateAddedAsc: return artists.sorted { ($0.addedAt ?? .distantPast) < ($1.addedAt ?? .distantPast) }
-        default: return artists.sorted { sortName(for: $0.title).localizedCaseInsensitiveCompare(sortName(for: $1.title)) == .orderedAscending }
+        default: return artists.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
         }
     }
     
     private func sortPlexAlbums(_ albums: [PlexAlbum]) -> [PlexAlbum] {
         switch currentSort {
-        case .nameAsc: return albums.sorted { sortName(for: $0.title).localizedCaseInsensitiveCompare(sortName(for: $1.title)) == .orderedAscending }
-        case .nameDesc: return albums.sorted { sortName(for: $0.title).localizedCaseInsensitiveCompare(sortName(for: $1.title)) == .orderedDescending }
+        case .nameAsc: return albums.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        case .nameDesc: return albums.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
         case .dateAddedDesc: return albums.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
         case .dateAddedAsc: return albums.sorted { ($0.addedAt ?? .distantPast) < ($1.addedAt ?? .distantPast) }
         case .yearDesc: return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
@@ -7747,11 +7749,139 @@ class ModernLibraryBrowserView: NSView {
     
     private func sortPlexTracks(_ tracks: [PlexTrack]) -> [PlexTrack] {
         switch currentSort {
-        case .nameAsc: return tracks.sorted { sortName(for: $0.title).localizedCaseInsensitiveCompare(sortName(for: $1.title)) == .orderedAscending }
-        case .nameDesc: return tracks.sorted { sortName(for: $0.title).localizedCaseInsensitiveCompare(sortName(for: $1.title)) == .orderedDescending }
+        case .nameAsc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        case .nameDesc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
         case .dateAddedDesc: return tracks.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
         case .dateAddedAsc: return tracks.sorted { ($0.addedAt ?? .distantPast) < ($1.addedAt ?? .distantPast) }
-        default: return tracks.sorted { sortName(for: $0.title).localizedCaseInsensitiveCompare(sortName(for: $1.title)) == .orderedAscending }
+        default: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        }
+    }
+
+    private func sortPlexPlaylists(_ playlists: [PlexPlaylist]) -> [PlexPlaylist] {
+        switch currentSort {
+        case .nameAsc: return playlists.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        case .nameDesc: return playlists.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
+        case .dateAddedDesc: return playlists.sorted { ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast) }
+        case .dateAddedAsc: return playlists.sorted { ($0.addedAt ?? .distantPast) < ($1.addedAt ?? .distantPast) }
+        default: return playlists.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        }
+    }
+
+    private func sortSubsonicArtists(_ artists: [SubsonicArtist]) -> [SubsonicArtist] {
+        switch currentSort {
+        case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortSubsonicAlbums(_ albums: [SubsonicAlbum]) -> [SubsonicAlbum] {
+        switch currentSort {
+        case .nameAsc: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        case .dateAddedDesc: return albums.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+        case .dateAddedAsc: return albums.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
+        case .yearDesc: return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc: return albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+
+    private func sortSubsonicPlaylists(_ playlists: [SubsonicPlaylist]) -> [SubsonicPlaylist] {
+        switch currentSort {
+        case .nameAsc: return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        case .dateAddedDesc:
+            return playlists.sorted { ($0.changed ?? $0.created ?? .distantPast) > ($1.changed ?? $1.created ?? .distantPast) }
+        case .dateAddedAsc:
+            return playlists.sorted { ($0.changed ?? $0.created ?? .distantPast) < ($1.changed ?? $1.created ?? .distantPast) }
+        default: return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortSubsonicTracks(_ tracks: [SubsonicSong]) -> [SubsonicSong] {
+        switch currentSort {
+        case .nameAsc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        case .nameDesc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
+        case .dateAddedDesc: return tracks.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+        case .dateAddedAsc: return tracks.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
+        case .yearDesc: return tracks.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc: return tracks.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+
+    private func sortJellyfinArtists(_ artists: [JellyfinArtist]) -> [JellyfinArtist] {
+        switch currentSort {
+        case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortJellyfinAlbums(_ albums: [JellyfinAlbum]) -> [JellyfinAlbum] {
+        switch currentSort {
+        case .nameAsc: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        case .dateAddedDesc: return albums.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+        case .dateAddedAsc: return albums.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
+        case .yearDesc: return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc: return albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+
+    private func sortJellyfinPlaylists(_ playlists: [JellyfinPlaylist]) -> [JellyfinPlaylist] {
+        switch currentSort {
+        case .nameAsc: return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default: return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortJellyfinTracks(_ tracks: [JellyfinSong]) -> [JellyfinSong] {
+        switch currentSort {
+        case .nameAsc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        case .nameDesc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
+        case .dateAddedDesc: return tracks.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+        case .dateAddedAsc: return tracks.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
+        case .yearDesc: return tracks.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc: return tracks.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+
+    private func sortEmbyArtists(_ artists: [EmbyArtist]) -> [EmbyArtist] {
+        switch currentSort {
+        case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortEmbyAlbums(_ albums: [EmbyAlbum]) -> [EmbyAlbum] {
+        switch currentSort {
+        case .nameAsc: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        case .dateAddedDesc: return albums.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+        case .dateAddedAsc: return albums.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
+        case .yearDesc: return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc: return albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
+        }
+    }
+
+    private func sortEmbyPlaylists(_ playlists: [EmbyPlaylist]) -> [EmbyPlaylist] {
+        switch currentSort {
+        case .nameAsc: return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .nameDesc: return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        default: return playlists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        }
+    }
+
+    private func sortEmbyTracks(_ tracks: [EmbySong]) -> [EmbySong] {
+        switch currentSort {
+        case .nameAsc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
+        case .nameDesc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
+        case .dateAddedDesc: return tracks.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+        case .dateAddedAsc: return tracks.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
+        case .yearDesc: return tracks.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
+        case .yearAsc: return tracks.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
         }
     }
     
