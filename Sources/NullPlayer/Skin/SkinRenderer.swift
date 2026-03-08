@@ -1412,34 +1412,14 @@ class SkinRenderer {
             let sourceRect = NSRect(x: 0, y: 0, width: 275, height: 116)
             drawSprite(from: eqImage, sourceRect: sourceRect, to: bounds, in: context)
             
-            // Draw title bar using PLEDIT tiles (no custom text)
-            let titleHeight: CGFloat = 20  // Native PLEDIT sprite height
-            if let pleditImage = skin.pledit {
-                let leftCornerWidth: CGFloat = 25
-                let rightCornerWidth: CGFloat = 25
-                let tileWidth: CGFloat = 25
-                
-                let leftCorner = isActive ? SkinElements.Playlist.TitleBarActive.leftCorner : SkinElements.Playlist.TitleBarInactive.leftCorner
-                let tileSprite = isActive ? SkinElements.Playlist.TitleBarActive.tile : SkinElements.Playlist.TitleBarInactive.tile
-                let rightCorner = isActive ? SkinElements.Playlist.TitleBarActive.rightCorner : SkinElements.Playlist.TitleBarInactive.rightCorner
-                
-                drawSprite(from: pleditImage, sourceRect: leftCorner,
-                          to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
-                drawSprite(from: pleditImage, sourceRect: rightCorner,
-                          to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
-                
-                let middleStart = leftCornerWidth
-                let middleEnd = bounds.width - rightCornerWidth
-                var x: CGFloat = middleStart
-                while x < middleEnd {
-                    let w = min(tileWidth, middleEnd - x)
-                    drawSprite(from: pleditImage, sourceRect: tileSprite,
-                              to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
-                    x += tileWidth
-                }
-            }
-            
-            // Note: Custom "NULLPLAYER EQUALIZER" text removed - let skin title show through
+            // Draw title bar from EQMAIN.BMP (active/inactive strips in skin file)
+            let titleSourceRect = isActive ? SkinElements.Equalizer.titleActive : SkinElements.Equalizer.titleInactive
+            drawSprite(
+                from: eqImage,
+                sourceRect: titleSourceRect,
+                to: NSRect(x: 0, y: 0, width: bounds.width, height: titleSourceRect.height),
+                in: context
+            )
         } else {
             // Fallback EQ background
             drawFallbackEQBackground(in: context, bounds: bounds)
@@ -2541,9 +2521,21 @@ class SkinRenderer {
         let tileWidth: CGFloat = 25
         
         // Get the correct sprite set for active/inactive state
-        let leftCorner = isActive ? SkinElements.Playlist.TitleBarActive.leftCorner : SkinElements.Playlist.TitleBarInactive.leftCorner
-        let tileSprite = isActive ? SkinElements.Playlist.TitleBarActive.tile : SkinElements.Playlist.TitleBarInactive.tile
-        let rightCorner = isActive ? SkinElements.Playlist.TitleBarActive.rightCorner : SkinElements.Playlist.TitleBarInactive.rightCorner
+        let leftCorner: NSRect
+        let titleSprite: NSRect
+        let tileSprite: NSRect
+        let rightCorner: NSRect
+        if isActive {
+            leftCorner = SkinElements.Playlist.TitleBarActive.leftCorner
+            titleSprite = SkinElements.Playlist.TitleBarActive.title
+            tileSprite = SkinElements.Playlist.TitleBarActive.tile
+            rightCorner = SkinElements.Playlist.TitleBarActive.rightCorner
+        } else {
+            leftCorner = SkinElements.Playlist.TitleBarInactive.leftCorner
+            titleSprite = SkinElements.Playlist.TitleBarInactive.title
+            tileSprite = SkinElements.Playlist.TitleBarInactive.tile
+            rightCorner = SkinElements.Playlist.TitleBarInactive.rightCorner
+        }
         
         // On non-Retina, fill background first to prevent seam gaps
         let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
@@ -2555,13 +2547,34 @@ class SkinRenderer {
         // Calculate available space for middle section
         let middleStart = leftCornerWidth
         let middleEnd = bounds.width - rightCornerWidth
-        let middleWidth = middleEnd - middleStart
+        let middleWidth = max(0, middleEnd - middleStart)
         
-        // Fill the entire middle section with tiles FIRST
+        // Draw the skin's playlist title sprite centered in the middle section.
+        // This preserves the titlebar artwork from PLEDIT.BMP instead of replacing it.
+        let titleWidth = min(titleSprite.width, middleWidth)
+        let centeredTitleX = floor(middleStart + (middleWidth - titleWidth) / 2)
+        let titleX = max(middleStart, min(centeredTitleX, middleEnd - titleWidth))
+        let titleEndX = titleX + titleWidth
+        
+        // Fill the left side of the middle section with tiles FIRST
         // Overlap tiles by 1px on non-Retina to avoid seam artifacts
         let tileStep = backingScale < 1.5 ? tileWidth - 1 : tileWidth
-        
         var x: CGFloat = middleStart
+        while x < titleX {
+            let w = min(tileWidth, titleX - x)
+            drawSprite(from: pleditImage, sourceRect: tileSprite,
+                      to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
+            x += tileStep
+        }
+        
+        // Draw centered title sprite from the skin
+        if titleWidth > 0 {
+            drawSprite(from: pleditImage, sourceRect: titleSprite,
+                      to: NSRect(x: titleX, y: 0, width: titleWidth, height: titleHeight), in: context)
+        }
+        
+        // Fill the right side of the middle section with tiles
+        x = titleEndX
         while x < middleEnd {
             let w = min(tileWidth, middleEnd - x)
             drawSprite(from: pleditImage, sourceRect: tileSprite,
@@ -2577,8 +2590,6 @@ class SkinRenderer {
         
         drawSprite(from: pleditImage, sourceRect: rightCorner,
                   to: NSRect(x: bounds.width - rightCornerWidth - cornerOverlap, y: 0, width: rightCornerWidth + cornerOverlap, height: titleHeight), in: context)
-        
-        // Note: Custom text removed - let the skin's title bar show through
         
         // Draw window control button pressed states if needed
         if pressedButton == .close {
