@@ -90,12 +90,7 @@ class DebugWindowController: NSWindowController, NSWindowDelegate {
     }
     
     private func loadExistingMessages() {
-        let messages = getFilteredMessages()
-        if !messages.isEmpty {
-            let text = messages.joined(separator: "\n") + "\n"
-            textView.string = text
-            scrollToBottom()
-        }
+        reloadMessages()
     }
     
     private func getFilteredMessages() -> [String] {
@@ -116,9 +111,20 @@ class DebugWindowController: NSWindowController, NSWindowDelegate {
     }
     
     // MARK: - Message Handling
-    
+
+    private var pendingReload = false
+
     @objc private func handleNewMessage() {
-        // Reload all messages (simple approach)
+        guard window?.isVisible == true else { return }
+        guard !pendingReload else { return }
+        pendingReload = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.pendingReload = false
+            self?.reloadMessages()
+        }
+    }
+
+    private func reloadMessages() {
         let messages = getFilteredMessages()
         let text = messages.joined(separator: "\n") + (messages.isEmpty ? "" : "\n")
         textView.string = text
@@ -155,7 +161,7 @@ class DebugWindowController: NSWindowController, NSWindowDelegate {
         hideUPnPMessages.toggle()
         updateUPnPFilterButtonState()
         // Refresh display with new filter state
-        handleNewMessage()
+        reloadMessages()
     }
     
     private func updateStopButtonState() {

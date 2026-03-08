@@ -548,6 +548,11 @@ class SpectrumAnalyzerView: NSView {
     // They are protected by dataLock and marked nonisolated(unsafe) to allow cross-thread access.
     
     private let dataLock = OSAllocatedUnfairLock()
+    private let machTimebaseInfo: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
     nonisolated(unsafe) private var rawSpectrum: [Float] = []       // From audio engine (75 bands)
     nonisolated(unsafe) private var displaySpectrum: [Float] = []   // After decay smoothing (Enhanced/Classic)
     nonisolated(unsafe) private var ultraDisplaySpectrum: [Float] = []  // After decay smoothing (Ultra mode - 96 bars)
@@ -1390,9 +1395,7 @@ class SpectrumAnalyzerView: NSView {
         // Throttle to 60Hz on high-refresh-rate displays
         let hostTime = mach_absolute_time()
         if lastFrameHostTime != 0 {
-            var timebase = mach_timebase_info_data_t()
-            mach_timebase_info(&timebase)
-            let elapsedNs = (hostTime - lastFrameHostTime) * UInt64(timebase.numer) / UInt64(timebase.denom)
+            let elapsedNs = (hostTime - lastFrameHostTime) * UInt64(machTimebaseInfo.numer) / UInt64(machTimebaseInfo.denom)
             if elapsedNs < 14_000_000 { // < 14ms = above ~71fps, skip this frame
                 return
             }
@@ -2245,11 +2248,13 @@ class SpectrumAnalyzerView: NSView {
                     hasData = true
                 }
             }
-            // Also decay Ultra spectrum
-            for i in 0..<ultraDisplaySpectrum.count {
-                ultraDisplaySpectrum[i] *= decay
-                if ultraDisplaySpectrum[i] < 0.01 {
-                    ultraDisplaySpectrum[i] = 0
+            // Also decay Ultra spectrum (only when in ultra mode)
+            if renderQualityMode == .ultra {
+                for i in 0..<ultraDisplaySpectrum.count {
+                    ultraDisplaySpectrum[i] *= decay
+                    if ultraDisplaySpectrum[i] < 0.01 {
+                        ultraDisplaySpectrum[i] = 0
+                    }
                 }
             }
         } else {
@@ -2308,18 +2313,20 @@ class SpectrumAnalyzerView: NSView {
                     }
                 }
                 
-                // Update Ultra display spectrum (96 bars - interpolate from raw spectrum)
-                for barIndex in 0..<ultraOutputCount {
-                    let sourceIndex = Float(barIndex) * Float(inputCount - 1) / Float(ultraOutputCount - 1)
-                    let lowerIndex = Int(sourceIndex)
-                    let upperIndex = min(lowerIndex + 1, inputCount - 1)
-                    let fraction = sourceIndex - Float(lowerIndex)
-                    let newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
-                    
-                    if newValue > ultraDisplaySpectrum[barIndex] {
-                        ultraDisplaySpectrum[barIndex] = newValue
-                    } else {
-                        ultraDisplaySpectrum[barIndex] = ultraDisplaySpectrum[barIndex] * decay + newValue * (1 - decay)
+                // Update Ultra display spectrum (96 bars - only computed when in ultra mode)
+                if renderQualityMode == .ultra {
+                    for barIndex in 0..<ultraOutputCount {
+                        let sourceIndex = Float(barIndex) * Float(inputCount - 1) / Float(ultraOutputCount - 1)
+                        let lowerIndex = Int(sourceIndex)
+                        let upperIndex = min(lowerIndex + 1, inputCount - 1)
+                        let fraction = sourceIndex - Float(lowerIndex)
+                        let newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+
+                        if newValue > ultraDisplaySpectrum[barIndex] {
+                            ultraDisplaySpectrum[barIndex] = newValue
+                        } else {
+                            ultraDisplaySpectrum[barIndex] = ultraDisplaySpectrum[barIndex] * decay + newValue * (1 - decay)
+                        }
                     }
                 }
             }
