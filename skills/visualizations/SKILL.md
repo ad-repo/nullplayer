@@ -9,7 +9,7 @@ NullPlayer features multiple visualization systems for audio-reactive visual eff
 
 ## Main Window Visualization
 
-The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports seven rendering modes.
+The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports eight rendering modes.
 
 ### Modes
 
@@ -22,6 +22,7 @@ The main window's built-in visualization area (76x16 pixels in Winamp coordinate
 | **JWST** | Deep space flythrough with 3D star field and JWST diffraction flares |
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks |
 | **Matrix** | Falling digital rain with procedural glyphs mapped to spectrum bands |
+| **Snow** | Audio-reactive snowfall with flurry-to-blizzard intensity and bass-driven wind gusts |
 
 ### Switching Modes
 
@@ -244,6 +245,7 @@ Participates in docking system with Main, EQ, and Playlist:
 | **JWST** | Deep space flythrough with 3D star field, JWST diffraction flares |
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks (8 color schemes) |
 | **Matrix** | Falling digital rain with procedural glyphs (5 color schemes, 2 intensity presets) |
+| **Snow** | Layered procedural snowfall with spectrum-shaped density, gusting drift, and soft atmospheric haze |
 
 ### Switching Modes
 
@@ -332,8 +334,8 @@ Controls how quickly bars fall:
 
 | Feature | Album Art | ProjectM/MilkDrop | Spectrum Analyzer |
 |---------|-----------|-------------------|-------------------|
-| **Visual Style** | Transformed artwork | Procedural graphics | Frequency bars/Fire/JWST/Lightning/Matrix |
-| **Effect Count** | 30 built-in | 100s of presets | 7 modes |
+| **Visual Style** | Transformed artwork | Procedural graphics | Frequency bars/Fire/JWST/Lightning/Matrix/Snow |
+| **Effect Count** | 30 built-in | 100s of presets | 8 modes |
 | **Customization** | Intensity adjustment | Full preset ecosystem | Mode + decay + style presets |
 | **GPU Tech** | Core Image (Metal) | OpenGL shaders | Metal shaders + compute |
 | **Audio Response** | Spectrum bands | PCM waveform + beats | 75-band spectrum / energy-driven |
@@ -386,7 +388,7 @@ Controls how quickly bars fall:
 - `Windows/Spectrum/SpectrumView.swift` - Container with classic chrome
 - `Windows/ModernSpectrum/ModernSpectrumWindowController.swift` - Window controller (modern)
 - `Windows/ModernSpectrum/ModernSpectrumView.swift` - Container with modern chrome
-- `Visualization/SpectrumAnalyzerView.swift` - Metal rendering (all 7 modes, shared)
+- `Visualization/SpectrumAnalyzerView.swift` - Metal rendering (all 8 modes, shared)
 - `Visualization/SpectrumShaders.metal` - Enhanced/Ultra mode shaders
 - `Visualization/FlameShaders.metal` - Fire mode compute + render shaders
 - `Visualization/CosmicShaders.metal` - JWST mode fragment shaders

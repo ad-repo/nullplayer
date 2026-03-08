@@ -24,6 +24,7 @@ enum SpectrumQualityMode: String, CaseIterable {
     case cosmic = "JWST"         // Procedural nebula inspired by JWST Pillars of Creation
     case electricity = "Lightning" // GPU lightning storm driven by peak frequencies
     case matrix = "Matrix"           // Falling digital rain driven by spectrum
+    case snow = "Snow"               // Audio-reactive snowfall driven by spectrum density
     
     var displayName: String { rawValue }
     
@@ -36,6 +37,7 @@ enum SpectrumQualityMode: String, CaseIterable {
         case .cosmic: return "CosmicShaders"
         case .electricity: return "ElectricityShaders"
         case .matrix: return "MatrixShaders"
+        case .snow: return "SnowShaders"
         }
     }
 }
@@ -214,6 +216,21 @@ struct MatrixParams {
     var brightnessBoost: Float = 1.0 // 4 bytes (offset 48) → total 52 (padded to 56)
 }
 
+/// Parameters for Snow Metal shaders (must match Metal SnowParams struct)
+struct SnowParams {
+    var viewportSize: SIMD2<Float>  // 8 bytes (offset 0)
+    var time: Float                  // 4 bytes (offset 8)
+    var bassEnergy: Float            // 4 bytes (offset 12)
+    var midEnergy: Float             // 4 bytes (offset 16)
+    var trebleEnergy: Float          // 4 bytes (offset 20)
+    var totalEnergy: Float           // 4 bytes (offset 24)
+    var beatIntensity: Float         // 4 bytes (offset 28)
+    var fallOffset: Float            // 4 bytes (offset 32)
+    var windPhase: Float             // 4 bytes (offset 36)
+    var density: Float               // 4 bytes (offset 40)
+    var brightnessBoost: Float = 1.0 // 4 bytes (offset 44) → total 48
+}
+
 /// Decay mode controlling how quickly bars fall
 enum SpectrumDecayMode: String, CaseIterable {
     case instant = "Instant"     // No smoothing, immediate response
@@ -311,6 +328,7 @@ class SpectrumAnalyzerView: NSView {
         case .cosmic: return cosmicRenderPipeline != nil
         case .electricity: return electricityRenderPipeline != nil
         case .matrix: return matrixRenderPipeline != nil
+        case .snow: return snowRenderPipeline != nil
         }
     }
     
@@ -496,6 +514,10 @@ class SpectrumAnalyzerView: NSView {
     private var matrixRenderPipeline: MTLRenderPipelineState?
     private var matrixParamsBuffer: MTLBuffer?
     
+    // Snow mode resources
+    private var snowRenderPipeline: MTLRenderPipelineState?
+    private var snowParamsBuffer: MTLBuffer?
+    
     // Flame mode resources
     private var flamePropPipeline: MTLComputePipelineState?
     private var flameRenderPipeline: MTLRenderPipelineState?   // vertical blur + color pass
@@ -587,6 +609,15 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var matrixDramaticCooldown: Int = 0  // Frames until next dramatic allowed
     nonisolated(unsafe) private var renderMatrixColorScheme: MatrixColorScheme = .classic
     nonisolated(unsafe) private var renderMatrixIntensity: MatrixIntensity = .subtle
+    
+    // Snow mode state
+    nonisolated(unsafe) private var snowSmoothBass: Float = 0
+    nonisolated(unsafe) private var snowSmoothMid: Float = 0
+    nonisolated(unsafe) private var snowSmoothTreble: Float = 0
+    nonisolated(unsafe) private var snowBeatIntensity: Float = 0
+    nonisolated(unsafe) private var snowFallOffset: Float = 0
+    nonisolated(unsafe) private var snowWindPhase: Float = 0
+    nonisolated(unsafe) private var snowDensity: Float = 0.2
     
     // Flame mode state
     nonisolated(unsafe) private var renderFlameStyle: FlameStyle = .inferno
@@ -893,6 +924,7 @@ class SpectrumAnalyzerView: NSView {
         setupCosmicPipelines()
         setupElectricityPipelines()
         setupMatrixPipelines()
+        setupSnowPipelines()
         
         // Create buffers
         setupBuffers()
@@ -923,7 +955,7 @@ class SpectrumAnalyzerView: NSView {
         case .electricity:
             // Lightning is fragment-heavy at fullscreen sizes.
             return 1.0
-        case .cosmic, .matrix:
+        case .cosmic, .matrix, .snow:
             // Slight cap keeps these smooth while preserving detail.
             return min(baseScale, 1.25)
         default:
@@ -1029,6 +1061,8 @@ class SpectrumAnalyzerView: NSView {
                 pipelineState = electricityRenderPipeline
             case .matrix:
                 pipelineState = matrixRenderPipeline
+            case .snow:
+                pipelineState = snowRenderPipeline
             }
 
             NSLog("SpectrumAnalyzerView: Metal pipelines created successfully")
@@ -1101,6 +1135,9 @@ class SpectrumAnalyzerView: NSView {
         
         // Matrix mode buffers
         matrixParamsBuffer = device.makeBuffer(length: MemoryLayout<MatrixParams>.stride, options: .storageModeShared)
+        
+        // Snow mode buffers
+        snowParamsBuffer = device.makeBuffer(length: MemoryLayout<SnowParams>.stride, options: .storageModeShared)
     }
     
     /// Set up flame compute and render pipelines
@@ -1225,6 +1262,30 @@ class SpectrumAnalyzerView: NSView {
             NSLog("SpectrumAnalyzerView: Matrix pipeline created")
         } catch {
             NSLog("SpectrumAnalyzerView: Matrix shader error: \(error)")
+        }
+    }
+    
+    /// Set up Snow mode render pipeline
+    private func setupSnowPipelines() {
+        guard let device = device else { return }
+        guard let url = BundleHelper.url(forResource: "SnowShaders", withExtension: "metal"),
+              let src = try? String(contentsOf: url, encoding: .utf8) else {
+            NSLog("SpectrumAnalyzerView: SnowShaders.metal not found")
+            return
+        }
+        do {
+            let lib = try device.makeLibrary(source: src, options: nil)
+            if let vf = lib.makeFunction(name: "snow_vertex"),
+               let ff = lib.makeFunction(name: "snow_fragment") {
+                let d = MTLRenderPipelineDescriptor()
+                d.vertexFunction = vf
+                d.fragmentFunction = ff
+                d.colorAttachments[0].pixelFormat = .bgra8Unorm
+                snowRenderPipeline = try device.makeRenderPipelineState(descriptor: d)
+            }
+            NSLog("SpectrumAnalyzerView: Snow pipeline created")
+        } catch {
+            NSLog("SpectrumAnalyzerView: Snow shader error: \(error)")
         }
     }
 
@@ -1428,6 +1489,10 @@ class SpectrumAnalyzerView: NSView {
             renderMatrix(drawable: drawable)
             return
         }
+        if currentMode == .snow {
+            renderSnow(drawable: drawable)
+            return
+        }
         
         let activePipeline: MTLRenderPipelineState?
         switch currentMode {
@@ -1445,6 +1510,8 @@ class SpectrumAnalyzerView: NSView {
             activePipeline = nil  // Handled by renderElectricity() above
         case .matrix:
             activePipeline = nil  // Handled by renderMatrix() above
+        case .snow:
+            activePipeline = nil  // Handled by renderSnow() above
         }
 
         guard let pipeline = activePipeline,
@@ -1542,6 +1609,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Handled by renderElectricity() above
         case .matrix:
             break  // Handled by renderMatrix() above
+        case .snow:
+            break  // Handled by renderSnow() above
         }
         
         encoder.endEncoding()
@@ -2034,6 +2103,112 @@ class SpectrumAnalyzerView: NSView {
         cb.present(drawable); cb.commit()
     }
     
+    /// Render snow mode: procedural layered snowfall with spectrum-driven density and gusts
+    private func renderSnow(drawable: CAMetalDrawable) {
+        guard let cb = commandQueue?.makeCommandBuffer() else {
+            inFlightSemaphore.signal(); return
+        }
+        
+        var localTime: Float = 0
+        var localFallOffset: Float = 0
+        var localWindPhase: Float = 0
+        var localDensity: Float = 0.05
+        
+        dataLock.withLock {
+            animationTime += 1.0 / 60.0
+            localTime = animationTime
+            
+            var bass: Float = 0
+            var mid: Float = 0
+            var treble: Float = 0
+            if !rawSpectrum.isEmpty {
+                for i in 0..<min(16, rawSpectrum.count) { bass += rawSpectrum[i] }
+                bass /= 16.0
+                for i in 16..<min(50, rawSpectrum.count) { mid += rawSpectrum[i] }
+                mid /= 34.0
+                for i in 50..<min(75, rawSpectrum.count) { treble += rawSpectrum[i] }
+                treble /= 25.0
+            }
+            bass *= bassAttenuation
+            
+            snowSmoothBass += (bass - snowSmoothBass) * (bass > snowSmoothBass ? 0.34 : 0.05)
+            snowSmoothMid += (mid - snowSmoothMid) * (mid > snowSmoothMid ? 0.28 : 0.045)
+            snowSmoothTreble += (treble - snowSmoothTreble) * (treble > snowSmoothTreble ? 0.32 : 0.05)
+            
+            let totalEnergy = (snowSmoothBass + snowSmoothMid + snowSmoothTreble) / 3.0
+            if bass > snowSmoothBass + 0.10 || treble > snowSmoothTreble + 0.12 || totalEnergy > snowDensity + 0.10 {
+                snowBeatIntensity = min(1.0, snowBeatIntensity + 0.42)
+            }
+            snowBeatIntensity *= 0.90
+            
+            let energyCurve = pow(min(1.0, totalEnergy), 1.55)
+            let targetDensity = min(1.0, 0.006 + energyCurve * 0.72 + snowSmoothTreble * 0.06)
+            snowDensity += (targetDensity - snowDensity) * (targetDensity > snowDensity ? 0.16 : 0.03)
+            let fallSpeed: Float = 0.014 + energyCurve * 0.42 + snowSmoothTreble * 0.05
+            let windSpeed: Float = 0.03 + snowSmoothBass * 0.09
+            
+            snowFallOffset += fallSpeed * (1.0 / 60.0)
+            snowWindPhase += windSpeed * (1.0 / 60.0)
+            
+            localFallOffset = snowFallOffset
+            localWindPhase = snowWindPhase
+            localDensity = snowDensity
+        }
+        
+        var localSpectrum: [Float] = []
+        dataLock.withLock { localSpectrum = displaySpectrum }
+        if let buf = flameSpectrumBuffer {
+            let p = buf.contents().bindMemory(to: Float.self, capacity: 75)
+            let bassAtten = bassAttenuation
+            for i in 0..<75 {
+                var val: Float = i < localSpectrum.count ? localSpectrum[i] : 0
+                if i < 16 { val *= bassAtten }
+                p[i] = val
+            }
+        }
+        
+        let viewport = drawableViewportSize(drawable)
+        let totalEnergy = (snowSmoothBass + snowSmoothMid + snowSmoothTreble) / 3.0
+        if let buf = snowParamsBuffer {
+            let p = buf.contents().bindMemory(to: SnowParams.self, capacity: 1)
+            p.pointee = SnowParams(
+                viewportSize: viewport,
+                time: localTime,
+                bassEnergy: snowSmoothBass,
+                midEnergy: snowSmoothMid,
+                trebleEnergy: snowSmoothTreble,
+                totalEnergy: totalEnergy,
+                beatIntensity: snowBeatIntensity,
+                fallOffset: localFallOffset,
+                windPhase: localWindPhase,
+                density: localDensity,
+                brightnessBoost: brightnessBoost
+            )
+        }
+        
+        guard let pl = snowRenderPipeline else {
+            inFlightSemaphore.signal(); return
+        }
+        
+        let rpd = MTLRenderPassDescriptor()
+        rpd.colorAttachments[0].texture = drawable.texture
+        rpd.colorAttachments[0].loadAction = .clear
+        rpd.colorAttachments[0].storeAction = .store
+        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0.02, green: 0.04, blue: 0.07, alpha: 1)
+        
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
+            enc.setRenderPipelineState(pl)
+            enc.setFragmentBuffer(snowParamsBuffer, offset: 0, index: 0)
+            enc.setFragmentBuffer(flameSpectrumBuffer, offset: 0, index: 1)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+            enc.endEncoding()
+        }
+        
+        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
+        cb.present(drawable)
+        cb.commit()
+    }
+    
     /// Update display spectrum with decay and return whether there's visible data
     /// Thread-safe version that acquires the lock
     /// - Returns: true if any bar has visible data (> 0.01), false if all bars are essentially zero
@@ -2165,6 +2340,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Electricity handles its own state in renderElectricity()
         case .matrix:
             break  // Matrix handles its own state in renderMatrix()
+        case .snow:
+            break  // Snow handles its own state in renderSnow()
         }
 
         hasVisibleData = hasData
@@ -2550,6 +2727,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Electricity updates its own buffers in renderElectricity()
         case .matrix:
             break  // Matrix updates its own buffers in renderMatrix()
+        case .snow:
+            break  // Snow updates its own buffers in renderSnow()
         }
     }
     

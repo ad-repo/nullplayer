@@ -9,6 +9,7 @@ enum MainWindowVisMode: String, CaseIterable {
     case cosmic = "JWST"             // Procedural nebula (Metal overlay)
     case electricity = "Lightning"   // GPU lightning storm (Metal overlay)
     case matrix = "Matrix"           // Falling digital rain (Metal overlay)
+    case snow = "Snow"               // Audio-reactive snowfall (Metal overlay)
     
     var displayName: String { rawValue }
     
@@ -25,6 +26,7 @@ enum MainWindowVisMode: String, CaseIterable {
         case .cosmic: return .cosmic
         case .electricity: return .electricity
         case .matrix: return .matrix
+        case .snow: return .snow
         }
     }
 }

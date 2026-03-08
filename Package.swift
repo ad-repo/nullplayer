@@ -70,6 +70,7 @@ let package = Package(
                 .copy("Visualization/CosmicShaders.metal"),
                 .copy("Visualization/ElectricityShaders.metal"),
                 .copy("Visualization/MatrixShaders.metal"),
+                .copy("Visualization/SnowShaders.metal"),
                 .copy("ModernSkin/BloomShader.metal")
             ],
             linkerSettings: [
