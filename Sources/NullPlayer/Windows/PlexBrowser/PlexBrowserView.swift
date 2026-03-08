@@ -5263,6 +5263,12 @@ class PlexBrowserView: NSView {
                         image = await self.loadWebArtwork(artist: track.artist, album: track.album, title: track.title)
                     }
                 }
+            } else if RadioManager.shared.isActive {
+                // Internet radio - use station icon URL or favicon fallback
+                image = await self.loadRadioArtwork(for: track)
+            } else if let thumb = track.artworkThumb {
+                // Generic remote artwork URL fallback
+                image = await self.loadRemoteArtwork(urlString: thumb, cacheNamespace: "generic")
             }
             
             // Check if task was cancelled
@@ -5557,6 +5563,66 @@ class PlexBrowserView: NSView {
         
         return nil
     }
+
+    private func loadRemoteArtwork(urlString: String, cacheNamespace: String) async -> NSImage? {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            return nil
+        }
+
+        let cacheKey = NSString(string: "\(cacheNamespace):\(trimmed)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) { return cached }
+
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 8
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            let mime = (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+            let looksLikeIcon = url.path.lowercased().hasSuffix(".ico") || mime.contains("icon")
+            guard mime.contains("image") || looksLikeIcon else { return nil }
+            guard let image = NSImage(data: data) else { return nil }
+            Self.artworkCache.setObject(image, forKey: cacheKey)
+            return image
+        } catch {
+            return nil
+        }
+    }
+
+    private func loadRadioArtwork(for track: Track, station: RadioStation? = nil) async -> NSImage? {
+        if let thumb = track.artworkThumb,
+           let image = await loadRemoteArtwork(urlString: thumb, cacheNamespace: "radio") {
+            return image
+        }
+
+        let activeStation = station ?? RadioManager.shared.currentStation
+        if let iconURL = activeStation?.iconURL?.absoluteString,
+           let image = await loadRemoteArtwork(urlString: iconURL, cacheNamespace: "radio") {
+            return image
+        }
+
+        var hosts = Set<String>()
+        if let host = track.url.host, !host.isEmpty { hosts.insert(host) }
+        if let host = activeStation?.url.host, !host.isEmpty { hosts.insert(host) }
+
+        var candidates: [String] = []
+        for host in hosts {
+            candidates.append("https://\(host)/favicon.ico")
+            if !host.lowercased().hasPrefix("www.") {
+                candidates.append("https://www.\(host)/favicon.ico")
+            }
+            candidates.append("http://\(host)/favicon.ico")
+        }
+
+        for candidate in candidates {
+            if let image = await loadRemoteArtwork(urlString: candidate, cacheNamespace: "radio-favicon") {
+                return image
+            }
+        }
+
+        return nil
+    }
     
     /// Extract all embedded artwork images from a local audio file
     /// Returns array of images (deduped across different metadata formats)
@@ -5669,6 +5735,14 @@ class PlexBrowserView: NSView {
             } else if let jellyfinId = currentTrack.jellyfinId {
                 // Jellyfin track - load cover art
                 if let image = await self.loadJellyfinArtwork(itemId: jellyfinId, imageTag: nil) {
+                    images.append(image)
+                }
+            } else if RadioManager.shared.isActive {
+                if let image = await self.loadRadioArtwork(for: currentTrack) {
+                    images.append(image)
+                }
+            } else if let thumb = currentTrack.artworkThumb {
+                if let image = await self.loadRemoteArtwork(urlString: thumb, cacheNamespace: "generic") {
                     images.append(image)
                 }
             }
@@ -5835,8 +5909,10 @@ class PlexBrowserView: NSView {
                 // Video artwork is loaded during playback via AVAssetImageGenerator
                 break
 
-            case .plexRadioStation, .radioStation, .radioFolder, .header:
-                // Radio stations load artwork when playing, not on selection
+            case .radioStation(let station):
+                let radioTrack = station.toTrack()
+                image = await self.loadRadioArtwork(for: radioTrack, station: station)
+            case .plexRadioStation, .radioFolder, .header:
                 break
             }
 

@@ -6264,6 +6264,10 @@ class ModernLibraryBrowserView: NSView {
                 image = await self.loadEmbyArtwork(itemId: embyId, imageTag: track.artworkThumb)
             } else if track.url.isFileURL {
                 image = await self.loadLocalArtwork(url: track.url)
+            } else if RadioManager.shared.isActive {
+                image = await self.loadRadioArtwork(for: track)
+            } else if let thumb = track.artworkThumb {
+                image = await self.loadRemoteArtwork(urlString: thumb, cacheNamespace: "generic")
             }
             guard !Task.isCancelled else { return }
             await MainActor.run { self.currentArtwork = image; self.artworkTrackId = track.id; self.needsDisplay = true }
@@ -6339,6 +6343,65 @@ class ModernLibraryBrowserView: NSView {
         } catch { }
         return nil
     }
+
+    private func loadRemoteArtwork(urlString: String, cacheNamespace: String) async -> NSImage? {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            return nil
+        }
+        let cacheKey = NSString(string: "\(cacheNamespace):\(trimmed)")
+        if let cached = Self.artworkCache.object(forKey: cacheKey) { return cached }
+
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 8
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            let mime = (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+            let looksLikeIcon = url.path.lowercased().hasSuffix(".ico") || mime.contains("icon")
+            guard mime.contains("image") || looksLikeIcon else { return nil }
+            guard let image = NSImage(data: data) else { return nil }
+            Self.artworkCache.setObject(image, forKey: cacheKey)
+            return image
+        } catch {
+            return nil
+        }
+    }
+
+    private func loadRadioArtwork(for track: Track, station: RadioStation? = nil) async -> NSImage? {
+        if let thumb = track.artworkThumb,
+           let image = await loadRemoteArtwork(urlString: thumb, cacheNamespace: "radio") {
+            return image
+        }
+
+        let activeStation = station ?? RadioManager.shared.currentStation
+        if let iconURL = activeStation?.iconURL?.absoluteString,
+           let image = await loadRemoteArtwork(urlString: iconURL, cacheNamespace: "radio") {
+            return image
+        }
+
+        var hosts = Set<String>()
+        if let host = track.url.host, !host.isEmpty { hosts.insert(host) }
+        if let host = activeStation?.url.host, !host.isEmpty { hosts.insert(host) }
+
+        var candidates: [String] = []
+        for host in hosts {
+            candidates.append("https://\(host)/favicon.ico")
+            if !host.lowercased().hasPrefix("www.") {
+                candidates.append("https://www.\(host)/favicon.ico")
+            }
+            candidates.append("http://\(host)/favicon.ico")
+        }
+
+        for candidate in candidates {
+            if let image = await loadRemoteArtwork(urlString: candidate, cacheNamespace: "radio-favicon") {
+                return image
+            }
+        }
+
+        return nil
+    }
     
     private func loadAllArtworkForCurrentTrack() {
         artworkCyclingTask?.cancel(); artworkCyclingTask = nil
@@ -6357,6 +6420,10 @@ class ModernLibraryBrowserView: NSView {
                 if let img = await self.loadJellyfinArtwork(itemId: jellyfinId, imageTag: currentTrack.artworkThumb) { images.append(img) }
             } else if let embyId = currentTrack.embyId {
                 if let img = await self.loadEmbyArtwork(itemId: embyId, imageTag: currentTrack.artworkThumb) { images.append(img) }
+            } else if RadioManager.shared.isActive {
+                if let img = await self.loadRadioArtwork(for: currentTrack) { images.append(img) }
+            } else if let thumb = currentTrack.artworkThumb {
+                if let img = await self.loadRemoteArtwork(urlString: thumb, cacheNamespace: "generic") { images.append(img) }
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
@@ -6463,6 +6530,9 @@ class ModernLibraryBrowserView: NSView {
                 image = await self.loadEmbyArtwork(itemId: season.id, imageTag: season.imageTag)
             case .embyEpisode(let episode):
                 image = await self.loadEmbyArtwork(itemId: episode.id, imageTag: episode.imageTag)
+            case .radioStation(let station):
+                let radioTrack = station.toTrack()
+                image = await self.loadRadioArtwork(for: radioTrack, station: station)
             default:
                 break
             }
