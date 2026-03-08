@@ -683,6 +683,8 @@ class PlexBrowserView: NSView {
     private var cachedRadioStations: [RadioStation] = []
     private var cachedRadioFolders: [RadioFolderDescriptor] = []
     private var expandedRadioFolders: Set<String> = []
+    private var radioLoadTask: Task<Void, Never>?
+    private var radioPlayTask: Task<Void, Never>?
 
     private struct RadioFolderMembershipAction {
         let station: RadioStation
@@ -1467,17 +1469,13 @@ class PlexBrowserView: NSView {
             // When switching to Internet Radio source, automatically switch to radio tab
             browseMode = .radio
         } else if browseMode == .radio, case .local = currentSource {
-            // When switching to Local source from radio tab, switch to artists tab
-            // (Plex and Subsonic modes support radio tab for Plex Radio)
+            // When switching sources from radio tab, default back to artists for non-Plex.
             browseMode = .artists
         } else if browseMode == .radio, case .subsonic = currentSource {
-            // Subsonic doesn't support radio tab, switch to artists tab
             browseMode = .artists
         } else if browseMode == .radio, case .jellyfin = currentSource {
-            // Jellyfin doesn't support radio tab, switch to artists tab
             browseMode = .artists
         } else if browseMode == .radio, case .emby = currentSource {
-            // Emby doesn't support radio tab, switch to artists tab
             browseMode = .artists
         }
         
@@ -5073,11 +5071,18 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Non-radio sources: radio tab shows Plex Radio options (for Plex) or empty
+        // Non-radio sources: radio tab supports source-specific library radio
         if browseMode == .radio {
             if case .plex = currentSource, PlexManager.shared.isLinked {
-                // Show Plex Radio options in the RADIO tab when in Plex mode
                 loadPlexRadioStations()
+            } else if case .subsonic = currentSource {
+                loadSubsonicRadioStations()
+            } else if case .jellyfin = currentSource {
+                loadJellyfinRadioStations()
+            } else if case .emby = currentSource {
+                loadEmbyRadioStations()
+            } else if case .local = currentSource {
+                loadLocalRadioStations()
             } else {
                 displayItems = []
             }
@@ -6106,7 +6111,13 @@ class PlexBrowserView: NSView {
             case .radioStation(let station):
                 let radioTrack = station.toTrack()
                 image = await self.loadRadioArtwork(for: radioTrack, station: station)
-            case .plexRadioStation, .radioFolder, .header:
+            case .plexRadioStation,
+                 .subsonicRadioStation,
+                 .jellyfinRadioStation,
+                 .embyRadioStation,
+                 .localRadioStation,
+                 .radioFolder,
+                 .header:
                 break
             }
 
@@ -7185,10 +7196,18 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Radio tab on Plex source - refresh Plex Radio stations
+        // Radio tab on non-radio sources - refresh source-specific radio stations
         if browseMode == .radio {
             if case .plex = currentSource {
                 loadPlexRadioStations()
+            } else if case .subsonic = currentSource {
+                loadSubsonicRadioStations()
+            } else if case .jellyfin = currentSource {
+                loadJellyfinRadioStations()
+            } else if case .emby = currentSource {
+                loadEmbyRadioStations()
+            } else if case .local = currentSource {
+                loadLocalRadioStations()
             }
             return
         }
@@ -8080,7 +8099,12 @@ class PlexBrowserView: NSView {
                 playTrack(item)
             case .localTrack(let track):
                 playLocalTrack(track)
-            case .plexRadioStation, .radioStation:
+            case .plexRadioStation,
+                 .subsonicRadioStation,
+                 .jellyfinRadioStation,
+                 .embyRadioStation,
+                 .localRadioStation,
+                 .radioStation:
                 // Radio stations don't load artwork on single-click - only on play (double-click)
                 break
             default:
@@ -9180,6 +9204,30 @@ class PlexBrowserView: NSView {
             viewArtItem.target = self
             viewArtItem.representedObject = item
             menu.addItem(viewArtItem)
+
+        case .subsonicRadioStation:
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlaySubsonicRadioStation(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = item
+            menu.addItem(playItem)
+
+        case .jellyfinRadioStation:
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayJellyfinRadioStation(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = item
+            menu.addItem(playItem)
+
+        case .embyRadioStation:
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayEmbyRadioStation(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = item
+            menu.addItem(playItem)
+
+        case .localRadioStation:
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalRadioStation(_:)), keyEquivalent: "")
+            playItem.target = self
+            playItem.representedObject = item
+            menu.addItem(playItem)
             
         case .localMovie(let movie):
             let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlay(_:)), keyEquivalent: "")
@@ -9564,6 +9612,30 @@ class PlexBrowserView: NSView {
         guard let item = sender.representedObject as? PlexDisplayItem,
               case .plexRadioStation(let radioType) = item.type else { return }
         playPlexRadioStation(radioType)
+    }
+
+    @objc private func contextMenuPlaySubsonicRadioStation(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem,
+              case .subsonicRadioStation(let radioType) = item.type else { return }
+        playSubsonicRadioStation(radioType)
+    }
+
+    @objc private func contextMenuPlayJellyfinRadioStation(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem,
+              case .jellyfinRadioStation(let radioType) = item.type else { return }
+        playJellyfinRadioStation(radioType)
+    }
+
+    @objc private func contextMenuPlayEmbyRadioStation(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem,
+              case .embyRadioStation(let radioType) = item.type else { return }
+        playEmbyRadioStation(radioType)
+    }
+
+    @objc private func contextMenuPlayLocalRadioStation(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem,
+              case .localRadioStation(let radioType) = item.type else { return }
+        playLocalRadioStation(radioType)
     }
     
     @objc private func contextMenuViewPlexRadioArt(_ sender: NSMenuItem) {
@@ -11447,11 +11519,18 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Non-radio sources: radio tab shows Plex Radio options (for Plex) or empty
+        // Non-radio sources: radio tab supports source-specific library radio
         if browseMode == .radio {
             if case .plex = currentSource, PlexManager.shared.isLinked {
-                // Show Plex Radio options in the RADIO tab when in Plex mode
                 loadPlexRadioStations()
+            } else if case .subsonic = currentSource {
+                loadSubsonicRadioStations()
+            } else if case .jellyfin = currentSource {
+                loadJellyfinRadioStations()
+            } else if case .emby = currentSource {
+                loadEmbyRadioStations()
+            } else if case .local = currentSource {
+                loadLocalRadioStations()
             } else {
                 isLoading = false
                 errorMessage = nil
@@ -12280,6 +12359,70 @@ class PlexBrowserView: NSView {
             needsDisplay = true
         }
     }
+
+    private func loadSubsonicRadioStations() {
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+
+        radioLoadTask?.cancel()
+        radioLoadTask = Task { @MainActor in
+            let genres = await SubsonicManager.shared.getGenres()
+            guard !Task.isCancelled, browseMode == .radio, case .subsonic = currentSource else { return }
+            buildSubsonicRadioStationItems(genres: genres)
+            isLoading = false
+            stopLoadingAnimation()
+            needsDisplay = true
+            radioLoadTask = nil
+        }
+    }
+
+    private func loadJellyfinRadioStations() {
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+
+        radioLoadTask?.cancel()
+        radioLoadTask = Task { @MainActor in
+            let genres = await JellyfinManager.shared.getMusicGenres()
+            guard !Task.isCancelled, browseMode == .radio, case .jellyfin = currentSource else { return }
+            buildJellyfinRadioStationItems(genres: genres)
+            isLoading = false
+            stopLoadingAnimation()
+            needsDisplay = true
+            radioLoadTask = nil
+        }
+    }
+
+    private func loadEmbyRadioStations() {
+        isLoading = true
+        errorMessage = nil
+        startLoadingAnimation()
+        needsDisplay = true
+
+        radioLoadTask?.cancel()
+        radioLoadTask = Task { @MainActor in
+            let genres = await EmbyManager.shared.getMusicGenres()
+            guard !Task.isCancelled, browseMode == .radio, case .emby = currentSource else { return }
+            buildEmbyRadioStationItems(genres: genres)
+            isLoading = false
+            stopLoadingAnimation()
+            needsDisplay = true
+            radioLoadTask = nil
+        }
+    }
+
+    private func loadLocalRadioStations() {
+        isLoading = false
+        errorMessage = nil
+        stopLoadingAnimation()
+
+        let genres = MediaLibrary.shared.allGenres()
+        buildLocalRadioStationItems(genres: genres)
+        needsDisplay = true
+    }
     
     /// Build display items for Plex Radio stations
     private func buildPlexRadioStationItems(genres: [String]) {
@@ -12396,6 +12539,254 @@ class PlexBrowserView: NSView {
                 indentLevel: 0,
                 hasChildren: false,
                 type: .plexRadioStation(.decadeRadioSonic(start: decade.start, end: decade.end, name: decade.name))
+            ))
+        }
+    }
+
+    private func buildSubsonicRadioStationItems(genres: [String]) {
+        displayItems.removeAll()
+        displayItems.append(PlexDisplayItem(
+            id: "sub-radio-library",
+            title: "Library Radio",
+            info: "Library",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .subsonicRadioStation(.libraryRadio)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "sub-radio-library-sim",
+            title: "Library Radio (Similar)",
+            info: "Library",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .subsonicRadioStation(.librarySimilar)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "sub-radio-starred",
+            title: "Starred Radio",
+            info: "Starred",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .subsonicRadioStation(.starredRadio)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "sub-radio-starred-sim",
+            title: "Starred Radio (Similar)",
+            info: "Starred",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .subsonicRadioStation(.starredSimilar)
+        ))
+        for genre in genres {
+            displayItems.append(PlexDisplayItem(
+                id: "sub-radio-genre-\(genre)",
+                title: "\(genre) Radio",
+                info: "Genre",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .subsonicRadioStation(.genreRadio(genre))
+            ))
+            displayItems.append(PlexDisplayItem(
+                id: "sub-radio-genre-\(genre)-sim",
+                title: "\(genre) Radio (Similar)",
+                info: "Genre",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .subsonicRadioStation(.genreSimilar(genre))
+            ))
+        }
+        for decade in RadioConfig.decades {
+            displayItems.append(PlexDisplayItem(
+                id: "sub-radio-decade-\(decade.name)",
+                title: "\(decade.name) Radio",
+                info: "Decade",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .subsonicRadioStation(.decadeRadio(start: decade.start, end: decade.end, name: decade.name))
+            ))
+            displayItems.append(PlexDisplayItem(
+                id: "sub-radio-decade-\(decade.name)-sim",
+                title: "\(decade.name) Radio (Similar)",
+                info: "Decade",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .subsonicRadioStation(.decadeSimilar(start: decade.start, end: decade.end, name: decade.name))
+            ))
+        }
+    }
+
+    private func buildJellyfinRadioStationItems(genres: [String]) {
+        displayItems.removeAll()
+        displayItems.append(PlexDisplayItem(
+            id: "jf-radio-library",
+            title: "Library Radio",
+            info: "Library",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .jellyfinRadioStation(.libraryRadio)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "jf-radio-library-mix",
+            title: "Library Radio (Instant Mix)",
+            info: "Library",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .jellyfinRadioStation(.libraryInstantMix)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "jf-radio-fav",
+            title: "Favorites Radio",
+            info: "Favorites",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .jellyfinRadioStation(.favoritesRadio)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "jf-radio-fav-mix",
+            title: "Favorites Radio (Instant Mix)",
+            info: "Favorites",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .jellyfinRadioStation(.favoritesInstantMix)
+        ))
+        for genre in genres {
+            displayItems.append(PlexDisplayItem(
+                id: "jf-radio-genre-\(genre)",
+                title: "\(genre) Radio",
+                info: "Genre",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .jellyfinRadioStation(.genreRadio(genre))
+            ))
+            displayItems.append(PlexDisplayItem(
+                id: "jf-radio-genre-\(genre)-mix",
+                title: "\(genre) Radio (Instant Mix)",
+                info: "Genre",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .jellyfinRadioStation(.genreInstantMix(genre))
+            ))
+        }
+        for decade in RadioConfig.decades {
+            displayItems.append(PlexDisplayItem(
+                id: "jf-radio-decade-\(decade.name)",
+                title: "\(decade.name) Radio",
+                info: "Decade",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .jellyfinRadioStation(.decadeRadio(start: decade.start, end: decade.end, name: decade.name))
+            ))
+            displayItems.append(PlexDisplayItem(
+                id: "jf-radio-decade-\(decade.name)-mix",
+                title: "\(decade.name) Radio (Instant Mix)",
+                info: "Decade",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .jellyfinRadioStation(.decadeInstantMix(start: decade.start, end: decade.end, name: decade.name))
+            ))
+        }
+    }
+
+    private func buildEmbyRadioStationItems(genres: [String]) {
+        displayItems.removeAll()
+        displayItems.append(PlexDisplayItem(
+            id: "emby-radio-library",
+            title: "Library Radio",
+            info: "Library",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .embyRadioStation(.libraryRadio)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "emby-radio-library-mix",
+            title: "Library Radio (Instant Mix)",
+            info: "Library",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .embyRadioStation(.libraryInstantMix)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "emby-radio-fav",
+            title: "Favorites Radio",
+            info: "Favorites",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .embyRadioStation(.favoritesRadio)
+        ))
+        displayItems.append(PlexDisplayItem(
+            id: "emby-radio-fav-mix",
+            title: "Favorites Radio (Instant Mix)",
+            info: "Favorites",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .embyRadioStation(.favoritesInstantMix)
+        ))
+        for genre in genres {
+            displayItems.append(PlexDisplayItem(
+                id: "emby-radio-genre-\(genre)",
+                title: "\(genre) Radio",
+                info: "Genre",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .embyRadioStation(.genreRadio(genre))
+            ))
+            displayItems.append(PlexDisplayItem(
+                id: "emby-radio-genre-\(genre)-mix",
+                title: "\(genre) Radio (Instant Mix)",
+                info: "Genre",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .embyRadioStation(.genreInstantMix(genre))
+            ))
+        }
+        for decade in RadioConfig.decades {
+            displayItems.append(PlexDisplayItem(
+                id: "emby-radio-decade-\(decade.name)",
+                title: "\(decade.name) Radio",
+                info: "Decade",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .embyRadioStation(.decadeRadio(start: decade.start, end: decade.end, name: decade.name))
+            ))
+            displayItems.append(PlexDisplayItem(
+                id: "emby-radio-decade-\(decade.name)-mix",
+                title: "\(decade.name) Radio (Instant Mix)",
+                info: "Decade",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .embyRadioStation(.decadeInstantMix(start: decade.start, end: decade.end, name: decade.name))
+            ))
+        }
+    }
+
+    private func buildLocalRadioStationItems(genres: [String]) {
+        displayItems.removeAll()
+        displayItems.append(PlexDisplayItem(
+            id: "local-radio-library",
+            title: "Library Radio",
+            info: "Library",
+            indentLevel: 0,
+            hasChildren: false,
+            type: .localRadioStation(.libraryRadio)
+        ))
+        for genre in genres {
+            displayItems.append(PlexDisplayItem(
+                id: "local-radio-genre-\(genre)",
+                title: "\(genre) Radio",
+                info: "Genre",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .localRadioStation(.genreRadio(genre))
+            ))
+        }
+        for decade in RadioConfig.decades {
+            displayItems.append(PlexDisplayItem(
+                id: "local-radio-decade-\(decade.name)",
+                title: "\(decade.name) Radio",
+                info: "Decade",
+                indentLevel: 0,
+                hasChildren: false,
+                type: .localRadioStation(.decadeRadio(start: decade.start, end: decade.end, name: decade.name))
             ))
         }
     }
@@ -13665,14 +14056,11 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Non-radio sources: radio tab shows Plex Radio options (for Plex) or empty
+        // Non-radio sources: keep already-built source radio items while on RADIO tab
         if browseMode == .radio {
             if case .plex = currentSource, PlexManager.shared.isLinked {
-                // Plex Radio items are built async by loadPlexRadioStations()
-                // Don't clear displayItems here - they're already populated
                 needsDisplay = true
             } else {
-                displayItems = []
                 needsDisplay = true
             }
             return
@@ -14659,6 +15047,14 @@ class PlexBrowserView: NSView {
             
         case .plexRadioStation(let radioType):
             playPlexRadioStation(radioType)
+        case .subsonicRadioStation(let radioType):
+            playSubsonicRadioStation(radioType)
+        case .jellyfinRadioStation(let radioType):
+            playJellyfinRadioStation(radioType)
+        case .embyRadioStation(let radioType):
+            playEmbyRadioStation(radioType)
+        case .localRadioStation(let radioType):
+            playLocalRadioStation(radioType)
         }
     }
     
@@ -14713,6 +15109,116 @@ class PlexBrowserView: NSView {
                 NSLog("%@: No tracks found", radioType.displayName)
             }
         }
+    }
+
+    private func playSubsonicRadioStation(_ radioType: SubsonicRadioType) {
+        radioPlayTask?.cancel()
+        radioPlayTask = Task { @MainActor in
+            var tracks: [Track] = []
+            switch radioType {
+            case .libraryRadio:
+                tracks = await SubsonicManager.shared.createLibraryRadio()
+            case .librarySimilar:
+                tracks = await SubsonicManager.shared.createLibraryRadioSimilar()
+            case .genreRadio(let genre):
+                tracks = await SubsonicManager.shared.createGenreRadio(genre: genre)
+            case .genreSimilar(let genre):
+                tracks = await SubsonicManager.shared.createGenreRadioSimilar(genre: genre)
+            case .decadeRadio(let start, let end, _):
+                tracks = await SubsonicManager.shared.createDecadeRadio(start: start, end: end)
+            case .decadeSimilar(let start, let end, _):
+                tracks = await SubsonicManager.shared.createDecadeRadioSimilar(start: start, end: end)
+            case .starredRadio:
+                tracks = await SubsonicManager.shared.createRatingRadio()
+            case .starredSimilar:
+                tracks = await SubsonicManager.shared.createRatingRadioSimilar()
+            }
+            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            let audioEngine = WindowManager.shared.audioEngine
+            audioEngine.clearPlaylist()
+            audioEngine.loadTracks(tracks)
+            audioEngine.play()
+            radioPlayTask = nil
+        }
+    }
+
+    private func playJellyfinRadioStation(_ radioType: JellyfinRadioType) {
+        radioPlayTask?.cancel()
+        radioPlayTask = Task { @MainActor in
+            var tracks: [Track] = []
+            switch radioType {
+            case .libraryRadio:
+                tracks = await JellyfinManager.shared.createLibraryRadio()
+            case .libraryInstantMix:
+                tracks = await JellyfinManager.shared.createLibraryRadioInstantMix()
+            case .genreRadio(let genre):
+                tracks = await JellyfinManager.shared.createGenreRadio(genre: genre)
+            case .genreInstantMix(let genre):
+                tracks = await JellyfinManager.shared.createGenreRadioInstantMix(genre: genre)
+            case .decadeRadio(let start, let end, _):
+                tracks = await JellyfinManager.shared.createDecadeRadio(start: start, end: end)
+            case .decadeInstantMix(let start, let end, _):
+                tracks = await JellyfinManager.shared.createDecadeRadioInstantMix(start: start, end: end)
+            case .favoritesRadio:
+                tracks = await JellyfinManager.shared.createFavoritesRadio()
+            case .favoritesInstantMix:
+                tracks = await JellyfinManager.shared.createFavoritesRadioInstantMix()
+            }
+            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            let audioEngine = WindowManager.shared.audioEngine
+            audioEngine.clearPlaylist()
+            audioEngine.loadTracks(tracks)
+            audioEngine.play()
+            radioPlayTask = nil
+        }
+    }
+
+    private func playEmbyRadioStation(_ radioType: EmbyRadioType) {
+        radioPlayTask?.cancel()
+        radioPlayTask = Task { @MainActor in
+            var tracks: [Track] = []
+            switch radioType {
+            case .libraryRadio:
+                tracks = await EmbyManager.shared.createLibraryRadio()
+            case .libraryInstantMix:
+                tracks = await EmbyManager.shared.createLibraryRadioInstantMix()
+            case .genreRadio(let genre):
+                tracks = await EmbyManager.shared.createGenreRadio(genre: genre)
+            case .genreInstantMix(let genre):
+                tracks = await EmbyManager.shared.createGenreRadioInstantMix(genre: genre)
+            case .decadeRadio(let start, let end, _):
+                tracks = await EmbyManager.shared.createDecadeRadio(start: start, end: end)
+            case .decadeInstantMix(let start, let end, _):
+                tracks = await EmbyManager.shared.createDecadeRadioInstantMix(start: start, end: end)
+            case .favoritesRadio:
+                tracks = await EmbyManager.shared.createFavoritesRadio()
+            case .favoritesInstantMix:
+                tracks = await EmbyManager.shared.createFavoritesRadioInstantMix()
+            }
+            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            let audioEngine = WindowManager.shared.audioEngine
+            audioEngine.clearPlaylist()
+            audioEngine.loadTracks(tracks)
+            audioEngine.play()
+            radioPlayTask = nil
+        }
+    }
+
+    private func playLocalRadioStation(_ radioType: LocalRadioType) {
+        let tracks: [Track]
+        switch radioType {
+        case .libraryRadio:
+            tracks = MediaLibrary.shared.createLocalLibraryRadio()
+        case .genreRadio(let genre):
+            tracks = MediaLibrary.shared.createLocalGenreRadio(genre: genre)
+        case .decadeRadio(let start, let end, _):
+            tracks = MediaLibrary.shared.createLocalDecadeRadio(start: start, end: end)
+        }
+        guard !tracks.isEmpty else { return }
+        let audioEngine = WindowManager.shared.audioEngine
+        audioEngine.clearPlaylist()
+        audioEngine.loadTracks(tracks)
+        audioEngine.play()
     }
     
     // MARK: - Subsonic Playback
@@ -15189,6 +15695,10 @@ private struct PlexDisplayItem {
         case radioFolder(RadioFolderDescriptor)
         // Plex Radio station type (dynamic playlists from Plex library)
         case plexRadioStation(PlexRadioType)
+        case subsonicRadioStation(SubsonicRadioType)
+        case jellyfinRadioStation(JellyfinRadioType)
+        case embyRadioStation(EmbyRadioType)
+        case localRadioStation(LocalRadioType)
 
         var isAlbumItem: Bool {
             switch self {
