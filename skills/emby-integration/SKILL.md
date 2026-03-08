@@ -48,6 +48,8 @@ The key differences from Jellyfin:
 ## Library Browsing
 
 - **All libraries/views**: `GET /Users/{userId}/Views`
+  - `fetchMusicLibraries()` returns all views (unfiltered).
+  - `fetchVideoLibraries()` uses the same endpoint but filters out non-video library types (`music`, `musicvideos`, `books`, `photos`, `playlists`, `livetv`).
 - **Artists**: `GET /Artists/AlbumArtists?parentId={libId}&userId={userId}&Recursive=true&SortBy=SortName`
 - **Albums**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=MusicAlbum&Recursive=true`
 - **Artist albums**: `GET /Users/{userId}/Items?AlbumArtistIds={artistId}&IncludeItemTypes=MusicAlbum`

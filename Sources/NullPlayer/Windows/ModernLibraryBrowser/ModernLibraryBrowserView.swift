@@ -276,6 +276,7 @@ class ModernLibraryBrowserView: NSView {
     private var jellyfinPlaylistTracks: [String: [JellyfinSong]] = [:]
     private var jellyfinAlbumSongs: [String: [JellyfinSong]] = [:]
     private var jellyfinLoadTask: Task<Void, Never>?
+    private var jellyfinAlbumWarmTask: Task<Void, Never>?
     private var jellyfinExpandTask: Task<Void, Never>?
     private var expandedJellyfinArtists: Set<String> = []
     private var expandedJellyfinAlbums: Set<String> = []
@@ -3072,6 +3073,8 @@ class ModernLibraryBrowserView: NSView {
             // Cancel any in-flight load task first to prevent race conditions
             jellyfinLoadTask?.cancel()
             jellyfinLoadTask = nil
+            jellyfinAlbumWarmTask?.cancel()
+            jellyfinAlbumWarmTask = nil
             JellyfinManager.shared.clearCachedContent()
             // Show loading state immediately, then preload in parallel and refresh
             isLoading = true; errorMessage = nil; displayItems = []; startLoadingAnimation(); needsDisplay = true
@@ -5615,6 +5618,8 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func clearAllCachedData() {
+        jellyfinAlbumWarmTask?.cancel()
+        jellyfinAlbumWarmTask = nil
         cachedArtists = []; cachedAlbums = []; cachedTracks = []
         artistAlbums = [:]; albumTracks = [:]; artistAlbumCounts = [:]
         expandedArtists = []; expandedAlbums = []
@@ -6568,6 +6573,8 @@ class ModernLibraryBrowserView: NSView {
     }
     
     func refreshData() {
+        jellyfinAlbumWarmTask?.cancel()
+        jellyfinAlbumWarmTask = nil
         // Plex caches
         cachedArtists = []; cachedAlbums = []; cachedTracks = []; artistAlbums = [:]; albumTracks = [:]; artistAlbumCounts = [:]
         cachedMovies = []; cachedShows = []; showSeasons = [:]; seasonEpisodes = [:]
@@ -6811,13 +6818,32 @@ class ModernLibraryBrowserView: NSView {
                let savedId = UserDefaults.standard.string(forKey: "JellyfinCurrentServerID"), savedId == serverId {
                 Task { @MainActor in
                     NSLog("ModernLibraryBrowser: Waiting for existing Jellyfin connection to '%@'...", serverId)
-                    while case .connecting = manager.connectionState {
-                        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                    let connectWaitDeadline = Date().addingTimeInterval(5)
+                    do {
+                        while case .connecting = manager.connectionState {
+                            if Date() >= connectWaitDeadline {
+                                NSLog("ModernLibraryBrowser: Existing Jellyfin connection wait timed out; retrying connect.")
+                                break
+                            }
+                            try Task.checkCancellation()
+                            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        }
+                    } catch is CancellationError {
+                        return
                     }
                     if case .connected = manager.connectionState, manager.currentServer?.id == serverId {
                         loadJellyfinDataForCurrentMode()
                     } else {
-                        isLoading = false; stopLoadingAnimation(); errorMessage = "Connection failed"; needsDisplay = true
+                        guard let server = manager.servers.first(where: { $0.id == serverId }) else {
+                            isLoading = false; stopLoadingAnimation(); errorMessage = "Server not found"; needsDisplay = true
+                            return
+                        }
+                        do {
+                            try await manager.connect(to: server)
+                            loadJellyfinDataForCurrentMode()
+                        } catch {
+                            isLoading = false; stopLoadingAnimation(); errorMessage = error.localizedDescription; needsDisplay = true
+                        }
                     }
                 }
                 return
@@ -6840,10 +6866,15 @@ class ModernLibraryBrowserView: NSView {
             guard let self = self else { return }
             do {
                 try Task.checkCancellation()
-                // If a preload is already in progress, wait for it instead of starting duplicate fetches
+                // If preload is active, wait briefly for cache warm-up but don't block indefinitely.
                 if manager.isPreloading {
                     NSLog("ModernLibraryBrowser: Waiting for Jellyfin preload to complete...")
+                    let preloadWaitDeadline = Date().addingTimeInterval(2)
                     while manager.isPreloading {
+                        if Date() >= preloadWaitDeadline {
+                            NSLog("ModernLibraryBrowser: Jellyfin preload still running; continuing with direct fetches.")
+                            break
+                        }
                         try Task.checkCancellation()
                         try await Task.sleep(nanoseconds: 100_000_000) // 100ms
                     }
@@ -6858,7 +6889,9 @@ class ModernLibraryBrowserView: NSView {
                             cachedJellyfinArtists = manager.cachedArtists; cachedJellyfinAlbums = manager.cachedAlbums
                         } else {
                             cachedJellyfinArtists = try await manager.fetchArtists()
-                            cachedJellyfinAlbums = try await manager.fetchAlbums()
+                            if let server = manager.currentServer {
+                                warmJellyfinAlbumsCache(forServerId: server.id)
+                            }
                         }
                     }
                     pendingArtistLoadUnfiltered = false
@@ -6898,6 +6931,32 @@ class ModernLibraryBrowserView: NSView {
             } catch is CancellationError { }
             catch where Task.isCancelled { }
             catch { isLoading = false; stopLoadingAnimation(); errorMessage = error.localizedDescription; needsDisplay = true }
+        }
+    }
+
+    private func warmJellyfinAlbumsCache(forServerId serverId: String) {
+        guard jellyfinAlbumWarmTask == nil else { return }
+
+        jellyfinAlbumWarmTask = Task.detached { [weak self] in
+            guard let self = self else { return }
+            do {
+                let albums = try await JellyfinManager.shared.fetchAlbums()
+                await MainActor.run {
+                    defer { self.jellyfinAlbumWarmTask = nil }
+                    guard case .jellyfin(let activeServerId) = self.currentSource, activeServerId == serverId else { return }
+                    guard self.cachedJellyfinAlbums.isEmpty else { return }
+                    self.cachedJellyfinAlbums = albums
+                    if self.browseMode == .artists {
+                        self.buildJellyfinArtistItems()
+                        self.needsDisplay = true
+                    }
+                }
+            } catch is CancellationError {
+                await MainActor.run { self.jellyfinAlbumWarmTask = nil }
+            } catch {
+                await MainActor.run { self.jellyfinAlbumWarmTask = nil }
+                NSLog("ModernLibraryBrowser: Jellyfin album cache warm failed: %@", error.localizedDescription)
+            }
         }
     }
 

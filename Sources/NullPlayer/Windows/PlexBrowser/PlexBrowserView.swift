@@ -649,6 +649,7 @@ class PlexBrowserView: NSView {
     private var jellyfinPlaylistTracks: [String: [JellyfinSong]] = [:]
     private var jellyfinAlbumSongs: [String: [JellyfinSong]] = [:]
     private var jellyfinLoadTask: Task<Void, Never>?
+    private var jellyfinAlbumWarmTask: Task<Void, Never>?
     // Emby music content
     private var cachedEmbyArtists: [EmbyArtist] = []
     private var cachedEmbyAlbums: [EmbyAlbum] = []
@@ -5187,6 +5188,8 @@ class PlexBrowserView: NSView {
     /// Refresh all data - clears cache and reloads from server
     func refreshData() {
         guard PlexManager.shared.isLinked else { return }
+        jellyfinAlbumWarmTask?.cancel()
+        jellyfinAlbumWarmTask = nil
         
         // Clear all cached data
         cachedArtists = []
@@ -5328,6 +5331,8 @@ class PlexBrowserView: NSView {
     }
     
     private func clearAllCachedData() {
+        jellyfinAlbumWarmTask?.cancel()
+        jellyfinAlbumWarmTask = nil
         cachedArtists = []
         cachedAlbums = []
         cachedTracks = []
@@ -11264,6 +11269,8 @@ class PlexBrowserView: NSView {
         } else {
             JellyfinManager.shared.clearMusicLibrarySelection()
         }
+        jellyfinAlbumWarmTask?.cancel()
+        jellyfinAlbumWarmTask = nil
 
         cachedJellyfinArtists = []
         cachedJellyfinAlbums = []
@@ -13217,8 +13224,9 @@ class PlexBrowserView: NSView {
                         } else {
                             try Task.checkCancellation()
                             cachedJellyfinArtists = try await manager.fetchArtists()
-                            try Task.checkCancellation()
-                            cachedJellyfinAlbums = try await manager.fetchAlbums()
+                            if let server = manager.currentServer {
+                                warmJellyfinAlbumsCache(forServerId: server.id)
+                            }
                         }
                     }
                     buildJellyfinArtistItems()
@@ -13285,6 +13293,32 @@ class PlexBrowserView: NSView {
                 stopLoadingAnimation()
                 errorMessage = error.localizedDescription
                 needsDisplay = true
+            }
+        }
+    }
+
+    private func warmJellyfinAlbumsCache(forServerId serverId: String) {
+        guard jellyfinAlbumWarmTask == nil else { return }
+
+        jellyfinAlbumWarmTask = Task.detached { [weak self] in
+            guard let self = self else { return }
+            do {
+                let albums = try await JellyfinManager.shared.fetchAlbums()
+                await MainActor.run {
+                    defer { self.jellyfinAlbumWarmTask = nil }
+                    guard case .jellyfin(let activeServerId) = self.currentSource, activeServerId == serverId else { return }
+                    guard self.cachedJellyfinAlbums.isEmpty else { return }
+                    self.cachedJellyfinAlbums = albums
+                    if self.browseMode == .artists {
+                        self.buildJellyfinArtistItems()
+                        self.needsDisplay = true
+                    }
+                }
+            } catch is CancellationError {
+                await MainActor.run { self.jellyfinAlbumWarmTask = nil }
+            } catch {
+                await MainActor.run { self.jellyfinAlbumWarmTask = nil }
+                NSLog("PlexBrowserView: Jellyfin album cache warm failed: %@", error.localizedDescription)
             }
         }
     }
@@ -14494,23 +14528,28 @@ class PlexBrowserView: NSView {
             } else {
                 expandedJellyfinArtists.insert(artist.id)
                 if jellyfinArtistAlbums[artist.id] == nil {
-                    let artistId = artist.id
-                    jellyfinExpandTask?.cancel()
-                    jellyfinExpandTask = Task { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        do {
-                            try Task.checkCancellation()
-                            let albums = try await JellyfinManager.shared.fetchAlbums(forArtist: artist)
-                            try Task.checkCancellation()
-                            jellyfinArtistAlbums[artistId] = albums
-                            rebuildCurrentModeItems()
-                            needsDisplay = true
-                        } catch is CancellationError {
-                        } catch {
-                            NSLog("Failed to load Jellyfin albums for artist: \(error)")
+                    // Prefer cached albums first to avoid unnecessary network calls.
+                    let cached = cachedJellyfinAlbums.filter { $0.artistId == artist.id }
+                    if !cached.isEmpty {
+                        jellyfinArtistAlbums[artist.id] = cached
+                    } else {
+                        let artistId = artist.id
+                        jellyfinExpandTask?.cancel()
+                        jellyfinExpandTask = Task.detached { @MainActor [weak self] in
+                            guard let self = self else { return }
+                            do {
+                                let albums = try await JellyfinManager.shared.fetchAlbums(forArtist: artist)
+                                jellyfinArtistAlbums[artistId] = albums
+                                rebuildCurrentModeItems()
+                                needsDisplay = true
+                            } catch is CancellationError {
+                            } catch where Task.isCancelled {
+                            } catch {
+                                NSLog("Failed to load Jellyfin albums for artist: \(error)")
+                            }
                         }
+                        return
                     }
-                    return
                 }
             }
             rebuildCurrentModeItems()
@@ -14523,16 +14562,15 @@ class PlexBrowserView: NSView {
                 if jellyfinAlbumSongs[album.id] == nil {
                     let albumId = album.id
                     jellyfinExpandTask?.cancel()
-                    jellyfinExpandTask = Task { @MainActor [weak self] in
+                    jellyfinExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
-                            try Task.checkCancellation()
                             let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
-                            try Task.checkCancellation()
                             jellyfinAlbumSongs[albumId] = songs
                             rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch is CancellationError {
+                        } catch where Task.isCancelled {
                         } catch {
                             NSLog("Failed to load Jellyfin songs for album: \(error)")
                         }
@@ -14550,15 +14588,15 @@ class PlexBrowserView: NSView {
                 if jellyfinShowSeasons[show.id] == nil {
                     let showId = show.id
                     jellyfinExpandTask?.cancel()
-                    jellyfinExpandTask = Task { @MainActor [weak self] in
+                    jellyfinExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
-                            try Task.checkCancellation()
                             let seasons = try await JellyfinManager.shared.fetchSeasons(forShow: show)
                             jellyfinShowSeasons[showId] = seasons
                             rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch is CancellationError {
+                        } catch where Task.isCancelled {
                         } catch {
                             expandedJellyfinShows.remove(showId)
                             rebuildCurrentModeItems()
@@ -14579,15 +14617,15 @@ class PlexBrowserView: NSView {
                 if jellyfinSeasonEpisodes[season.id] == nil {
                     let seasonId = season.id
                     jellyfinExpandTask?.cancel()
-                    jellyfinExpandTask = Task { @MainActor [weak self] in
+                    jellyfinExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
-                            try Task.checkCancellation()
                             let episodes = try await JellyfinManager.shared.fetchEpisodes(forSeason: season)
                             jellyfinSeasonEpisodes[seasonId] = episodes
                             rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch is CancellationError {
+                        } catch where Task.isCancelled {
                         } catch {
                             expandedJellyfinSeasons.remove(seasonId)
                             rebuildCurrentModeItems()
@@ -14608,16 +14646,15 @@ class PlexBrowserView: NSView {
                 if jellyfinPlaylistTracks[playlist.id] == nil {
                     let playlistId = playlist.id
                     jellyfinExpandTask?.cancel()
-                    jellyfinExpandTask = Task { @MainActor [weak self] in
+                    jellyfinExpandTask = Task.detached { @MainActor [weak self] in
                         guard let self = self else { return }
                         do {
-                            try Task.checkCancellation()
                             let (_, tracks) = try await JellyfinManager.shared.serverClient?.fetchPlaylist(id: playlistId) ?? (playlist, [])
-                            try Task.checkCancellation()
                             jellyfinPlaylistTracks[playlistId] = tracks
                             rebuildCurrentModeItems()
                             needsDisplay = true
                         } catch is CancellationError {
+                        } catch where Task.isCancelled {
                         } catch {
                             NSLog("Failed to load Jellyfin tracks for playlist: \(error)")
                         }

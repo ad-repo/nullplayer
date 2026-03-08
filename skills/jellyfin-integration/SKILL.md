@@ -31,7 +31,9 @@ All requests include header: `Authorization: MediaBrowser Client="NullPlayer", D
 
 ## Library Browsing
 
-- **All libraries/views**: `GET /Users/{userId}/Views` — returns all views with no `CollectionType` filtering. Both `fetchMusicLibraries()` and `fetchVideoLibraries()` call this same endpoint and return the full unfiltered list so every library is visible in the selector.
+- **All libraries/views**: `GET /Users/{userId}/Views`
+  - `fetchMusicLibraries()` returns all views (no `CollectionType` filtering).
+  - `fetchVideoLibraries()` uses the same endpoint but filters out non-video library types (`music`, `musicvideos`, `books`, `photos`, `playlists`, `livetv`).
 - **Artists**: `GET /Artists/AlbumArtists?parentId={libId}&userId={userId}&Recursive=true&SortBy=SortName`
 - **Albums**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=MusicAlbum&Recursive=true`
 - **Artist albums**: `GET /Users/{userId}/Items?AlbumArtistIds={artistId}&IncludeItemTypes=MusicAlbum`
@@ -41,7 +43,7 @@ All requests include header: `Authorization: MediaBrowser Client="NullPlayer", D
 
 ## Video Browsing
 
-- **Video libraries**: same `GET /Users/{userId}/Views` endpoint — no filtering by `CollectionType`
+- **Video libraries**: same `GET /Users/{userId}/Views` endpoint, filtered to exclude non-video `CollectionType` values
 - **Movies**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=Movie&MediaTypes=Video`
   - `MediaTypes=Video` excludes non-video files
 - **Series**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=Series`
@@ -147,9 +149,19 @@ The status bar "Lib:" zone is **browse-mode-aware**:
 
 ## Artist Expansion Performance
 
-When expanding a Jellyfin artist in the library browser, albums are resolved from the preloaded cache (`cachedJellyfinAlbums`) by filtering on `artistId`, making expansion instant. Network fallback only occurs if the cache has no matching albums.
+When expanding a Jellyfin artist in the library browser (both modern `ModernLibraryBrowserView` and classic `PlexBrowserView`), albums are resolved from the preloaded cache (`cachedJellyfinAlbums`) by filtering on `artistId`, making expansion instant. Network fallback only occurs if the cache has no matching albums.
 
-**Important**: Expand tasks must use `Task.detached` (not `Task { }`) to avoid inheriting cancellation state from the calling context.
+**Important**: Expand tasks must use `Task.detached` (not `Task { }`) to avoid inheriting cancellation state from the calling context. Inherited cancellation can surface as Jellyfin request failures like `NSURLErrorDomain Code=-999 "cancelled"` during artist expansion.
+
+## Large Library Performance Notes
+
+Jellyfin can load noticeably slower than Emby/Plex/Subsonic on very large libraries due to server-side cost of deep recursive item queries (`Recursive=true`) over large datasets.
+
+Current app-side mitigations:
+- `JellyfinServerClient` uses smaller pagination (`1000`) for artists/albums/movies/shows and guards against repeated pages to avoid long/hanging scans.
+- `JellyfinManager.preloadLibraryContent()` is music-focused (artists/albums/playlists) so initial browse readiness is not blocked by movie/show scans.
+- Artist views in both modern/classic render artists first, then warm `cachedJellyfinAlbums` asynchronously in background.
+- `performRequest` emits slow-request logs for endpoint-level diagnostics on real servers.
 
 ## Casting
 
