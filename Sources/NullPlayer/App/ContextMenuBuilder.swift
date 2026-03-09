@@ -983,9 +983,16 @@ class ContextMenuBuilder {
         libraryMenu.autoenablesItems = false
         
         let trackCount = MediaLibrary.shared.tracksSnapshot.count
+        let movieCount = MediaLibrary.shared.moviesSnapshot.count
+        let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+        let totalLocalItems = trackCount + movieCount + episodeCount
         
         // Library info header
-        let infoItem = NSMenuItem(title: "\(trackCount) tracks in library", action: nil, keyEquivalent: "")
+        let infoItem = NSMenuItem(
+            title: "\(totalLocalItems) items (\(trackCount) tracks, \(movieCount) movies, \(episodeCount) episodes)",
+            action: nil,
+            keyEquivalent: ""
+        )
         libraryMenu.addItem(infoItem)
         
         libraryMenu.addItem(NSMenuItem.separator())
@@ -1047,10 +1054,34 @@ class ContextMenuBuilder {
         
         libraryMenu.addItem(NSMenuItem.separator())
         
-        // Clear Library (with confirmation)
-        let clearItem = NSMenuItem(title: "Clear Library...", action: #selector(MenuActions.clearLibrary), keyEquivalent: "")
-        clearItem.target = MenuActions.shared
-        clearItem.isEnabled = trackCount > 0
+        // Clear Library submenu (with confirmations)
+        let clearItem = NSMenuItem(title: "Clear...", action: nil, keyEquivalent: "")
+        let clearMenu = NSMenu()
+        clearMenu.autoenablesItems = false
+
+        let clearMusicItem = NSMenuItem(title: "Clear Music...", action: #selector(MenuActions.clearLocalMusic), keyEquivalent: "")
+        clearMusicItem.target = MenuActions.shared
+        clearMusicItem.isEnabled = trackCount > 0
+        clearMenu.addItem(clearMusicItem)
+
+        let clearMoviesItem = NSMenuItem(title: "Clear Movies...", action: #selector(MenuActions.clearLocalMovies), keyEquivalent: "")
+        clearMoviesItem.target = MenuActions.shared
+        clearMoviesItem.isEnabled = movieCount > 0
+        clearMenu.addItem(clearMoviesItem)
+
+        let clearTVItem = NSMenuItem(title: "Clear TV...", action: #selector(MenuActions.clearLocalTV), keyEquivalent: "")
+        clearTVItem.target = MenuActions.shared
+        clearTVItem.isEnabled = episodeCount > 0
+        clearMenu.addItem(clearTVItem)
+
+        clearMenu.addItem(NSMenuItem.separator())
+
+        let clearAllItem = NSMenuItem(title: "Clear Everything...", action: #selector(MenuActions.clearLibrary), keyEquivalent: "")
+        clearAllItem.target = MenuActions.shared
+        clearAllItem.isEnabled = totalLocalItems > 0
+        clearMenu.addItem(clearAllItem)
+
+        clearItem.submenu = clearMenu
         libraryMenu.addItem(clearItem)
         
         libraryItem.submenu = libraryMenu
@@ -3713,29 +3744,127 @@ class MenuActions: NSObject {
         MediaLibrary.shared.showBackupsInFinder()
     }
     
+    @objc func clearLocalMusic() {
+        performLocalLibraryClear(.music)
+    }
+
+    @objc func clearLocalMovies() {
+        performLocalLibraryClear(.movies)
+    }
+
+    @objc func clearLocalTV() {
+        performLocalLibraryClear(.tv)
+    }
+
     @objc func clearLibrary() {
+        performLocalLibraryClear(.all)
+    }
+
+    private enum LocalLibraryClearScope {
+        case music
+        case movies
+        case tv
+        case all
+
+        var dialogTitle: String {
+            switch self {
+            case .music: return "Clear Music?"
+            case .movies: return "Clear Movies?"
+            case .tv: return "Clear TV?"
+            case .all: return "Clear Library?"
+            }
+        }
+
+        var backupName: String {
+            switch self {
+            case .music: return "pre_clear_music_auto_backup"
+            case .movies: return "pre_clear_movies_auto_backup"
+            case .tv: return "pre_clear_tv_auto_backup"
+            case .all: return "pre_clear_auto_backup"
+            }
+        }
+    }
+
+    private func performLocalLibraryClear(_ scope: LocalLibraryClearScope) {
         let trackCount = MediaLibrary.shared.tracksSnapshot.count
+        let movieCount = MediaLibrary.shared.moviesSnapshot.count
+        let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+        let totalCount = trackCount + movieCount + episodeCount
+
+        let targetCount: Int
+        let targetLabel: String
+        let informativeText: String
+        let confirmTitle: String
+
+        switch scope {
+        case .music:
+            targetCount = trackCount
+            targetLabel = "music track\(targetCount == 1 ? "" : "s")"
+            informativeText = "This will remove \(targetCount) \(targetLabel) from your library. Files on disk will NOT be deleted.\n\nA backup will be created automatically before clearing."
+            confirmTitle = "Clear Music"
+        case .movies:
+            targetCount = movieCount
+            targetLabel = "movie\(targetCount == 1 ? "" : "s")"
+            informativeText = "This will remove \(targetCount) \(targetLabel) from your library. Files on disk will NOT be deleted.\n\nA backup will be created automatically before clearing."
+            confirmTitle = "Clear Movies"
+        case .tv:
+            targetCount = episodeCount
+            targetLabel = "TV episode\(targetCount == 1 ? "" : "s")"
+            informativeText = "This will remove \(targetCount) \(targetLabel) from your library. Files on disk will NOT be deleted.\n\nA backup will be created automatically before clearing."
+            confirmTitle = "Clear TV"
+        case .all:
+            targetCount = totalCount
+            targetLabel = "local item\(targetCount == 1 ? "" : "s")"
+            informativeText = "This will remove \(targetCount) \(targetLabel) from your library (\(trackCount) tracks, \(movieCount) movies, \(episodeCount) episodes). Files on disk will NOT be deleted.\n\nA backup will be created automatically before clearing."
+            confirmTitle = "Clear Library"
+        }
+
+        guard targetCount > 0 else {
+            let alert = NSAlert()
+            alert.messageText = "Nothing to Clear"
+            switch scope {
+            case .music:
+                alert.informativeText = "No local music tracks are currently in the library."
+            case .movies:
+                alert.informativeText = "No local movies are currently in the library."
+            case .tv:
+                alert.informativeText = "No local TV episodes are currently in the library."
+            case .all:
+                alert.informativeText = "No local tracks, movies, or episodes are currently in the library."
+            }
+            alert.alertStyle = .informational
+            alert.runModal()
+            return
+        }
         
         let alert = NSAlert()
-        alert.messageText = "Clear Library?"
-        alert.informativeText = "This will remove all \(trackCount) tracks from your library. The audio files will NOT be deleted from disk.\n\nA backup will be created automatically before clearing."
+        alert.messageText = scope.dialogTitle
+        alert.informativeText = informativeText
         alert.alertStyle = .critical
-        alert.addButton(withTitle: "Clear Library")
+        alert.addButton(withTitle: confirmTitle)
         alert.addButton(withTitle: "Cancel")
         
         if alert.runModal() == .alertFirstButtonReturn {
-            // Create backup before clearing
             do {
-                try MediaLibrary.shared.backupLibrary(customName: "pre_clear_auto_backup")
+                try MediaLibrary.shared.backupLibrary(customName: scope.backupName)
             } catch {
                 NSLog("Failed to create pre-clear backup: %@", error.localizedDescription)
             }
-            
-            MediaLibrary.shared.clearLibrary()
+
+            switch scope {
+            case .music:
+                MediaLibrary.shared.clearMusicLibrary()
+            case .movies:
+                MediaLibrary.shared.clearMovieLibrary()
+            case .tv:
+                MediaLibrary.shared.clearTVLibrary()
+            case .all:
+                MediaLibrary.shared.clearLibrary()
+            }
             
             let successAlert = NSAlert()
-            successAlert.messageText = "Library Cleared"
-            successAlert.informativeText = "Your library has been cleared. A backup was saved automatically."
+            successAlert.messageText = "Library Updated"
+            successAlert.informativeText = "Removed \(targetCount) \(targetLabel). A backup was saved automatically."
             successAlert.alertStyle = .informational
             successAlert.runModal()
         }

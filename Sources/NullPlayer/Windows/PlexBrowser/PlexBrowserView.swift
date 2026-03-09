@@ -7276,6 +7276,41 @@ class PlexBrowserView: NSView {
             radioItem.state = .on
         }
         menu.addItem(radioItem)
+
+        if case .local = currentSource {
+            let trackCount = MediaLibrary.shared.tracksSnapshot.count
+            let movieCount = MediaLibrary.shared.moviesSnapshot.count
+            let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+            let totalLocalItems = trackCount + movieCount + episodeCount
+            menu.addItem(NSMenuItem.separator())
+            let clearItem = NSMenuItem(title: "Clear Local Library", action: nil, keyEquivalent: "")
+            let clearSubmenu = NSMenu()
+
+            let clearMusicItem = NSMenuItem(title: "Clear Music...", action: #selector(clearLocalMusicFromSourceMenu), keyEquivalent: "")
+            clearMusicItem.target = self
+            clearMusicItem.isEnabled = trackCount > 0
+            clearSubmenu.addItem(clearMusicItem)
+
+            let clearMoviesItem = NSMenuItem(title: "Clear Movies...", action: #selector(clearLocalMoviesFromSourceMenu), keyEquivalent: "")
+            clearMoviesItem.target = self
+            clearMoviesItem.isEnabled = movieCount > 0
+            clearSubmenu.addItem(clearMoviesItem)
+
+            let clearTVItem = NSMenuItem(title: "Clear TV...", action: #selector(clearLocalTVFromSourceMenu), keyEquivalent: "")
+            clearTVItem.target = self
+            clearTVItem.isEnabled = episodeCount > 0
+            clearSubmenu.addItem(clearTVItem)
+
+            clearSubmenu.addItem(NSMenuItem.separator())
+
+            let clearAllItem = NSMenuItem(title: "Clear Everything...", action: #selector(clearLocalLibraryFromSourceMenu), keyEquivalent: "")
+            clearAllItem.target = self
+            clearAllItem.isEnabled = totalLocalItems > 0
+            clearSubmenu.addItem(clearAllItem)
+
+            clearItem.submenu = clearSubmenu
+            menu.addItem(clearItem)
+        }
         
         // Separator
         menu.addItem(NSMenuItem.separator())
@@ -7768,6 +7803,28 @@ class PlexBrowserView: NSView {
 
     @objc private func selectLocalSource() {
         currentSource = .local
+    }
+
+    @objc private func clearLocalMusicFromSourceMenu() {
+        MenuActions.shared.clearLocalMusic()
+        if case .local = currentSource { loadLocalData() }
+    }
+
+    @objc private func clearLocalMoviesFromSourceMenu() {
+        MenuActions.shared.clearLocalMovies()
+        if case .local = currentSource { loadLocalData() }
+    }
+
+    @objc private func clearLocalTVFromSourceMenu() {
+        MenuActions.shared.clearLocalTV()
+        if case .local = currentSource { loadLocalData() }
+    }
+
+    @objc private func clearLocalLibraryFromSourceMenu() {
+        MenuActions.shared.clearLibrary()
+        if case .local = currentSource {
+            loadLocalData()
+        }
     }
     
     @objc private func selectRadioSource() {
@@ -9448,12 +9505,18 @@ class PlexBrowserView: NSView {
     
     @objc private func contextMenuRemoveLocalTrack(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
-        MediaLibrary.shared.removeTrack(track)
+        let tracksToRemove = selectedLocalTracksForContextAction(fallback: track)
+        if tracksToRemove.count == 1 {
+            MediaLibrary.shared.removeTrack(track)
+        } else {
+            MediaLibrary.shared.removeTracks(urls: tracksToRemove.map { $0.url })
+        }
     }
     
     @objc private func contextMenuDeleteLocalTrack(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
-        deleteTracksFromDisk([track])
+        let tracksToDelete = selectedLocalTracksForContextAction(fallback: track)
+        deleteTracksFromDisk(tracksToDelete)
     }
     
     @objc private func contextMenuRemoveLocalAlbum(_ sender: NSMenuItem) {
@@ -9467,9 +9530,7 @@ class PlexBrowserView: NSView {
         alert.addButton(withTitle: "Cancel")
         
         if alert.runModal() == .alertFirstButtonReturn {
-            for track in album.tracks {
-                MediaLibrary.shared.removeTrack(track)
-            }
+            MediaLibrary.shared.removeTracks(urls: album.tracks.map { $0.url })
         }
     }
     
@@ -9480,23 +9541,25 @@ class PlexBrowserView: NSView {
     
     @objc private func contextMenuRemoveLocalArtist(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }
-        
-        var allTracks: [LibraryTrack] = []
-        for album in artist.albums {
-            allTracks.append(contentsOf: album.tracks)
-        }
+
+        let artistsToRemove = selectedLocalArtistsForContextAction(fallback: artist)
+        let allTracks = dedupeTracksByURL(
+            artistsToRemove.flatMap { $0.albums.flatMap { $0.tracks } }
+        )
         
         let alert = NSAlert()
-        alert.messageText = "Remove artist from library?"
+        if artistsToRemove.count == 1 {
+            alert.messageText = "Remove artist from library?"
+        } else {
+            alert.messageText = "Remove \(artistsToRemove.count) artists from library?"
+        }
         alert.informativeText = "This will remove \(allTracks.count) tracks from your library. The files will not be deleted from disk."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Remove")
         alert.addButton(withTitle: "Cancel")
         
         if alert.runModal() == .alertFirstButtonReturn {
-            for track in allTracks {
-                MediaLibrary.shared.removeTrack(track)
-            }
+            MediaLibrary.shared.removeTracks(urls: allTracks.map { $0.url })
         }
     }
     
@@ -9652,12 +9715,57 @@ class PlexBrowserView: NSView {
     
     @objc private func contextMenuDeleteLocalArtist(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }
-        
-        var allTracks: [LibraryTrack] = []
-        for album in artist.albums {
-            allTracks.append(contentsOf: album.tracks)
-        }
+
+        let artistsToDelete = selectedLocalArtistsForContextAction(fallback: artist)
+        let allTracks = dedupeTracksByURL(
+            artistsToDelete.flatMap { $0.albums.flatMap { $0.tracks } }
+        )
         deleteTracksFromDisk(allTracks)
+    }
+
+    /// For local-track context actions, prefer current multi-selection when the
+    /// clicked track is part of it; otherwise fall back to the clicked track.
+    private func selectedLocalTracksForContextAction(fallback track: LibraryTrack) -> [LibraryTrack] {
+        let selectedTracks = selectedIndices
+            .filter { $0 >= 0 && $0 < displayItems.count }
+            .sorted()
+            .compactMap { index -> LibraryTrack? in
+                guard case .localTrack(let selectedTrack) = displayItems[index].type else { return nil }
+                return selectedTrack
+            }
+
+        guard selectedTracks.count > 1,
+              selectedTracks.contains(where: { $0.url == track.url }) else {
+            return [track]
+        }
+
+        var seen = Set<URL>()
+        return selectedTracks.filter { seen.insert($0.url).inserted }
+    }
+
+    /// For local-artist context actions, prefer current multi-selection when the
+    /// clicked artist is part of it; otherwise fall back to the clicked artist.
+    private func selectedLocalArtistsForContextAction(fallback artist: Artist) -> [Artist] {
+        let selectedArtists = selectedIndices
+            .filter { $0 >= 0 && $0 < displayItems.count }
+            .sorted()
+            .compactMap { index -> Artist? in
+                guard case .localArtist(let selectedArtist) = displayItems[index].type else { return nil }
+                return selectedArtist
+            }
+
+        guard selectedArtists.count > 1,
+              selectedArtists.contains(where: { $0.id == artist.id }) else {
+            return [artist]
+        }
+
+        var seen = Set<String>()
+        return selectedArtists.filter { seen.insert($0.id).inserted }
+    }
+
+    private func dedupeTracksByURL(_ tracks: [LibraryTrack]) -> [LibraryTrack] {
+        var seen = Set<URL>()
+        return tracks.filter { seen.insert($0.url).inserted }
     }
     
     /// Helper to delete tracks from disk with confirmation
@@ -9683,6 +9791,7 @@ class PlexBrowserView: NSView {
         
         let useTrash = moveToTrashCheckbox.state == .on
         var failedFiles: [String] = []
+        var removedTrackURLs: [URL] = []
         
         for track in tracks {
             do {
@@ -9691,9 +9800,18 @@ class PlexBrowserView: NSView {
                 } else {
                     try FileManager.default.removeItem(at: track.url)
                 }
-                MediaLibrary.shared.removeTrack(track)
+                removedTrackURLs.append(track.url)
             } catch {
                 failedFiles.append(track.url.lastPathComponent)
+            }
+        }
+
+        if !removedTrackURLs.isEmpty {
+            if removedTrackURLs.count == 1, let firstURL = removedTrackURLs.first,
+               let removedTrack = tracks.first(where: { $0.url == firstURL }) {
+                MediaLibrary.shared.removeTrack(removedTrack)
+            } else {
+                MediaLibrary.shared.removeTracks(urls: removedTrackURLs)
             }
         }
         

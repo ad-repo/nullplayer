@@ -445,10 +445,12 @@ class MediaLibrary {
     
     /// Remove tracks by URL
     func removeTracks(urls: [URL]) {
+        let pathsToRemove = Set(urls.map(\.path))
+        guard !pathsToRemove.isEmpty else { return }
+
         dataQueue.sync {
-            for url in urls {
-                let path = url.path
-                tracks.removeAll { $0.url.path == path }
+            tracks.removeAll { pathsToRemove.contains($0.url.path) }
+            for path in pathsToRemove {
                 tracksByPath.removeValue(forKey: path)
             }
         }
@@ -456,11 +458,53 @@ class MediaLibrary {
         saveLibrary()
     }
     
-    /// Clear the entire library
+    /// Clear all local media entries from the library (tracks, movies, episodes).
+    /// Watch folders are preserved.
     func clearLibrary() {
         dataQueue.sync {
             tracks.removeAll()
             tracksByPath.removeAll()
+            movies.removeAll()
+            moviesByPath.removeAll()
+            episodes.removeAll()
+            episodesByPath.removeAll()
+            albumRatings.removeAll()
+            artistRatings.removeAll()
+        }
+        notifyChange()
+        saveLibrary()
+    }
+
+    /// Clear music entries only (tracks + track-derived ratings).
+    /// Movies, TV episodes, and watch folders are preserved.
+    func clearMusicLibrary() {
+        dataQueue.sync {
+            tracks.removeAll()
+            tracksByPath.removeAll()
+            albumRatings.removeAll()
+            artistRatings.removeAll()
+        }
+        notifyChange()
+        saveLibrary()
+    }
+
+    /// Clear movie entries only.
+    /// Music tracks, TV episodes, and watch folders are preserved.
+    func clearMovieLibrary() {
+        dataQueue.sync {
+            movies.removeAll()
+            moviesByPath.removeAll()
+        }
+        notifyChange()
+        saveLibrary()
+    }
+
+    /// Clear TV entries only (episodes/shows).
+    /// Music tracks, movies, and watch folders are preserved.
+    func clearTVLibrary() {
+        dataQueue.sync {
+            episodes.removeAll()
+            episodesByPath.removeAll()
         }
         notifyChange()
         saveLibrary()
@@ -566,18 +610,38 @@ class MediaLibrary {
 
     /// Remove a movie from the library (file is not deleted)
     func removeMovie(_ movie: LocalVideo) {
+        removeMovies(urls: [movie.url])
+    }
+
+    /// Remove movies by URL
+    func removeMovies(urls: [URL]) {
+        let pathsToRemove = Set(urls.map(\.path))
+        guard !pathsToRemove.isEmpty else { return }
+
         dataQueue.sync {
-            movies.removeAll { $0.id == movie.id }
-            moviesByPath.removeValue(forKey: movie.url.path)
+            movies.removeAll { pathsToRemove.contains($0.url.path) }
+            for path in pathsToRemove {
+                moviesByPath.removeValue(forKey: path)
+            }
         }
         notifyChange(); saveLibrary()
     }
 
     /// Remove an episode from the library (file is not deleted)
     func removeEpisode(_ episode: LocalEpisode) {
+        removeEpisodes(urls: [episode.url])
+    }
+
+    /// Remove episodes by URL
+    func removeEpisodes(urls: [URL]) {
+        let pathsToRemove = Set(urls.map(\.path))
+        guard !pathsToRemove.isEmpty else { return }
+
         dataQueue.sync {
-            episodes.removeAll { $0.id == episode.id }
-            episodesByPath.removeValue(forKey: episode.url.path)
+            episodes.removeAll { pathsToRemove.contains($0.url.path) }
+            for path in pathsToRemove {
+                episodesByPath.removeValue(forKey: path)
+            }
         }
         notifyChange(); saveLibrary()
     }

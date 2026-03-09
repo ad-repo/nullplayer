@@ -3317,6 +3317,42 @@ class ModernLibraryBrowserView: NSView {
         let radioItem = NSMenuItem(title: "Internet Radio", action: #selector(selectRadioSource), keyEquivalent: "")
         radioItem.target = self; if case .radio = currentSource { radioItem.state = .on }
         menu.addItem(radioItem)
+
+        if case .local = currentSource {
+            let trackCount = MediaLibrary.shared.tracksSnapshot.count
+            let movieCount = MediaLibrary.shared.moviesSnapshot.count
+            let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+            let totalLocalItems = trackCount + movieCount + episodeCount
+            menu.addItem(NSMenuItem.separator())
+            let clearItem = NSMenuItem(title: "Clear Local Library", action: nil, keyEquivalent: "")
+            let clearSubmenu = NSMenu()
+
+            let clearMusicItem = NSMenuItem(title: "Clear Music...", action: #selector(clearLocalMusicFromSourceMenu), keyEquivalent: "")
+            clearMusicItem.target = self
+            clearMusicItem.isEnabled = trackCount > 0
+            clearSubmenu.addItem(clearMusicItem)
+
+            let clearMoviesItem = NSMenuItem(title: "Clear Movies...", action: #selector(clearLocalMoviesFromSourceMenu), keyEquivalent: "")
+            clearMoviesItem.target = self
+            clearMoviesItem.isEnabled = movieCount > 0
+            clearSubmenu.addItem(clearMoviesItem)
+
+            let clearTVItem = NSMenuItem(title: "Clear TV...", action: #selector(clearLocalTVFromSourceMenu), keyEquivalent: "")
+            clearTVItem.target = self
+            clearTVItem.isEnabled = episodeCount > 0
+            clearSubmenu.addItem(clearTVItem)
+
+            clearSubmenu.addItem(NSMenuItem.separator())
+
+            let clearAllItem = NSMenuItem(title: "Clear Everything...", action: #selector(clearLocalLibraryFromSourceMenu), keyEquivalent: "")
+            clearAllItem.target = self
+            clearAllItem.isEnabled = totalLocalItems > 0
+            clearSubmenu.addItem(clearAllItem)
+
+            clearItem.submenu = clearSubmenu
+            menu.addItem(clearItem)
+        }
+
         menu.addItem(NSMenuItem.separator())
         for server in PlexManager.shared.servers {
             let item = NSMenuItem(title: server.name, action: #selector(selectPlexServer(_:)), keyEquivalent: "")
@@ -4173,6 +4209,24 @@ class ModernLibraryBrowserView: NSView {
     
     @objc private func selectLocalSource() { currentSource = .local }
     @objc private func selectRadioSource() { currentSource = .radio }
+    @objc private func clearLocalMusicFromSourceMenu() {
+        MenuActions.shared.clearLocalMusic()
+        if case .local = currentSource { loadLocalData() }
+    }
+    @objc private func clearLocalMoviesFromSourceMenu() {
+        MenuActions.shared.clearLocalMovies()
+        if case .local = currentSource { loadLocalData() }
+    }
+    @objc private func clearLocalTVFromSourceMenu() {
+        MenuActions.shared.clearLocalTV()
+        if case .local = currentSource { loadLocalData() }
+    }
+    @objc private func clearLocalLibraryFromSourceMenu() {
+        MenuActions.shared.clearLibrary()
+        if case .local = currentSource {
+            loadLocalData()
+        }
+    }
     @objc private func selectPlexServer(_ sender: NSMenuItem) {
         guard let serverId = sender.representedObject as? String else { return }
         currentSource = .plex(serverId: serverId)
@@ -4398,7 +4452,13 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func contextMenuRemoveLocalTrack(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
-        MediaLibrary.shared.removeTrack(track); loadLocalData()
+        let tracksToRemove = selectedLocalTracksForContextAction(fallback: track)
+        if tracksToRemove.count == 1 {
+            MediaLibrary.shared.removeTrack(track)
+        } else {
+            MediaLibrary.shared.removeTracks(urls: tracksToRemove.map { $0.url })
+        }
+        loadLocalData()
     }
     @objc private func contextMenuRemoveLocalAlbum(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
@@ -4412,17 +4472,33 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func contextMenuRemoveLocalArtist(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }
-        let count = artist.trackCount
+        let artistsToRemove = selectedLocalArtistsForContextAction(fallback: artist)
+        let trackURLs = artistsToRemove
+            .flatMap { $0.albums.flatMap { $0.tracks } }
+            .map { $0.url }
+        let dedupedTrackURLs = dedupeURLsPreservingOrder(trackURLs)
+        let count = dedupedTrackURLs.count
+
         let alert = NSAlert()
-        alert.messageText = "Remove \"\(artist.name)\" from Library?"
+        if artistsToRemove.count == 1 {
+            alert.messageText = "Remove \"\(artist.name)\" from Library?"
+        } else {
+            alert.messageText = "Remove \(artistsToRemove.count) Artists from Library?"
+        }
         alert.informativeText = "This will remove \(count) track\(count == 1 ? "" : "s"). Files will not be deleted."
         alert.addButton(withTitle: "Remove"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        MediaLibrary.shared.removeTracks(urls: artist.albums.flatMap { $0.tracks }.map { $0.url }); loadLocalData()
+        MediaLibrary.shared.removeTracks(urls: dedupedTrackURLs); loadLocalData()
     }
     @objc private func contextMenuRemoveLocalMovie(_ sender: NSMenuItem) {
         guard let movie = sender.representedObject as? LocalVideo else { return }
-        MediaLibrary.shared.removeMovie(movie); loadLocalData()
+        let moviesToRemove = selectedLocalMoviesForContextAction(fallback: movie)
+        if moviesToRemove.count == 1 {
+            MediaLibrary.shared.removeMovie(movie)
+        } else {
+            MediaLibrary.shared.removeMovies(urls: moviesToRemove.map { $0.url })
+        }
+        loadLocalData()
     }
     @objc private func contextMenuRemoveLocalEpisode(_ sender: NSMenuItem) {
         guard let episode = sender.representedObject as? LocalEpisode else { return }
@@ -4451,6 +4527,76 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuShowInFinder(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         NSWorkspace.shared.activateFileViewerSelecting([track.url])
+    }
+
+    /// For local-track context actions, prefer current multi-selection when the
+    /// clicked track is part of it; otherwise fall back to the clicked track.
+    private func selectedLocalTracksForContextAction(fallback track: LibraryTrack) -> [LibraryTrack] {
+        let selectedTracks = selectedIndices
+            .filter { $0 >= 0 && $0 < displayItems.count }
+            .sorted()
+            .compactMap { index -> LibraryTrack? in
+                guard case .localTrack(let selectedTrack) = displayItems[index].type else { return nil }
+                return selectedTrack
+            }
+
+        guard selectedTracks.count > 1,
+              selectedTracks.contains(where: { $0.url == track.url }) else {
+            return [track]
+        }
+
+        // De-duplicate by file URL while preserving visual selection order.
+        return dedupeByURL(selectedTracks, keyPath: \.url)
+    }
+
+    /// For local-artist context actions, prefer current multi-selection when the
+    /// clicked artist is part of it; otherwise fall back to the clicked artist.
+    private func selectedLocalArtistsForContextAction(fallback artist: Artist) -> [Artist] {
+        let selectedArtists = selectedIndices
+            .filter { $0 >= 0 && $0 < displayItems.count }
+            .sorted()
+            .compactMap { index -> Artist? in
+                guard case .localArtist(let selectedArtist) = displayItems[index].type else { return nil }
+                return selectedArtist
+            }
+
+        guard selectedArtists.count > 1,
+              selectedArtists.contains(where: { $0.id == artist.id }) else {
+            return [artist]
+        }
+
+        var seen = Set<String>()
+        return selectedArtists.filter { seen.insert($0.id).inserted }
+    }
+
+    /// For local-movie context actions, prefer current multi-selection when the
+    /// clicked movie is part of it; otherwise fall back to the clicked movie.
+    private func selectedLocalMoviesForContextAction(fallback movie: LocalVideo) -> [LocalVideo] {
+        let selectedMovies = selectedIndices
+            .filter { $0 >= 0 && $0 < displayItems.count }
+            .sorted()
+            .compactMap { index -> LocalVideo? in
+                guard case .localMovie(let selectedMovie) = displayItems[index].type else { return nil }
+                return selectedMovie
+            }
+
+        guard selectedMovies.count > 1,
+              selectedMovies.contains(where: { $0.id == movie.id }) else {
+            return [movie]
+        }
+
+        var seen = Set<UUID>()
+        return selectedMovies.filter { seen.insert($0.id).inserted }
+    }
+
+    private func dedupeURLsPreservingOrder(_ urls: [URL]) -> [URL] {
+        var seen = Set<URL>()
+        return urls.filter { seen.insert($0).inserted }
+    }
+
+    private func dedupeByURL<T>(_ items: [T], keyPath: KeyPath<T, URL>) -> [T] {
+        var seen = Set<URL>()
+        return items.filter { seen.insert($0[keyPath: keyPath]).inserted }
     }
     @objc private func contextMenuPlayLocalMovie(_ sender: NSMenuItem) {
         guard let movie = sender.representedObject as? LocalVideo else { return }
