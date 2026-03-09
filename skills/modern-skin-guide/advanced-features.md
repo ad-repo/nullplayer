@@ -356,6 +356,32 @@ With this configuration:
 - If `textOpacity` is `1.0`, text keeps its original alpha (no additional dimming).
 - To verify quickly, set `textOpacity` to `0.4` temporarily; library row data, marquee text, and time digits should visibly darken while window glass opacity remains unchanged.
 
+## Main Window Spectrum Opacity (`window.mainSpectrumOpacity`)
+
+Modern skins also support an independent opacity override for the main window's mini spectrum analyzer.
+
+- `window.mainSpectrumOpacity`: optional `0.0...1.0` override.
+- Applies only to the main-window spectrum region:
+  - mini spectrum panel fill/border,
+  - 8-bar CPU spectrum content,
+  - embedded Metal overlay modes shown in the same panel.
+- Does not affect standalone spectrum window opacity.
+- Does not alter base window translucency (`window.opacity`) or text opacity (`window.textOpacity`).
+- If omitted, mini spectrum opacity follows existing `window.opacity` + `window.areaOpacity.spectrumArea` resolution.
+
+### Example
+
+```json
+"window": {
+    "opacity": 0.52,
+    "textOpacity": 0.8,
+    "mainSpectrumOpacity": 0.9,
+    "areaOpacity": {
+        "spectrumArea": { "background": 0.8, "border": 0.8, "content": 0.8 }
+    }
+}
+```
+
 ## Double Size (2x) Mode
 
 Toggle via the **2X** button on the main window or right-click context menu → **Double Size** (available in both modern and classic UI). Doubles all window dimensions and rendering scale.

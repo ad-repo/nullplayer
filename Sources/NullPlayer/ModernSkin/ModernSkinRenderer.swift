@@ -1026,7 +1026,8 @@ class ModernSkinRenderer {
     }
     
     /// Draw the mini spectrum bars.
-    /// Opacity channels are provided by callers from `window.areaOpacity.spectrumArea`.
+    /// Opacity channels are provided by callers from `window.areaOpacity.spectrumArea`
+    /// and optional main-spectrum-only multipliers.
     func drawMiniSpectrum(
         _ levels: [Float],
         in rect: NSRect,

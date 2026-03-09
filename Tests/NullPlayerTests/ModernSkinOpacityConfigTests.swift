@@ -123,6 +123,86 @@ final class ModernSkinOpacityConfigTests: XCTestCase {
         XCTAssertEqual(output.alphaComponent, 0.4, accuracy: 0.0001)
     }
 
+    func testDecodeSucceedsWhenMainSpectrumOpacityOmittedAndKeepsResolvedOpacity() throws {
+        let omittedJSON = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.62 }
+        }
+        """
+        let omittedConfig = try decodeConfig(from: omittedJSON)
+        XCTAssertNil(omittedConfig.window.mainSpectrumOpacity)
+        let omittedSkin = ModernSkin(config: omittedConfig, bundlePath: nil)
+        XCTAssertNil(omittedSkin.mainSpectrumOpacityOverride)
+
+        let baseAlpha = omittedSkin.resolvedOpacity(for: .spectrumArea).content
+        XCTAssertEqual(omittedSkin.applyMainSpectrumOpacity(to: baseAlpha), baseAlpha, accuracy: 0.0001)
+    }
+
+    func testMainSpectrumOpacityOverrideClampsAtBounds() throws {
+        let lowJSON = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.62, "mainSpectrumOpacity": -0.25 }
+        }
+        """
+        let highJSON = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.62, "mainSpectrumOpacity": 1.6 }
+        }
+        """
+
+        let lowSkin = ModernSkin(config: try decodeConfig(from: lowJSON), bundlePath: nil)
+        let highSkin = ModernSkin(config: try decodeConfig(from: highJSON), bundlePath: nil)
+
+        XCTAssertNotNil(lowSkin.mainSpectrumOpacityOverride)
+        XCTAssertNotNil(highSkin.mainSpectrumOpacityOverride)
+        XCTAssertEqual(lowSkin.mainSpectrumOpacityOverride ?? -1, 0.0, accuracy: 0.0001)
+        XCTAssertEqual(highSkin.mainSpectrumOpacityOverride ?? -1, 1.0, accuracy: 0.0001)
+    }
+
+    func testApplyMainSpectrumOpacityUsesOverrideAsAbsoluteAlpha() throws {
+        let json = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.62, "mainSpectrumOpacity": 0.5 }
+        }
+        """
+
+        let skin = ModernSkin(config: try decodeConfig(from: json), bundlePath: nil)
+        XCTAssertEqual(skin.applyMainSpectrumOpacity(to: 0.8), 0.5, accuracy: 0.0001)
+        XCTAssertEqual(skin.applyMainSpectrumOpacity(to: 0.2), 0.5, accuracy: 0.0001)
+    }
+
     func testAreaOpacityFallbackUsesWindowOpacityAndMultiplierSemantics() throws {
         let json = """
         {

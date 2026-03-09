@@ -201,6 +201,18 @@ class ModernSkin {
         let alpha = clampedOpacity(color.alphaComponent * textOpacityMultiplier)
         return color.withAlphaComponent(alpha)
     }
+
+    /// Optional main-window spectrum opacity override for the mini analyzer panel and bars.
+    /// When nil, spectrum opacity follows legacy resolved area/window channels.
+    var mainSpectrumOpacityOverride: CGFloat? {
+        guard let value = config.window.mainSpectrumOpacity else { return nil }
+        return clampedOpacity(value)
+    }
+
+    /// Apply main-window spectrum opacity override when present; otherwise return clamped input.
+    func applyMainSpectrumOpacity(to opacity: CGFloat) -> CGFloat {
+        mainSpectrumOpacityOverride ?? clampedOpacity(opacity)
+    }
     
     /// Get resolved rect for an element, applying any config overrides
     func resolvedRect(for element: ModernSkinElements.Element) -> NSRect {

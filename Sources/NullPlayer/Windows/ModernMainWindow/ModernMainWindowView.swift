@@ -283,6 +283,10 @@ class ModernMainWindowView: NSView {
         let trackOpacity = renderer.skin.resolvedOpacity(for: .trackDisplay)
         let volumeOpacity = renderer.skin.resolvedOpacity(for: .volumeArea)
         let spectrumOpacity = renderer.skin.resolvedOpacity(for: .spectrumArea)
+        let hasSpectrumOverride = renderer.skin.mainSpectrumOpacityOverride != nil
+        let spectrumBackgroundOpacity = renderer.skin.applyMainSpectrumOpacity(to: spectrumOpacity.background)
+        let spectrumBorderOpacity = renderer.skin.applyMainSpectrumOpacity(to: spectrumOpacity.border)
+        let spectrumContentOpacity = renderer.skin.applyMainSpectrumOpacity(to: spectrumOpacity.content)
         
         if isShadeMode {
             drawShadeMode(in: windowBounds, context: context)
@@ -381,24 +385,32 @@ class ModernMainWindowView: NSView {
             // 5. Spectrum area panel + content
             let specScaled = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
             if dirtyRect.intersects(specScaled) {
-                if mainVisMode == .spectrum {
-                    // `window.areaOpacity.spectrumArea` controls panel + bars.
-                    renderer.drawMiniSpectrum(
-                        spectrumLevels,
-                        in: ModernSkinElements.spectrumArea.defaultRect,
-                        panelBackgroundOpacity: spectrumOpacity.background,
-                        panelBorderOpacity: spectrumOpacity.border,
-                        contentOpacity: spectrumOpacity.content,
-                        context: context
-                    )
+                let drawSpectrumArea = { [self] in
+                    if self.mainVisMode == .spectrum {
+                        // `window.areaOpacity.spectrumArea` controls panel + bars.
+                        // `window.mainSpectrumOpacity` (if set) overrides the resolved spectrum alpha.
+                        self.renderer.drawMiniSpectrum(
+                            self.spectrumLevels,
+                            in: ModernSkinElements.spectrumArea.defaultRect,
+                            panelBackgroundOpacity: spectrumBackgroundOpacity,
+                            panelBorderOpacity: spectrumBorderOpacity,
+                            contentOpacity: spectrumContentOpacity,
+                            context: context
+                        )
+                    } else {
+                        // For Metal visualization modes, keep panel opacity-driven too.
+                        self.renderer.drawInsetPanel(
+                            in: ModernSkinElements.spectrumArea.defaultRect,
+                            backgroundOpacity: spectrumBackgroundOpacity,
+                            borderOpacity: spectrumBorderOpacity,
+                            context: context
+                        )
+                    }
+                }
+                if hasSpectrumOverride {
+                    drawContentUnattenuated(context: context, draw: drawSpectrumArea)
                 } else {
-                    // For Metal visualization modes, keep panel opacity-driven too.
-                    renderer.drawInsetPanel(
-                        in: ModernSkinElements.spectrumArea.defaultRect,
-                        backgroundOpacity: spectrumOpacity.background,
-                        borderOpacity: spectrumOpacity.border,
-                        context: context
-                    )
+                    drawSpectrumArea()
                 }
             }
 
@@ -848,9 +860,20 @@ class ModernMainWindowView: NSView {
     /// Apply spectrum content opacity to the optional Metal overlay view.
     private func updateSpectrumOverlayOpacity() {
         let skin = renderer.skin
-        let mainContentOpacity = skin.resolvedOpacity(for: .mainWindow).content
-        let spectrumContentOpacity = skin.resolvedOpacity(for: .spectrumArea).content
-        metalOverlay?.alphaValue = min(1.0, max(0.0, mainContentOpacity * spectrumContentOpacity))
+        if let spectrumOverride = skin.mainSpectrumOpacityOverride {
+            metalOverlay?.alphaValue = spectrumOverride
+        } else {
+            let mainContentOpacity = skin.resolvedOpacity(for: .mainWindow).content
+            let spectrumContentOpacity = skin.resolvedOpacity(for: .spectrumArea).content
+            metalOverlay?.alphaValue = min(1.0, max(0.0, mainContentOpacity * spectrumContentOpacity))
+        }
+    }
+
+    private func drawContentUnattenuated(context: CGContext, draw: () -> Void) {
+        context.saveGState()
+        context.setAlpha(1.0)
+        draw()
+        context.restoreGState()
     }
 
     private func withContextAlpha(_ alpha: CGFloat, context: CGContext, draw: () -> Void) {

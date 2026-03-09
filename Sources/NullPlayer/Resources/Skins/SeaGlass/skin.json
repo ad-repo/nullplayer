@@ -61,6 +61,7 @@
         "cornerRadius": 14,
         "opacity": 0.52,
         "textOpacity": 0.8,
+        "mainSpectrumOpacity": 0.9,
         "seamlessDocking": 1.0,
         "areaOpacity": {
             "mainWindow": {

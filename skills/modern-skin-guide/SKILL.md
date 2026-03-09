@@ -99,6 +99,7 @@ MySkin/
         "scale": 1.25,
         "opacity": 0.9,
         "textOpacity": 1.0,
+        "mainSpectrumOpacity": 1.0,
         "seamlessDocking": 1.0
     },
     "marquee": {
@@ -183,7 +184,14 @@ The simplest skin is just a `skin.json` with palette colors:
     "fonts": { "primaryName": "DepartureMono-Regular", "fallbackName": "Menlo" },
     "background": { "grid": { "color": "#332200", "spacing": 15, "angle": 80, "opacity": 0.1 } },
     "glow": { "enabled": true, "radius": 6, "intensity": 0.5, "threshold": 0.6 },
-    "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.9, "textOpacity": 1.0, "seamlessDocking": 1.0 }
+    "window": {
+        "borderWidth": 1,
+        "cornerRadius": 6,
+        "opacity": 0.9,
+        "textOpacity": 1.0,
+        "mainSpectrumOpacity": 1.0,
+        "seamlessDocking": 1.0
+    }
 }
 ```
 
