@@ -164,7 +164,7 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 ## Visualizations
 
 ### Main Window GPU Modes
-Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (double-click to cycle)
+Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (double-click to cycle)
 
 ### Album Art Visualizer
 30 effects transforming album artwork based on audio
@@ -173,7 +173,7 @@ Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (double-click to 
 100+ bundled presets, OpenGL rendering, fullscreen support
 
 ### Spectrum Analyzer Window
-55 bars, 8 quality modes (Winamp/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
+55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
 
 ## Skins
 
@@ -210,6 +210,10 @@ Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (double-click to 
 - **Z**: Previous track
 - **←/→**: Seek backward/forward 5s
 - **↑/↓**: Volume up/down
+
+### vis_classic Profiles
+- **Main window**: **, / .** previous/next profile
+- **Spectrum window**: **[ / ]** previous/next profile (left/right also cycle profiles in vis_classic mode)
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

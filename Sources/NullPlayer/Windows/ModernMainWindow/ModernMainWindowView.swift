@@ -39,6 +39,7 @@ class ModernMainWindowView: NSView {
     private var mainVisMode: MainWindowVisMode = .spectrum {
         didSet {
             UserDefaults.standard.set(mainVisMode.rawValue, forKey: "modernMainWindowVisMode")
+            UserDefaults.standard.set(mainVisMode.rawValue, forKey: "mainWindowVisMode")
             updateMetalOverlay()
         }
     }
@@ -1438,6 +1439,19 @@ class ModernMainWindowView: NSView {
     
     override func keyDown(with event: NSEvent) {
         let audioEngine = WindowManager.shared.audioEngine
+
+        if mainVisMode == .visClassicExact,
+           let overlay = metalOverlay,
+           let chars = event.charactersIgnoringModifiers {
+            if chars == "," {
+                _ = overlay.loadPreviousVisClassicProfile()
+                return
+            }
+            if chars == "." {
+                _ = overlay.loadNextVisClassicProfile()
+                return
+            }
+        }
         
         switch event.keyCode {
         case 49: // Space - play/pause

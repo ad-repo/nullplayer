@@ -413,6 +413,18 @@ class SpectrumView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
+        if spectrumAnalyzerView?.qualityMode == .visClassicExact,
+           let chars = event.charactersIgnoringModifiers {
+            if chars == "[" {
+                _ = spectrumAnalyzerView?.loadPreviousVisClassicProfile()
+                return
+            }
+            if chars == "]" {
+                _ = spectrumAnalyzerView?.loadNextVisClassicProfile()
+                return
+            }
+        }
+
         switch event.keyCode {
         case 53: // Escape - close window or exit fullscreen
             if isFullscreen {
@@ -429,6 +441,8 @@ class SpectrumView: NSView {
                 cycleLightningStyle(forward: false)
             } else if spectrumAnalyzerView?.qualityMode == .matrix {
                 cycleMatrixColor(forward: false)
+            } else if spectrumAnalyzerView?.qualityMode == .visClassicExact {
+                _ = spectrumAnalyzerView?.loadPreviousVisClassicProfile()
             } else { super.keyDown(with: event) }
         case 124: // Right arrow - next style (flame/lightning/matrix mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
@@ -437,6 +451,8 @@ class SpectrumView: NSView {
                 cycleLightningStyle(forward: true)
             } else if spectrumAnalyzerView?.qualityMode == .matrix {
                 cycleMatrixColor(forward: true)
+            } else if spectrumAnalyzerView?.qualityMode == .visClassicExact {
+                _ = spectrumAnalyzerView?.loadNextVisClassicProfile()
             } else { super.keyDown(with: event) }
         default:
             super.keyDown(with: event)
@@ -601,6 +617,54 @@ class SpectrumView: NSView {
             matrixIntensityMenuItem.submenu = matrixIntensityMenu
             menu.addItem(matrixIntensityMenuItem)
         }
+
+        // vis_classic profile controls (only when vis_classic mode is active)
+        if spectrumAnalyzerView?.qualityMode == .visClassicExact {
+            let profilesMenu = NSMenu()
+            let fitToWidthEnabled = spectrumAnalyzerView?.visClassicFitToWidthEnabled() ?? true
+
+            if let profiles = spectrumAnalyzerView?.visClassicProfiles(), !profiles.isEmpty {
+                let current = spectrumAnalyzerView?.visClassicCurrentProfileName()
+                for entry in profiles {
+                    let item = NSMenuItem(title: entry.name, action: #selector(setVisClassicProfile(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = entry.name
+                    item.state = (entry.name == current) ? .on : .off
+                    profilesMenu.addItem(item)
+                }
+            } else {
+                let noneItem = NSMenuItem(title: "No Profiles", action: nil, keyEquivalent: "")
+                noneItem.isEnabled = false
+                profilesMenu.addItem(noneItem)
+            }
+
+            let profilesRoot = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
+            profilesRoot.submenu = profilesMenu
+            menu.addItem(profilesRoot)
+
+            menu.addItem(NSMenuItem.separator())
+
+            let fitItem = NSMenuItem(title: "Fit to Width", action: #selector(toggleVisClassicFitToWidth(_:)), keyEquivalent: "")
+            fitItem.target = self
+            fitItem.state = fitToWidthEnabled ? .on : .off
+            menu.addItem(fitItem)
+
+            let nextItem = NSMenuItem(title: "Next Profile", action: #selector(loadNextVisClassicProfile(_:)), keyEquivalent: "")
+            nextItem.target = self
+            menu.addItem(nextItem)
+
+            let prevItem = NSMenuItem(title: "Previous Profile", action: #selector(loadPreviousVisClassicProfile(_:)), keyEquivalent: "")
+            prevItem.target = self
+            menu.addItem(prevItem)
+
+            let importItem = NSMenuItem(title: "Import INI...", action: #selector(importVisClassicProfile(_:)), keyEquivalent: "")
+            importItem.target = self
+            menu.addItem(importItem)
+
+            let exportItem = NSMenuItem(title: "Export Current INI...", action: #selector(exportVisClassicProfile(_:)), keyEquivalent: "")
+            exportItem.target = self
+            menu.addItem(exportItem)
+        }
         
         menu.addItem(NSMenuItem.separator())
         
@@ -666,6 +730,31 @@ class SpectrumView: NSView {
     @objc private func setMatrixIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? MatrixIntensity else { return }
         spectrumAnalyzerView?.matrixIntensity = intensity
+    }
+
+    @objc private func setVisClassicProfile(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        _ = spectrumAnalyzerView?.loadVisClassicProfile(named: name)
+    }
+
+    @objc private func loadNextVisClassicProfile(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.loadNextVisClassicProfile()
+    }
+
+    @objc private func loadPreviousVisClassicProfile(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.loadPreviousVisClassicProfile()
+    }
+
+    @objc private func importVisClassicProfile(_ sender: Any?) {
+        spectrumAnalyzerView?.importVisClassicProfile()
+    }
+
+    @objc private func exportVisClassicProfile(_ sender: Any?) {
+        spectrumAnalyzerView?.exportCurrentVisClassicProfile()
+    }
+
+    @objc private func toggleVisClassicFitToWidth(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.toggleVisClassicFitToWidth()
     }
     
     @objc private func closeWindow(_ sender: Any?) {

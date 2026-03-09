@@ -100,7 +100,7 @@ Skills contain detailed technical documentation. Key skills include:
 - **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations (Plex, Jellyfin, Navidrome/Subsonic, Emby)
 - **sonos-casting**, **chromecast-casting**: Casting protocols
 - **radio-streaming**: Internet radio + library radio support (metadata, folders, ratings, history)
-- **visualizations**: Album art and ProjectM
+- **visualizations**: Album art, ProjectM, spectrum modes, and vis_classic exact mode
 - **testing**: UI testing workflows
 - **non-retina-fixes**: Display artifact fixes
 
@@ -121,7 +121,7 @@ Sources/NullPlayer/
 ├── Subsonic/         # Navidrome/Subsonic server integration
 ├── Jellyfin/         # Jellyfin media server integration
 ├── Emby/             # Emby media server integration
-├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer + flame mode
+├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer, vis_classic bridge/core integration
 └── Models/           # Track, Playlist, MediaLibrary
 ```
 
@@ -133,7 +133,7 @@ Sources/NullPlayer/
 | Skin (Modern) | `ModernSkin/ModernSkinEngine.swift`, `ModernSkin/ModernSkinConfig.swift`, `ModernSkin/ModernSkinRenderer.swift`, `ModernSkin/ModernSkinLoader.swift`, `ModernSkin/ModernSkinElements.swift` |
 | Audio | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift`, `Audio/BPMDetector.swift` |
 | Windows | `Windows/MainWindow/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, `Windows/ModernLibraryBrowser/`, `Windows/Playlist/`, `Windows/Equalizer/` |
-| Visualization | `Windows/ProjectM/`, `Windows/Spectrum/`, `Visualization/VisualizationGLView.swift`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/SpectrumShaders.metal`, `Visualization/FlameShaders.metal`, `Visualization/CosmicShaders.metal`, `Visualization/ElectricityShaders.metal`, `Visualization/MatrixShaders.metal`, `Visualization/ProjectMWrapper.swift` |
+| Visualization | `Windows/ProjectM/`, `Windows/Spectrum/`, `Visualization/VisualizationGLView.swift`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/VisClassicBridge.swift`, `Visualization/SpectrumShaders.metal`, `Visualization/FlameShaders.metal`, `Visualization/CosmicShaders.metal`, `Visualization/ElectricityShaders.metal`, `Visualization/MatrixShaders.metal`, `Visualization/ProjectMWrapper.swift`, `Sources/CVisClassicCore/` |
 | Marquee | `Skin/MarqueeLayer.swift` (classic), `ModernSkin/ModernMarqueeLayer.swift` (modern), `Windows/Playlist/PlaylistView.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift`, `Plex/PlexRadioHistory.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
@@ -189,6 +189,7 @@ Sources/NullPlayer/
 ## Gotchas
 
 - **Remember State On Quit**: `AppStateManager` saves/restores complete session state (v2). Two-phase restoration: settings first (`restoreSettingsState` — skin, volume, EQ, windows, double size), then playlist (`restorePlaylistState` — tracks with ordering preserved, current track index, seek position). Streaming tracks (Plex/Subsonic/Jellyfin/Emby) are loaded as placeholder `Track` objects with saved metadata, then replaced asynchronously via `engine.replaceTrack(at:with:)`. Radio tracks are saved via `SavedTrack.radioURL`. Many other settings (visualization modes, browser columns, radio stations, hide title bars) persist independently via UserDefaults and are NOT part of `AppState`. Internet radio station ratings/folders/play-history persistence is SQLite-backed and URL-keyed (`radio_station_ratings.db`, `radio_station_folders.db`) and also not part of `AppState`. When adding new state: if it's a preference that should always persist, use UserDefaults directly; if it's session state that should only persist when "Remember State" is enabled, add it to the `AppState` struct with `decodeIfPresent` defaults
+- **vis_classic profile state is window-scoped**: Main window and spectrum window keep independent profile and fit settings. Use `VisClassicBridge.PreferenceScope` and scoped keys (`visClassicLastProfileName.mainWindow` / `.spectrumWindow`, `visClassicFitToWidth.mainWindow` / `.spectrumWindow`). Do not use shared keys for menu checkmarks or restore logic.
 - **Modern main window layout split**: The time panel's visual boundary is hardcoded as a `drawInsetPanel` call in `ModernMainWindowView.swift` `draw()` — it is NOT an element in `ModernSkinElements`. The display panel uses `marqueeBackground` from `ModernSkinElements`. When adjusting time-panel geometry, update **both** the `drawInsetPanel` rect in `ModernMainWindowView.swift` and the dependent element rects (`timeDisplay`, `statusPlay/Pause/Stop`) in `ModernSkinElements.swift`.
 - **Modern skin system is completely independent**: Files in `ModernSkin/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, and `Windows/ModernLibraryBrowser/` must NEVER import or reference anything from `Skin/` or `Windows/MainWindow/`. The coupling points are only: `AppDelegate` (mode selection), `WindowManager` (via `MainWindowProviding`, `SpectrumWindowProviding`, `PlaylistWindowProviding`, `EQWindowProviding`, `ProjectMWindowProviding`, and `LibraryBrowserWindowProviding` protocols), and shared infrastructure (`AudioEngine`, `Track`, `PlaybackState`)
 - **Modern glass opacity + seam debugging doc**: Detailed implementation notes for the 2026-03 glass darkening/seam fix live in `skills/modern-skin-guide/advanced-features.md` under the section "Glass Skin Darkening and Seam Stability".

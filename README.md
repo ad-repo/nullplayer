@@ -23,7 +23,7 @@
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
 - Modern V2 UI skin system, many v2 skins included. Open format, users can easily make new v2 skins via json
-- Original Spenctrum analysis visualization system
+- Original spectrum analysis visualization system with `vis_classic` exact mode (profile-compatible) in both main and spectrum windows
 - Album art visualization system with user selected effects
 - Main player, Playlist editor, and 10-band Equalizer windows
 - Classic window snapping and docking behavior
@@ -157,4 +157,3 @@ This project is open source and uses the following licensed components:
 
 - **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
 - **libprojectM** (LGPL-2.1) - ProjectM visualizations
-

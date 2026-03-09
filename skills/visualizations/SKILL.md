@@ -9,13 +9,14 @@ NullPlayer features multiple visualization systems for audio-reactive visual eff
 
 ## Main Window Visualization
 
-The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports eight rendering modes.
+The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports nine rendering modes.
 
 ### Modes
 
 | Mode | Description |
 |------|-------------|
 | **Spectrum** | Classic 19-bar spectrum analyzer drawn with skin colors via CGContext (default) |
+| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible rendering |
 | **Fire** | GPU flame simulation using Metal compute shaders |
 | **Enhanced** | LED matrix with rainbow gradient, gravity-bouncing peaks, amber fade trails |
 | **Ultra** | Maximum fidelity seamless gradient with smooth decay, physics-based peaks, reflections |
@@ -32,7 +33,7 @@ The main window's built-in visualization area (76x16 pixels in Winamp coordinate
 
 ### Settings
 
-All GPU modes share:
+All non-`vis_classic` GPU modes share:
 - **Responsiveness**: Bar decay speed (Instant/Snappy/Balanced/Smooth) — `mainWindowDecayMode`
 - **Normalization**: Level scaling (Accurate/Adaptive/Dynamic) — `mainWindowNormalizationMode`
 
@@ -40,10 +41,12 @@ Mode-specific:
 - **Fire**: Flame Style + Fire Intensity — `mainWindowFlameStyle`, `mainWindowFlameIntensity`
 - **Lightning**: Lightning Style — `mainWindowLightningStyle`
 - **Matrix**: Matrix Color + Matrix Intensity — `mainWindowMatrixColorScheme`, `mainWindowMatrixIntensity`
+- **vis_classic**: Profile selection + Fit to Width — window-scoped UserDefaults keys
 
 ### Technical Details
 
 - **Implementation**: Metal overlay (`SpectrumAnalyzerView` with `isEmbedded = true`) as subview
+- **vis_classic Core**: CPU frame generation via `VisClassicBridge` + `CVisClassicCore`, uploaded to a Metal texture
 - **Positioning**: Converted from Winamp coordinates to macOS view coordinates
 - **Lifecycle**: Created lazily on first GPU mode activation
 - **CPU Efficiency**: Display link pauses when window is minimized/occluded or in Spectrum mode
@@ -239,6 +242,7 @@ Participates in docking system with Main, EQ, and Playlist:
 | Mode | Description |
 |------|-------------|
 | **Winamp** | Discrete color bands from skin palette with floating peaks, 3D bar shading, LED gaps (default) |
+| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible INI behavior |
 | **Enhanced** | Rainbow LED matrix (55x16) with gravity-bouncing peaks, amber fade trails, rounded corners |
 | **Ultra** | Maximum fidelity seamless gradient with smooth decay, physics-based bouncing peaks, reflection effect |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues (4 color styles) |
@@ -251,7 +255,29 @@ Participates in docking system with Main, EQ, and Playlist:
 
 - **Double-click** the spectrum window to cycle through modes
 - **Right-click** → Mode to select specific mode
-- **Left/Right arrows**: Cycle flame/lightning/matrix styles
+- **Left/Right arrows**: Cycle flame/lightning/matrix styles (or prev/next profile in `vis_classic`)
+- **[ / ]**: Previous/next profile in `vis_classic`
+
+### vis_classic Mode Details
+
+Profile controls are available from both main window and spectrum window context menus when `vis_classic` is active.
+
+- **Profiles submenu**: Load profile directly
+- **Fit to Width**: Toggle bar mapping across full width
+- **Next/Previous Profile**: Cycle through profile catalog
+- **Import/Export INI**: Read and write profile files
+
+Main window `vis_classic` keyboard controls:
+- **,** previous profile
+- **.** next profile
+
+Spectrum window `vis_classic` keyboard controls:
+- **Left/Right** previous/next profile
+- **[ / ]** previous/next profile
+
+Persistence is window-scoped (independent between main window and spectrum window):
+- Profile keys: `visClassicLastProfileName.mainWindow`, `visClassicLastProfileName.spectrumWindow`
+- Fit keys: `visClassicFitToWidth.mainWindow`, `visClassicFitToWidth.spectrumWindow`
 
 ### Flame Mode Details
 
@@ -334,8 +360,8 @@ Controls how quickly bars fall:
 
 | Feature | Album Art | ProjectM/MilkDrop | Spectrum Analyzer |
 |---------|-----------|-------------------|-------------------|
-| **Visual Style** | Transformed artwork | Procedural graphics | Frequency bars/Fire/JWST/Lightning/Matrix/Snow |
-| **Effect Count** | 30 built-in | 100s of presets | 8 modes |
+| **Visual Style** | Transformed artwork | Procedural graphics | Frequency bars/vis_classic/Fire/JWST/Lightning/Matrix/Snow |
+| **Effect Count** | 30 built-in | 100s of presets | 9 modes |
 | **Customization** | Intensity adjustment | Full preset ecosystem | Mode + decay + style presets |
 | **GPU Tech** | Core Image (Metal) | OpenGL shaders | Metal shaders + compute |
 | **Audio Response** | Spectrum bands | PCM waveform + beats | 75-band spectrum / energy-driven |
@@ -388,12 +414,14 @@ Controls how quickly bars fall:
 - `Windows/Spectrum/SpectrumView.swift` - Container with classic chrome
 - `Windows/ModernSpectrum/ModernSpectrumWindowController.swift` - Window controller (modern)
 - `Windows/ModernSpectrum/ModernSpectrumView.swift` - Container with modern chrome
-- `Visualization/SpectrumAnalyzerView.swift` - Metal rendering (all 8 modes, shared)
+- `Visualization/SpectrumAnalyzerView.swift` - Metal rendering and vis_classic frame upload path (shared)
+- `Visualization/VisClassicBridge.swift` - Swift bridge to C vis_classic core, scoped prefs/profile I/O
 - `Visualization/SpectrumShaders.metal` - Enhanced/Ultra mode shaders
 - `Visualization/FlameShaders.metal` - Fire mode compute + render shaders
 - `Visualization/CosmicShaders.metal` - JWST mode fragment shaders
 - `Visualization/ElectricityShaders.metal` - Lightning mode fragment shaders
 - `Visualization/MatrixShaders.metal` - Matrix mode fragment shaders
+- `Sources/CVisClassicCore/` - Portable C/C++ vis_classic core implementation and C API
 - `App/SpectrumWindowProviding.swift` - Protocol abstracting classic/modern
 
 ### Main Window GPU Modes

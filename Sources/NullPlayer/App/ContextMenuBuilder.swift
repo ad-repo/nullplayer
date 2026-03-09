@@ -762,6 +762,55 @@ class ContextMenuBuilder {
             matrixIntensityItem.submenu = matrixIntensityMenu
             visMenu.addItem(matrixIntensityItem)
         }
+
+        // vis_classic profile controls (only when vis_classic mode active)
+        if currentMode == .visClassicExact {
+            let profilesMenuItem = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
+            let profilesMenu = NSMenu()
+            profilesMenu.autoenablesItems = false
+
+            let currentName = VisClassicBridge.lastProfileName(for: .mainWindow)
+            let profiles = VisClassicBridge.availableProfilesCatalog()
+            if profiles.isEmpty {
+                let none = NSMenuItem(title: "No Profiles", action: nil, keyEquivalent: "")
+                none.isEnabled = false
+                profilesMenu.addItem(none)
+            } else {
+                for entry in profiles {
+                    let item = NSMenuItem(title: entry.name, action: #selector(MenuActions.loadMainVisClassicProfile(_:)), keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = entry.name
+                    item.state = (entry.name == currentName) ? .on : .off
+                    profilesMenu.addItem(item)
+                }
+            }
+
+            profilesMenuItem.submenu = profilesMenu
+            visMenu.addItem(profilesMenuItem)
+            visMenu.addItem(NSMenuItem.separator())
+
+            let fitEnabled = VisClassicBridge.fitToWidthDefault(for: .mainWindow)
+            let fitItem = NSMenuItem(title: "Fit to Width", action: #selector(MenuActions.toggleMainVisClassicFitToWidth), keyEquivalent: "")
+            fitItem.target = MenuActions.shared
+            fitItem.state = fitEnabled ? .on : .off
+            visMenu.addItem(fitItem)
+
+            let nextItem = NSMenuItem(title: "Next Profile", action: #selector(MenuActions.nextMainVisClassicProfile), keyEquivalent: "")
+            nextItem.target = MenuActions.shared
+            visMenu.addItem(nextItem)
+
+            let prevItem = NSMenuItem(title: "Previous Profile", action: #selector(MenuActions.previousMainVisClassicProfile), keyEquivalent: "")
+            prevItem.target = MenuActions.shared
+            visMenu.addItem(prevItem)
+
+            let importItem = NSMenuItem(title: "Import INI...", action: #selector(MenuActions.importMainVisClassicProfile), keyEquivalent: "")
+            importItem.target = MenuActions.shared
+            visMenu.addItem(importItem)
+
+            let exportItem = NSMenuItem(title: "Export Current INI...", action: #selector(MenuActions.exportMainVisClassicProfile), keyEquivalent: "")
+            exportItem.target = MenuActions.shared
+            visMenu.addItem(exportItem)
+        }
         
         return visMenu
     }
@@ -952,6 +1001,55 @@ class ContextMenuBuilder {
             
             matrixIntensityItem.submenu = matrixIntensityMenu
             spectrumWindowMenu.addItem(matrixIntensityItem)
+        }
+
+        // vis_classic profile controls (only when vis_classic mode active)
+        if currentQuality == .visClassicExact {
+            let profilesMenuItem = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
+            let profilesMenu = NSMenu()
+            profilesMenu.autoenablesItems = false
+
+            let currentName = VisClassicBridge.lastProfileName(for: .spectrumWindow)
+            let profiles = VisClassicBridge.availableProfilesCatalog()
+            if profiles.isEmpty {
+                let none = NSMenuItem(title: "No Profiles", action: nil, keyEquivalent: "")
+                none.isEnabled = false
+                profilesMenu.addItem(none)
+            } else {
+                for entry in profiles {
+                    let item = NSMenuItem(title: entry.name, action: #selector(MenuActions.loadVisClassicProfile(_:)), keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = entry.name
+                    item.state = (entry.name == currentName) ? .on : .off
+                    profilesMenu.addItem(item)
+                }
+            }
+
+            profilesMenuItem.submenu = profilesMenu
+            spectrumWindowMenu.addItem(profilesMenuItem)
+            spectrumWindowMenu.addItem(NSMenuItem.separator())
+
+            let fitEnabled = VisClassicBridge.fitToWidthDefault(for: .spectrumWindow)
+            let fitItem = NSMenuItem(title: "Fit to Width", action: #selector(MenuActions.toggleVisClassicFitToWidth), keyEquivalent: "")
+            fitItem.target = MenuActions.shared
+            fitItem.state = fitEnabled ? .on : .off
+            spectrumWindowMenu.addItem(fitItem)
+
+            let nextItem = NSMenuItem(title: "Next Profile", action: #selector(MenuActions.nextVisClassicProfile), keyEquivalent: "")
+            nextItem.target = MenuActions.shared
+            spectrumWindowMenu.addItem(nextItem)
+
+            let prevItem = NSMenuItem(title: "Previous Profile", action: #selector(MenuActions.previousVisClassicProfile), keyEquivalent: "")
+            prevItem.target = MenuActions.shared
+            spectrumWindowMenu.addItem(prevItem)
+
+            let importItem = NSMenuItem(title: "Import INI...", action: #selector(MenuActions.importVisClassicProfile), keyEquivalent: "")
+            importItem.target = MenuActions.shared
+            spectrumWindowMenu.addItem(importItem)
+
+            let exportItem = NSMenuItem(title: "Export Current INI...", action: #selector(MenuActions.exportVisClassicProfile), keyEquivalent: "")
+            exportItem.target = MenuActions.shared
+            spectrumWindowMenu.addItem(exportItem)
         }
         
         spectrumWindowItem.submenu = spectrumWindowMenu
@@ -2924,6 +3022,104 @@ class MenuActions: NSObject {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
         // Normalization mode is read each frame, no notification needed
+    }
+
+    @objc func loadVisClassicProfile(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "load", "profileName": name, "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func nextVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "next", "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func previousVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "previous", "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func importVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "import", "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func exportVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "export", "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func toggleVisClassicFitToWidth() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "fitToWidth", "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func loadMainVisClassicProfile(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "load", "profileName": name, "target": "mainWindow"]
+        )
+    }
+
+    @objc func nextMainVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "next", "target": "mainWindow"]
+        )
+    }
+
+    @objc func previousMainVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "previous", "target": "mainWindow"]
+        )
+    }
+
+    @objc func importMainVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "import", "target": "mainWindow"]
+        )
+    }
+
+    @objc func exportMainVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "export", "target": "mainWindow"]
+        )
+    }
+
+    @objc func toggleMainVisClassicFitToWidth() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "fitToWidth", "target": "mainWindow"]
+        )
     }
     
     @objc func toggleRememberState() {

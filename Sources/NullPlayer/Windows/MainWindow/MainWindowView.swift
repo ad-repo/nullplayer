@@ -3,6 +3,7 @@ import AppKit
 /// Visualization mode for the main window's built-in visualization area
 enum MainWindowVisMode: String, CaseIterable {
     case spectrum = "Spectrum"       // Classic 19-bar spectrum analyzer (CGContext)
+    case visClassicExact = "vis_classic" // Exact vis_classic port (CPU frame in Metal overlay)
     case fire = "Fire"               // GPU flame simulation (Metal overlay)
     case enhanced = "Enhanced"       // LED matrix with rainbow (Metal overlay)
     case ultra = "Ultra"             // Maximum visual quality (Metal overlay)
@@ -20,6 +21,7 @@ enum MainWindowVisMode: String, CaseIterable {
     var spectrumQualityMode: SpectrumQualityMode? {
         switch self {
         case .spectrum: return nil
+        case .visClassicExact: return .visClassicExact
         case .fire: return .flame
         case .enhanced: return .enhanced
         case .ultra: return .ultra
@@ -1726,6 +1728,19 @@ class MainWindowView: NSView {
     override func keyDown(with event: NSEvent) {
         let engine = WindowManager.shared.audioEngine
         let isVideoActive = WindowManager.shared.isVideoActivePlayback
+
+        if mainVisMode == .visClassicExact,
+           let overlay = metalOverlay,
+           let chars = event.charactersIgnoringModifiers {
+            if chars == "," {
+                _ = overlay.loadPreviousVisClassicProfile()
+                return
+            }
+            if chars == "." {
+                _ = overlay.loadNextVisClassicProfile()
+                return
+            }
+        }
         
         switch event.keyCode {
         case 49: // Space - Play/Pause

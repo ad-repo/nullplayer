@@ -286,6 +286,16 @@ class AudioEngine {
     /// Reusable userInfo dict for PCM notifications (avoids per-callback allocation)
     private var pcmUserInfo: [String: Any] = [:]
 
+    /// Reusable 576-sample stereo waveform buffers for vis_classic exact mode
+    private var waveformLeftU8 = [UInt8](repeating: 128, count: 576)
+    private var waveformRightU8 = [UInt8](repeating: 128, count: 576)
+    private var waveformUserInfo: [String: Any] = [:]
+    private var waveformLeftRing = [Float](repeating: 0, count: 8192)
+    private var waveformRightRing = [Float](repeating: 0, count: 8192)
+    private var waveformRingReadIndex = 0
+    private var waveformRingWriteIndex = 0
+    private var waveformRingCount = 0
+
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
     private let fftSize: Int = 2048  // Match streaming FFT for consistent display
@@ -709,6 +719,17 @@ class AudioEngine {
               let fftSetup = fftSetup else { return }
 
         let frameCount = Int(buffer.frameLength)
+        guard frameCount > 0 else { return }
+        let channelCount = Int(buffer.format.channelCount)
+        let bufferSampleRate = buffer.format.sampleRate
+
+        enqueueWaveformSamplesAndPost(
+            channelData: channelData,
+            channelCount: channelCount,
+            frameCount: frameCount,
+            sampleRate: bufferSampleRate
+        )
+
         guard frameCount >= fftSize else { return }
         
         // Throttle updates to 60Hz max to prevent memory buildup
@@ -718,8 +739,6 @@ class AudioEngine {
         lastSpectrumUpdateTime = now
         
         // Get audio samples (mono mix if stereo) - use pre-allocated buffer
-        let channelCount = Int(buffer.format.channelCount)
-        
         if channelCount == 1 {
             memcpy(&fftSamples, channelData[0], fftSize * MemoryLayout<Float>.size)
         } else {
@@ -745,7 +764,6 @@ class AudioEngine {
         for i in 0..<pcmSize {
             fftPcmSamples[i] = fftSamples[i * pcmStride]
         }
-        let bufferSampleRate = buffer.format.sampleRate
         
         // Post notification for low-latency visualization (direct from audio tap)
         // Copy to avoid data races since we reuse the buffer
@@ -757,7 +775,7 @@ class AudioEngine {
             object: self,
             userInfo: pcmUserInfo
         )
-        
+
         // Also store in property for legacy access - coalesce dispatches
         if !pendingPcmUpdate {
             pendingPcmUpdate = true
@@ -938,6 +956,62 @@ class AudioEngine {
                 name: .audioSpectrumDataUpdated,
                 object: self,
                 userInfo: ["spectrum": self.spectrumData]
+            )
+        }
+    }
+
+    private func enqueueWaveformSamplesAndPost(
+        channelData: UnsafePointer<UnsafeMutablePointer<Float>>,
+        channelCount: Int,
+        frameCount: Int,
+        sampleRate: Double
+    ) {
+        guard channelCount > 0 else { return }
+        for i in 0..<frameCount {
+            let left = channelData[0][i]
+            let right = channelCount > 1 ? channelData[1][i] : left
+            appendWaveformSample(left: left, right: right)
+        }
+        postAvailableWaveformChunks(sampleRate: sampleRate)
+    }
+
+    private func appendWaveformSample(left: Float, right: Float) {
+        if waveformRingCount == waveformLeftRing.count {
+            waveformRingReadIndex = (waveformRingReadIndex + 1) % waveformLeftRing.count
+            waveformRingCount -= 1
+        }
+
+        waveformLeftRing[waveformRingWriteIndex] = left
+        waveformRightRing[waveformRingWriteIndex] = right
+        waveformRingWriteIndex = (waveformRingWriteIndex + 1) % waveformLeftRing.count
+        waveformRingCount += 1
+    }
+
+    private func postAvailableWaveformChunks(sampleRate: Double) {
+        let chunkSize = waveformLeftU8.count
+        while waveformRingCount >= chunkSize {
+            var index = waveformRingReadIndex
+            for i in 0..<chunkSize {
+                let leftInt = Int((waveformLeftRing[index] * 127.0) + 128.0)
+                let rightInt = Int((waveformRightRing[index] * 127.0) + 128.0)
+                waveformLeftU8[i] = UInt8(clamping: leftInt)
+                waveformRightU8[i] = UInt8(clamping: rightInt)
+                index += 1
+                if index == waveformLeftRing.count {
+                    index = 0
+                }
+            }
+
+            waveformRingReadIndex = index
+            waveformRingCount -= chunkSize
+
+            waveformUserInfo["left"] = waveformLeftU8
+            waveformUserInfo["right"] = waveformRightU8
+            waveformUserInfo["sampleRate"] = sampleRate
+            NotificationCenter.default.post(
+                name: .audioWaveform576DataUpdated,
+                object: self,
+                userInfo: waveformUserInfo
             )
         }
     }

@@ -1,6 +1,17 @@
 import Accelerate
+import AppKit
 import MetalKit
 import os.lock
+
+extension Notification.Name {
+    /// Posted when a 576-sample stereo waveform frame is available for vis_classic exact mode.
+    /// userInfo: "left" ([UInt8]), "right" ([UInt8]), "sampleRate" (Double)
+    static let audioWaveform576DataUpdated = Notification.Name("audioWaveform576DataUpdated")
+
+    /// Posted by menu actions that operate on vis_classic profiles.
+    /// userInfo: "command" (String), optional "profileName" (String)
+    static let visClassicProfileCommand = Notification.Name("visClassicProfileCommand")
+}
 
 // =============================================================================
 // SPECTRUM ANALYZER VIEW - Metal-based real-time audio visualization
@@ -25,6 +36,7 @@ enum SpectrumQualityMode: String, CaseIterable {
     case electricity = "Lightning" // GPU lightning storm driven by peak frequencies
     case matrix = "Matrix"           // Falling digital rain driven by spectrum
     case snow = "Snow"               // Audio-reactive snowfall driven by spectrum density
+    case visClassicExact = "vis_classic" // Exact-port vis_classic analyzer core (CPU frame path)
     
     var displayName: String { rawValue }
     
@@ -38,6 +50,7 @@ enum SpectrumQualityMode: String, CaseIterable {
         case .electricity: return "ElectricityShaders"
         case .matrix: return "MatrixShaders"
         case .snow: return "SnowShaders"
+        case .visClassicExact: return "SpectrumShaders" // Always bundled; keeps mode enabled in menus
         }
     }
 }
@@ -307,6 +320,9 @@ struct UltraParams {
 
 /// Metal-based spectrum analyzer visualization view
 class SpectrumAnalyzerView: NSView {
+    private var visClassicPreferenceScope: VisClassicBridge.PreferenceScope {
+        isEmbedded ? .mainWindow : .spectrumWindow
+    }
     
     // MARK: - Shader Availability
     
@@ -329,6 +345,7 @@ class SpectrumAnalyzerView: NSView {
         case .electricity: return electricityRenderPipeline != nil
         case .matrix: return matrixRenderPipeline != nil
         case .snow: return snowRenderPipeline != nil
+        case .visClassicExact: return true
         }
     }
     
@@ -356,6 +373,13 @@ class SpectrumAnalyzerView: NSView {
             dataLock.withLock {
                 renderQualityMode = mode
             }
+
+            if mode == .visClassicExact && visClassicBridge == nil {
+                let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+                let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+                visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            }
+
             // Heavy fullscreen shader modes can stall at Retina-scale pixel counts.
             // Keep drawable scale in sync with the active mode.
             DispatchQueue.main.async { [weak self] in
@@ -517,6 +541,11 @@ class SpectrumAnalyzerView: NSView {
     // Snow mode resources
     private var snowRenderPipeline: MTLRenderPipelineState?
     private var snowParamsBuffer: MTLBuffer?
+
+    // vis_classic exact mode resources (CPU-rendered frame uploaded to a Metal texture)
+    private var visClassicBridge: VisClassicBridge?
+    private var visClassicFrameTexture: MTLTexture?
+    private var visClassicFrameBytes: [UInt8] = []
     
     // Flame mode resources
     private var flamePropPipeline: MTLComputePipelineState?
@@ -623,6 +652,11 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var snowFallOffset: Float = 0
     nonisolated(unsafe) private var snowWindPhase: Float = 0
     nonisolated(unsafe) private var snowDensity: Float = 0.2
+
+    // vis_classic waveform state (latest 576-sample stereo frame)
+    nonisolated(unsafe) private var visClassicWaveLeft: [UInt8] = Array(repeating: 128, count: 576)
+    nonisolated(unsafe) private var visClassicWaveRight: [UInt8] = Array(repeating: 128, count: 576)
+    nonisolated(unsafe) private var visClassicWaveSampleRate: Double = 44100
     
     // Flame mode state
     nonisolated(unsafe) private var renderFlameStyle: FlameStyle = .inferno
@@ -757,6 +791,14 @@ class SpectrumAnalyzerView: NSView {
         // Observe playback state changes to ensure display link restarts when playback begins
         NotificationCenter.default.addObserver(self, selector: #selector(handlePlaybackStateChange),
                                                name: .audioPlaybackStateChanged, object: nil)
+
+        // Observe 576-sample stereo waveform updates for vis_classic exact mode
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWaveform576Update(_:)),
+                                               name: .audioWaveform576DataUpdated, object: nil)
+
+        // Observe profile commands triggered from app/context menus
+        NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
+                                               name: .visClassicProfileCommand, object: nil)
         
         // Initialize cached normalization mode
         cachedIsAccurateNormalization = UserDefaults.standard.string(forKey: normalizationUserDefaultsKey) == SpectrumNormalizationMode.accurate.rawValue
@@ -860,6 +902,72 @@ class SpectrumAnalyzerView: NSView {
         dataLock.withLock {
             idleFrameCount = 0
             hasClearedAfterIdle = false
+        }
+    }
+
+    @objc private func handleWaveform576Update(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let left = userInfo["left"] as? [UInt8],
+              let right = userInfo["right"] as? [UInt8],
+              let sampleRate = userInfo["sampleRate"] as? Double else { return }
+
+        let hasData = left.contains { $0 != 128 } || right.contains { $0 != 128 }
+
+        dataLock.withLock {
+            visClassicWaveLeft = left
+            visClassicWaveRight = right
+            visClassicWaveSampleRate = sampleRate
+
+            if hasData {
+                stoppedDueToIdle = false
+                idleFrameCount = 0
+                hasClearedAfterIdle = false
+            }
+        }
+
+        if qualityMode == .visClassicExact && hasData && !isRendering {
+            DispatchQueue.main.async { [weak self] in
+                self?.startRendering()
+            }
+        }
+    }
+
+    @objc private func handleVisClassicProfileCommand(_ notification: Notification) {
+        guard qualityMode == .visClassicExact,
+              window?.isVisible == true else { return }
+        guard let userInfo = notification.userInfo,
+              let command = userInfo["command"] as? String else { return }
+        let target = userInfo["target"] as? String
+        switch target {
+        case "mainWindow":
+            guard isEmbedded else { return }
+        case "spectrumWindow", nil:
+            guard !isEmbedded else { return }
+        default:
+            return
+        }
+
+        switch command {
+        case "next":
+            _ = loadNextVisClassicProfile()
+        case "previous":
+            _ = loadPreviousVisClassicProfile()
+        case "import":
+            importVisClassicProfile()
+        case "export":
+            exportCurrentVisClassicProfile()
+        case "load":
+            if let name = userInfo["profileName"] as? String {
+                _ = loadVisClassicProfile(named: name)
+            }
+        case "fitToWidth":
+            if let enabled = userInfo["enabled"] as? Bool {
+                _ = setVisClassicFitToWidth(enabled)
+            } else {
+                _ = toggleVisClassicFitToWidth()
+            }
+        default:
+            break
         }
     }
     
@@ -1068,6 +1176,8 @@ class SpectrumAnalyzerView: NSView {
                 pipelineState = matrixRenderPipeline
             case .snow:
                 pipelineState = snowRenderPipeline
+            case .visClassicExact:
+                pipelineState = nil
             }
 
             NSLog("SpectrumAnalyzerView: Metal pipelines created successfully")
@@ -1392,11 +1502,25 @@ class SpectrumAnalyzerView: NSView {
     /// Called by display link at 60Hz
     /// Note: This is internal (not private) so the display link callback can access it
     func render() {
-        // Throttle to 60Hz on high-refresh-rate displays
+        var modeForPacing: SpectrumQualityMode = .classic
+        dataLock.withLock {
+            modeForPacing = renderQualityMode
+        }
+
+        // Throttle to a mode-appropriate FPS on high-refresh-rate displays.
+        // Embedded vis_classic is capped lower to avoid high CPU cost in the main window.
+        let minFrameIntervalNs: UInt64
+        switch modeForPacing {
+        case .visClassicExact:
+            minFrameIntervalNs = isEmbedded ? 30_000_000 : 20_000_000
+        default:
+            minFrameIntervalNs = 14_000_000
+        }
+
         let hostTime = mach_absolute_time()
         if lastFrameHostTime != 0 {
             let elapsedNs = (hostTime - lastFrameHostTime) * UInt64(machTimebaseInfo.numer) / UInt64(machTimebaseInfo.denom)
-            if elapsedNs < 14_000_000 { // < 14ms = above ~71fps, skip this frame
+            if elapsedNs < minFrameIntervalNs {
                 return
             }
         }
@@ -1424,28 +1548,37 @@ class SpectrumAnalyzerView: NSView {
         var currentMode: SpectrumQualityMode = .classic
         
         dataLock.withLock {
-            // Update display spectrum with decay
-            hadData = updateDisplaySpectrumLocked()
-            
-            // Check idle state
-            if !hadData {
-                idleFrameCount += 1
-                
-                if idleFrameCount >= idleFrameThreshold {
-                    stoppedDueToIdle = true
-                    shouldStopDueToIdle = true
-                } else if hasClearedAfterIdle {
-                    shouldSkipFrame = true
-                } else {
-                    hasClearedAfterIdle = true
-                }
-            } else {
+            // Get current mode first so per-mode update/idle rules can be applied.
+            currentMode = renderQualityMode
+
+            if currentMode == .visClassicExact {
+                // vis_classic uses waveform-driven frames and its own decay logic.
+                // Skipping generic spectrum idle handling prevents visible stutter/flashing.
+                hadData = true
                 idleFrameCount = 0
                 hasClearedAfterIdle = false
+                stoppedDueToIdle = false
+            } else {
+                // Update display spectrum with decay
+                hadData = updateDisplaySpectrumLocked()
+
+                // Check idle state
+                if !hadData {
+                    idleFrameCount += 1
+
+                    if idleFrameCount >= idleFrameThreshold {
+                        stoppedDueToIdle = true
+                        shouldStopDueToIdle = true
+                    } else if hasClearedAfterIdle {
+                        shouldSkipFrame = true
+                    } else {
+                        hasClearedAfterIdle = true
+                    }
+                } else {
+                    idleFrameCount = 0
+                    hasClearedAfterIdle = false
+                }
             }
-            
-            // Get current mode for pipeline selection
-            currentMode = renderQualityMode
         }
         
         if shouldStopDueToIdle {
@@ -1496,6 +1629,10 @@ class SpectrumAnalyzerView: NSView {
             renderSnow(drawable: drawable)
             return
         }
+        if currentMode == .visClassicExact {
+            renderVisClassicExact(drawable: drawable)
+            return
+        }
         
         let activePipeline: MTLRenderPipelineState?
         switch currentMode {
@@ -1515,6 +1652,8 @@ class SpectrumAnalyzerView: NSView {
             activePipeline = nil  // Handled by renderMatrix() above
         case .snow:
             activePipeline = nil  // Handled by renderSnow() above
+        case .visClassicExact:
+            activePipeline = nil  // Handled by renderVisClassicExact() above
         }
 
         guard let pipeline = activePipeline,
@@ -1614,6 +1753,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Handled by renderMatrix() above
         case .snow:
             break  // Handled by renderSnow() above
+        case .visClassicExact:
+            break  // Handled by renderVisClassicExact() above
         }
         
         encoder.endEncoding()
@@ -2211,6 +2352,96 @@ class SpectrumAnalyzerView: NSView {
         cb.present(drawable)
         cb.commit()
     }
+
+    /// Render vis_classic exact mode: CPU frame generation in C++ core, then blit to drawable.
+    private func renderVisClassicExact(drawable: CAMetalDrawable) {
+        guard let device = device,
+              let commandQueue = commandQueue else {
+            inFlightSemaphore.signal()
+            return
+        }
+
+        let width = drawable.texture.width
+        let height = drawable.texture.height
+        guard width > 0, height > 0 else {
+            inFlightSemaphore.signal()
+            return
+        }
+
+        if visClassicBridge == nil {
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        guard let bridge = visClassicBridge else {
+            inFlightSemaphore.signal()
+            return
+        }
+
+        var left: [UInt8] = []
+        var right: [UInt8] = []
+        var sampleRate: Double = 44100
+        dataLock.withLock {
+            left = visClassicWaveLeft
+            right = visClassicWaveRight
+            sampleRate = visClassicWaveSampleRate
+        }
+        bridge.updateWaveform(left: left, right: right, sampleRate: sampleRate)
+
+        guard bridge.renderFrame(width: width, height: height, into: &visClassicFrameBytes),
+              visClassicFrameBytes.count == width * height * 4 else {
+            inFlightSemaphore.signal()
+            return
+        }
+
+        if visClassicFrameTexture == nil ||
+            visClassicFrameTexture?.width != width ||
+            visClassicFrameTexture?.height != height {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .bgra8Unorm,
+                width: width,
+                height: height,
+                mipmapped: false
+            )
+            descriptor.usage = [.shaderRead]
+            descriptor.storageMode = .shared
+            visClassicFrameTexture = device.makeTexture(descriptor: descriptor)
+        }
+
+        guard let sourceTexture = visClassicFrameTexture,
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let blit = commandBuffer.makeBlitCommandEncoder() else {
+            inFlightSemaphore.signal()
+            return
+        }
+
+        visClassicFrameBytes.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            sourceTexture.replace(
+                region: MTLRegionMake2D(0, 0, width, height),
+                mipmapLevel: 0,
+                withBytes: base,
+                bytesPerRow: width * 4
+            )
+        }
+
+        blit.copy(
+            from: sourceTexture,
+            sourceSlice: 0,
+            sourceLevel: 0,
+            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: width, height: height, depth: 1),
+            to: drawable.texture,
+            destinationSlice: 0,
+            destinationLevel: 0,
+            destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
+        )
+        blit.endEncoding()
+
+        commandBuffer.addCompletedHandler { [weak self] _ in
+            self?.inFlightSemaphore.signal()
+        }
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
     
     /// Update display spectrum with decay and return whether there's visible data
     /// Thread-safe version that acquires the lock
@@ -2349,6 +2580,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Matrix handles its own state in renderMatrix()
         case .snow:
             break  // Snow handles its own state in renderSnow()
+        case .visClassicExact:
+            break  // vis_classic exact mode renders from CPU frame output
         }
 
         hasVisibleData = hasData
@@ -2736,6 +2969,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Matrix updates its own buffers in renderMatrix()
         case .snow:
             break  // Snow updates its own buffers in renderSnow()
+        case .visClassicExact:
+            break  // vis_classic exact mode does not use shader parameter buffers
         }
     }
     
@@ -2819,8 +3054,109 @@ class SpectrumAnalyzerView: NSView {
             idleFrameCount = 0
             hasClearedAfterIdle = false
             stoppedDueToIdle = false
+
+            visClassicWaveLeft = Array(repeating: 128, count: 576)
+            visClassicWaveRight = Array(repeating: 128, count: 576)
         }
         NSLog("SpectrumAnalyzerView: State reset")
+    }
+
+    // MARK: - vis_classic Profiles
+
+    func visClassicProfiles() -> [VisClassicBridge.ProfileEntry] {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.availableProfiles() ?? []
+    }
+
+    func visClassicCurrentProfileName() -> String? {
+        visClassicBridge?.currentProfileName
+    }
+
+    @discardableResult
+    func loadVisClassicProfile(named name: String) -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.loadProfile(named: name) ?? false
+    }
+
+    @discardableResult
+    func loadNextVisClassicProfile() -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.loadNextProfile() ?? false
+    }
+
+    @discardableResult
+    func loadPreviousVisClassicProfile() -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.loadPreviousProfile() ?? false
+    }
+
+    func importVisClassicProfile() {
+        let panel = NSOpenPanel()
+        panel.allowedFileTypes = ["ini"]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Import a vis_classic profile (.ini)"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        _ = visClassicBridge?.importProfile(from: url)
+    }
+
+    func exportCurrentVisClassicProfile() {
+        guard let bridge = visClassicBridge else { return }
+
+        let panel = NSSavePanel()
+        panel.allowedFileTypes = ["ini"]
+        panel.nameFieldStringValue = (bridge.currentProfileName ?? "vis_classic_profile") + ".ini"
+        panel.message = "Export current vis_classic profile"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        _ = bridge.saveCurrentProfile(to: url)
+    }
+
+    func visClassicFitToWidthEnabled() -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.fitToWidthEnabled() ?? true
+    }
+
+    @discardableResult
+    func setVisClassicFitToWidth(_ enabled: Bool) -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.setFitToWidth(enabled) ?? false
+    }
+
+    @discardableResult
+    func toggleVisClassicFitToWidth() -> Bool {
+        let current = visClassicFitToWidthEnabled()
+        return setVisClassicFitToWidth(!current)
     }
     
     /// Update spectrum data from audio engine (called from audio thread)

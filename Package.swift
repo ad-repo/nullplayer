@@ -25,6 +25,15 @@ let package = Package(
         .package(url: "https://github.com/swhitty/FlyingFox.git", from: "0.16.0"),
     ],
     targets: [
+        .target(
+            name: "CVisClassicCore",
+            dependencies: [],
+            path: "Sources/CVisClassicCore",
+            publicHeadersPath: "include",
+            cxxSettings: [
+                .headerSearchPath(".")
+            ]
+        ),
         // Lightweight core library containing model types
         // Unit tests depend only on this target for fast compilation
         .target(
@@ -54,6 +63,7 @@ let package = Package(
             name: "NullPlayer",
             dependencies: [
                 "NullPlayerCore",
+                "CVisClassicCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "KSPlayer",
