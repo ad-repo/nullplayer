@@ -1305,6 +1305,11 @@ class WindowManager {
     var spectrumWindowFrame: NSRect? {
         return spectrumWindowController?.window?.frame
     }
+
+    /// Access the spectrum window when visible/internal geometry repairs need direct frame updates.
+    var spectrumWindow: NSWindow? {
+        spectrumWindowController?.window
+    }
     
     func toggleSpectrum() {
         if let controller = spectrumWindowController, controller.window?.isVisible == true {

@@ -1044,82 +1044,152 @@ class AppStateManager {
         // exist yet when this function is called.
     }
 
+    struct ClassicCenterStackRepairResult {
+        let mainFrame: NSRect
+        let equalizerFrame: NSRect?
+        let playlistFrame: NSRect?
+        let spectrumFrame: NSRect?
+        let repaired: Bool
+    }
+
+    /// Pure geometry helper for restoring classic center-stack windows (Main/EQ/Playlist/Spectrum).
+    /// Repairs near-docked gaps, normalizes width/X to main, and snaps repaired windows flush below
+    /// the current anchor in stack order.
+    static func repairClassicCenterStackFrames(
+        mainFrame: NSRect,
+        equalizerFrame: NSRect?,
+        playlistFrame: NSRect?,
+        spectrumFrame: NSRect?,
+        scale: CGFloat
+    ) -> ClassicCenterStackRepairResult {
+        let widthEpsilon: CGFloat = 0.5
+        let minMainHeight = Skin.mainWindowSize.height * scale
+        let nearDockTolerance = max(20.0, 24.0 * scale)
+
+        var repaired = false
+        var adjustedMain = mainFrame
+        if adjustedMain.height + widthEpsilon < minMainHeight {
+            let topY = adjustedMain.maxY
+            adjustedMain.size.height = minMainHeight
+            adjustedMain.origin.y = topY - minMainHeight
+            repaired = true
+        }
+
+        var anchorFrame = adjustedMain
+
+        func shouldRepairCandidate(_ candidate: NSRect, below anchor: NSRect) -> Bool {
+            let verticalGap = abs(candidate.maxY - anchor.minY)
+            let horizontalOverlap = candidate.minX < anchor.maxX && candidate.maxX > anchor.minX
+            let leftAligned = abs(candidate.minX - anchor.minX) <= nearDockTolerance
+            return verticalGap <= nearDockTolerance && horizontalOverlap && leftAligned
+        }
+
+        func normalizedFlushFrame(for candidate: NSRect, below anchor: NSRect) -> NSRect {
+            NSRect(
+                x: adjustedMain.minX,
+                y: anchor.minY - candidate.height,
+                width: adjustedMain.width,
+                height: candidate.height
+            )
+        }
+
+        func frameChanged(_ lhs: NSRect, _ rhs: NSRect) -> Bool {
+            abs(lhs.minX - rhs.minX) > widthEpsilon ||
+            abs(lhs.minY - rhs.minY) > widthEpsilon ||
+            abs(lhs.width - rhs.width) > widthEpsilon
+        }
+
+        func repairCandidate(_ candidate: NSRect?) -> NSRect? {
+            guard let candidate else { return nil }
+            guard shouldRepairCandidate(candidate, below: anchorFrame) else { return candidate }
+
+            let repairedFrame = normalizedFlushFrame(for: candidate, below: anchorFrame)
+            if frameChanged(candidate, repairedFrame) {
+                repaired = true
+            }
+            anchorFrame = repairedFrame
+            return repairedFrame
+        }
+
+        let adjustedEQ = repairCandidate(equalizerFrame)
+        let adjustedPlaylist = repairCandidate(playlistFrame)
+        let adjustedSpectrum = repairCandidate(spectrumFrame)
+
+        return ClassicCenterStackRepairResult(
+            mainFrame: adjustedMain,
+            equalizerFrame: adjustedEQ,
+            playlistFrame: adjustedPlaylist,
+            spectrumFrame: adjustedSpectrum,
+            repaired: repaired
+        )
+    }
+
     /// Repair classic-mode docked stack geometry if corrupted by cross-mode frame restore.
-    /// Applies only to clearly docked EQ/playlist windows directly below main.
+    /// Applies only to near-docked center-stack windows directly below main.
     private func repairClassicDockedStackWidthsIfNeeded() {
         let wm = WindowManager.shared
         guard !wm.isRunningModernUI else { return }
         guard let mainWindow = wm.mainWindowController?.window else { return }
 
         let scale: CGFloat = wm.isDoubleSize ? 1.5 : 1.0
-        let minMainHeight = Skin.mainWindowSize.height * scale
-        let widthEpsilon: CGFloat = 0.5
-        let gapEpsilon: CGFloat = 1.0
-        let dockThreshold: CGFloat = 20
-        var repaired = false
+        let equalizerWindow = wm.equalizerWindowController?.window
+        let playlistWindow = wm.playlistWindowController?.window
+        let spectrumWindow = wm.spectrumWindow
 
-        var mainFrame = mainWindow.frame
-        if mainFrame.height + widthEpsilon < minMainHeight {
-            let topY = mainFrame.maxY
-            mainFrame.size.height = minMainHeight
-            mainFrame.origin.y = topY - minMainHeight
-            mainWindow.setFrame(mainFrame, display: true)
-            mainFrame = mainWindow.frame
-            repaired = true
-            NSLog("AppStateManager: Repaired classic main window height to %.1f", minMainHeight)
+        let equalizerFrame: NSRect?
+        if let equalizerWindow, equalizerWindow.isVisible {
+            equalizerFrame = equalizerWindow.frame
+        } else {
+            equalizerFrame = nil
         }
 
-        func isClearlyDockedBelow(_ upper: NSWindow, _ lower: NSWindow) -> Bool {
-            let upperFrame = upper.frame
-            let lowerFrame = lower.frame
-            let verticalGap = abs(lowerFrame.maxY - upperFrame.minY)
-            let horizontalOverlap = lowerFrame.minX < upperFrame.maxX && lowerFrame.maxX > upperFrame.minX
-            let leftAligned = abs(lowerFrame.minX - upperFrame.minX) <= dockThreshold
-            return verticalGap <= dockThreshold && horizontalOverlap && leftAligned
+        let playlistFrame: NSRect?
+        if let playlistWindow, playlistWindow.isVisible {
+            playlistFrame = playlistWindow.frame
+        } else {
+            playlistFrame = nil
         }
 
-        func normalizeWidthToMain(_ window: NSWindow) {
-            let current = window.frame
-            guard abs(current.width - mainFrame.width) > widthEpsilon || abs(current.minX - mainFrame.minX) > widthEpsilon else {
-                return
-            }
-            let topY = current.maxY
-            let newFrame = NSRect(x: mainFrame.minX,
-                                  y: topY - current.height,
-                                  width: mainFrame.width,
-                                  height: current.height)
-            window.setFrame(newFrame, display: true)
-            repaired = true
+        let spectrumFrame: NSRect?
+        if let spectrumWindow, spectrumWindow.isVisible {
+            spectrumFrame = spectrumWindow.frame
+        } else {
+            spectrumFrame = nil
         }
 
-        func snapBelow(_ upper: NSWindow, _ lower: NSWindow) {
-            let upperFrame = upper.frame
-            let lowerFrame = lower.frame
-            let dy = upperFrame.minY - lowerFrame.maxY
-            guard abs(dy) > gapEpsilon else { return }
-            lower.setFrameOrigin(NSPoint(x: lowerFrame.origin.x, y: lowerFrame.origin.y + dy))
-            repaired = true
+        let repairedFrames = Self.repairClassicCenterStackFrames(
+            mainFrame: mainWindow.frame,
+            equalizerFrame: equalizerFrame,
+            playlistFrame: playlistFrame,
+            spectrumFrame: spectrumFrame,
+            scale: scale
+        )
+
+        if repairedFrames.mainFrame != mainWindow.frame {
+            mainWindow.setFrame(repairedFrames.mainFrame, display: true)
+        }
+        if let equalizerWindow,
+           equalizerWindow.isVisible,
+           let repairedFrame = repairedFrames.equalizerFrame,
+           repairedFrame != equalizerWindow.frame {
+            equalizerWindow.setFrame(repairedFrame, display: true)
+        }
+        if let playlistWindow,
+           playlistWindow.isVisible,
+           let repairedFrame = repairedFrames.playlistFrame,
+           repairedFrame != playlistWindow.frame {
+            playlistWindow.setFrame(repairedFrame, display: true)
+        }
+        if let spectrumWindow,
+           spectrumWindow.isVisible,
+           let repairedFrame = repairedFrames.spectrumFrame,
+           repairedFrame != spectrumWindow.frame {
+            spectrumWindow.setFrame(repairedFrame, display: true)
         }
 
-        var eqDockedToMain = false
-        if let eqWindow = wm.equalizerWindowController?.window, eqWindow.isVisible {
-            eqDockedToMain = isClearlyDockedBelow(mainWindow, eqWindow)
-            if eqDockedToMain {
-                normalizeWidthToMain(eqWindow)
-                snapBelow(mainWindow, eqWindow)
-            }
-        }
-
-        if let playlistWindow = wm.playlistWindowController?.window, playlistWindow.isVisible {
-            let anchor = (eqDockedToMain ? wm.equalizerWindowController?.window : mainWindow) ?? mainWindow
-            if isClearlyDockedBelow(anchor, playlistWindow) {
-                normalizeWidthToMain(playlistWindow)
-                snapBelow(anchor, playlistWindow)
-            }
-        }
-
-        if repaired {
-            NSLog("AppStateManager: Repaired classic docked stack width(s) to match main window")
+        if repairedFrames.repaired {
+            NSLog("AppStateManager: Repaired classic docked stack geometry to remove near-docked gaps")
+            wm.updateDockedChildWindows()
         }
     }
     
