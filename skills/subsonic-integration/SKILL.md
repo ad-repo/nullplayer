@@ -88,7 +88,7 @@ The "Lib:" zone in the status bar shows the current folder name ("All" when nil)
 
 - Current server ID: `SubsonicCurrentServerID` (UserDefaults)
 - Current music folder ID: `SubsonicCurrentMusicFolderID` (UserDefaults) — nil = all folders
-- Credentials: macOS Keychain via `KeychainHelper` (key: `subsonic_servers`)
+- Credentials: macOS login keychain via `KeychainHelper` (key: `subsonic_servers`) — uses permissive `SecAccessCreate` ACL; do NOT add `kSecUseDataProtectionKeychain` (breaks ad-hoc DMG builds with `-34018`)
 
 ## Notifications
 

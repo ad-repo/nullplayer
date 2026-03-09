@@ -194,6 +194,7 @@ Jellyfin movies and episodes can be cast to video-capable devices (Chromecast, D
 Jellyfin credentials are stored using `KeychainHelper`:
 - Key: `jellyfin_servers`
 - Stores: `[JellyfinServerCredentials]` (includes access token and userId)
+- Uses the macOS login keychain with a permissive `SecAccessCreate` ACL. Do NOT add `kSecUseDataProtectionKeychain` or `kSecAttrAccessible` — they require entitlements that ad-hoc signed DMG builds don't have and cause `-34018 errSecMissingEntitlement`.
 
 ## State Persistence
 

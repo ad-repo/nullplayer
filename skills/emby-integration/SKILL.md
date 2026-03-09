@@ -182,6 +182,7 @@ Emby tracks support casting to Sonos, Chromecast, and DLNA devices:
 Emby credentials are stored using `KeychainHelper`:
 - Key: `emby_servers`
 - Stores: `[EmbyServerCredentials]` (includes access token and userId)
+- Uses the macOS login keychain with a permissive `SecAccessCreate` ACL. Do NOT add `kSecUseDataProtectionKeychain` or `kSecAttrAccessible` — they require entitlements that ad-hoc signed DMG builds don't have and cause `-34018 errSecMissingEntitlement`.
 
 ## State Persistence
 
