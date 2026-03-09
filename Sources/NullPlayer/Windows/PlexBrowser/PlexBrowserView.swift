@@ -1757,6 +1757,24 @@ class PlexBrowserView: NSView {
             }
         }
     }
+
+    /// Returns true when the classic server bar should reserve horizontal space for the rating stars.
+    private func shouldReserveServerBarRatingSpace() -> Bool {
+        guard isArtOnlyMode,
+              let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
+            return false
+        }
+        return canRateTrack(currentTrack)
+    }
+
+    /// Shift the Lib field left into unused server-name width when rating stars are visible.
+    private func libraryFieldLeftShift(serverTextWidth: CGFloat, maxServerWidth: CGFloat) -> CGFloat {
+        guard shouldReserveServerBarRatingSpace() else { return 0 }
+        let usedServerWidth = min(serverTextWidth, maxServerWidth)
+        let unusedServerWidth = max(0, maxServerWidth - usedServerWidth)
+        let preferredShift: CGFloat = 24
+        return min(preferredShift, unusedServerWidth)
+    }
     
     private func drawServerBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
         let barY = Layout.titleBarHeight
@@ -1916,7 +1934,8 @@ class PlexBrowserView: NSView {
                 
                 // Library label and name after server name
                 let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16
+                let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth, maxServerWidth: maxServerWidth)
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 - libraryLeftShift
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
                 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4
@@ -2065,7 +2084,8 @@ class PlexBrowserView: NSView {
 
                 // Library label and selected folder after server name
                 let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16
+                let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth, maxServerWidth: maxServerWidth)
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 - libraryLeftShift
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4
@@ -2186,7 +2206,8 @@ class PlexBrowserView: NSView {
 
                 // Library label and selected library after server name
                 let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16
+                let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth, maxServerWidth: maxServerWidth)
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 - libraryLeftShift
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4
@@ -2297,7 +2318,8 @@ class PlexBrowserView: NSView {
 
                 // Library label and selected library after server name
                 let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16
+                let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth, maxServerWidth: maxServerWidth)
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 - libraryLeftShift
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4
@@ -7109,9 +7131,13 @@ class PlexBrowserView: NSView {
                 // Source area = source dropdown
                 showSourceMenu(at: event)
             }
-        } else if case .plex = currentSource {
+        } else if case .plex(let serverId) = currentSource {
             // Plex mode - Server and Library on left with max widths
-            let serverZoneEnd = sourcePrefix + maxServerWidth
+            let manager = PlexManager.shared
+            let serverName = manager.servers.first(where: { $0.id == serverId })?.name ?? "Select Server"
+            let serverTextWidth = CGFloat(serverName.count) * charWidth
+            let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth, maxServerWidth: maxServerWidth)
+            let serverZoneEnd = sourcePrefix + maxServerWidth - libraryLeftShift
             let libLabelWidth: CGFloat = 4 * charWidth + 4  // "Lib:" + spacing
             let libraryZoneStart = serverZoneEnd + 12  // includes "Lib:" label
             let libraryZoneEnd = libraryZoneStart + libLabelWidth + maxLibraryWidth
@@ -7123,11 +7149,15 @@ class PlexBrowserView: NSView {
                 // Source/server area = source dropdown
                 showSourceMenu(at: event)
             }
-        } else if case .subsonic = currentSource {
+        } else if case .subsonic(let serverId) = currentSource {
             // Subsonic mode - Server and folder selector on left
             let maxSubsonicServerChars = 20
             let maxSubsonicServerWidth = CGFloat(maxSubsonicServerChars) * charWidth
-            let serverZoneEnd = sourcePrefix + maxSubsonicServerWidth
+            let manager = SubsonicManager.shared
+            let serverName = manager.servers.first(where: { $0.id == serverId })?.name ?? "Select Server"
+            let serverTextWidth = CGFloat(serverName.count) * charWidth
+            let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth, maxServerWidth: maxSubsonicServerWidth)
+            let serverZoneEnd = sourcePrefix + maxSubsonicServerWidth - libraryLeftShift
             let maxLibraryChars = 10
             let maxLibraryWidth = CGFloat(maxLibraryChars) * charWidth
             let libLabelWidth: CGFloat = 4 * charWidth + 4  // "Lib:" + spacing
@@ -7140,11 +7170,15 @@ class PlexBrowserView: NSView {
                 // Source/server area = source dropdown
                 showSourceMenu(at: event)
             }
-        } else if case .jellyfin = currentSource {
+        } else if case .jellyfin(let serverId) = currentSource {
             // Jellyfin mode - Server and library selector on left
             let maxJellyfinServerChars = 20
             let maxJellyfinServerWidth = CGFloat(maxJellyfinServerChars) * charWidth
-            let serverZoneEnd = sourcePrefix + maxJellyfinServerWidth
+            let manager = JellyfinManager.shared
+            let serverName = manager.servers.first(where: { $0.id == serverId })?.name ?? "Select Server"
+            let serverTextWidth = CGFloat(serverName.count) * charWidth
+            let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth, maxServerWidth: maxJellyfinServerWidth)
+            let serverZoneEnd = sourcePrefix + maxJellyfinServerWidth - libraryLeftShift
             let maxLibraryChars = 10
             let maxLibraryWidth = CGFloat(maxLibraryChars) * charWidth
             let libLabelWidth: CGFloat = 4 * charWidth + 4  // "Lib:" + spacing
@@ -7160,11 +7194,15 @@ class PlexBrowserView: NSView {
             } else if relativeX < serverZoneEnd {
                 showSourceMenu(at: event)
             }
-        } else if case .emby = currentSource {
+        } else if case .emby(let serverId) = currentSource {
             // Emby mode - Server and library selector on left
             let maxEmbyServerChars = 20
             let maxEmbyServerWidth = CGFloat(maxEmbyServerChars) * charWidth
-            let serverZoneEnd = sourcePrefix + maxEmbyServerWidth
+            let manager = EmbyManager.shared
+            let serverName = manager.servers.first(where: { $0.id == serverId })?.name ?? "Select Server"
+            let serverTextWidth = CGFloat(serverName.count) * charWidth
+            let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth, maxServerWidth: maxEmbyServerWidth)
+            let serverZoneEnd = sourcePrefix + maxEmbyServerWidth - libraryLeftShift
             let maxLibraryChars = 10
             let maxLibraryWidth = CGFloat(maxLibraryChars) * charWidth
             let libLabelWidth: CGFloat = 4 * charWidth + 4  // "Lib:" + spacing
