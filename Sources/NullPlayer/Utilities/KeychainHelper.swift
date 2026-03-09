@@ -267,15 +267,8 @@ class KeychainHelper {
     
     private func getData(forKey key: String) -> Data? {
         if useKeychain {
-            // 1. Try new data-protection keychain first
-            if let dp = getDataKeychain(forKey: key) { return dp }
-            // 2. Migrate from legacy login keychain (items stored before this fix)
-            if let legacy = getDataLegacyKeychain(forKey: key) {
-                _ = setDataKeychain(legacy, forKey: key)
-                deleteLegacyKeychain(forKey: key)
-                return legacy
-            }
-            // 3. Migrate from UserDefaults (pre-Keychain items)
+            if let existing = getDataKeychain(forKey: key) { return existing }
+            // Migrate from UserDefaults (credentials saved before keychain was used)
             if let ud = getDataUserDefaults(forKey: key) {
                 _ = setDataKeychain(ud, forKey: key)
                 deleteUserDefaults(forKey: key)
@@ -313,17 +306,23 @@ class KeychainHelper {
     // MARK: - Keychain Storage (Production)
     
     private func setDataKeychain(_ data: Data, forKey key: String) -> Bool {
-        // Delete any existing item first
         deleteKeychain(forKey: key)
 
-        let query: [String: Any] = [
+        // Permissive ACL: any app can access without a prompt.
+        // Required because ad-hoc code signatures change on every rebuild —
+        // a strict ACL would prompt users on every app update.
+        var access: SecAccess?
+        SecAccessCreate("NullPlayer" as CFString, nil, &access)
+
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Keys.service,
             kSecAttrAccount as String: key,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-            kSecUseDataProtectionKeychain as String: true
         ]
+        if let access = access {
+            query[kSecAttrAccess as String] = access
+        }
 
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
@@ -336,12 +335,10 @@ class KeychainHelper {
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseDataProtectionKeychain as String: true
         ]
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-
         guard status == errSecSuccess else { return nil }
         return result as? Data
     }
@@ -351,37 +348,7 @@ class KeychainHelper {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Keys.service,
             kSecAttrAccount as String: key,
-            kSecUseDataProtectionKeychain as String: true
         ]
-
-        SecItemDelete(query as CFDictionary)
-    }
-
-    // MARK: - Legacy Login Keychain (migration only)
-
-    private func getDataLegacyKeychain(forKey key: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Keys.service,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
-    }
-
-    private func deleteLegacyKeychain(forKey key: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Keys.service,
-            kSecAttrAccount as String: key
-        ]
-
         SecItemDelete(query as CFDictionary)
     }
 }
