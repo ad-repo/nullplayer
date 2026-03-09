@@ -185,6 +185,11 @@ class ContextMenuBuilder {
         loadSkin.target = MenuActions.shared
         classicMenu.addItem(loadSkin)
         
+        // Get More Skins...
+        let getMoreSkins = NSMenuItem(title: "Get More Skins...", action: #selector(MenuActions.getMoreClassicSkins), keyEquivalent: "")
+        getMoreSkins.target = MenuActions.shared
+        classicMenu.addItem(getMoreSkins)
+        
         classicMenu.addItem(NSMenuItem.separator())
         
         // Default Skin (Silver)
@@ -2584,6 +2589,11 @@ class MenuActions: NSObject {
             WindowManager.shared.loadSkin(from: url)
             UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
         }
+    }
+    
+    @objc func getMoreClassicSkins() {
+        guard let url = URL(string: "https://skins.webamp.org") else { return }
+        NSWorkspace.shared.open(url)
     }
     
     @objc func loadSkin(_ sender: NSMenuItem) {
