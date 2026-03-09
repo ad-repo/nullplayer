@@ -10,10 +10,11 @@ class KeychainHelper {
     
     static let shared = KeychainHelper()
     
-    /// Use the data-protection keychain only when running as a proper app bundle.
-    /// Raw dev binaries have no bundle ID and get -34018 from the data-protection keychain.
+    /// Only use Keychain when running as a signed .app bundle.
+    /// Raw binaries from `swift build` are unsigned and generate per-item
+    /// Keychain prompts. Falls back to UserDefaults in dev.
     private var useKeychain: Bool {
-        return Bundle.main.bundleIdentifier != nil
+        return Bundle.main.bundlePath.hasSuffix(".app")
     }
     
     private init() {}
@@ -340,6 +341,7 @@ class KeychainHelper {
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
+
         guard status == errSecSuccess else { return nil }
         return result as? Data
     }

@@ -35,9 +35,6 @@ else
     BUILD_DIR=".build/arm64-apple-macosx/release"
 fi
 
-echo "🔏 Ad-hoc signing for keychain access..."
-codesign --force --sign - --entitlements scripts/NullPlayer.entitlements "$BUILD_DIR/NullPlayer"
-
 # Copy projectM library to build frameworks directory
 echo "📦 Copying projectM libraries..."
 mkdir -p "${BUILD_DIR%/release}/Frameworks"
