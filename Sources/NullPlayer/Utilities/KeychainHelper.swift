@@ -267,14 +267,19 @@ class KeychainHelper {
     
     private func getData(forKey key: String) -> Data? {
         if useKeychain {
-            // Migrate from UserDefaults if Keychain has no entry yet
-            if let keychainData = getDataKeychain(forKey: key) {
-                return keychainData
+            // 1. Try new data-protection keychain first
+            if let dp = getDataKeychain(forKey: key) { return dp }
+            // 2. Migrate from legacy login keychain (items stored before this fix)
+            if let legacy = getDataLegacyKeychain(forKey: key) {
+                _ = setDataKeychain(legacy, forKey: key)
+                deleteLegacyKeychain(forKey: key)
+                return legacy
             }
-            if let legacyData = getDataUserDefaults(forKey: key) {
-                _ = setDataKeychain(legacyData, forKey: key)
+            // 3. Migrate from UserDefaults (pre-Keychain items)
+            if let ud = getDataUserDefaults(forKey: key) {
+                _ = setDataKeychain(ud, forKey: key)
                 deleteUserDefaults(forKey: key)
-                return legacyData
+                return ud
             }
             return nil
         } else {
@@ -310,20 +315,51 @@ class KeychainHelper {
     private func setDataKeychain(_ data: Data, forKey key: String) -> Bool {
         // Delete any existing item first
         deleteKeychain(forKey: key)
-        
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Keys.service,
             kSecAttrAccount as String: key,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecUseDataProtectionKeychain as String: true
         ]
-        
+
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
     }
-    
+
     private func getDataKeychain(forKey key: String) -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Keys.service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseDataProtectionKeychain as String: true
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess else { return nil }
+        return result as? Data
+    }
+
+    private func deleteKeychain(forKey key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Keys.service,
+            kSecAttrAccount as String: key,
+            kSecUseDataProtectionKeychain as String: true
+        ]
+
+        SecItemDelete(query as CFDictionary)
+    }
+
+    // MARK: - Legacy Login Keychain (migration only)
+
+    private func getDataLegacyKeychain(forKey key: String) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Keys.service,
@@ -331,21 +367,21 @@ class KeychainHelper {
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
-        
+
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        
+
         guard status == errSecSuccess else { return nil }
         return result as? Data
     }
-    
-    private func deleteKeychain(forKey key: String) {
+
+    private func deleteLegacyKeychain(forKey key: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Keys.service,
             kSecAttrAccount as String: key
         ]
-        
+
         SecItemDelete(query as CFDictionary)
     }
 }
