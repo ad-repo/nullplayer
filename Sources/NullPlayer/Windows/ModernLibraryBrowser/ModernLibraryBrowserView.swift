@@ -7997,10 +7997,70 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func sortArtists(_ artists: [Artist]) -> [Artist] {
+        var newestAddedByArtist: [String: Date] = [:]
+        var oldestAddedByArtist: [String: Date] = [:]
+        var newestYearByArtist: [String: Int] = [:]
+        var oldestYearByArtist: [String: Int] = [:]
+
+        for artist in artists {
+            for album in artist.albums {
+                if let albumYear = album.year {
+                    let newestYear = newestYearByArtist[artist.id] ?? Int.min
+                    if albumYear > newestYear { newestYearByArtist[artist.id] = albumYear }
+
+                    let oldestYear = oldestYearByArtist[artist.id] ?? Int.max
+                    if albumYear < oldestYear { oldestYearByArtist[artist.id] = albumYear }
+                }
+
+                for track in album.tracks {
+                    let newestDate = newestAddedByArtist[artist.id] ?? .distantPast
+                    if track.dateAdded > newestDate { newestAddedByArtist[artist.id] = track.dateAdded }
+
+                    let oldestDate = oldestAddedByArtist[artist.id] ?? .distantFuture
+                    if track.dateAdded < oldestDate { oldestAddedByArtist[artist.id] = track.dateAdded }
+
+                    if let trackYear = track.year {
+                        let newestYear = newestYearByArtist[artist.id] ?? Int.min
+                        if trackYear > newestYear { newestYearByArtist[artist.id] = trackYear }
+
+                        let oldestYear = oldestYearByArtist[artist.id] ?? Int.max
+                        if trackYear < oldestYear { oldestYearByArtist[artist.id] = trackYear }
+                    }
+                }
+            }
+        }
+
         switch currentSort {
         case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
-        default: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .dateAddedDesc:
+            return artists.sorted {
+                let d0 = newestAddedByArtist[$0.id] ?? .distantPast
+                let d1 = newestAddedByArtist[$1.id] ?? .distantPast
+                if d0 != d1 { return d0 > d1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .dateAddedAsc:
+            return artists.sorted {
+                let d0 = oldestAddedByArtist[$0.id] ?? .distantPast
+                let d1 = oldestAddedByArtist[$1.id] ?? .distantPast
+                if d0 != d1 { return d0 < d1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .yearDesc:
+            return artists.sorted {
+                let y0 = newestYearByArtist[$0.id] ?? 0
+                let y1 = newestYearByArtist[$1.id] ?? 0
+                if y0 != y1 { return y0 > y1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .yearAsc:
+            return artists.sorted {
+                let y0 = oldestYearByArtist[$0.id] ?? 0
+                let y1 = oldestYearByArtist[$1.id] ?? 0
+                if y0 != y1 { return y0 < y1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
         }
     }
     
@@ -8066,11 +8126,87 @@ class ModernLibraryBrowserView: NSView {
         }
     }
 
+    private func subsonicArtistKey(id: String?, name: String?) -> String? {
+        if let id = id, !id.isEmpty { return "id:\(id)" }
+        guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+        return "name:\(name.lowercased())"
+    }
+
+    private func jellyfinArtistKey(id: String?, name: String?) -> String? {
+        if let id = id, !id.isEmpty { return "id:\(id)" }
+        guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+        return "name:\(name.lowercased())"
+    }
+
+    private func embyArtistKey(id: String?, name: String?) -> String? {
+        if let id = id, !id.isEmpty { return "id:\(id)" }
+        guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+        return "name:\(name.lowercased())"
+    }
+
     private func sortSubsonicArtists(_ artists: [SubsonicArtist]) -> [SubsonicArtist] {
+        var newestAddedByArtist: [String: Date] = [:]
+        var oldestAddedByArtist: [String: Date] = [:]
+        var newestYearByArtist: [String: Int] = [:]
+        var oldestYearByArtist: [String: Int] = [:]
+
+        for album in cachedSubsonicAlbums {
+            guard let key = subsonicArtistKey(id: album.artistId, name: album.artist) else { continue }
+            if let created = album.created {
+                let newestExisting = newestAddedByArtist[key] ?? .distantPast
+                if created > newestExisting { newestAddedByArtist[key] = created }
+
+                let oldestExisting = oldestAddedByArtist[key] ?? .distantFuture
+                if created < oldestExisting { oldestAddedByArtist[key] = created }
+            }
+            if let year = album.year {
+                let newestExisting = newestYearByArtist[key] ?? Int.min
+                if year > newestExisting { newestYearByArtist[key] = year }
+
+                let oldestExisting = oldestYearByArtist[key] ?? Int.max
+                if year < oldestExisting { oldestYearByArtist[key] = year }
+            }
+        }
+
         switch currentSort {
         case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
-        default: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .dateAddedDesc:
+            return artists.sorted {
+                let key0 = subsonicArtistKey(id: $0.id, name: $0.name)
+                let key1 = subsonicArtistKey(id: $1.id, name: $1.name)
+                let d0 = key0.flatMap { newestAddedByArtist[$0] } ?? .distantPast
+                let d1 = key1.flatMap { newestAddedByArtist[$0] } ?? .distantPast
+                if d0 != d1 { return d0 > d1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .dateAddedAsc:
+            return artists.sorted {
+                let key0 = subsonicArtistKey(id: $0.id, name: $0.name)
+                let key1 = subsonicArtistKey(id: $1.id, name: $1.name)
+                let d0 = key0.flatMap { oldestAddedByArtist[$0] } ?? .distantPast
+                let d1 = key1.flatMap { oldestAddedByArtist[$0] } ?? .distantPast
+                if d0 != d1 { return d0 < d1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .yearDesc:
+            return artists.sorted {
+                let key0 = subsonicArtistKey(id: $0.id, name: $0.name)
+                let key1 = subsonicArtistKey(id: $1.id, name: $1.name)
+                let y0 = key0.flatMap { newestYearByArtist[$0] } ?? 0
+                let y1 = key1.flatMap { newestYearByArtist[$0] } ?? 0
+                if y0 != y1 { return y0 > y1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .yearAsc:
+            return artists.sorted {
+                let key0 = subsonicArtistKey(id: $0.id, name: $0.name)
+                let key1 = subsonicArtistKey(id: $1.id, name: $1.name)
+                let y0 = key0.flatMap { oldestYearByArtist[$0] } ?? 0
+                let y1 = key1.flatMap { oldestYearByArtist[$0] } ?? 0
+                if y0 != y1 { return y0 < y1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
         }
     }
 
@@ -8109,10 +8245,68 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func sortJellyfinArtists(_ artists: [JellyfinArtist]) -> [JellyfinArtist] {
+        var newestAddedByArtist: [String: Date] = [:]
+        var oldestAddedByArtist: [String: Date] = [:]
+        var newestYearByArtist: [String: Int] = [:]
+        var oldestYearByArtist: [String: Int] = [:]
+
+        for album in cachedJellyfinAlbums {
+            guard let key = jellyfinArtistKey(id: album.artistId, name: album.artist) else { continue }
+            if let created = album.created {
+                let newestExisting = newestAddedByArtist[key] ?? .distantPast
+                if created > newestExisting { newestAddedByArtist[key] = created }
+
+                let oldestExisting = oldestAddedByArtist[key] ?? .distantFuture
+                if created < oldestExisting { oldestAddedByArtist[key] = created }
+            }
+            if let year = album.year {
+                let newestExisting = newestYearByArtist[key] ?? Int.min
+                if year > newestExisting { newestYearByArtist[key] = year }
+
+                let oldestExisting = oldestYearByArtist[key] ?? Int.max
+                if year < oldestExisting { oldestYearByArtist[key] = year }
+            }
+        }
+
         switch currentSort {
         case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
-        default: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .dateAddedDesc:
+            return artists.sorted {
+                let key0 = jellyfinArtistKey(id: $0.id, name: $0.name)
+                let key1 = jellyfinArtistKey(id: $1.id, name: $1.name)
+                let d0 = key0.flatMap { newestAddedByArtist[$0] } ?? .distantPast
+                let d1 = key1.flatMap { newestAddedByArtist[$0] } ?? .distantPast
+                if d0 != d1 { return d0 > d1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .dateAddedAsc:
+            return artists.sorted {
+                let key0 = jellyfinArtistKey(id: $0.id, name: $0.name)
+                let key1 = jellyfinArtistKey(id: $1.id, name: $1.name)
+                let d0 = key0.flatMap { oldestAddedByArtist[$0] } ?? .distantPast
+                let d1 = key1.flatMap { oldestAddedByArtist[$0] } ?? .distantPast
+                if d0 != d1 { return d0 < d1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .yearDesc:
+            return artists.sorted {
+                let key0 = jellyfinArtistKey(id: $0.id, name: $0.name)
+                let key1 = jellyfinArtistKey(id: $1.id, name: $1.name)
+                let y0 = key0.flatMap { newestYearByArtist[$0] } ?? 0
+                let y1 = key1.flatMap { newestYearByArtist[$0] } ?? 0
+                if y0 != y1 { return y0 > y1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .yearAsc:
+            return artists.sorted {
+                let key0 = jellyfinArtistKey(id: $0.id, name: $0.name)
+                let key1 = jellyfinArtistKey(id: $1.id, name: $1.name)
+                let y0 = key0.flatMap { oldestYearByArtist[$0] } ?? 0
+                let y1 = key1.flatMap { oldestYearByArtist[$0] } ?? 0
+                if y0 != y1 { return y0 < y1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
         }
     }
 
@@ -8147,10 +8341,68 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func sortEmbyArtists(_ artists: [EmbyArtist]) -> [EmbyArtist] {
+        var newestAddedByArtist: [String: Date] = [:]
+        var oldestAddedByArtist: [String: Date] = [:]
+        var newestYearByArtist: [String: Int] = [:]
+        var oldestYearByArtist: [String: Int] = [:]
+
+        for album in cachedEmbyAlbums {
+            guard let key = embyArtistKey(id: album.artistId, name: album.artist) else { continue }
+            if let created = album.created {
+                let newestExisting = newestAddedByArtist[key] ?? .distantPast
+                if created > newestExisting { newestAddedByArtist[key] = created }
+
+                let oldestExisting = oldestAddedByArtist[key] ?? .distantFuture
+                if created < oldestExisting { oldestAddedByArtist[key] = created }
+            }
+            if let year = album.year {
+                let newestExisting = newestYearByArtist[key] ?? Int.min
+                if year > newestExisting { newestYearByArtist[key] = year }
+
+                let oldestExisting = oldestYearByArtist[key] ?? Int.max
+                if year < oldestExisting { oldestYearByArtist[key] = year }
+            }
+        }
+
         switch currentSort {
         case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
         case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
-        default: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+        case .dateAddedDesc:
+            return artists.sorted {
+                let key0 = embyArtistKey(id: $0.id, name: $0.name)
+                let key1 = embyArtistKey(id: $1.id, name: $1.name)
+                let d0 = key0.flatMap { newestAddedByArtist[$0] } ?? .distantPast
+                let d1 = key1.flatMap { newestAddedByArtist[$0] } ?? .distantPast
+                if d0 != d1 { return d0 > d1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .dateAddedAsc:
+            return artists.sorted {
+                let key0 = embyArtistKey(id: $0.id, name: $0.name)
+                let key1 = embyArtistKey(id: $1.id, name: $1.name)
+                let d0 = key0.flatMap { oldestAddedByArtist[$0] } ?? .distantPast
+                let d1 = key1.flatMap { oldestAddedByArtist[$0] } ?? .distantPast
+                if d0 != d1 { return d0 < d1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .yearDesc:
+            return artists.sorted {
+                let key0 = embyArtistKey(id: $0.id, name: $0.name)
+                let key1 = embyArtistKey(id: $1.id, name: $1.name)
+                let y0 = key0.flatMap { newestYearByArtist[$0] } ?? 0
+                let y1 = key1.flatMap { newestYearByArtist[$0] } ?? 0
+                if y0 != y1 { return y0 > y1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
+        case .yearAsc:
+            return artists.sorted {
+                let key0 = embyArtistKey(id: $0.id, name: $0.name)
+                let key1 = embyArtistKey(id: $1.id, name: $1.name)
+                let y0 = key0.flatMap { oldestYearByArtist[$0] } ?? 0
+                let y1 = key1.flatMap { oldestYearByArtist[$0] } ?? 0
+                if y0 != y1 { return y0 < y1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
         }
     }
 
