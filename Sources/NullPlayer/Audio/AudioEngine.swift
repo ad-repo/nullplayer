@@ -3299,10 +3299,12 @@ class AudioEngine {
         let masterVolume = volume
         startCrossfadeVolumeRamp(
             outgoingVolume: { [weak self] v in
-                self?.streamingPlayer?.volume = masterVolume * v
+                guard let self, self.isCrossfading else { return }
+                self.streamingPlayer?.volume = masterVolume * v
             },
             incomingVolume: { [weak self] v in
-                self?.crossfadeStreamingPlayer?.volume = masterVolume * v
+                guard let self, self.isCrossfading else { return }
+                self.crossfadeStreamingPlayer?.volume = masterVolume * v
             },
             completion: { [weak self] in
                 self?.completeStreamingCrossfade(nextIndex: nextIndex)
