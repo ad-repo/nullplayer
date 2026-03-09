@@ -2846,4 +2846,53 @@ final class NullPlayerTests: XCTestCase {
         
         XCTAssertNil(decoded.customSkinPath)
     }
+
+    // MARK: - AudioEngine Radio Transition Tests
+
+    func testShouldStopRadioForIncomingTrackWhenActiveAndSameURL() {
+        let stationURL = URL(string: "https://radio.example.com/live.mp3")
+        let shouldStop = AudioEngine.shouldStopRadioForIncomingTrack(
+            isRadioActive: true,
+            currentStationURL: stationURL,
+            incomingTrackURL: stationURL
+        )
+
+        XCTAssertFalse(shouldStop)
+    }
+
+    func testShouldStopRadioForIncomingTrackWhenActiveAndDifferentLocalURL() {
+        let stationURL = URL(string: "https://radio.example.com/live.mp3")
+        let localURL = URL(fileURLWithPath: "/tmp/local-song.mp3")
+        let shouldStop = AudioEngine.shouldStopRadioForIncomingTrack(
+            isRadioActive: true,
+            currentStationURL: stationURL,
+            incomingTrackURL: localURL
+        )
+
+        XCTAssertTrue(shouldStop)
+    }
+
+    func testShouldStopRadioForIncomingTrackWhenActiveAndDifferentHTTPURL() {
+        let stationURL = URL(string: "https://radio.example.com/live.mp3")
+        let remoteURL = URL(string: "https://media.example.com/song.mp3")
+        let shouldStop = AudioEngine.shouldStopRadioForIncomingTrack(
+            isRadioActive: true,
+            currentStationURL: stationURL,
+            incomingTrackURL: remoteURL
+        )
+
+        XCTAssertTrue(shouldStop)
+    }
+
+    func testShouldStopRadioForIncomingTrackWhenRadioInactive() {
+        let stationURL = URL(string: "https://radio.example.com/live.mp3")
+        let localURL = URL(fileURLWithPath: "/tmp/local-song.mp3")
+        let shouldStop = AudioEngine.shouldStopRadioForIncomingTrack(
+            isRadioActive: false,
+            currentStationURL: stationURL,
+            incomingTrackURL: localURL
+        )
+
+        XCTAssertFalse(shouldStop)
+    }
 }

@@ -2151,6 +2151,32 @@ class AudioEngine {
         NSLog("loadFiles: %d tracks created (%d invalid)", tracks.count, validation.invalidFiles.count)
         loadTracks(tracks)
     }
+
+    static func shouldStopRadioForIncomingTrack(
+        isRadioActive: Bool,
+        currentStationURL: URL?,
+        incomingTrackURL: URL?
+    ) -> Bool {
+        guard isRadioActive else { return false }
+        guard let stationURL = currentStationURL, let incomingTrackURL else { return true }
+        return stationURL != incomingTrackURL
+    }
+
+    @discardableResult
+    private func stopRadioIfLoadingNonRadioContent(incomingTrackURL: URL?, context: String) -> Bool {
+        let shouldStopRadio = Self.shouldStopRadioForIncomingTrack(
+            isRadioActive: RadioManager.shared.isActive,
+            currentStationURL: RadioManager.shared.currentStation?.url,
+            incomingTrackURL: incomingTrackURL
+        )
+
+        if shouldStopRadio {
+            NSLog("%@: stopping RadioManager (loading non-radio content)", context)
+            RadioManager.shared.stop()
+        }
+
+        return RadioManager.shared.isActive && !shouldStopRadio
+    }
     
     /// Load tracks with metadata (for Plex and other sources with pre-populated info)
     func loadTracks(_ tracks: [Track]) {
@@ -2186,21 +2212,10 @@ class AudioEngine {
         
         NSLog("loadTracks: %d valid tracks (%d skipped)", validTracks.count, missingCount)
         
-        // Stop RadioManager if we're loading non-radio content
-        // Radio content is identified by matching the current station's URL
-        let isRadioContent: Bool
-        if RadioManager.shared.isActive {
-            isRadioContent = validTracks.first.map { track in
-                RadioManager.shared.currentStation?.url == track.url
-            } ?? false
-            
-            if !isRadioContent {
-                NSLog("loadTracks: stopping RadioManager (loading non-radio content)")
-                RadioManager.shared.stop()
-            }
-        } else {
-            isRadioContent = false
-        }
+        let isRadioContent = stopRadioIfLoadingNonRadioContent(
+            incomingTrackURL: validTracks.first?.url,
+            context: "loadTracks"
+        )
         
         // Check if we're currently casting - we want to keep the cast session active
         let wasCasting = isCastingActive
@@ -2425,6 +2440,11 @@ class AudioEngine {
             NSLog("AudioEngine: playNow() blocked - local file cast in progress")
             return
         }
+
+        _ = stopRadioIfLoadingNonRadioContent(
+            incomingTrackURL: tracks.first?.url,
+            context: "playNow"
+        )
         
         let insertIndex = currentIndex >= 0 ? currentIndex + 1 : 0
         
@@ -2528,6 +2548,11 @@ class AudioEngine {
             NSLog("loadTrack: skipping placeholder track '%@' — waiting for async URL fetch", track.title ?? "")
             return
         }
+
+        _ = stopRadioIfLoadingNonRadioContent(
+            incomingTrackURL: track.url,
+            context: "loadTrack"
+        )
 
         // Route video tracks to the video player
         if track.mediaType == .video {
