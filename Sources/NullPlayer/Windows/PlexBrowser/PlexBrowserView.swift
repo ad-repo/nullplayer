@@ -8989,6 +8989,11 @@ class PlexBrowserView: NSView {
             menu.addItem(queueItem)
             
             menu.addItem(NSMenuItem.separator())
+
+            let rateAlbumItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateAlbumItem.submenu = buildRateSubmenuForLocalAlbum(albumId: album.id)
+            menu.addItem(rateAlbumItem)
+            menu.addItem(NSMenuItem.separator())
             
             let removeItem = NSMenuItem(title: "Remove Album from Library", action: #selector(contextMenuRemoveLocalAlbum(_:)), keyEquivalent: "")
             removeItem.target = self
@@ -9026,6 +9031,11 @@ class PlexBrowserView: NSView {
             expandItem.representedObject = item
             menu.addItem(expandItem)
             
+            menu.addItem(NSMenuItem.separator())
+
+            let rateArtistItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
+            rateArtistItem.submenu = buildRateSubmenuForLocalArtist(artistId: artist.id)
+            menu.addItem(rateArtistItem)
             menu.addItem(NSMenuItem.separator())
             
             let removeItem = NSMenuItem(title: "Remove Artist from Library", action: #selector(contextMenuRemoveLocalArtist(_:)), keyEquivalent: "")
@@ -9428,6 +9438,46 @@ class PlexBrowserView: NSView {
 
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
+
+    private func buildRateSubmenuForLocalAlbum(albumId: String) -> NSMenu {
+        let menu = NSMenu(title: "Rate")
+        for stars in 1...5 {
+            let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+            let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocalAlbum(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = stars * 2
+            item.representedObject = albumId
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+
+        let clearItem = NSMenuItem(title: "Clear Rating", action: #selector(contextMenuRateLocalAlbum(_:)), keyEquivalent: "")
+        clearItem.target = self
+        clearItem.tag = -1
+        clearItem.representedObject = albumId
+        menu.addItem(clearItem)
+        return menu
+    }
+
+    private func buildRateSubmenuForLocalArtist(artistId: String) -> NSMenu {
+        let menu = NSMenu(title: "Rate")
+        for stars in 1...5 {
+            let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+            let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocalArtist(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = stars * 2
+            item.representedObject = artistId
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+
+        let clearItem = NSMenuItem(title: "Clear Rating", action: #selector(contextMenuRateLocalArtist(_:)), keyEquivalent: "")
+        clearItem.target = self
+        clearItem.tag = -1
+        clearItem.representedObject = artistId
+        menu.addItem(clearItem)
+        return menu
+    }
     
     @objc private func contextMenuPlay(_ sender: NSMenuItem) {
         guard let item = sender.representedObject as? PlexDisplayItem else { return }
@@ -9475,6 +9525,20 @@ class PlexBrowserView: NSView {
     @objc private func contextMenuPlayLocalArtist(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }
         playLocalArtist(artist)
+    }
+
+    @objc private func contextMenuRateLocalAlbum(_ sender: NSMenuItem) {
+        guard let albumId = sender.representedObject as? String else { return }
+        let rating = sender.tag
+        MediaLibrary.shared.setAlbumRating(albumId: albumId, rating: rating >= 0 ? rating : nil)
+        needsDisplay = true
+    }
+
+    @objc private func contextMenuRateLocalArtist(_ sender: NSMenuItem) {
+        guard let artistId = sender.representedObject as? String else { return }
+        let rating = sender.tag
+        MediaLibrary.shared.setArtistRating(artistId: artistId, rating: rating >= 0 ? rating : nil)
+        needsDisplay = true
     }
     
     // MARK: - Play and Replace Queue Handlers
@@ -16582,7 +16646,9 @@ extension PlexDisplayItem {
         case "duration":
             return album.formattedDuration
         case "rating":
-            return ""
+            guard let rating = MediaLibrary.shared.albumRating(for: album.id), rating > 0 else { return "" }
+            let stars = rating / 2
+            return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
         default:
             return ""
         }
@@ -16622,6 +16688,10 @@ extension PlexDisplayItem {
             return String(artist.albums.count)
         case "genre":
             return ""  // Local artists don't have genre at artist level
+        case "rating":
+            guard let rating = MediaLibrary.shared.artistRating(for: artist.id), rating > 0 else { return "" }
+            let stars = rating / 2
+            return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
         default:
             return ""
         }
