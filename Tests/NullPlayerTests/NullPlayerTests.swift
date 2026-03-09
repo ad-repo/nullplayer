@@ -2895,4 +2895,78 @@ final class NullPlayerTests: XCTestCase {
 
         XCTAssertFalse(shouldStop)
     }
+
+    // MARK: - AudioEngine Playback Pipeline Reload Tests
+
+    func testShouldReloadPlaybackPipelineForStreamingTrackWhenEngineIsLocal() {
+        let streamingURL = URL(string: "https://media.example.com/song.mp3")!
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: streamingURL,
+            isStreamingPlayback: false,
+            hasStreamingPlayer: false,
+            hasLocalAudioFile: true
+        )
+
+        XCTAssertTrue(shouldReload)
+    }
+
+    func testShouldReloadPlaybackPipelineForStreamingTrackWhenStreamingPlayerMissing() {
+        let streamingURL = URL(string: "https://media.example.com/song.mp3")!
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: streamingURL,
+            isStreamingPlayback: true,
+            hasStreamingPlayer: false,
+            hasLocalAudioFile: false
+        )
+
+        XCTAssertTrue(shouldReload)
+    }
+
+    func testShouldReloadPlaybackPipelineForLocalTrackWhenEngineIsStreaming() {
+        let localURL = URL(fileURLWithPath: "/tmp/local-song.mp3")
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: localURL,
+            isStreamingPlayback: true,
+            hasStreamingPlayer: true,
+            hasLocalAudioFile: false
+        )
+
+        XCTAssertTrue(shouldReload)
+    }
+
+    func testShouldReloadPlaybackPipelineForLocalTrackWhenAudioFileMissing() {
+        let localURL = URL(fileURLWithPath: "/tmp/local-song.mp3")
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: localURL,
+            isStreamingPlayback: false,
+            hasStreamingPlayer: false,
+            hasLocalAudioFile: false
+        )
+
+        XCTAssertTrue(shouldReload)
+    }
+
+    func testShouldNotReloadPlaybackPipelineWhenStreamingStateMatches() {
+        let streamingURL = URL(string: "https://media.example.com/song.mp3")!
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: streamingURL,
+            isStreamingPlayback: true,
+            hasStreamingPlayer: true,
+            hasLocalAudioFile: false
+        )
+
+        XCTAssertFalse(shouldReload)
+    }
+
+    func testShouldNotReloadPlaybackPipelineWhenLocalStateMatches() {
+        let localURL = URL(fileURLWithPath: "/tmp/local-song.mp3")
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: localURL,
+            isStreamingPlayback: false,
+            hasStreamingPlayer: false,
+            hasLocalAudioFile: true
+        )
+
+        XCTAssertFalse(shouldReload)
+    }
 }

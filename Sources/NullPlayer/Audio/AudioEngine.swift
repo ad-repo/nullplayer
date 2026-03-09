@@ -1046,6 +1046,43 @@ class AudioEngine {
             currentIndex = 0
             loadTrack(at: currentIndex)
         }
+
+        if let track = currentTrack {
+            let trackIsStreaming = track.url.scheme == "http" || track.url.scheme == "https"
+            let hasStreamingPlayer = streamingPlayer != nil
+            let hasLocalAudioFile = audioFile != nil
+            let needsPipelineReload = Self.shouldReloadPlaybackPipelineForCurrentTrack(
+                trackURL: track.url,
+                isStreamingPlayback: isStreamingPlayback,
+                hasStreamingPlayer: hasStreamingPlayer,
+                hasLocalAudioFile: hasLocalAudioFile
+            )
+
+            if needsPipelineReload {
+                // Resolve stale playback pipeline state before resuming.
+                // This prevents local/streaming mismatches after cast handoffs.
+                let reloadIndex: Int
+                if currentIndex >= 0 && currentIndex < playlist.count && playlist[currentIndex].id == track.id {
+                    reloadIndex = currentIndex
+                } else if let foundIndex = playlist.firstIndex(where: { $0.id == track.id }) {
+                    currentIndex = foundIndex
+                    reloadIndex = foundIndex
+                } else {
+                    NSLog("play(): unable to reload current track '%@' - not found in playlist", track.title)
+                    return
+                }
+
+                NSLog("play(): reloading track due to pipeline mismatch (trackStreaming=%d, isStreamingPlayback=%d, hasStreamingPlayer=%d, hasAudioFile=%d)",
+                      trackIsStreaming ? 1 : 0,
+                      isStreamingPlayback ? 1 : 0,
+                      hasStreamingPlayer ? 1 : 0,
+                      hasLocalAudioFile ? 1 : 0)
+                loadTrack(at: reloadIndex)
+
+                // Streaming load starts playback internally.
+                if trackIsStreaming { return }
+            }
+        }
         
         if isStreamingPlayback {
             // Streaming playback via AudioStreaming (with EQ support)
@@ -1266,15 +1303,26 @@ class AudioEngine {
             _currentTime += Date().timeIntervalSince(startDate)
         }
         playbackStartDate = nil
-        
-        // Fully stop streaming player to release the connection
-        // This is critical for Subsonic/Navidrome which limits concurrent streams per user
-        if isStreamingPlayback {
-            streamingPlayer?.stop()
-            NSLog("AudioEngine: Stopped streaming player - connection released")
-        } else {
-            playerNode.stop()
-        }
+
+        // Invalidate pending completion handlers so stale callbacks can't restart local flow
+        playbackGeneration += 1
+
+        // Force-stop any in-progress crossfade before casting handoff.
+        // This avoids mixed local+cast playback when crossfade players are active.
+        crossfadeTimer?.invalidate()
+        crossfadeTimer = nil
+        isCrossfading = false
+        crossfadeTargetIndex = -1
+
+        // Fully stop ALL local playback paths (primary + crossfade, local + streaming).
+        // This ensures no local audio leaks while cast playback is active.
+        streamingPlayer?.stop()
+        crossfadeStreamingPlayer?.stop()
+        crossfadeStreamingPlayer?.volume = 0
+        playerNode.stop()
+        crossfadePlayerNode.stop()
+        crossfadePlayerNode.volume = 0
+        crossfadePlayerIsActive = false
         
         state = .stopped
         stopTimeUpdates()
@@ -2160,6 +2208,17 @@ class AudioEngine {
         guard isRadioActive else { return false }
         guard let stationURL = currentStationURL, let incomingTrackURL else { return true }
         return stationURL != incomingTrackURL
+    }
+
+    static func shouldReloadPlaybackPipelineForCurrentTrack(
+        trackURL: URL,
+        isStreamingPlayback: Bool,
+        hasStreamingPlayer: Bool,
+        hasLocalAudioFile: Bool
+    ) -> Bool {
+        let trackIsStreaming = trackURL.scheme == "http" || trackURL.scheme == "https"
+        return (trackIsStreaming && (!isStreamingPlayback || !hasStreamingPlayer)) ||
+            (!trackIsStreaming && (isStreamingPlayback || !hasLocalAudioFile))
     }
 
     @discardableResult
