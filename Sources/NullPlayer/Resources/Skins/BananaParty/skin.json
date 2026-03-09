@@ -1,0 +1,147 @@
+{
+    "meta": {
+        "name": "BananaParty",
+        "author": "NullPlayer",
+        "version": "1.0",
+        "description": "Outrageously yellow party skin with citrus glow, glossy banana tones, and mild translucent layering"
+    },
+    "palette": {
+        "primary": "#fffb00",
+        "secondary": "#ffd000",
+        "accent": "#fff700",
+        "highlight": "#fffed0",
+        "background": "#fff74d",
+        "surface": "#ffe218",
+        "text": "#2a1f00",
+        "textDim": "#6e5800",
+        "positive": "#d3ff2c",
+        "negative": "#a74f00",
+        "warning": "#ff9400",
+        "border": "#fffcc2",
+        "timeColor": "#211800",
+        "marqueeColor": "#2f2300",
+        "dataColor": "#3a2c00",
+        "eqLow": "#dcff30",
+        "eqMid": "#fff700",
+        "eqHigh": "#ffb300"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 9,
+        "bodySize": 10,
+        "smallSize": 7,
+        "timeSize": 22,
+        "infoSize": 6.5,
+        "eqLabelSize": 7,
+        "eqValueSize": 6,
+        "marqueeSize": 11.5,
+        "playlistSize": 8
+    },
+    "background": {
+        "grid": {
+            "color": "#fffbc0",
+            "spacing": 28,
+            "angle": 76,
+            "opacity": 0.06,
+            "perspective": false
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 14,
+        "intensity": 0.58,
+        "threshold": 0.6,
+        "color": "#fff700",
+        "elementBlur": 0.68
+    },
+    "window": {
+        "borderWidth": 1.2,
+        "borderColor": "#fffcd0",
+        "cornerRadius": 12,
+        "opacity": 0.8,
+        "textOpacity": 0.9,
+        "seamlessDocking": 1.0,
+        "areaOpacity": {
+            "mainWindow": {
+                "background": 0.92,
+                "border": 0.95,
+                "content": 0.95
+            },
+            "timeDisplay": {
+                "background": 0.9,
+                "border": 0.93,
+                "content": 0.95
+            },
+            "trackDisplay": {
+                "background": 0.9,
+                "border": 0.93,
+                "content": 0.95
+            },
+            "volumeArea": {
+                "background": 0.9,
+                "border": 0.93,
+                "content": 0.95
+            },
+            "spectrumArea": {
+                "background": 0.9,
+                "border": 0.93,
+                "content": 0.95
+            },
+            "eqFaderBackground": {
+                "background": 0.9,
+                "border": 0.93,
+                "content": 0.95
+            },
+            "curveBackground": {
+                "background": 0.9,
+                "border": 0.93,
+                "content": 0.95
+            }
+        }
+    },
+    "marquee": {
+        "scrollSpeed": 34,
+        "scrollGap": 56
+    },
+    "elements": {
+        "titlebar": {
+            "color": "#ffda00"
+        },
+        "spectrum_titlebar": {
+            "color": "#ffda00"
+        },
+        "playlist_titlebar": {
+            "color": "#ffda00"
+        },
+        "eq_titlebar": {
+            "color": "#ffda00"
+        },
+        "library_titlebar": {
+            "color": "#ffda00"
+        },
+        "projectm_titlebar": {
+            "color": "#ffda00"
+        },
+        "marquee_bg": {
+            "color": "#ffe100"
+        },
+        "spectrum_area": {
+            "color": "#fff800"
+        },
+        "seek_fill": {
+            "color": "#fff800"
+        },
+        "info_cast": {
+            "color": "#2f2300"
+        }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 1.8,
+            "minValue": 0.65,
+            "maxValue": 1.0
+        }
+    }
+}
