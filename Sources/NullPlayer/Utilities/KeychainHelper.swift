@@ -10,17 +10,10 @@ class KeychainHelper {
     
     static let shared = KeychainHelper()
     
-    /// Use Keychain when running as a signed .app bundle or as an ad-hoc signed
-    /// dev binary (e.g. from kill_build_run.sh). Falls back to UserDefaults only
-    /// for truly unsigned builds.
+    /// Always use the data-protection keychain. kSecUseDataProtectionKeychain never
+    /// shows user prompts (unlike the legacy login keychain), so no signing guard needed.
     private var useKeychain: Bool {
-        if Bundle.main.bundlePath.hasSuffix(".app") { return true }
-        // Also use keychain for ad-hoc signed dev builds
-        guard let url = Bundle.main.executableURL else { return false }
-        var staticCode: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
-              let code = staticCode else { return false }
-        return SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess
+        return true
     }
     
     private init() {}
