@@ -12,8 +12,8 @@ Modern skins can define a top-level `visualization` object in `skin.json`.
     "mainWindowMode": "vis_classic",
     "spectrumWindowMode": "vis_classic",
     "visClassic": {
-      "mainWindowProfile": "Classic",
-      "spectrumWindowProfile": "Classic",
+      "mainWindowProfile": "Purple Neon",
+      "spectrumWindowProfile": "Purple Neon",
       "mainWindowFitToWidth": true,
       "spectrumWindowFitToWidth": true
     },
@@ -66,8 +66,8 @@ When a classic skin is loaded, NullPlayer now forces these defaults:
 
 - `mainWindowVisMode = "vis_classic"`
 - `spectrumQualityMode = "vis_classic"`
-- `visClassicLastProfileName.mainWindow = "Classic"`
-- `visClassicLastProfileName.spectrumWindow = "Classic"`
+- `visClassicLastProfileName.mainWindow = "Purple Neon"`
+- `visClassicLastProfileName.spectrumWindow = "Purple Neon"`
 - `visClassicFitToWidth.mainWindow = true`
 - `visClassicFitToWidth.spectrumWindow = true`
 

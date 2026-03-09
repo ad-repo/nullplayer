@@ -1483,7 +1483,7 @@ class WindowManager {
     private func applyClassicVisualizationDefaults(notify: Bool) {
         let defaults = UserDefaults.standard
         let visClassicMode = MainWindowVisMode.visClassicExact.rawValue
-        let classicProfile = "Classic"
+        let classicProfile = "Purple Neon"
 
         defaults.set(visClassicMode, forKey: "mainWindowVisMode")
         defaults.set(visClassicMode, forKey: "modernMainWindowVisMode")
