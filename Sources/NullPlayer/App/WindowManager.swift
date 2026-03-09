@@ -1404,6 +1404,7 @@ class WindowManager {
             currentSkinPath = url.path
             // Persist last used classic skin for easy reload when switching UI modes
             UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
+            applyClassicVisualizationDefaults(notify: true)
             notifySkinChanged()
         } catch {
             print("Failed to load skin: \(error)")
@@ -1417,6 +1418,7 @@ class WindowManager {
             do {
                 currentSkin = try SkinLoader.shared.load(from: URL(fileURLWithPath: lastPath))
                 currentSkinPath = lastPath
+                applyClassicVisualizationDefaults(notify: false)
                 return
             } catch {
                 NSLog("Failed to restore last skin: \(error)")
@@ -1427,6 +1429,7 @@ class WindowManager {
         if let bundledURL = findBundledClassicSkin("NullPlayer-Silver") {
             do {
                 currentSkin = try SkinLoader.shared.load(from: bundledURL)
+                applyClassicVisualizationDefaults(notify: false)
                 return
             } catch {
                 NSLog("Failed to load bundled skin: \(error)")
@@ -1435,6 +1438,7 @@ class WindowManager {
         
         // 3. Fallback: unskinned native macOS rendering
         currentSkin = SkinLoader.shared.loadDefault()
+        applyClassicVisualizationDefaults(notify: false)
     }
     
     private func findBundledClassicSkin(_ name: String) -> URL? {
@@ -1461,6 +1465,7 @@ class WindowManager {
                 currentSkin = try SkinLoader.shared.load(from: bundledURL)
                 currentSkinPath = nil
                 UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+                applyClassicVisualizationDefaults(notify: true)
                 notifySkinChanged()
                 return
             } catch {
@@ -1471,7 +1476,52 @@ class WindowManager {
         currentSkin = SkinLoader.shared.loadDefault()
         currentSkinPath = nil
         UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+        applyClassicVisualizationDefaults(notify: true)
         notifySkinChanged()
+    }
+
+    private func applyClassicVisualizationDefaults(notify: Bool) {
+        let defaults = UserDefaults.standard
+        let visClassicMode = MainWindowVisMode.visClassicExact.rawValue
+        let classicProfile = "Classic"
+
+        defaults.set(visClassicMode, forKey: "mainWindowVisMode")
+        defaults.set(visClassicMode, forKey: "modernMainWindowVisMode")
+        defaults.set(SpectrumQualityMode.visClassicExact.rawValue, forKey: "spectrumQualityMode")
+
+        defaults.set(classicProfile, forKey: "visClassicLastProfileName.mainWindow")
+        defaults.set(classicProfile, forKey: "visClassicLastProfileName.spectrumWindow")
+        defaults.set(true, forKey: "visClassicFitToWidth.mainWindow")
+        defaults.set(true, forKey: "visClassicFitToWidth.spectrumWindow")
+
+        // Legacy fallback keys are still read by VisClassicBridge.
+        defaults.set(classicProfile, forKey: "visClassicLastProfileName")
+        defaults.set(true, forKey: "visClassicFitToWidth")
+
+        guard notify else { return }
+
+        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "load", "profileName": classicProfile, "target": "mainWindow"]
+        )
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "load", "profileName": classicProfile, "target": "spectrumWindow"]
+        )
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "fitToWidth", "enabled": true, "target": "mainWindow"]
+        )
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "fitToWidth", "enabled": true, "target": "spectrumWindow"]
+        )
     }
     
     private func notifySkinChanged() {

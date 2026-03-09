@@ -136,5 +136,31 @@
             "minValue": 0.4,
             "maxValue": 1.0
         }
+    },
+    "visualization": {
+        "mainWindowMode": "vis_classic",
+        "spectrumWindowMode": "vis_classic",
+        "visClassic": {
+            "mainWindowProfile": "City Night",
+            "spectrumWindowProfile": "City Night",
+            "mainWindowFitToWidth": true,
+            "spectrumWindowFitToWidth": true
+        },
+        "fire": {
+            "mainWindowStyle": "Ocean",
+            "mainWindowIntensity": "Mellow",
+            "spectrumWindowStyle": "Ocean",
+            "spectrumWindowIntensity": "Mellow"
+        },
+        "lightning": {
+            "mainWindowStyle": "Arctic",
+            "spectrumWindowStyle": "Arctic"
+        },
+        "matrix": {
+            "mainWindowColorScheme": "Blue Pill",
+            "mainWindowIntensity": "Subtle",
+            "spectrumWindowColorScheme": "Blue Pill",
+            "spectrumWindowIntensity": "Subtle"
+        }
     }
 }

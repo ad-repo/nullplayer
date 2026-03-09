@@ -136,5 +136,31 @@
             "minValue": 0.4,
             "maxValue": 1.0
         }
+    },
+    "visualization": {
+        "mainWindowMode": "vis_classic",
+        "spectrumWindowMode": "vis_classic",
+        "visClassic": {
+            "mainWindowProfile": "Northern Lights",
+            "spectrumWindowProfile": "Northern Lights",
+            "mainWindowFitToWidth": true,
+            "spectrumWindowFitToWidth": true
+        },
+        "fire": {
+            "mainWindowStyle": "Aurora",
+            "mainWindowIntensity": "Mellow",
+            "spectrumWindowStyle": "Aurora",
+            "spectrumWindowIntensity": "Mellow"
+        },
+        "lightning": {
+            "mainWindowStyle": "Aurora",
+            "spectrumWindowStyle": "Aurora"
+        },
+        "matrix": {
+            "mainWindowColorScheme": "Neon",
+            "mainWindowIntensity": "Subtle",
+            "spectrumWindowColorScheme": "Neon",
+            "spectrumWindowIntensity": "Subtle"
+        }
     }
 }

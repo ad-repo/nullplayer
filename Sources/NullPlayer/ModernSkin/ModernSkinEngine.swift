@@ -166,6 +166,9 @@ class ModernSkinEngine {
         
         // Apply base scale factor from skin config (sizeMultiplier is preserved independently)
         ModernSkinElements.baseScaleFactor = skin.config.window.scale ?? 1.25
+
+        // Apply per-skin visualization defaults (mode + mode-specific presets/profiles).
+        applyVisualizationDefaults(from: skin.config.visualization)
         
         // Configure bloom processor
         bloomProcessor.configure(with: skin.config.glow)
@@ -176,6 +179,191 @@ class ModernSkinEngine {
             for (elementId, animConfig) in animations {
                 animationEngine.startAnimation(elementId: elementId, config: animConfig)
             }
+        }
+    }
+
+    private func applyVisualizationDefaults(from config: VisualizationConfig?) {
+        guard let config else { return }
+
+        let defaults = UserDefaults.standard
+        var mainVisChanged = false
+        var spectrumSettingsChanged = false
+        var visClassicMainProfileToLoad: String?
+        var visClassicSpectrumProfileToLoad: String?
+        var visClassicMainFitToWidth: Bool?
+        var visClassicSpectrumFitToWidth: Bool?
+
+        if let modeRaw = config.mainWindowMode {
+            if let mode = MainWindowVisMode(rawValue: modeRaw) {
+                if let qualityMode = mode.spectrumQualityMode,
+                   !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
+                    NSLog("ModernSkinEngine: Ignoring unsupported mainWindowMode '%@' (shader unavailable)", modeRaw)
+                } else {
+                    defaults.set(mode.rawValue, forKey: "mainWindowVisMode")
+                    defaults.set(mode.rawValue, forKey: "modernMainWindowVisMode")
+                    mainVisChanged = true
+                }
+            } else {
+                NSLog("ModernSkinEngine: Ignoring unknown mainWindowMode '%@'", modeRaw)
+            }
+        }
+
+        if let modeRaw = config.spectrumWindowMode {
+            if let mode = SpectrumQualityMode(rawValue: modeRaw) {
+                if SpectrumAnalyzerView.isShaderAvailable(for: mode) {
+                    defaults.set(mode.rawValue, forKey: "spectrumQualityMode")
+                    spectrumSettingsChanged = true
+                } else {
+                    NSLog("ModernSkinEngine: Ignoring unsupported spectrumWindowMode '%@' (shader unavailable)", modeRaw)
+                }
+            } else {
+                NSLog("ModernSkinEngine: Ignoring unknown spectrumWindowMode '%@'", modeRaw)
+            }
+        }
+
+        if let visClassic = config.visClassic {
+            if let profile = visClassic.mainWindowProfile {
+                defaults.set(profile, forKey: "visClassicLastProfileName.mainWindow")
+                visClassicMainProfileToLoad = profile
+                mainVisChanged = true
+            }
+            if let profile = visClassic.spectrumWindowProfile {
+                defaults.set(profile, forKey: "visClassicLastProfileName.spectrumWindow")
+                visClassicSpectrumProfileToLoad = profile
+                spectrumSettingsChanged = true
+            }
+            if let fit = visClassic.mainWindowFitToWidth {
+                defaults.set(fit, forKey: "visClassicFitToWidth.mainWindow")
+                visClassicMainFitToWidth = fit
+                mainVisChanged = true
+            }
+            if let fit = visClassic.spectrumWindowFitToWidth {
+                defaults.set(fit, forKey: "visClassicFitToWidth.spectrumWindow")
+                visClassicSpectrumFitToWidth = fit
+                spectrumSettingsChanged = true
+            }
+        }
+
+        if let fire = config.fire {
+            if let styleRaw = fire.mainWindowStyle,
+               let style = FlameStyle(rawValue: styleRaw) {
+                defaults.set(style.rawValue, forKey: "mainWindowFlameStyle")
+                mainVisChanged = true
+            } else if let styleRaw = fire.mainWindowStyle {
+                NSLog("ModernSkinEngine: Ignoring unknown fire.mainWindowStyle '%@'", styleRaw)
+            }
+
+            if let intensityRaw = fire.mainWindowIntensity,
+               let intensity = FlameIntensity(rawValue: intensityRaw) {
+                defaults.set(intensity.rawValue, forKey: "mainWindowFlameIntensity")
+                mainVisChanged = true
+            } else if let intensityRaw = fire.mainWindowIntensity {
+                NSLog("ModernSkinEngine: Ignoring unknown fire.mainWindowIntensity '%@'", intensityRaw)
+            }
+
+            if let styleRaw = fire.spectrumWindowStyle,
+               let style = FlameStyle(rawValue: styleRaw) {
+                defaults.set(style.rawValue, forKey: "flameStyle")
+                spectrumSettingsChanged = true
+            } else if let styleRaw = fire.spectrumWindowStyle {
+                NSLog("ModernSkinEngine: Ignoring unknown fire.spectrumWindowStyle '%@'", styleRaw)
+            }
+
+            if let intensityRaw = fire.spectrumWindowIntensity,
+               let intensity = FlameIntensity(rawValue: intensityRaw) {
+                defaults.set(intensity.rawValue, forKey: "flameIntensity")
+                spectrumSettingsChanged = true
+            } else if let intensityRaw = fire.spectrumWindowIntensity {
+                NSLog("ModernSkinEngine: Ignoring unknown fire.spectrumWindowIntensity '%@'", intensityRaw)
+            }
+        }
+
+        if let lightning = config.lightning {
+            if let styleRaw = lightning.mainWindowStyle,
+               let style = LightningStyle(rawValue: styleRaw) {
+                defaults.set(style.rawValue, forKey: "mainWindowLightningStyle")
+                mainVisChanged = true
+            } else if let styleRaw = lightning.mainWindowStyle {
+                NSLog("ModernSkinEngine: Ignoring unknown lightning.mainWindowStyle '%@'", styleRaw)
+            }
+
+            if let styleRaw = lightning.spectrumWindowStyle,
+               let style = LightningStyle(rawValue: styleRaw) {
+                defaults.set(style.rawValue, forKey: "lightningStyle")
+                spectrumSettingsChanged = true
+            } else if let styleRaw = lightning.spectrumWindowStyle {
+                NSLog("ModernSkinEngine: Ignoring unknown lightning.spectrumWindowStyle '%@'", styleRaw)
+            }
+        }
+
+        if let matrix = config.matrix {
+            if let schemeRaw = matrix.mainWindowColorScheme,
+               let scheme = MatrixColorScheme(rawValue: schemeRaw) {
+                defaults.set(scheme.rawValue, forKey: "mainWindowMatrixColorScheme")
+                mainVisChanged = true
+            } else if let schemeRaw = matrix.mainWindowColorScheme {
+                NSLog("ModernSkinEngine: Ignoring unknown matrix.mainWindowColorScheme '%@'", schemeRaw)
+            }
+
+            if let intensityRaw = matrix.mainWindowIntensity,
+               let intensity = MatrixIntensity(rawValue: intensityRaw) {
+                defaults.set(intensity.rawValue, forKey: "mainWindowMatrixIntensity")
+                mainVisChanged = true
+            } else if let intensityRaw = matrix.mainWindowIntensity {
+                NSLog("ModernSkinEngine: Ignoring unknown matrix.mainWindowIntensity '%@'", intensityRaw)
+            }
+
+            if let schemeRaw = matrix.spectrumWindowColorScheme,
+               let scheme = MatrixColorScheme(rawValue: schemeRaw) {
+                defaults.set(scheme.rawValue, forKey: "matrixColorScheme")
+                spectrumSettingsChanged = true
+            } else if let schemeRaw = matrix.spectrumWindowColorScheme {
+                NSLog("ModernSkinEngine: Ignoring unknown matrix.spectrumWindowColorScheme '%@'", schemeRaw)
+            }
+
+            if let intensityRaw = matrix.spectrumWindowIntensity,
+               let intensity = MatrixIntensity(rawValue: intensityRaw) {
+                defaults.set(intensity.rawValue, forKey: "matrixIntensity")
+                spectrumSettingsChanged = true
+            } else if let intensityRaw = matrix.spectrumWindowIntensity {
+                NSLog("ModernSkinEngine: Ignoring unknown matrix.spectrumWindowIntensity '%@'", intensityRaw)
+            }
+        }
+
+        if mainVisChanged {
+            NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+        }
+        if spectrumSettingsChanged {
+            NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+        }
+
+        if let profile = visClassicMainProfileToLoad {
+            NotificationCenter.default.post(
+                name: .visClassicProfileCommand,
+                object: nil,
+                userInfo: ["command": "load", "profileName": profile, "target": "mainWindow"]
+            )
+        }
+        if let profile = visClassicSpectrumProfileToLoad {
+            NotificationCenter.default.post(
+                name: .visClassicProfileCommand,
+                object: nil,
+                userInfo: ["command": "load", "profileName": profile, "target": "spectrumWindow"]
+            )
+        }
+        if let fit = visClassicMainFitToWidth {
+            NotificationCenter.default.post(
+                name: .visClassicProfileCommand,
+                object: nil,
+                userInfo: ["command": "fitToWidth", "enabled": fit, "target": "mainWindow"]
+            )
+        }
+        if let fit = visClassicSpectrumFitToWidth {
+            NotificationCenter.default.post(
+                name: .visClassicProfileCommand,
+                object: nil,
+                userInfo: ["command": "fitToWidth", "enabled": fit, "target": "spectrumWindow"]
+            )
         }
     }
     

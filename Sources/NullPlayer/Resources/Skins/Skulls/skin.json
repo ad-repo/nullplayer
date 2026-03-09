@@ -78,5 +78,31 @@
                 "content": 1
             }
         }
+    },
+    "visualization": {
+        "mainWindowMode": "vis_classic",
+        "spectrumWindowMode": "vis_classic",
+        "visClassic": {
+            "mainWindowProfile": "BackAMP StoneAge",
+            "spectrumWindowProfile": "BackAMP StoneAge",
+            "mainWindowFitToWidth": true,
+            "spectrumWindowFitToWidth": true
+        },
+        "fire": {
+            "mainWindowStyle": "Inferno",
+            "mainWindowIntensity": "Mellow",
+            "spectrumWindowStyle": "Inferno",
+            "spectrumWindowIntensity": "Mellow"
+        },
+        "lightning": {
+            "mainWindowStyle": "Ember",
+            "spectrumWindowStyle": "Ember"
+        },
+        "matrix": {
+            "mainWindowColorScheme": "Amber",
+            "mainWindowIntensity": "Subtle",
+            "spectrumWindowColorScheme": "Amber",
+            "spectrumWindowIntensity": "Subtle"
+        }
     }
 }

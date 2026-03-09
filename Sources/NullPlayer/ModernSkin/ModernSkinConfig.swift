@@ -22,6 +22,9 @@ struct ModernSkinConfig: Codable {
     
     /// Window chrome configuration
     let window: WindowConfig
+
+    /// Visualization defaults and mode-specific preset/profile mappings
+    let visualization: VisualizationConfig?
     
     /// Marquee/scrolling text configuration
     let marquee: MarqueeConfig?
@@ -37,6 +40,54 @@ struct ModernSkinConfig: Codable {
 }
 
 // MARK: - Sub-Configs
+
+/// Per-skin visualization defaults.
+/// Allows skins to set default modes and per-mode preset/profile mappings.
+struct VisualizationConfig: Codable {
+    /// Default visualization mode for main window (`MainWindowVisMode.rawValue`)
+    let mainWindowMode: String?
+
+    /// Default visualization mode for spectrum window (`SpectrumQualityMode.rawValue`)
+    let spectrumWindowMode: String?
+
+    /// vis_classic profile defaults (only applies when mode is `vis_classic`)
+    let visClassic: VisClassicVisualizationConfig?
+
+    /// Fire mode preset defaults
+    let fire: FireVisualizationConfig?
+
+    /// Lightning mode preset defaults
+    let lightning: LightningVisualizationConfig?
+
+    /// Matrix mode preset defaults
+    let matrix: MatrixVisualizationConfig?
+}
+
+struct VisClassicVisualizationConfig: Codable {
+    let mainWindowProfile: String?
+    let spectrumWindowProfile: String?
+    let mainWindowFitToWidth: Bool?
+    let spectrumWindowFitToWidth: Bool?
+}
+
+struct FireVisualizationConfig: Codable {
+    let mainWindowStyle: String?
+    let mainWindowIntensity: String?
+    let spectrumWindowStyle: String?
+    let spectrumWindowIntensity: String?
+}
+
+struct LightningVisualizationConfig: Codable {
+    let mainWindowStyle: String?
+    let spectrumWindowStyle: String?
+}
+
+struct MatrixVisualizationConfig: Codable {
+    let mainWindowColorScheme: String?
+    let mainWindowIntensity: String?
+    let spectrumWindowColorScheme: String?
+    let spectrumWindowIntensity: String?
+}
 
 struct SkinMeta: Codable {
     let name: String
