@@ -10,10 +10,10 @@ class KeychainHelper {
     
     static let shared = KeychainHelper()
     
-    /// Always use the data-protection keychain. kSecUseDataProtectionKeychain never
-    /// shows user prompts (unlike the legacy login keychain), so no signing guard needed.
+    /// Use the data-protection keychain only when running as a proper app bundle.
+    /// Raw dev binaries have no bundle ID and get -34018 from the data-protection keychain.
     private var useKeychain: Bool {
-        return true
+        return Bundle.main.bundleIdentifier != nil
     }
     
     private init() {}
@@ -340,7 +340,6 @@ class KeychainHelper {
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-
         guard status == errSecSuccess else { return nil }
         return result as? Data
     }

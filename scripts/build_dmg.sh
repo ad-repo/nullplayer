@@ -258,8 +258,8 @@ for dylib in "$FRAMEWORKS_DIR/"*.dylib; do
     fi
 done
 
-# Sign the main executable and app bundle last
-codesign --force --sign - "$APP_BUNDLE"
+# Sign the main executable and app bundle last (with entitlements for keychain access)
+codesign --force --sign - --entitlements "$REPO_ROOT/scripts/NullPlayer.entitlements" "$APP_BUNDLE"
 log_success "Code signing complete"
 
 log_success "App bundle created at $APP_BUNDLE"
