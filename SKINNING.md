@@ -130,7 +130,8 @@ MyPaletteSkin/
         "borderColor": "#00ffcc",
         "cornerRadius": 8,
         "scale": 1.25,
-        "opacity": 0.94
+        "opacity": 0.94,
+        "textOpacity": 1.0
     }
 }
 ```
@@ -270,6 +271,7 @@ The `elementBlur` multiplier scales the glow halos on individual UI elements (se
     "borderColor": "#00ffcc",
     "cornerRadius": 8,
     "opacity": 1.0,
+    "textOpacity": 1.0,
     "areaOpacity": {
         "mainWindow": { "background": 1.0, "border": 1.0, "content": 1.0 },
         "timeDisplay": { "background": 1.0, "border": 1.0, "content": 1.0 },
@@ -290,6 +292,7 @@ The `elementBlur` multiplier scales the glow halos on individual UI elements (se
 | `scale` | UI scale factor (default 1.25). Smaller = more compact, larger = bigger UI |
 | `seamlessDocking` | 0.0-1.0 joined-edge seam suppression for docked modern windows |
 | `opacity` | Base opacity for modern window chrome. **Required** |
+| `textOpacity` | Global text-only opacity multiplier (`0.0`-`1.0`, default `1.0`) |
 | `areaOpacity` | Per-area opacity overrides for modern windows. Missing areas/channels fall back to `window.opacity` |
 
 `areaOpacity` is modern-skin-only and currently applies to these 7 regions:
@@ -308,6 +311,8 @@ Each area style supports:
 - `background`: panel/background layer opacity
 - `border`: border/stroke layer opacity
 - `content`: foreground text/icons/bars/curve layer opacity
+
+`window.textOpacity` is independent of these area channels and applies to modern text-like content (library data text, marquee text, and main time digits). This lets you darken text without changing window translucency.
 
 When `seamlessDocking` is greater than `0`, docked modern windows suppress joined-edge shadows to keep interior seams faint instead of dark.
 
@@ -340,21 +345,23 @@ Glass style example:
     "borderColor": "#d3fff1",
     "cornerRadius": 14,
     "opacity": 0.52,
+    "textOpacity": 0.8,
     "seamlessDocking": 1.0,
     "areaOpacity": {
-        "mainWindow": { "background": 0.52, "border": 0.52, "content": 0.52 },
-        "timeDisplay": { "background": 0.52, "border": 0.52, "content": 0.52 },
-        "trackDisplay": { "background": 0.52, "border": 0.52, "content": 0.52 },
-        "volumeArea": { "background": 0.52, "border": 0.52, "content": 0.52 },
-        "spectrumArea": { "background": 0.52, "border": 0.52, "content": 0.52 },
-        "eqFaderBackground": { "background": 0.52, "border": 0.52, "content": 0.52 },
-        "curveBackground": { "background": 0.52, "border": 0.52, "content": 0.52 }
+        "mainWindow": { "background": 0.8, "border": 0.8, "content": 0.8 },
+        "timeDisplay": { "background": 0.8, "border": 0.8, "content": 0.8 },
+        "trackDisplay": { "background": 0.8, "border": 0.8, "content": 0.8 },
+        "volumeArea": { "background": 0.8, "border": 0.8, "content": 0.8 },
+        "spectrumArea": { "background": 0.8, "border": 0.8, "content": 0.8 },
+        "eqFaderBackground": { "background": 0.8, "border": 0.8, "content": 0.8 },
+        "curveBackground": { "background": 0.8, "border": 0.8, "content": 0.8 }
     }
 }
 ```
 
 Migration notes:
 - Existing skins must define `window.opacity`; if omitted, `skin.json` decode fails and the skin will not load.
+- `window.textOpacity` is optional. If omitted, it defaults to `1.0` (no text dimming).
 - `window.areaOpacity` is optional. If omitted, all 7 regions use `window.opacity`.
 - Within an area object, missing `background`, `border`, or `content` also fall back to `window.opacity`.
 

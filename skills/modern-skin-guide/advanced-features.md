@@ -326,8 +326,12 @@ Glass skins often need darker text for readability while keeping the same transl
 ### Behavior
 
 - Optional field, range `0.0...1.0`, default `1.0`.
-- Applied only to modern string text drawing paths (`NSAttributedString` foreground colors).
-- Not applied to non-text rendering (fills, borders, strokes, icons, glow geometry).
+- Applied to modern text-like channels:
+  - modern string text (`NSAttributedString` foreground colors) across main/EQ/playlist/library,
+  - marquee text (main + playlist),
+  - main time digits (sprite and programmatic 7-segment fallback).
+- Text paths are rendered at full context alpha so `window.areaOpacity.*.content` does not re-attenuate text.
+- Not applied to non-text rendering (fills, borders, strokes, panel backgrounds, icon/shape geometry).
 - Resolved as:
   - `resolvedTextAlpha = clamp(inputTextAlpha) * clamp(window.textOpacity)`
 
@@ -346,6 +350,11 @@ Glass skins often need darker text for readability while keeping the same transl
 With this configuration:
 - Window translucency remains driven by `window.opacity` and `areaOpacity`.
 - Text alpha is reduced to 80% of its original text color alpha.
+
+### Practical Notes
+
+- If `textOpacity` is `1.0`, text keeps its original alpha (no additional dimming).
+- To verify quickly, set `textOpacity` to `0.4` temporarily; library row data, marquee text, and time digits should visibly darken while window glass opacity remains unchanged.
 
 ## Double Size (2x) Mode
 
