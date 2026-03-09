@@ -10,11 +10,17 @@ class KeychainHelper {
     
     static let shared = KeychainHelper()
     
-    /// Only use Keychain when running as a signed .app bundle.
-    /// Raw binaries from `swift build` are unsigned and generate per-item
-    /// Keychain prompts. Falls back to UserDefaults in dev.
+    /// Use Keychain when running as a signed .app bundle or as an ad-hoc signed
+    /// dev binary (e.g. from kill_build_run.sh). Falls back to UserDefaults only
+    /// for truly unsigned builds.
     private var useKeychain: Bool {
-        return Bundle.main.bundlePath.hasSuffix(".app")
+        if Bundle.main.bundlePath.hasSuffix(".app") { return true }
+        // Also use keychain for ad-hoc signed dev builds
+        guard let url = Bundle.main.executableURL else { return false }
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &staticCode) == errSecSuccess,
+              let code = staticCode else { return false }
+        return SecStaticCodeCheckValidity(code, [], nil) == errSecSuccess
     }
     
     private init() {}
