@@ -370,6 +370,8 @@ class ModernLibraryBrowserView: NSView {
     
     // Rating overlay
     private var isRatingOverlayVisible: Bool = false
+    // Delayed to differentiate single-click (rate) vs double-click (cycle artwork) in art mode.
+    private var pendingArtSingleClickWorkItem: DispatchWorkItem?
     private var currentTrackRating: Int? = nil
     private var rateButtonRect: NSRect = .zero
     private var ratingSubmitTask: Task<Void, Never>?
@@ -643,6 +645,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     deinit {
+        cancelPendingArtSingleClickAction()
         NotificationCenter.default.removeObserver(self)
         stopLoadingAnimation()
         stopServerNameScroll()
@@ -2609,8 +2612,41 @@ class ModernLibraryBrowserView: NSView {
         ))
     }
     
+    private func cancelPendingArtSingleClickAction() {
+        pendingArtSingleClickWorkItem?.cancel()
+        pendingArtSingleClickWorkItem = nil
+    }
+    
+    private func scheduleArtSingleClickRatingOverlay() {
+        cancelPendingArtSingleClickAction()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.pendingArtSingleClickWorkItem = nil
+            guard self.isArtOnlyMode, !self.isVisualizingArt else { return }
+            self.showRatingOverlay()
+        }
+        
+        pendingArtSingleClickWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: workItem)
+    }
+    
+    private func handleArtOnlyContentClick(_ event: NSEvent) {
+        if event.clickCount >= 2 {
+            cancelPendingArtSingleClickAction()
+            cycleToNextArtwork()
+            return
+        }
+        
+        scheduleArtSingleClickRatingOverlay()
+    }
+    
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        
+        // Any new click should clear a pending single-click action unless this click
+        // re-schedules/handles the art-only interaction.
+        cancelPendingArtSingleClickAction()
 
         // When HT is on, record drag start point early so mouseDragged can move the window
         // from anywhere (title bar is hidden so there's no dedicated drag handle)
@@ -2656,13 +2692,14 @@ class ModernLibraryBrowserView: NSView {
         // Search bar
         if hitTestSearchBar(at: point) { window?.makeFirstResponder(self); return }
         
-        // Art-only mode: visualization click cycles effects, normal click cycles artwork
+        // Art-only mode: visualization click cycles effects.
+        // In non-visualizer art mode, single-click rates and double-click cycles artwork.
         // (checked AFTER server bar, tabs, and search bar so those still work)
         if isArtOnlyMode && isVisualizingArt && hitTestContentArea(at: point) {
             nextVisEffect(); return
         }
         if isArtOnlyMode && !isVisualizingArt && hitTestContentArea(at: point) {
-            cycleToNextArtwork(); return
+            handleArtOnlyContentClick(event); return
         }
         
         // Column resize (check before sort so edge-drag doesn't trigger sort)
@@ -2779,6 +2816,8 @@ class ModernLibraryBrowserView: NSView {
     }
     
     override func rightMouseDown(with event: NSEvent) {
+        cancelPendingArtSingleClickAction()
+        
         let point = convert(event.locationInWindow, from: nil)
         
         // Right-click on column header: show column visibility menu

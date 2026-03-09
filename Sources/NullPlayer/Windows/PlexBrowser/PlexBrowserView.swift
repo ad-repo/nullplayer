@@ -780,6 +780,10 @@ class PlexBrowserView: NSView {
     /// Whether the rating overlay is visible
     private var isRatingOverlayVisible: Bool = false
     
+    /// Pending single-click action for art-only content clicks.
+    /// Delayed to distinguish single-click (rate) from double-click (cycle art).
+    private var pendingArtSingleClickWorkItem: DispatchWorkItem?
+    
     /// Current user rating for the playing Plex track (0-10, nil if unrated)
     private var currentTrackRating: Int? = nil
     
@@ -1518,6 +1522,7 @@ class PlexBrowserView: NSView {
     }
     
     deinit {
+        cancelPendingArtSingleClickAction()
         NotificationCenter.default.removeObserver(self)
         stopLoadingAnimation()
         stopServerNameScroll()
@@ -6647,6 +6652,8 @@ class PlexBrowserView: NSView {
     }
     
     override func rightMouseDown(with event: NSEvent) {
+        cancelPendingArtSingleClickAction()
+        
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
         
@@ -6909,9 +6916,42 @@ class PlexBrowserView: NSView {
         return contentRect.contains(point)
     }
     
+    private func cancelPendingArtSingleClickAction() {
+        pendingArtSingleClickWorkItem?.cancel()
+        pendingArtSingleClickWorkItem = nil
+    }
+    
+    private func scheduleArtSingleClickRatingOverlay() {
+        cancelPendingArtSingleClickAction()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.pendingArtSingleClickWorkItem = nil
+            guard self.isArtOnlyMode, !self.isVisualizingArt else { return }
+            self.showRatingOverlay()
+        }
+        
+        pendingArtSingleClickWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: workItem)
+    }
+    
+    private func handleArtOnlyContentClick(_ event: NSEvent) {
+        if event.clickCount >= 2 {
+            cancelPendingArtSingleClickAction()
+            cycleToNextArtwork()
+            return
+        }
+        
+        scheduleArtSingleClickRatingOverlay()
+    }
+    
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
+        
+        // Any new click should clear a pending single-click action unless this click
+        // re-schedules/handles the art-only interaction.
+        cancelPendingArtSingleClickAction()
         
         // In visualization mode, click anywhere in content to cycle effects
         if isArtOnlyMode && isVisualizingArt && hitTestContentArea(at: skinPoint) {
@@ -6919,9 +6959,10 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // In art-only mode without visualization, cycle through artwork images
+        // In art-only mode without visualization:
+        // single-click opens rating overlay, double-click cycles artwork.
         if isArtOnlyMode && !isVisualizingArt && hitTestContentArea(at: skinPoint) {
-            cycleToNextArtwork()
+            handleArtOnlyContentClick(event)
             return
         }
         
