@@ -538,16 +538,27 @@ class ModernEQView: NSView {
             context.saveGState()
             context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
                               color: color.withAlphaComponent(0.8).cgColor)
-            str.draw(at: origin)
+            drawTextUnattenuated(in: context) {
+                str.draw(at: origin)
+            }
             context.restoreGState()
         }
-        str.draw(at: origin)
+        drawTextUnattenuated(in: context) {
+            str.draw(at: origin)
+        }
     }
 
     private func withContextAlpha(_ alpha: CGFloat, context: CGContext, draw: () -> Void) {
         let resolvedAlpha = min(1.0, max(0.0, alpha))
         context.saveGState()
         context.setAlpha(resolvedAlpha)
+        draw()
+        context.restoreGState()
+    }
+
+    private func drawTextUnattenuated(in context: CGContext, draw: () -> Void) {
+        context.saveGState()
+        context.setAlpha(1.0)
         draw()
         context.restoreGState()
     }
@@ -599,15 +610,20 @@ class ModernEQView: NSView {
         ]
         let str = NSAttributedString(string: label, attributes: attrs)
         let size = str.size()
-        str.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+        let textOrigin = NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2)
+        drawTextUnattenuated(in: context) {
+            str.draw(at: textOrigin)
+        }
         context.restoreGState()
         if isActive { // second pass for crisp text
             let attrs2: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: skin.applyTextOpacity(to: color)
             ]
-            NSAttributedString(string: label, attributes: attrs2).draw(
-                at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+            let crisp = NSAttributedString(string: label, attributes: attrs2)
+            drawTextUnattenuated(in: context) {
+                crisp.draw(at: textOrigin)
+            }
         }
     }
     
@@ -634,7 +650,9 @@ class ModernEQView: NSView {
         ]
         let str = NSAttributedString(string: label, attributes: attrs)
         let size = str.size()
-        str.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+        drawTextUnattenuated(in: context) {
+            str.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+        }
     }
     
     // MARK: - Slider Drawing

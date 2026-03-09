@@ -878,7 +878,7 @@ class ModernLibraryBrowserView: NSView {
         let textSize = label.size(withAttributes: attrs)
         let textOrigin = NSPoint(x: rect.midX - textSize.width / 2,
                                   y: rect.midY - textSize.height / 2)
-        label.draw(at: textOrigin, withAttributes: attrs)
+        drawText(label, at: textOrigin, withAttributes: attrs, context: context)
         
         context.restoreGState()
     }
@@ -907,7 +907,7 @@ class ModernLibraryBrowserView: NSView {
             .foregroundColor: skin.applyTextOpacity(to: dimColor)
         ]
         let prefix = "Source: "
-        prefix.draw(at: NSPoint(x: barRect.minX + 4 * m, y: textY), withAttributes: prefixAttrs)
+        drawText(prefix, at: NSPoint(x: barRect.minX + 4 * m, y: textY), withAttributes: prefixAttrs, context: context)
         let prefixWidth = prefix.size(withAttributes: prefixAttrs).width
         let sourceNameStartX = barRect.minX + 4 * m + prefixWidth
         
@@ -924,7 +924,7 @@ class ModernLibraryBrowserView: NSView {
         let refreshText = "F5"
         let refreshWidth = refreshText.size(withAttributes: prefixAttrs).width
         let refreshX = barRect.maxX - refreshWidth - 8 * m
-        refreshText.draw(at: NSPoint(x: refreshX, y: textY), withAttributes: prefixAttrs)
+        drawText(refreshText, at: NSPoint(x: refreshX, y: textY), withAttributes: prefixAttrs, context: context)
         
         // ART toggle button (modern boxed toggle style)
         let artText = "ART"
@@ -989,19 +989,19 @@ class ModernLibraryBrowserView: NSView {
         switch currentSource {
         case .local:
             let sourceText = "Local Files"
-            sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
+            drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
             
             let addText = "+ADD"
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
-            addText.draw(at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs)
+            drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
             
             // Item count (only in list mode, not art-only)
             if !isArtOnlyMode {
                 let countText = "\(displayItems.count) items"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
-                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
+                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             }
             
         case .plex(let serverId):
@@ -1023,7 +1023,7 @@ class ModernLibraryBrowserView: NSView {
 
                 let libLabel = "Lib:"
                 let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
-                libLabel.draw(at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs)
+                drawText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs, context: context)
                 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
                 let libraryX = libraryLabelX + libLabelWidth + 4 * m
@@ -1051,13 +1051,13 @@ class ModernLibraryBrowserView: NSView {
                     let countText = "\(itemCount) ITEMS"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
-                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
+                    drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
                 }
             } else {
                 let linkText = "Click to link your Plex account"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
                 let linkX = barRect.midX - linkWidth / 2
-                linkText.draw(at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs)
+                drawText(linkText, at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs, context: context)
             }
             
         case .subsonic(let serverId):
@@ -1076,7 +1076,7 @@ class ModernLibraryBrowserView: NSView {
 
                 let libLabel = "Lib:"
                 let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
-                libLabel.draw(at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs)
+                drawText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs, context: context)
 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
                 let libraryX = libraryLabelX + libLabelWidth + 4 * m
@@ -1095,13 +1095,13 @@ class ModernLibraryBrowserView: NSView {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
-                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
+                    drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
                 }
             } else {
                 let linkText = "Click to add a Subsonic server"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
                 let linkX = barRect.midX - linkWidth / 2
-                linkText.draw(at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs)
+                drawText(linkText, at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs, context: context)
             }
             
         case .jellyfin(let serverId):
@@ -1120,7 +1120,7 @@ class ModernLibraryBrowserView: NSView {
 
                 let libLabel = "Lib:"
                 let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
-                libLabel.draw(at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs)
+                drawText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs, context: context)
 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
                 let libraryX = libraryLabelX + libLabelWidth + 4 * m
@@ -1139,13 +1139,13 @@ class ModernLibraryBrowserView: NSView {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
-                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
+                    drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
                 }
             } else {
                 let linkText = "Click to add a Jellyfin server"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
                 let linkX = barRect.midX - linkWidth / 2
-                linkText.draw(at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs)
+                drawText(linkText, at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs, context: context)
             }
 
         case .emby(let serverId):
@@ -1164,7 +1164,7 @@ class ModernLibraryBrowserView: NSView {
 
                 let libLabel = "Lib:"
                 let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * m
-                libLabel.draw(at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs)
+                drawText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), withAttributes: prefixAttrs, context: context)
 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
                 let libraryX = libraryLabelX + libLabelWidth + 4 * m
@@ -1183,30 +1183,30 @@ class ModernLibraryBrowserView: NSView {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
-                    countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
+                    drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
                 }
             } else {
                 let linkText = "Click to add an Emby server"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
                 let linkX = barRect.midX - linkWidth / 2
-                linkText.draw(at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs)
+                drawText(linkText, at: NSPoint(x: linkX, y: textY), withAttributes: prefixAttrs, context: context)
             }
 
         case .radio:
             let sourceText = "Internet Radio"
-            sourceText.draw(at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs)
+            drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
             
             let addText = "+ADD"
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
-            addText.draw(at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs)
+            drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
             
             // Item count (only in list mode, not art-only)
             if !isArtOnlyMode {
                 let countText = "\(displayItems.count) stations"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
-                countText.draw(at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs)
+                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             }
         }
     }
@@ -1226,7 +1226,7 @@ class ModernLibraryBrowserView: NSView {
         guard textWidth > availableWidth else {
             context.saveGState()
             context.clip(to: NSRect(x: startX, y: textY, width: availableWidth, height: textHeight))
-            text.draw(at: NSPoint(x: startX, y: textY), withAttributes: attributes)
+            drawText(text, at: NSPoint(x: startX, y: textY), withAttributes: attributes, context: context)
             context.restoreGState()
             return
         }
@@ -1241,9 +1241,40 @@ class ModernLibraryBrowserView: NSView {
         for pass in 0..<2 {
             let baseX = startX - scrollOffset + CGFloat(pass) * totalCycleWidth
             if baseX + totalCycleWidth < startX || baseX > startX + availableWidth { continue }
-            text.draw(at: NSPoint(x: baseX, y: textY), withAttributes: attributes)
+            drawText(text, at: NSPoint(x: baseX, y: textY), withAttributes: attributes, context: context)
         }
 
+        context.restoreGState()
+    }
+
+    /// Draw string text without inheriting parent content alpha attenuation.
+    private func drawText(_ text: String, at point: NSPoint,
+                          withAttributes attributes: [NSAttributedString.Key: Any],
+                          context: CGContext) {
+        context.saveGState()
+        context.setAlpha(1.0)
+        text.draw(at: point, withAttributes: attributes)
+        context.restoreGState()
+    }
+
+    /// Draw wrapped/truncated string text without inheriting parent content alpha attenuation.
+    private func drawText(_ text: String, in rect: NSRect,
+                          withAttributes attributes: [NSAttributedString.Key: Any],
+                          context: CGContext) {
+        context.saveGState()
+        context.setAlpha(1.0)
+        text.draw(in: rect, withAttributes: attributes)
+        context.restoreGState()
+    }
+
+    /// Draw wrapped/truncated text without inheriting parent content alpha attenuation.
+    private func drawText(_ text: String, in rect: NSRect,
+                          options: NSString.DrawingOptions,
+                          withAttributes attributes: [NSAttributedString.Key: Any],
+                          context: CGContext) {
+        context.saveGState()
+        context.setAlpha(1.0)
+        text.draw(with: rect, options: options, attributes: attributes)
         context.restoreGState()
     }
 
@@ -1310,7 +1341,7 @@ class ModernLibraryBrowserView: NSView {
         ]
         let textSize = displayText.size(withAttributes: attrs)
         let textY = searchRect.minY + (searchRect.height - textSize.height) / 2
-        displayText.draw(at: NSPoint(x: searchRect.minX + 6, y: textY), withAttributes: attrs)
+        drawText(displayText, at: NSPoint(x: searchRect.minX + 6, y: textY), withAttributes: attrs, context: context)
         
         // Draw cursor
         if isFocused && !searchQuery.isEmpty {
@@ -1417,7 +1448,7 @@ class ModernLibraryBrowserView: NSView {
                         .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor),
                         .font: skin.scaledSystemFont(size: 6.4)
                     ]
-                    indicator.draw(at: NSPoint(x: textX - 12, y: itemRect.midY - 5), withAttributes: indicatorAttrs)
+                    drawText(indicator, at: NSPoint(x: textX - 12, y: itemRect.midY - 5), withAttributes: indicatorAttrs, context: context)
                 }
                 
                 // Main text
@@ -1428,7 +1459,7 @@ class ModernLibraryBrowserView: NSView {
                 ]
                 let textRect = NSRect(x: textX, y: itemRect.minY + 2,
                                      width: itemRect.width - indent - 60, height: itemHeight - 4)
-                item.title.draw(in: textRect, withAttributes: attrs)
+                drawText(item.title, in: textRect, withAttributes: attrs, context: context)
                 
                 // Secondary info
                 if let info = item.info {
@@ -1441,8 +1472,7 @@ class ModernLibraryBrowserView: NSView {
                     let infoX = browseMode == .radio
                         ? (itemRect.midX - infoSize.width / 2)
                         : (itemRect.maxX - infoSize.width - 4)
-                    info.draw(at: NSPoint(x: infoX, y: itemRect.midY - infoSize.height / 2),
-                             withAttributes: infoAttrs)
+                    drawText(info, at: NSPoint(x: infoX, y: itemRect.midY - infoSize.height / 2), withAttributes: infoAttrs, context: context)
                 }
             }
         }
@@ -1485,7 +1515,7 @@ class ModernLibraryBrowserView: NSView {
             let textSize = column.title.size(withAttributes: attrs)
             let textY = rect.minY + (columnHeaderHeight - textSize.height) / 2
             let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4)
-            column.title.draw(at: NSPoint(x: textX, y: textY), withAttributes: attrs)
+            drawText(column.title, at: NSPoint(x: textX, y: textY), withAttributes: attrs, context: context)
             
             if isSortColumn {
                 let indicator = columnSortAscending ? "▲" : "▼"
@@ -1493,7 +1523,7 @@ class ModernLibraryBrowserView: NSView {
                     .font: skin.scaledSystemFont(size: 5.6),
                     .foregroundColor: skin.applyTextOpacity(to: sortedHeaderColor)
                 ]
-                indicator.draw(at: NSPoint(x: textX + textSize.width + 3, y: textY + 1), withAttributes: indicatorAttrs)
+                drawText(indicator, at: NSPoint(x: textX + textSize.width + 3, y: textY + 1), withAttributes: indicatorAttrs, context: context)
             }
             
             if index < columns.count - 1 {
@@ -1547,7 +1577,13 @@ class ModernLibraryBrowserView: NSView {
             let maxTextWidth = width - 8
             
             let drawRect = NSRect(x: textX, y: textY, width: maxTextWidth, height: textSize.height)
-            value.draw(with: drawRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs)
+            drawText(
+                value,
+                in: drawRect,
+                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                withAttributes: attrs,
+                context: context
+            )
             
             x += width
         }
@@ -1562,8 +1598,7 @@ class ModernLibraryBrowserView: NSView {
             .font: NSFont.systemFont(ofSize: 12)
         ]
         let size = message.size(withAttributes: attrs)
-        message.draw(at: NSPoint(x: listRect.midX - size.width / 2, y: listRect.midY - size.height / 2),
-                    withAttributes: attrs)
+        drawText(message, at: NSPoint(x: listRect.midX - size.width / 2, y: listRect.midY - size.height / 2), withAttributes: attrs, context: context)
         
         let hint = "Click the server bar above to link"
         let hintAttrs: [NSAttributedString.Key: Any] = [
@@ -1571,8 +1606,7 @@ class ModernLibraryBrowserView: NSView {
             .font: NSFont.systemFont(ofSize: 10)
         ]
         let hintSize = hint.size(withAttributes: hintAttrs)
-        hint.draw(at: NSPoint(x: listRect.midX - hintSize.width / 2, y: listRect.midY - size.height / 2 - 20),
-                 withAttributes: hintAttrs)
+        drawText(hint, at: NSPoint(x: listRect.midX - hintSize.width / 2, y: listRect.midY - size.height / 2 - 20), withAttributes: hintAttrs, context: context)
     }
     
     private func drawLoadingState(in context: CGContext, listRect: NSRect, skin: ModernSkin) {
@@ -1610,8 +1644,7 @@ class ModernLibraryBrowserView: NSView {
             .font: NSFont.systemFont(ofSize: 11)
         ]
         let size = message.size(withAttributes: attrs)
-        message.draw(at: NSPoint(x: listRect.midX - size.width / 2, y: listRect.midY - size.height / 2),
-                    withAttributes: attrs)
+        drawText(message, at: NSPoint(x: listRect.midX - size.width / 2, y: listRect.midY - size.height / 2), withAttributes: attrs, context: context)
     }
     
     private func drawEmptyState(in context: CGContext, listRect: NSRect, skin: ModernSkin) {
@@ -1641,7 +1674,7 @@ class ModernLibraryBrowserView: NSView {
         let textSize = message.size(withAttributes: attrs)
         let textX = listRect.midX - textSize.width / 2
         let textY = listRect.midY - textSize.height / 2
-        message.draw(at: NSPoint(x: textX, y: textY), withAttributes: attrs)
+        drawText(message, at: NSPoint(x: textX, y: textY), withAttributes: attrs, context: context)
     }
     
     // MARK: - Art Only Area
@@ -1677,8 +1710,8 @@ class ModernLibraryBrowserView: NSView {
                 .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
             ]
             let textSize = message.size(withAttributes: attrs)
-            message.draw(at: NSPoint(x: contentRect.midX - textSize.width / 2,
-                                      y: contentRect.midY - textSize.height / 2), withAttributes: attrs)
+            drawText(message, at: NSPoint(x: contentRect.midX - textSize.width / 2,
+                                      y: contentRect.midY - textSize.height / 2), withAttributes: attrs, context: context)
         }
     }
     
@@ -1714,7 +1747,7 @@ class ModernLibraryBrowserView: NSView {
                 x: letterRect.midX - letterSize.width / 2,
                 y: letterRect.midY - letterSize.height / 2
             )
-            letter.draw(at: drawPoint, withAttributes: attrs)
+            drawText(letter, at: drawPoint, withAttributes: attrs, context: context)
         }
     }
     

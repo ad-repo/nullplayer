@@ -839,10 +839,9 @@ class ModernMainWindowView: NSView {
     /// Apply `window.areaOpacity.trackDisplay.content` (and `mainWindow.content`) to the marquee layer,
     /// which is rendered as a separate CALayer outside CGContext draw passes.
     private func updateMarqueeOpacity() {
-        let skin = renderer.skin
-        let mainContentOpacity = skin.resolvedOpacity(for: .mainWindow).content
-        let trackContentOpacity = skin.resolvedOpacity(for: .trackDisplay).content
-        marqueeLayer?.opacity = Float(min(1.0, max(0.0, mainContentOpacity * trackContentOpacity)))
+        // Keep marquee text opacity independent from window/content alpha channels.
+        // Text opacity is applied through text color (`window.textOpacity`) in ModernMarqueeLayer.
+        marqueeLayer?.opacity = 1.0
     }
 
     /// Apply spectrum content opacity to the optional Metal overlay view.

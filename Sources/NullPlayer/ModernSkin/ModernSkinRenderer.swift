@@ -487,7 +487,9 @@ class ModernSkinRenderer {
                 let charStr = NSAttributedString(string: String(glyph.char), attributes: attrs)
                 let charSize = charStr.size()
                 let charY = rect.midY - charSize.height / 2 + verticalOffset
-                charStr.draw(at: NSPoint(x: x, y: charY))
+                drawTextUnattenuated(in: context) {
+                    charStr.draw(at: NSPoint(x: x, y: charY))
+                }
             }
             x += glyph.width + charSpacing
         }
@@ -531,7 +533,9 @@ class ModernSkinRenderer {
         if skin.config.glow.enabled {
             drawTextWithGlow(titleStr, at: titleOrigin, glowColor: titleColor, context: context)
         } else {
-            titleStr.draw(at: titleOrigin)
+            drawTextUnattenuated(in: context) {
+                titleStr.draw(at: titleOrigin)
+            }
         }
         drawX += titleSize.width
         
@@ -625,6 +629,9 @@ class ModernSkinRenderer {
             return
         }
         
+        // Time digits are text-like content: keep them independent from parent window/content alpha.
+        context.saveGState()
+        context.setAlpha(skin.textOpacityMultiplier)
         if let img = skin.image(for: imageName) {
             // Use pixel art rendering for crisp scaling of small digit sprites
             drawPixelArtImage(img, in: scaledR, context: context)
@@ -632,6 +639,7 @@ class ModernSkinRenderer {
             // Programmatic 7-segment LED rendering
             draw7SegmentChar(character, in: scaledR, context: context)
         }
+        context.restoreGState()
     }
     
     /// Draw a character as a 7-segment LED display
@@ -910,7 +918,9 @@ class ModernSkinRenderer {
         if isOn && skin.config.glow.enabled {
             drawTextWithGlow(str, at: origin, glowColor: skin.applyTextOpacity(to: onColor), context: context)
         } else {
-            str.draw(at: origin)
+            drawTextUnattenuated(in: context) {
+                str.draw(at: origin)
+            }
         }
     }
     
@@ -932,7 +942,9 @@ class ModernSkinRenderer {
         ]
         
         let str = NSAttributedString(string: text, attributes: attrs)
-        str.draw(in: scaledR)
+        drawTextUnattenuated(in: context) {
+            str.draw(in: scaledR)
+        }
     }
     
     /// Draw a text label with glow effect
@@ -959,9 +971,13 @@ class ModernSkinRenderer {
         context.saveGState()
         context.setShadow(offset: .zero, blur: 3 * scaleFactor * glowMultiplier,
                           color: resolvedTextColor.withAlphaComponent(0.7).cgColor)
-        str.draw(in: scaledR)
+        drawTextUnattenuated(in: context) {
+            str.draw(in: scaledR)
+        }
         context.restoreGState()
-        str.draw(in: scaledR)
+        drawTextUnattenuated(in: context) {
+            str.draw(in: scaledR)
+        }
     }
     
     /// Draw a window control button (close, minimize, shade)
@@ -1170,7 +1186,9 @@ class ModernSkinRenderer {
                 x: buttonRect.midX - size.width / 2,
                 y: buttonRect.midY - size.height / 2
             )
-            str.draw(at: textOrigin)
+            drawTextUnattenuated(in: context) {
+                str.draw(at: textOrigin)
+            }
         }
     }
     
@@ -1209,11 +1227,24 @@ class ModernSkinRenderer {
         context.saveGState()
         context.setShadow(offset: .zero, blur: 4 * scaleFactor * glowMultiplier,
                           color: glowColor.withAlphaComponent(0.6).cgColor)
-        attributedString.draw(at: point)
+        drawTextUnattenuated(in: context) {
+            attributedString.draw(at: point)
+        }
         context.restoreGState()
         
         // Draw crisp text on top
-        attributedString.draw(at: point)
+        drawTextUnattenuated(in: context) {
+            attributedString.draw(at: point)
+        }
+    }
+
+    /// Draw string text at full context alpha so text-opacity is controlled only
+    /// by text color alpha channels (including `window.textOpacity`).
+    private func drawTextUnattenuated(in context: CGContext, draw: () -> Void) {
+        context.saveGState()
+        context.setAlpha(1.0)
+        draw()
+        context.restoreGState()
     }
     
     // MARK: - Shared Panel Drawing
