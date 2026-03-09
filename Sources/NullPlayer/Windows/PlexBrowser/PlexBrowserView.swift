@@ -509,6 +509,13 @@ class PlexBrowserView: NSView {
         // Sort the sortable items
         let ascending = columnSortAscending
         sortableItems.sort { a, b in
+            // Date columns: sort by raw date, not formatted string
+            if sortColumn.id == "dateAdded" || sortColumn.id == "lastPlayed" {
+                let aDate = a.columnDateValue(for: sortColumn) ?? .distantPast
+                let bDate = b.columnDateValue(for: sortColumn) ?? .distantPast
+                return ascending ? aDate < bDate : aDate > bDate
+            }
+
             let aVal = a.columnValue(for: sortColumn)
             let bVal = b.columnValue(for: sortColumn)
             
@@ -16182,10 +16189,12 @@ private struct BrowserColumn {
     static let size = BrowserColumn(id: "size", title: "Size", minWidth: 55)
     static let rating = BrowserColumn(id: "rating", title: "Rating", minWidth: 70)
     static let playCount = BrowserColumn(id: "plays", title: "Plays", minWidth: 45)
+    static let dateAdded = BrowserColumn(id: "dateAdded", title: "Date Added", minWidth: 80)
+    static let lastPlayed = BrowserColumn(id: "lastPlayed", title: "Last Played", minWidth: 80)
     
     /// Columns shown for track lists
     static let trackColumns: [BrowserColumn] = [
-        .trackNumber, .title, .artist, .album, .year, .genre, .duration, .bitrate, .size, .rating, .playCount
+        .trackNumber, .title, .artist, .album, .year, .genre, .duration, .bitrate, .size, .rating, .playCount, .dateAdded, .lastPlayed
     ]
     
     /// Columns shown for album lists  
@@ -16257,6 +16266,28 @@ extension PlexDisplayItem {
             return ""
         }
     }
+
+    /// Returns the raw sortable date for a column, if applicable
+    func columnDateValue(for column: BrowserColumn) -> Date? {
+        switch column.id {
+        case "dateAdded":
+            switch type {
+            case .localTrack(let t): return t.dateAdded
+            case .track(let t): return t.addedAt
+            case .subsonicTrack(let s): return s.created
+            case .jellyfinTrack(let s): return s.created
+            case .embyTrack(let s): return s.created
+            default: return nil
+            }
+        case "lastPlayed":
+            switch type {
+            case .localTrack(let t): return t.lastPlayed
+            default: return nil
+            }
+        default:
+            return nil
+        }
+    }
     
     // MARK: - Plex Track Values
     
@@ -16286,6 +16317,10 @@ extension PlexDisplayItem {
             return Self.formatRating(track.userRating)
         case "plays":
             return track.ratingCount.map { String($0) } ?? ""
+        case "dateAdded":
+            return track.addedAt.map { Self.formatDate($0) } ?? ""
+        case "lastPlayed":
+            return ""
         default:
             return ""
         }
@@ -16319,6 +16354,10 @@ extension PlexDisplayItem {
             return song.starred != nil ? "★★★★★" : ""
         case "plays":
             return song.playCount.map { String($0) } ?? ""
+        case "dateAdded":
+            return song.created.map { Self.formatDate($0) } ?? ""
+        case "lastPlayed":
+            return ""
         default:
             return ""
         }
@@ -16351,6 +16390,10 @@ extension PlexDisplayItem {
             return ""  // Local files don't have ratings yet
         case "plays":
             return track.playCount > 0 ? String(track.playCount) : ""
+        case "dateAdded":
+            return Self.formatDate(track.dateAdded)
+        case "lastPlayed":
+            return track.lastPlayed.map { Self.formatDate($0) } ?? ""
         default:
             return ""
         }
@@ -16473,6 +16516,10 @@ extension PlexDisplayItem {
             return song.isFavorite ? "★★★★★" : ""
         case "plays":
             return song.playCount.map { String($0) } ?? ""
+        case "dateAdded":
+            return song.created.map { Self.formatDate($0) } ?? ""
+        case "lastPlayed":
+            return ""
         default:
             return ""
         }
@@ -16553,5 +16600,16 @@ extension PlexDisplayItem {
     private static func formatStarRating(_ rating: Int) -> String {
         let clamped = min(5, max(0, rating))
         return String(repeating: "★", count: clamped) + String(repeating: "☆", count: 5 - clamped)
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }()
+
+    private static func formatDate(_ date: Date) -> String {
+        dateFormatter.string(from: date)
     }
 }
