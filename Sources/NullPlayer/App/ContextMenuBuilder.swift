@@ -2567,15 +2567,14 @@ class MenuActions: NSObject {
     private func relaunchApp() {
         guard let bundleURL = Bundle.main.bundleURL as URL? else { return }
         
-        // Use a small delay so the current process can begin terminating
-        // before the new instance tries to launch
-        let bundlePath = bundleURL.path
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            task.arguments = [bundlePath]
-            try? task.run()
-        }
+        // Spawn a detached shell that sleeps 0.5s then opens the bundle.
+        // Must be launched BEFORE NSApp.terminate so it survives the parent's exit
+        // (macOS reparents orphaned children to launchd). Pass the path as $1
+        // (positional arg) to avoid any shell-injection risk.
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 0.5 && /usr/bin/open \"$1\"", "--", bundleURL.path]
+        try? task.run()
 
         NSApp.terminate(nil)
     }
