@@ -61,6 +61,37 @@ final class WindowManagerEdgeOcclusionTests: XCTestCase {
         assertRange(segments.right[0], equals: 0...100)
     }
 
+    func testDragAdjustedFrameKeepsDockedBottomEdgeConnectedWhenPeerFrameLags() {
+        // Main window already moved this drag tick.
+        let mainMovedFrame = NSRect(x: 50, y: 0, width: 100, height: 100)
+        // EQ window still reports prior frame momentarily (mixed-timing state).
+        let eqLaggingFrame = NSRect(x: 0, y: -100, width: 100, height: 100)
+        // Stored drag-group offset captured at drag start.
+        let eqOffset = NSPoint(x: 0, y: -100)
+
+        let laggingSegments = WindowManager.computeEdgeOcclusionSegments(
+            frame: mainMovedFrame,
+            otherFrames: [eqLaggingFrame],
+            dockThreshold: 2
+        )
+        XCTAssertEqual(laggingSegments.bottom.count, 1)
+        assertRange(laggingSegments.bottom[0], equals: 0...50)
+
+        let adjustedEQ = WindowManager.dragAdjustedFrame(
+            windowFrame: eqLaggingFrame,
+            draggingFrame: mainMovedFrame,
+            offsetFromDragging: eqOffset
+        )
+        let stableSegments = WindowManager.computeEdgeOcclusionSegments(
+            frame: mainMovedFrame,
+            otherFrames: [adjustedEQ],
+            dockThreshold: 2
+        )
+
+        XCTAssertEqual(stableSegments.bottom.count, 1)
+        assertRange(stableSegments.bottom[0], equals: 0...100)
+    }
+
     private func assertRange(_ actual: ClosedRange<CGFloat>, equals expected: ClosedRange<CGFloat>, accuracy: CGFloat = 0.001, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(actual.lowerBound, expected.lowerBound, accuracy: accuracy, file: file, line: line)
         XCTAssertEqual(actual.upperBound, expected.upperBound, accuracy: accuracy, file: file, line: line)

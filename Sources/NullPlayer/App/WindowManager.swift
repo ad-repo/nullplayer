@@ -2503,10 +2503,39 @@ class WindowManager {
         return edges
     }
 
+    /// Returns a frame suitable for edge-occlusion calculations.
+    ///
+    /// During active drag-group moves, windows can briefly report mixed frame
+    /// timing. Derive group members from the dragging window + stored offset.
+    private func edgeOcclusionFrame(for window: NSWindow) -> NSRect {
+        guard let dragging = draggingWindow else { return window.frame }
+        if window === dragging { return dragging.frame }
+        if let offset = dockedWindowOffsets[ObjectIdentifier(window)] {
+            return Self.dragAdjustedFrame(
+                windowFrame: window.frame,
+                draggingFrame: dragging.frame,
+                offsetFromDragging: offset
+            )
+        }
+        return window.frame
+    }
+
+    /// Pure helper for deriving a drag-group member frame from the dragging
+    /// window's frame plus stored relative offset. Used by runtime logic and tests.
+    static func dragAdjustedFrame(windowFrame: NSRect, draggingFrame: NSRect, offsetFromDragging: NSPoint) -> NSRect {
+        NSRect(
+            origin: NSPoint(
+                x: draggingFrame.origin.x + offsetFromDragging.x,
+                y: draggingFrame.origin.y + offsetFromDragging.y
+            ),
+            size: windowFrame.size
+        )
+    }
+
     private func _computeEdgeOcclusionSegmentsImpl(for window: NSWindow) -> EdgeOcclusionSegments {
-        let frame = window.frame
+        let frame = edgeOcclusionFrame(for: window)
         let otherFrames = allWindows().compactMap { other in
-            other === window ? nil : other.frame
+            other === window ? nil : edgeOcclusionFrame(for: other)
         }
         return Self.computeEdgeOcclusionSegments(frame: frame, otherFrames: otherFrames, dockThreshold: dockThreshold)
     }
