@@ -742,6 +742,10 @@ class PlexBrowserView: NSView {
     private var serverScrollTimer: Timer?
     private var lastServerName: String = ""
     private var lastLibraryName: String = ""
+
+    /// Cached skin renderer — avoids recreating (and discarding its whiteTextImage cache) every frame
+    private var cachedRenderer: SkinRenderer?
+    private var cachedRendererSkinPath: String?
     
     /// Shade mode state
     private(set) var isShadeMode = false
@@ -1493,6 +1497,7 @@ class PlexBrowserView: NSView {
         
         // Reload data for new source
         reloadData()
+        startServerNameScroll()
     }
     
     /// Clear local cached data
@@ -1529,8 +1534,13 @@ class PlexBrowserView: NSView {
         stopVisualizerTimer()
     }
     
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        startServerNameScroll()
+    }
+
     // MARK: - Scaling Support
-    
+
     /// Get the original window size for drawing and hit testing
     /// Normal mode uses actual bounds (no scaling), shade mode uses fixed reference size
     private var originalWindowSize: NSSize {
@@ -1595,7 +1605,12 @@ class PlexBrowserView: NSView {
         
         // Use current skin
         let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
-        let renderer = SkinRenderer(skin: skin)
+        let skinPath = WindowManager.shared.currentSkinPath ?? "default"
+        if cachedRenderer == nil || cachedRendererSkinPath != skinPath {
+            cachedRenderer = SkinRenderer(skin: skin)
+            cachedRendererSkinPath = skinPath
+        }
+        let renderer = cachedRenderer!
         let isActive = window?.isKeyWindow ?? true
         
         // Flip coordinate system to match skin's top-down coordinates
@@ -1630,52 +1645,56 @@ class PlexBrowserView: NSView {
             renderer.drawPlexBrowserShade(in: context, bounds: drawBounds, isActive: isActive,
                                           pressedButton: pressedButton)
         } else {
-            // Calculate scroll position for scrollbar (0-1)
-            let scrollPosition = calculateScrollPosition()
-            
-            // Draw window frame using skin sprites
-            renderer.drawPlexBrowserWindow(in: context, bounds: drawBounds, isActive: isActive,
-                                           pressedButton: pressedButton, scrollPosition: scrollPosition)
-            
-            
-            // Get skin colors for content areas
             let colors = skin.playlistColors
-            
-            // Draw server/library selector bar
-            drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
-            
-            if isArtOnlyMode {
-                // Art-only mode: skip tabs and list, draw album art large
-                drawArtOnlyArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
+
+            // Fast path: scroll timer marks only server bar area dirty — skip window frame + list
+            let serverBarMinY = bounds.height - CGFloat(Layout.titleBarHeight + Layout.serverBarHeight)
+            if dirtyRect.minY >= serverBarMinY {
+                drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             } else {
-                // Normal mode: draw tabs, search, and list.
-                // Skip expensive tab+list rendering if dirtyRect is entirely in the title/server bar zone
-                // (server name scroll timer marks only serverBarArea dirty at 15Hz).
-                let belowServerBar = bounds.height - CGFloat(Layout.titleBarHeight + Layout.serverBarHeight)
-                if dirtyRect.minY < belowServerBar {
-                    // Draw tab bar
-                    drawTabBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                // Calculate scroll position for scrollbar (0-1)
+                let scrollPosition = calculateScrollPosition()
 
-                    // Draw search bar (only in search mode)
-                    if browseMode == .search {
-                        drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                // Draw window frame using skin sprites
+                renderer.drawPlexBrowserWindow(in: context, bounds: drawBounds, isActive: isActive,
+                                               pressedButton: pressedButton, scrollPosition: scrollPosition)
+
+                // Draw server/library selector bar
+                drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+
+                if isArtOnlyMode {
+                    // Art-only mode: skip tabs and list, draw album art large
+                    drawArtOnlyArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
+                } else {
+                    // Normal mode: draw tabs, search, and list.
+                    // Skip expensive tab+list rendering if dirtyRect is entirely in the title/server bar zone
+                    // (server name scroll timer marks only serverBarArea dirty at 15Hz).
+                    let belowServerBar = bounds.height - CGFloat(Layout.titleBarHeight + Layout.serverBarHeight)
+                    if dirtyRect.minY < belowServerBar {
+                        // Draw tab bar
+                        drawTabBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+
+                        // Draw search bar (only in search mode)
+                        if browseMode == .search {
+                            drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                        }
+
+                        // Draw list area or connection status
+                        // Only check Plex link status if using Plex source
+                        let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
+                        if needsPlexLink {
+                            drawNotLinkedState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                        } else if isLoading {
+                            drawLoadingState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                        } else if let error = errorMessage {
+                            drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors, renderer: renderer)
+                        } else {
+                            drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
+                        }
+
+                        // Draw status bar text
+                        drawStatusBarText(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                     }
-
-                    // Draw list area or connection status
-                    // Only check Plex link status if using Plex source
-                    let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
-                    if needsPlexLink {
-                        drawNotLinkedState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
-                    } else if isLoading {
-                        drawLoadingState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
-                    } else if let error = errorMessage {
-                        drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors, renderer: renderer)
-                    } else {
-                        drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
-                    }
-
-                    // Draw status bar text
-                    drawStatusBarText(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                 }
             }
         }
@@ -1791,13 +1810,8 @@ class PlexBrowserView: NSView {
                             width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
                             height: Layout.serverBarHeight)
         
-        // Background - use fully opaque on non-Retina to prevent compositing artifacts
-        let backingScaleForBg = NSScreen.main?.backingScaleFactor ?? 2.0
-        if backingScaleForBg < 1.5 {
-            colors.normalBackground.setFill()
-        } else {
-            colors.normalBackground.withAlphaComponent(0.6).setFill()
-        }
+        // Background - always fully opaque in classic UI
+        colors.normalBackground.setFill()
         context.fill(barRect)
         
         let charWidth = SkinElements.TextFont.charWidth
@@ -4921,7 +4935,6 @@ class PlexBrowserView: NSView {
     
     private func startServerNameScroll() {
         guard serverScrollTimer == nil else { return }
-        // Reduced from 20Hz (0.05s) to 15Hz (0.067s) for CPU efficiency
         serverScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.067, repeats: true) { [weak self] _ in
             self?.handleServerNameScrollTick()
         }
@@ -4934,15 +4947,10 @@ class PlexBrowserView: NSView {
         libraryNameScrollOffset = 0
     }
     
-    /// Handle server name scroll tick with visibility check
     private func handleServerNameScrollTick() {
-        // Skip updates if window is not visible or occluded
         guard let window = window,
               window.isVisible,
-              window.occlusionState.contains(.visible) else {
-            return
-        }
-        
+              window.occlusionState.contains(.visible) else { return }
         updateServerNameScroll()
     }
     
@@ -4965,11 +4973,9 @@ class PlexBrowserView: NSView {
             let configuredServer = manager.servers.first(where: { $0.id == serverId })
             let hasConfiguredServer = configuredServer != nil || manager.isLinked
             guard hasConfiguredServer else {
-                if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
-                    serverNameScrollOffset = 0
-                    libraryNameScrollOffset = 0
-                    needsDisplay = true
-                }
+                let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
+                stopServerNameScroll()
+                if hadOffset { needsDisplay = true }
                 return
             }
             serverName = configuredServer?.name ?? "Select Server"
@@ -4979,11 +4985,9 @@ class PlexBrowserView: NSView {
             let manager = SubsonicManager.shared
             let configuredServer = manager.servers.first(where: { $0.id == serverId })
             guard configuredServer != nil else {
-                if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
-                    serverNameScrollOffset = 0
-                    libraryNameScrollOffset = 0
-                    needsDisplay = true
-                }
+                let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
+                stopServerNameScroll()
+                if hadOffset { needsDisplay = true }
                 return
             }
             serverName = configuredServer?.name ?? "Select Server"
@@ -4993,11 +4997,9 @@ class PlexBrowserView: NSView {
             let manager = JellyfinManager.shared
             let configuredServer = manager.servers.first(where: { $0.id == serverId })
             guard configuredServer != nil else {
-                if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
-                    serverNameScrollOffset = 0
-                    libraryNameScrollOffset = 0
-                    needsDisplay = true
-                }
+                let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
+                stopServerNameScroll()
+                if hadOffset { needsDisplay = true }
                 return
             }
             serverName = configuredServer?.name ?? "Select Server"
@@ -5007,22 +5009,18 @@ class PlexBrowserView: NSView {
             let manager = EmbyManager.shared
             let configuredServer = manager.servers.first(where: { $0.id == serverId })
             guard configuredServer != nil else {
-                if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
-                    serverNameScrollOffset = 0
-                    libraryNameScrollOffset = 0
-                    needsDisplay = true
-                }
+                let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
+                stopServerNameScroll()
+                if hadOffset { needsDisplay = true }
                 return
             }
             serverName = configuredServer?.name ?? "Select Server"
             libraryName = embyCurrentLibraryName
             serverWidth = maxRemoteServerWidth
         case .local, .radio:
-            if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
-                serverNameScrollOffset = 0
-                libraryNameScrollOffset = 0
-                needsDisplay = true
-            }
+            let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
+            stopServerNameScroll()
+            if hadOffset { needsDisplay = true }
             return
         }
         
@@ -5045,24 +5043,24 @@ class PlexBrowserView: NSView {
         
         // Early exit if nothing needs scrolling
         if !serverNeedsScroll && !libraryNeedsScroll {
-            if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
-                serverNameScrollOffset = 0
-                libraryNameScrollOffset = 0
+            let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
+            stopServerNameScroll()
+            if hadOffset {
                 let serverBarArea = NSRect(x: 0, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
                                            width: bounds.width, height: Layout.serverBarHeight)
                 setNeedsDisplay(serverBarArea)
             }
             return
         }
-        
+
         var needsRedraw = false
-        
+
         // Handle server name scrolling
         if serverNeedsScroll {
             let separator = "   "
             let separatorWidth = CGFloat(separator.count) * scaledCharWidth
             let totalCycleWidth = serverTextWidth + separatorWidth
-            
+
             serverNameScrollOffset += 1
             if serverNameScrollOffset >= totalCycleWidth {
                 serverNameScrollOffset = 0
@@ -5072,13 +5070,13 @@ class PlexBrowserView: NSView {
             serverNameScrollOffset = 0
             needsRedraw = true
         }
-        
+
         // Handle library name scrolling
         if libraryNeedsScroll {
             let separator = "   "
             let separatorWidth = CGFloat(separator.count) * scaledCharWidth
             let totalCycleWidth = libraryTextWidth + separatorWidth
-            
+
             libraryNameScrollOffset += 1
             if libraryNameScrollOffset >= totalCycleWidth {
                 libraryNameScrollOffset = 0
@@ -5088,7 +5086,7 @@ class PlexBrowserView: NSView {
             libraryNameScrollOffset = 0
             needsRedraw = true
         }
-        
+
         if needsRedraw {
             let serverBarArea = NSRect(x: 0, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
                                        width: bounds.width, height: Layout.serverBarHeight)

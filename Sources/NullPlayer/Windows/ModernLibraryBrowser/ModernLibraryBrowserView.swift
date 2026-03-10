@@ -345,6 +345,13 @@ class ModernLibraryBrowserView: NSView {
     private var serverScrollTimer: Timer?
     private var lastServerName: String = ""
     private var lastLibraryName: String = ""
+
+    /// Cached server bar font and attribute dictionaries — invalidated when skin changes
+    private var cachedServerBarFont: NSFont?
+    private var cachedServerBarFontSkinName: String?
+    private var cachedPrefixAttrs: [NSAttributedString.Key: Any]?
+    private var cachedDataAttrs: [NSAttributedString.Key: Any]?
+    private var cachedActiveAttrs: [NSAttributedString.Key: Any]?
     private var serverNameTextWidth: CGFloat = 0
     private var libraryNameTextWidth: CGFloat = 0
     private var serverNameMaxWidth: CGFloat = 0
@@ -658,6 +665,11 @@ class ModernLibraryBrowserView: NSView {
         updateCornerMask()
     }
 
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        startServerNameScroll()
+    }
+
     // MARK: - Current Skin Helper
     
     private func currentSkin() -> ModernSkin {
@@ -682,7 +694,6 @@ class ModernLibraryBrowserView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
         let skin = currentSkin()
-        let renderer = ModernSkinRenderer(skin: skin)
         let mainOpacity = skin.resolvedOpacity(for: .mainWindow)
         
         if isShadeMode {
@@ -722,8 +733,20 @@ class ModernLibraryBrowserView: NSView {
             context.restoreGState()
             return
         }
-        
+
+        // Fast path: scroll timer marks only server bar dirty — skip full window redraw
+        let serverBarY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+        let sbRect = NSRect(x: 0, y: serverBarY, width: bounds.width, height: Layout.serverBarHeight)
+        if sbRect.contains(dirtyRect) {
+            context.saveGState()
+            context.setAlpha(mainOpacity.content)
+            drawServerBar(in: context, serverBarY: serverBarY, skin: skin)
+            context.restoreGState()
+            return
+        }
+
         // Normal mode - bottom-left origin (no coordinate flipping)
+        let renderer = ModernSkinRenderer(skin: skin)
         renderer.drawWindowBackground(
             in: bounds,
             context: context,
@@ -766,7 +789,6 @@ class ModernLibraryBrowserView: NSView {
         }
         
         // Server bar (below title bar in screen coords)
-        let serverBarY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
         drawServerBar(in: context, serverBarY: serverBarY, skin: skin)
         
         // Tab bar (below server bar)
@@ -895,33 +917,33 @@ class ModernLibraryBrowserView: NSView {
         
         skin.surfaceColor.withAlphaComponent(0.4).setFill()
         context.fill(barRect)
-        
-        let font = skin.sideWindowFont(size: 11)
+
         let dimColor = skin.textDimColor
         let dataColor = skin.dataColor
         let accentColor = skin.accentColor
-        
+
+        let skinName = ModernSkinEngine.shared.currentSkinName ?? "default"
+        if cachedServerBarFont == nil || cachedServerBarFontSkinName != skinName {
+            let font = skin.sideWindowFont(size: 11)
+            cachedServerBarFont = font
+            cachedServerBarFontSkinName = skinName
+            cachedPrefixAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dimColor)]
+            cachedDataAttrs   = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dataColor)]
+            cachedActiveAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: accentColor)]
+        }
+        let font = cachedServerBarFont!
+        let prefixAttrs = cachedPrefixAttrs!
+        let dataAttrs   = cachedDataAttrs!
+        let activeAttrs = cachedActiveAttrs!
+
         let m = ModernSkinElements.sizeMultiplier
         let textY = barRect.minY + (barRect.height - font.pointSize - 2 * m) / 2
-        
+
         // Common prefix
-        let prefixAttrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: skin.applyTextOpacity(to: dimColor)
-        ]
         let prefix = "Source: "
         drawText(prefix, at: NSPoint(x: barRect.minX + 4 * m, y: textY), withAttributes: prefixAttrs, context: context)
         let prefixWidth = prefix.size(withAttributes: prefixAttrs).width
         let sourceNameStartX = barRect.minX + 4 * m + prefixWidth
-        
-        let dataAttrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: skin.applyTextOpacity(to: dataColor)
-        ]
-        let activeAttrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: skin.applyTextOpacity(to: accentColor)
-        ]
         
         // Right side: F5 refresh label
         let refreshText = "F5"
@@ -5887,6 +5909,7 @@ class ModernLibraryBrowserView: NSView {
         if case .radio = currentSource { browseMode = .radio }
         else if browseMode == .radio && !currentSource.isPlex { browseMode = .artists }
         reloadData()
+        startServerNameScroll()
     }
     
     private func clearLocalCachedData() {
@@ -5966,7 +5989,7 @@ class ModernLibraryBrowserView: NSView {
             self?.handleServerNameScrollTick()
         }
     }
-    
+
     private func stopServerNameScroll() {
         serverScrollTimer?.invalidate(); serverScrollTimer = nil
         serverNameScrollOffset = 0; libraryNameScrollOffset = 0
@@ -5982,15 +6005,14 @@ class ModernLibraryBrowserView: NSView {
     private func updateServerNameScroll() {
         // serverNameMaxWidth / serverNameTextWidth are written by drawServerBar each draw cycle.
         // If nothing has been drawn yet (both zero) there is nothing to scroll.
-        guard serverNameMaxWidth > 0 else { return }
+        guard serverNameMaxWidth > 0 else { stopServerNameScroll(); return }
 
         // Local and Radio sources have fixed short labels — no scrolling needed.
         switch currentSource {
         case .local, .radio:
-            if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
-                serverNameScrollOffset = 0; libraryNameScrollOffset = 0
-                setNeedsDisplay(serverBarRect())
-            }
+            let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
+            stopServerNameScroll()
+            if hadOffset { setNeedsDisplay(serverBarRect()) }
             return
         default: break
         }
@@ -6016,6 +6038,7 @@ class ModernLibraryBrowserView: NSView {
             currentServerName = server?.name ?? "Select Server"
             currentLibraryName = embyCurrentLibraryName
         default:
+            stopServerNameScroll()
             return
         }
 
@@ -6033,10 +6056,9 @@ class ModernLibraryBrowserView: NSView {
         let libraryNeedsScroll = libraryNameMaxWidth > 0 && libraryNameTextWidth > libraryNameMaxWidth
 
         if !serverNeedsScroll && !libraryNeedsScroll {
-            if serverNameScrollOffset != 0 || libraryNameScrollOffset != 0 {
-                serverNameScrollOffset = 0; libraryNameScrollOffset = 0
-                setNeedsDisplay(serverBarRect())
-            }
+            let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
+            stopServerNameScroll()
+            if hadOffset { setNeedsDisplay(serverBarRect()) }
             return
         }
 
