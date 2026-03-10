@@ -296,7 +296,7 @@ The `elementBlur` multiplier scales the glow halos on individual UI elements (se
 | `cornerRadius` | Rounded corner radius (0 = square corners) |
 | `scale` | UI scale factor (default 1.25). Smaller = more compact, larger = bigger UI |
 | `seamlessDocking` | 0.0-1.0 joined-edge seam suppression for docked modern windows |
-| `opacity` | Base opacity for modern window chrome. **Required** |
+| `opacity` | Base opacity for modern window chrome. **Optional (default: `1.0`)** |
 | `textOpacity` | Global text-only opacity multiplier (`0.0`-`1.0`, default `1.0`) |
 | `mainSpectrumOpacity` | Main-window mini spectrum opacity override (`0.0`-`1.0`, optional) |
 | `areaOpacity` | Per-area opacity overrides for modern windows. Missing areas/channels fall back to `window.opacity` |
