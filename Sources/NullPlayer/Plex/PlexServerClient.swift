@@ -754,7 +754,12 @@ class PlexServerClient {
         }
         
         #if DEBUG
-        NSLog("PlexServerClient: Final smart playlist URL: %@", finalURL.absoluteString)
+        if var sanitized = URLComponents(url: finalURL, resolvingAgainstBaseURL: false) {
+            sanitized.queryItems = sanitized.queryItems?.map {
+                $0.name == "X-Plex-Token" ? URLQueryItem(name: $0.name, value: "<redacted>") : $0
+            }
+            NSLog("PlexServerClient: Final smart playlist URL: %@", sanitized.url?.absoluteString ?? "?")
+        }
         #endif
 
         var request = URLRequest(url: finalURL)

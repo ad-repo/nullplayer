@@ -94,13 +94,15 @@ class ModernSkinAnimation {
         isRunning = true
         lastTimestamp = CACurrentMediaTime()
 
-        timer = Timer.scheduledTimer(withTimeInterval: Self.animationInterval, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: Self.animationInterval, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             let now = CACurrentMediaTime()
             let dt = CGFloat(now - self.lastTimestamp)
             self.lastTimestamp = now
             self.update(dt: dt)
         }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     private func stopDisplayLink() {

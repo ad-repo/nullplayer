@@ -189,11 +189,38 @@ struct WindowConfig: Codable {
     let borderColor: String?
     let cornerRadius: CGFloat?
     let scale: CGFloat?        // UI scale factor (defaults to 1.25)
-    let opacity: CGFloat       // Window background opacity 0.0-1.0 (required)
+    let opacity: CGFloat       // Window background opacity 0.0-1.0 (defaults to 1.0 for old skins)
     let textOpacity: CGFloat?  // Global text opacity multiplier 0.0-1.0 (defaults to 1.0)
     let mainSpectrumOpacity: CGFloat?  // Main-window spectrum opacity override 0.0-1.0 (optional)
     let seamlessDocking: CGFloat?  // 0.0 (full borders) to 1.0 (fully hidden on docked edges). Default 0.
     let areaOpacity: AreaOpacityConfig? // Optional per-area opacity overrides
+
+    init(borderWidth: CGFloat?, borderColor: String?, cornerRadius: CGFloat?, scale: CGFloat?,
+         opacity: CGFloat, textOpacity: CGFloat?, mainSpectrumOpacity: CGFloat?,
+         seamlessDocking: CGFloat?, areaOpacity: AreaOpacityConfig?) {
+        self.borderWidth = borderWidth
+        self.borderColor = borderColor
+        self.cornerRadius = cornerRadius
+        self.scale = scale
+        self.opacity = opacity
+        self.textOpacity = textOpacity
+        self.mainSpectrumOpacity = mainSpectrumOpacity
+        self.seamlessDocking = seamlessDocking
+        self.areaOpacity = areaOpacity
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        borderWidth         = try c.decodeIfPresent(CGFloat.self, forKey: .borderWidth)
+        borderColor         = try c.decodeIfPresent(String.self,  forKey: .borderColor)
+        cornerRadius        = try c.decodeIfPresent(CGFloat.self, forKey: .cornerRadius)
+        scale               = try c.decodeIfPresent(CGFloat.self, forKey: .scale)
+        opacity             = try c.decodeIfPresent(CGFloat.self, forKey: .opacity) ?? 1.0
+        textOpacity         = try c.decodeIfPresent(CGFloat.self, forKey: .textOpacity)
+        mainSpectrumOpacity = try c.decodeIfPresent(CGFloat.self, forKey: .mainSpectrumOpacity)
+        seamlessDocking     = try c.decodeIfPresent(CGFloat.self, forKey: .seamlessDocking)
+        areaOpacity         = try c.decodeIfPresent(AreaOpacityConfig.self, forKey: .areaOpacity)
+    }
 }
 
 /// Per-area opacity styles for Modern UI regions.

@@ -311,9 +311,12 @@ class MediaLibrary {
     
     /// Whether the library is currently scanning (main thread only)
     private(set) var isScanning = false
-    
+
     /// Scan progress (0.0 - 1.0) (main thread only)
     private(set) var scanProgress: Double = 0
+
+    /// Incremented whenever a clear is requested; in-flight scans check this to discard stale results (main thread only)
+    private var scanGeneration: Int = 0
     
     /// Notification names
     static let libraryDidChangeNotification = Notification.Name("MediaLibraryDidChange")
@@ -461,6 +464,7 @@ class MediaLibrary {
     /// Clear all local media entries from the library (tracks, movies, episodes).
     /// Watch folders are preserved.
     func clearLibrary() {
+        scanGeneration += 1
         dataQueue.sync {
             tracks.removeAll()
             tracksByPath.removeAll()
@@ -478,6 +482,7 @@ class MediaLibrary {
     /// Clear music entries only (tracks + track-derived ratings).
     /// Movies, TV episodes, and watch folders are preserved.
     func clearMusicLibrary() {
+        scanGeneration += 1
         dataQueue.sync {
             tracks.removeAll()
             tracksByPath.removeAll()
@@ -491,6 +496,7 @@ class MediaLibrary {
     /// Clear movie entries only.
     /// Music tracks, TV episodes, and watch folders are preserved.
     func clearMovieLibrary() {
+        scanGeneration += 1
         dataQueue.sync {
             movies.removeAll()
             moviesByPath.removeAll()
@@ -502,6 +508,7 @@ class MediaLibrary {
     /// Clear TV entries only (episodes/shows).
     /// Music tracks, movies, and watch folders are preserved.
     func clearTVLibrary() {
+        scanGeneration += 1
         dataQueue.sync {
             episodes.removeAll()
             episodesByPath.removeAll()
@@ -709,12 +716,13 @@ class MediaLibrary {
     /// Scan a folder for audio files
     func scanFolder(_ url: URL, recursive: Bool = true) {
         guard !isScanning else { return }
-        
+
+        let gen = scanGeneration
         DispatchQueue.main.async {
             self.isScanning = true
             self.scanProgress = 0
         }
-        
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
@@ -773,11 +781,12 @@ class MediaLibrary {
             }
             
             DispatchQueue.main.async {
+                guard self.scanGeneration == gen else { return }
                 self.isScanning = false
                 self.scanProgress = 1.0
                 NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: nil)
             }
-            
+
             self.saveLibrary()
         }
     }

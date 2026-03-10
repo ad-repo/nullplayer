@@ -40,6 +40,9 @@ Both approaches use the same `skin.json` configuration file. The difference is w
            "surface": "#16213e",
            "text": "#ff6600",
            "textDim": "#664400"
+       },
+       "window": {
+           "opacity": 1.0
        }
    }
    ```
@@ -365,7 +368,7 @@ Glass style example:
 ```
 
 Migration notes:
-- Existing skins must define `window.opacity`; if omitted, `skin.json` decode fails and the skin will not load.
+- `window.opacity` is optional; if omitted, it defaults to `1.0` (fully opaque).
 - `window.textOpacity` is optional. If omitted, it defaults to `1.0` (no text dimming).
 - `window.mainSpectrumOpacity` is optional. If omitted, mini spectrum opacity follows existing `window.opacity` + `areaOpacity.spectrumArea` behavior.
 - `window.areaOpacity` is optional. If omitted, all 7 regions use `window.opacity`.

@@ -187,8 +187,7 @@ class JellyfinServerClient {
             
             let elapsedMs = Date().timeIntervalSince(startTime) * 1000
             if elapsedMs >= slowRequestThresholdMs {
-                NSLog("JellyfinServerClient: Slow request %.0fms %@ (status: %d, bytes: %d, retry: %d)",
-                      elapsedMs, request.url?.path ?? "unknown", httpResponse.statusCode, data.count, retryCount)
+                NSLog("JellyfinServerClient: Slow request \(Int(elapsedMs))ms \(request.url?.path ?? "unknown") (status: \(httpResponse.statusCode), bytes: \(data.count), retry: \(retryCount))")
             }
             
             guard httpResponse.statusCode == 200 else {
@@ -365,7 +364,7 @@ class JellyfinServerClient {
                 break
             }
             if newItems.isEmpty {
-                NSLog("JellyfinServerClient: fetchMovies pagination stopped early (no new item IDs at offset %d)", offset)
+                NSLog("JellyfinServerClient: fetchMovies pagination stopped early (no new item IDs at offset \(offset))")
                 break
             }
             if response.Items.count < pageSize {
@@ -373,7 +372,7 @@ class JellyfinServerClient {
             }
             pageCount += 1
             if pageCount >= maxPages {
-                NSLog("JellyfinServerClient: fetchMovies reached max pages (%d), stopping pagination", maxPages)
+                NSLog("[WARNING] JellyfinServerClient: fetchMovies reached max page limit (\(maxPages)) — results may be incomplete")
                 break
             }
             offset += pageSize
@@ -434,7 +433,7 @@ class JellyfinServerClient {
                 break
             }
             if newItems.isEmpty {
-                NSLog("JellyfinServerClient: fetchShows pagination stopped early (no new item IDs at offset %d)", offset)
+                NSLog("JellyfinServerClient: fetchShows pagination stopped early (no new item IDs at offset \(offset))")
                 break
             }
             if response.Items.count < pageSize {
@@ -442,7 +441,7 @@ class JellyfinServerClient {
             }
             pageCount += 1
             if pageCount >= maxPages {
-                NSLog("JellyfinServerClient: fetchShows reached max pages (%d), stopping pagination", maxPages)
+                NSLog("[WARNING] JellyfinServerClient: fetchShows reached max page limit (\(maxPages)) — results may be incomplete")
                 break
             }
             offset += pageSize
@@ -534,7 +533,7 @@ class JellyfinServerClient {
                 break
             }
             if newItems.isEmpty {
-                NSLog("JellyfinServerClient: fetchAllArtists pagination stopped early (no new item IDs at offset %d)", offset)
+                NSLog("JellyfinServerClient: fetchAllArtists pagination stopped early (no new item IDs at offset \(offset))")
                 break
             }
             if response.Items.count < pageSize {
@@ -542,7 +541,7 @@ class JellyfinServerClient {
             }
             pageCount += 1
             if pageCount >= maxPages {
-                NSLog("JellyfinServerClient: fetchAllArtists reached max pages (%d), stopping pagination", maxPages)
+                NSLog("[WARNING] JellyfinServerClient: fetchAllArtists reached max page limit (\(maxPages)) — results may be incomplete")
                 break
             }
             offset += pageSize
@@ -621,7 +620,7 @@ class JellyfinServerClient {
                 break
             }
             if newItems.isEmpty {
-                NSLog("JellyfinServerClient: fetchAllAlbums pagination stopped early (no new item IDs at offset %d)", offset)
+                NSLog("JellyfinServerClient: fetchAllAlbums pagination stopped early (no new item IDs at offset \(offset))")
                 break
             }
             if response.Items.count < pageSize {
@@ -629,7 +628,7 @@ class JellyfinServerClient {
             }
             pageCount += 1
             if pageCount >= maxPages {
-                NSLog("JellyfinServerClient: fetchAllAlbums reached max pages (%d), stopping pagination", maxPages)
+                NSLog("[WARNING] JellyfinServerClient: fetchAllAlbums reached max page limit (\(maxPages)) — results may be incomplete")
                 break
             }
             offset += pageSize
@@ -793,7 +792,7 @@ class JellyfinServerClient {
             throw JellyfinClientError.invalidURL
         }
         try await performVoidRequest(request)
-        NSLog("JellyfinServerClient: Set rating %d for item %@", rating, itemId)
+        NSLog("JellyfinServerClient: Set rating \(rating) for item \(itemId)")
     }
     
     // MARK: - Scrobbling / Playback Reporting

@@ -63,5 +63,5 @@ void SqrTable(int *table)
 void FractionalTable(int *table)
 {
   for(int i = 0; i < 256; i++)
-    table[i] = (int)(256.0 - (double)(256 / (table[i] + 1)));  // 1/x function
+    table[i] = (int)(256.0 - 256.0 / (table[i] + 1));  // 1/x function
 }

@@ -17,6 +17,15 @@ int AssignCount(int nNotAssigned, double fDiv)
 // pnBarTable - bars array, each element will have a count of the number of FFT elements to use
 void LogBarValueTable(const unsigned int nFftSize, const unsigned int nSampleRate, const unsigned int nLastBarCutHz, const unsigned int nBars, unsigned int *pnBarTable)
 {
+	if (pnBarTable == nullptr || nBars == 0)
+		return;
+
+	if (nFftSize <= nBars) {
+		for (unsigned int i = 0; i < nBars; i++)
+			pnBarTable[i] = (i < nFftSize) ? 1 : 0;
+		return;
+	}
+
 	// pre-assign each bar to draw with at least 1 element from the spec data
 	for(unsigned int i = 0; i < nBars; i++)
 		pnBarTable[i] = 1;

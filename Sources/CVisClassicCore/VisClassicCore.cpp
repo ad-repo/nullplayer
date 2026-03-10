@@ -91,8 +91,10 @@ struct IniProfile {
     std::map<std::string, std::string> analyzer;
     std::array<RGB, kColorCount> barColors{};
     std::array<RGB, kColorCount> peakColors{};
+    std::array<int, kColorCount> volumeFunc{};
     bool hasBarColors = false;
     bool hasPeakColors = false;
+    bool hasVolumeFunc = false;
 };
 
 class Core {
@@ -346,6 +348,9 @@ public:
         if (profile.hasPeakColors) {
             peakColors_ = profile.peakColors;
         }
+        if (profile.hasVolumeFunc) {
+            volumeFunc_ = profile.volumeFunc;
+        }
 
         setupFFT();
         recalcGeometry();
@@ -394,6 +399,11 @@ public:
             out << i << "=" << static_cast<int>(peakColors_[i].b) << " "
                 << static_cast<int>(peakColors_[i].g) << " "
                 << static_cast<int>(peakColors_[i].r) << "\n";
+        }
+
+        out << "[VolumeFunction]\n";
+        for (int i = 0; i < kColorCount; ++i) {
+            out << i << "=" << volumeFunc_[i] << "\n";
         }
 
         currentProfilePath_ = path;
@@ -621,7 +631,7 @@ private:
             low = 0;
             x = reverseRight_ ? bands_ - 1 : half;
             dir = reverseRight_ ? -1 : 1;
-            for (int i = half; i < bands_; ++i, x += dir) {
+            for (int i = 0; i < half; ++i, x += dir) {
                 int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
                 high = std::min(high, fftFrequencies_);
                 int newLevel = stereoLevel(spectrumRight_, low, high);
@@ -820,6 +830,30 @@ private:
             } else if (section == "PeakColours") {
                 out.peakColors[static_cast<size_t>(idx)] = c;
                 out.hasPeakColors = true;
+            }
+        }
+
+        // Second pass: parse VolumeFunction (integer values, not RGB)
+        {
+            std::ifstream in2(path);
+            std::string section2;
+            std::string line2;
+            while (std::getline(in2, line2)) {
+                line2 = trim(line2);
+                if (line2.empty() || line2[0] == ';' || line2[0] == '#') continue;
+                if (line2.front() == '[' && line2.back() == ']') {
+                    section2 = line2.substr(1, line2.size() - 2);
+                    continue;
+                }
+                if (section2 != "VolumeFunction") continue;
+                const size_t eq = line2.find('=');
+                if (eq == std::string::npos) continue;
+                int idx2 = -1;
+                if (!parseInt(trim(line2.substr(0, eq)), idx2) || idx2 < 0 || idx2 >= kColorCount) continue;
+                int val = 0;
+                if (!parseInt(trim(line2.substr(eq + 1)), val)) continue;
+                out.volumeFunc[static_cast<size_t>(idx2)] = val;
+                out.hasVolumeFunc = true;
             }
         }
 

@@ -33,6 +33,7 @@ unsigned char BarColourElevator(int i, int y)
 
 unsigned char BarColourFire(int i, int y)
 {
+  if (i == 0) return 0;
   // y correction so bottom colour is not always 0;
   if(y == 0 && (draw_height > 0)) {
     //y = 255 / draw_height;

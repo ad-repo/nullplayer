@@ -1648,31 +1648,35 @@ class PlexBrowserView: NSView {
                 // Art-only mode: skip tabs and list, draw album art large
                 drawArtOnlyArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
             } else {
-                // Normal mode: draw tabs, search, and list
-                
-                // Draw tab bar
-                drawTabBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
-                
-                // Draw search bar (only in search mode)
-                if browseMode == .search {
-                    drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                // Normal mode: draw tabs, search, and list.
+                // Skip expensive tab+list rendering if dirtyRect is entirely in the title/server bar zone
+                // (server name scroll timer marks only serverBarArea dirty at 15Hz).
+                let belowServerBar = bounds.height - CGFloat(Layout.titleBarHeight + Layout.serverBarHeight)
+                if dirtyRect.minY < belowServerBar {
+                    // Draw tab bar
+                    drawTabBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+
+                    // Draw search bar (only in search mode)
+                    if browseMode == .search {
+                        drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                    }
+
+                    // Draw list area or connection status
+                    // Only check Plex link status if using Plex source
+                    let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
+                    if needsPlexLink {
+                        drawNotLinkedState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                    } else if isLoading {
+                        drawLoadingState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                    } else if let error = errorMessage {
+                        drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors, renderer: renderer)
+                    } else {
+                        drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
+                    }
+
+                    // Draw status bar text
+                    drawStatusBarText(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                 }
-                
-                // Draw list area or connection status
-                // Only check Plex link status if using Plex source
-                let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
-                if needsPlexLink {
-                    drawNotLinkedState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
-                } else if isLoading {
-                    drawLoadingState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
-                } else if let error = errorMessage {
-                    drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors, renderer: renderer)
-                } else {
-                    drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
-                }
-                
-                // Draw status bar text
-                drawStatusBarText(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             }
         }
         

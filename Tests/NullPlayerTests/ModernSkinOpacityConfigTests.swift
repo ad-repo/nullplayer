@@ -3,7 +3,7 @@ import XCTest
 
 final class ModernSkinOpacityConfigTests: XCTestCase {
 
-    func testDecodeFailsWhenWindowOpacityMissing() {
+    func testDecodeSucceedsWhenWindowOpacityMissingAndDefaultsToOne() throws {
         let json = """
         {
             "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
@@ -18,7 +18,8 @@ final class ModernSkinOpacityConfigTests: XCTestCase {
         }
         """
 
-        XCTAssertThrowsError(try decodeConfig(from: json))
+        let config = try decodeConfig(from: json)
+        XCTAssertEqual(config.window.opacity, 1.0, accuracy: 0.0001)
     }
 
     func testDecodeSucceedsWhenTextOpacityOmittedAndDefaultsToIdentity() throws {

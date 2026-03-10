@@ -42,19 +42,9 @@ class ModernSkinEngine {
     
     /// Load the preferred skin (from UserDefaults) or the default
     func loadPreferredSkin() {
-        let preferredName = UserDefaults.standard.string(forKey: skinNameKey)
-        
-        if let name = preferredName {
-            let resolvedName = resolvedSkinName(for: name)
-            if resolvedName != name {
-                UserDefaults.standard.set(resolvedName, forKey: skinNameKey)
-            }
-            if loadSkin(named: resolvedName) {
-                return
-            }
+        if let name = UserDefaults.standard.string(forKey: skinNameKey) {
+            if loadSkin(named: name) { return }
         }
-        
-        // Fall back to default
         loadDefaultSkin()
     }
     
@@ -70,14 +60,15 @@ class ModernSkinEngine {
     /// Load a skin by name (searches bundled and user skins)
     @discardableResult
     func loadSkin(named name: String) -> Bool {
-        let resolvedName = resolvedSkinName(for: name)
         let available = loader.availableSkins()
-        
-        guard let skinInfo = available.first(where: { $0.name == resolvedName }) else {
-            NSLog("ModernSkinEngine: Skin '%@' not found", resolvedName)
+        let resolvedName = resolvedSkinName(for: name)
+
+        guard let skinInfo = available.first(where: { $0.name == name })
+                          ?? available.first(where: { $0.name == resolvedName }) else {
+            NSLog("ModernSkinEngine: Skin '%@' not found", name)
             return false
         }
-        
+
         do {
             let ext = skinInfo.path.pathExtension.lowercased()
             if ext == "nps" {
@@ -85,14 +76,14 @@ class ModernSkinEngine {
             } else {
                 currentSkin = try loader.load(from: skinInfo.path)
             }
-            currentSkinName = resolvedName
-            UserDefaults.standard.set(resolvedName, forKey: skinNameKey)
+            currentSkinName = skinInfo.name
+            UserDefaults.standard.set(skinInfo.name, forKey: skinNameKey)
             configureSkinDependencies()
             notifySkinChanged()
-            NSLog("ModernSkinEngine: Loaded skin '%@'", resolvedName)
+            NSLog("ModernSkinEngine: Loaded skin '%@'", skinInfo.name)
             return true
         } catch {
-            NSLog("ModernSkinEngine: Failed to load skin '%@': %@", resolvedName, error.localizedDescription)
+            NSLog("ModernSkinEngine: Failed to load skin '%@': %@", skinInfo.name, error.localizedDescription)
             return false
         }
     }

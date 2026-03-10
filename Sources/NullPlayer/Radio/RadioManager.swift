@@ -1944,11 +1944,18 @@ class RadioManager {
     }
 
     private func isPrivateHost(_ host: String) -> Bool {
+        // Strip IPv6 bracket notation: [::1] → ::1
+        let h = host.hasPrefix("[") ? String(host.dropFirst().dropLast()) : host
+
         let privateRanges = ["127.", "10.", "192.168.", "localhost"]
-        if privateRanges.contains(where: { host.hasPrefix($0) }) { return true }
+        if privateRanges.contains(where: { h.hasPrefix($0) }) { return true }
         // 172.16.0.0/12
-        if host.hasPrefix("172."), let second = host.split(separator: ".").dropFirst().first,
+        if h.hasPrefix("172."), let second = h.split(separator: ".").dropFirst().first,
            let octet = Int(second), (16...31).contains(octet) { return true }
+        // IPv6 loopback, link-local, unique-local
+        let lower = h.lowercased()
+        if lower == "::1" || lower.hasPrefix("fe80:") ||
+           lower.hasPrefix("fc") || lower.hasPrefix("fd") { return true }
         return false
     }
 

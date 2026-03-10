@@ -161,8 +161,14 @@ class StreamingAudioPlayer {
     /// Volume level (0.0 - 1.0)
     var volume: Float {
         get { player.volume }
-        set { player.volume = newValue }
+        set {
+            player.volume = newValue
+            _cachedVolume = newValue
+        }
     }
+
+    /// Cached volume for use inside tap callbacks (avoids mainMixerNode access from realtime thread)
+    private var _cachedVolume: Float = 1.0
     
     /// Playback rate (1.0 = normal speed)
     var rate: Float {
@@ -404,7 +410,7 @@ class StreamingAudioPlayer {
         guard frameCount > 0 else { return }
         
         let channelCount = Int(buffer.format.channelCount)
-        let effectiveVolume = max(0.05, volume)  // Min 5% to avoid extreme amplification
+        let effectiveVolume = max(0.05, _cachedVolume)  // Use cached value; volume.getter acquires AVAudioEngine lock (deadlocks from tap callback)
         let volumeCompensation = min(20.0, 1.0 / effectiveVolume)  // Cap at 20x
 
         enqueueWaveformSamplesAndPost(
