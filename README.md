@@ -164,7 +164,9 @@ NullPlayer includes a standalone dockable waveform window in both UI modes.
 
 ## License
 
-This project is open source and uses the following licensed components:
+NullPlayer is licensed under **GPL-3.0-only**. It also distributes third-party components with their own notices and terms:
 
 - **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
 - **libprojectM** (LGPL-2.1) - ProjectM visualizations
+- **vis_classic** resources/core attribution (MIT) - notice included at `Sources/NullPlayer/Resources/vis_classic/LICENSE.txt`
+- **Nullsoft FFT code** used by `CVisClassicCore` upstream files (`fft.h` / `fft.cpp`) - BSD-style 3-clause terms; notice included at `Sources/CVisClassicCore/upstream/FFTNullsoft_LICENSE.txt` and bundled copy at `Sources/NullPlayer/Resources/ThirdPartyLicenses/FFTNullsoft_LICENSE.txt`
