@@ -1251,11 +1251,8 @@ class AudioEngine {
             streamingPlayer?.stop()
         } else {
             playerNode.stop()
-            // Also stop crossfade player and reset to playerNode as primary
-            crossfadePlayerNode.stop()
-            crossfadePlayerNode.volume = 0
-            crossfadePlayerIsActive = false
         }
+        resetLocalCrossfadeStateForDirectPlayback()
         
         playbackStartDate = nil
         _currentTime = 0  // Reset to beginning
@@ -1309,20 +1306,12 @@ class AudioEngine {
 
         // Force-stop any in-progress crossfade before casting handoff.
         // This avoids mixed local+cast playback when crossfade players are active.
-        crossfadeTimer?.invalidate()
-        crossfadeTimer = nil
-        isCrossfading = false
-        crossfadeTargetIndex = -1
+        resetLocalCrossfadeStateForDirectPlayback()
 
         // Fully stop ALL local playback paths (primary + crossfade, local + streaming).
         // This ensures no local audio leaks while cast playback is active.
         streamingPlayer?.stop()
-        crossfadeStreamingPlayer?.stop()
-        crossfadeStreamingPlayer?.volume = 0
         playerNode.stop()
-        crossfadePlayerNode.stop()
-        crossfadePlayerNode.volume = 0
-        crossfadePlayerIsActive = false
         
         state = .stopped
         stopTimeUpdates()
@@ -2679,11 +2668,9 @@ class AudioEngine {
         stopStreamingPlayer()
         isStreamingPlayback = false
         
-        // Ensure crossfade player is stopped and reset to playerNode as primary
-        // (after a completed crossfade, crossfadePlayerNode may still be playing)
-        crossfadePlayerNode.stop()
-        crossfadePlayerNode.volume = 0
-        crossfadePlayerIsActive = false
+        // Reset crossfade state and force local primary node to audible unity gain.
+        // Rapid source switches can otherwise leave playerNode.volume at 0.
+        resetLocalCrossfadeStateForDirectPlayback()
         
         // Reset AudioEngine's adaptive normalization peaks for clean start
         // When streaming was active, AudioEngine just forwarded StreamingAudioPlayer's
@@ -2792,6 +2779,7 @@ class AudioEngine {
     /// Stop playback completely when a track fails to load
     private func stopPlaybackOnError() {
         playerNode.stop()
+        resetLocalCrossfadeStateForDirectPlayback()
         audioFile = nil
         currentTrack = nil
         _currentTime = 0
@@ -3545,6 +3533,26 @@ class AudioEngine {
         // Reset to playerNode as primary (crossfade was incomplete, outgoing player continues)
         crossfadePlayerIsActive = false
         NSLog("Sweet Fades: Crossfade cancelled")
+    }
+
+    /// Reset all crossfade internals and restore direct local playback defaults.
+    /// This is used when loading/stopping tracks to prevent stale crossfade state
+    /// from leaving local playback silent after rapid source switches.
+    private func resetLocalCrossfadeStateForDirectPlayback() {
+        crossfadeTimer?.invalidate()
+        crossfadeTimer = nil
+        isCrossfading = false
+        crossfadeTargetIndex = -1
+
+        crossfadeStreamingPlayer?.stop()
+        crossfadeStreamingPlayer?.volume = 0
+        crossfadePlayerNode.stop()
+        crossfadePlayerNode.volume = 0
+        crossfadeAudioFile = nil
+        crossfadePlayerIsActive = false
+
+        // Local playback is scheduled on playerNode; keep it at unity gain.
+        playerNode.volume = 1.0
     }
     
     // MARK: - Volume Normalization
