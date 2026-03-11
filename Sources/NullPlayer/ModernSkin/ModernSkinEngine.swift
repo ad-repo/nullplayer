@@ -71,7 +71,7 @@ class ModernSkinEngine {
 
         do {
             let ext = skinInfo.path.pathExtension.lowercased()
-            if ext == "nps" {
+            if ModernSkinLoader.isSupportedBundleExtension(ext) {
                 currentSkin = try loader.loadFromBundle(at: skinInfo.path)
             } else {
                 currentSkin = try loader.load(from: skinInfo.path)
@@ -100,6 +100,30 @@ class ModernSkinEngine {
             NSLog("ModernSkinEngine: Failed to load skin from %@: %@", url.path, error.localizedDescription)
             return false
         }
+    }
+
+    /// Import a `.nsz` skin bundle into the user's ModernSkins directory.
+    /// Returns the imported skin name (derived from filename without extension).
+    func importSkinBundle(from sourceURL: URL) throws -> String {
+        let ext = sourceURL.pathExtension.lowercased()
+        guard ModernSkinLoader.isSupportedBundleExtension(ext) else {
+            throw ModernSkinError.unsupportedBundleExtension(ext)
+        }
+
+        let userDir = loader.userSkinsDirectory
+        try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
+
+        let destinationURL = userDir.appendingPathComponent(sourceURL.lastPathComponent)
+        if sourceURL.standardizedFileURL != destinationURL.standardizedFileURL {
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+        }
+
+        let importedName = destinationURL.deletingPathExtension().lastPathComponent
+        UserDefaults.standard.set(importedName, forKey: skinNameKey)
+        return importedName
     }
     
     // MARK: - Skin Selection Menu

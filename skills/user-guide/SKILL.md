@@ -186,6 +186,7 @@ Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (dou
 - **Options > Use Modern UI** to enable modern skin engine
 - Requires restart to switch modes
 - Modern skins use `skin.json` format
+- Portable modern skin bundles use `.nsz` (ZIP) and can be imported via **UI > Modern > Load Skin...**
 - Bundled modern skins: NeonWave (default), Skulls
 
 ### Double Size Mode

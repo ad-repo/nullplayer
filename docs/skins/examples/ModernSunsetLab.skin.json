@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "name": "ModernSunsetLab",
+    "author": "NullPlayer Test",
+    "version": "1.0",
+    "description": "Warm sunset test skin with amber display tones and deep navy chrome."
+  },
+  "palette": {
+    "primary": "#ff9f43",
+    "secondary": "#ff6b6b",
+    "accent": "#ffd166",
+    "highlight": "#ffe29a",
+    "background": "#0b1020",
+    "surface": "#171f33",
+    "text": "#ffd98e",
+    "textDim": "#b18a52",
+    "positive": "#7ddc79",
+    "negative": "#ff5c72",
+    "warning": "#ffc857",
+    "border": "#ff9f43",
+    "timeColor": "#ffd166",
+    "marqueeColor": "#ffe7b0",
+    "dataColor": "#ffd166",
+    "eqLow": "#4dd97d",
+    "eqMid": "#ffd166",
+    "eqHigh": "#ff6b6b"
+  },
+  "fonts": {
+    "primaryName": "Avenir Next Condensed Bold",
+    "fallbackName": "Menlo",
+    "titleSize": 8,
+    "bodySize": 9,
+    "smallSize": 7,
+    "timeSize": 21,
+    "marqueeSize": 12
+  },
+  "background": {
+    "grid": {
+      "color": "#ff8c42",
+      "spacing": 20,
+      "angle": 78,
+      "opacity": 0.08,
+      "perspective": true
+    }
+  },
+  "glow": {
+    "enabled": true,
+    "radius": 7,
+    "intensity": 0.58,
+    "threshold": 0.55,
+    "elementBlur": 1.1
+  },
+  "window": {
+    "borderWidth": 1.5,
+    "borderColor": "#ff9f43",
+    "cornerRadius": 3,
+    "scale": 1.25,
+    "opacity": 0.94,
+    "textOpacity": 1.0,
+    "mainSpectrumOpacity": 0.9,
+    "seamlessDocking": 1.0
+  },
+  "marquee": {
+    "scrollSpeed": 34,
+    "scrollGap": 58
+  },
+  "elements": {
+    "titlebar": { "color": "#1b243a" },
+    "timeDisplay": { "color": "#ffd166" },
+    "seekbar_track": { "color": "#ffb25d" },
+    "volume_track": { "color": "#ff8f4d" },
+    "playlist_titlebar": { "color": "#1b243a" },
+    "eq_titlebar": { "color": "#1b243a" },
+    "spectrum_titlebar": { "color": "#1b243a" }
+  }
+}

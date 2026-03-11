@@ -149,7 +149,7 @@ The bundled default skin ("NeonWave") is fully programmatic -- zero image assets
 
 **Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
 
-**Skin installation**: Place skin folders or `.nps` bundles in `~/Library/Application Support/NullPlayer/ModernSkins/`, then right-click the player and select your skin from **Modern UI > Select Skin**.
+**Skin installation**: Use **UI > Modern > Load Skin...** to import a `.nsz` bundle, or place skin folders/`.nsz` files in `~/Library/Application Support/NullPlayer/ModernSkins/`, then select the skin from **UI > Modern**.
 
 ## License
 

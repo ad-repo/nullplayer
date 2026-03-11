@@ -1,15 +1,21 @@
 import AppKit
 import ZIPFoundation
 
-/// Loads modern skins from directory paths or `.nps` (ZIP) bundles.
+/// Loads modern skins from directory paths or `.nsz` (ZIP) bundles.
 /// Returns a fully configured `ModernSkin` with images, fonts, and config.
 class ModernSkinLoader {
     
     // MARK: - Singleton
     
     static let shared = ModernSkinLoader()
+
+    static let bundleExtension = "nsz"
     
     private init() {}
+
+    static func isSupportedBundleExtension(_ ext: String) -> Bool {
+        ext.lowercased() == bundleExtension
+    }
     
     // MARK: - Loading
     
@@ -45,7 +51,7 @@ class ModernSkinLoader {
         return skin
     }
     
-    /// Load a skin from a `.nps` ZIP bundle
+    /// Load a skin from a `.nsz` ZIP bundle
     func loadFromBundle(at url: URL) throws -> ModernSkin {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ModernSkin_\(UUID().uuidString)")
@@ -136,7 +142,7 @@ class ModernSkinLoader {
                     if FileManager.default.fileExists(atPath: skinJSON.path) {
                         skins.append((name: item.lastPathComponent, path: item, isBundled: false))
                     }
-                } else if item.pathExtension.lowercased() == "nps" {
+                } else if Self.isSupportedBundleExtension(item.pathExtension) {
                     // ZIP-bundled skin
                     let name = item.deletingPathExtension().lastPathComponent
                     skins.append((name: name, path: item, isBundled: false))
@@ -295,6 +301,7 @@ enum ModernSkinError: Error, LocalizedError {
     case configNotFound(String)
     case invalidConfig(String)
     case imageLoadFailed(String)
+    case unsupportedBundleExtension(String)
     
     var errorDescription: String? {
         switch self {
@@ -304,6 +311,8 @@ enum ModernSkinError: Error, LocalizedError {
             return "Invalid skin config: \(message)"
         case .imageLoadFailed(let path):
             return "Failed to load image: \(path)"
+        case .unsupportedBundleExtension(let ext):
+            return "Unsupported skin bundle extension: .\(ext)"
         }
     }
 }
