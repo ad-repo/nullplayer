@@ -76,7 +76,7 @@ Previous, Play, Pause, Stop, Next, Eject (open file dialog)
 - **EQ**: Show/hide Equalizer
 - **PL**: Show/hide Playlist
 
-Modern UI adds: **2X** (Double Size), **HT** (Hide Title Bars), **CA** (Cast), **pM** (ProjectM), **SP** (Spectrum), **LB** (Library)
+Modern UI adds: **HT** (Hide Title Bars), **CA** (Cast), **pM** (ProjectM), **SP** (Spectrum), **WV** (Waveform), **LB** (Library)
 
 ## Media Sources
 
@@ -203,7 +203,8 @@ Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (dou
 - Bundled modern skins: NeonWave (default), Skulls
 
 ### Double Size Mode
-- Toggle via **2X button** or context menu → **Double Size**
+- **Modern UI**: toggle via context menu → **Double Size**
+- **Classic UI**: toggle via **2X button** or context menu → **Double Size**
 - Scales all windows by 2x
 - Persists across restarts
 - **Modern UI**: toggles live instantly
