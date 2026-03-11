@@ -19,6 +19,9 @@ extension Notification.Name {
     /// Posted when playback state changes (playing, paused, stopped)
     /// userInfo contains: "state" (PlaybackState)
     static let audioPlaybackStateChanged = Notification.Name("audioPlaybackStateChanged")
+
+    /// Posted when playback option state changes (repeat, shuffle, gapless, normalization, crossfade)
+    static let audioPlaybackOptionsChanged = Notification.Name("audioPlaybackOptionsChanged")
     
     /// Posted when the current track changes
     /// userInfo contains: "track" (Track?) - may be nil when playback stops
@@ -158,10 +161,18 @@ class AudioEngine {
     }
     
     /// Shuffle enabled
-    var shuffleEnabled: Bool = false
+    var shuffleEnabled: Bool = false {
+        didSet {
+            notifyPlaybackOptionsChanged()
+        }
+    }
     
     /// Repeat mode
-    var repeatEnabled: Bool = false
+    var repeatEnabled: Bool = false {
+        didSet {
+            notifyPlaybackOptionsChanged()
+        }
+    }
     
     /// Gapless playback mode - pre-schedules next track for seamless transitions
     var gaplessPlaybackEnabled: Bool = false {
@@ -171,6 +182,7 @@ class AudioEngine {
             if gaplessPlaybackEnabled && state == .playing {
                 scheduleNextTrackForGapless()
             }
+            notifyPlaybackOptionsChanged()
         }
     }
     
@@ -185,6 +197,7 @@ class AudioEngine {
                 normalizationGain = 1.0
                 applyNormalizationGain()
             }
+            notifyPlaybackOptionsChanged()
         }
     }
     
@@ -201,6 +214,7 @@ class AudioEngine {
         didSet {
             UserDefaults.standard.set(sweetFadeEnabled, forKey: "sweetFadeEnabled")
             NSLog("AudioEngine: Sweet Fades %@", sweetFadeEnabled ? "enabled" : "disabled")
+            notifyPlaybackOptionsChanged()
         }
     }
     
@@ -209,6 +223,7 @@ class AudioEngine {
         didSet {
             UserDefaults.standard.set(sweetFadeDuration, forKey: "sweetFadeDuration")
             NSLog("AudioEngine: Sweet Fades duration set to %.1fs", sweetFadeDuration)
+            notifyPlaybackOptionsChanged()
         }
     }
     
@@ -464,6 +479,10 @@ class AudioEngine {
         engine.stop()
         // FFT setup is automatically released when set to nil
         fftSetup = nil
+    }
+
+    private func notifyPlaybackOptionsChanged() {
+        NotificationCenter.default.post(name: .audioPlaybackOptionsChanged, object: self)
     }
     
     @objc private func handleSpectrumSettingsChanged() {

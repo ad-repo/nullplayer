@@ -93,6 +93,105 @@ class ContextMenuBuilder {
         return menu
     }
 
+    // MARK: - Menu Bar Builders
+
+    /// Builds the top-level "Windows" menu content for the macOS menu bar.
+    static func buildMenuBarWindowsMenu() -> NSMenu {
+        let menu = NSMenu()
+        let wm = WindowManager.shared
+
+        menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
+        menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
+        menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
+        menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
+        menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
+        menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
+
+        menu.addItem(NSMenuItem.separator())
+
+        let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
+        alwaysOnTop.target = MenuActions.shared
+        alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
+        menu.addItem(alwaysOnTop)
+
+        if wm.isModernUIEnabled {
+            let hideTitleBars = NSMenuItem(title: "Hide Title Bars", action: #selector(MenuActions.toggleHideTitleBars), keyEquivalent: "")
+            hideTitleBars.target = MenuActions.shared
+            hideTitleBars.state = wm.hideTitleBars ? .on : .off
+            menu.addItem(hideTitleBars)
+        }
+
+        let sizeToggleTitle = wm.isRunningModernUI ? "Double Size" : "Large UI"
+        let doubleSize = NSMenuItem(title: sizeToggleTitle, action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
+        doubleSize.target = MenuActions.shared
+        doubleSize.state = wm.isDoubleSize ? .on : .off
+        menu.addItem(doubleSize)
+
+        let snapToDefault = NSMenuItem(title: "Snap To Default", action: #selector(MenuActions.snapToDefault), keyEquivalent: "")
+        snapToDefault.target = MenuActions.shared
+        menu.addItem(snapToDefault)
+
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "UI" menu content for the macOS menu bar.
+    static func buildMenuBarUIMenu() -> NSMenu {
+        let menu = buildUIMenu()
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "Playback" menu content for the macOS menu bar.
+    static func buildMenuBarPlaybackMenu() -> NSMenu {
+        let menu = NSMenu()
+        let wm = WindowManager.shared
+
+        let aboutPlaying = NSMenuItem(title: "About Playing", action: #selector(MenuActions.showAboutPlaying), keyEquivalent: "")
+        aboutPlaying.target = MenuActions.shared
+        let hasAudioContent = wm.audioEngine.currentTrack != nil
+        let hasVideoContent = wm.currentVideoTitle != nil
+        aboutPlaying.isEnabled = hasAudioContent || hasVideoContent
+        menu.addItem(aboutPlaying)
+        menu.addItem(NSMenuItem.separator())
+
+        let optionsMenu = buildOptionsMenu()
+        moveMenuItems(from: optionsMenu, to: menu)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let rememberState = NSMenuItem(title: "Remember State On Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
+        rememberState.target = MenuActions.shared
+        rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
+        menu.addItem(rememberState)
+
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "Visuals" menu content for the macOS menu bar.
+    static func buildMenuBarVisualsMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(buildVisualizationsMenuItem())
+        menu.addItem(buildSpectrumAnalyzerMenuItem())
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "Libraries" menu content for the macOS menu bar.
+    static func buildMenuBarLibrariesMenu() -> NSMenu {
+        let menu = buildLibrariesMenu()
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "Output" menu content for the macOS menu bar.
+    static func buildMenuBarOutputMenu() -> NSMenu {
+        let menu = buildMenuBarOutputDevicesMenu()
+        menu.autoenablesItems = false
+        return menu
+    }
+
     // MARK: - Modern Skins Menu
 
     /// Public access to a modern-skins-only menu (used by modern skin SK button)
@@ -158,11 +257,25 @@ class ContextMenuBuilder {
         item.state = visible ? .on : .off
         return item
     }
-    
+
+    private static func moveMenuItems(from source: NSMenu, to destination: NSMenu) {
+        while let item = source.items.first {
+            source.removeItem(item)
+            destination.addItem(item)
+        }
+    }
+
     // MARK: - UI Submenu (unified Modern/Classic with skin selection)
     
     private static func buildUIMenuItem() -> NSMenuItem {
         let uiItem = NSMenuItem(title: "UI", action: nil, keyEquivalent: "")
+        let uiMenu = buildUIMenu()
+        uiMenu.autoenablesItems = false
+        uiItem.submenu = uiMenu
+        return uiItem
+    }
+
+    private static func buildUIMenu() -> NSMenu {
         let uiMenu = NSMenu()
         uiMenu.autoenablesItems = false
         
@@ -290,14 +403,18 @@ class ContextMenuBuilder {
         classicItem.submenu = classicMenu
         uiMenu.addItem(classicItem)
         
-        uiItem.submenu = uiMenu
-        return uiItem
+        return uiMenu
     }
     
     // MARK: - Visualizations Submenu
     
     private static func buildVisualizationsMenuItem() -> NSMenuItem {
         let visItem = NSMenuItem(title: "Visualizations", action: nil, keyEquivalent: "")
+        visItem.submenu = buildVisualizationsMenu()
+        return visItem
+    }
+
+    private static func buildVisualizationsMenu() -> NSMenu {
         let visMenu = NSMenu()
         visMenu.autoenablesItems = false
         
@@ -354,14 +471,18 @@ class ContextMenuBuilder {
         showBundledItem.target = MenuActions.shared
         visMenu.addItem(showBundledItem)
         
-        visItem.submenu = visMenu
-        return visItem
+        return visMenu
     }
     
     // MARK: - Options Submenu
     
     private static func buildOptionsMenuItem() -> NSMenuItem {
         let optionsItem = NSMenuItem(title: "Playback Options", action: nil, keyEquivalent: "")
+        optionsItem.submenu = buildOptionsMenu()
+        return optionsItem
+    }
+
+    private static func buildOptionsMenu() -> NSMenu {
         let optionsMenu = NSMenu()
         optionsMenu.autoenablesItems = false
         
@@ -656,8 +777,7 @@ class ContextMenuBuilder {
 
         optionsMenu.addItem(NSMenuItem.separator())
 
-        optionsItem.submenu = optionsMenu
-        return optionsItem
+        return optionsMenu
     }
     
     // MARK: - Main Window Visualization Submenu
@@ -892,6 +1012,11 @@ class ContextMenuBuilder {
     
     private static func buildSpectrumAnalyzerMenuItem() -> NSMenuItem {
         let spectrumItem = NSMenuItem(title: "Spectrum Analyzer", action: nil, keyEquivalent: "")
+        spectrumItem.submenu = buildSpectrumAnalyzerMenu()
+        return spectrumItem
+    }
+
+    private static func buildSpectrumAnalyzerMenu() -> NSMenu {
         let spectrumMenu = NSMenu()
         spectrumMenu.autoenablesItems = false
         
@@ -1134,22 +1259,25 @@ class ContextMenuBuilder {
         spectrumWindowItem.submenu = spectrumWindowMenu
         spectrumMenu.addItem(spectrumWindowItem)
         
-        spectrumItem.submenu = spectrumMenu
-        return spectrumItem
+        return spectrumMenu
     }
     
     // MARK: - Libraries Submenu
 
     private static func buildLibrariesMenuItem() -> NSMenuItem {
         let librariesItem = NSMenuItem(title: "Libraries", action: nil, keyEquivalent: "")
+        librariesItem.submenu = buildLibrariesMenu()
+        return librariesItem
+    }
+
+    private static func buildLibrariesMenu() -> NSMenu {
         let librariesMenu = NSMenu()
         librariesMenu.addItem(buildLocalLibraryMenuItem())
         librariesMenu.addItem(buildPlexMenuItem())
         librariesMenu.addItem(buildSubsonicMenuItem())
         librariesMenu.addItem(buildJellyfinMenuItem())
         librariesMenu.addItem(buildEmbyMenuItem())
-        librariesItem.submenu = librariesMenu
-        return librariesItem
+        return librariesMenu
     }
 
     // MARK: - Local Library Submenu
@@ -1756,6 +1884,188 @@ class ContextMenuBuilder {
         let item = buildOutputDevicesMenuItem()
         return item.submenu ?? NSMenu()
     }
+
+    private static func buildMenuBarOutputDevicesMenu() -> NSMenu {
+        let outputMenu = NSMenu()
+        outputMenu.autoenablesItems = false
+
+        let audioManager = AudioOutputManager.shared
+        let castManager = CastManager.shared
+        let coreAudioDevices = audioManager.outputDevices
+        let airPlayDevices = audioManager.discoveredAirPlayDevices
+        let currentDeviceID = WindowManager.shared.audioEngine.currentOutputDeviceID
+
+        // Local Audio
+        outputMenu.addItem(NSMenuItem(title: "Local Audio", action: nil, keyEquivalent: ""))
+
+        let defaultItem = NSMenuItem(title: "System Default", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+        defaultItem.target = MenuActions.shared
+        defaultItem.representedObject = nil as AudioDeviceID?
+        defaultItem.state = currentDeviceID == nil ? .on : .off
+        outputMenu.addItem(defaultItem)
+
+        let localDevices = coreAudioDevices.filter { !$0.isWireless }
+        for device in localDevices {
+            let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+            deviceItem.target = MenuActions.shared
+            deviceItem.representedObject = device.id
+            deviceItem.state = currentDeviceID == device.id ? .on : .off
+            outputMenu.addItem(deviceItem)
+        }
+
+        // AirPlay
+        let coreAudioWireless = coreAudioDevices.filter { $0.isWireless }
+        if !coreAudioWireless.isEmpty || !airPlayDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+
+            let airPlayItem = NSMenuItem(title: "AirPlay", action: nil, keyEquivalent: "")
+            let airPlayMenu = NSMenu()
+            airPlayMenu.autoenablesItems = false
+
+            if !coreAudioWireless.isEmpty {
+                airPlayMenu.addItem(NSMenuItem(title: "Connected", action: nil, keyEquivalent: ""))
+                for device in coreAudioWireless {
+                    let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+                    deviceItem.target = MenuActions.shared
+                    deviceItem.representedObject = device.id
+                    deviceItem.state = currentDeviceID == device.id ? .on : .off
+                    airPlayMenu.addItem(deviceItem)
+                }
+            }
+
+            if !airPlayDevices.isEmpty {
+                if !coreAudioWireless.isEmpty {
+                    airPlayMenu.addItem(NSMenuItem.separator())
+                }
+
+                airPlayMenu.addItem(NSMenuItem(title: "Available (Connect in Sound Settings)", action: nil, keyEquivalent: ""))
+                for device in airPlayDevices {
+                    let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectAirPlayDevice(_:)), keyEquivalent: "")
+                    deviceItem.target = MenuActions.shared
+                    deviceItem.representedObject = device.name
+                    airPlayMenu.addItem(deviceItem)
+                }
+            }
+
+            airPlayMenu.addItem(NSMenuItem.separator())
+            let settingsItem = NSMenuItem(title: "Sound Settings...", action: #selector(MenuActions.openSoundSettings), keyEquivalent: "")
+            settingsItem.target = MenuActions.shared
+            airPlayMenu.addItem(settingsItem)
+
+            airPlayItem.submenu = airPlayMenu
+            outputMenu.addItem(airPlayItem)
+        }
+
+        // Sonos
+        let sonosRooms = castManager.sonosRooms
+        if !sonosRooms.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+
+            let sonosItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
+            let sonosMenu = NSMenu()
+            sonosMenu.autoenablesItems = false
+
+            let castTargetUDN = castManager.activeSession?.device.id
+            let isCastingToSonos = castManager.activeSession?.device.type == .sonos
+
+            for room in sonosRooms {
+                let isChecked: Bool
+                if isCastingToSonos, let targetUDN = castTargetUDN {
+                    if room.id == targetUDN {
+                        isChecked = true
+                    } else if room.groupCoordinatorUDN == targetUDN {
+                        isChecked = true
+                    } else if room.isGroupCoordinator {
+                        let targetRoom = sonosRooms.first { $0.id == targetUDN }
+                        isChecked = targetRoom?.groupCoordinatorUDN == room.id
+                    } else {
+                        isChecked = false
+                    }
+                } else {
+                    isChecked = castManager.selectedSonosRooms.contains(room.id)
+                }
+
+                let toggleInfo = SonosRoomToggle(
+                    roomUDN: room.id,
+                    roomName: room.name,
+                    coordinatorUDN: castTargetUDN ?? room.groupCoordinatorUDN ?? sonosRooms.first?.id ?? "",
+                    coordinatorName: room.groupCoordinatorName ?? sonosRooms.first?.name ?? "",
+                    isCurrentlyInGroup: isChecked,
+                    isCoordinator: room.id == castTargetUDN
+                )
+
+                // Match the context menu behavior: toggling a room keeps the Sonos submenu open.
+                let roomItem = NSMenuItem()
+                roomItem.view = SonosRoomCheckboxView(info: toggleInfo, isChecked: isChecked, menu: sonosMenu)
+                sonosMenu.addItem(roomItem)
+            }
+
+            sonosMenu.addItem(NSMenuItem.separator())
+
+            if isCastingToSonos {
+                let stopItem = NSMenuItem(title: "🔴 Stop Casting", action: #selector(MenuActions.stopCasting), keyEquivalent: "")
+                stopItem.target = MenuActions.shared
+                sonosMenu.addItem(stopItem)
+            } else {
+                let castItem = NSMenuItem(title: "🟢 Start Casting", action: #selector(MenuActions.castToSonosRoom(_:)), keyEquivalent: "")
+                castItem.target = MenuActions.shared
+                sonosMenu.addItem(castItem)
+            }
+
+            let refreshItem = NSMenuItem(title: "Refresh", action: #selector(MenuActions.refreshSonosRooms), keyEquivalent: "")
+            refreshItem.target = MenuActions.shared
+            sonosMenu.addItem(refreshItem)
+
+            sonosItem.submenu = sonosMenu
+            outputMenu.addItem(sonosItem)
+        }
+
+        // Other cast devices
+        let activeSession = castManager.activeSession
+
+        if !castManager.chromecastDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+            outputMenu.addItem(NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: ""))
+
+            for device in castManager.chromecastDevices {
+                let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device
+                deviceItem.state = activeSession?.device.id == device.id ? .on : .off
+                outputMenu.addItem(deviceItem)
+            }
+        }
+
+        if !castManager.dlnaTVDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+            outputMenu.addItem(NSMenuItem(title: "TVs (DLNA)", action: nil, keyEquivalent: ""))
+
+            for device in castManager.dlnaTVDevices {
+                let displayName = device.manufacturer != nil ? "\(device.name) [\(device.manufacturer!)]" : device.name
+                let deviceItem = NSMenuItem(title: displayName, action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device
+                deviceItem.state = activeSession?.device.id == device.id ? .on : .off
+                outputMenu.addItem(deviceItem)
+            }
+        }
+
+        if !castManager.chromecastDevices.isEmpty || !castManager.dlnaTVDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+
+            if let activeDevice = activeSession?.device {
+                let activeItem = NSMenuItem(title: "Stop Casting to \(activeDevice.name)", action: #selector(MenuActions.stopCasting), keyEquivalent: "")
+                activeItem.target = MenuActions.shared
+                outputMenu.addItem(activeItem)
+            }
+
+            let refreshCastItem = NSMenuItem(title: "Refresh Cast Devices", action: #selector(MenuActions.refreshCastDevices), keyEquivalent: "")
+            refreshCastItem.target = MenuActions.shared
+            outputMenu.addItem(refreshCastItem)
+        }
+
+        return outputMenu
+    }
     
     private static func buildOutputDevicesMenuItem() -> NSMenuItem {
         let outputItem = NSMenuItem(title: "Output Devices", action: nil, keyEquivalent: "")
@@ -1928,7 +2238,6 @@ class ContextMenuBuilder {
         
         // ========== Other Cast Devices ==========
         let chromecastDevices = castManager.chromecastDevices
-        let sonosDevices = castManager.sonosDevices
         let tvDevices = castManager.dlnaTVDevices
         let activeSession = castManager.activeSession
         

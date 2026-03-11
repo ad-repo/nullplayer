@@ -134,6 +134,10 @@ class ModernMainWindowView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(radioConnectionStateDidChange),
                                                 name: RadioManager.connectionStateDidChangeNotification, object: nil)
 
+        // Observe playback option changes so menu-triggered toggles update button state.
+        NotificationCenter.default.addObserver(self, selector: #selector(playbackOptionsDidChange),
+                                                name: .audioPlaybackOptionsChanged, object: nil)
+
         // Observe main window vis mode changes from context menu
         NotificationCenter.default.addObserver(self, selector: #selector(mainVisSettingsChanged),
                                                 name: NSNotification.Name("MainWindowVisChanged"), object: nil)
@@ -221,6 +225,10 @@ class ModernMainWindowView: NSView {
             ModernSkinEngine.shared.animationEngine.pauseForOcclusion()
             marqueeLayer.pauseScrolling()
         }
+    }
+
+    @objc private func playbackOptionsDidChange() {
+        needsDisplay = true
     }
 
     private func updateCornerMask() {

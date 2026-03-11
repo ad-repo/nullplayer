@@ -231,6 +231,10 @@ class MainWindowView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(playbackStateDidChange),
                                                name: .audioPlaybackStateChanged, object: nil)
 
+        // Observe playback option changes so menu-triggered toggles update button state.
+        NotificationCenter.default.addObserver(self, selector: #selector(playbackOptionsDidChange),
+                                               name: .audioPlaybackOptionsChanged, object: nil)
+
         // Observe vis_classic profile commands so transparent-background toggles
         // immediately update main-window skin drawing behind the Metal overlay.
         NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
@@ -739,6 +743,10 @@ class MainWindowView: NSView {
         case .playing:
             break
         }
+    }
+
+    @objc private func playbackOptionsDidChange() {
+        needsDisplay = true
     }
 
     @objc private func handleVisClassicProfileCommand(_ notification: Notification) {

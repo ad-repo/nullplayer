@@ -160,6 +160,16 @@ Valid widths: 275, 300, 425, 450, 475, 500, 550px
 
 **Non-Retina displays**: Even with aligned widths, tile seams may be visible on 1x displays. See the non-retina-fixes skill for techniques like background fill, tile overlap, and bottom-to-top drawing.
 
+## Menu Bar Integration (AppKit)
+
+When adding or refactoring top menu bar content:
+
+- Build dedicated menu-bar trees (`buildMenuBar*`) instead of reusing context-menu `NSMenuItem` instances.
+- Avoid `NSMenuItem.copy()` for action-bearing items; copied items can lose expected target/action behavior in this app.
+- Keep side effects (network discovery, long-running work) out of menu construction.
+- Prefer lifecycle startup for services and `menuNeedsUpdate(_:)` for state refresh when a menu opens.
+- For Sonos room selection UX, use `SonosRoomCheckboxView` when persistent-open submenu behavior is required.
+
 ## Custom Sprites
 
 For on/off states, stack vertically in NSImage:

@@ -5,6 +5,7 @@ import AppKit
 class AppDelegate: NSObject, NSApplicationDelegate {
     
     private var windowManager: WindowManager!
+    private var dynamicMenuBuilders: [ObjectIdentifier: () -> NSMenu] = [:]
     
     /// Whether the app is running in UI testing mode
     private(set) var isUITesting = false
@@ -65,6 +66,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up the application menu
         setupMainMenu()
+
+        // Start cast discovery from app lifecycle, not from menu construction.
+        CastManager.shared.startDiscovery()
         
         // Restore settings state (skin, volume, EQ, windows)
         AppStateManager.shared.restoreSettingsState()
@@ -122,6 +126,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up the application menu
         setupMainMenu()
+
+        // Skip network discovery in UI testing mode.
         
         // Mark app as ready for file opens
         isAppReady = true
@@ -226,11 +232,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             withTitle: "About nullPlayer",
             action: #selector(showAbout),
             keyEquivalent: ""
-        )        
+        )
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Quit nullPlayer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        addDynamicTopLevelMenu(title: "Windows", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarWindowsMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "UI", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarUIMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Playback", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarPlaybackMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Visuals", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarVisualsMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Libraries", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarLibrariesMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Output", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarOutputMenu, refreshOnOpen: true)
         
         NSApplication.shared.mainMenu = mainMenu
+    }
+
+    private func addDynamicTopLevelMenu(title: String, to mainMenu: NSMenu, builder: @escaping () -> NSMenu, refreshOnOpen: Bool = false) {
+        let topLevelItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        mainMenu.addItem(topLevelItem)
+
+        let submenu = builder()
+        submenu.title = title
+        if refreshOnOpen {
+            submenu.delegate = self
+            dynamicMenuBuilders[ObjectIdentifier(submenu)] = builder
+        }
+        topLevelItem.submenu = submenu
     }
     
     // MARK: - Menu Actions
@@ -407,6 +433,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+}
+
+extension AppDelegate: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let builder = dynamicMenuBuilders[ObjectIdentifier(menu)] else { return }
+
+        let rebuiltMenu = builder()
+        menu.removeAllItems()
+
+        while let item = rebuiltMenu.items.first {
+            rebuiltMenu.removeItem(item)
+            menu.addItem(item)
+        }
+    }
 }
 
 // MARK: - AudioEngineDelegate

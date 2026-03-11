@@ -25,6 +25,19 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic and local media | Logo button or context menu |
 | **ProjectM** | Real-time audio visualizations | Menu button or context menu |
 
+### Top Menu Bar
+
+Global controls are also available from the macOS top menu bar:
+
+- `Windows`
+- `UI`
+- `Playback`
+- `Visuals`
+- `Libraries`
+- `Output`
+
+`Output > Sonos` supports persistent-open room checkbox selection (same behavior as the context menu Sonos submenu).
+
 ### Window Docking
 
 Windows automatically snap together when dragged near each other:
