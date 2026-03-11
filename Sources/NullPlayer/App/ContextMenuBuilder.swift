@@ -92,6 +92,63 @@ class ContextMenuBuilder {
         menu.autoenablesItems = false
         return menu
     }
+
+    // MARK: - Modern Skins Menu
+
+    /// Public access to a modern-skins-only menu (used by modern skin SK button)
+    static func buildModernSkinsMenu() -> NSMenu {
+        let modernMenu = NSMenu()
+        modernMenu.autoenablesItems = false
+
+        let isModern = WindowManager.shared.isModernUIEnabled
+
+        // Last used modern skin for quick switch (shown at top when in classic mode)
+        let lastModernSkin = UserDefaults.standard.string(forKey: "modernSkinName")
+        if !isModern {
+            let switchItem = NSMenuItem(
+                title: "Switch to Modern" + (lastModernSkin.map { " (\($0))" } ?? ""),
+                action: #selector(MenuActions.setModernMode),
+                keyEquivalent: ""
+            )
+            switchItem.target = MenuActions.shared
+            modernMenu.addItem(switchItem)
+            modernMenu.addItem(NSMenuItem.separator())
+        }
+
+        let loadModernSkin = NSMenuItem(title: "Load Skin...", action: #selector(MenuActions.loadModernSkinFromFile), keyEquivalent: "")
+        loadModernSkin.target = MenuActions.shared
+        modernMenu.addItem(loadModernSkin)
+        modernMenu.addItem(NSMenuItem.separator())
+
+        // Modern skin list
+        let modernSkins = ModernSkinEngine.shared.loader.availableSkins()
+        let currentModernSkin = ModernSkinEngine.shared.currentSkinName
+
+        if modernSkins.isEmpty {
+            let noSkins = NSMenuItem(title: "No skins available", action: nil, keyEquivalent: "")
+            noSkins.isEnabled = false
+            modernMenu.addItem(noSkins)
+        } else {
+            for skinInfo in modernSkins {
+                let item = NSMenuItem(title: skinInfo.name, action: #selector(MenuActions.selectModernSkin(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = skinInfo.name
+                if isModern && skinInfo.name == currentModernSkin {
+                    item.state = .on
+                }
+                modernMenu.addItem(item)
+            }
+        }
+
+        modernMenu.addItem(NSMenuItem.separator())
+
+        // Open modern skins folder
+        let openModernFolder = NSMenuItem(title: "Open Skins Folder...", action: #selector(MenuActions.openModernSkinsFolder), keyEquivalent: "")
+        openModernFolder.target = MenuActions.shared
+        modernMenu.addItem(openModernFolder)
+
+        return modernMenu
+    }
     
     // MARK: - Window Toggle Items
     
@@ -128,6 +185,11 @@ class ContextMenuBuilder {
             modernMenu.addItem(switchItem)
             modernMenu.addItem(NSMenuItem.separator())
         }
+
+        let loadModernSkin = NSMenuItem(title: "Load Skin...", action: #selector(MenuActions.loadModernSkinFromFile), keyEquivalent: "")
+        loadModernSkin.target = MenuActions.shared
+        modernMenu.addItem(loadModernSkin)
+        modernMenu.addItem(NSMenuItem.separator())
         
         // Modern skin list
         let modernSkins = ModernSkinEngine.shared.loader.availableSkins()
@@ -2600,6 +2662,29 @@ class MenuActions: NSObject {
         if panel.runModal() == .OK, let url = panel.url {
             WindowManager.shared.loadSkin(from: url)
             UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
+        }
+    }
+
+    @objc func loadModernSkinFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.init(filenameExtension: ModernSkinLoader.bundleExtension)!]
+        panel.message = "Select a .\(ModernSkinLoader.bundleExtension) modern skin bundle"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let importedSkinName = try ModernSkinEngine.shared.importSkinBundle(from: url)
+            if WindowManager.shared.isRunningModernUI {
+                _ = ModernSkinEngine.shared.loadSkin(named: importedSkinName)
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Failed to Import Modern Skin"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
         }
     }
     

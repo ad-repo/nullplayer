@@ -693,7 +693,7 @@ class ModernMainWindowView: NSView {
             ("btn_repeat", "RP", audioEngine.repeatEnabled),
             ("btn_cast", "CA", CastManager.shared.isCasting),
             ("btn_2x", "XL", WindowManager.shared.isDoubleSize),
-            ("btn_ht", "HT", WindowManager.shared.hideTitleBars),
+            ("btn_sk", "SK", false),
             ("btn_projectm", "pM", WindowManager.shared.isProjectMVisible),
             ("btn_eq", "EQ", WindowManager.shared.isEqualizerVisible),
             ("btn_playlist", "PL", WindowManager.shared.isPlaylistVisible),
@@ -1225,7 +1225,7 @@ class ModernMainWindowView: NSView {
             let rightEdge: CGFloat = 269
             let bw: CGFloat = 16
             let bs = (rightEdge - leftEdge - 10 * bw) / 9
-            let ids = ["btn_shuffle", "btn_repeat", "btn_cast", "btn_2x", "btn_ht",
+            let ids = ["btn_shuffle", "btn_repeat", "btn_cast", "btn_2x", "btn_sk",
                        "btn_projectm", "btn_eq", "btn_playlist", "btn_spectrum", "btn_library"]
             for (i, id) in ids.enumerated() {
                 hitTargets.append((id, NSRect(x: leftEdge + CGFloat(i) * (bw + bs), y: 42, width: bw, height: 14)))
@@ -1454,8 +1454,8 @@ class ModernMainWindowView: NSView {
         case "btn_2x":
             WindowManager.shared.isDoubleSize.toggle()
             
-        case "btn_ht":
-            WindowManager.shared.toggleHideTitleBars()
+        case "btn_sk":
+            showModernSkinsMenu()
             
         case "btn_shuffle":
             audioEngine.shuffleEnabled.toggle()
@@ -1503,6 +1503,13 @@ class ModernMainWindowView: NSView {
     private func showCastMenu() {
         let menu = ContextMenuBuilder.buildOutputDevicesMenu()
         let btnRect = scaledRect(NSRect(x: 147, y: 42, width: 18, height: 14))
+        let menuPoint = NSPoint(x: btnRect.minX, y: btnRect.maxY)
+        menu.popUp(positioning: nil, at: menuPoint, in: self)
+    }
+
+    private func showModernSkinsMenu() {
+        let menu = ContextMenuBuilder.buildModernSkinsMenu()
+        let btnRect = scaledRect(NSRect(x: 163, y: 42, width: 18, height: 14))
         let menuPoint = NSPoint(x: btnRect.minX, y: btnRect.maxY)
         menu.popUp(positioning: nil, at: menuPoint, in: self)
     }
