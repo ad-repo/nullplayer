@@ -1063,10 +1063,12 @@ class AppStateManager {
         let equalizerFrame: NSRect?
         let playlistFrame: NSRect?
         let spectrumFrame: NSRect?
+        let waveformFrame: NSRect?
         let repaired: Bool
     }
 
-    /// Pure geometry helper for restoring classic center-stack windows (Main/EQ/Playlist/Spectrum).
+    /// Pure geometry helper for restoring classic center-stack windows
+    /// (Main/EQ/Playlist/Spectrum/Waveform).
     /// Repairs near-docked gaps, normalizes width/X to main, and snaps repaired windows flush below
     /// the current anchor in stack order.
     static func repairClassicCenterStackFrames(
@@ -1074,6 +1076,7 @@ class AppStateManager {
         equalizerFrame: NSRect?,
         playlistFrame: NSRect?,
         spectrumFrame: NSRect?,
+        waveformFrame: NSRect?,
         scale: CGFloat
     ) -> ClassicCenterStackRepairResult {
         let widthEpsilon: CGFloat = 0.5
@@ -1128,12 +1131,14 @@ class AppStateManager {
         let adjustedEQ = repairCandidate(equalizerFrame)
         let adjustedPlaylist = repairCandidate(playlistFrame)
         let adjustedSpectrum = repairCandidate(spectrumFrame)
+        let adjustedWaveform = repairCandidate(waveformFrame)
 
         return ClassicCenterStackRepairResult(
             mainFrame: adjustedMain,
             equalizerFrame: adjustedEQ,
             playlistFrame: adjustedPlaylist,
             spectrumFrame: adjustedSpectrum,
+            waveformFrame: adjustedWaveform,
             repaired: repaired
         )
     }
@@ -1149,6 +1154,7 @@ class AppStateManager {
         let equalizerWindow = wm.equalizerWindowController?.window
         let playlistWindow = wm.playlistWindowController?.window
         let spectrumWindow = wm.spectrumWindow
+        let waveformWindow = wm.waveformWindow
 
         let equalizerFrame: NSRect?
         if let equalizerWindow, equalizerWindow.isVisible {
@@ -1171,11 +1177,19 @@ class AppStateManager {
             spectrumFrame = nil
         }
 
+        let waveformFrame: NSRect?
+        if let waveformWindow, waveformWindow.isVisible {
+            waveformFrame = waveformWindow.frame
+        } else {
+            waveformFrame = nil
+        }
+
         let repairedFrames = Self.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
             equalizerFrame: equalizerFrame,
             playlistFrame: playlistFrame,
             spectrumFrame: spectrumFrame,
+            waveformFrame: waveformFrame,
             scale: scale
         )
 
@@ -1199,6 +1213,12 @@ class AppStateManager {
            let repairedFrame = repairedFrames.spectrumFrame,
            repairedFrame != spectrumWindow.frame {
             spectrumWindow.setFrame(repairedFrame, display: true)
+        }
+        if let waveformWindow,
+           waveformWindow.isVisible,
+           let repairedFrame = repairedFrames.waveformFrame,
+           repairedFrame != waveformWindow.frame {
+            waveformWindow.setFrame(repairedFrame, display: true)
         }
 
         if repairedFrames.repaired {

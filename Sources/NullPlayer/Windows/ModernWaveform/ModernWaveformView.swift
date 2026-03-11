@@ -5,6 +5,10 @@ import QuartzCore
 class ModernWaveformView: BaseWaveformView {
     private var renderer: ModernSkinRenderer!
     private var pressedClose = false
+    private var isDraggingWindow = false
+    private var hasDraggedWindow = false
+    private var windowDragStartPoint: NSPoint = .zero
+    private var pendingWaveformSeekPoint: NSPoint?
 
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
@@ -151,28 +155,80 @@ class ModernWaveformView: BaseWaveformView {
             return
         }
         if waveformRect.contains(point) {
+            if WindowManager.shared.effectiveHideTitleBars(for: window) {
+                pendingWaveformSeekPoint = point
+                hasDraggedWindow = false
+                isDraggingWindow = true
+                windowDragStartPoint = event.locationInWindow
+                if let window {
+                    WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+                }
+                return
+            }
             beginWaveformDrag(at: point)
             return
         }
         if titleBarRect().contains(point) {
-            window?.performDrag(with: event)
+            isDraggingWindow = true
+            windowDragStartPoint = event.locationInWindow
+            if let window {
+                WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+            }
+            return
+        }
+        if WindowManager.shared.effectiveHideTitleBars(for: window) {
+            hasDraggedWindow = false
+            isDraggingWindow = true
+            windowDragStartPoint = event.locationInWindow
+            if let window {
+                WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+            }
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if isDraggingWindow, let window {
+            hasDraggedWindow = true
+            let currentPoint = event.locationInWindow
+            let deltaX = currentPoint.x - windowDragStartPoint.x
+            let deltaY = currentPoint.y - windowDragStartPoint.y
+
+            var newOrigin = window.frame.origin
+            newOrigin.x += deltaX
+            newOrigin.y += deltaY
+
+            newOrigin = WindowManager.shared.windowWillMove(window, to: newOrigin)
+            window.setFrameOrigin(newOrigin)
+            return
+        }
         continueWaveformDrag(at: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if isDraggingWindow {
+            isDraggingWindow = false
+            if let window {
+                WindowManager.shared.windowDidFinishDragging(window)
+            }
+        }
         if pressedClose {
             pressedClose = false
             needsDisplay = true
             if closeButtonRect().contains(point) {
-                WindowManager.shared.toggleWaveform()
+                window?.close()
             }
             return
         }
+        if let seekPoint = pendingWaveformSeekPoint, !hasDraggedWindow {
+            beginWaveformDrag(at: seekPoint)
+            endWaveformDrag(at: point)
+            pendingWaveformSeekPoint = nil
+            hasDraggedWindow = false
+            return
+        }
+        pendingWaveformSeekPoint = nil
+        hasDraggedWindow = false
         endWaveformDrag(at: point)
     }
 

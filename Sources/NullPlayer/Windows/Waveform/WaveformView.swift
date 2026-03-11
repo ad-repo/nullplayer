@@ -3,6 +3,8 @@ import AppKit
 /// Classic waveform window content view with shared waveform rendering.
 class WaveformView: BaseWaveformView {
     private var pressedClose = false
+    private var isDraggingWindow = false
+    private var windowDragStartPoint: NSPoint = .zero
 
     private var windowScale: CGFloat {
         bounds.width / max(SkinElements.WaveformWindow.windowSize.width, 1)
@@ -105,21 +107,44 @@ class WaveformView: BaseWaveformView {
             return
         }
         if titleBarRect().contains(point) {
-            window?.performDrag(with: event)
+            isDraggingWindow = true
+            windowDragStartPoint = event.locationInWindow
+            if let window {
+                WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+            }
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if isDraggingWindow, let window {
+            let currentPoint = event.locationInWindow
+            let deltaX = currentPoint.x - windowDragStartPoint.x
+            let deltaY = currentPoint.y - windowDragStartPoint.y
+
+            var newOrigin = window.frame.origin
+            newOrigin.x += deltaX
+            newOrigin.y += deltaY
+
+            newOrigin = WindowManager.shared.windowWillMove(window, to: newOrigin)
+            window.setFrameOrigin(newOrigin)
+            return
+        }
         continueWaveformDrag(at: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if isDraggingWindow {
+            isDraggingWindow = false
+            if let window {
+                WindowManager.shared.windowDidFinishDragging(window)
+            }
+        }
         if pressedClose {
             pressedClose = false
             needsDisplay = true
             if closeButtonRect().contains(point) {
-                WindowManager.shared.toggleWaveform()
+                window?.close()
             }
             return
         }
@@ -127,17 +152,17 @@ class WaveformView: BaseWaveformView {
     }
 
     private func titleBarRect() -> NSRect {
-        let titleHeight = SkinElements.WaveformWindow.Layout.titleBarHeight * windowScale
+        let titleHeight = SkinElements.Playlist.titleHeight
         return NSRect(x: 0, y: bounds.height - titleHeight, width: bounds.width, height: titleHeight)
     }
 
     private func closeButtonRect() -> NSRect {
-        let scale = windowScale
+        let titleHeight = SkinElements.Playlist.titleHeight
         return NSRect(
-            x: bounds.width - (11 * scale),
-            y: bounds.height - (SkinElements.WaveformWindow.Layout.titleBarHeight * windowScale) + (3 * scale),
-            width: 9 * scale,
-            height: 9 * scale
+            x: bounds.width - SkinElements.SpectrumWindow.TitleBarButtons.closeOffset,
+            y: bounds.height - titleHeight + 3,
+            width: 9,
+            height: 9
         )
     }
 }

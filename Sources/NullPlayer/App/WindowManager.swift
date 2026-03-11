@@ -230,7 +230,7 @@ class WindowManager {
     }
     
     /// Returns true if the title bar should be hidden for the given window.
-    /// - Base behavior: EQ, Playlist, Spectrum always hide when docked.
+    /// - Base behavior: EQ, Playlist, Spectrum, and Waveform always hide when docked.
     /// - HT on: ALL windows hide titlebars regardless of docking.
     func effectiveHideTitleBars(for window: NSWindow?) -> Bool {
         guard let window else { return false }
@@ -1376,6 +1376,11 @@ class WindowManager {
         waveformWindowController?.window?.frame
     }
 
+    /// Access the waveform window when visible/internal geometry repairs need direct frame updates.
+    var waveformWindow: NSWindow? {
+        waveformWindowController?.window
+    }
+
     func toggleWaveform() {
         if let controller = waveformWindowController, controller.window?.isVisible == true {
             let closingFrame = controller.window!.frame
@@ -2062,7 +2067,7 @@ class WindowManager {
         // Each window preserves its current size and aligns left with main
         var nextY = mainFrame.minY  // Bottom of previous window in stack
         
-        // Collect frames for visible stack windows (order: EQ, Playlist, Spectrum)
+        // Collect frames for visible stack windows (order: EQ, Playlist, Spectrum, Waveform)
         var eqFrame: NSRect?
         var playlistFrame: NSRect?
         var spectrumFrame: NSRect?
@@ -2777,7 +2782,8 @@ class WindowManager {
     }
 
     private func _computeSharpCornersImpl(for window: NSWindow) -> CACornerMask {
-        // Sharp corners apply only inside the center stack (main/EQ/playlist/spectrum).
+        // Sharp corners apply only inside the center stack
+        // (main/EQ/playlist/spectrum/waveform).
         // Side windows (library/projectM) keep rounded corners and do not force
         // sharp corners on center-stack windows where they meet.
         guard isDockableWindow(window) else { return [] }
