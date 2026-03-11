@@ -42,6 +42,7 @@ Modern skins can define a top-level `visualization` object in `skin.json`.
 
 - `mainWindowMode`: `MainWindowVisMode.rawValue`
 - `spectrumWindowMode`: `SpectrumQualityMode.rawValue`
+  - Includes `Punch` (raw value: `"Punch"`) for the Metal peak-focused spectrum mode.
 - `visClassic`:
   - `mainWindowProfile`, `spectrumWindowProfile`
   - `mainWindowFitToWidth`, `spectrumWindowFitToWidth`
@@ -58,6 +59,10 @@ Modern skins can define a top-level `visualization` object in `skin.json`.
 
 - Mode selection is not limited to `vis_classic`; any valid mode raw value is accepted.
 - Only modes that have preset/profile families are represented (`visClassic`, `fire`, `lightning`, `matrix`).
+- `Punch` has no extra style block in `skin.json`; configure it by setting
+  `mainWindowMode` and/or `spectrumWindowMode` to `"Punch"`.
+- `Punch` renders bars only (no separate peak marker line), with dominant-frequency focus
+  and fast response tuned for transient-heavy material.
 - Invalid mode/preset strings are ignored safely at runtime and logged.
 - If a mode requires a missing shader, the requested mode is ignored.
 
