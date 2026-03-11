@@ -68,6 +68,8 @@ class SpectrumView: NSView {
         ) { [weak self] notification in
             self?.handleSpectrumUpdate(notification)
         }
+        NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
+                                               name: .visClassicProfileCommand, object: nil)
         WindowManager.shared.audioEngine.addSpectrumConsumer("spectrumView")
     }
     
@@ -117,6 +119,7 @@ class SpectrumView: NSView {
         if let observer = spectrumObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        NotificationCenter.default.removeObserver(self)
         WindowManager.shared.audioEngine.removeSpectrumConsumer("spectrumView")
     }
     
@@ -172,6 +175,13 @@ class SpectrumView: NSView {
                                             pressedButton: pressedButton, isShadeMode: isShadeMode)
         
         context.restoreGState()
+
+        // In standalone vis_classic transparent mode, clear the analyzer content area
+        // so transparent pixels reveal what's behind the window instead of painted chrome.
+        if spectrumAnalyzerView?.qualityMode == .visClassicExact,
+           spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() == true {
+            context.clear(calculateContentArea())
+        }
     }
     
     // MARK: - Spectrum Data
@@ -189,6 +199,16 @@ class SpectrumView: NSView {
         
         // Forward spectrum data to Metal view
         spectrumAnalyzerView?.updateSpectrum(spectrum)
+    }
+
+    @objc private func handleVisClassicProfileCommand(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let command = userInfo["command"] as? String,
+              command == "transparentBg" else { return }
+
+        let target = userInfo["target"] as? String
+        guard target == nil || target == "spectrumWindow" else { return }
+        needsDisplay = true
     }
     
     // MARK: - Public Methods
@@ -649,6 +669,12 @@ class SpectrumView: NSView {
             fitItem.state = fitToWidthEnabled ? .on : .off
             menu.addItem(fitItem)
 
+            let transparentBgEnabled = spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() ?? false
+            let transparentBgItem = NSMenuItem(title: "Transparent Background", action: #selector(toggleVisClassicTransparentBg(_:)), keyEquivalent: "")
+            transparentBgItem.target = self
+            transparentBgItem.state = transparentBgEnabled ? .on : .off
+            menu.addItem(transparentBgItem)
+
             let nextItem = NSMenuItem(title: "Next Profile", action: #selector(loadNextVisClassicProfile(_:)), keyEquivalent: "")
             nextItem.target = self
             menu.addItem(nextItem)
@@ -755,6 +781,11 @@ class SpectrumView: NSView {
 
     @objc private func toggleVisClassicFitToWidth(_ sender: Any?) {
         _ = spectrumAnalyzerView?.toggleVisClassicFitToWidth()
+    }
+
+    @objc private func toggleVisClassicTransparentBg(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.toggleVisClassicTransparentBackground()
+        needsDisplay = true
     }
     
     @objc private func closeWindow(_ sender: Any?) {

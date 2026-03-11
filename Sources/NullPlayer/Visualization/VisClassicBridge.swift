@@ -19,6 +19,13 @@ final class VisClassicBridge {
             case .mainWindow: return "visClassicFitToWidth.mainWindow"
             }
         }
+
+        var transparentBgKey: String {
+            switch self {
+            case .spectrumWindow: return "visClassicTransparentBg.spectrumWindow"
+            case .mainWindow: return "visClassicTransparentBg.mainWindow"
+            }
+        }
     }
 
     struct ProfileEntry {
@@ -52,6 +59,9 @@ final class VisClassicBridge {
 
         let fitDefault = Self.fitToWidthDefault(for: scope)
         _ = setFitToWidth(fitDefault)
+
+        let transparentBgDefault = Self.transparentBgDefault(for: scope)
+        _ = setTransparentBackground(transparentBgDefault)
     }
 
     deinit {
@@ -132,6 +142,24 @@ final class VisClassicBridge {
         guard let core else { return true }
         var value: Int32 = 1
         guard vc_get_option(core, "FitToWidth", &value) == 1 else { return true }
+        return value != 0
+    }
+
+    @discardableResult
+    func setTransparentBackground(_ enabled: Bool) -> Bool {
+        guard let core else { return false }
+        let value: Int32 = enabled ? 1 : 0
+        let ok = vc_set_option(core, "transparentbg", value) == 1
+        if ok {
+            UserDefaults.standard.set(enabled, forKey: preferenceScope.transparentBgKey)
+        }
+        return ok
+    }
+
+    func transparentBackgroundEnabled() -> Bool {
+        guard let core else { return false }
+        var value: Int32 = 0
+        guard vc_get_option(core, "transparentbg", &value) == 1 else { return false }
         return value != 0
     }
 
@@ -223,6 +251,10 @@ final class VisClassicBridge {
             return legacy
         }
         return true
+    }
+
+    static func transparentBgDefault(for scope: PreferenceScope = .spectrumWindow) -> Bool {
+        return UserDefaults.standard.bool(forKey: scope.transparentBgKey)
     }
 
     @discardableResult

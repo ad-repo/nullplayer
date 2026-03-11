@@ -722,6 +722,12 @@ class ModernSpectrumView: NSView {
             fitItem.state = fitToWidthEnabled ? .on : .off
             menu.addItem(fitItem)
 
+            let transparentBgEnabled = spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() ?? false
+            let transparentBgItem = NSMenuItem(title: "Transparent Background", action: #selector(toggleVisClassicTransparentBg(_:)), keyEquivalent: "")
+            transparentBgItem.target = self
+            transparentBgItem.state = transparentBgEnabled ? .on : .off
+            menu.addItem(transparentBgItem)
+
             let nextItem = NSMenuItem(title: "Next Profile", action: #selector(loadNextVisClassicProfile(_:)), keyEquivalent: "")
             nextItem.target = self
             menu.addItem(nextItem)
@@ -830,6 +836,10 @@ class ModernSpectrumView: NSView {
 
     @objc private func toggleVisClassicFitToWidth(_ sender: Any?) {
         _ = spectrumAnalyzerView?.toggleVisClassicFitToWidth()
+    }
+
+    @objc private func toggleVisClassicTransparentBg(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.toggleVisClassicTransparentBackground()
     }
     
     @objc private func closeWindow(_ sender: Any?) {

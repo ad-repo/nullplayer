@@ -137,6 +137,8 @@ class ModernMainWindowView: NSView {
         // Observe main window vis mode changes from context menu
         NotificationCenter.default.addObserver(self, selector: #selector(mainVisSettingsChanged),
                                                 name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
+                                                name: .visClassicProfileCommand, object: nil)
         
         // Set accessibility
         setAccessibilityIdentifier("ModernMainWindowView")
@@ -283,9 +285,9 @@ class ModernMainWindowView: NSView {
         let trackOpacity = renderer.skin.resolvedOpacity(for: .trackDisplay)
         let volumeOpacity = renderer.skin.resolvedOpacity(for: .volumeArea)
         let spectrumOpacity = renderer.skin.resolvedOpacity(for: .spectrumArea)
-        let hasSpectrumOverride = renderer.skin.mainSpectrumOpacityOverride != nil
-        let spectrumBackgroundOpacity = renderer.skin.applyMainSpectrumOpacity(to: spectrumOpacity.background)
-        let spectrumBorderOpacity = renderer.skin.applyMainSpectrumOpacity(to: spectrumOpacity.border)
+        // Keep panel fill/border tied to true skin opacity; only content uses main-spectrum override.
+        let spectrumBackgroundOpacity = spectrumOpacity.background
+        let spectrumBorderOpacity = spectrumOpacity.border
         let spectrumContentOpacity = renderer.skin.applyMainSpectrumOpacity(to: spectrumOpacity.content)
         
         if isShadeMode {
@@ -312,7 +314,7 @@ class ModernMainWindowView: NSView {
             borderOpacity: mainOpacity.border
         )
         context.restoreGState()
-        
+
         // 2..9. Foreground content under the main window content opacity channel.
         withContextAlpha(mainOpacity.content, context: context) {
             // 2. Title bar -- only if not hidden and dirty rect overlaps
@@ -398,20 +400,23 @@ class ModernMainWindowView: NSView {
                             context: context
                         )
                     } else {
-                        // For Metal visualization modes, keep panel opacity-driven too.
+                        // For Metal modes, vis_classic transparent background keeps border
+                        // from skin opacity but clears panel fill behind the analyzer.
+                        let panelBgOpacity: CGFloat
+                        if self.mainVisMode == .visClassicExact && self.isMainVisClassicTransparentEnabled() {
+                            panelBgOpacity = 0
+                        } else {
+                            panelBgOpacity = spectrumBackgroundOpacity
+                        }
                         self.renderer.drawInsetPanel(
                             in: ModernSkinElements.spectrumArea.defaultRect,
-                            backgroundOpacity: spectrumBackgroundOpacity,
+                            backgroundOpacity: panelBgOpacity,
                             borderOpacity: spectrumBorderOpacity,
                             context: context
                         )
                     }
                 }
-                if hasSpectrumOverride {
-                    drawContentUnattenuated(context: context, draw: drawSpectrumArea)
-                } else {
-                    drawSpectrumArea()
-                }
+                drawSpectrumArea()
             }
 
             // 6. EQ & Playlist toggle buttons (above seek bar)
@@ -813,8 +818,8 @@ class ModernMainWindowView: NSView {
         
         // Reposition metal overlay to match new scale
         if let overlay = metalOverlay {
-            let specRect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
-            overlay.frame = specRect
+            overlay.frame = currentMainSpectrumOverlayRect()
+            updateMainSpectrumOverlayGeometryAndStyle()
         }
         
         needsDisplay = true
@@ -859,13 +864,22 @@ class ModernMainWindowView: NSView {
 
     /// Apply spectrum content opacity to the optional Metal overlay view.
     private func updateSpectrumOverlayOpacity() {
+        if mainVisMode == .visClassicExact && isMainVisClassicTransparentEnabled() {
+            metalOverlay?.alphaValue = 1.0
+            metalOverlay?.layer?.opacity = 1.0
+            return
+        }
+
         let skin = renderer.skin
         if let spectrumOverride = skin.mainSpectrumOpacityOverride {
             metalOverlay?.alphaValue = spectrumOverride
+            metalOverlay?.layer?.opacity = Float(spectrumOverride)
         } else {
             let mainContentOpacity = skin.resolvedOpacity(for: .mainWindow).content
             let spectrumContentOpacity = skin.resolvedOpacity(for: .spectrumArea).content
-            metalOverlay?.alphaValue = min(1.0, max(0.0, mainContentOpacity * spectrumContentOpacity))
+            let alpha = min(1.0, max(0.0, mainContentOpacity * spectrumContentOpacity))
+            metalOverlay?.alphaValue = alpha
+            metalOverlay?.layer?.opacity = Float(alpha)
         }
     }
 
@@ -986,12 +1000,14 @@ class ModernMainWindowView: NSView {
     private func updateMetalOverlay() {
         if mainVisMode.usesMetal {
             if metalOverlay == nil {
-                let specRect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
+                let specRect = currentMainSpectrumOverlayRect()
                 let overlay = SpectrumAnalyzerView(frame: specRect)
                 overlay.isEmbedded = true  // prevent contamination of "spectrumQualityMode" UserDefaults
                 overlay.wantsLayer = true
                 overlay.layer?.cornerRadius = 4 * scale
                 overlay.layer?.masksToBounds = true
+                overlay.layer?.backgroundColor = NSColor.clear.cgColor
+                overlay.layer?.isOpaque = false
 
                 // Set spectrum colors from modern skin
                 if let skin = ModernSkinEngine.shared.currentSkin {
@@ -1019,6 +1035,11 @@ class ModernMainWindowView: NSView {
             if let qualityMode = mainVisMode.spectrumQualityMode {
                 metalOverlay?.qualityMode = qualityMode
             }
+            if mainVisMode == .visClassicExact {
+                let enabled = VisClassicBridge.transparentBgDefault(for: .mainWindow)
+                _ = metalOverlay?.setVisClassicTransparentBackground(enabled)
+            }
+            updateMainSpectrumOverlayGeometryAndStyle()
             updateSpectrumOverlayOpacity()
             metalOverlay?.isHidden = false
             metalOverlay?.startDisplayLink()
@@ -1071,7 +1092,29 @@ class ModernMainWindowView: NSView {
                let intensity = MatrixIntensity(rawValue: savedIntensity) { overlay.matrixIntensity = intensity }
             if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
                let mode = SpectrumDecayMode(rawValue: savedDecay) { overlay.decayMode = mode }
+            if mainVisMode == .visClassicExact {
+                let enabled = VisClassicBridge.transparentBgDefault(for: .mainWindow)
+                _ = overlay.setVisClassicTransparentBackground(enabled)
+            }
+            updateMainSpectrumOverlayGeometryAndStyle()
         }
+        updateSpectrumOverlayOpacity()
+    }
+
+    @objc private func handleVisClassicProfileCommand(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let command = userInfo["command"] as? String,
+              command == "transparentBg",
+              (userInfo["target"] as? String) == "mainWindow" else { return }
+
+        let enabled = (userInfo["enabled"] as? Bool)
+            ?? VisClassicBridge.transparentBgDefault(for: .mainWindow)
+        if mainVisMode == .visClassicExact {
+            _ = metalOverlay?.setVisClassicTransparentBackground(enabled)
+        }
+        updateMainSpectrumOverlayGeometryAndStyle()
+        updateSpectrumOverlayOpacity()
+        invalidateElement("spectrum_area")
     }
 
     // MARK: - Hit Testing
@@ -1085,6 +1128,31 @@ class ModernMainWindowView: NSView {
     private func scaledRect(_ rect: NSRect) -> NSRect {
         NSRect(x: rect.origin.x * scale, y: rect.origin.y * scale,
                width: rect.size.width * scale, height: rect.size.height * scale)
+    }
+
+    private func isMainVisClassicTransparentEnabled() -> Bool {
+        if let overlay = metalOverlay {
+            return overlay.visClassicTransparentBackgroundEnabled()
+                || VisClassicBridge.transparentBgDefault(for: .mainWindow)
+        }
+        return VisClassicBridge.transparentBgDefault(for: .mainWindow)
+    }
+
+    private func currentMainSpectrumOverlayRect() -> NSRect {
+        var baseRect = ModernSkinElements.spectrumArea.defaultRect
+        if mainVisMode == .visClassicExact && isMainVisClassicTransparentEnabled() {
+            baseRect = baseRect.insetBy(dx: 2, dy: 2)
+        }
+        return scaledRect(baseRect)
+    }
+
+    private func updateMainSpectrumOverlayGeometryAndStyle() {
+        guard let overlay = metalOverlay else { return }
+        overlay.frame = currentMainSpectrumOverlayRect()
+        overlay.layer?.cornerRadius = 4 * scale
+        overlay.layer?.masksToBounds = true
+        overlay.layer?.backgroundColor = NSColor.clear.cgColor
+        overlay.layer?.isOpaque = false
     }
     
     /// Invalidate the screen region for a given element ID (for targeted partial redraws)

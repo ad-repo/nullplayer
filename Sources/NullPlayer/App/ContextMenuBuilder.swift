@@ -800,6 +800,12 @@ class ContextMenuBuilder {
             fitItem.state = fitEnabled ? .on : .off
             visMenu.addItem(fitItem)
 
+            let transparentBgEnabledMain = VisClassicBridge.transparentBgDefault(for: .mainWindow)
+            let transparentBgItemMain = NSMenuItem(title: "Transparent Background", action: #selector(MenuActions.toggleMainVisClassicTransparentBg), keyEquivalent: "")
+            transparentBgItemMain.target = MenuActions.shared
+            transparentBgItemMain.state = transparentBgEnabledMain ? .on : .off
+            visMenu.addItem(transparentBgItemMain)
+
             let nextItem = NSMenuItem(title: "Next Profile", action: #selector(MenuActions.nextMainVisClassicProfile), keyEquivalent: "")
             nextItem.target = MenuActions.shared
             visMenu.addItem(nextItem)
@@ -1039,6 +1045,12 @@ class ContextMenuBuilder {
             fitItem.target = MenuActions.shared
             fitItem.state = fitEnabled ? .on : .off
             spectrumWindowMenu.addItem(fitItem)
+
+            let transparentEnabled = VisClassicBridge.transparentBgDefault(for: .spectrumWindow)
+            let transparentItem = NSMenuItem(title: "Transparent Background", action: #selector(MenuActions.toggleVisClassicTransparentBg), keyEquivalent: "")
+            transparentItem.target = MenuActions.shared
+            transparentItem.state = transparentEnabled ? .on : .off
+            spectrumWindowMenu.addItem(transparentItem)
 
             let nextItem = NSMenuItem(title: "Next Profile", action: #selector(MenuActions.nextVisClassicProfile), keyEquivalent: "")
             nextItem.target = MenuActions.shared
@@ -3083,6 +3095,16 @@ class MenuActions: NSObject {
         )
     }
 
+    @objc func toggleVisClassicTransparentBg() {
+        let enabled = !VisClassicBridge.transparentBgDefault(for: .spectrumWindow)
+        UserDefaults.standard.set(enabled, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "transparentBg", "target": "spectrumWindow", "enabled": enabled]
+        )
+    }
+
     @objc func loadMainVisClassicProfile(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
         NotificationCenter.default.post(
@@ -3129,6 +3151,16 @@ class MenuActions: NSObject {
             name: .visClassicProfileCommand,
             object: nil,
             userInfo: ["command": "fitToWidth", "target": "mainWindow"]
+        )
+    }
+
+    @objc func toggleMainVisClassicTransparentBg() {
+        let enabled = !VisClassicBridge.transparentBgDefault(for: .mainWindow)
+        UserDefaults.standard.set(enabled, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "transparentBg", "target": "mainWindow", "enabled": enabled]
         )
     }
     

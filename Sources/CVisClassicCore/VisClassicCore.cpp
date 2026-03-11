@@ -221,6 +221,10 @@ public:
             fitToWidth_ = value != 0;
             return 1;
         }
+        if (key == "transparentbg" || key == "transparent_bg" || key == "transparent bg") {
+            transparentBg_ = value != 0;
+            return 1;
+        }
         return 0;
     }
 
@@ -298,6 +302,10 @@ public:
         }
         if (key == "fittowidth" || key == "fit_to_width" || key == "fit to width") {
             *valueOut = fitToWidth_ ? 1 : 0;
+            return 1;
+        }
+        if (key == "transparentbg" || key == "transparent_bg" || key == "transparent bg") {
+            *valueOut = transparentBg_ ? 1 : 0;
             return 1;
         }
         return 0;
@@ -439,6 +447,7 @@ private:
     float fftEnvelope_ = 0.2f;
     float fftScale_ = 2.0f;
     bool fitToWidth_ = true;
+    bool transparentBg_ = false;
 
     unsigned int sampleRate_ = 44100;
     unsigned int lastBarTableSampleRate_ = 0;
@@ -709,10 +718,10 @@ private:
                 if ((backgroundDraw_ == 3 || backgroundDraw_ == 4) && ((x % 8 == 0) || (y % 8 == 0))) {
                     v = static_cast<uint8_t>(std::min(255, base + 20));
                 }
-                row[x * 4 + 0] = v;
-                row[x * 4 + 1] = v;
-                row[x * 4 + 2] = v;
-                row[x * 4 + 3] = 255;
+                row[x * 4 + 0] = transparentBg_ ? 0 : v;
+                row[x * 4 + 1] = transparentBg_ ? 0 : v;
+                row[x * 4 + 2] = transparentBg_ ? 0 : v;
+                row[x * 4 + 3] = transparentBg_ ? 0 : 255;
             }
         }
     }

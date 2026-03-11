@@ -966,6 +966,12 @@ class SpectrumAnalyzerView: NSView {
             } else {
                 _ = toggleVisClassicFitToWidth()
             }
+        case "transparentBg":
+            if let enabled = userInfo["enabled"] as? Bool {
+                _ = setVisClassicTransparentBackground(enabled)
+            } else {
+                _ = toggleVisClassicTransparentBackground()
+            }
         default:
             break
         }
@@ -1021,6 +1027,8 @@ class SpectrumAnalyzerView: NSView {
         metalLayer.device = device
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.framebufferOnly = true
+        metalLayer.isOpaque = !VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope)
+        layer?.isOpaque = !VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope)
         metalLayer.frame = bounds
         syncMetalLayerScaleAndSize()
         // CRITICAL: Limit drawable pool size to prevent unbounded memory growth
@@ -3002,7 +3010,15 @@ class SpectrumAnalyzerView: NSView {
         rpd.colorAttachments[0].texture = drawable.texture
         rpd.colorAttachments[0].loadAction = .clear
         rpd.colorAttachments[0].storeAction = .store
-        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        let shouldClearTransparent =
+            qualityMode == .visClassicExact &&
+            visClassicTransparentBackgroundEnabled()
+        rpd.colorAttachments[0].clearColor = MTLClearColor(
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: shouldClearTransparent ? 0 : 1
+        )
         
         if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: rpd) {
             encoder.endEncoding()
@@ -3157,6 +3173,37 @@ class SpectrumAnalyzerView: NSView {
     func toggleVisClassicFitToWidth() -> Bool {
         let current = visClassicFitToWidthEnabled()
         return setVisClassicFitToWidth(!current)
+    }
+
+    func visClassicTransparentBackgroundEnabled() -> Bool {
+        if visClassicBridge == nil {
+            return VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.transparentBackgroundEnabled() ?? false
+    }
+
+    @discardableResult
+    func setVisClassicTransparentBackground(_ enabled: Bool) -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        let ok = visClassicBridge?.setTransparentBackground(enabled) ?? false
+        if ok {
+            metalLayer?.isOpaque = !enabled
+            layer?.isOpaque = !enabled
+            if qualityMode == .visClassicExact && !isRendering {
+                renderBlackFrame()
+            }
+        }
+        return ok
+    }
+
+    @discardableResult
+    func toggleVisClassicTransparentBackground() -> Bool {
+        let current = visClassicTransparentBackgroundEnabled()
+        return setVisClassicTransparentBackground(!current)
     }
     
     /// Update spectrum data from audio engine (called from audio thread)
