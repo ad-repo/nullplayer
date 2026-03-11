@@ -207,6 +207,10 @@ class ModernSkinEngine {
         var visClassicSpectrumProfileToLoad: String?
         var visClassicMainFitToWidth: Bool?
         var visClassicSpectrumFitToWidth: Bool?
+        var visClassicMainTransparentBackground: Bool?
+        var visClassicSpectrumTransparentBackground: Bool?
+        var visClassicMainOpacity: Double?
+        var visClassicSpectrumOpacity: Double?
 
         if let modeRaw = config.mainWindowMode {
             if let mode = MainWindowVisMode(rawValue: modeRaw) {
@@ -255,6 +259,28 @@ class ModernSkinEngine {
             if let fit = visClassic.spectrumWindowFitToWidth {
                 defaults.set(fit, forKey: "visClassicFitToWidth.spectrumWindow")
                 visClassicSpectrumFitToWidth = fit
+                spectrumSettingsChanged = true
+            }
+            if let transparent = visClassic.mainWindowTransparentBackground {
+                defaults.set(transparent, forKey: "visClassicTransparentBg.mainWindow")
+                visClassicMainTransparentBackground = transparent
+                mainVisChanged = true
+            }
+            if let transparent = visClassic.spectrumWindowTransparentBackground {
+                defaults.set(transparent, forKey: "visClassicTransparentBg.spectrumWindow")
+                visClassicSpectrumTransparentBackground = transparent
+                spectrumSettingsChanged = true
+            }
+            if let opacity = visClassic.mainWindowOpacity {
+                let clamped = max(0.0, min(1.0, Double(opacity)))
+                defaults.set(clamped, forKey: VisClassicBridge.PreferenceScope.mainWindow.opacityKey)
+                visClassicMainOpacity = clamped
+                mainVisChanged = true
+            }
+            if let opacity = visClassic.spectrumWindowOpacity {
+                let clamped = max(0.0, min(1.0, Double(opacity)))
+                defaults.set(clamped, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.opacityKey)
+                visClassicSpectrumOpacity = clamped
                 spectrumSettingsChanged = true
             }
         }
@@ -378,6 +404,34 @@ class ModernSkinEngine {
                 name: .visClassicProfileCommand,
                 object: nil,
                 userInfo: ["command": "fitToWidth", "enabled": fit, "target": "spectrumWindow"]
+            )
+        }
+        if let transparent = visClassicMainTransparentBackground {
+            NotificationCenter.default.post(
+                name: .visClassicProfileCommand,
+                object: nil,
+                userInfo: ["command": "transparentBg", "enabled": transparent, "target": "mainWindow"]
+            )
+        }
+        if let transparent = visClassicSpectrumTransparentBackground {
+            NotificationCenter.default.post(
+                name: .visClassicProfileCommand,
+                object: nil,
+                userInfo: ["command": "transparentBg", "enabled": transparent, "target": "spectrumWindow"]
+            )
+        }
+        if let opacity = visClassicMainOpacity {
+            NotificationCenter.default.post(
+                name: .visClassicProfileCommand,
+                object: nil,
+                userInfo: ["command": "opacity", "value": opacity, "target": "mainWindow"]
+            )
+        }
+        if let opacity = visClassicSpectrumOpacity {
+            NotificationCenter.default.post(
+                name: .visClassicProfileCommand,
+                object: nil,
+                userInfo: ["command": "opacity", "value": opacity, "target": "spectrumWindow"]
             )
         }
     }

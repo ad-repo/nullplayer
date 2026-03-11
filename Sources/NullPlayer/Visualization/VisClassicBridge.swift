@@ -26,6 +26,13 @@ final class VisClassicBridge {
             case .mainWindow: return "visClassicTransparentBg.mainWindow"
             }
         }
+
+        var opacityKey: String {
+            switch self {
+            case .spectrumWindow: return "visClassicOpacity.spectrumWindow"
+            case .mainWindow: return "visClassicOpacity.mainWindow"
+            }
+        }
     }
 
     struct ProfileEntry {
@@ -255,6 +262,14 @@ final class VisClassicBridge {
 
     static func transparentBgDefault(for scope: PreferenceScope = .spectrumWindow) -> Bool {
         return UserDefaults.standard.bool(forKey: scope.transparentBgKey)
+    }
+
+    static func opacityDefault(for scope: PreferenceScope = .spectrumWindow) -> Double? {
+        let defaults = UserDefaults.standard
+        guard let value = defaults.object(forKey: scope.opacityKey) as? NSNumber else {
+            return nil
+        }
+        return max(0.0, min(1.0, value.doubleValue))
     }
 
     @discardableResult

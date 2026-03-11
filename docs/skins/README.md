@@ -16,7 +16,11 @@ Modern skins can define a top-level `visualization` object in `skin.json`.
       "mainWindowProfile": "Purple Neon",
       "spectrumWindowProfile": "Purple Neon",
       "mainWindowFitToWidth": true,
-      "spectrumWindowFitToWidth": true
+      "spectrumWindowFitToWidth": true,
+      "mainWindowTransparentBackground": false,
+      "spectrumWindowTransparentBackground": false,
+      "mainWindowOpacity": 1.0,
+      "spectrumWindowOpacity": 1.0
     },
     "fire": {
       "mainWindowStyle": "Inferno",
@@ -46,6 +50,8 @@ Modern skins can define a top-level `visualization` object in `skin.json`.
 - `visClassic`:
   - `mainWindowProfile`, `spectrumWindowProfile`
   - `mainWindowFitToWidth`, `spectrumWindowFitToWidth`
+  - `mainWindowTransparentBackground`, `spectrumWindowTransparentBackground`
+  - `mainWindowOpacity`, `spectrumWindowOpacity` (`0.0`-`1.0`, only applied when transparent background is enabled)
 - `fire`:
   - `mainWindowStyle`, `mainWindowIntensity`
   - `spectrumWindowStyle`, `spectrumWindowIntensity`

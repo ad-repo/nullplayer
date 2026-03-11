@@ -152,7 +152,11 @@
             "mainWindowProfile": "flock darkmateria",
             "spectrumWindowProfile": "flock darkmateria",
             "mainWindowFitToWidth": true,
-            "spectrumWindowFitToWidth": true
+            "spectrumWindowFitToWidth": true,
+            "mainWindowTransparentBackground": true,
+            "spectrumWindowTransparentBackground": true,
+            "mainWindowOpacity": 0.8,
+            "spectrumWindowOpacity": 0.8
         },
         "fire": {
             "mainWindowStyle": "Ocean",

@@ -529,10 +529,15 @@ class MainWindowView: NSView {
     
     private func updateMainVisClassicOverlayOpacity() {
         guard let overlay = metalOverlay else { return }
-        // Keep analyzer content fully opaque; transparency is handled by per-pixel
-        // background alpha from vis_classic plus the main-window clear region.
-        overlay.alphaValue = 1.0
-        overlay.layer?.opacity = 1.0
+        if mainVisMode == .visClassicExact && VisClassicBridge.transparentBgDefault(for: .mainWindow) {
+            let visClassicOpacity = CGFloat(VisClassicBridge.opacityDefault(for: .mainWindow) ?? 1.0)
+            let clamped = min(1.0, max(0.0, visClassicOpacity))
+            overlay.alphaValue = clamped
+            overlay.layer?.opacity = Float(clamped)
+        } else {
+            overlay.alphaValue = 1.0
+            overlay.layer?.opacity = 1.0
+        }
 
         guard mainVisMode == .visClassicExact else { return }
         // Force-sync the vis_classic core option from persisted main-window state.
@@ -752,7 +757,7 @@ class MainWindowView: NSView {
     @objc private func handleVisClassicProfileCommand(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
               let command = userInfo["command"] as? String,
-              command == "transparentBg",
+              (command == "transparentBg" || command == "opacity"),
               (userInfo["target"] as? String) == "mainWindow" else { return }
         updateMainVisClassicOverlayOpacity()
         updateMetalOverlayFrame()

@@ -152,7 +152,11 @@
             "mainWindowProfile": "Northern Lights",
             "spectrumWindowProfile": "Northern Lights",
             "mainWindowFitToWidth": true,
-            "spectrumWindowFitToWidth": true
+            "spectrumWindowFitToWidth": true,
+            "mainWindowTransparentBackground": true,
+            "spectrumWindowTransparentBackground": true,
+            "mainWindowOpacity": 0.8,
+            "spectrumWindowOpacity": 0.8
         },
         "fire": {
             "mainWindowStyle": "Inferno",

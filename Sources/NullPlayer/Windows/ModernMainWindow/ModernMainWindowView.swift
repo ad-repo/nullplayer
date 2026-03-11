@@ -873,8 +873,10 @@ class ModernMainWindowView: NSView {
     /// Apply spectrum content opacity to the optional Metal overlay view.
     private func updateSpectrumOverlayOpacity() {
         if mainVisMode == .visClassicExact && isMainVisClassicTransparentEnabled() {
-            metalOverlay?.alphaValue = 1.0
-            metalOverlay?.layer?.opacity = 1.0
+            let visClassicOpacity = CGFloat(VisClassicBridge.opacityDefault(for: .mainWindow) ?? 1.0)
+            let clamped = min(1.0, max(0.0, visClassicOpacity))
+            metalOverlay?.alphaValue = clamped
+            metalOverlay?.layer?.opacity = Float(clamped)
             return
         }
 
@@ -1112,7 +1114,7 @@ class ModernMainWindowView: NSView {
     @objc private func handleVisClassicProfileCommand(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
               let command = userInfo["command"] as? String,
-              command == "transparentBg",
+              (command == "transparentBg" || command == "opacity"),
               (userInfo["target"] as? String) == "mainWindow" else { return }
 
         let enabled = (userInfo["enabled"] as? Bool)

@@ -152,7 +152,11 @@
             "mainWindowProfile": "Matches",
             "spectrumWindowProfile": "Matches",
             "mainWindowFitToWidth": true,
-            "spectrumWindowFitToWidth": true
+            "spectrumWindowFitToWidth": true,
+            "mainWindowTransparentBackground": true,
+            "spectrumWindowTransparentBackground": true,
+            "mainWindowOpacity": 0.8,
+            "spectrumWindowOpacity": 0.8
         },
         "fire": {
             "mainWindowStyle": "Ocean",

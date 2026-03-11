@@ -68,6 +68,10 @@ struct VisClassicVisualizationConfig: Codable {
     let spectrumWindowProfile: String?
     let mainWindowFitToWidth: Bool?
     let spectrumWindowFitToWidth: Bool?
+    let mainWindowTransparentBackground: Bool?
+    let spectrumWindowTransparentBackground: Bool?
+    let mainWindowOpacity: CGFloat?
+    let spectrumWindowOpacity: CGFloat?
 }
 
 struct FireVisualizationConfig: Codable {

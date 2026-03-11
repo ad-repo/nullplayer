@@ -392,6 +392,9 @@ class SpectrumAnalyzerView: NSView {
             // Keep Punch mode's dynamic bar layout in sync when mode changes.
             applyModeDrivenBarLayoutIfNeeded()
             updateWaveformConsumerRegistration()
+            DispatchQueue.main.async { [weak self] in
+                self?.applyVisClassicOpacity()
+            }
             // Note: Don't change semaphore at runtime - it causes crashes when GPU work is in-flight
         }
     }
@@ -1043,6 +1046,8 @@ class SpectrumAnalyzerView: NSView {
             } else {
                 _ = toggleVisClassicTransparentBackground()
             }
+        case "opacity":
+            applyVisClassicOpacity()
         default:
             break
         }
@@ -1120,6 +1125,7 @@ class SpectrumAnalyzerView: NSView {
         
         // Create buffers
         setupBuffers()
+        applyVisClassicOpacity()
     }
     
     /// Returns the exact viewport size (in pixels) for the current drawable.
@@ -3369,6 +3375,22 @@ class SpectrumAnalyzerView: NSView {
         return visClassicBridge?.transparentBackgroundEnabled() ?? false
     }
 
+    private func resolvedVisClassicOpacity() -> CGFloat {
+        let resolved = VisClassicBridge.opacityDefault(for: visClassicPreferenceScope) ?? 1.0
+        return CGFloat(max(0.0, min(1.0, resolved)))
+    }
+
+    private func applyVisClassicOpacity() {
+        let alpha: CGFloat
+        if qualityMode == .visClassicExact && visClassicTransparentBackgroundEnabled() {
+            alpha = resolvedVisClassicOpacity()
+        } else {
+            alpha = 1.0
+        }
+        alphaValue = alpha
+        layer?.opacity = Float(alpha)
+    }
+
     @discardableResult
     func setVisClassicTransparentBackground(_ enabled: Bool) -> Bool {
         if visClassicBridge == nil {
@@ -3380,6 +3402,7 @@ class SpectrumAnalyzerView: NSView {
         if ok {
             metalLayer?.isOpaque = !enabled
             layer?.isOpaque = !enabled
+            applyVisClassicOpacity()
             if qualityMode == .visClassicExact && !isRendering {
                 renderBlackFrame()
             }

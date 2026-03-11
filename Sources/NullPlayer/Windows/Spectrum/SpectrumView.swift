@@ -204,7 +204,7 @@ class SpectrumView: NSView {
     @objc private func handleVisClassicProfileCommand(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
               let command = userInfo["command"] as? String,
-              command == "transparentBg" else { return }
+              (command == "transparentBg" || command == "opacity") else { return }
 
         let target = userInfo["target"] as? String
         guard target == nil || target == "spectrumWindow" else { return }
