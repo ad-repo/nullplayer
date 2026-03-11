@@ -149,7 +149,8 @@ class WindowManager {
             // be moved — only the main window's bottom changes, its top is anchored.
             let subWindows = [equalizerWindowController?.window,
                               playlistWindowController?.window,
-                              spectrumWindowController?.window].compactMap { $0 }
+                              spectrumWindowController?.window,
+                              waveformWindowController?.window].compactMap { $0 }
             var windowsBelow: [NSWindow] = []
             var frontier: [NSRect] = [mainWindow.frame]
             while !frontier.isEmpty {
@@ -208,11 +209,12 @@ class WindowManager {
             isSnappingWindow = false
         }
 
-        // Refresh all 6 window views
+        // Refresh all managed window views
         for controller in [mainWindowController as? NSWindowController,
                            equalizerWindowController as? NSWindowController,
                            playlistWindowController as? NSWindowController,
                            spectrumWindowController as? NSWindowController,
+                           waveformWindowController as? NSWindowController,
                            projectMWindowController as? NSWindowController,
                            plexBrowserWindowController as? NSWindowController] {
             if let view = controller?.window?.contentView {
@@ -237,7 +239,8 @@ class WindowManager {
         // Sub-windows always hide when docked (base behavior)
         let isSubWindow = window === equalizerWindowController?.window ||
                           window === playlistWindowController?.window ||
-                          window === spectrumWindowController?.window
+                          window === spectrumWindowController?.window ||
+                          window === waveformWindowController?.window
         if isSubWindow && isWindowDocked(window) {
             return true
         }
@@ -268,6 +271,9 @@ class WindowManager {
     
     /// Spectrum analyzer window controller (classic or modern, accessed via protocol)
     private var spectrumWindowController: SpectrumWindowProviding?
+
+    /// Waveform window controller (classic or modern, accessed via protocol)
+    private var waveformWindowController: WaveformWindowProviding?
     
     /// Debug console window controller
     private var debugWindowController: DebugWindowController?
@@ -362,7 +368,9 @@ class WindowManager {
         UserDefaults.standard.register(defaults: [
             "timeDisplayMode": TimeDisplayMode.elapsed.rawValue,
             "isAlwaysOnTop": false,
-            "hideTitleBars": true
+            "hideTitleBars": true,
+            "waveformShowCuePoints": false,
+            "waveformHideTooltip": false
         ])
     }
     
@@ -501,7 +509,7 @@ class WindowManager {
         updateDockedChildWindows()
     }
     
-    /// Position a sub-window (EQ, Playlist, or Spectrum) in the vertical stack.
+    /// Position a sub-window (EQ, Playlist, Spectrum, or Waveform) in the vertical stack.
     /// Fills the first gap between visible stack windows if one exists,
     /// otherwise positions below the lowest visible window in the stack.
     private func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
@@ -520,6 +528,7 @@ class WindowManager {
         if let w = equalizerWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = playlistWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
+        if let w = waveformWindowController?.window, w.isVisible, w !== window { visibleWindows.append(w) }
         
         // Sort top-to-bottom (highest minY first, since macOS Y increases upward)
         visibleWindows.sort { $0.frame.minY > $1.frame.minY }
@@ -567,7 +576,8 @@ class WindowManager {
     private func slideUpWindowsBelow(closingFrame: NSRect) {
         let subWindows = [equalizerWindowController?.window,
                           playlistWindowController?.window,
-                          spectrumWindowController?.window].compactMap { $0 }
+                          spectrumWindowController?.window,
+                          waveformWindowController?.window].compactMap { $0 }
 
         // BFS: find windows directly docked below closingFrame, then those below them
         var toMove: [NSWindow] = []
@@ -1325,6 +1335,95 @@ class WindowManager {
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }
+
+    // MARK: - Waveform Window
+
+    func showWaveform(at restoredFrame: NSRect? = nil) {
+        let isNewWindow = waveformWindowController == nil
+        if isNewWindow {
+            if isModernUIEnabled {
+                waveformWindowController = ModernWaveformWindowController()
+            } else {
+                waveformWindowController = WaveformWindowController()
+            }
+        }
+
+        if let window = waveformWindowController?.window {
+            applyCenterStackSizingConstraints(window, kind: .waveform)
+            if let frame = restoredFrame, frame != .zero {
+                window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .waveform), display: true)
+            } else {
+                if isNewWindow {
+                    applyDefaultCenterStackFrameForCurrentHT(window, kind: .waveform)
+                }
+                positionSubWindow(window)
+            }
+        }
+
+        waveformWindowController?.showWindow(nil)
+        waveformWindowController?.updateTrack(audioEngine.currentTrack)
+        waveformWindowController?.updateTime(current: audioEngine.currentTime, duration: audioEngine.duration)
+        applyAlwaysOnTopToWindow(waveformWindowController?.window)
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+    }
+
+    var isWaveformVisible: Bool {
+        waveformWindowController?.window?.isVisible == true
+    }
+
+    var waveformWindowFrame: NSRect? {
+        waveformWindowController?.window?.frame
+    }
+
+    func toggleWaveform() {
+        if let controller = waveformWindowController, controller.window?.isVisible == true {
+            let closingFrame = controller.window!.frame
+            controller.stopLoadingForHide()
+            controller.window?.orderOut(nil)
+            slideUpWindowsBelow(closingFrame: closingFrame)
+        } else {
+            showWaveform()
+        }
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
+    func updateWaveformTrack(_ track: Track?) {
+        waveformWindowController?.updateTrack(track)
+    }
+
+    func updateWaveformTime(current: TimeInterval, duration: TimeInterval) {
+        waveformWindowController?.updateTime(current: current, duration: duration)
+    }
+
+    func reloadWaveform(force: Bool) {
+        waveformWindowController?.reloadWaveform(force: force)
+    }
+
+    func clearCurrentWaveformCache() {
+        waveformWindowController?.stopLoadingForHide()
+        let track = audioEngine.currentTrack
+        Task {
+            await WaveformCacheService.shared.clearCache(for: track)
+            await MainActor.run {
+                WindowManager.shared.waveformWindowController?.reloadWaveform(force: false)
+            }
+        }
+    }
+
+    func toggleWaveformCuePoints() {
+        let current = UserDefaults.standard.bool(forKey: "waveformShowCuePoints")
+        UserDefaults.standard.set(!current, forKey: "waveformShowCuePoints")
+        waveformWindowController?.updateTrack(audioEngine.currentTrack)
+    }
+
+    func toggleWaveformTooltip() {
+        let current = UserDefaults.standard.bool(forKey: "waveformHideTooltip")
+        UserDefaults.standard.set(!current, forKey: "waveformHideTooltip")
+        waveformWindowController?.updateTrack(audioEngine.currentTrack)
+    }
     
     // MARK: - Debug Window
     
@@ -1537,6 +1636,7 @@ class WindowManager {
         plexBrowserWindowController?.skinDidChange()
         projectMWindowController?.skinDidChange()
         spectrumWindowController?.skinDidChange()
+        waveformWindowController?.skinDidChange()
     }
     
     // MARK: - Skin Discovery
@@ -1698,6 +1798,37 @@ class WindowManager {
                 spectrumWindow.setContentSize(spectrumAdjustedSize)
             }
         }
+
+        // Waveform window - position below spectrum (or previous window)
+        if let waveformWindow = waveformWindowController?.window {
+            let baseMinSize: NSSize = runningModernMode ? ModernSkinElements.waveformMinSize : SkinElements.WaveformWindow.minSize
+            let minHeight = runningModernMode
+                ? expectedMainHeightForCurrentHT(mainWindowController?.window)
+                : baseMinSize.height * scale
+
+            let targetWidth = mainFrame.width
+            waveformWindow.minSize = NSSize(width: targetWidth, height: minHeight)
+            waveformWindow.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
+
+            let currentFrame = waveformWindow.frame
+            let heightScaleMultiplier: CGFloat = runningModernMode
+                ? (isDoubleSize ? 2.0 : 0.5)
+                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
+
+            if waveformWindow.isVisible {
+                let waveformFrame = NSRect(
+                    x: mainFrame.minX,
+                    y: nextY - newHeight,
+                    width: targetWidth,
+                    height: newHeight
+                )
+                waveformWindow.setFrame(waveformFrame, display: true, animate: true)
+                nextY = waveformFrame.minY
+            } else {
+                waveformWindow.setContentSize(NSSize(width: targetWidth, height: newHeight))
+            }
+        }
         
         // Side windows - match the vertical stack height and reposition
         let stackTopY = mainFrame.maxY
@@ -1743,6 +1874,7 @@ class WindowManager {
         videoPlayerWindowController?.window?.level = level
         projectMWindowController?.window?.level = level
         spectrumWindowController?.window?.level = level
+        waveformWindowController?.window?.level = level
     }
     
     /// Apply always on top level to a single window (used when showing windows)
@@ -1761,7 +1893,8 @@ class WindowManager {
             plexBrowserWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
-            spectrumWindowController?.window
+            spectrumWindowController?.window,
+            waveformWindowController?.window
         ]
         
         for window in windows {
@@ -1771,7 +1904,7 @@ class WindowManager {
         }
     }
     
-    /// Calculate the bounding box of the vertical window stack (main + EQ + playlist + spectrum)
+    /// Calculate the bounding box of the vertical window stack (main + EQ + playlist + spectrum + waveform)
     /// Returns the combined bounds of all visible windows in the vertical stack
     private func verticalStackBounds() -> NSRect {
         guard let mainFrame = mainWindowController?.window?.frame else { return .zero }
@@ -1791,6 +1924,9 @@ class WindowManager {
         if let spectrumWindow = spectrumWindowController?.window, spectrumWindow.isVisible {
             bottomY = min(bottomY, spectrumWindow.frame.minY)
         }
+        if let waveformWindow = waveformWindowController?.window, waveformWindow.isVisible {
+            bottomY = min(bottomY, waveformWindow.frame.minY)
+        }
         
         return NSRect(x: x, y: round(bottomY), width: width, height: round(topY) - round(bottomY))
     }
@@ -1799,12 +1935,14 @@ class WindowManager {
         case equalizer
         case playlist
         case spectrum
+        case waveform
     }
 
     private func centerStackWindowKind(for window: NSWindow) -> CenterStackWindowKind? {
         if window === equalizerWindowController?.window { return .equalizer }
         if window === playlistWindowController?.window { return .playlist }
         if window === spectrumWindowController?.window { return .spectrum }
+        if window === waveformWindowController?.window { return .waveform }
         return nil
     }
 
@@ -1821,7 +1959,7 @@ class WindowManager {
                                          titleBarDelta: CGFloat,
                                          preservePlaylistContentHeight: Bool) -> CGFloat {
         let target = expectedMainHeightForCurrentHT(mainWindowController?.window)
-        guard kind == .playlist else { return target }
+        guard kind == .playlist || kind == .waveform else { return target }
         guard preservePlaylistContentHeight else { return target }
         let adjusted = hideTitleBars ? (currentHeight - titleBarDelta) : (currentHeight + titleBarDelta)
         return max(target, adjusted)
@@ -1835,7 +1973,7 @@ class WindowManager {
         case .equalizer, .spectrum:
             window.minSize = NSSize(width: targetWidth, height: targetHeight)
             window.maxSize = NSSize(width: targetWidth, height: targetHeight)
-        case .playlist:
+        case .playlist, .waveform:
             window.minSize = NSSize(width: targetWidth, height: targetHeight)
             window.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
         }
@@ -1868,7 +2006,7 @@ class WindowManager {
         switch kind {
         case .equalizer, .spectrum:
             normalized.size.height = target
-        case .playlist:
+        case .playlist, .waveform:
             let full = fullMainHeightForCurrentScale()
             let compact = compactMainHeightForCurrentScale()
             let tol: CGFloat = 1
@@ -1949,6 +2087,14 @@ class WindowManager {
             nextY -= h
             spectrumFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
         }
+
+        var waveformFrame: NSRect?
+        if let waveformWindow = waveformWindowController?.window, waveformWindow.isVisible {
+            let h = waveformWindow.frame.height
+            let w = waveformWindow.frame.width
+            nextY -= h
+            waveformFrame = NSRect(x: mainFrame.minX, y: nextY, width: w, height: h)
+        }
         
         // Side windows span the full stack height
         let stackTopY = mainFrame.maxY
@@ -1977,6 +2123,7 @@ class WindowManager {
         defaults.removeObject(forKey: "VideoPlayerWindowFrame")
         defaults.removeObject(forKey: "ArtVisualizerWindowFrame")
         defaults.removeObject(forKey: "SpectrumWindowFrame")
+        defaults.removeObject(forKey: "WaveformWindowFrame")
         
         // Disable snapping during programmatic frame changes to prevent interference
         isSnappingWindow = true
@@ -1993,6 +2140,9 @@ class WindowManager {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = spectrumFrame, let window = spectrumWindowController?.window {
+            window.setFrame(frame, display: true, animate: false)
+        }
+        if let frame = waveformFrame, let window = waveformWindowController?.window {
             window.setFrame(frame, display: true, animate: false)
         }
         if let frame = browserFrame, let window = plexBrowserWindowController?.window {
@@ -2674,6 +2824,7 @@ class WindowManager {
         if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = projectMWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
     
@@ -2684,6 +2835,7 @@ class WindowManager {
         if let w = playlistWindowController?.window, w.isVisible { windows.append(w) }
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
     
@@ -2692,7 +2844,8 @@ class WindowManager {
         return window === mainWindowController?.window ||
                window === playlistWindowController?.window ||
                window === equalizerWindowController?.window ||
-               window === spectrumWindowController?.window
+               window === spectrumWindowController?.window ||
+               window === waveformWindowController?.window
     }
     
     /// Get all visible windows
@@ -2776,6 +2929,9 @@ class WindowManager {
         if let frame = spectrumWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: "SpectrumWindowFrame")
         }
+        if let frame = waveformWindowController?.window?.frame {
+            defaults.set(NSStringFromRect(frame), forKey: "WaveformWindowFrame")
+        }
     }
     
     func restoreWindowPositions() {
@@ -2813,6 +2969,11 @@ class WindowManager {
         }
         if let frameString = defaults.string(forKey: "SpectrumWindowFrame"),
            let window = spectrumWindowController?.window {
+            let frame = NSRectFromString(frameString)
+            window.setFrame(frame, display: true)
+        }
+        if let frameString = defaults.string(forKey: "WaveformWindowFrame"),
+           let window = waveformWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }

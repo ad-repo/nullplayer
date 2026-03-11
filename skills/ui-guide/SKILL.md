@@ -170,6 +170,22 @@ When adding or refactoring top menu bar content:
 - Prefer lifecycle startup for services and `menuNeedsUpdate(_:)` for state refresh when a menu opens.
 - For Sonos room selection UX, use `SonosRoomCheckboxView` when persistent-open submenu behavior is required.
 
+## Dockable Center-Stack Windows
+
+Main, EQ, Playlist, Spectrum, and Waveform all participate in the center stack managed by `WindowManager`.
+
+- Width is normalized to the main stack
+- Height is window-specific
+- Saved frames are restored through `WindowManager` rather than ad hoc per-window logic
+- Modern and classic implementations should expose a provider protocol in `App/` so `WindowManager` can manage both without mode-specific branching outside window creation
+
+For new center-stack windows, follow the waveform/spectrum pattern:
+
+1. Shared non-UI logic in a neutral folder (for example `Waveform/`)
+2. Classic chrome in `Windows/...`
+3. Modern chrome in `Windows/Modern...`
+4. Registration and docking behavior in `WindowManager`
+
 ## Custom Sprites
 
 For on/off states, stack vertically in NSImage:

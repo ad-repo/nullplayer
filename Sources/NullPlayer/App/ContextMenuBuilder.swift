@@ -24,6 +24,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
         menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
+        menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
@@ -103,6 +104,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
         menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
+        menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
@@ -1261,6 +1263,33 @@ class ContextMenuBuilder {
         
         return spectrumMenu
     }
+
+    static func buildWaveformWindowContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let rerender = NSMenuItem(title: "Re-render Waveform", action: #selector(MenuActions.rerenderCurrentWaveform), keyEquivalent: "")
+        rerender.target = MenuActions.shared
+        menu.addItem(rerender)
+
+        let clearCache = NSMenuItem(title: "Clear Cached Waveform", action: #selector(MenuActions.clearCurrentWaveformCache), keyEquivalent: "")
+        clearCache.target = MenuActions.shared
+        menu.addItem(clearCache)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let cuePoints = NSMenuItem(title: "Show CUE Points", action: #selector(MenuActions.toggleWaveformCuePoints), keyEquivalent: "")
+        cuePoints.target = MenuActions.shared
+        cuePoints.state = UserDefaults.standard.bool(forKey: "waveformShowCuePoints") ? .on : .off
+        menu.addItem(cuePoints)
+
+        let hideTooltip = NSMenuItem(title: "Hide Waveform Tooltip", action: #selector(MenuActions.toggleWaveformTooltip), keyEquivalent: "")
+        hideTooltip.target = MenuActions.shared
+        hideTooltip.state = UserDefaults.standard.bool(forKey: "waveformHideTooltip") ? .on : .off
+        menu.addItem(hideTooltip)
+
+        return menu
+    }
     
     // MARK: - Libraries Submenu
 
@@ -2407,6 +2436,7 @@ class SonosRoomCheckboxView: NSView {
         
         // Keep menu open by canceling the close - the menu stays open because we're in a custom view
     }
+
 }
 
 /// Info for toggling a room in/out of a group
@@ -2480,9 +2510,29 @@ class MenuActions: NSObject {
     @objc func toggleSpectrum() {
         WindowManager.shared.toggleSpectrum()
     }
+
+    @objc func toggleWaveform() {
+        WindowManager.shared.toggleWaveform()
+    }
     
     @objc func toggleDebugConsole() {
         WindowManager.shared.toggleDebugWindow()
+    }
+
+    @objc func rerenderCurrentWaveform() {
+        WindowManager.shared.reloadWaveform(force: true)
+    }
+
+    @objc func clearCurrentWaveformCache() {
+        WindowManager.shared.clearCurrentWaveformCache()
+    }
+
+    @objc func toggleWaveformCuePoints() {
+        WindowManager.shared.toggleWaveformCuePoints()
+    }
+
+    @objc func toggleWaveformTooltip() {
+        WindowManager.shared.toggleWaveformTooltip()
     }
     
     // MARK: - About Playing

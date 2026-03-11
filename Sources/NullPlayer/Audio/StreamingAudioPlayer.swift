@@ -33,6 +33,9 @@ class StreamingAudioPlayer {
 
     /// Whether spectrum FFT should run — bridged from AudioEngine.spectrumNeeded
     var spectrumNeeded: Bool = false
+    
+    /// Whether 576-sample waveform frames should be generated for consumers like vis_classic or the stream waveform window.
+    var waveformNeeded: Bool = false
 
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
     var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
@@ -391,10 +394,9 @@ class StreamingAudioPlayer {
         // Skip FFT processing when paused or stopped to save CPU
         // The frame filter still receives buffers but we don't need to process them
         guard state == .playing else { return }
-        guard spectrumNeeded else { return }
+        guard spectrumNeeded || waveformNeeded else { return }
 
-        guard let channelData = buffer.floatChannelData,
-              let fftSetup = fftSetup else { return }
+        guard let channelData = buffer.floatChannelData else { return }
         
         // Report format info once per track
         if !hasReportedFormat {
@@ -413,15 +415,17 @@ class StreamingAudioPlayer {
         let effectiveVolume = max(0.05, _cachedVolume)  // Use cached value; volume.getter acquires AVAudioEngine lock (deadlocks from tap callback)
         let volumeCompensation = min(20.0, 1.0 / effectiveVolume)  // Cap at 20x
 
-        enqueueWaveformSamplesAndPost(
-            channelData: channelData,
-            channelCount: channelCount,
-            frameCount: frameCount,
-            sampleRate: buffer.format.sampleRate,
-            volumeCompensation: volumeCompensation
-        )
+        if waveformNeeded {
+            enqueueWaveformSamplesAndPost(
+                channelData: channelData,
+                channelCount: channelCount,
+                frameCount: frameCount,
+                sampleRate: buffer.format.sampleRate,
+                volumeCompensation: volumeCompensation
+            )
+        }
 
-        guard frameCount >= fftSize else { return }
+        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
 
         // Get audio samples (mono mix if stereo) - use pre-allocated buffer
         if channelCount == 1 {

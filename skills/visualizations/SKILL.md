@@ -7,6 +7,8 @@ description: Album art visualizer, ProjectM/MilkDrop integration, spectrum analy
 
 NullPlayer features multiple visualization systems for audio-reactive visual effects.
 
+Related but separate from the visualization stack is the standalone waveform window. It reuses the audio system's waveform notifications and cache service, but it is not a Metal visualization mode and should not be documented or implemented as one.
+
 ## Main Window Visualization
 
 The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports nine rendering modes.
@@ -257,6 +259,14 @@ Participates in docking system with Main, EQ, and Playlist:
 - **Right-click** → Mode to select specific mode
 - **Left/Right arrows**: Cycle flame/lightning/matrix styles (or prev/next profile in `vis_classic`)
 - **[ / ]**: Previous/next profile in `vis_classic`
+
+### `vis_classic` Exact Mode and Waveform Demand
+
+`vis_classic` exact mode consumes the shared 576-sample waveform notification stream (`.audioWaveform576DataUpdated`), not just generic spectrum data.
+
+- `SpectrumAnalyzerView` registers a waveform consumer only while `qualityMode == .visClassicExact`
+- The registration is tied to active rendering, so hidden/occluded analyzers do not keep the waveform side path alive
+- This is separate from `spectrumConsumers`; do not merge the two demand signals when refactoring
 
 ### vis_classic Mode Details
 

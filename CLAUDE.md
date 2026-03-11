@@ -122,6 +122,7 @@ Sources/NullPlayer/
 ├── Jellyfin/         # Jellyfin media server integration
 ├── Emby/             # Emby media server integration
 ├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer, vis_classic bridge/core integration
+├── Waveform/         # Shared waveform models, cache service, drawing, and stream accumulation
 └── Models/           # Track, Playlist, MediaLibrary
 ```
 
@@ -132,8 +133,9 @@ Sources/NullPlayer/
 | Skin (Classic) | `Skin/SkinElements.swift`, `Skin/SkinRenderer.swift`, `Skin/SkinLoader.swift` |
 | Skin (Modern) | `ModernSkin/ModernSkinEngine.swift`, `ModernSkin/ModernSkinConfig.swift`, `ModernSkin/ModernSkinRenderer.swift`, `ModernSkin/ModernSkinLoader.swift`, `ModernSkin/ModernSkinElements.swift` |
 | Audio | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift`, `Audio/BPMDetector.swift` |
-| Windows | `Windows/MainWindow/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, `Windows/ModernLibraryBrowser/`, `Windows/Playlist/`, `Windows/Equalizer/` |
+| Windows | `Windows/MainWindow/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernWaveform/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, `Windows/ModernLibraryBrowser/`, `Windows/Waveform/`, `Windows/Playlist/`, `Windows/Equalizer/` |
 | Visualization | `Windows/ProjectM/`, `Windows/Spectrum/`, `Visualization/VisualizationGLView.swift`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/VisClassicBridge.swift`, `Visualization/SpectrumShaders.metal`, `Visualization/FlameShaders.metal`, `Visualization/CosmicShaders.metal`, `Visualization/ElectricityShaders.metal`, `Visualization/MatrixShaders.metal`, `Visualization/ProjectMWrapper.swift`, `Sources/CVisClassicCore/` |
+| Waveform | `Waveform/WaveformModels.swift`, `Waveform/WaveformCacheService.swift`, `Waveform/WaveformDrawing.swift`, `Waveform/BaseWaveformView.swift`, `App/WaveformWindowProviding.swift` |
 | Marquee | `Skin/MarqueeLayer.swift` (classic), `ModernSkin/ModernMarqueeLayer.swift` (modern), `Windows/Playlist/PlaylistView.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift`, `Plex/PlexRadioHistory.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
@@ -157,6 +159,7 @@ Sources/NullPlayer/
 1. Create folder in `Windows/`
 2. Add WindowController + View
 3. Register in `WindowManager.swift`
+4. If the window has shared classic/modern behavior, add a provider protocol in `App/` and shared infrastructure outside `Skin/`/`ModernSkin/`
 
 ### Modifying skin rendering (classic)
 1. Check sprite coordinates in `SkinElements.swift`
@@ -193,6 +196,7 @@ Sources/NullPlayer/
 - **vis_classic transparent background has host-window responsibilities**: `SpectrumAnalyzerView` toggles analyzer-layer opacity, but host views must also redraw/clear their analyzer region where chrome was already painted. Main-window views and classic `SpectrumView` explicitly invalidate/clear host content on `transparentBg` commands (target-scoped via `.visClassicProfileCommand`).
 - **Modern main window layout split**: The time panel's visual boundary is hardcoded as a `drawInsetPanel` call in `ModernMainWindowView.swift` `draw()` — it is NOT an element in `ModernSkinElements`. The display panel uses `marqueeBackground` from `ModernSkinElements`. When adjusting time-panel geometry, update **both** the `drawInsetPanel` rect in `ModernMainWindowView.swift` and the dependent element rects (`timeDisplay`, `statusPlay/Pause/Stop`) in `ModernSkinElements.swift`.
 - **Modern skin system is completely independent**: Files in `ModernSkin/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, and `Windows/ModernLibraryBrowser/` must NEVER import or reference anything from `Skin/` or `Windows/MainWindow/`. The coupling points are only: `AppDelegate` (mode selection), `WindowManager` (via `MainWindowProviding`, `SpectrumWindowProviding`, `PlaylistWindowProviding`, `EQWindowProviding`, `ProjectMWindowProviding`, and `LibraryBrowserWindowProviding` protocols), and shared infrastructure (`AudioEngine`, `Track`, `PlaybackState`)
+- **Waveform window follows the same split**: `Windows/Waveform/` and `Windows/ModernWaveform/` own their respective chrome, but shared waveform logic lives in `Waveform/` and is coordinated through `WaveformWindowProviding`. Keep waveform rendering/cache/stream accumulation out of both `Skin/` and `ModernSkin/`.
 - **Modern glass opacity + seam debugging doc**: Detailed implementation notes for the 2026-03 glass darkening/seam fix live in `skills/modern-skin-guide/advanced-features.md` under the section "Glass Skin Darkening and Seam Stability".
 - **UI mode switching requires restart**: The `modernUIEnabled` UserDefaults preference selects which `MainWindowProviding` implementation `WindowManager` creates. Changing it at runtime shows a "Restart / Cancel" confirmation dialog — choosing Restart relaunches the app automatically, choosing Cancel reverts the preference
 - **Mode-specific features must be guarded at all layers**: When a feature only applies to one UI mode (modern or classic), enforce it in three places:
@@ -228,6 +232,7 @@ Sources/NullPlayer/
 - **Jellyfin/Emby library selector is browse-mode-aware (modern + classic)**: The "Lib:" click zone in both `ModernLibraryBrowserView` and classic `PlexBrowserView` shows a music library picker when in music tabs (Artists/Albums/Tracks/Plists) and a video library picker when in Movies/Shows tabs. Both `JellyfinManager` and `EmbyManager` have separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification (`musicLibraryDidChangeNotification`, `videoLibraryDidChangeNotification`). `fetchMusicLibraries()` and `fetchVideoLibraries()` both return ALL views without `CollectionType` filtering. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
 - **Subsonic music folders (modern + classic)**: `SubsonicManager` tracks `musicFolders: [SubsonicMusicFolder]` and `currentMusicFolder: SubsonicMusicFolder?` (nil = all folders). Fetched via `getMusicFolders` on connect. `musicFolderId` is passed to `getArtists` and `getAlbumList2` when a folder is selected. Persisted via `SubsonicCurrentMusicFolderID` UserDefaults key. Posts `musicFolderDidChangeNotification` on change. In both `ModernLibraryBrowserView` and classic `PlexBrowserView`, the "Lib:" click zone opens an "All Folders" + folders picker for Subsonic/Navidrome sources.
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
+- **Waveform generation has two paths**: local files decode and cache via `WaveformCacheService`; non-file audio tracks build live waveform snapshots from the existing 576-sample PCM notifications. Engine-side waveform chunk generation is gated by explicit waveform consumers (`AudioEngine.waveformConsumers`) so hidden waveform windows and inactive `vis_classic` exact views do not keep paying the callback cost.
 - **Local file completion handler**: Must use `scheduleFile(_:at:completionCallbackType:completionHandler:)` with `.dataPlayedBack` - NOT the deprecated 3-parameter `scheduleFile(_:at:completionHandler:)` which defaults to `.dataConsumed` and fires before audio finishes playing, causing premature track advancement and UI desync
 - **Window docking**: Complex snapping logic in `WindowManager` - test edge cases
   - Multi-monitor: Screen edge snapping is skipped if it would cause docked windows to end up on different screens

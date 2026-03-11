@@ -321,6 +321,8 @@ struct UltraParams {
 
 /// Metal-based spectrum analyzer visualization view
 class SpectrumAnalyzerView: NSView {
+    private let waveformConsumerID = "visClassicWaveform.\(UUID().uuidString)"
+
     private var visClassicPreferenceScope: VisClassicBridge.PreferenceScope {
         isEmbedded ? .mainWindow : .spectrumWindow
     }
@@ -389,6 +391,7 @@ class SpectrumAnalyzerView: NSView {
 
             // Keep Punch mode's dynamic bar layout in sync when mode changes.
             applyModeDrivenBarLayoutIfNeeded()
+            updateWaveformConsumerRegistration()
             // Note: Don't change semaphore at runtime - it causes crashes when GPU work is in-flight
         }
     }
@@ -875,6 +878,7 @@ class SpectrumAnalyzerView: NSView {
     }
     
     deinit {
+        WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
         NotificationCenter.default.removeObserver(self)
         stopRendering()
     }
@@ -1493,6 +1497,7 @@ class SpectrumAnalyzerView: NSView {
         guard isRenderEligible() else { return }
         guard !isRendering else { return }
         isRendering = true
+        updateWaveformConsumerRegistration()
         
         // Reset idle tracking state (protected by dataLock)
         dataLock.withLock {
@@ -1508,6 +1513,7 @@ class SpectrumAnalyzerView: NSView {
         guard let displayLink = link else {
             NSLog("SpectrumAnalyzerView: Failed to create display link")
             isRendering = false
+            updateWaveformConsumerRegistration()
             return
         }
         
@@ -1531,6 +1537,7 @@ class SpectrumAnalyzerView: NSView {
     private func stopRendering() {
         guard isRendering else { return }
         isRendering = false
+        updateWaveformConsumerRegistration()
         
         if let displayLink = displayLink {
             CVDisplayLinkStop(displayLink)
@@ -3482,6 +3489,14 @@ class SpectrumAnalyzerView: NSView {
     /// Start the display link (for when window becomes visible)
     func startDisplayLink() {
         startRendering()
+    }
+
+    private func updateWaveformConsumerRegistration() {
+        if qualityMode == .visClassicExact && isRendering {
+            WindowManager.shared.audioEngine.addWaveformConsumer(waveformConsumerID)
+        } else {
+            WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
+        }
     }
     
     // MARK: - Layout

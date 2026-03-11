@@ -5,8 +5,8 @@ import AppKit
 /// on quit and restores on launch.
 ///
 /// ## Saved State (AppState struct, v2)
-/// - **Window visibility**: playlist, EQ, browser, ProjectM, spectrum
-/// - **Window frames**: main, playlist, EQ, browser, ProjectM, spectrum; ProjectM fullscreen
+/// - **Window visibility**: playlist, EQ, browser, ProjectM, spectrum, waveform
+/// - **Window frames**: main, playlist, EQ, browser, ProjectM, spectrum, waveform; ProjectM fullscreen
 /// - **Audio**: volume, balance, shuffle, repeat, gapless, normalization
 /// - **Sweet Fades**: enabled, duration
 /// - **EQ**: enabled, auto, preamp, 10 bands
@@ -184,6 +184,7 @@ class AppStateManager {
         var isPlexBrowserVisible: Bool
         var isProjectMVisible: Bool
         var isSpectrumVisible: Bool = false
+        var isWaveformVisible: Bool = false
         
         // Window frames (as strings for NSRect compatibility)
         var mainWindowFrame: String?
@@ -192,6 +193,7 @@ class AppStateManager {
         var plexBrowserWindowFrame: String?
         var projectMWindowFrame: String?
         var spectrumWindowFrame: String?
+        var waveformWindowFrame: String?
         var isProjectMFullscreen: Bool = false
         
         // Audio settings
@@ -253,8 +255,8 @@ class AppStateManager {
         // MARK: - Custom Decoding for Backward Compatibility
         
         enum CodingKeys: String, CodingKey {
-            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible
-            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, isProjectMFullscreen
+            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isWaveformVisible
+            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, waveformWindowFrame, isProjectMFullscreen
             case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
             case sweetFadeEnabled, sweetFadeDuration
             case eqEnabled, eqAutoEnabled, eqPreamp, eqBands
@@ -277,6 +279,7 @@ class AppStateManager {
             isPlexBrowserVisible = try container.decode(Bool.self, forKey: .isPlexBrowserVisible)
             isProjectMVisible = try container.decode(Bool.self, forKey: .isProjectMVisible)
             isSpectrumVisible = try container.decodeIfPresent(Bool.self, forKey: .isSpectrumVisible) ?? false
+            isWaveformVisible = try container.decodeIfPresent(Bool.self, forKey: .isWaveformVisible) ?? false
             
             // Window frames
             mainWindowFrame = try container.decodeIfPresent(String.self, forKey: .mainWindowFrame)
@@ -285,6 +288,7 @@ class AppStateManager {
             plexBrowserWindowFrame = try container.decodeIfPresent(String.self, forKey: .plexBrowserWindowFrame)
             projectMWindowFrame = try container.decodeIfPresent(String.self, forKey: .projectMWindowFrame)
             spectrumWindowFrame = try container.decodeIfPresent(String.self, forKey: .spectrumWindowFrame)
+            waveformWindowFrame = try container.decodeIfPresent(String.self, forKey: .waveformWindowFrame)
             isProjectMFullscreen = try container.decodeIfPresent(Bool.self, forKey: .isProjectMFullscreen) ?? false
             
             // Audio settings
@@ -350,12 +354,14 @@ class AppStateManager {
             isPlexBrowserVisible: Bool,
             isProjectMVisible: Bool,
             isSpectrumVisible: Bool = false,
+            isWaveformVisible: Bool = false,
             mainWindowFrame: String?,
             playlistWindowFrame: String?,
             equalizerWindowFrame: String?,
             plexBrowserWindowFrame: String?,
             projectMWindowFrame: String?,
             spectrumWindowFrame: String? = nil,
+            waveformWindowFrame: String? = nil,
             isProjectMFullscreen: Bool = false,
             volume: Float,
             balance: Float,
@@ -389,12 +395,14 @@ class AppStateManager {
             self.isPlexBrowserVisible = isPlexBrowserVisible
             self.isProjectMVisible = isProjectMVisible
             self.isSpectrumVisible = isSpectrumVisible
+            self.isWaveformVisible = isWaveformVisible
             self.mainWindowFrame = mainWindowFrame
             self.playlistWindowFrame = playlistWindowFrame
             self.equalizerWindowFrame = equalizerWindowFrame
             self.plexBrowserWindowFrame = plexBrowserWindowFrame
             self.projectMWindowFrame = projectMWindowFrame
             self.spectrumWindowFrame = spectrumWindowFrame
+            self.waveformWindowFrame = waveformWindowFrame
             self.isProjectMFullscreen = isProjectMFullscreen
             self.volume = volume
             self.balance = balance
@@ -474,6 +482,7 @@ class AppStateManager {
             isPlexBrowserVisible: wm.isPlexBrowserVisible,
             isProjectMVisible: wm.isProjectMVisible,
             isSpectrumVisible: wm.isSpectrumVisible,
+            isWaveformVisible: wm.isWaveformVisible,
             
             // Window frames
             mainWindowFrame: wm.mainWindowController?.window.map { NSStringFromRect($0.frame) },
@@ -483,6 +492,7 @@ class AppStateManager {
             // Don't save frame when fullscreen (it would be screen bounds)
             projectMWindowFrame: wm.isProjectMVisible && !wm.isProjectMFullscreen ? wm.projectMWindowFrame.map { NSStringFromRect($0) } : nil,
             spectrumWindowFrame: wm.spectrumWindowFrame.map { NSStringFromRect($0) },
+            waveformWindowFrame: wm.waveformWindowFrame.map { NSStringFromRect($0) },
             isProjectMFullscreen: wm.isProjectMFullscreen,
             
             // Audio settings
@@ -691,6 +701,7 @@ class AppStateManager {
         let browserFrame = modeMatches ? state.plexBrowserWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let projectMFrame = modeMatches ? state.projectMWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let spectrumFrame = modeMatches ? state.spectrumWindowFrame.flatMap({ NSRectFromString($0) }) : nil
+        let waveformFrame = modeMatches ? state.waveformWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let projectMPresetIndex = state.projectMPresetIndex
         let projectMFullscreen = state.isProjectMFullscreen
         let savedBrowseMode = state.browserBrowseMode
@@ -714,6 +725,9 @@ class AppStateManager {
             }
             if state.isSpectrumVisible {
                 wm.showSpectrum(at: spectrumFrame)
+            }
+            if state.isWaveformVisible {
+                wm.showWaveform(at: waveformFrame)
             }
             if state.isPlexBrowserVisible {
                 wm.showPlexBrowser(at: browserFrame)

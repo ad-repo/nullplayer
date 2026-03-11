@@ -460,10 +460,12 @@ extension AppDelegate: AudioEngineDelegate {
         // Don't update main window time if video session is active (video has its own time source)
         guard !windowManager.isVideoActivePlayback else { return }
         windowManager.mainWindowController?.updateTime(current: current, duration: duration)
+        windowManager.updateWaveformTime(current: current, duration: duration)
     }
     
     func audioEngineDidChangeTrack(_ track: Track?) {
         windowManager.mainWindowController?.updateTrackInfo(track)
+        windowManager.updateWaveformTrack(track)
     }
     
     func audioEngineDidUpdateSpectrum(_ levels: [Float]) {

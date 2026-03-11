@@ -328,6 +328,9 @@ class AudioEngine {
 
     /// Spectrum consumers — FFT is skipped entirely when this set is empty
     private var spectrumConsumers = Set<String>()
+    
+    /// Live waveform consumers — 576-sample waveform chunk generation is skipped entirely when this set is empty.
+    private var waveformConsumers = Set<String>()
 
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
     private var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
@@ -343,6 +346,18 @@ class AudioEngine {
     }
 
     var spectrumNeeded: Bool { !spectrumConsumers.isEmpty }
+
+    func addWaveformConsumer(_ id: String) {
+        waveformConsumers.insert(id)
+        streamingPlayer?.waveformNeeded = !waveformConsumers.isEmpty
+    }
+
+    func removeWaveformConsumer(_ id: String) {
+        waveformConsumers.remove(id)
+        streamingPlayer?.waveformNeeded = !waveformConsumers.isEmpty
+    }
+
+    var waveformNeeded: Bool { !waveformConsumers.isEmpty }
 
     // MARK: - Pre-allocated FFT Buffers (Memory Optimization)
 
@@ -733,23 +748,24 @@ class AudioEngine {
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard spectrumNeeded else { return }
-        guard let channelData = buffer.floatChannelData,
-              let fftSetup = fftSetup else { return }
+        guard spectrumNeeded || waveformNeeded else { return }
+        guard let channelData = buffer.floatChannelData else { return }
 
         let frameCount = Int(buffer.frameLength)
         guard frameCount > 0 else { return }
         let channelCount = Int(buffer.format.channelCount)
         let bufferSampleRate = buffer.format.sampleRate
 
-        enqueueWaveformSamplesAndPost(
-            channelData: channelData,
-            channelCount: channelCount,
-            frameCount: frameCount,
-            sampleRate: bufferSampleRate
-        )
+        if waveformNeeded {
+            enqueueWaveformSamplesAndPost(
+                channelData: channelData,
+                channelCount: channelCount,
+                frameCount: frameCount,
+                sampleRate: bufferSampleRate
+            )
+        }
 
-        guard frameCount >= fftSize else { return }
+        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
         
         // Throttle updates to 60Hz max to prevent memory buildup
         let now = CFAbsoluteTimeGetCurrent()
@@ -2845,6 +2861,7 @@ class AudioEngine {
             streamingPlayer = StreamingAudioPlayer()
             streamingPlayer?.delegate = self
             streamingPlayer?.spectrumNeeded = spectrumNeeded
+            streamingPlayer?.waveformNeeded = waveformNeeded
             streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         }
         
@@ -3460,6 +3477,7 @@ class AudioEngine {
         // Set delegate on new primary player
         streamingPlayer?.delegate = self
         streamingPlayer?.spectrumNeeded = spectrumNeeded
+        streamingPlayer?.waveformNeeded = waveformNeeded
         streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         // crossfadeStreamingPlayer (old primary) already has nil delegate from above
         

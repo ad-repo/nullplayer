@@ -24,8 +24,9 @@
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
 - Modern V2 UI skin system, many v2 skins included. Open format, users can easily make new v2 skins via json
 - Original spectrum analysis visualization system with `vis_classic` exact mode (profile-compatible) in both main and spectrum windows
+- Dockable waveform window in both classic and modern UI modes with current-track rendering, click-to-seek for timed tracks, optional `.cue` markers, and live streaming waveform support
 - Album art visualization system with user selected effects
-- Main player, Playlist editor, and 10-band Equalizer windows
+- Main player, Playlist editor, Waveform window, and 10-band Equalizer windows
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
 - Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (KSPlayer/FFmpeg)
@@ -150,6 +151,16 @@ The bundled default skin ("NeonWave") is fully programmatic -- zero image assets
 **Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
 
 **Skin installation**: Use **UI > Modern > Load Skin...** to import a `.nsz` bundle, or place skin folders/`.nsz` files in `~/Library/Application Support/NullPlayer/ModernSkins/`, then select the skin from **UI > Modern**.
+
+## Waveform Window
+
+NullPlayer includes a standalone dockable waveform window in both UI modes.
+
+- Local audio files generate and cache a 4096-bucket waveform in `~/Library/Application Support/NullPlayer/WaveformCache/`
+- Timed streams build a progressive live waveform and remain seekable
+- Live radio-style streams render a rolling live waveform and are shown as non-seekable
+- Optional adjacent `.cue` files provide cue markers and tooltip labels
+- The window is available from the Window/context menus and docks into the same center stack as EQ, Playlist, and Spectrum
 
 ## License
 
