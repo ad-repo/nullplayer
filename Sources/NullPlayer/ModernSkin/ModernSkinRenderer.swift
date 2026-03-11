@@ -891,7 +891,12 @@ class ModernSkinRenderer {
         let labelText = label ?? id.replacingOccurrences(of: "btn_", with: "").uppercased()
         
         // Toggle buttons with outlined boxes
-        let isBoxedButton = (id == "btn_eq" || id == "btn_playlist" || id == "btn_library" || id == "btn_projectm" || id == "btn_spectrum")
+        let isBoxedButton = (id == "btn_eq" ||
+                             id == "btn_playlist" ||
+                             id == "btn_library" ||
+                             id == "btn_projectm" ||
+                             id == "btn_spectrum" ||
+                             id == "btn_waveform")
         if isBoxedButton {
             let boxColor = isOn ? onColor : offColor
             context.saveGState()

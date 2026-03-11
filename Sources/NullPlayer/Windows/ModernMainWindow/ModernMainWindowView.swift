@@ -700,12 +700,12 @@ class ModernMainWindowView: NSView {
             ("btn_shuffle", "SH", audioEngine.shuffleEnabled),
             ("btn_repeat", "RP", audioEngine.repeatEnabled),
             ("btn_cast", "CA", CastManager.shared.isCasting),
-            ("btn_2x", "XL", WindowManager.shared.isDoubleSize),
             ("btn_sk", "SK", false),
             ("btn_projectm", "pM", WindowManager.shared.isProjectMVisible),
             ("btn_eq", "EQ", WindowManager.shared.isEqualizerVisible),
             ("btn_playlist", "PL", WindowManager.shared.isPlaylistVisible),
             ("btn_spectrum", "SP", WindowManager.shared.isSpectrumVisible),
+            ("btn_waveform", "WV", WindowManager.shared.isWaveformVisible),
             ("btn_library", "LB", WindowManager.shared.isPlexBrowserVisible),
         ]
         
@@ -1233,8 +1233,8 @@ class ModernMainWindowView: NSView {
             let rightEdge: CGFloat = 269
             let bw: CGFloat = 16
             let bs = (rightEdge - leftEdge - 10 * bw) / 9
-            let ids = ["btn_shuffle", "btn_repeat", "btn_cast", "btn_2x", "btn_sk",
-                       "btn_projectm", "btn_eq", "btn_playlist", "btn_spectrum", "btn_library"]
+            let ids = ["btn_shuffle", "btn_repeat", "btn_cast", "btn_sk",
+                       "btn_projectm", "btn_eq", "btn_playlist", "btn_spectrum", "btn_waveform", "btn_library"]
             for (i, id) in ids.enumerated() {
                 hitTargets.append((id, NSRect(x: leftEdge + CGFloat(i) * (bw + bs), y: 42, width: bw, height: 14)))
             }
@@ -1459,9 +1459,6 @@ class ModernMainWindowView: NSView {
         case "btn_eject":
             openFileDialog()
             
-        case "btn_2x":
-            WindowManager.shared.isDoubleSize.toggle()
-            
         case "btn_sk":
             showModernSkinsMenu()
             
@@ -1496,6 +1493,9 @@ class ModernMainWindowView: NSView {
             
         case "btn_spectrum":
             WindowManager.shared.toggleSpectrum()
+
+        case "btn_waveform":
+            WindowManager.shared.toggleWaveform()
             
         case "btn_cast":
             // Show the Output Devices menu at the cast button location
