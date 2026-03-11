@@ -13,8 +13,7 @@ enum WaveformDrawing {
         context: CGContext
     ) {
         context.saveGState()
-        context.setFillColor(colors.background.cgColor)
-        context.fill(rect)
+        drawBackground(in: rect, colors: colors, context: context)
 
         switch snapshot.state {
         case .ready:
@@ -30,10 +29,30 @@ enum WaveformDrawing {
                 context: context
             )
         case .loading, .unsupported, .failed:
-            drawMessage(snapshot.message ?? "", in: rect, color: colors.text)
+            drawMessage(snapshot.message ?? "", in: rect, color: applyContentOpacity(to: colors.text, colors: colors))
         }
 
         context.restoreGState()
+    }
+
+    private static func drawBackground(
+        in rect: NSRect,
+        colors: WaveformRenderColors,
+        context: CGContext
+    ) {
+        switch colors.backgroundMode {
+        case .opaque:
+            context.setFillColor(colors.background.cgColor)
+            context.fill(rect)
+        case .glass:
+            context.saveGState()
+            context.setBlendMode(.copy)
+            context.setFillColor(colors.background.withAlphaComponent(clamped(colors.backgroundOpacity)).cgColor)
+            context.fill(rect)
+            context.restoreGState()
+        case .clear:
+            context.clear(rect)
+        }
     }
 
     private static func drawWaveform(
@@ -48,7 +67,7 @@ enum WaveformDrawing {
         context: CGContext
     ) {
         guard !snapshot.samples.isEmpty else {
-            drawMessage("Waveform unavailable", in: rect, color: colors.text)
+            drawMessage("Waveform unavailable", in: rect, color: applyContentOpacity(to: colors.text, colors: colors))
             return
         }
 
@@ -66,7 +85,7 @@ enum WaveformDrawing {
             let lineX = rect.minX + CGFloat(xPixel)
             let y = midY - CGFloat(scaledHeight) / 2
             let isPlayed = showsPlaybackProgress && CGFloat(xPixel) < rect.width * CGFloat(playedFraction)
-            context.setStrokeColor((isPlayed ? colors.playedWaveform : colors.waveform).cgColor)
+            context.setStrokeColor(applyContentOpacity(to: isPlayed ? colors.playedWaveform : colors.waveform, colors: colors).cgColor)
             context.strokeLineSegments(between: [
                 NSPoint(x: lineX, y: y),
                 NSPoint(x: lineX, y: y + CGFloat(scaledHeight))
@@ -74,7 +93,7 @@ enum WaveformDrawing {
         }
 
         if showCuePoints, snapshot.duration > 0 {
-            context.setStrokeColor(colors.cuePoint.cgColor)
+            context.setStrokeColor(applyContentOpacity(to: colors.cuePoint, colors: colors).cgColor)
             for cuePoint in cuePoints {
                 let fraction = min(max(CGFloat(Double(cuePoint.milliseconds) / (snapshot.duration * 1000.0)), 0), 1)
                 let x = rect.minX + (rect.width * fraction)
@@ -87,7 +106,7 @@ enum WaveformDrawing {
 
         if showsPlaybackProgress {
             let playheadX = rect.minX + rect.width * CGFloat(playedFraction)
-            context.setStrokeColor(colors.playhead.cgColor)
+            context.setStrokeColor(applyContentOpacity(to: colors.playhead, colors: colors).cgColor)
             context.strokeLineSegments(between: [
                 NSPoint(x: playheadX, y: rect.minY),
                 NSPoint(x: playheadX, y: rect.maxY)
@@ -153,5 +172,13 @@ enum WaveformDrawing {
 
     private static func format(_ seconds: Int) -> String {
         "\(seconds / 60):" + String(format: "%02d", seconds % 60)
+    }
+
+    private static func applyContentOpacity(to color: NSColor, colors: WaveformRenderColors) -> NSColor {
+        color.withAlphaComponent(color.alphaComponent * clamped(colors.contentOpacity))
+    }
+
+    private static func clamped(_ value: CGFloat) -> CGFloat {
+        min(1.0, max(0.0, value))
     }
 }

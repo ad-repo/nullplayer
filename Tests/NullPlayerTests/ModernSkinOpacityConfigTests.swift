@@ -281,6 +281,60 @@ final class ModernSkinOpacityConfigTests: XCTestCase {
         XCTAssertEqual(main.content, 1.0, accuracy: 0.0001)
     }
 
+    func testWaveformTransparentBackgroundStyleDefaultsToGlassWhenOmitted() throws {
+        let json = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "window": { "borderWidth": 1, "cornerRadius": 6, "opacity": 0.62 }
+        }
+        """
+
+        let skin = ModernSkin(config: try decodeConfig(from: json), bundlePath: nil)
+        XCTAssertEqual(skin.waveformTransparentBackgroundStyle, .glass)
+    }
+
+    func testWaveformConfigAndWaveformAreaOpacityDecode() throws {
+        let json = """
+        {
+            "meta": { "name": "Test", "author": "Tester", "version": "1.0", "description": "d" },
+            "palette": {
+                "primary": "#00ffcc", "secondary": "#00ccff", "accent": "#ff00aa",
+                "background": "#080810", "surface": "#0c1018", "text": "#00ffcc", "textDim": "#009977"
+            },
+            "fonts": { "primaryName": "Menlo" },
+            "background": { "grid": { "color": "#00ffcc", "spacing": 18, "angle": 75, "opacity": 0.06 } },
+            "glow": { "enabled": true },
+            "waveform": { "transparentBackgroundStyle": "clear" },
+            "window": {
+                "borderWidth": 1,
+                "cornerRadius": 6,
+                "opacity": 0.62,
+                "areaOpacity": {
+                    "waveformArea": { "background": 0.4, "border": 0.7, "content": 0.5 }
+                }
+            }
+        }
+        """
+
+        let config = try decodeConfig(from: json)
+        XCTAssertEqual(config.waveform?.transparentBackgroundStyle, .clear)
+
+        let skin = ModernSkin(config: config, bundlePath: nil)
+        XCTAssertEqual(skin.waveformTransparentBackgroundStyle, .clear)
+
+        let waveform = skin.resolvedOpacity(for: .waveformArea)
+        XCTAssertEqual(waveform.background, 0.248, accuracy: 0.0001)
+        XCTAssertEqual(waveform.border, 0.434, accuracy: 0.0001)
+        XCTAssertEqual(waveform.content, 0.31, accuracy: 0.0001)
+    }
+
     func testBundledModernSkinJSONFilesDecodeWithAreaOpacity() throws {
         let testFileURL = URL(fileURLWithPath: #filePath)
         let repoRoot = testFileURL

@@ -33,8 +33,36 @@ class ModernWaveformView: BaseWaveformView {
         let skin = renderer.skin
         let accent = skin.elementColor(for: "seek_fill")
         let cue = skin.elementColor(for: "info_cast").withAlphaComponent(0.65)
+        let transparent = WindowManager.shared.isWaveformTransparentBackgroundEnabled()
+        let waveformOpacity = skin.resolvedOpacity(for: .waveformArea)
+        let backgroundMode: WaveformBackgroundMode
+        let background: NSColor
+        let backgroundOpacity: CGFloat
+        let contentOpacity: CGFloat
+
+        if transparent {
+            background = skin.surfaceColor
+            contentOpacity = waveformOpacity.content
+            switch skin.waveformTransparentBackgroundStyle {
+            case .glass:
+                backgroundMode = .glass
+                backgroundOpacity = waveformOpacity.background
+            case .clear:
+                backgroundMode = .clear
+                backgroundOpacity = 0
+            }
+        } else {
+            backgroundMode = .opaque
+            background = NSColor(calibratedWhite: 0.04, alpha: 1.0)
+            backgroundOpacity = 1.0
+            contentOpacity = 1.0
+        }
+
         return WaveformRenderColors(
-            background: NSColor(calibratedWhite: 0.04, alpha: 1.0),
+            background: background,
+            backgroundMode: backgroundMode,
+            backgroundOpacity: backgroundOpacity,
+            contentOpacity: contentOpacity,
             waveform: accent.withAlphaComponent(0.95),
             playedWaveform: accent.withAlphaComponent(0.45),
             cuePoint: cue,
@@ -55,6 +83,7 @@ class ModernWaveformView: BaseWaveformView {
     }
 
     deinit {
+        stopAppearanceObservation()
         stopLoadingForHide()
         NotificationCenter.default.removeObserver(self)
     }
@@ -62,6 +91,7 @@ class ModernWaveformView: BaseWaveformView {
     private func commonInit() {
         wantsLayer = true
         layer?.isOpaque = false
+        startAppearanceObservation()
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
 

@@ -3,6 +3,54 @@ import XCTest
 @testable import NullPlayer
 
 final class WaveformTests: XCTestCase {
+    func testWaveformTransparencyDefaultsToBundledGlassSkinsOnlyInModernUI() {
+        let defaults = makeTestDefaults()
+
+        XCTAssertTrue(
+            WaveformAppearancePreferences.transparentBackgroundEnabled(
+                defaults: defaults,
+                isRunningModernUI: true,
+                modernSkinName: "SmoothGlass"
+            )
+        )
+        XCTAssertFalse(
+            WaveformAppearancePreferences.transparentBackgroundEnabled(
+                defaults: defaults,
+                isRunningModernUI: true,
+                modernSkinName: "NeonWave"
+            )
+        )
+        XCTAssertFalse(
+            WaveformAppearancePreferences.transparentBackgroundEnabled(
+                defaults: defaults,
+                isRunningModernUI: false,
+                modernSkinName: "SmoothGlass"
+            )
+        )
+    }
+
+    func testWaveformTransparencyExplicitOverrideWinsOverSkinDefault() {
+        let defaults = makeTestDefaults()
+
+        defaults.set(false, forKey: WaveformAppearancePreferences.transparentBackgroundKey)
+        XCTAssertFalse(
+            WaveformAppearancePreferences.transparentBackgroundEnabled(
+                defaults: defaults,
+                isRunningModernUI: true,
+                modernSkinName: "SmoothGlass"
+            )
+        )
+
+        defaults.set(true, forKey: WaveformAppearancePreferences.transparentBackgroundKey)
+        XCTAssertTrue(
+            WaveformAppearancePreferences.transparentBackgroundEnabled(
+                defaults: defaults,
+                isRunningModernUI: true,
+                modernSkinName: "NeonWave"
+            )
+        )
+    }
+
     func testBucketAccumulatorMapsFramesIntoStableBuckets() {
         var accumulator = WaveformBucketAccumulator(totalFrames: 8, bucketCount: 4)
         let amplitudes: [Float] = [0.1, 0.2, 0.9, 0.3, 0.4, 0.8, 0.05, 0.6]
@@ -111,6 +159,22 @@ final class WaveformTests: XCTestCase {
         await service.clearCache(for: track)
     }
 
+    func testWaveformDrawingOpaqueBackgroundFillsFully() {
+        let result = renderWaveform(backgroundMode: .opaque, backgroundOpacity: 1.0, contentOpacity: 1.0)
+        XCTAssertLessThanOrEqual(abs(Int(result.corner.a) - 255), 1)
+    }
+
+    func testWaveformDrawingGlassBackgroundUsesPartialAlpha() {
+        let result = renderWaveform(backgroundMode: .glass, backgroundOpacity: 0.4, contentOpacity: 1.0)
+        XCTAssertLessThanOrEqual(abs(Int(result.corner.a) - Int(round(0.4 * 255.0))), 1)
+    }
+
+    func testWaveformDrawingClearBackgroundLeavesUnusedPixelsTransparentButKeepsForeground() {
+        let result = renderWaveform(backgroundMode: .clear, backgroundOpacity: 0.0, contentOpacity: 1.0)
+        XCTAssertEqual(result.corner.a, 0)
+        XCTAssertGreaterThan(result.center.a, 0)
+    }
+
     private func temporaryURL(named name: String) -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -146,5 +210,93 @@ final class WaveformTests: XCTestCase {
 
             try file.write(from: buffer)
         }
+    }
+
+    private func makeTestDefaults() -> UserDefaults {
+        let suiteName = "WaveformTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+
+    private func renderWaveform(
+        backgroundMode: WaveformBackgroundMode,
+        backgroundOpacity: CGFloat,
+        contentOpacity: CGFloat
+    ) -> (corner: (r: UInt8, g: UInt8, b: UInt8, a: UInt8), center: (r: UInt8, g: UInt8, b: UInt8, a: UInt8)) {
+        let width = 16
+        let height = 16
+        let bytesPerRow = width * 4
+        let totalBytes = bytesPerRow * height
+        let data = UnsafeMutablePointer<UInt8>.allocate(capacity: totalBytes)
+        data.initialize(repeating: 0, count: totalBytes)
+        defer { data.deallocate() }
+
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        guard let context = CGContext(
+            data: data,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo
+        ) else {
+            XCTFail("Failed to create bitmap context")
+            return ((0, 0, 0, 0), (0, 0, 0, 0))
+        }
+
+        let rect = NSRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
+        let snapshot = WaveformSnapshot(
+            sourcePath: "test",
+            duration: 30,
+            samples: [0],
+            state: .ready,
+            message: nil,
+            cacheKey: nil,
+            fileSize: nil,
+            modificationDate: nil,
+            allowsSeeking: false,
+            isStreaming: false
+        )
+        let colors = WaveformRenderColors(
+            background: NSColor(calibratedWhite: 0.08, alpha: 1.0),
+            backgroundMode: backgroundMode,
+            backgroundOpacity: backgroundOpacity,
+            contentOpacity: contentOpacity,
+            waveform: NSColor.white,
+            playedWaveform: NSColor.green,
+            cuePoint: NSColor.lightGray,
+            playhead: NSColor.white,
+            text: NSColor.white,
+            selection: NSColor.white
+        )
+
+        WaveformDrawing.draw(
+            snapshot: snapshot,
+            columnAmplitudes: [],
+            cuePoints: [],
+            showCuePoints: false,
+            currentTime: 0,
+            dragTime: nil,
+            in: rect,
+            colors: colors,
+            context: context
+        )
+
+        return (
+            corner: rgbaPixel(x: width - 1, y: height - 1, data: data, bytesPerRow: bytesPerRow),
+            center: rgbaPixel(x: width / 2, y: height / 2, data: data, bytesPerRow: bytesPerRow)
+        )
+    }
+
+    private func rgbaPixel(
+        x: Int,
+        y: Int,
+        data: UnsafeMutablePointer<UInt8>,
+        bytesPerRow: Int
+    ) -> (r: UInt8, g: UInt8, b: UInt8, a: UInt8) {
+        let offset = y * bytesPerRow + x * 4
+        return (data[offset], data[offset + 1], data[offset + 2], data[offset + 3])
     }
 }

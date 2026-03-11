@@ -6,6 +6,7 @@ enum ModernOpacityArea: CaseIterable {
     case trackDisplay
     case volumeArea
     case spectrumArea
+    case waveformArea
     case eqFaderBackground
     case curveBackground
 }
@@ -174,6 +175,8 @@ class ModernSkin {
             return areaOpacity?.volumeArea
         case .spectrumArea:
             return areaOpacity?.spectrumArea
+        case .waveformArea:
+            return areaOpacity?.waveformArea
         case .eqFaderBackground:
             return areaOpacity?.eqFaderBackground
         case .curveBackground:
@@ -212,6 +215,10 @@ class ModernSkin {
     /// Apply main-window spectrum opacity override when present; otherwise return clamped input.
     func applyMainSpectrumOpacity(to opacity: CGFloat) -> CGFloat {
         mainSpectrumOpacityOverride ?? clampedOpacity(opacity)
+    }
+
+    var waveformTransparentBackgroundStyle: WaveformTransparentBackgroundStyle {
+        config.waveform?.transparentBackgroundStyle ?? .glass
     }
     
     /// Get resolved rect for an element, applying any config overrides

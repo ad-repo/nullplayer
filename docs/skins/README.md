@@ -38,6 +38,19 @@ Modern skins can define a top-level `visualization` object in `skin.json`.
       "spectrumWindowColorScheme": "Classic",
       "spectrumWindowIntensity": "Subtle"
     }
+  },
+  "waveform": {
+    "transparentBackgroundStyle": "glass"
+  },
+  "window": {
+    "opacity": 0.54,
+    "areaOpacity": {
+      "waveformArea": {
+        "background": 0.8,
+        "border": 0.8,
+        "content": 0.85
+      }
+    }
   }
 }
 ```
@@ -60,6 +73,14 @@ Modern skins can define a top-level `visualization` object in `skin.json`.
 - `matrix`:
   - `mainWindowColorScheme`, `mainWindowIntensity`
   - `spectrumWindowColorScheme`, `spectrumWindowIntensity`
+- `waveform`:
+  - `transparentBackgroundStyle`: `"glass"` or `"clear"` for the waveform window when the shared `Transparent Background` toggle is on. Defaults to `"glass"` if omitted.
+- `window.areaOpacity.waveformArea`:
+  - `background`, `border`, `content`
+  - Follows the same multiplier semantics as the other `areaOpacity` sections.
+  - `background` controls the translucent waveform fill in `"glass"` mode.
+  - `content` controls waveform lines, cue markers, playhead, and text when transparency is enabled.
+  - `border` is parsed for schema consistency but is not rendered separately in v1.
 
 ## Notes
 
@@ -71,6 +92,9 @@ Modern skins can define a top-level `visualization` object in `skin.json`.
   and fast response tuned for transient-heavy material.
 - Invalid mode/preset strings are ignored safely at runtime and logged.
 - If a mode requires a missing shader, the requested mode is ignored.
+- The waveform window has one shared `Transparent Background` toggle across classic and modern UI.
+- Its default is auto-enabled only for bundled glass skins: `SmoothGlass`, `SeaGlass`, and `BloodGlass`.
+- Imported/custom modern skins default this toggle off unless the user enables it.
 
 ## Classic skins (`.wsz`) behavior
 

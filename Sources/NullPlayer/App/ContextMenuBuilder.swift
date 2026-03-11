@@ -1283,6 +1283,11 @@ class ContextMenuBuilder {
         cuePoints.state = UserDefaults.standard.bool(forKey: "waveformShowCuePoints") ? .on : .off
         menu.addItem(cuePoints)
 
+        let transparentBackground = NSMenuItem(title: "Transparent Background", action: #selector(MenuActions.toggleWaveformTransparentBackground), keyEquivalent: "")
+        transparentBackground.target = MenuActions.shared
+        transparentBackground.state = WindowManager.shared.isWaveformTransparentBackgroundEnabled() ? .on : .off
+        menu.addItem(transparentBackground)
+
         let hideTooltip = NSMenuItem(title: "Hide Waveform Tooltip", action: #selector(MenuActions.toggleWaveformTooltip), keyEquivalent: "")
         hideTooltip.target = MenuActions.shared
         hideTooltip.state = UserDefaults.standard.bool(forKey: "waveformHideTooltip") ? .on : .off
@@ -2529,6 +2534,10 @@ class MenuActions: NSObject {
 
     @objc func toggleWaveformCuePoints() {
         WindowManager.shared.toggleWaveformCuePoints()
+    }
+
+    @objc func toggleWaveformTransparentBackground() {
+        WindowManager.shared.toggleWaveformTransparentBackground()
     }
 
     @objc func toggleWaveformTooltip() {

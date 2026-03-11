@@ -58,7 +58,17 @@
     "opacity": 0.94,
     "textOpacity": 1.0,
     "mainSpectrumOpacity": 0.9,
-    "seamlessDocking": 1.0
+    "seamlessDocking": 1.0,
+    "areaOpacity": {
+      "waveformArea": {
+        "background": 0.85,
+        "border": 0.85,
+        "content": 0.92
+      }
+    }
+  },
+  "waveform": {
+    "transparentBackgroundStyle": "glass"
   },
   "marquee": {
     "scrollSpeed": 34,

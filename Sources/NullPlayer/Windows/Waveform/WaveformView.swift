@@ -25,8 +25,12 @@ class WaveformView: BaseWaveformView {
     }
 
     override var waveformColors: WaveformRenderColors {
-        WaveformRenderColors(
+        let transparent = WindowManager.shared.isWaveformTransparentBackgroundEnabled()
+        return WaveformRenderColors(
             background: NSColor.black,
+            backgroundMode: transparent ? .clear : .opaque,
+            backgroundOpacity: transparent ? 0 : 1,
+            contentOpacity: 1.0,
             waveform: NSColor(calibratedRed: 0.0, green: 1.0, blue: 0.0, alpha: 1.0),
             playedWaveform: NSColor(calibratedRed: 0.0, green: 0.55, blue: 0.0, alpha: 1.0),
             cuePoint: NSColor(calibratedRed: 0.46, green: 0.45, blue: 0.54, alpha: 1.0),
@@ -39,6 +43,7 @@ class WaveformView: BaseWaveformView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        startAppearanceObservation()
         setAccessibilityIdentifier("waveformView")
         setAccessibilityRole(.group)
         setAccessibilityLabel("NullPlayer Waveform")
@@ -47,12 +52,14 @@ class WaveformView: BaseWaveformView {
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         wantsLayer = true
+        startAppearanceObservation()
         setAccessibilityIdentifier("waveformView")
         setAccessibilityRole(.group)
         setAccessibilityLabel("NullPlayer Waveform")
     }
 
     deinit {
+        stopAppearanceObservation()
         stopLoadingForHide()
     }
 

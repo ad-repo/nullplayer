@@ -10,6 +10,7 @@ class BaseWaveformView: NSView {
     private var trackingArea: NSTrackingArea?
     private var tooltipTag: NSView.ToolTipTag = 0
     private var streamWaveformObserver: NSObjectProtocol?
+    private var appearanceObserver: NSObjectProtocol?
     private var streamingAccumulator: StreamingWaveformAccumulator?
     private var waveformColumnCache: [UInt16] = []
     private var waveformColumnCacheWidth = 0
@@ -31,6 +32,9 @@ class BaseWaveformView: NSView {
     var waveformColors: WaveformRenderColors {
         WaveformRenderColors(
             background: .black,
+            backgroundMode: .opaque,
+            backgroundOpacity: 1.0,
+            contentOpacity: 1.0,
             waveform: .white,
             playedWaveform: .green,
             cuePoint: .lightGray,
@@ -76,6 +80,24 @@ class BaseWaveformView: NSView {
         addTrackingArea(newArea)
         trackingArea = newArea
         refreshToolTips()
+    }
+
+    func startAppearanceObservation() {
+        guard appearanceObserver == nil else { return }
+        appearanceObserver = NotificationCenter.default.addObserver(
+            forName: .waveformAppearanceDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleWaveformAppearanceChanged()
+        }
+    }
+
+    func stopAppearanceObservation() {
+        if let appearanceObserver {
+            NotificationCenter.default.removeObserver(appearanceObserver)
+            self.appearanceObserver = nil
+        }
     }
 
     func drawWaveform(in context: CGContext) {
@@ -259,6 +281,10 @@ class BaseWaveformView: NSView {
 
         guard !isTooltipHidden else { return }
         tooltipTag = addToolTip(waveformRect, owner: self, userData: nil)
+    }
+
+    private func handleWaveformAppearanceChanged() {
+        setNeedsDisplay(waveformRect)
     }
 
     private func time(for point: NSPoint) -> TimeInterval {

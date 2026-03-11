@@ -1424,6 +1424,17 @@ class WindowManager {
         waveformWindowController?.updateTrack(audioEngine.currentTrack)
     }
 
+    func isWaveformTransparentBackgroundEnabled() -> Bool {
+        WaveformAppearancePreferences.transparentBackgroundEnabled(
+            isRunningModernUI: isRunningModernUI,
+            modernSkinName: ModernSkinEngine.shared.currentSkinName
+        )
+    }
+
+    func toggleWaveformTransparentBackground() {
+        WaveformAppearancePreferences.setTransparentBackgroundEnabled(!isWaveformTransparentBackgroundEnabled())
+    }
+
     func toggleWaveformTooltip() {
         let current = UserDefaults.standard.bool(forKey: "waveformHideTooltip")
         UserDefaults.standard.set(!current, forKey: "waveformHideTooltip")

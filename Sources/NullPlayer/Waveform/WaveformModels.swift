@@ -51,6 +51,9 @@ struct WaveformCuePoint: Equatable {
 
 struct WaveformRenderColors {
     let background: NSColor
+    let backgroundMode: WaveformBackgroundMode
+    let backgroundOpacity: CGFloat
+    let contentOpacity: CGFloat
     let waveform: NSColor
     let playedWaveform: NSColor
     let cuePoint: NSColor

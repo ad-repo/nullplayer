@@ -25,6 +25,9 @@ struct ModernSkinConfig: Codable {
 
     /// Visualization defaults and mode-specific preset/profile mappings
     let visualization: VisualizationConfig?
+
+    /// Waveform window appearance defaults
+    let waveform: WaveformConfig?
     
     /// Marquee/scrolling text configuration
     let marquee: MarqueeConfig?
@@ -61,6 +64,10 @@ struct VisualizationConfig: Codable {
 
     /// Matrix mode preset defaults
     let matrix: MatrixVisualizationConfig?
+}
+
+struct WaveformConfig: Codable {
+    let transparentBackgroundStyle: WaveformTransparentBackgroundStyle?
 }
 
 struct VisClassicVisualizationConfig: Codable {
@@ -236,6 +243,7 @@ struct AreaOpacityConfig: Codable, Equatable {
     let trackDisplay: AreaOpacityStyle?
     let volumeArea: AreaOpacityStyle?
     let spectrumArea: AreaOpacityStyle?
+    let waveformArea: AreaOpacityStyle?
     let eqFaderBackground: AreaOpacityStyle?
     let curveBackground: AreaOpacityStyle?
 }
