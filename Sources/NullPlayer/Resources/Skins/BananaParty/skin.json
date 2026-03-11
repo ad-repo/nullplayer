@@ -12,15 +12,15 @@
         "highlight": "#fffed0",
         "background": "#fff74d",
         "surface": "#ffe218",
-        "text": "#2a1f00",
-        "textDim": "#6e5800",
+        "text": "#8a004f",
+        "textDim": "#b86a44",
         "positive": "#d3ff2c",
         "negative": "#a74f00",
         "warning": "#ff9400",
         "border": "#fffcc2",
-        "timeColor": "#211800",
-        "marqueeColor": "#2f2300",
-        "dataColor": "#3a2c00",
+        "timeColor": "#b1006b",
+        "marqueeColor": "#e02256",
+        "dataColor": "#d12b71",
         "eqLow": "#dcff30",
         "eqMid": "#fff700",
         "eqHigh": "#ffb300"
@@ -133,7 +133,7 @@
             "color": "#fff800"
         },
         "info_cast": {
-            "color": "#2f2300"
+            "color": "#e02256"
         }
     },
     "animations": {
