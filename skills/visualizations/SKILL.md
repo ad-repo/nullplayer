@@ -264,6 +264,7 @@ Profile controls are available from both main window and spectrum window context
 
 - **Profiles submenu**: Load profile directly
 - **Fit to Width**: Toggle bar mapping across full width
+- **Transparent Background**: Toggle analyzer background alpha (window-scoped)
 - **Next/Previous Profile**: Cycle through profile catalog
 - **Import/Export INI**: Read and write profile files
 
@@ -278,6 +279,7 @@ Spectrum window `vis_classic` keyboard controls:
 Persistence is window-scoped (independent between main window and spectrum window):
 - Profile keys: `visClassicLastProfileName.mainWindow`, `visClassicLastProfileName.spectrumWindow`
 - Fit keys: `visClassicFitToWidth.mainWindow`, `visClassicFitToWidth.spectrumWindow`
+- Transparent keys: `visClassicTransparentBg.mainWindow`, `visClassicTransparentBg.spectrumWindow`
 
 ### Flame Mode Details
 

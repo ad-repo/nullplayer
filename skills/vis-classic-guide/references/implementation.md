@@ -61,6 +61,7 @@ When `qualityMode == .visClassicExact`, render loop behavior differs from GPU sp
 This scope controls independent persistence keys for:
 - last profile name
 - fit-to-width flag
+- transparent-background flag
 
 ## 3. Profile Lifecycle and Storage
 
@@ -86,6 +87,8 @@ Window-scoped keys:
 - `visClassicLastProfileName.spectrumWindow`
 - `visClassicFitToWidth.mainWindow`
 - `visClassicFitToWidth.spectrumWindow`
+- `visClassicTransparentBg.mainWindow`
+- `visClassicTransparentBg.spectrumWindow`
 
 Legacy fallback keys:
 - `visClassicLastProfileName`
@@ -108,9 +111,9 @@ Bridge operations:
 Notification: `.visClassicProfileCommand`
 
 Expected userInfo keys:
-- `command`: `load`, `next`, `previous`, `import`, `export`, `fitToWidth`
+- `command`: `load`, `next`, `previous`, `import`, `export`, `fitToWidth`, `transparentBg`
 - optional `profileName` for `load`
-- optional `enabled` for explicit fit-to-width set
+- optional `enabled` for explicit fit-to-width or transparent-background set
 - `target`: `mainWindow` or `spectrumWindow`
 
 `SpectrumAnalyzerView.handleVisClassicProfileCommand(_:)` applies command only if:
@@ -124,11 +127,18 @@ Global menu/context menu builder (`ContextMenuBuilder`):
 - emits scoped commands for both main window and spectrum window
 - profile submenu checkmarks use scoped last-profile keys
 - fit checkmarks use scoped fit keys
+- transparent-background checkmarks use scoped transparent keys
 
 Local spectrum window context menus (`SpectrumView`, `ModernSpectrumView`):
 - call `SpectrumAnalyzerView` vis_classic methods directly
 
-## 4.3 Keyboard shortcuts
+## 4.3 Transparent-background rendering behavior
+
+- `SpectrumAnalyzerView` applies transparent-mode state to both bridge options and layer opacity (`metalLayer.isOpaque`, `layer?.isOpaque`).
+- Main-window hosts (classic and modern) redraw host chrome around the analyzer when transparent mode changes.
+- Classic standalone spectrum window (`SpectrumView`) clears its analyzer content rect after drawing chrome when vis_classic transparent mode is enabled. This is required so transparent analyzer pixels do not sit on top of already-painted window content.
+
+## 4.4 Keyboard shortcuts
 
 Main window (`MainWindowView`, `ModernMainWindowView`):
 - `,` previous vis_classic profile

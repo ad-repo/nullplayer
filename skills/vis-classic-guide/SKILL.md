@@ -1,6 +1,6 @@
 ---
 name: vis-classic-guide
-description: Comprehensive implementation and profile reference for NullPlayer's vis_classic mode (CVisClassicCore, VisClassicBridge, SpectrumAnalyzerView integration, menu/keyboard controls, persistence keys, and bundled INI profiles). Use when modifying vis_classic rendering behavior, profile import/export, assigning profiles to skins, or debugging profile-specific response differences.
+description: Comprehensive implementation and profile reference for NullPlayer's vis_classic mode (CVisClassicCore, VisClassicBridge, SpectrumAnalyzerView integration, menu/keyboard controls, transparent-background behavior, persistence keys, and bundled INI profiles). Use when modifying vis_classic rendering behavior, profile import/export, assigning profiles to skins, or debugging profile-specific response differences.
 ---
 
 # Vis Classic Guide

@@ -214,6 +214,7 @@ Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (dou
 ### vis_classic Profiles
 - **Main window**: **, / .** previous/next profile
 - **Spectrum window**: **[ / ]** previous/next profile (left/right also cycle profiles in vis_classic mode)
+- **Transparent Background**: right-click in vis_classic mode and toggle per window (main and spectrum persist separately)
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

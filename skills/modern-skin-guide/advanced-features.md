@@ -362,9 +362,9 @@ Modern skins also support an independent opacity override for the main window's 
 
 - `window.mainSpectrumOpacity`: optional `0.0...1.0` override.
 - Applies only to the main-window spectrum region:
-  - mini spectrum panel fill/border,
   - 8-bar CPU spectrum content,
   - embedded Metal overlay modes shown in the same panel.
+- Does not override spectrum panel fill/border alpha; those follow `window.opacity` + `window.areaOpacity.spectrumArea` so panel border weight stays consistent with other main-window panels.
 - Does not affect standalone spectrum window opacity.
 - Does not alter base window translucency (`window.opacity`) or text opacity (`window.textOpacity`).
 - If omitted, mini spectrum opacity follows existing `window.opacity` + `window.areaOpacity.spectrumArea` resolution.
