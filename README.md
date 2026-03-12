@@ -1,43 +1,40 @@
 # NullPlayer
 
-### A free, open-source music player for macOS, featuring modern Plex, Jellyfin, Emby, and Sonos integration.
+## A free throwback open-source music player for macOS, featuring modern Plex, Navidrome, Jellyfin, Emby, and Sonos integration.
 
-###  This is a clean room project is not affiliated with classic skin, classic skin LLC, Radionomy Group or anyone else.
+## This is a 100% clean room hobby project is not affiliated with Winamp, Nullsoft, Sonos, Plex, Radionomy Group or anyone else.
 
-**If you enjoy NullPlayer, please ⭐ star ⭐ the project on GitHub!**
+## **If you enjoy NullPlayer, please ⭐ star ⭐ the project on GitHub!**
 
+![MixCollage_player](https://github.com/user-attachments/assets/5d29303e-2910-4f1d-b5ac-b65b7f17a34f)
 
 ## Features
 
 - Library browser window for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local library files
 - Plex Media Server integration with PIN-based authentication
-- Plex music and video streaming and playlist support
 - Jellyfin media server integration with music and video streaming, scrobbling, and library browsing
 - Emby media server integration with music and video streaming, scrobbling, and library browsing
+- Inteligent radio mix generation for all sources
 - Navidrome/Subsonic server integration with scrobbling support
 - Local media library with metadata parsing, editing, library management
 - ProjectM visualizations with 100 included. Users can download more
-- Sonic similarity radio stations populated by Plex APIs (Library, Genre, Decade, Hits, Deep Cuts, and rating-based presets)
-- Unified `Radio History` submenu with per-source repeat filtering controls (Plex, Subsonic/Navidrome, Jellyfin, Emby, Local)
+- Sonic similarity radio stations populated by Plex API's  (Library, Genre, Decade, Hits, Deep Cuts)
+- Plex radio track history with configurable exclusion rules. Stop the same songs from being added to your Plex radio stations
 - Sonos content filtering for unsupported lossless formats. Keeps the music playing by not sending unsupported encodings to Sonos.
 - Much better Sonos playlist support than the current PlexAmp (Jan 2026)
 - Classic V1 UI has full support for classic Winamp skin skins (.wsz files)
 - Modern V2 UI skin system, many v2 skins included. Open format, users can easily make new v2 skins via json
-- Original spectrum analysis visualization system with `vis_classic` exact mode (profile-compatible) in both main and spectrum windows
-- Dockable waveform window in both classic and modern UI modes with current-track rendering, click-to-seek for timed tracks, optional `.cue` markers, and live streaming waveform support
+- Original Spenctrum analysis visualization system
 - Album art visualization system with user selected effects
-- Main player, Playlist editor, Waveform window, and 10-band Equalizer windows
+- Main player, Playlist editor, and 10-band Equalizer windows
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
 - Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (KSPlayer/FFmpeg)
 - Gapless playback for seamless track transitions
 - Sweet Fades (crossfade) with configurable fade duration
-- Volume normalization for consistent loudness
 - Media Drag and drop support
 - Album/Cover/Movie art browser with visualizations
-- IMDB integration
-- Internet radio (Shoutcast/Icecast) with a large bundled global station catalog, live metadata (ICY + SomaFM fallback), and auto-reconnect
-- Internet radio smart/manual folders with persistent 5-star station ratings
+- Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
 - AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
 - macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
@@ -150,23 +147,14 @@ The bundled default skin ("NeonWave") is fully programmatic -- zero image assets
 
 **Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
 
-**Skin installation**: Use **UI > Modern > Load Skin...** to import a `.nsz` bundle, or place skin folders/`.nsz` files in `~/Library/Application Support/NullPlayer/ModernSkins/`, then select the skin from **UI > Modern**.
-
-## Waveform Window
-
-NullPlayer includes a standalone dockable waveform window in both UI modes.
-
-- Local audio files generate and cache a 4096-bucket waveform in `~/Library/Application Support/NullPlayer/WaveformCache/`
-- Timed streams build a progressive live waveform and remain seekable
-- Live radio-style streams render a rolling live waveform and are shown as non-seekable
-- Optional adjacent `.cue` files provide cue markers and tooltip labels
-- The window is available from the Window/context menus and docks into the same center stack as EQ, Playlist, and Spectrum
+**Skin installation**: Place skin folders or `.nps` bundles in `~/Library/Application Support/NullPlayer/ModernSkins/`, then right-click the player and select your skin from **Modern UI > Select Skin**.
 
 ## License
 
-NullPlayer is licensed under **GPL-3.0-only**. It also distributes third-party components with their own notices and terms:
+This project is open source and uses the following licensed components:
 
 - **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
 - **libprojectM** (LGPL-2.1) - ProjectM visualizations
-- **vis_classic** resources/core attribution (MIT) - notice included at `Sources/NullPlayer/Resources/vis_classic/LICENSE.txt`
-- **Nullsoft FFT code** used by `CVisClassicCore` upstream files (`fft.h` / `fft.cpp`) - BSD-style 3-clause terms; notice included at `Sources/CVisClassicCore/upstream/FFTNullsoft_LICENSE.txt` and bundled copy at `Sources/NullPlayer/Resources/ThirdPartyLicenses/FFTNullsoft_LICENSE.txt`
+
+
+
