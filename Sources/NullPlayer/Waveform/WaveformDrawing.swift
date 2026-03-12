@@ -51,7 +51,12 @@ enum WaveformDrawing {
             context.fill(rect)
             context.restoreGState()
         case .clear:
-            context.clear(rect)
+            context.saveGState()
+            context.setBlendMode(.copy)
+            // Keep the area effectively invisible while preserving hit-testing for borderless windows.
+            context.setFillColor(NSColor(calibratedWhite: 0, alpha: 0.001).cgColor)
+            context.fill(rect)
+            context.restoreGState()
         }
     }
 
