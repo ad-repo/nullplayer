@@ -7,6 +7,7 @@
 ## **If you enjoy NullPlayer, please ⭐ star ⭐ the project on GitHub!**
 
 ![MixCollage_player](https://github.com/user-attachments/assets/5d29303e-2910-4f1d-b5ac-b65b7f17a34f)
+![MixCollage-12-Mar-2026-03-38-PM-191](https://github.com/user-attachments/assets/b26003a8-bb5d-45ca-9504-2a3e13079fe9)
 
 ## Features
 
