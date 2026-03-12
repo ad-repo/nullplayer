@@ -644,6 +644,8 @@ class PlexBrowserView: NSView {
     private var subsonicAlbumSongs: [String: [SubsonicSong]] = [:]
     private var subsonicLoadTask: Task<Void, Never>?
     private var subsonicExpandTask: Task<Void, Never>?
+    private var plexLoadTask: Task<Void, Never>?
+    private var sourceConnectTask: Task<Void, Never>?
     
     /// Cached data - Music (Jellyfin)
     private var cachedJellyfinArtists: [JellyfinArtist] = []
@@ -693,6 +695,7 @@ class PlexBrowserView: NSView {
     private var expandedRadioFolders: Set<String> = []
     private var radioLoadTask: Task<Void, Never>?
     private var radioPlayTask: Task<Void, Never>?
+    private var loadGeneration: Int = 0
 
     private struct RadioFolderMembershipAction {
         let station: RadioStation
@@ -1465,7 +1468,44 @@ class PlexBrowserView: NSView {
     }
     
     /// Called when source changes
+    @discardableResult
+    private func invalidateActiveLoads() -> Int {
+        loadGeneration &+= 1
+        sourceConnectTask?.cancel(); sourceConnectTask = nil
+        plexLoadTask?.cancel(); plexLoadTask = nil
+        subsonicLoadTask?.cancel(); subsonicLoadTask = nil
+        jellyfinLoadTask?.cancel(); jellyfinLoadTask = nil
+        embyLoadTask?.cancel(); embyLoadTask = nil
+        radioLoadTask?.cancel(); radioLoadTask = nil
+        jellyfinAlbumWarmTask?.cancel(); jellyfinAlbumWarmTask = nil
+        subsonicExpandTask?.cancel(); subsonicExpandTask = nil
+        jellyfinExpandTask?.cancel(); jellyfinExpandTask = nil
+        embyExpandTask?.cancel(); embyExpandTask = nil
+        return loadGeneration
+    }
+    
+    private func isLoadContextActive(_ generation: Int, source expectedSource: BrowserSource) -> Bool {
+        generation == loadGeneration && currentSource == expectedSource
+    }
+    
+    private func setLoadErrorIfActive(_ message: String, generation: Int, source expectedSource: BrowserSource) {
+        guard isLoadContextActive(generation, source: expectedSource) else { return }
+        isLoading = false
+        stopLoadingAnimation()
+        errorMessage = message
+        needsDisplay = true
+    }
+    
+    private func finishLoadIfActive(generation: Int, source expectedSource: BrowserSource) {
+        guard isLoadContextActive(generation, source: expectedSource) else { return }
+        isLoading = false
+        stopLoadingAnimation()
+        errorMessage = nil
+        needsDisplay = true
+    }
+    
     private func onSourceChanged() {
+        invalidateActiveLoads()
         // Clear all cached data for both sources
         clearAllCachedData()
         clearLocalCachedData()
@@ -1523,6 +1563,7 @@ class PlexBrowserView: NSView {
     
     @objc private func plexContentDidPreload() {
         // When PlexManager finishes preloading content, reload our data
+        guard case .plex = currentSource else { return }
         reloadData()
     }
     
@@ -5097,137 +5138,14 @@ class PlexBrowserView: NSView {
     // MARK: - Public Methods
     
     func reloadData() {
-        // Radio source supports Radio tab and Search tab.
-        if case .radio = currentSource {
-            if browseMode == .radio {
-                loadRadioStations()
-            } else if browseMode == .search {
-                loadRadioSearchResults()
-            } else {
-                displayItems = []
-            }
-            needsDisplay = true
-            return
-        }
-        
-        // Non-radio sources: radio tab supports source-specific library radio
-        if browseMode == .radio {
-            if case .plex = currentSource, PlexManager.shared.isLinked {
-                loadPlexRadioStations()
-            } else if case .subsonic = currentSource {
-                loadSubsonicRadioStations()
-            } else if case .jellyfin = currentSource {
-                loadJellyfinRadioStations()
-            } else if case .emby = currentSource {
-                loadEmbyRadioStations()
-            } else if case .local = currentSource {
-                loadLocalRadioStations()
-            } else {
-                displayItems = []
-            }
-            needsDisplay = true
-            return
-        }
-        
-        // For local source, we don't need Plex to be linked
-        if case .local = currentSource {
-            loadLocalData()
-            needsDisplay = true
-            return
-        }
-        
-        // For Subsonic source
-        if case .subsonic(let serverId) = currentSource {
-            loadSubsonicData(serverId: serverId)
-            return
-        }
-        
-        // For Jellyfin source
-        if case .jellyfin(let serverId) = currentSource {
-            loadJellyfinData(serverId: serverId)
-            return
-        }
-        
-        // For Plex source, check if linked
-        guard PlexManager.shared.isLinked else {
-            displayItems = []
-            stopLoadingAnimation()
-            needsDisplay = true
-            return
-        }
-        
-        // If we're still connecting to a server, show loading state
-        if case .connecting = PlexManager.shared.connectionState {
-            isLoading = true
-            errorMessage = nil
-            startLoadingAnimation()
-            needsDisplay = true
-            return
-        }
-        
-        // If no server client yet, show loading and try to connect
-        if PlexManager.shared.serverClient == nil {
-            isLoading = true
-            errorMessage = nil
-            startLoadingAnimation()
-            needsDisplay = true
-            
-            // Try to connect to current server if we have one
-            if let server = PlexManager.shared.currentServer {
-                Task { @MainActor in
-                    do {
-                        try await PlexManager.shared.connect(to: server)
-                        loadDataForCurrentMode()
-                    } catch {
-                        isLoading = false
-                        stopLoadingAnimation()
-                        errorMessage = error.localizedDescription
-                        needsDisplay = true
-                    }
-                }
-            } else if !PlexManager.shared.servers.isEmpty {
-                Task { @MainActor in
-                    do {
-                        try await PlexManager.shared.refreshServers()
-                        loadDataForCurrentMode()
-                    } catch {
-                        isLoading = false
-                        stopLoadingAnimation()
-                        errorMessage = error.localizedDescription
-                        needsDisplay = true
-                    }
-                }
-            } else {
-                Task { @MainActor in
-                    do {
-                        try await PlexManager.shared.refreshServers()
-                        if PlexManager.shared.currentServer != nil {
-                            loadDataForCurrentMode()
-                        } else {
-                            isLoading = false
-                            stopLoadingAnimation()
-                            errorMessage = "No Plex servers found"
-                            needsDisplay = true
-                        }
-                    } catch {
-                        isLoading = false
-                        stopLoadingAnimation()
-                        errorMessage = error.localizedDescription
-                        needsDisplay = true
-                    }
-                }
-            }
-            return
-        }
-        
-        loadDataForCurrentMode()
+        let generation = invalidateActiveLoads()
+        loadDataForCurrentMode(generation: generation)
     }
     
     /// Refresh all data - clears cache and reloads from server
     func refreshData() {
         guard PlexManager.shared.isLinked else { return }
-        jellyfinAlbumWarmTask?.cancel()
-        jellyfinAlbumWarmTask = nil
+        let generation = invalidateActiveLoads()
         
         // Clear all cached data
         cachedArtists = []
@@ -5268,7 +5186,7 @@ class PlexBrowserView: NSView {
         NSLog("PlexBrowserView: Refreshing data...")
         
         // Reload data for current mode
-        loadDataForCurrentMode()
+        loadDataForCurrentMode(generation: generation)
     }
     
     func skinDidChange() {
@@ -5289,13 +5207,14 @@ class PlexBrowserView: NSView {
     
     @objc private func plexStateDidChange() {
         DispatchQueue.main.async { [weak self] in
+            guard let self = self, case .plex = self.currentSource else { return }
             if case .connecting = PlexManager.shared.connectionState {
-                self?.isLoading = true
-                self?.errorMessage = nil
-                self?.needsDisplay = true
+                self.isLoading = true
+                self.errorMessage = nil
+                self.needsDisplay = true
                 return
             }
-            self?.reloadData()
+            self.reloadData()
         }
     }
     
@@ -5308,6 +5227,8 @@ class PlexBrowserView: NSView {
                 self.needsDisplay = true
                 return
             }
+            
+            if !self.currentSource.isPlex && self.pendingSourceRestore == nil { return }
             
             // Check if we have a pending source to restore now that servers are loaded
             if let pending = self.pendingSourceRestore {
@@ -7322,6 +7243,7 @@ class PlexBrowserView: NSView {
             Task {
                 await SubsonicManager.shared.preloadLibraryContent()
                 await MainActor.run {
+                    guard case .subsonic = self.currentSource else { return }
                     self.refreshData()
                 }
             }
@@ -7330,6 +7252,7 @@ class PlexBrowserView: NSView {
             Task {
                 await JellyfinManager.shared.preloadLibraryContent()
                 await MainActor.run {
+                    guard case .jellyfin = self.currentSource else { return }
                     self.refreshData()
                 }
             }
@@ -7338,6 +7261,7 @@ class PlexBrowserView: NSView {
             Task {
                 await EmbyManager.shared.preloadLibraryContent()
                 await MainActor.run {
+                    guard case .emby = self.currentSource else { return }
                     self.refreshData()
                 }
             }
@@ -7982,19 +7906,6 @@ class PlexBrowserView: NSView {
     @objc private func selectPlexServer(_ sender: NSMenuItem) {
         guard let serverId = sender.representedObject as? String else { return }
         currentSource = .plex(serverId: serverId)
-        
-        // Connect to the selected server
-        if let server = PlexManager.shared.servers.first(where: { $0.id == serverId }) {
-            Task { @MainActor in
-                do {
-                    try await PlexManager.shared.connect(to: server)
-                    reloadData()
-                } catch {
-                    errorMessage = error.localizedDescription
-                    needsDisplay = true
-                }
-            }
-        }
     }
     
     @objc private func linkPlexAccount() {
@@ -8004,19 +7915,6 @@ class PlexBrowserView: NSView {
     @objc private func selectSubsonicServer(_ sender: NSMenuItem) {
         guard let serverId = sender.representedObject as? String else { return }
         currentSource = .subsonic(serverId: serverId)
-        
-        // Connect to the selected server
-        if let server = SubsonicManager.shared.servers.first(where: { $0.id == serverId }) {
-            Task { @MainActor in
-                do {
-                    try await SubsonicManager.shared.connect(to: server)
-                    reloadData()
-                } catch {
-                    errorMessage = error.localizedDescription
-                    needsDisplay = true
-                }
-            }
-        }
     }
     
     @objc private func addSubsonicServer() {
@@ -8026,18 +7924,6 @@ class PlexBrowserView: NSView {
     @objc private func selectJellyfinServer(_ sender: NSMenuItem) {
         guard let serverId = sender.representedObject as? String else { return }
         currentSource = .jellyfin(serverId: serverId)
-        
-        if let server = JellyfinManager.shared.servers.first(where: { $0.id == serverId }) {
-            Task { @MainActor in
-                do {
-                    try await JellyfinManager.shared.connect(to: server)
-                    reloadData()
-                } catch {
-                    errorMessage = error.localizedDescription
-                    needsDisplay = true
-                }
-            }
-        }
     }
     
     @objc private func addJellyfinServer() {
@@ -8047,18 +7933,6 @@ class PlexBrowserView: NSView {
     @objc private func selectEmbyServer(_ sender: NSMenuItem) {
         guard let serverId = sender.representedObject as? String else { return }
         currentSource = .emby(serverId: serverId)
-
-        if let server = EmbyManager.shared.servers.first(where: { $0.id == serverId }) {
-            Task { @MainActor in
-                do {
-                    try await EmbyManager.shared.connect(to: server)
-                    reloadData()
-                } catch {
-                    errorMessage = error.localizedDescription
-                    needsDisplay = true
-                }
-            }
-        }
     }
 
     @objc private func addEmbyServer() {
@@ -11569,25 +11443,7 @@ class PlexBrowserView: NSView {
               let server = PlexManager.shared.servers.first(where: { $0.id == serverID }) else {
             return
         }
-        
-        isLoading = true
-        errorMessage = nil
-        startLoadingAnimation()
-        needsDisplay = true
-        
-        Task { @MainActor in
-            do {
-                try await PlexManager.shared.connect(to: server)
-                clearAllCachedData()
-                reloadData()
-            } catch {
-                NSLog("Failed to connect to server: %@", error.localizedDescription)
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = "Failed to connect to \(server.name): \(error.localizedDescription)"
-                needsDisplay = true
-            }
-        }
+        currentSource = .plex(serverId: server.id)
     }
     
     @objc private func selectLibrary(_ sender: NSMenuItem) {
@@ -11886,15 +11742,15 @@ class PlexBrowserView: NSView {
     
     // MARK: - Data Management
     
-    private func loadDataForCurrentMode() {
-        // Radio source supports Radio tab and Search tab.
+    private func loadDataForCurrentMode(generation: Int? = nil) {
+        let generation = generation ?? loadGeneration
+        
         if case .radio = currentSource {
             if browseMode == .radio {
                 loadRadioStations()
             } else if browseMode == .search {
                 loadRadioSearchResults()
             } else {
-                // Non-radio tabs show empty for radio source
                 isLoading = false
                 errorMessage = nil
                 stopLoadingAnimation()
@@ -11904,163 +11760,173 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Non-radio sources: radio tab supports source-specific library radio
         if browseMode == .radio {
-            if case .plex = currentSource, PlexManager.shared.isLinked {
-                loadPlexRadioStations()
-            } else if case .subsonic = currentSource {
-                loadSubsonicRadioStations()
-            } else if case .jellyfin = currentSource {
-                loadJellyfinRadioStations()
-            } else if case .emby = currentSource {
-                loadEmbyRadioStations()
-            } else if case .local = currentSource {
+            switch currentSource {
+            case .plex:
+                loadPlexRadioStations(generation: generation)
+            case .subsonic:
+                loadSubsonicRadioStations(generation: generation)
+            case .jellyfin:
+                loadJellyfinRadioStations(generation: generation)
+            case .emby:
+                loadEmbyRadioStations(generation: generation)
+            case .local:
                 loadLocalRadioStations()
-            } else {
-                isLoading = false
-                errorMessage = nil
-                stopLoadingAnimation()
+            case .radio:
                 displayItems = []
-                needsDisplay = true
             }
+            needsDisplay = true
             return
         }
         
-        // Check source first - local files don't need async loading
-        if case .local = currentSource {
+        switch currentSource {
+        case .local:
             loadLocalData()
+        case .plex(let serverId):
+            loadPlexData(serverId: serverId, generation: generation)
+        case .subsonic(let serverId):
+            loadSubsonicData(serverId: serverId, generation: generation)
+        case .jellyfin(let serverId):
+            loadJellyfinData(serverId: serverId, generation: generation)
+        case .emby(let serverId):
+            loadEmbyData(serverId: serverId, generation: generation)
+        case .radio:
+            break
+        }
+    }
+    
+    private func loadPlexData(serverId: String, generation: Int? = nil) {
+        let generation = generation ?? loadGeneration
+        let expectedSource = BrowserSource.plex(serverId: serverId)
+        guard isLoadContextActive(generation, source: expectedSource) else { return }
+        guard PlexManager.shared.isLinked else {
+            displayItems = []
+            stopLoadingAnimation()
+            needsDisplay = true
             return
         }
         
-        // Subsonic source - use Subsonic loading
-        if case .subsonic(let serverId) = currentSource {
-            loadSubsonicData(serverId: serverId)
-            return
-        }
-        
-        // Jellyfin source - use Jellyfin loading
-        if case .jellyfin(let serverId) = currentSource {
-            loadJellyfinData(serverId: serverId)
-            return
-        }
-
-        // Emby source - use Emby loading
-        if case .emby(let serverId) = currentSource {
-            loadEmbyData(serverId: serverId)
-            return
-        }
-
-        // Plex source - async loading
+        let manager = PlexManager.shared
         isLoading = true
         errorMessage = nil
         startLoadingAnimation()
         needsDisplay = true
         
-        Task { @MainActor in
+        if manager.currentServer?.id != serverId || manager.serverClient == nil {
+            guard let server = manager.servers.first(where: { $0.id == serverId }) else {
+                setLoadErrorIfActive("Server not found", generation: generation, source: expectedSource)
+                return
+            }
+            sourceConnectTask?.cancel()
+            sourceConnectTask = Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                do {
+                    try await manager.connect(to: server)
+                    guard self.isLoadContextActive(generation, source: expectedSource),
+                          manager.currentServer?.id == serverId else { return }
+                    self.loadPlexDataForCurrentMode(serverId: serverId, generation: generation, expectedSource: expectedSource)
+                } catch {
+                    self.setLoadErrorIfActive(error.localizedDescription, generation: generation, source: expectedSource)
+                }
+            }
+            return
+        }
+        
+        loadPlexDataForCurrentMode(serverId: serverId, generation: generation, expectedSource: expectedSource)
+    }
+    
+    private func loadPlexDataForCurrentMode(serverId: String, generation: Int, expectedSource: BrowserSource) {
+        let plexManager = PlexManager.shared
+        plexLoadTask?.cancel()
+        plexLoadTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             do {
-                let plexManager = PlexManager.shared
+                guard self.isLoadContextActive(generation, source: expectedSource),
+                      plexManager.currentServer?.id == serverId else { return }
                 
-                switch browseMode {
+                switch self.browseMode {
                 case .artists:
-                    if cachedArtists.isEmpty {
-                        // Use preloaded data from PlexManager if available
+                    if self.cachedArtists.isEmpty {
                         if plexManager.isContentPreloaded && !plexManager.cachedArtists.isEmpty {
-                            cachedArtists = plexManager.cachedArtists
-                            cachedAlbums = plexManager.cachedAlbums
-                            NSLog("PlexBrowserView: Using preloaded artists (%d) and albums (%d)", cachedArtists.count, cachedAlbums.count)
+                            self.cachedArtists = plexManager.cachedArtists
+                            self.cachedAlbums = plexManager.cachedAlbums
                         } else {
-                            cachedArtists = try await plexManager.fetchArtists()
-                            // Also fetch albums to get accurate counts per artist
-                            if cachedAlbums.isEmpty {
-                                cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                            self.cachedArtists = try await plexManager.fetchArtists()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                            if self.cachedAlbums.isEmpty {
+                                self.cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                             }
                         }
-                        // Build artist album counts from the albums data
-                        buildArtistAlbumCounts()
+                        self.buildArtistAlbumCounts()
                     }
-                    buildArtistItems()
+                    self.buildArtistItems()
                     
                 case .albums:
-                    if cachedAlbums.isEmpty {
-                        // Use preloaded data from PlexManager if available
+                    if self.cachedAlbums.isEmpty {
                         if plexManager.isContentPreloaded && !plexManager.cachedAlbums.isEmpty {
-                            cachedAlbums = plexManager.cachedAlbums
-                            NSLog("PlexBrowserView: Using preloaded albums (%d)", cachedAlbums.count)
+                            self.cachedAlbums = plexManager.cachedAlbums
                         } else {
-                            cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 500)
+                            self.cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 500)
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildAlbumItems()
+                    self.buildAlbumItems()
                     
                 case .movies:
-                    NSLog("PlexBrowserView: Loading movies...")
-                    if cachedMovies.isEmpty {
-                        // Use preloaded data from PlexManager if available
+                    if self.cachedMovies.isEmpty {
                         if plexManager.isContentPreloaded && !plexManager.cachedMovies.isEmpty {
-                            cachedMovies = plexManager.cachedMovies
-                            NSLog("PlexBrowserView: Using preloaded movies (%d)", cachedMovies.count)
+                            self.cachedMovies = plexManager.cachedMovies
                         } else {
-                            cachedMovies = try await plexManager.fetchMovies(offset: 0, limit: 500)
-                            NSLog("PlexBrowserView: Loaded %d movies", cachedMovies.count)
+                            self.cachedMovies = try await plexManager.fetchMovies(offset: 0, limit: 500)
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildMovieItems()
-                    NSLog("PlexBrowserView: Built %d movie items", displayItems.count)
+                    self.buildMovieItems()
                     
                 case .shows:
-                    NSLog("PlexBrowserView: Loading TV shows...")
-                    if cachedShows.isEmpty {
-                        // Use preloaded data from PlexManager if available
+                    if self.cachedShows.isEmpty {
                         if plexManager.isContentPreloaded && !plexManager.cachedShows.isEmpty {
-                            cachedShows = plexManager.cachedShows
-                            NSLog("PlexBrowserView: Using preloaded shows (%d)", cachedShows.count)
+                            self.cachedShows = plexManager.cachedShows
                         } else {
-                            cachedShows = try await plexManager.fetchShows(offset: 0, limit: 500)
-                            NSLog("PlexBrowserView: Loaded %d shows", cachedShows.count)
+                            self.cachedShows = try await plexManager.fetchShows(offset: 0, limit: 500)
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildShowItems()
-                    NSLog("PlexBrowserView: Built %d show items", displayItems.count)
+                    self.buildShowItems()
                     
                 case .plists:
-                    NSLog("PlexBrowserView: Loading Plex playlists...")
-                    if cachedPlexPlaylists.isEmpty {
+                    if self.cachedPlexPlaylists.isEmpty {
                         if !plexManager.cachedPlaylists.isEmpty {
-                            cachedPlexPlaylists = plexManager.cachedPlaylists
-                            NSLog("PlexBrowserView: Using cached playlists (%d)", cachedPlexPlaylists.count)
+                            self.cachedPlexPlaylists = plexManager.cachedPlaylists
                         } else {
-                            cachedPlexPlaylists = try await plexManager.fetchPlaylists()
-                            NSLog("PlexBrowserView: Loaded %d playlists", cachedPlexPlaylists.count)
+                            self.cachedPlexPlaylists = try await plexManager.fetchPlaylists()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildPlexPlaylistItems()
-                    NSLog("PlexBrowserView: Built %d playlist items", displayItems.count)
+                    self.buildPlexPlaylistItems()
                     
                 case .search:
-                    if !searchQuery.isEmpty {
-                        // Search in the current library
-                        searchResults = try await plexManager.search(query: searchQuery)
-                        buildSearchItems()
+                    if !self.searchQuery.isEmpty {
+                        self.searchResults = try await plexManager.search(query: self.searchQuery)
+                        guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                        self.buildSearchItems()
                     } else {
-                        displayItems = []
+                        self.displayItems = []
                     }
                     
                 case .radio:
-                    // Radio is handled at the start of loadDataForCurrentMode()
-                    // This case should never be reached but is here for exhaustive switch
-                    loadRadioStations()
+                    self.loadPlexRadioStations(generation: generation)
+                    return
                 }
                 
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = nil
+                self.finishLoadIfActive(generation: generation, source: expectedSource)
+            } catch is CancellationError {
+            } catch where Task.isCancelled {
             } catch {
-                NSLog("PlexBrowserView: Error loading data for mode %d: %@", browseMode.rawValue, error.localizedDescription)
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = error.localizedDescription
+                self.setLoadErrorIfActive(error.localizedDescription, generation: generation, source: expectedSource)
             }
-            needsDisplay = true
         }
     }
     
@@ -12772,73 +12638,102 @@ class PlexBrowserView: NSView {
     }
     
     /// Load Plex Radio stations (dynamic playlists from Plex library)
-    private func loadPlexRadioStations() {
+    private func loadPlexRadioStations(generation: Int? = nil) {
+        let generation = generation ?? loadGeneration
+        guard case .plex = currentSource else { return }
+        let expectedSource = currentSource
         isLoading = true
         errorMessage = nil
         startLoadingAnimation()
         needsDisplay = true
         
-        // Fetch genres async and build items
-        Task { @MainActor in
+        radioLoadTask?.cancel()
+        radioLoadTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             let genres = await PlexManager.shared.getGenres()
-            buildPlexRadioStationItems(genres: genres)
-            isLoading = false
-            stopLoadingAnimation()
-            needsDisplay = true
+            guard !Task.isCancelled,
+                  self.isLoadContextActive(generation, source: expectedSource),
+                  self.browseMode == .radio else { return }
+            self.buildPlexRadioStationItems(genres: genres)
+            self.isLoading = false
+            self.stopLoadingAnimation()
+            self.needsDisplay = true
+            self.radioLoadTask = nil
         }
     }
 
-    private func loadSubsonicRadioStations() {
+    private func loadSubsonicRadioStations(generation: Int? = nil) {
+        let generation = generation ?? loadGeneration
+        guard case .subsonic = currentSource else { return }
+        let expectedSource = currentSource
         isLoading = true
         errorMessage = nil
         startLoadingAnimation()
         needsDisplay = true
 
         radioLoadTask?.cancel()
-        radioLoadTask = Task { @MainActor in
+        radioLoadTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             let genres = await SubsonicManager.shared.getGenres()
-            guard !Task.isCancelled, browseMode == .radio, case .subsonic = currentSource else { return }
-            buildSubsonicRadioStationItems(genres: genres)
-            isLoading = false
-            stopLoadingAnimation()
-            needsDisplay = true
-            radioLoadTask = nil
+            guard !Task.isCancelled,
+                  self.isLoadContextActive(generation, source: expectedSource),
+                  self.browseMode == .radio,
+                  case .subsonic = self.currentSource else { return }
+            self.buildSubsonicRadioStationItems(genres: genres)
+            self.isLoading = false
+            self.stopLoadingAnimation()
+            self.needsDisplay = true
+            self.radioLoadTask = nil
         }
     }
 
-    private func loadJellyfinRadioStations() {
+    private func loadJellyfinRadioStations(generation: Int? = nil) {
+        let generation = generation ?? loadGeneration
+        guard case .jellyfin = currentSource else { return }
+        let expectedSource = currentSource
         isLoading = true
         errorMessage = nil
         startLoadingAnimation()
         needsDisplay = true
 
         radioLoadTask?.cancel()
-        radioLoadTask = Task { @MainActor in
+        radioLoadTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             let genres = await JellyfinManager.shared.getMusicGenres()
-            guard !Task.isCancelled, browseMode == .radio, case .jellyfin = currentSource else { return }
-            buildJellyfinRadioStationItems(genres: genres)
-            isLoading = false
-            stopLoadingAnimation()
-            needsDisplay = true
-            radioLoadTask = nil
+            guard !Task.isCancelled,
+                  self.isLoadContextActive(generation, source: expectedSource),
+                  self.browseMode == .radio,
+                  case .jellyfin = self.currentSource else { return }
+            self.buildJellyfinRadioStationItems(genres: genres)
+            self.isLoading = false
+            self.stopLoadingAnimation()
+            self.needsDisplay = true
+            self.radioLoadTask = nil
         }
     }
 
-    private func loadEmbyRadioStations() {
+    private func loadEmbyRadioStations(generation: Int? = nil) {
+        let generation = generation ?? loadGeneration
+        guard case .emby = currentSource else { return }
+        let expectedSource = currentSource
         isLoading = true
         errorMessage = nil
         startLoadingAnimation()
         needsDisplay = true
 
         radioLoadTask?.cancel()
-        radioLoadTask = Task { @MainActor in
+        radioLoadTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             let genres = await EmbyManager.shared.getMusicGenres()
-            guard !Task.isCancelled, browseMode == .radio, case .emby = currentSource else { return }
-            buildEmbyRadioStationItems(genres: genres)
-            isLoading = false
-            stopLoadingAnimation()
-            needsDisplay = true
-            radioLoadTask = nil
+            guard !Task.isCancelled,
+                  self.isLoadContextActive(generation, source: expectedSource),
+                  self.browseMode == .radio,
+                  case .emby = self.currentSource else { return }
+            self.buildEmbyRadioStationItems(genres: genres)
+            self.isLoading = false
+            self.stopLoadingAnimation()
+            self.needsDisplay = true
+            self.radioLoadTask = nil
         }
     }
 
@@ -13235,7 +13130,10 @@ class PlexBrowserView: NSView {
     }
     
     /// Load Subsonic data for the current mode
-    private func loadSubsonicData(serverId: String) {
+    private func loadSubsonicData(serverId: String, generation: Int? = nil) {
+        let generation = generation ?? loadGeneration
+        let expectedSource = BrowserSource.subsonic(serverId: serverId)
+        guard isLoadContextActive(generation, source: expectedSource) else { return }
         isLoading = true
         errorMessage = nil
         startLoadingAnimation()
@@ -13243,112 +13141,98 @@ class PlexBrowserView: NSView {
         
         let manager = SubsonicManager.shared
         
-        // Check if we need to connect first
         if manager.currentServer?.id != serverId {
-            if let server = manager.servers.first(where: { $0.id == serverId }) {
-                Task { @MainActor in
-                    do {
-                        try await manager.connect(to: server)
-                        loadSubsonicDataForCurrentMode()
-                    } catch {
-                        isLoading = false
-                        stopLoadingAnimation()
-                        errorMessage = error.localizedDescription
-                        needsDisplay = true
-                    }
+            guard let server = manager.servers.first(where: { $0.id == serverId }) else {
+                setLoadErrorIfActive("Server not found", generation: generation, source: expectedSource)
+                return
+            }
+            sourceConnectTask?.cancel()
+            sourceConnectTask = Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                do {
+                    try await manager.connect(to: server)
+                    guard self.isLoadContextActive(generation, source: expectedSource),
+                          manager.currentServer?.id == serverId else { return }
+                    self.loadSubsonicDataForCurrentMode(generation: generation, expectedSource: expectedSource)
+                } catch {
+                    self.setLoadErrorIfActive(error.localizedDescription, generation: generation, source: expectedSource)
                 }
-            } else {
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = "Server not found"
-                needsDisplay = true
             }
             return
         }
         
-        // Already connected to this server
-        loadSubsonicDataForCurrentMode()
+        loadSubsonicDataForCurrentMode(generation: generation, expectedSource: expectedSource)
     }
     
     /// Load Subsonic content for the current browse mode
-    private func loadSubsonicDataForCurrentMode() {
+    private func loadSubsonicDataForCurrentMode(generation: Int, expectedSource: BrowserSource) {
         let manager = SubsonicManager.shared
         
-        // Cancel any pending load task
         subsonicLoadTask?.cancel()
         
         subsonicLoadTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
             
             do {
-                // Check for cancellation before each major operation
-                try Task.checkCancellation()
+                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                 
-                switch browseMode {
+                switch self.browseMode {
                 case .artists:
-                    if cachedSubsonicArtists.isEmpty {
+                    if self.cachedSubsonicArtists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
-                            cachedSubsonicArtists = manager.cachedArtists
-                            cachedSubsonicAlbums = manager.cachedAlbums
+                            self.cachedSubsonicArtists = manager.cachedArtists
+                            self.cachedSubsonicAlbums = manager.cachedAlbums
                         } else {
                             try Task.checkCancellation()
-                            cachedSubsonicArtists = try await manager.fetchArtists()
+                            self.cachedSubsonicArtists = try await manager.fetchArtists()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                             try Task.checkCancellation()
-                            cachedSubsonicAlbums = try await manager.fetchAlbums()
+                            self.cachedSubsonicAlbums = try await manager.fetchAlbums()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    try Task.checkCancellation()
-                    buildSubsonicArtistItems()
+                    self.buildSubsonicArtistItems()
                     
                 case .albums:
-                    if cachedSubsonicAlbums.isEmpty {
+                    if self.cachedSubsonicAlbums.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedAlbums.isEmpty {
-                            cachedSubsonicAlbums = manager.cachedAlbums
+                            self.cachedSubsonicAlbums = manager.cachedAlbums
                         } else {
                             try Task.checkCancellation()
-                            cachedSubsonicAlbums = try await manager.fetchAlbums()
+                            self.cachedSubsonicAlbums = try await manager.fetchAlbums()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    try Task.checkCancellation()
-                    buildSubsonicAlbumItems()
+                    self.buildSubsonicAlbumItems()
                     
                 case .search:
-                    // TODO: Implement Subsonic search
-                    displayItems = []
+                    self.displayItems = []
                     
                 case .plists:
-                    NSLog("PlexBrowserView: Loading Subsonic playlists...")
-                    if cachedSubsonicPlaylists.isEmpty {
+                    if self.cachedSubsonicPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty {
-                            cachedSubsonicPlaylists = manager.cachedPlaylists
+                            self.cachedSubsonicPlaylists = manager.cachedPlaylists
                         } else {
                             try Task.checkCancellation()
-                            cachedSubsonicPlaylists = try await manager.fetchPlaylists()
+                            self.cachedSubsonicPlaylists = try await manager.fetchPlaylists()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    try Task.checkCancellation()
-                    buildSubsonicPlaylistItems()
-                    NSLog("PlexBrowserView: Built %d playlist items", displayItems.count)
+                    self.buildSubsonicPlaylistItems()
                     
                 case .movies, .shows:
-                    // Video modes not supported for Subsonic
-                    displayItems = []
+                    self.displayItems = []
                     
                 case .radio:
-                    // Radio is handled by loadRadioStations() in loadDataForCurrentMode()
-                    break
+                    self.loadSubsonicRadioStations(generation: generation)
+                    return
                 }
                 
-                isLoading = false
-                stopLoadingAnimation()
-                needsDisplay = true
+                self.finishLoadIfActive(generation: generation, source: expectedSource)
             } catch is CancellationError {
-                // Task was cancelled, ignore
             } catch {
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = error.localizedDescription
-                needsDisplay = true
+                self.setLoadErrorIfActive(error.localizedDescription, generation: generation, source: expectedSource)
             }
         }
     }
@@ -13471,7 +13355,10 @@ class PlexBrowserView: NSView {
     
     // MARK: - Emby Data Loading
 
-    private func loadEmbyData(serverId: String) {
+    private func loadEmbyData(serverId: String, generation: Int? = nil) {
+        let generation = generation ?? loadGeneration
+        let expectedSource = BrowserSource.emby(serverId: serverId)
+        guard isLoadContextActive(generation, source: expectedSource) else { return }
         isLoading = true
         errorMessage = nil
         startLoadingAnimation()
@@ -13480,31 +13367,30 @@ class PlexBrowserView: NSView {
         let manager = EmbyManager.shared
 
         if manager.currentServer?.id != serverId {
-            if let server = manager.servers.first(where: { $0.id == serverId }) {
-                Task { @MainActor in
-                    do {
-                        try await manager.connect(to: server)
-                        loadEmbyDataForCurrentMode()
-                    } catch {
-                        isLoading = false
-                        stopLoadingAnimation()
-                        errorMessage = error.localizedDescription
-                        needsDisplay = true
-                    }
+            guard let server = manager.servers.first(where: { $0.id == serverId }) else {
+                setLoadErrorIfActive("Server not found", generation: generation, source: expectedSource)
+                return
+            }
+            sourceConnectTask?.cancel()
+            sourceConnectTask = Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                do {
+                    try await manager.connect(to: server)
+                    guard self.isLoadContextActive(generation, source: expectedSource),
+                          manager.currentServer?.id == serverId else { return }
+                    self.loadEmbyDataForCurrentMode(generation: generation, expectedSource: expectedSource)
+                } catch {
+                    self.setLoadErrorIfActive(error.localizedDescription, generation: generation, source: expectedSource)
                 }
-            } else {
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = "Server not found"
-                needsDisplay = true
             }
             return
         }
 
-        loadEmbyDataForCurrentMode()
+        loadEmbyDataForCurrentMode(generation: generation, expectedSource: expectedSource)
     }
 
-    private func loadEmbyDataForCurrentMode() {
+    private func loadEmbyDataForCurrentMode(generation: Int, expectedSource: BrowserSource) {
         let manager = EmbyManager.shared
 
         embyLoadTask?.cancel()
@@ -13513,91 +13399,95 @@ class PlexBrowserView: NSView {
             guard let self = self else { return }
 
             do {
-                try Task.checkCancellation()
+                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
 
-                switch browseMode {
+                switch self.browseMode {
                 case .artists:
-                    if cachedEmbyArtists.isEmpty {
+                    if self.cachedEmbyArtists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
-                            cachedEmbyArtists = manager.cachedArtists
-                            cachedEmbyAlbums = manager.cachedAlbums
+                            self.cachedEmbyArtists = manager.cachedArtists
+                            self.cachedEmbyAlbums = manager.cachedAlbums
                         } else {
                             try Task.checkCancellation()
-                            cachedEmbyArtists = try await manager.fetchArtists()
+                            self.cachedEmbyArtists = try await manager.fetchArtists()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                             try Task.checkCancellation()
-                            cachedEmbyAlbums = try await manager.fetchAlbums()
+                            self.cachedEmbyAlbums = try await manager.fetchAlbums()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildEmbyArtistItems()
+                    self.buildEmbyArtistItems()
 
                 case .albums:
-                    if cachedEmbyAlbums.isEmpty {
+                    if self.cachedEmbyAlbums.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedAlbums.isEmpty {
-                            cachedEmbyAlbums = manager.cachedAlbums
+                            self.cachedEmbyAlbums = manager.cachedAlbums
                         } else {
                             try Task.checkCancellation()
-                            cachedEmbyAlbums = try await manager.fetchAlbums()
+                            self.cachedEmbyAlbums = try await manager.fetchAlbums()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildEmbyAlbumItems()
+                    self.buildEmbyAlbumItems()
 
                 case .plists:
-                    if cachedEmbyPlaylists.isEmpty {
+                    if self.cachedEmbyPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty {
-                            cachedEmbyPlaylists = manager.cachedPlaylists
+                            self.cachedEmbyPlaylists = manager.cachedPlaylists
                         } else {
                             try Task.checkCancellation()
-                            cachedEmbyPlaylists = try await manager.fetchPlaylists()
+                            self.cachedEmbyPlaylists = try await manager.fetchPlaylists()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildEmbyPlaylistItems()
+                    self.buildEmbyPlaylistItems()
 
                 case .search:
-                    displayItems = []
+                    self.displayItems = []
 
                 case .movies:
-                    if cachedEmbyMovies.isEmpty {
+                    if self.cachedEmbyMovies.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedMovies.isEmpty {
-                            cachedEmbyMovies = manager.cachedMovies
+                            self.cachedEmbyMovies = manager.cachedMovies
                         } else {
                             try Task.checkCancellation()
-                            cachedEmbyMovies = try await manager.fetchMovies()
+                            self.cachedEmbyMovies = try await manager.fetchMovies()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildEmbyMovieItems()
+                    self.buildEmbyMovieItems()
 
                 case .shows:
-                    if cachedEmbyShows.isEmpty {
+                    if self.cachedEmbyShows.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedShows.isEmpty {
-                            cachedEmbyShows = manager.cachedShows
+                            self.cachedEmbyShows = manager.cachedShows
                         } else {
                             try Task.checkCancellation()
-                            cachedEmbyShows = try await manager.fetchShows()
+                            self.cachedEmbyShows = try await manager.fetchShows()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildEmbyShowItems()
+                    self.buildEmbyShowItems()
 
                 case .radio:
-                    break
+                    self.loadEmbyRadioStations(generation: generation)
+                    return
                 }
 
-                isLoading = false
-                stopLoadingAnimation()
-                needsDisplay = true
+                self.finishLoadIfActive(generation: generation, source: expectedSource)
             } catch is CancellationError {
-                // Task was cancelled, don't update UI
             } catch {
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = error.localizedDescription
-                needsDisplay = true
+                self.setLoadErrorIfActive(error.localizedDescription, generation: generation, source: expectedSource)
             }
         }
     }
 
     // MARK: - Jellyfin Data Loading
 
-    private func loadJellyfinData(serverId: String) {
+    private func loadJellyfinData(serverId: String, generation: Int? = nil) {
+        let generation = generation ?? loadGeneration
+        let expectedSource = BrowserSource.jellyfin(serverId: serverId)
+        guard isLoadContextActive(generation, source: expectedSource) else { return }
         isLoading = true
         errorMessage = nil
         startLoadingAnimation()
@@ -13606,31 +13496,30 @@ class PlexBrowserView: NSView {
         let manager = JellyfinManager.shared
         
         if manager.currentServer?.id != serverId {
-            if let server = manager.servers.first(where: { $0.id == serverId }) {
-                Task { @MainActor in
-                    do {
-                        try await manager.connect(to: server)
-                        loadJellyfinDataForCurrentMode()
-                    } catch {
-                        isLoading = false
-                        stopLoadingAnimation()
-                        errorMessage = error.localizedDescription
-                        needsDisplay = true
-                    }
+            guard let server = manager.servers.first(where: { $0.id == serverId }) else {
+                setLoadErrorIfActive("Server not found", generation: generation, source: expectedSource)
+                return
+            }
+            sourceConnectTask?.cancel()
+            sourceConnectTask = Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
+                do {
+                    try await manager.connect(to: server)
+                    guard self.isLoadContextActive(generation, source: expectedSource),
+                          manager.currentServer?.id == serverId else { return }
+                    self.loadJellyfinDataForCurrentMode(generation: generation, expectedSource: expectedSource)
+                } catch {
+                    self.setLoadErrorIfActive(error.localizedDescription, generation: generation, source: expectedSource)
                 }
-            } else {
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = "Server not found"
-                needsDisplay = true
             }
             return
         }
         
-        loadJellyfinDataForCurrentMode()
+        loadJellyfinDataForCurrentMode(generation: generation, expectedSource: expectedSource)
     }
     
-    private func loadJellyfinDataForCurrentMode() {
+    private func loadJellyfinDataForCurrentMode(generation: Int, expectedSource: BrowserSource) {
         let manager = JellyfinManager.shared
         
         jellyfinLoadTask?.cancel()
@@ -13639,86 +13528,85 @@ class PlexBrowserView: NSView {
             guard let self = self else { return }
             
             do {
-                try Task.checkCancellation()
+                guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                 
-                switch browseMode {
+                switch self.browseMode {
                 case .artists:
-                    if cachedJellyfinArtists.isEmpty {
+                    if self.cachedJellyfinArtists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedArtists.isEmpty {
-                            cachedJellyfinArtists = manager.cachedArtists
-                            cachedJellyfinAlbums = manager.cachedAlbums
+                            self.cachedJellyfinArtists = manager.cachedArtists
+                            self.cachedJellyfinAlbums = manager.cachedAlbums
                         } else {
                             try Task.checkCancellation()
-                            cachedJellyfinArtists = try await manager.fetchArtists()
+                            self.cachedJellyfinArtists = try await manager.fetchArtists()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                             if let server = manager.currentServer {
-                                warmJellyfinAlbumsCache(forServerId: server.id)
+                                self.warmJellyfinAlbumsCache(forServerId: server.id)
                             }
                         }
                     }
-                    buildJellyfinArtistItems()
+                    self.buildJellyfinArtistItems()
                     
                 case .albums:
-                    if cachedJellyfinAlbums.isEmpty {
+                    if self.cachedJellyfinAlbums.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedAlbums.isEmpty {
-                            cachedJellyfinAlbums = manager.cachedAlbums
+                            self.cachedJellyfinAlbums = manager.cachedAlbums
                         } else {
                             try Task.checkCancellation()
-                            cachedJellyfinAlbums = try await manager.fetchAlbums()
+                            self.cachedJellyfinAlbums = try await manager.fetchAlbums()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildJellyfinAlbumItems()
+                    self.buildJellyfinAlbumItems()
 
                 case .plists:
-                    NSLog("PlexBrowserView: Loading Jellyfin playlists...")
-                    if cachedJellyfinPlaylists.isEmpty {
+                    if self.cachedJellyfinPlaylists.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedPlaylists.isEmpty {
-                            cachedJellyfinPlaylists = manager.cachedPlaylists
+                            self.cachedJellyfinPlaylists = manager.cachedPlaylists
                         } else {
                             try Task.checkCancellation()
-                            cachedJellyfinPlaylists = try await manager.fetchPlaylists()
+                            self.cachedJellyfinPlaylists = try await manager.fetchPlaylists()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildJellyfinPlaylistItems()
+                    self.buildJellyfinPlaylistItems()
                     
                 case .search:
-                    displayItems = []
+                    self.displayItems = []
                     
                 case .movies:
-                    if cachedJellyfinMovies.isEmpty {
+                    if self.cachedJellyfinMovies.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedMovies.isEmpty {
-                            cachedJellyfinMovies = manager.cachedMovies
+                            self.cachedJellyfinMovies = manager.cachedMovies
                         } else {
                             try Task.checkCancellation()
-                            cachedJellyfinMovies = try await manager.fetchMovies()
+                            self.cachedJellyfinMovies = try await manager.fetchMovies()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildJellyfinMovieItems()
+                    self.buildJellyfinMovieItems()
                     
                 case .shows:
-                    if cachedJellyfinShows.isEmpty {
+                    if self.cachedJellyfinShows.isEmpty {
                         if manager.isContentPreloaded && !manager.cachedShows.isEmpty {
-                            cachedJellyfinShows = manager.cachedShows
+                            self.cachedJellyfinShows = manager.cachedShows
                         } else {
                             try Task.checkCancellation()
-                            cachedJellyfinShows = try await manager.fetchShows()
+                            self.cachedJellyfinShows = try await manager.fetchShows()
+                            guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
-                    buildJellyfinShowItems()
+                    self.buildJellyfinShowItems()
                     
                 case .radio:
-                    break
+                    self.loadJellyfinRadioStations(generation: generation)
+                    return
                 }
                 
-                isLoading = false
-                stopLoadingAnimation()
-                needsDisplay = true
+                self.finishLoadIfActive(generation: generation, source: expectedSource)
             } catch is CancellationError {
-                // Task was cancelled, don't update UI
             } catch {
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = error.localizedDescription
-                needsDisplay = true
+                self.setLoadErrorIfActive(error.localizedDescription, generation: generation, source: expectedSource)
             }
         }
     }
