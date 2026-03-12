@@ -341,6 +341,9 @@ class WindowManager {
     /// Flag to prevent feedback loop when snapping windows
     private var isSnappingWindow = false
 
+    /// Guard against re-entrant classic stack tightening while applying repaired frames.
+    private var isTighteningClassicCenterStack = false
+
     /// Time gate for drag layout notifications (throttle to ~30Hz)
     private var lastDragLayoutNotificationTime: TimeInterval = 0
 
@@ -459,6 +462,7 @@ class WindowManager {
             showPlaylist()
         }
         notifyMainWindowVisibilityChanged()
+        _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }
@@ -505,6 +509,7 @@ class WindowManager {
             showEqualizer()
         }
         notifyMainWindowVisibilityChanged()
+        _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }
@@ -1332,6 +1337,7 @@ class WindowManager {
             showSpectrum()
         }
         notifyMainWindowVisibilityChanged()
+        _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }
@@ -1391,6 +1397,7 @@ class WindowManager {
             showWaveform()
         }
         notifyMainWindowVisibilityChanged()
+        _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }
@@ -2053,6 +2060,70 @@ class WindowManager {
         guard isRunningModernUI else { return mainFrame.height * 4 }
         return expectedMainHeightForCurrentHT(mainWindowController?.window) * 4
     }
+
+    /// Classic-only runtime self-heal for near-docked center-stack gaps/width drift.
+    /// Keeps modern mode untouched and only adjusts windows that match classic near-dock rules.
+    @discardableResult
+    private func tightenClassicCenterStackIfNeeded() -> Bool {
+        guard !isRunningModernUI else { return false }
+        guard !isTighteningClassicCenterStack else { return false }
+        guard let mainWindow = mainWindowController?.window else { return false }
+
+        let scale: CGFloat = isDoubleSize ? 1.5 : 1.0
+        let equalizerWindow = equalizerWindowController?.window
+        let playlistWindow = playlistWindowController?.window
+        let spectrumWindow = spectrumWindowController?.window
+        let waveformWindow = waveformWindowController?.window
+
+        let repaired = AppStateManager.repairClassicCenterStackFrames(
+            mainFrame: mainWindow.frame,
+            equalizerFrame: (equalizerWindow?.isVisible == true) ? equalizerWindow?.frame : nil,
+            playlistFrame: (playlistWindow?.isVisible == true) ? playlistWindow?.frame : nil,
+            spectrumFrame: (spectrumWindow?.isVisible == true) ? spectrumWindow?.frame : nil,
+            waveformFrame: (waveformWindow?.isVisible == true) ? waveformWindow?.frame : nil,
+            scale: scale
+        )
+
+        guard repaired.repaired else { return false }
+
+        isTighteningClassicCenterStack = true
+        let previousSnappingState = isSnappingWindow
+        isSnappingWindow = true
+        defer {
+            isSnappingWindow = previousSnappingState
+            isTighteningClassicCenterStack = false
+        }
+
+        if repaired.mainFrame != mainWindow.frame {
+            mainWindow.setFrame(repaired.mainFrame, display: true, animate: false)
+        }
+        if let equalizerWindow,
+           equalizerWindow.isVisible,
+           let repairedFrame = repaired.equalizerFrame,
+           repairedFrame != equalizerWindow.frame {
+            equalizerWindow.setFrame(repairedFrame, display: true, animate: false)
+        }
+        if let playlistWindow,
+           playlistWindow.isVisible,
+           let repairedFrame = repaired.playlistFrame,
+           repairedFrame != playlistWindow.frame {
+            playlistWindow.setFrame(repairedFrame, display: true, animate: false)
+        }
+        if let spectrumWindow,
+           spectrumWindow.isVisible,
+           let repairedFrame = repaired.spectrumFrame,
+           repairedFrame != spectrumWindow.frame {
+            spectrumWindow.setFrame(repairedFrame, display: true, animate: false)
+        }
+        if let waveformWindow,
+           waveformWindow.isVisible,
+           let repairedFrame = repaired.waveformFrame,
+           repairedFrame != waveformWindow.frame {
+            waveformWindow.setFrame(repairedFrame, display: true, animate: false)
+        }
+
+        return true
+    }
     
     /// Reset all windows to their default positions
     /// Only stacks currently visible windows with no gaps, preserving their current sizes
@@ -2170,6 +2241,7 @@ class WindowManager {
         if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
             videoWindow.center()
         }
+        _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
     }
     
@@ -2212,6 +2284,7 @@ class WindowManager {
         dockedWindowsToMove.removeAll()
         dockedWindowOffsets.removeAll()
         dockedWindowOriginalOrigins.removeAll()
+        _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }
