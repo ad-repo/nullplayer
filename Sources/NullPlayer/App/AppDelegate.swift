@@ -311,7 +311,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(wrappingLabelWithString: "The throwback player for modern home media")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback player for modern personal media")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
@@ -327,7 +327,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Credits
         let thanksLabel = NSTextField(labelWithString: "Please add a ⭐ star ⭐ on github")
-        thanksLabel.font = NSFont.systemFont(ofSize: 14)
+        thanksLabel.font = NSFont.systemFont(ofSize: 15)
         thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         thanksLabel.alignment = .center
         thanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
@@ -386,7 +386,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Disclaimer
         let disclaimerLabel = NSTextField(wrappingLabelWithString: "This is a clean room project")
-        disclaimerLabel.font = NSFont.systemFont(ofSize: 10)
+        disclaimerLabel.font = NSFont.systemFont(ofSize: 12)
         disclaimerLabel.textColor = NSColor(white: 0.4, alpha: 1.0)
         disclaimerLabel.alignment = .center
         disclaimerLabel.frame = NSRect(x: 20, y: y - 28, width: windowWidth - 40, height: 28)

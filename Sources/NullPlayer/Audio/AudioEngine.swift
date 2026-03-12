@@ -97,6 +97,12 @@ class AudioEngine {
     
     /// Guard against concurrent loadTrack() calls which can cause both local and streaming players to be active
     private var isLoadingTrack: Bool = false
+
+    /// In-flight placeholder resolution tasks keyed by playlist index.
+    private var placeholderResolutionTasks: [Int: Task<Void, Never>] = [:]
+
+    /// One-shot stale URL refresh guard for the current playback attempt.
+    private var staleStreamingRefreshRetriedServiceIdentity: String?
     
     /// Current playback state
     private(set) var state: PlaybackState = .stopped {
@@ -1074,23 +1080,44 @@ class AudioEngine {
             }
             return
         }
+
+        if state != .playing {
+            staleStreamingRefreshRetriedServiceIdentity = nil
+        }
         
         guard currentTrack != nil || !playlist.isEmpty else { return }
         
         if currentTrack == nil && !playlist.isEmpty {
             currentIndex = 0
             loadTrack(at: currentIndex)
+            if currentTrack == nil,
+               currentIndex >= 0,
+               currentIndex < playlist.count,
+               playlist[currentIndex].isStreamingPlaceholder {
+                currentTrack = playlist[currentIndex]
+                resolvePlaceholderTrackAndOptionallyPlay(at: currentIndex, autoPlayOnSuccess: true)
+                return
+            }
         }
 
         if let track = currentTrack {
-            let trackIsStreaming = track.url.scheme == "http" || track.url.scheme == "https"
+            if track.isStreamingPlaceholder,
+               currentIndex >= 0 && currentIndex < playlist.count {
+                resolvePlaceholderTrackAndOptionallyPlay(at: currentIndex, autoPlayOnSuccess: true)
+                return
+            }
+
+            let trackIsStreaming = track.url.scheme == "http"
+                || track.url.scheme == "https"
+                || track.isStreamingPlaceholder
             let hasStreamingPlayer = streamingPlayer != nil
             let hasLocalAudioFile = audioFile != nil
             let needsPipelineReload = Self.shouldReloadPlaybackPipelineForCurrentTrack(
                 trackURL: track.url,
                 isStreamingPlayback: isStreamingPlayback,
                 hasStreamingPlayer: hasStreamingPlayer,
-                hasLocalAudioFile: hasLocalAudioFile
+                hasLocalAudioFile: hasLocalAudioFile,
+                isStreamingPlaceholder: track.isStreamingPlaceholder
             )
 
             if needsPipelineReload {
@@ -2238,11 +2265,29 @@ class AudioEngine {
         trackURL: URL,
         isStreamingPlayback: Bool,
         hasStreamingPlayer: Bool,
-        hasLocalAudioFile: Bool
+        hasLocalAudioFile: Bool,
+        isStreamingPlaceholder: Bool = false
     ) -> Bool {
-        let trackIsStreaming = trackURL.scheme == "http" || trackURL.scheme == "https"
+        let trackIsStreaming = isStreamingPlaceholder
+            || trackURL.scheme == "http"
+            || trackURL.scheme == "https"
         return (trackIsStreaming && (!isStreamingPlayback || !hasStreamingPlayer)) ||
             (!trackIsStreaming && (isStreamingPlayback || !hasLocalAudioFile))
+    }
+
+    static func shouldAttemptStreamingURLRefreshAfterError(
+        track: Track?,
+        isRadioActive: Bool,
+        previouslyRetriedServiceIdentity: String?
+    ) -> Bool {
+        guard !isRadioActive,
+              let track,
+              !track.isStreamingPlaceholder,
+              track.url.scheme == "http" || track.url.scheme == "https",
+              let serviceIdentity = track.streamingServiceIdentity else {
+            return false
+        }
+        return previouslyRetriedServiceIdentity != serviceIdentity
     }
 
     @discardableResult
@@ -2444,6 +2489,74 @@ class AudioEngine {
         playlist[index] = track
         delegate?.audioEngineDidChangePlaylist()
     }
+
+    private func resolvePlaceholderTrackAndOptionallyPlay(at index: Int, autoPlayOnSuccess: Bool) {
+        guard index >= 0 && index < playlist.count else { return }
+        let placeholder = playlist[index]
+        guard placeholder.isStreamingPlaceholder else {
+            if autoPlayOnSuccess {
+                loadTrack(at: index)
+                if state != .playing {
+                    play()
+                }
+            }
+            return
+        }
+
+        guard placeholder.isResolvableStreamingServiceTrack else {
+            let message = "Cannot refresh streaming URL for \(placeholder.title)"
+            let error = NSError(
+                domain: "AudioEngine",
+                code: 1001,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+            notifyTrackLoadFailure(track: placeholder, error: error, message: message)
+            return
+        }
+
+        if placeholderResolutionTasks[index] != nil {
+            NSLog("AudioEngine: placeholder resolve already in progress for index %d", index)
+            return
+        }
+
+        NSLog("AudioEngine: resolving placeholder track '%@' at index %d", placeholder.title, index)
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let resolvedTrack = await StreamingTrackResolver.resolve(placeholder)
+
+            await MainActor.run {
+                self.placeholderResolutionTasks[index] = nil
+                guard index >= 0 && index < self.playlist.count else { return }
+
+                // Only replace if the same placeholder is still at this index.
+                guard self.playlist[index].id == placeholder.id,
+                      self.playlist[index].isStreamingPlaceholder else {
+                    return
+                }
+
+                guard let resolvedTrack else {
+                    let message = "Cannot refresh streaming URL for \(placeholder.title)"
+                    let error = NSError(
+                        domain: "AudioEngine",
+                        code: 1002,
+                        userInfo: [NSLocalizedDescriptionKey: message]
+                    )
+                    self.notifyTrackLoadFailure(track: placeholder, error: error, message: message)
+                    return
+                }
+
+                self.replaceTrack(at: index, with: resolvedTrack)
+                if self.currentIndex == index {
+                    self.loadTrack(at: index)
+                    if autoPlayOnSuccess && self.state != .playing {
+                        self.play()
+                    }
+                }
+            }
+        }
+
+        placeholderResolutionTasks[index] = task
+    }
     
     /// Insert tracks immediately after the current position.
     /// If nothing is playing (currentIndex == -1), inserts at index 0.
@@ -2625,10 +2738,14 @@ class AudioEngine {
         defer { isLoadingTrack = false }
         
         let track = playlist[index]
+        if staleStreamingRefreshRetriedServiceIdentity != nil,
+           staleStreamingRefreshRetriedServiceIdentity != track.streamingServiceIdentity {
+            staleStreamingRefreshRetriedServiceIdentity = nil
+        }
 
         // Skip about:blank placeholder tracks — streaming URL not yet resolved via async fetch
-        if track.url.absoluteString == "about:blank" {
-            NSLog("loadTrack: skipping placeholder track '%@' — waiting for async URL fetch", track.title ?? "")
+        if track.isStreamingPlaceholder {
+            NSLog("loadTrack: skipping placeholder track '%@' — waiting for async URL fetch", track.title)
             return
         }
 
@@ -3812,6 +3929,9 @@ class AudioEngine {
     
     func clearPlaylist() {
         NSLog("clearPlaylist: isStreamingPlayback=%d", isStreamingPlayback)
+        placeholderResolutionTasks.values.forEach { $0.cancel() }
+        placeholderResolutionTasks.removeAll()
+        staleStreamingRefreshRetriedServiceIdentity = nil
         stop()
         stopStreamingPlayer()
         isStreamingPlayback = false
@@ -3898,10 +4018,20 @@ class AudioEngine {
         let wasCasting = isCastingActive
         
         currentIndex = index
+        staleStreamingRefreshRetriedServiceIdentity = nil
+        let track = playlist[index]
+
+        if track.isStreamingPlaceholder {
+            currentTrack = track
+            _currentTime = 0
+            lastReportedTime = 0
+            state = .stopped
+            resolvePlaceholderTrackAndOptionallyPlay(at: index, autoPlayOnSuccess: true)
+            return
+        }
         
         if wasCasting {
             // When casting, don't set up local playback - just update track metadata and cast
-            let track = playlist[index]
             let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
             
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
@@ -4193,15 +4323,50 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             RadioManager.shared.streamDidDisconnect(error: error)
             return
         }
-        
-        // Check if this is the M4A packet table error (non-optimized M4A file)
+
         let errorDescription = String(describing: error)
-        let isPacketTableError = errorDescription.contains("packet table") || 
-                                  errorDescription.contains("streamParseBytesFailure")
-        
+        if Self.shouldAttemptStreamingURLRefreshAfterError(
+            track: currentTrack,
+            isRadioActive: RadioManager.shared.isActive,
+            previouslyRetriedServiceIdentity: staleStreamingRefreshRetriedServiceIdentity
+        ), let failingTrack = currentTrack,
+           let retryIdentity = failingTrack.streamingServiceIdentity,
+           currentIndex >= 0 {
+            staleStreamingRefreshRetriedServiceIdentity = retryIdentity
+            let retryIndex = currentIndex
+            NSLog("AudioEngine: attempting one-time stream URL refresh for '%@'", failingTrack.title)
+
+            Task { [weak self] in
+                guard let self else { return }
+                if let refreshedTrack = await StreamingTrackResolver.resolve(failingTrack) {
+                    await MainActor.run {
+                        guard retryIndex >= 0 && retryIndex < self.playlist.count else { return }
+                        // Ensure we're still looking at the same logical service track.
+                        guard self.playlist[retryIndex].streamingServiceIdentity == retryIdentity else { return }
+                        self.replaceTrack(at: retryIndex, with: refreshedTrack)
+                        if self.currentIndex == retryIndex {
+                            self.loadTrack(at: retryIndex)
+                        }
+                    }
+                } else {
+                    await MainActor.run {
+                        self.handleStreamingErrorFallback(error, errorDescription: errorDescription)
+                    }
+                }
+            }
+            return
+        }
+
+        handleStreamingErrorFallback(error, errorDescription: errorDescription)
+    }
+
+    private func handleStreamingErrorFallback(_ error: AudioPlayerError, errorDescription: String) {
+        let isPacketTableError = errorDescription.contains("packet table")
+            || errorDescription.contains("streamParseBytesFailure")
+
         if isPacketTableError {
             NSLog("AudioEngine: M4A parsing error - file may not be optimized for streaming")
-            
+
             // Show error in marquee briefly, then advance to next track
             if let track = currentTrack {
                 let errorMessage = "Cannot play: \(track.title) (format not supported for streaming)"
@@ -4211,7 +4376,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                     userInfo: ["track": track, "error": error, "message": errorMessage]
                 )
             }
-            
+
             // Advance to next track after a brief delay to let error state settle
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 guard let self = self else { return }

@@ -784,13 +784,10 @@ class AppStateManager {
         
         // Build the complete track list in original order.
         // Local and radio tracks are fully resolved immediately.
-        // Streaming tracks (Plex/Subsonic/Jellyfin) get placeholder Track objects
-        // with saved metadata, which are replaced when async fetches complete.
+        // Streaming tracks get placeholder Track objects carrying service IDs,
+        // then those placeholders are replaced as async fetches complete.
         var allTracks: [Track] = []
-        var plexIndicesToFetch: [(SavedTrack, Int)] = []
-        var subsonicIndicesToFetch: [(SavedTrack, Int)] = []
-        var jellyfinIndicesToFetch: [(SavedTrack, Int)] = []
-        var embyIndicesToFetch: [(SavedTrack, Int)] = []
+        var placeholderIndicesToResolve: [Int] = []
         var skippedIndices: Set<Int> = []
         
         for (index, savedTrack) in state.playlistTracks.enumerated() {
@@ -823,9 +820,11 @@ class AppStateManager {
                     artist: savedTrack.artist,
                     album: savedTrack.album,
                     duration: savedTrack.duration,
+                    plexRatingKey: savedTrack.plexRatingKey,
+                    plexServerId: savedTrack.plexServerId,
                     contentType: savedTrack.contentType
                 )
-                plexIndicesToFetch.append((savedTrack, allTracks.count))
+                placeholderIndicesToResolve.append(allTracks.count)
                 allTracks.append(placeholder)
             } else if savedTrack.isSubsonic {
                 let placeholder = Track(
@@ -834,9 +833,11 @@ class AppStateManager {
                     artist: savedTrack.artist,
                     album: savedTrack.album,
                     duration: savedTrack.duration,
+                    subsonicId: savedTrack.subsonicId,
+                    subsonicServerId: savedTrack.subsonicServerId,
                     contentType: savedTrack.contentType
                 )
-                subsonicIndicesToFetch.append((savedTrack, allTracks.count))
+                placeholderIndicesToResolve.append(allTracks.count)
                 allTracks.append(placeholder)
             } else if savedTrack.isJellyfin {
                 let placeholder = Track(
@@ -845,9 +846,11 @@ class AppStateManager {
                     artist: savedTrack.artist,
                     album: savedTrack.album,
                     duration: savedTrack.duration,
+                    jellyfinId: savedTrack.jellyfinId,
+                    jellyfinServerId: savedTrack.jellyfinServerId,
                     contentType: savedTrack.contentType
                 )
-                jellyfinIndicesToFetch.append((savedTrack, allTracks.count))
+                placeholderIndicesToResolve.append(allTracks.count)
                 allTracks.append(placeholder)
             } else if savedTrack.isEmby {
                 let placeholder = Track(
@@ -856,9 +859,11 @@ class AppStateManager {
                     artist: savedTrack.artist,
                     album: savedTrack.album,
                     duration: savedTrack.duration,
+                    embyId: savedTrack.embyId,
+                    embyServerId: savedTrack.embyServerId,
                     contentType: savedTrack.contentType
                 )
-                embyIndicesToFetch.append((savedTrack, allTracks.count))
+                placeholderIndicesToResolve.append(allTracks.count)
                 allTracks.append(placeholder)
             } else {
                 // Unknown type - skip
@@ -879,10 +884,9 @@ class AppStateManager {
         }
         
         // Determine if the current track is a streaming placeholder (real URL not yet available)
-        let currentIsPlaceholder = plexIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
-            || subsonicIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
-            || jellyfinIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
-            || embyIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
+        let currentIsPlaceholder = adjustedIndex >= 0
+            && adjustedIndex < allTracks.count
+            && allTracks[adjustedIndex].isStreamingPlaceholder
 
         // Select the current track (load it without playing)
         if adjustedIndex >= 0 && adjustedIndex < allTracks.count {
@@ -908,96 +912,30 @@ class AppStateManager {
         }
         
         // Fetch streaming tracks asynchronously and replace placeholders
-        let hasStreamingTracks = !plexIndicesToFetch.isEmpty || !subsonicIndicesToFetch.isEmpty || !jellyfinIndicesToFetch.isEmpty || !embyIndicesToFetch.isEmpty
-        if hasStreamingTracks {
+        if !placeholderIndicesToResolve.isEmpty {
             let savedCurrentIndex = adjustedIndex
-            Task.detached { [self] in
+            Task {
                 var replacements: [(Track, Int)] = []  // (realTrack, playlistIndex)
-
-                // Fetch Plex tracks
-                if !plexIndicesToFetch.isEmpty, let client = await waitForPlexClient() {
-                    for (savedTrack, playlistIndex) in plexIndicesToFetch {
-                        if let ratingKey = savedTrack.plexRatingKey {
-                            do {
-                                if let plexTrack = try await client.fetchTrackDetails(trackID: ratingKey),
-                                   let track = PlexManager.shared.convertToTrack(plexTrack) {
-                                    replacements.append((track, playlistIndex))
-                                }
-                            } catch {
-                                NSLog("AppStateManager: Failed to fetch Plex track %@: %@",
-                                      savedTrack.title, error.localizedDescription)
-                            }
-                        }
+                for playlistIndex in placeholderIndicesToResolve {
+                    let placeholderTrack = allTracks[playlistIndex]
+                    if let resolvedTrack = await StreamingTrackResolver.resolve(placeholderTrack) {
+                        replacements.append((resolvedTrack, playlistIndex))
+                    } else {
+                        NSLog("AppStateManager: Failed to resolve placeholder track '%@'", placeholderTrack.title)
                     }
                 }
-                
-                // Fetch Subsonic tracks
-                for (savedTrack, playlistIndex) in subsonicIndicesToFetch {
-                    if let songId = savedTrack.subsonicId,
-                       let serverId = savedTrack.subsonicServerId,
-                       SubsonicManager.shared.servers.contains(where: { $0.id == serverId }),
-                       let credentials = KeychainHelper.shared.getSubsonicServer(id: serverId),
-                       let client = SubsonicServerClient(credentials: credentials) {
-                        do {
-                            if let song = try await client.fetchSong(id: songId),
-                               let track = SubsonicManager.shared.convertToTrack(song) {
-                                replacements.append((track, playlistIndex))
-                            }
-                        } catch {
-                            NSLog("AppStateManager: Failed to fetch Subsonic track %@: %@",
-                                  savedTrack.title, error.localizedDescription)
-                        }
-                    }
-                }
-                
-                // Fetch Jellyfin tracks
-                for (savedTrack, playlistIndex) in jellyfinIndicesToFetch {
-                    if let jellyfinId = savedTrack.jellyfinId,
-                       let serverId = savedTrack.jellyfinServerId,
-                       JellyfinManager.shared.servers.contains(where: { $0.id == serverId }),
-                       let credentials = KeychainHelper.shared.getJellyfinServer(id: serverId),
-                       let client = JellyfinServerClient(credentials: credentials) {
-                        do {
-                            if let song = try await client.fetchSong(id: jellyfinId),
-                               let track = JellyfinManager.shared.convertToTrack(song) {
-                                replacements.append((track, playlistIndex))
-                            }
-                        } catch {
-                            NSLog("AppStateManager: Failed to fetch Jellyfin track %@: %@",
-                                  savedTrack.title, error.localizedDescription)
-                        }
-                    }
-                }
-
-                // Fetch Emby tracks
-                for (savedTrack, playlistIndex) in embyIndicesToFetch {
-                    if let embyId = savedTrack.embyId,
-                       let serverId = savedTrack.embyServerId,
-                       EmbyManager.shared.servers.contains(where: { $0.id == serverId }),
-                       let credentials = KeychainHelper.shared.getEmbyServer(id: serverId),
-                       let client = EmbyServerClient(credentials: credentials) {
-                        do {
-                            if let song = try await client.fetchSong(id: embyId),
-                               let track = EmbyManager.shared.convertToTrack(song) {
-                                replacements.append((track, playlistIndex))
-                            }
-                        } catch {
-                            NSLog("AppStateManager: Failed to fetch Emby track %@: %@",
-                                  savedTrack.title, error.localizedDescription)
-                        }
-                    }
-                }
+                let resolvedReplacements = replacements
 
                 // Replace placeholder tracks with real ones on the main thread
                 await MainActor.run {
                     var replacedCurrentTrack = false
-                    for (realTrack, playlistIndex) in replacements {
+                    for (realTrack, playlistIndex) in resolvedReplacements {
                         engine.replaceTrack(at: playlistIndex, with: realTrack)
                         if playlistIndex == savedCurrentIndex {
                             replacedCurrentTrack = true
                         }
                     }
-                    NSLog("AppStateManager: Replaced %d streaming track placeholders", replacements.count)
+                    NSLog("AppStateManager: Replaced %d streaming track placeholders", resolvedReplacements.count)
                     
                     // If the current track was a streaming placeholder, reload it
                     // now that we have the real URL
@@ -1228,21 +1166,6 @@ class AppStateManager {
     }
     
     // MARK: - Helpers
-
-    /// Wait up to `timeout` seconds for Plex to connect and return its serverClient.
-    private func waitForPlexClient(timeout: TimeInterval = 15) async -> PlexServerClient? {
-        if let client = PlexManager.shared.serverClient { return client }
-        NSLog("AppStateManager: Waiting for Plex connection to restore streaming tracks...")
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            try? await Task.sleep(nanoseconds: 250_000_000) // poll every 0.25s
-            if let client = PlexManager.shared.serverClient { return client }
-        }
-        // One final check in case client connected during the last sleep window
-        if let client = PlexManager.shared.serverClient { return client }
-        NSLog("AppStateManager: Plex did not connect within %.0fs — skipping Plex track restoration", timeout)
-        return nil
-    }
 
     /// Get the custom skin path if a non-default skin is loaded
     private func getCustomSkinPath() -> String? {

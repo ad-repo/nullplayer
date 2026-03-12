@@ -254,6 +254,37 @@ struct Track: Identifiable, Equatable {
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
+
+    /// True when this row is a state-restore placeholder awaiting URL refresh.
+    var isStreamingPlaceholder: Bool {
+        url.absoluteString == "about:blank"
+    }
+
+    /// True when this track has enough persisted service identity to be refreshed by ID.
+    var isResolvableStreamingServiceTrack: Bool {
+        if plexRatingKey != nil { return true }
+        if subsonicId != nil && subsonicServerId != nil { return true }
+        if jellyfinId != nil && jellyfinServerId != nil { return true }
+        if embyId != nil && embyServerId != nil { return true }
+        return false
+    }
+
+    /// Stable identity for retry guards across refreshed Track instances.
+    var streamingServiceIdentity: String? {
+        if let plexRatingKey {
+            return "plex:\(plexServerId ?? ""):\(plexRatingKey)"
+        }
+        if let subsonicId {
+            return "subsonic:\(subsonicServerId ?? ""):\(subsonicId)"
+        }
+        if let jellyfinId {
+            return "jellyfin:\(jellyfinServerId ?? ""):\(jellyfinId)"
+        }
+        if let embyId {
+            return "emby:\(embyServerId ?? ""):\(embyId)"
+        }
+        return nil
+    }
 }
 
 // MARK: - Hashable
