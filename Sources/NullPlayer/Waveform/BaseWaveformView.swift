@@ -298,9 +298,13 @@ class BaseWaveformView: NSView {
         streamWaveformObserver = NotificationCenter.default.addObserver(
             forName: .audioWaveform576DataUpdated,
             object: nil,
-            queue: .main
+            queue: nil
         ) { [weak self] notification in
-            self?.handleStreamingWaveformNotification(notification)
+            // Avoid blocking the real-time audio callback thread while waiting on
+            // OperationQueue.main delivery, which can deadlock during cast handoff.
+            DispatchQueue.main.async { [weak self] in
+                self?.handleStreamingWaveformNotification(notification)
+            }
         }
     }
 
