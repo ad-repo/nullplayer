@@ -7429,6 +7429,10 @@ class PlexBrowserView: NSView {
         addFolderItem.target = self
         menu.addItem(addFolderItem)
 
+        let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
+        manageFoldersItem.target = self
+        menu.addItem(manageFoldersItem)
+
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
     }
@@ -7958,6 +7962,15 @@ class PlexBrowserView: NSView {
                 if case .plex = currentSource {
                     currentSource = .local
                 }
+            }
+        }
+    }
+
+    @objc private func manageWatchFolders() {
+        WatchFolderManagerDialog.present { [weak self] in
+            guard let self = self else { return }
+            if case .local = self.currentSource {
+                self.loadLocalData()
             }
         }
     }
