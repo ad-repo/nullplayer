@@ -332,7 +332,7 @@ class PlexBrowserView: NSView {
     }
 
     private var hasInternetRadioColumns: Bool {
-        guard case .radio = currentSource, browseMode == .radio else { return false }
+        guard case .radio = currentSource else { return false }
         return displayItems.contains {
             if case .radioStation = $0.type { return true }
             return false
@@ -340,7 +340,7 @@ class PlexBrowserView: NSView {
     }
 
     private func isInternetRadioItem(_ item: PlexDisplayItem) -> Bool {
-        guard case .radio = currentSource, browseMode == .radio else { return false }
+        guard case .radio = currentSource else { return false }
         if case .radioStation = item.type { return true }
         return false
     }
@@ -5097,10 +5097,12 @@ class PlexBrowserView: NSView {
     // MARK: - Public Methods
     
     func reloadData() {
-        // Radio source - only radio tab has content (Internet Radio stations)
+        // Radio source supports Radio tab and Search tab.
         if case .radio = currentSource {
             if browseMode == .radio {
                 loadRadioStations()
+            } else if browseMode == .search {
+                loadRadioSearchResults()
             } else {
                 displayItems = []
             }
@@ -7280,12 +7282,13 @@ class PlexBrowserView: NSView {
     
     /// Handle refresh button click based on current source
     private func handleRefreshClick() {
-        // Radio source (Internet Radio) - only radio tab has content to refresh
+        // Radio source (Internet Radio) supports refresh in radio and search tabs.
         if case .radio = currentSource {
             if browseMode == .radio {
                 loadRadioStations()
+            } else if browseMode == .search {
+                loadRadioSearchResults()
             }
-            // Non-radio tabs on radio source - nothing to refresh
             return
         }
         
@@ -7733,7 +7736,7 @@ class PlexBrowserView: NSView {
             }
             
             if totalStations > 0 {
-                loadRadioStations()
+                reloadInternetRadioForCurrentMode()
                 
                 let successAlert = NSAlert()
                 successAlert.messageText = "Playlist Imported"
@@ -7766,7 +7769,7 @@ class PlexBrowserView: NSView {
                 }
                 
                 // Reload and show success
-                loadRadioStations()
+                reloadInternetRadioForCurrentMode()
                 
                 let successAlert = NSAlert()
                 successAlert.messageText = "Playlist Added"
@@ -7927,7 +7930,7 @@ class PlexBrowserView: NSView {
                 RadioManager.shared.addStation(newStation)
                 // Switch to radio source if not already
                 if case .radio = self?.currentSource {
-                    self?.loadRadioStations()
+                    self?.reloadInternetRadioForCurrentMode()
                 } else {
                     self?.currentSource = .radio
                 }
@@ -7949,13 +7952,13 @@ class PlexBrowserView: NSView {
             alert.runModal()
             return
         }
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
     
     @objc private func addMissingRadioDefaults() {
         RadioManager.shared.addMissingDefaults()
         if case .radio = currentSource {
-            loadRadioStations()
+            reloadInternetRadioForCurrentMode()
         }
     }
     
@@ -7971,7 +7974,7 @@ class PlexBrowserView: NSView {
         if alert.runModal() == .alertFirstButtonReturn {
             RadioManager.shared.resetToDefaults()
             if case .radio = currentSource {
-                loadRadioStations()
+                reloadInternetRadioForCurrentMode()
             }
         }
     }
@@ -8253,10 +8256,13 @@ class PlexBrowserView: NSView {
                  .subsonicRadioStation,
                  .jellyfinRadioStation,
                  .embyRadioStation,
-                 .localRadioStation,
-                 .radioStation:
+                 .localRadioStation:
                 // Radio stations don't load artwork on single-click - only on play (double-click)
                 break
+            case .radioStation(let station):
+                if browseMode == .search && event.clickCount == 1 {
+                    playRadioStation(station)
+                }
             default:
                 // For non-playable items and video items, just load artwork
                 loadArtworkForSelection()
@@ -8535,7 +8541,7 @@ class PlexBrowserView: NSView {
             if totalStations > 0 {
                 // Switch to radio source to show added stations
                 if case .radio = currentSource {
-                    loadRadioStations()
+                    reloadInternetRadioForCurrentMode()
                 } else {
                     currentSource = .radio
                 }
@@ -9830,7 +9836,7 @@ class PlexBrowserView: NSView {
             self?.activeRadioStationSheet = nil  // Release reference when done
             if let updated = updatedStation {
                 RadioManager.shared.updateStation(updated)
-                self?.loadRadioStations()
+                self?.reloadInternetRadioForCurrentMode()
             }
         }
     }
@@ -9847,7 +9853,7 @@ class PlexBrowserView: NSView {
         
         if alert.runModal() == .alertFirstButtonReturn {
             RadioManager.shared.removeStation(station)
-            loadRadioStations()
+            reloadInternetRadioForCurrentMode()
         }
     }
 
@@ -9868,7 +9874,7 @@ class PlexBrowserView: NSView {
             alert.runModal()
             return
         }
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
 
     @objc private func contextMenuDeleteRadioFolder(_ sender: NSMenuItem) {
@@ -9882,7 +9888,7 @@ class PlexBrowserView: NSView {
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         _ = RadioManager.shared.deleteUserFolder(id: action.folderID)
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
 
     @objc private func contextMenuToggleStationFolderMembership(_ sender: NSMenuItem) {
@@ -9892,19 +9898,19 @@ class PlexBrowserView: NSView {
         } else {
             _ = RadioManager.shared.addStation(action.station, toUserFolderID: action.folderID)
         }
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
 
     @objc private func contextMenuAssignStationSmartGenre(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioSmartGenreAction else { return }
         _ = RadioManager.shared.setSmartGenreOverride(action.genre, for: action.station)
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
 
     @objc private func contextMenuAssignStationSmartRegion(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioSmartRegionAction else { return }
         _ = RadioManager.shared.setSmartRegionOverride(action.region, for: action.station)
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
 
     @objc private func contextMenuCreateRadioFolderAndAddStation(_ sender: NSMenuItem) {
@@ -9923,7 +9929,7 @@ class PlexBrowserView: NSView {
             return
         }
         _ = RadioManager.shared.addStation(action.station, toUserFolderID: folder.id)
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
     
     // MARK: - Plex Radio Station Context Menu Actions
@@ -11881,10 +11887,12 @@ class PlexBrowserView: NSView {
     // MARK: - Data Management
     
     private func loadDataForCurrentMode() {
-        // Radio source - only radio tab has content
+        // Radio source supports Radio tab and Search tab.
         if case .radio = currentSource {
             if browseMode == .radio {
                 loadRadioStations()
+            } else if browseMode == .search {
+                loadRadioSearchResults()
             } else {
                 // Non-radio tabs show empty for radio source
                 isLoading = false
@@ -12664,6 +12672,32 @@ class PlexBrowserView: NSView {
         
         needsDisplay = true
     }
+
+    private func loadRadioSearchResults() {
+        isLoading = false
+        errorMessage = nil
+        stopLoadingAnimation()
+
+        cachedRadioStations = RadioManager.shared.stations
+        buildRadioSearchItems()
+
+        needsDisplay = true
+    }
+
+    private func reloadInternetRadioForCurrentMode() {
+        guard case .radio = currentSource else { return }
+        if browseMode == .radio {
+            loadRadioStations()
+        } else if browseMode == .search {
+            loadRadioSearchResults()
+        } else {
+            isLoading = false
+            errorMessage = nil
+            stopLoadingAnimation()
+            displayItems = []
+            needsDisplay = true
+        }
+    }
     
     /// Build display items for radio stations
     private func buildRadioStationItems() {
@@ -12679,6 +12713,23 @@ class PlexBrowserView: NSView {
 
         for root in roots {
             appendRadioFolderRow(root, level: 0, childrenByParent: childrenByParent)
+        }
+    }
+
+    private func buildRadioSearchItems() {
+        displayItems.removeAll()
+        guard !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        let matches = RadioManager.shared.searchStations(query: searchQuery)
+        for station in matches {
+            displayItems.append(PlexDisplayItem(
+                id: "radio-search-\(station.id.uuidString)",
+                title: station.name,
+                info: RadioManager.shared.normalizedGenre(for: station),
+                indentLevel: 0,
+                hasChildren: false,
+                type: .radioStation(station)
+            ))
         }
     }
 
@@ -13173,8 +13224,13 @@ class PlexBrowserView: NSView {
         guard case .radio = currentSource else { return }
         
         DispatchQueue.main.async { [weak self] in
-            self?.loadRadioStations()
-            self?.needsDisplay = true
+            guard let self = self else { return }
+            if self.browseMode == .radio {
+                self.loadRadioStations()
+            } else if self.browseMode == .search {
+                self.loadRadioSearchResults()
+            }
+            self.needsDisplay = true
         }
     }
     
@@ -14693,10 +14749,12 @@ class PlexBrowserView: NSView {
         // Reset horizontal scroll when items change
         horizontalScrollOffset = 0
         
-        // Radio source - only radio tab has content
+        // Radio source supports Radio tab and Search tab.
         if case .radio = currentSource {
             if browseMode == .radio {
                 buildRadioStationItems()
+            } else if browseMode == .search {
+                buildRadioSearchItems()
             } else {
                 displayItems = []
             }

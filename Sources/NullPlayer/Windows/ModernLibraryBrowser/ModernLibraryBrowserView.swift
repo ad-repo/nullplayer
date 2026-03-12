@@ -2090,7 +2090,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private var hasInternetRadioColumns: Bool {
-        guard case .radio = currentSource, browseMode == .radio else { return false }
+        guard case .radio = currentSource else { return false }
         return displayItems.contains {
             if case .radioStation = $0.type { return true }
             return false
@@ -2098,7 +2098,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func isInternetRadioItem(_ item: ModernDisplayItem) -> Bool {
-        guard case .radio = currentSource, browseMode == .radio else { return false }
+        guard case .radio = currentSource else { return false }
         if case .radioStation = item.type { return true }
         return false
     }
@@ -3201,7 +3201,17 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func handleRefreshClick() {
-        if case .radio = currentSource { if browseMode == .radio { loadRadioStations() }; return }
+        if case .radio = currentSource {
+            switch browseMode {
+            case .radio:
+                loadRadioStations()
+            case .search:
+                loadRadioSearchResults()
+            default:
+                break
+            }
+            return
+        }
         if browseMode == .radio {
             if case .plex = currentSource { loadPlexRadioStations() }
             else if case .subsonic = currentSource { loadSubsonicRadioStations() }
@@ -3361,7 +3371,13 @@ class ModernLibraryBrowserView: NSView {
             else { selectedIndices.insert(index) }
         } else {
             selectedIndices = [index]
-            loadArtworkForSelection()
+            if browseMode == .search,
+               case .radioStation(let station) = item.type,
+               event.clickCount == 1 {
+                playRadioStation(station)
+            } else {
+                loadArtworkForSelection()
+            }
         }
         
         if event.clickCount == 2 { handleDoubleClick(on: item) }
@@ -4427,7 +4443,7 @@ class ModernLibraryBrowserView: NSView {
             self?.activeRadioStationSheet = nil
             if let newStation = station {
                 RadioManager.shared.addStation(newStation)
-                if case .radio = self?.currentSource { self?.loadRadioStations() }
+                if case .radio = self?.currentSource { self?.reloadInternetRadioForCurrentMode() }
                 else { self?.currentSource = .radio }
             }
         }
@@ -4446,13 +4462,13 @@ class ModernLibraryBrowserView: NSView {
             alert.runModal()
             return
         }
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
-    @objc private func addMissingRadioDefaults() { RadioManager.shared.addMissingDefaults(); if case .radio = currentSource { loadRadioStations() } }
+    @objc private func addMissingRadioDefaults() { RadioManager.shared.addMissingDefaults(); if case .radio = currentSource { reloadInternetRadioForCurrentMode() } }
     @objc private func resetRadioToDefaults() {
         let alert = NSAlert(); alert.messageText = "Reset to Defaults"; alert.informativeText = "Replace all stations with defaults?"
         alert.addButton(withTitle: "Reset"); alert.addButton(withTitle: "Cancel"); alert.alertStyle = .warning
-        if alert.runModal() == .alertFirstButtonReturn { RadioManager.shared.resetToDefaults(); if case .radio = currentSource { loadRadioStations() } }
+        if alert.runModal() == .alertFirstButtonReturn { RadioManager.shared.resetToDefaults(); if case .radio = currentSource { reloadInternetRadioForCurrentMode() } }
     }
     @objc private func menuNextEffect() { nextVisEffect() }
     @objc private func enableArtVisualization() { isVisualizingArt = true }
@@ -4808,14 +4824,14 @@ class ModernLibraryBrowserView: NSView {
         activeRadioStationSheet = AddRadioStationSheet(station: station)
         activeRadioStationSheet?.showDialog { [weak self] updated in
             self?.activeRadioStationSheet = nil
-            if let u = updated { RadioManager.shared.updateStation(u); self?.loadRadioStations() }
+            if let u = updated { RadioManager.shared.updateStation(u); self?.reloadInternetRadioForCurrentMode() }
         }
     }
     @objc private func contextMenuDeleteRadioStation(_ sender: NSMenuItem) {
         guard let station = sender.representedObject as? RadioStation else { return }
         let alert = NSAlert(); alert.messageText = "Delete '\(station.name)'?"; alert.alertStyle = .warning
         alert.addButton(withTitle: "Delete"); alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn { RadioManager.shared.removeStation(station); loadRadioStations() }
+        if alert.runModal() == .alertFirstButtonReturn { RadioManager.shared.removeStation(station); reloadInternetRadioForCurrentMode() }
     }
     @objc private func contextMenuRenameRadioFolder(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioFolderRenameAction else { return }
@@ -4834,7 +4850,7 @@ class ModernLibraryBrowserView: NSView {
             alert.runModal()
             return
         }
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
     @objc private func contextMenuDeleteRadioFolder(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioFolderDeleteAction else { return }
@@ -4847,7 +4863,7 @@ class ModernLibraryBrowserView: NSView {
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         _ = RadioManager.shared.deleteUserFolder(id: action.folderID)
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
     @objc private func contextMenuToggleStationFolderMembership(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioFolderMembershipAction else { return }
@@ -4856,17 +4872,17 @@ class ModernLibraryBrowserView: NSView {
         } else {
             _ = RadioManager.shared.addStation(action.station, toUserFolderID: action.folderID)
         }
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
     @objc private func contextMenuAssignStationSmartGenre(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioSmartGenreAction else { return }
         _ = RadioManager.shared.setSmartGenreOverride(action.genre, for: action.station)
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
     @objc private func contextMenuAssignStationSmartRegion(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioSmartRegionAction else { return }
         _ = RadioManager.shared.setSmartRegionOverride(action.region, for: action.station)
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
     @objc private func contextMenuCreateRadioFolderAndAddStation(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? RadioFolderStationAction else { return }
@@ -4884,7 +4900,7 @@ class ModernLibraryBrowserView: NSView {
             return
         }
         _ = RadioManager.shared.addStation(action.station, toUserFolderID: folder.id)
-        loadRadioStations()
+        reloadInternetRadioForCurrentMode()
     }
     @objc private func contextMenuPlayPlexRadioStation(_ sender: NSMenuItem) {
         guard let item = sender.representedObject as? ModernDisplayItem,
@@ -5844,7 +5860,18 @@ class ModernLibraryBrowserView: NSView {
     
     @objc private func radioStationsDidChange() {
         guard case .radio = currentSource else { return }
-        DispatchQueue.main.async { [weak self] in self?.loadRadioStations(); self?.needsDisplay = true }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            switch self.browseMode {
+            case .radio:
+                self.loadRadioStations()
+            case .search:
+                self.loadRadioSearchResults()
+            default:
+                break
+            }
+            self.needsDisplay = true
+        }
     }
     
     @objc private func trackDidChange(_ notification: Notification) {
@@ -6843,7 +6870,14 @@ class ModernLibraryBrowserView: NSView {
     
     func reloadData() {
         if case .radio = currentSource {
-            if browseMode == .radio { loadRadioStations() } else { displayItems = [] }
+            switch browseMode {
+            case .radio:
+                loadRadioStations()
+            case .search:
+                loadRadioSearchResults()
+            default:
+                displayItems = []
+            }
             needsDisplay = true; return
         }
         if browseMode == .radio {
@@ -6902,7 +6936,19 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Data Loading
     
     private func loadDataForCurrentMode() {
-        if case .radio = currentSource { if browseMode == .radio { loadRadioStations() } else { displayItems = []; isLoading = false; needsDisplay = true }; return }
+        if case .radio = currentSource {
+            switch browseMode {
+            case .radio:
+                loadRadioStations()
+            case .search:
+                loadRadioSearchResults()
+            default:
+                displayItems = []
+                isLoading = false
+                needsDisplay = true
+            }
+            return
+        }
         if browseMode == .radio {
             if case .plex = currentSource, PlexManager.shared.isLinked { loadPlexRadioStations() }
             else if case .subsonic = currentSource { loadSubsonicRadioStations() }
@@ -7007,6 +7053,31 @@ class ModernLibraryBrowserView: NSView {
         cachedRadioFolders = RadioManager.shared.internetRadioFolderDescriptors()
         buildRadioStationItems()
         needsDisplay = true
+    }
+
+    private func loadRadioSearchResults() {
+        isLoading = false
+        errorMessage = nil
+        stopLoadingAnimation()
+        cachedRadioStations = RadioManager.shared.stations
+        buildRadioSearchItems()
+        needsDisplay = true
+    }
+
+    private func reloadInternetRadioForCurrentMode() {
+        guard case .radio = currentSource else { return }
+        switch browseMode {
+        case .radio:
+            loadRadioStations()
+        case .search:
+            loadRadioSearchResults()
+        default:
+            isLoading = false
+            errorMessage = nil
+            stopLoadingAnimation()
+            displayItems = []
+            needsDisplay = true
+        }
     }
     
     private func loadPlexRadioStations() {
@@ -7634,6 +7705,25 @@ class ModernLibraryBrowserView: NSView {
 
         for root in roots {
             appendRadioFolderRow(root, level: 0, childrenByParent: childrenByParent)
+        }
+    }
+
+    private func buildRadioSearchItems() {
+        displayItems.removeAll()
+        guard !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        let matches = RadioManager.shared.searchStations(query: searchQuery)
+        for station in matches {
+            displayItems.append(
+                ModernDisplayItem(
+                    id: "radio-search-\(station.id.uuidString)",
+                    title: station.name,
+                    info: RadioManager.shared.normalizedGenre(for: station),
+                    indentLevel: 0,
+                    hasChildren: false,
+                    type: .radioStation(station)
+                )
+            )
         }
     }
 
@@ -8501,7 +8591,18 @@ class ModernLibraryBrowserView: NSView {
     
     private func rebuildCurrentModeItems() {
         horizontalScrollOffset = 0
-        if case .radio = currentSource { if browseMode == .radio { buildRadioStationItems() } else { displayItems = [] }; needsDisplay = true; return }
+        if case .radio = currentSource {
+            switch browseMode {
+            case .radio:
+                buildRadioStationItems()
+            case .search:
+                buildRadioSearchItems()
+            default:
+                displayItems = []
+            }
+            needsDisplay = true
+            return
+        }
         if browseMode == .radio { needsDisplay = true; return }
         if case .local = currentSource {
             switch browseMode {

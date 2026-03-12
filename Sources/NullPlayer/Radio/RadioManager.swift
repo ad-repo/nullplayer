@@ -1320,6 +1320,25 @@ class RadioManager {
         NSLog("RadioManager: Added %d missing default stations (skipped %d deleted)", added, deleted.count)
     }
 
+    // MARK: - Search
+
+    /// Search internet radio stations by metadata.
+    ///
+    /// Matches against station name, effective genre, effective region, URL host, and full URL.
+    /// Query tokens are case-insensitive and all tokens must match.
+    func searchStations(query: String) -> [RadioStation] {
+        searchStations(in: stations, query: query)
+    }
+
+    /// Search a provided station list by internet-radio metadata.
+    func searchStations(in candidateStations: [RadioStation], query: String) -> [RadioStation] {
+        let tokens = searchTokens(from: query)
+        guard !tokens.isEmpty else { return [] }
+        return stationsSortedBySearchName(
+            candidateStations.filter { stationMatchesSearchTokens($0, tokens: tokens) }
+        )
+    }
+
     // MARK: - Station Ratings
 
     /// Return a station rating on a 0-5 scale (0 = unrated).
@@ -1656,6 +1675,50 @@ class RadioManager {
 
     private func stationsSortedByName(_ items: [RadioStation]) -> [RadioStation] {
         items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func stationsSortedBySearchName(_ items: [RadioStation]) -> [RadioStation] {
+        items.sorted { lhs, rhs in
+            let nameOrder = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+            if nameOrder != .orderedSame {
+                return nameOrder == .orderedAscending
+            }
+            let urlOrder = lhs.url.absoluteString.localizedCaseInsensitiveCompare(rhs.url.absoluteString)
+            if urlOrder != .orderedSame {
+                return urlOrder == .orderedAscending
+            }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+    }
+
+    private func searchTokens(from query: String) -> [String] {
+        query
+            .split(whereSeparator: \.isWhitespace)
+            .map { String($0) }
+            .filter { !$0.isEmpty }
+            .map { normalizedSearchToken($0) }
+    }
+
+    private func normalizedSearchToken(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+
+    private func stationSearchText(_ station: RadioStation) -> String {
+        var fields: [String] = [
+            station.name,
+            effectiveGenreLabel(for: station),
+            effectiveRegionLabel(for: station),
+            station.url.absoluteString
+        ]
+        if let host = station.url.host {
+            fields.append(host)
+        }
+        return normalizedSearchToken(fields.joined(separator: " "))
+    }
+
+    private func stationMatchesSearchTokens(_ station: RadioStation, tokens: [String]) -> Bool {
+        let searchText = stationSearchText(station)
+        return tokens.allSatisfy { searchText.contains($0) }
     }
 
     private func stationsSortedByGenreAndName(_ items: [RadioStation]) -> [RadioStation] {
