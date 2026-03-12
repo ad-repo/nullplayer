@@ -1,19 +1,20 @@
 # NullPlayer
 
-### A free, open-source music player for macOS, featuring modern Plex, Jellyfin, Emby, and Sonos integration.
+## A free throwback open-source music player for macOS, featuring modern Plex, Navidrome, Jellyfin, Emby, and Sonos integration.
 
-###  This is a clean room project is not affiliated with classic skin, classic skin LLC, Radionomy Group or anyone else.
+## This is a 100% clean room hobby project is not affiliated with Winamp, Nullsoft, Sonos, Plex, Radionomy Group or anyone else.
 
-**If you enjoy NullPlayer, please ⭐ star ⭐ the project on GitHub!**
+## **If you enjoy NullPlayer, please ⭐ star ⭐ the project on GitHub!**
 
+![MixCollage_player](https://github.com/user-attachments/assets/5d29303e-2910-4f1d-b5ac-b65b7f17a34f)
 
 ## Features
 
 - Library browser window for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local library files
 - Plex Media Server integration with PIN-based authentication
-- Plex music and video streaming and playlist support
 - Jellyfin media server integration with music and video streaming, scrobbling, and library browsing
 - Emby media server integration with music and video streaming, scrobbling, and library browsing
+- Inteligent radio mix generation for all sources
 - Navidrome/Subsonic server integration with scrobbling support
 - Local media library with metadata parsing, editing, library management
 - ProjectM visualizations with 100 included. Users can download more
@@ -31,10 +32,8 @@
 - Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (KSPlayer/FFmpeg)
 - Gapless playback for seamless track transitions
 - Sweet Fades (crossfade) with configurable fade duration
-- Volume normalization for consistent loudness
 - Media Drag and drop support
 - Album/Cover/Movie art browser with visualizations
-- IMDB integration
 - Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
 - AirPlay and Casting to Chromecast, Sonos (multi-room), and DLNA devices
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
