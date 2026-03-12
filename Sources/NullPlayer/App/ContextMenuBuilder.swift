@@ -3027,9 +3027,24 @@ class MenuActions: NSObject {
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.init(filenameExtension: "wsz")!]
         
-        if panel.runModal() == .OK, let url = panel.url {
-            WindowManager.shared.loadSkin(from: url)
-            UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let wm = WindowManager.shared
+        do {
+            let importedURL = try wm.importClassicSkin(from: url)
+            if !wm.loadSkin(from: importedURL) {
+                let alert = NSAlert()
+                alert.messageText = "Failed to Load Classic Skin"
+                alert.informativeText = "The skin was imported but could not be loaded."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Failed to Import Classic Skin"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
         }
     }
 
@@ -3042,10 +3057,22 @@ class MenuActions: NSObject {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        let previousSkinName = UserDefaults.standard.string(forKey: "modernSkinName")
         do {
             let importedSkinName = try ModernSkinEngine.shared.importSkinBundle(from: url)
             if WindowManager.shared.isRunningModernUI {
-                _ = ModernSkinEngine.shared.loadSkin(named: importedSkinName)
+                if !ModernSkinEngine.shared.loadSkin(named: importedSkinName) {
+                    if let previousSkinName = previousSkinName {
+                        UserDefaults.standard.set(previousSkinName, forKey: "modernSkinName")
+                    } else {
+                        UserDefaults.standard.removeObject(forKey: "modernSkinName")
+                    }
+                    let alert = NSAlert()
+                    alert.messageText = "Failed to Load Modern Skin"
+                    alert.informativeText = "The skin was imported but could not be loaded."
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
             }
         } catch {
             let alert = NSAlert()

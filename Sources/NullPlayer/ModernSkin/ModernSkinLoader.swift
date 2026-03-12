@@ -107,12 +107,12 @@ class ModernSkinLoader {
         return appSupport.appendingPathComponent("NullPlayer").appendingPathComponent("ModernSkins")
     }
     
-    /// Get all available modern skins (bundled + user)
-    func availableSkins() -> [(name: String, path: URL, isBundled: Bool)] {
+    /// Get all available modern skins (bundled + user by default).
+    func availableSkins(includeBundled: Bool = true, userDirectory: URL? = nil) -> [(name: String, path: URL, isBundled: Bool)] {
         var skins: [(name: String, path: URL, isBundled: Bool)] = []
         
         // Bundled skins
-        if let bundledDir = findBundledSkinsDirectory() {
+        if includeBundled, let bundledDir = findBundledSkinsDirectory() {
             if let contents = try? FileManager.default.contentsOfDirectory(at: bundledDir, includingPropertiesForKeys: [.isDirectoryKey]) {
                 for item in contents {
                     var isDir: ObjCBool = false
@@ -128,7 +128,7 @@ class ModernSkinLoader {
         }
         
         // User skins directory
-        let userDir = userSkinsDirectory
+        let userDir = userDirectory ?? userSkinsDirectory
         try? FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
         
         if let contents = try? FileManager.default.contentsOfDirectory(at: userDir, includingPropertiesForKeys: nil) {

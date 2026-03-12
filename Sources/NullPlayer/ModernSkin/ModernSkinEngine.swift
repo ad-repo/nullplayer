@@ -104,13 +104,23 @@ class ModernSkinEngine {
 
     /// Import a `.nsz` skin bundle into the user's ModernSkins directory.
     /// Returns the imported skin name (derived from filename without extension).
-    func importSkinBundle(from sourceURL: URL) throws -> String {
+    ///
+    /// The bundle is validated before replacing an existing installed file,
+    /// and the selected skin preference is updated only after a successful import.
+    func importSkinBundle(
+        from sourceURL: URL,
+        destinationDirectory: URL? = nil,
+        userDefaults: UserDefaults = .standard
+    ) throws -> String {
         let ext = sourceURL.pathExtension.lowercased()
         guard ModernSkinLoader.isSupportedBundleExtension(ext) else {
             throw ModernSkinError.unsupportedBundleExtension(ext)
         }
 
-        let userDir = loader.userSkinsDirectory
+        // Validate first so invalid bundles cannot replace existing installed skins.
+        _ = try loader.loadFromBundle(at: sourceURL)
+
+        let userDir = destinationDirectory ?? loader.userSkinsDirectory
         try FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
 
         let destinationURL = userDir.appendingPathComponent(sourceURL.lastPathComponent)
@@ -122,7 +132,7 @@ class ModernSkinEngine {
         }
 
         let importedName = destinationURL.deletingPathExtension().lastPathComponent
-        UserDefaults.standard.set(importedName, forKey: skinNameKey)
+        userDefaults.set(importedName, forKey: skinNameKey)
         return importedName
     }
     

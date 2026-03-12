@@ -23,6 +23,8 @@ Sources/NullPlayer/
 │   ├── RadioStationRatingsStore.swift # SQLite-backed 0-5 ratings (URL-keyed)
 │   ├── RadioFolderModels.swift        # Folder descriptor/kind model
 │   └── RadioStationFoldersStore.swift # SQLite-backed folders + memberships + play history
+├── Resources/Radio/
+│   └── default_stations.json          # Bundled default station catalog
 ├── Data/Models/
 │   └── RadioStation.swift             # Station data model
 ├── Windows/Radio/
@@ -36,7 +38,7 @@ Sources/NullPlayer/
 ### RadioManager
 
 Singleton (`RadioManager.shared`) that manages:
-- Station list (persisted to UserDefaults)
+- Station list (seeded from bundled JSON, persisted to UserDefaults)
 - Current playing station
 - Connection state (disconnected/connecting/connected/reconnecting/failed)
 - Stream metadata (ICY + SomaFM fallback)
@@ -149,7 +151,8 @@ UI should consume only `streamMetadataDidChangeNotification` and not assume ICY 
 
 Internet radio persistence is split by concern:
 
-- **Station list**: JSON in UserDefaults key `"RadioStations"` (expanded default catalog includes full SomaFM plus curated global stations, including African/Caribbean/South American/European/Indian/Thai and additional jazz streams)
+- **Bundled default catalog**: `Sources/NullPlayer/Resources/Radio/default_stations.json` (full curated default station list shipped with the app)
+- **Saved station list**: JSON in UserDefaults key `"RadioStations"` (user runtime list; initialized from bundled defaults on first launch or reset)
 - **Ratings**: SQLite `~/Library/Application Support/NullPlayer/radio_station_ratings.db`, table `radio_station_ratings` (`station_url` PK, `rating` 0...5, `updated_at`)
 - **Folders/memberships/play history**: SQLite `~/Library/Application Support/NullPlayer/radio_station_folders.db`
   - `radio_folders`

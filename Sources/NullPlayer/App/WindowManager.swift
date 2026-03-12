@@ -1507,6 +1507,17 @@ class WindowManager {
     }
     
     // MARK: - Skin Management
+
+    enum ClassicSkinImportError: LocalizedError {
+        case unsupportedExtension(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .unsupportedExtension(let ext):
+                return "Expected a .wsz skin file, got .\(ext)"
+            }
+        }
+    }
     
     /// When true, shows album art as transparent background in browser window (default: true)
     var showBrowserArtworkBackground: Bool {
@@ -1524,18 +1535,28 @@ class WindowManager {
         }
     }
     
-    func loadSkin(from url: URL) {
+    @discardableResult
+    func loadSkin(from url: URL, userDefaults: UserDefaults = .standard) -> Bool {
         do {
             let skin = try SkinLoader.shared.load(from: url)
             currentSkin = skin
             currentSkinPath = url.path
             // Persist last used classic skin for easy reload when switching UI modes
-            UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
+            userDefaults.set(url.path, forKey: "lastClassicSkinPath")
             applyClassicVisualizationDefaults(notify: true)
             notifySkinChanged()
+            return true
         } catch {
             print("Failed to load skin: \(error)")
+            return false
         }
+    }
+
+    /// Import a classic `.wsz` skin into the persistent user skins directory.
+    /// Returns the canonical imported URL used for future selection.
+    @discardableResult
+    func importClassicSkin(from sourceURL: URL) throws -> URL {
+        try Self.importClassicSkin(from: sourceURL, to: skinsDirectoryURL)
     }
     
     private func loadDefaultSkin() {
@@ -1679,11 +1700,37 @@ class WindowManager {
     func availableSkins() -> [(name: String, url: URL)] {
         // Ensure directory exists
         try? FileManager.default.createDirectory(at: skinsDirectoryURL, withIntermediateDirectories: true)
-        
-        guard let contents = try? FileManager.default.contentsOfDirectory(at: skinsDirectoryURL, includingPropertiesForKeys: nil) else {
+
+        return Self.availableClassicSkins(in: skinsDirectoryURL)
+    }
+
+    /// Import a classic `.wsz` file into a skins directory.
+    /// Existing files with the same name are replaced.
+    static func importClassicSkin(from sourceURL: URL, to skinsDirectoryURL: URL, fileManager: FileManager = .default) throws -> URL {
+        let ext = sourceURL.pathExtension.lowercased()
+        guard ext == "wsz" else {
+            throw ClassicSkinImportError.unsupportedExtension(ext.isEmpty ? "(none)" : ext)
+        }
+
+        try fileManager.createDirectory(at: skinsDirectoryURL, withIntermediateDirectories: true)
+
+        let destinationURL = skinsDirectoryURL.appendingPathComponent(sourceURL.lastPathComponent)
+        if sourceURL.standardizedFileURL != destinationURL.standardizedFileURL {
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try fileManager.removeItem(at: destinationURL)
+            }
+            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+        }
+
+        return destinationURL
+    }
+
+    /// Discover available classic `.wsz` skins in a directory.
+    static func availableClassicSkins(in directoryURL: URL, fileManager: FileManager = .default) -> [(name: String, url: URL)] {
+        guard let contents = try? fileManager.contentsOfDirectory(at: directoryURL, includingPropertiesForKeys: nil) else {
             return []
         }
-        
+
         return contents
             .filter { $0.pathExtension.lowercased() == "wsz" }
             .map { (name: $0.deletingPathExtension().lastPathComponent, url: $0) }

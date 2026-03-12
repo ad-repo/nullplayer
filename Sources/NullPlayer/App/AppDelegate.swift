@@ -330,18 +330,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         thanksLabel.font = NSFont.systemFont(ofSize: 15)
         thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         thanksLabel.alignment = .center
-        thanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
+        thanksLabel.frame = NSRect(x: 20, y: y - 18, width: windowWidth - 40, height: 18)
         contentView.addSubview(thanksLabel)
         y -= 36
 
-        // sthanks
-        let sthanksLabel = NSTextField(labelWithString: "Thanks to u/SpaXter25 for QE and PD")
-        sthanksLabel.font = NSFont.systemFont(ofSize: 12)
-        sthanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
-        sthanksLabel.alignment = .center
-        sthanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
-        contentView.addSubview(sthanksLabel)
-        y -= 36
+        // // sthanks
+        // let sthanksLabel = NSTextField(labelWithString: "Thanks to u/SpaXter25 for QE and PD")
+        // sthanksLabel.font = NSFont.systemFont(ofSize: 12)
+        // sthanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
+        // sthanksLabel.alignment = .center
+        // sthanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
+        // contentView.addSubview(sthanksLabel)
+        // y -= 36
         
         // Buttons (3 on one row)
         let buttonWidth: CGFloat = 90
