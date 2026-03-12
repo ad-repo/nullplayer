@@ -1,6 +1,6 @@
 # NullPlayer
 
-## A throwback open-source music player for macOS, supporting Plex, Sonos, Navidrome, Jellyfin, Emby and Chromecast integration, Local media, internet radio and more.
+## A throwback open-source music player for macOS, supporting Plex, Sonos, Navidrome, Jellyfin, Emby and Chromecast integration, local media, internet radio and more.
 
 ## This is a 100% clean room hobby project is not affiliated with Winamp, Nullsoft, Sonos, Plex, Radionomy Group or anyone else.
 
