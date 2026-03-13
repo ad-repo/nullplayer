@@ -1515,11 +1515,6 @@
     "genre": "Rock"
   },
   {
-    "name": "Radio Paradise Rock Mix FLAC",
-    "url": "https://stream.radioparadise.com/rock-flac",
-    "genre": "Rock"
-  },
-  {
     "name": "Radio Ultra",
     "url": "http://nashe1.hostingradio.ru/ultra-192.mp3",
     "genre": "Alternative Rock"
@@ -1863,5 +1858,465 @@
     "name": "True Black Metal Radio",
     "url": "http://trueblackmetalradio.com:666/radio",
     "genre": "Extreme Music"
+  },
+  {
+    "name": "Radio Bias",
+    "url": "https://admin.biasradio.com/listen/bias_radio/live",
+    "genre": "Pop"
+  },
+  {
+    "name": "ČRo Vltava",
+    "url": "https://rozhlas.stream/vltava.mp3",
+    "genre": "Jazz"
+  },
+  {
+    "name": "ČRo D-dur",
+    "url": "https://rozhlas.stream/ddur.mp3",
+    "genre": "Classical"
+  },
+  {
+    "name": "ČRo Jazz",
+    "url": "https://rozhlas.stream/jazz.mp3",
+    "genre": "Jazz"
+  },
+  {
+    "name": "ČRo Radio Wave",
+    "url": "https://rozhlas.stream/radio_wave.mp3",
+    "genre": "Electronic"
+  },
+  {
+    "name": "Open Sky Radio",
+    "url": "https://audio.opensky.radio:8082/oise",
+    "genre": "Popular"
+  },
+  {
+    "name": "WBOR Radio",
+    "url": "https://azura.wbor.org/listen/wbor/stream",
+    "genre": "Indie"
+  },
+  {
+    "name": "SmoothJazz.com.pl",
+    "url": "https://bcast.vigormultimedia.com:48888/sjcompl320mp3",
+    "genre": "Smooth Jazz"
+  },
+  {
+    "name": "BluesWave Radio",
+    "url": "https://blueswave.radio:8002/blues320",
+    "genre": "Blues"
+  },
+  {
+    "name": "AIDAradio",
+    "url": "https://edge62.streamonkey.net/aidaradio-meergefuehl",
+    "genre": "Hits"
+  },
+  {
+    "name": "High Fi Dream Radio",
+    "url": "https://www.streamvortex.com:8444/s/10280",
+    "genre": "Pop"
+  },
+  {
+    "name": "60 North Radio",
+    "url": "https://cdn1.zetcast.net/stream",
+    "genre": "Eclectic"
+  },
+  {
+    "name": "Dance Wave!",
+    "url": "https://dancewave.online/dance.mp3",
+    "genre": "Dance"
+  },
+  {
+    "name": "Sveriges Radio: P2",
+    "url": "https://http-live.sr.se/p2musik-aac-320",
+    "genre": "Classical"
+  },
+  {
+    "name": "Futura.FM",
+    "url": "https://stream.rcs.revma.com/vbp5ag77xs3vv",
+    "genre": "80s"
+  },
+  {
+    "name": "Radio Random",
+    "url": "https://ice.radiorandom.org/WBJM",
+    "genre": "Pop"
+  },
+  {
+    "name": "SuperStereo: Signal 1",
+    "url": "https://icecast.centaury.cl:7550/SuperStereo1",
+    "genre": "Yacht Rock"
+  },
+  {
+    "name": "SuperStereo: Signal 1+",
+    "url": "https://icecast.centaury.cl:7550/SuperStereo1Plus",
+    "genre": "Disco"
+  },
+  {
+    "name": "SuperStereo: Signal 2",
+    "url": "https://icecast.centaury.cl:7550/SuperStereo2",
+    "genre": "50s"
+  },
+  {
+    "name": "SuperStereo: Signal 3",
+    "url": "https://icecast.centaury.cl:7550/SuperStereo3",
+    "genre": "80s"
+  },
+  {
+    "name": "SuperStereo: Signal 3+",
+    "url": "https://icecast.centaury.cl:7550/SuperStereo3Plus",
+    "genre": "New Wave"
+  },
+  {
+    "name": "SuperStereo: Signal 4",
+    "url": "https://icecast.centaury.cl:7550/SuperStereo4",
+    "genre": "Ballads"
+  },
+  {
+    "name": "SuperStereo: Signal 4+",
+    "url": "https://icecast.centaury.cl:7550/SuperStereo4Plus",
+    "genre": "Ballads"
+  },
+  {
+    "name": "SuperStereo: Signal 5",
+    "url": "https://icecast.centaury.cl:7550/SuperStereo5",
+    "genre": "Rock"
+  },
+  {
+    "name": "SuperStereo: Signal 6",
+    "url": "https://icecast.centaury.cl:7550/SuperStereo6",
+    "genre": "Instrumental"
+  },
+  {
+    "name": "SuperStereo: Signal 7",
+    "url": "https://icecast.centaury.cl:7550/SuperStereo7",
+    "genre": "Jazz"
+  },
+  {
+    "name": "RadioSEGA",
+    "url": "https://icecast.radiosega.net/live",
+    "genre": "Chiptune"
+  },
+  {
+    "name": "Rondo Classic: Klasu",
+    "url": "https://iradio.fi/klasu-hi.mp3",
+    "genre": "Classical"
+  },
+  {
+    "name": "Rondo Classic: Klasu Pro",
+    "url": "https://iradio.fi/klasupro-hi.mp3",
+    "genre": "Classical"
+  },
+  {
+    "name": "TEKnival Radio",
+    "url": "https://listen.teknivalradio.com/listen/teknivalradio/radio.mp3",
+    "genre": "Rave"
+  },
+  {
+    "name": "Easy Radio",
+    "url": "https://live.easyradio.bg/aac?type=.mp3",
+    "genre": "Pop"
+  },
+  {
+    "name": "Dhectar",
+    "url": "https://manager.dhectar.fr:1065/stream",
+    "genre": "Techno"
+  },
+  {
+    "name": "JB Radio",
+    "url": "https://mediacp.jb-radio.net:8001/aac",
+    "genre": "Rock"
+  },
+  {
+    "name": "Magic Radio",
+    "url": "https://mp3.magic-radio.net/320",
+    "genre": "80s"
+  },
+  {
+    "name": "Naim Classical",
+    "url": "https://mscp3.live-streams.nl:8252/class-high.aac",
+    "genre": "Classical"
+  },
+  {
+    "name": "Naim Jazz",
+    "url": "https://mscp3.live-streams.nl:8342/jazz-high.aac",
+    "genre": "Jazz"
+  },
+  {
+    "name": "Naim Radio",
+    "url": "https://mscp3.live-streams.nl:8362/high.aac",
+    "genre": "Eclectic"
+  },
+  {
+    "name": "Pure Classix Radio",
+    "url": "https://mscp4.live-streams.nl:8142/live.mp3",
+    "genre": "Funk"
+  },
+  {
+    "name": "Pure Lounge Radio",
+    "url": "https://mscp4.live-streams.nl:8142/lounge.mp3",
+    "genre": "Lounge"
+  },
+  {
+    "name": "Jammin Vibez Radio: Caribbean Variety Mix",
+    "url": "https://online.jamminvibezradio.com/listen/caribbean/stream",
+    "genre": "Reggae"
+  },
+  {
+    "name": "Jammin Vibez Radio: Caribbean Christmas Mix",
+    "url": "https://online.jamminvibezradio.com/listen/christmas/stream",
+    "genre": "Reggae"
+  },
+  {
+    "name": "Jammin Vibez Radio: Classic Oldies Mix",
+    "url": "https://online.jamminvibezradio.com/listen/oldies/stream",
+    "genre": "Classic Hits"
+  },
+  {
+    "name": "Jammin Vibez Radio: Reggae Classics Mix",
+    "url": "https://online.jamminvibezradio.com/listen/reggae/stream",
+    "genre": "Reggae"
+  },
+  {
+    "name": "LapFox Radio",
+    "url": "https://radio.lapfoxradio.com/radio/8000/stream-mp3-320.mp3",
+    "genre": "Electronic"
+  },
+  {
+    "name": "Radio Calico",
+    "url": "https://radio3.radio-calico.com:8443/calico.mp3",
+    "genre": "Pop"
+  },
+  {
+    "name": "Distorsion FM",
+    "url": "https://radioemisoras.cl/distorsion.mp3",
+    "genre": "Rock"
+  },
+  {
+    "name": "Radio Sputnik",
+    "url": "https://radiosputnik.nl:8443",
+    "genre": "Techno"
+  },
+  {
+    "name": "Radio Krov",
+    "url": "https://radiotalas.dckrov.rs/listen/dckrov/aac",
+    "genre": "World Music"
+  },
+  {
+    "name": "Dance Wave Retro!",
+    "url": "https://retro.dancewave.online/retrodance.mp3",
+    "genre": "Dance"
+  },
+  {
+    "name": "BDPST Rock",
+    "url": "https://s2.audiostream.hu/bdpstrock_320k",
+    "genre": "Rock"
+  },
+  {
+    "name": "Youventus Radio",
+    "url": "https://s2.audiostream.hu/juventus_320k",
+    "genre": "Pop"
+  },
+  {
+    "name": "Roxy Radio",
+    "url": "https://s2.audiostream.hu/roxy_320k",
+    "genre": "Hits"
+  },
+  {
+    "name": "Intense Radio",
+    "url": "https://secure.live-streams.nl/live",
+    "genre": "Dance"
+  },
+  {
+    "name": "The Cheese",
+    "url": "https://station.thecheese.co.nz/listen/the_cheese/aac",
+    "genre": "Pop"
+  },
+  {
+    "name": "Riverside Radio",
+    "url": "https://stream.and-stuff.nl:8443/riversideMp3",
+    "genre": "Pop"
+  },
+  {
+    "name": "Danubius Radio",
+    "url": "https://stream.danubiusradio.hu/danubius_320k",
+    "genre": "Pop"
+  },
+  {
+    "name": "Mother Earth Radio",
+    "url": "https://stream.motherearthradio.de/listen/motherearth/motherearth.aac",
+    "genre": "Rock"
+  },
+  {
+    "name": "Mother Earth Instrumental",
+    "url": "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental.aac",
+    "genre": "Instrumental"
+  },
+  {
+    "name": "Mother Earth Jazz",
+    "url": "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz.mp4",
+    "genre": "Jazz"
+  },
+  {
+    "name": "Mother Earth Klassik",
+    "url": "https://stream.motherearthradio.de/listen/motherearth_klassik/motherearth.klassik.aac",
+    "genre": "Classical"
+  },
+  {
+    "name": "Open Broadcast Radio",
+    "url": "https://stream.openbroadcast.ch/320.mp3",
+    "genre": "Eclectic"
+  },
+  {
+    "name": "P-Node: Pi ano",
+    "url": "https://stream.p-node.org/piano.mp3",
+    "genre": "Classical"
+  },
+  {
+    "name": "Radio 90FM Valencia",
+    "url": "https://stream.radio90.fm:2002/web",
+    "genre": "Techno"
+  },
+  {
+    "name": "Radio Bergeijk",
+    "url": "https://stream.radiobergeijk.nl/listen/radio_bergeijk/mp3",
+    "genre": "Eclectic"
+  },
+  {
+    "name": "Radio Club 80: Classic Hits",
+    "url": "https://stream.radioclub80.cl:8002/clasicos80.mp3",
+    "genre": "70s"
+  },
+  {
+    "name": "Radio Club 80: Latin Hits",
+    "url": "https://stream.radioclub80.cl:8012/live.mp3",
+    "genre": "Latin Pop"
+  },
+  {
+    "name": "Radio Club 80: Retro",
+    "url": "https://stream.radioclub80.cl:8022/retro80.mp3",
+    "genre": "Disco"
+  },
+  {
+    "name": "Radio Club 80: Euro Hits",
+    "url": "https://stream.radioclub80.cl:8032/stream.euro80mp3",
+    "genre": "00s"
+  },
+  {
+    "name": "Radio Club 80: Ballads",
+    "url": "https://stream.radioclub80.cl:8042/baladas80.mp3",
+    "genre": "Ballads"
+  },
+  {
+    "name": "Radio Club 80: Trance",
+    "url": "https://stream.radioclub80.cl:8052/trancelive80.mp3",
+    "genre": "Trance"
+  },
+  {
+    "name": "Radio Energy",
+    "url": "https://gmusto.radioca.st/mp3",
+    "genre": "Pop"
+  },
+  {
+    "name": "Radio Paradise: Beyond...",
+    "url": "https://stream.radioparadise.com/beyond-320",
+    "genre": "Eclectic"
+  },
+  {
+    "name": "Radio Paradise: Main Mix",
+    "url": "https://stream.radioparadise.com/aac-320",
+    "genre": "Pop"
+  },
+  {
+    "name": "Radio Paradise: Global Mix",
+    "url": "https://stream.radioparadise.com/global-320",
+    "genre": "World Music"
+  },
+  {
+    "name": "Radio Paradise: Mellow Mix",
+    "url": "https://stream.radioparadise.com/mellow-320",
+    "genre": "Acoustic"
+  },
+  {
+    "name": "Radio Paradise 2050",
+    "url": "https://stream.radioparadise.com/radio2050-320",
+    "genre": "Pop"
+  },
+  {
+    "name": "Radio Jeunes Rheims",
+    "url": "https://stream.rjrradio.fr/rjr.mp3",
+    "genre": "Pop"
+  },
+  {
+    "name": "TrancePulse",
+    "url": "https://stream.trance.ie/stream",
+    "genre": "Trance"
+  },
+  {
+    "name": "Djam Radio",
+    "url": "https://stream9.xdevel.com/audio1s976748-1515/stream/icecast.audio",
+    "genre": "World Music"
+  },
+  {
+    "name": "Le Bon Mix",
+    "url": "https://stream10.xdevel.com/audio13s976748-2017/stream/icecast.audio",
+    "genre": "Funk"
+  },
+  {
+    "name": "95bFM Radio",
+    "url": "https://streams.95bfm.com/stream95",
+    "genre": "Indie"
+  },
+  {
+    "name": "Pure Radio Holland: Dance",
+    "url": "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_dance_channel/ultra",
+    "genre": "Dance"
+  },
+  {
+    "name": "Pure Radio Holland: DJ R.I.P's Podcast",
+    "url": "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_dj_r.i.ps_podcast/ultra",
+    "genre": "Electronic"
+  },
+  {
+    "name": "Pure Radio Holland: Downtempo",
+    "url": "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_downtempo_channel/ultra",
+    "genre": "Downtempo"
+  },
+  {
+    "name": "Pure Radio Holland: Hardcore",
+    "url": "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_hardcore_channel/ultra",
+    "genre": "Hardcore"
+  },
+  {
+    "name": "Pure Radio Holland: Live Party",
+    "url": "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_live-party_channel/ultra",
+    "genre": "Techno"
+  },
+  {
+    "name": "Pure Radio Holland: Rap & Hip-Hop",
+    "url": "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_rap__hip-hop_channel/ultra",
+    "genre": "Rap"
+  },
+  {
+    "name": "Pure Radio Holland: Trance-Electro",
+    "url": "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_trance-electro_channel/ultra",
+    "genre": "Trance"
+  },
+  {
+    "name": "Pure Radio Holland: Various",
+    "url": "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_various_channel/ultra",
+    "genre": "Eclectic"
+  },
+  {
+    "name": "Pure Radio Holland: Underground",
+    "url": "https://streamserver.pure-isp.eu/listen/pure_radio_holland_the_underground_channel/ultra",
+    "genre": "Electronic"
+  },
+  {
+    "name": "Violent Forces Radio: '80s Thrash",
+    "url": "https://tuneintoradio1.com/listen/vfr_80s/radio.mp3",
+    "genre": "Thrash Metal"
+  },
+  {
+    "name": "Violent Forces Radio: General Thrash",
+    "url": "https://tuneintoradio1.com/listen/violent_forces_radio/radio.mp3",
+    "genre": "Thrash Metal"
   }
 ]

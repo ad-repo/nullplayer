@@ -120,4 +120,60 @@ final class RadioDefaultStationCatalogTests: XCTestCase {
         XCTAssertEqual(result.stations[0].genre, "Bossa Nova")
         XCTAssertEqual(result.stations[1], removedDefaultStation)
     }
+
+    func testApplyingDefaultURLCorrectionsMigratesLegacyAudiophilePrimaryToCanonicalSecondary() {
+        let legacyAudiophileStation = RadioStation(
+            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
+            name: "Distorsion FM",
+            url: URL(string: "https://radioemisoras.cl/distorsion.flac")!,
+            genre: "Rock"
+        )
+        let alreadyCanonicalStation = RadioStation(
+            id: UUID(uuidString: "44444444-4444-4444-4444-444444444444")!,
+            name: "Distorsion FM",
+            url: URL(string: "https://radioemisoras.cl/distorsion.mp3")!,
+            genre: "Rock"
+        )
+        let unrelatedNameWithLegacyURL = RadioStation(
+            id: UUID(uuidString: "55555555-5555-5555-5555-555555555555")!,
+            name: "Custom Distorsion Clone",
+            url: URL(string: "https://radioemisoras.cl/distorsion.flac")!,
+            genre: "Rock"
+        )
+
+        let input = [legacyAudiophileStation, alreadyCanonicalStation, unrelatedNameWithLegacyURL]
+        let result = RadioManager.applyingDefaultURLCorrections(to: input)
+
+        XCTAssertEqual(result.stations.count, input.count)
+        XCTAssertEqual(result.changedCount, 1)
+        XCTAssertEqual(result.stations[0].url.absoluteString, "https://radioemisoras.cl/distorsion.mp3")
+        XCTAssertEqual(result.stations[1], alreadyCanonicalStation)
+        XCTAssertEqual(result.stations[2], unrelatedNameWithLegacyURL)
+    }
+
+    func testApplyingDefaultURLCorrectionsRemovesKnownBrokenDefaults() {
+        let removedRockFlac = RadioStation(
+            id: UUID(uuidString: "66666666-6666-6666-6666-666666666666")!,
+            name: "Radio Paradise Rock Mix FLAC",
+            url: URL(string: "https://stream.radioparadise.com/rock-flac")!,
+            genre: "Rock"
+        )
+        let removedBluesFlac = RadioStation(
+            id: UUID(uuidString: "77777777-7777-7777-7777-777777777777")!,
+            name: "Radio Blues Flac",
+            url: URL(string: "https://audio-edge-cmc51.fra.h.radiomast.io/radioblues-flac")!,
+            genre: "Blues"
+        )
+        let keeper = RadioStation(
+            id: UUID(uuidString: "88888888-8888-8888-8888-888888888888")!,
+            name: "Example Keeper",
+            url: URL(string: "https://example.com/stream.mp3")!,
+            genre: "Eclectic"
+        )
+
+        let result = RadioManager.applyingDefaultURLCorrections(to: [removedRockFlac, removedBluesFlac, keeper])
+
+        XCTAssertEqual(result.changedCount, 2)
+        XCTAssertEqual(result.stations, [keeper])
+    }
 }

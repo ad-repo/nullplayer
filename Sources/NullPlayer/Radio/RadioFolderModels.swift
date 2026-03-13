@@ -14,9 +14,11 @@ enum RadioFolderKind: Hashable {
     case topRated
     case unrated
     case recentlyPlayed
+    case byChannel
     case byGenre
     case byRegion
     case userFoldersRoot
+    case channel(String)
     case genre(String)
     case region(String)
     case manual(UUID)
@@ -28,9 +30,11 @@ enum RadioFolderKind: Hashable {
         case .topRated: return "radio-folder-top-rated"
         case .unrated: return "radio-folder-unrated"
         case .recentlyPlayed: return "radio-folder-recent"
+        case .byChannel: return "radio-folder-by-channel"
         case .byGenre: return "radio-folder-by-genre"
         case .byRegion: return "radio-folder-by-region"
         case .userFoldersRoot: return "radio-folder-user-root"
+        case .channel(let name): return "radio-folder-channel-\(name.lowercased())"
         case .genre(let name): return "radio-folder-genre-\(name.lowercased())"
         case .region(let name): return "radio-folder-region-\(name.lowercased())"
         case .manual(let folderID): return "radio-folder-manual-\(folderID.uuidString.lowercased())"
@@ -39,9 +43,9 @@ enum RadioFolderKind: Hashable {
 
     var isStationContainer: Bool {
         switch self {
-        case .allStations, .favorites, .topRated, .unrated, .recentlyPlayed, .genre, .region, .manual:
+        case .allStations, .favorites, .topRated, .unrated, .recentlyPlayed, .channel, .genre, .region, .manual:
             return true
-        case .byGenre, .byRegion, .userFoldersRoot:
+        case .byChannel, .byGenre, .byRegion, .userFoldersRoot:
             return false
         }
     }
