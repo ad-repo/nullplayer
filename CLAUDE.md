@@ -105,6 +105,7 @@ Skills contain detailed technical documentation. Key skills include:
 - **non-retina-fixes**: Display artifact fixes
 
 All skills are in the `skills/` directory.
+Local-library import/scan implementation notes and handoff status are in `docs/local-library-import-pipeline.md`.
 
 ## Architecture
 
@@ -144,6 +145,7 @@ Sources/NullPlayer/
 | Radio | `Radio/RadioManager.swift`, `Radio/RadioStationRatingsStore.swift`, `Radio/RadioFolderModels.swift`, `Radio/RadioStationFoldersStore.swift`, `Data/Models/RadioStation.swift`, `Resources/Radio/default_stations.json`, `Windows/Radio/AddRadioStationSheet.swift` |
 | Casting | `Casting/CastManager.swift`, `Casting/CastProtocol.swift`, `Casting/ChromecastManager.swift`, `Casting/UPnPManager.swift`, `Casting/LocalMediaServer.swift`, `Casting/CastDevice.swift` |
 | App | `App/WindowManager.swift`, `App/AppStateManager.swift`, `App/ContextMenuBuilder.swift`, `App/MainWindowProviding.swift`, `App/SpectrumWindowProviding.swift`, `App/PlaylistWindowProviding.swift`, `App/EQWindowProviding.swift`, `App/ProjectMWindowProviding.swift`, `App/LibraryBrowserWindowProviding.swift` |
+| Local Library / Import | `Data/Models/MediaLibrary.swift`, `Data/Models/Track.swift` (`lightweightURL`), `Utilities/LocalFileDiscovery.swift`, `Windows/ModernLibraryBrowser/ModernLibraryBrowserView.swift`, `Windows/PlexBrowser/PlexBrowserView.swift`, `Windows/Playlist/PlaylistView.swift`, `Windows/ModernPlaylist/ModernPlaylistView.swift`, `Windows/MainWindow/MainWindowView.swift`, `Windows/ModernMainWindow/ModernMainWindowView.swift` |
 
 ## Common Tasks
 
@@ -232,6 +234,7 @@ Sources/NullPlayer/
 - **Jellyfin/Emby library selector is browse-mode-aware (modern + classic)**: The "Lib:" click zone in both `ModernLibraryBrowserView` and classic `PlexBrowserView` shows a music library picker when in music tabs (Artists/Albums/Tracks/Plists) and a video library picker when in Movies/Shows tabs. Both `JellyfinManager` and `EmbyManager` have separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification (`musicLibraryDidChangeNotification`, `videoLibraryDidChangeNotification`). `fetchMusicLibraries()` and `fetchVideoLibraries()` both return ALL views without `CollectionType` filtering. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
 - **Subsonic music folders (modern + classic)**: `SubsonicManager` tracks `musicFolders: [SubsonicMusicFolder]` and `currentMusicFolder: SubsonicMusicFolder?` (nil = all folders). Fetched via `getMusicFolders` on connect. `musicFolderId` is passed to `getArtists` and `getAlbumList2` when a folder is selected. Persisted via `SubsonicCurrentMusicFolderID` UserDefaults key. Posts `musicFolderDidChangeNotification` on change. In both `ModernLibraryBrowserView` and classic `PlexBrowserView`, the "Lib:" click zone opens an "All Folders" + folders picker for Subsonic/Navidrome sources.
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
+- **Local library scans/imports are incremental-first now**: `MediaLibrary.importMedia` uses discover → diff → process with persisted `scanSignaturesByPath` (`fileSize` + `contentModificationDate`) and fast filename-first ingest. Metadata enrichment is async and worker-limited for non-local volumes. See `docs/local-library-import-pipeline.md` for current behavior and resume checklist.
 - **Waveform generation has two paths**: local files decode and cache via `WaveformCacheService`; non-file audio tracks build live waveform snapshots from the existing 576-sample PCM notifications. Engine-side waveform chunk generation is gated by explicit waveform consumers (`AudioEngine.waveformConsumers`) so hidden waveform windows and inactive `vis_classic` exact views do not keep paying the callback cost.
 - **Local file completion handler**: Must use `scheduleFile(_:at:completionCallbackType:completionHandler:)` with `.dataPlayedBack` - NOT the deprecated 3-parameter `scheduleFile(_:at:completionHandler:)` which defaults to `.dataConsumed` and fires before audio finishes playing, causing premature track advancement and UI desync
 - **Window docking**: Complex snapping logic in `WindowManager` - test edge cases

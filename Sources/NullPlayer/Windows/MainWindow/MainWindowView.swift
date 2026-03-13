@@ -1883,41 +1883,18 @@ class MainWindowView: NSView {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] else {
             return false
         }
-        
-        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
-        var mediaURLs: [URL] = []
-        
-        for url in items {
-            var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
-                if isDirectory.boolValue {
-                    // Scan folder recursively for audio files
-                    if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey]) {
-                        while let fileURL = enumerator.nextObject() as? URL {
-                            if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
-                                mediaURLs.append(fileURL)
-                            }
-                        }
-                    }
-                } else {
-                    // Add individual audio file
-                    if audioExtensions.contains(url.pathExtension.lowercased()) {
-                        mediaURLs.append(url)
-                    }
-                }
-            }
+
+        guard LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false) else {
+            return false
         }
-        
-        // Sort files alphabetically
-        mediaURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
-        
-        if !mediaURLs.isEmpty {
+
+        LocalFileDiscovery.discoverMediaURLsAsync(from: items, includeVideo: false) { mediaURLs in
+            guard !mediaURLs.isEmpty else { return }
             let audioEngine = WindowManager.shared.audioEngine
-            let firstNewIndex = audioEngine.playlist.count  // Index where first new track will be
-            audioEngine.appendFiles(mediaURLs)  // Append without replacing playlist
-            audioEngine.playTrack(at: firstNewIndex)  // Start playing first dropped file
-            return true
+            let firstNewIndex = audioEngine.playlist.count
+            audioEngine.appendFiles(mediaURLs)
+            audioEngine.playTrack(at: firstNewIndex)
         }
-        return false
+        return true
     }
 }

@@ -1534,9 +1534,11 @@ class ModernMainWindowView: NSView {
         
         panel.begin { [weak self] response in
             guard response == .OK else { return }
-            let urls = panel.urls
-            WindowManager.shared.audioEngine.loadFiles(urls)
-            WindowManager.shared.audioEngine.play()
+            LocalFileDiscovery.discoverMediaURLsAsync(from: panel.urls, includeVideo: false) { urls in
+                guard !urls.isEmpty else { return }
+                WindowManager.shared.audioEngine.loadFiles(urls)
+                WindowManager.shared.audioEngine.play()
+            }
             _ = self
         }
     }
@@ -1639,33 +1641,16 @@ class ModernMainWindowView: NSView {
         ]) as? [URL] else {
             return false
         }
-        
-        let audioExtensions = Set(["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"])
-        
-        var audioURLs: [URL] = []
-        
-        for url in items {
-            var isDir: ObjCBool = false
-            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-            
-            if isDir.boolValue {
-                if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) {
-                    for case let fileURL as URL in enumerator {
-                        if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
-                            audioURLs.append(fileURL)
-                        }
-                    }
-                }
-            } else if audioExtensions.contains(url.pathExtension.lowercased()) {
-                audioURLs.append(url)
-            }
+
+        guard LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false) else {
+            return false
         }
-        
-        guard !audioURLs.isEmpty else { return false }
-        
-        WindowManager.shared.audioEngine.loadFiles(audioURLs)
-        WindowManager.shared.audioEngine.play()
-        
+
+        LocalFileDiscovery.discoverMediaURLsAsync(from: items, includeVideo: false) { audioURLs in
+            guard !audioURLs.isEmpty else { return }
+            WindowManager.shared.audioEngine.loadFiles(audioURLs)
+            WindowManager.shared.audioEngine.play()
+        }
         return true
     }
 }

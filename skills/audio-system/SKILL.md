@@ -146,6 +146,24 @@ func streamingPlayerDidFinishPlaying() {
 }
 ```
 
+### NAS Responsiveness for Local Track Switches
+
+Local-file playback now has explicit deferred I/O paths to avoid beachballing when files are on SMB/AFP/NAS volumes:
+
+- `AudioEngine` owns a background `deferredIOQueue`.
+- `playTrack(at:)` routes direct local selections through `loadLocalTrackForImmediatePlayback(_:at:)`.
+- `loadLocalTrackForImmediatePlayback` opens `AVAudioFile` off-main, then commits only if a request token and track/index still match.
+- `deferredLocalTrackLoadToken` invalidates stale in-flight local opens during rapid track changes and stop/load transitions.
+- Normalization analysis and gapless pre-open also run on `deferredIOQueue` and are token-guarded (`normalizationAnalysisToken`, `gaplessPreparationToken`).
+
+Related follow-up already applied in waveform UI path:
+
+- `BaseWaveformView` cue-sheet parsing is async (`requestCuePoints`) and cancellable (`cueLoadTask`) so sidecar `.cue` reads do not block main-thread track switching.
+
+Known caveat:
+
+- Some non-direct local transitions still go through synchronous `loadTrack -> loadLocalTrack` (for example certain auto-advance/crossfade paths). If NAS stalls remain after direct-click fixes, continue migrating those paths to deferred open with the same token/cancellation pattern.
+
 ## Equalizer
 
 ### Configuration

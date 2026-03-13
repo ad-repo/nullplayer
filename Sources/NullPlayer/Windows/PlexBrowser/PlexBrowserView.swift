@@ -629,6 +629,7 @@ class PlexBrowserView: NSView {
     /// Cached data - Video (Local)
     private var cachedLocalMovies: [LocalVideo] = []
     private var cachedLocalShows: [LocalShow] = []
+    private var localLibraryReloadWorkItem: DispatchWorkItem?
     private var expandedLocalShows: Set<String> = []
     private var expandedLocalSeasons: Set<String> = []
     
@@ -1553,12 +1554,15 @@ class PlexBrowserView: NSView {
         // Only reload if we're showing local content (not on radio tab)
         guard case .local = currentSource else { return }
         guard browseMode != .radio else { return }
-        
-        DispatchQueue.main.async { [weak self] in
+
+        localLibraryReloadWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, self.browseMode != .radio else { return }
             self.loadLocalData()
             self.needsDisplay = true
         }
+        localLibraryReloadWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: workItem)
     }
     
     @objc private func plexContentDidPreload() {
@@ -1569,6 +1573,7 @@ class PlexBrowserView: NSView {
     
     deinit {
         cancelPendingArtSingleClickAction()
+        localLibraryReloadWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
         stopLoadingAnimation()
         stopServerNameScroll()
@@ -8358,23 +8363,7 @@ class PlexBrowserView: NSView {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
             return []
         }
-        
-        // Check if we have valid files to drop
-        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
-        let playlistExtensions = ["m3u", "m3u8", "pls"]
-        
-        for url in items {
-            let ext = url.pathExtension.lowercased()
-            var isDirectory: ObjCBool = false
-            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-            
-            // Accept audio files, directories, or playlist files
-            if isDirectory.boolValue || audioExtensions.contains(ext) || playlistExtensions.contains(ext) {
-                return .copy
-            }
-        }
-        
-        return []
+        return LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false, includePlaylists: true) ? .copy : []
     }
     
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -8385,26 +8374,19 @@ class PlexBrowserView: NSView {
         var fileURLs: [URL] = []
         var playlistURLs: [URL] = []
         var processedDirectories = false
-        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
-        let playlistExtensions = ["m3u", "m3u8", "pls"]
         
         for url in items {
-            var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
-                let ext = url.pathExtension.lowercased()
-                
-                if isDirectory.boolValue {
-                    // Add folder as watch folder and scan
-                    MediaLibrary.shared.addWatchFolder(url)
-                    MediaLibrary.shared.scanFolder(url)
-                    processedDirectories = true
-                } else if playlistExtensions.contains(ext) {
-                    // Playlist file
-                    playlistURLs.append(url)
-                } else if audioExtensions.contains(ext) {
-                    // Audio file
-                    fileURLs.append(url)
-                }
+            if LocalFileDiscovery.isDirectory(url) {
+                // Add folder as watch folder and scan
+                MediaLibrary.shared.addWatchFolder(url)
+                MediaLibrary.shared.scanFolder(url)
+                processedDirectories = true
+            } else if LocalFileDiscovery.isSupportedPlaylistFile(url) {
+                // Playlist file
+                playlistURLs.append(url)
+            } else if LocalFileDiscovery.isSupportedAudioFile(url) {
+                // Audio file
+                fileURLs.append(url)
             }
         }
         
@@ -12505,26 +12487,30 @@ class PlexBrowserView: NSView {
         stopLoadingAnimation()
         
         let library = MediaLibrary.shared
-        
-        // Load cached data from MediaLibrary
-        cachedLocalTracks = library.tracksSnapshot
-        cachedLocalArtists = library.allArtists()
-        cachedLocalAlbums = library.allAlbums()
-        
+
         // Build display items for current mode
         switch browseMode {
         case .artists:
+            cachedLocalArtists = library.allArtists()
+            cachedLocalTracks = library.tracksSnapshot
             buildLocalArtistItems()
         case .albums:
+            cachedLocalAlbums = library.allAlbums()
             buildLocalAlbumItems()
         case .search:
+            cachedLocalArtists = library.allArtists()
+            cachedLocalAlbums = library.allAlbums()
+            cachedLocalTracks = library.tracksSnapshot
             buildLocalSearchItems()
         case .plists:
             // TODO: Build local playlist items
             displayItems = []
-        case .movies, .shows:
-            // Video modes not supported for local content - show empty
-            displayItems = []
+        case .movies:
+            cachedLocalMovies = library.moviesSnapshot
+            buildLocalMovieItems()
+        case .shows:
+            cachedLocalShows = library.allShows()
+            buildLocalShowItems()
         case .radio:
             // Radio is handled by loadRadioStations() in loadDataForCurrentMode()
             break

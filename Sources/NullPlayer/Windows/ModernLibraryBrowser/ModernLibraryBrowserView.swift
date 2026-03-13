@@ -257,6 +257,7 @@ class ModernLibraryBrowserView: NSView {
     private var cachedLocalTracks: [LibraryTrack] = []
     private var cachedLocalMovies: [LocalVideo] = []
     private var cachedLocalShows: [LocalShow] = []
+    private var localLibraryReloadWorkItem: DispatchWorkItem?
     
     // Cached data - Subsonic
     private var cachedSubsonicArtists: [SubsonicArtist] = []
@@ -656,6 +657,7 @@ class ModernLibraryBrowserView: NSView {
     
     deinit {
         cancelPendingArtSingleClickAction()
+        localLibraryReloadWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
         stopLoadingAnimation()
         stopServerNameScroll()
@@ -3064,30 +3066,20 @@ class ModernLibraryBrowserView: NSView {
     
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else { return [] }
-        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
-        let playlistExtensions = ["m3u", "m3u8", "pls"]
-        for url in items {
-            let ext = url.pathExtension.lowercased()
-            var isDirectory: ObjCBool = false
-            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-            if isDirectory.boolValue || audioExtensions.contains(ext) || playlistExtensions.contains(ext) { return .copy }
-        }
-        return []
+        return LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false, includePlaylists: true) ? .copy : []
     }
     
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else { return false }
         var fileURLs: [URL] = []
         var processedDirectories = false
-        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
         for url in items {
-            var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
-                if isDirectory.boolValue {
-                    MediaLibrary.shared.addWatchFolder(url); MediaLibrary.shared.scanFolder(url); processedDirectories = true
-                } else if audioExtensions.contains(url.pathExtension.lowercased()) {
-                    fileURLs.append(url)
-                }
+            if LocalFileDiscovery.isDirectory(url) {
+                MediaLibrary.shared.addWatchFolder(url)
+                MediaLibrary.shared.scanFolder(url)
+                processedDirectories = true
+            } else if LocalFileDiscovery.isSupportedAudioFile(url) {
+                fileURLs.append(url)
             }
         }
         if !fileURLs.isEmpty {
@@ -5853,10 +5845,14 @@ class ModernLibraryBrowserView: NSView {
     
     @objc private func mediaLibraryDidChange() {
         guard case .local = currentSource, browseMode != .radio else { return }
-        DispatchQueue.main.async { [weak self] in
+        localLibraryReloadWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, self.browseMode != .radio else { return }
-            self.loadLocalData(); self.needsDisplay = true
+            self.loadLocalData()
+            self.needsDisplay = true
         }
+        localLibraryReloadWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: workItem)
     }
     
     @objc private func radioStationsDidChange() {
@@ -6995,17 +6991,25 @@ class ModernLibraryBrowserView: NSView {
     private func loadLocalData() {
         isLoading = false; errorMessage = nil; stopLoadingAnimation()
         let library = MediaLibrary.shared
-        cachedLocalTracks = library.tracksSnapshot; cachedLocalArtists = library.allArtists(); cachedLocalAlbums = library.allAlbums()
         switch browseMode {
-        case .artists: buildLocalArtistItems()
-        case .albums: buildLocalAlbumItems()
-        case .search: buildLocalSearchItems()
+        case .artists:
+            cachedLocalArtists = library.allArtists()
+            cachedLocalTracks = library.tracksSnapshot
+            buildLocalArtistItems()
+        case .albums:
+            cachedLocalAlbums = library.allAlbums()
+            buildLocalAlbumItems()
+        case .search:
+            cachedLocalArtists = library.allArtists()
+            cachedLocalAlbums = library.allAlbums()
+            cachedLocalTracks = library.tracksSnapshot
+            buildLocalSearchItems()
         case .plists: displayItems = []
         case .movies:
-            cachedLocalMovies = MediaLibrary.shared.moviesSnapshot
+            cachedLocalMovies = library.moviesSnapshot
             buildLocalMovieItems()
         case .shows:
-            cachedLocalShows = MediaLibrary.shared.allShows()
+            cachedLocalShows = library.allShows()
             buildLocalShowItems()
         case .radio: loadLocalRadioStations()
         }
