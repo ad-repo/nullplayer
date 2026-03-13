@@ -35,18 +35,16 @@ class BPMDetector {
     private var ringCount = 0
     
     // MARK: - Display State
-    
+
     private var displayedBPM: Int = 0
     private var hasConfidentReading = false
-    private var recentReadings: [Float] = []
+    /// Fixed-size circular buffer for recent BPM readings
+    private var recentReadings: [Float] = Array(repeating: 0, count: 10)
+    private var readingIndex = 0
+    private var readingCount = 0
+    private var sortBuffer: [Float] = Array(repeating: 0, count: 10)
     private var lastNotificationTime: CFAbsoluteTime = 0
     private let notificationInterval: CFAbsoluteTime = 1.0
-    
-    // MARK: - Initialization
-    
-    init() {
-        recentReadings.reserveCapacity(maxBPMReadings + 2)
-    }
     
     deinit { destroyAubio() }
     
@@ -78,7 +76,8 @@ class BPMDetector {
         ringWritePos = 0
         ringReadPos = 0
         ringCount = 0
-        recentReadings.removeAll(keepingCapacity: true)
+        readingIndex = 0
+        readingCount = 0
         displayedBPM = 0
         hasConfidentReading = false
         lastNotificationTime = 0
@@ -136,14 +135,14 @@ class BPMDetector {
             let confidence = aubio_tempo_get_confidence(tempoObj)
             
             if bpm > 0 && confidence >= minConfidence {
-                recentReadings.append(bpm)
-                if recentReadings.count > maxBPMReadings {
-                    recentReadings.removeFirst()
-                }
-                
-                if recentReadings.count >= 3 {
-                    let sorted = recentReadings.sorted()
-                    let median = sorted[sorted.count / 2]
+                recentReadings[readingIndex % maxBPMReadings] = bpm
+                readingIndex += 1
+                readingCount = min(readingCount + 1, maxBPMReadings)
+
+                if readingCount >= 3 {
+                    sortBuffer[0..<readingCount] = recentReadings[0..<readingCount]
+                    sortBuffer[0..<readingCount].sort()
+                    let median = sortBuffer[readingCount / 2]
                     let newBPM = Int(median.rounded())
                     if newBPM > 0 {
                         displayedBPM = newBPM

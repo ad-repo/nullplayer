@@ -1,6 +1,6 @@
 # Audio Pipelines - Detailed Implementation
 
-This document covers the detailed implementation of gapless playback, Sweet Fades (crossfade), and volume normalization.
+This document covers the detailed implementation of gapless playback, Sweet Fades (crossfade), volume normalization, and the waveform side path that sits alongside playback.
 
 ## Gapless Playback
 
@@ -164,6 +164,43 @@ This ensures seamless transitions between devices with different sample rates (e
 The selected output device UID is saved to UserDefaults and restored on app launch. If the saved device is no longer available, the system default is used.
 
 **Note:** Output device selection only affects local file playback. Streaming audio uses the system default output (AudioStreaming limitation).
+
+## Waveform Side Path
+
+The waveform window is not just a UI concern. It has a dedicated side path in the audio system with separate cost controls.
+
+### Local File Waveforms
+
+- Generated on demand by `WaveformCacheService`
+- Read with `AVAudioFile` in chunked PCM passes
+- Reduced to 4096 max-amplitude buckets
+- Cached to `~/Library/Application Support/NullPlayer/WaveformCache/`
+
+This keeps waveform generation off the hot playback path after the first decode.
+
+### Streaming Waveforms
+
+Streams do not remote-decode into a cache file. Instead:
+
+1. `AudioEngine` / `StreamingAudioPlayer` publish 576-sample stereo waveform chunks via `.audioWaveform576DataUpdated`
+2. `BaseWaveformView` consumes those chunks only for non-file audio tracks
+3. `StreamingWaveformAccumulator` builds either:
+   - a progressive full-track waveform when the stream has a known duration
+   - a rolling live window when the stream has no reliable duration
+
+### CPU Gating
+
+Waveform generation is gated independently from FFT/spectrum analysis:
+
+- `spectrumConsumers` controls spectrum/visualizer work
+- `waveformConsumers` controls live waveform chunk generation
+
+This is deliberate. A user may want:
+- spectrum or ProjectM without a waveform window
+- a waveform window without a visible spectrum window
+- `vis_classic` exact mode, which needs waveform chunks even if generic FFT spectrum work is otherwise idle
+
+If you touch the stream PCM callback path, preserve this separation.
 
 ## Historical Note
 

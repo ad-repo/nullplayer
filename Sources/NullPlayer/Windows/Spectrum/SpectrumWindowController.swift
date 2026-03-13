@@ -13,6 +13,11 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
     /// Stored normal mode frame for restoration
     private var normalModeFrame: NSRect?
     
+    /// Custom fullscreen state (for borderless window)
+    private var isCustomFullscreen = false
+    private var preFullscreenFrame: NSRect?
+    private var preFullscreenLevel: NSWindow.Level = .normal
+    
     // MARK: - Initialization
     
     convenience init() {
@@ -134,6 +139,62 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
         
         spectrumView.setShadeMode(enabled)
     }
+    
+    // MARK: - Fullscreen
+    
+    /// Toggle fullscreen mode using custom fullscreen implementation for borderless windows.
+    func toggleFullscreen() {
+        guard window != nil else { return }
+        
+        if isCustomFullscreen {
+            exitCustomFullscreen()
+        } else {
+            enterCustomFullscreen()
+        }
+    }
+    
+    private func enterCustomFullscreen() {
+        guard let window = window else { return }
+        
+        if isShadeMode {
+            setShadeMode(false)
+        }
+        
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        
+        preFullscreenFrame = window.frame
+        preFullscreenLevel = window.level
+        
+        spectrumView.setFullscreen(true)
+        
+        isCustomFullscreen = true
+        window.level = .screenSaver
+        window.setFrame(screen.frame, display: true, animate: true)
+        
+        NSCursor.setHiddenUntilMouseMoves(true)
+        NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
+    }
+    
+    private func exitCustomFullscreen() {
+        guard let window = window else { return }
+        
+        isCustomFullscreen = false
+        window.level = preFullscreenLevel
+        NSApp.presentationOptions = []
+        
+        spectrumView.setFullscreen(false)
+        
+        if let frame = preFullscreenFrame {
+            window.setFrame(frame, display: true, animate: true)
+        }
+        
+        preFullscreenFrame = nil
+    }
+    
+    /// Whether the window is in custom fullscreen mode.
+    var isFullscreen: Bool {
+        isCustomFullscreen
+    }
 }
 
 // MARK: - NSWindowDelegate
@@ -141,6 +202,7 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
 extension SpectrumWindowController: NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         guard let window = window else { return }
+        if isCustomFullscreen { return }
         let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: newOrigin)
     }
@@ -151,6 +213,10 @@ extension SpectrumWindowController: NSWindowDelegate {
     }
     
     func windowWillClose(_ notification: Notification) {
+        if isCustomFullscreen {
+            exitCustomFullscreen()
+        }
+        
         // Stop rendering when window closes
         spectrumView.stopRendering()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
@@ -158,8 +224,10 @@ extension SpectrumWindowController: NSWindowDelegate {
     
     func windowDidBecomeKey(_ notification: Notification) {
         spectrumView.needsDisplay = true
-        // Bring all app windows to front when this window gets focus
-        WindowManager.shared.bringAllWindowsToFront()
+        // Don't bring other windows above fullscreen visualization.
+        if !isCustomFullscreen {
+            WindowManager.shared.bringAllWindowsToFront()
+        }
     }
     
     func windowDidResignKey(_ notification: Notification) {

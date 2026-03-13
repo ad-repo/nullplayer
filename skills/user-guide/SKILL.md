@@ -25,6 +25,19 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic and local media | Logo button or context menu |
 | **ProjectM** | Real-time audio visualizations | Menu button or context menu |
 
+### Top Menu Bar
+
+Global controls are also available from the macOS top menu bar:
+
+- `Windows`
+- `UI`
+- `Playback`
+- `Visuals`
+- `Libraries`
+- `Output`
+
+`Output > Sonos` supports persistent-open room checkbox selection (same behavior as the context menu Sonos submenu).
+
 ### Window Docking
 
 Windows automatically snap together when dragged near each other:
@@ -63,7 +76,7 @@ Previous, Play, Pause, Stop, Next, Eject (open file dialog)
 - **EQ**: Show/hide Equalizer
 - **PL**: Show/hide Playlist
 
-Modern UI adds: **2X** (Double Size), **HT** (Hide Title Bars), **CA** (Cast), **pM** (ProjectM), **SP** (Spectrum), **LB** (Library)
+Modern UI adds: **HT** (Hide Title Bars), **CA** (Cast), **pM** (ProjectM), **SP** (Spectrum), **WV** (Waveform), **LB** (Library)
 
 ## Media Sources
 
@@ -89,10 +102,15 @@ Modern UI adds: **2X** (Double Size), **HT** (Hide Title Bars), **CA** (Cast), *
 
 ### Internet Radio
 - Shoutcast/Icecast streaming
-- ICY metadata display
+- Live song metadata (ICY + SomaFM fallback when ICY is missing)
 - Auto-reconnect on disconnect
-- Station management
+- Large bundled global station catalog (including full SomaFM channel set)
+- Curated regional additions (African, Caribbean, South American, European, Indian, Thai) plus expanded jazz streams
+- Station management (add/edit/delete/import)
+- Internet-radio-only folder organization (smart folders + custom folders)
+- 5-star station ratings (persisted per station URL)
 - Casting to Sonos
+- Playback Options now groups all source histories under a single **Radio History** submenu
 
 ### Local Files
 Drag & drop or use File menu. Supports: MP3, M4A, AAC, WAV, AIFF, FLAC, OGG, ALAC
@@ -139,9 +157,11 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 ### Equalizer
 - 10-band graphic EQ (-12dB to +12dB per band)
 - Preamp control
-- Presets (Flat, i'm old, i'm young, Rock, Pop, Jazz, Classical, etc.)
-- Auto EQ (genre-based automatic presets)
 - Anti-clipping limiter
+- **Modern UI**: 7 compact preset toggle buttons in the button row (FLAT, ROCK, POP, ELEC, HIP, JAZZ, CLSC); clicking a preset auto-enables EQ if off; clicking the active preset deactivates it (reverts to flat); dragging any fader clears the active preset
+- **Modern UI**: double-click a fader to reset that band only to 0 dB; double-click preamp to reset preamp only
+- **Modern UI**: AUTO button applies genre-based preset for the current track and auto-enables EQ if off
+- **Classic UI**: PRESETS dropdown with all presets including "I'm Old" / "I'm Young"
 
 ### Playback Options
 - **Gapless Playback**: Seamless track transitions (local files)
@@ -157,7 +177,7 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 ## Visualizations
 
 ### Main Window GPU Modes
-Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix (double-click to cycle)
+Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (double-click to cycle)
 
 ### Album Art Visualizer
 30 effects transforming album artwork based on audio
@@ -166,7 +186,7 @@ Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix (double-click to cycle)
 100+ bundled presets, OpenGL rendering, fullscreen support
 
 ### Spectrum Analyzer Window
-55 bars, 7 quality modes (Winamp/Enhanced/Ultra/Fire/JWST/Lightning/Matrix)
+55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
 
 ## Skins
 
@@ -179,10 +199,12 @@ Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix (double-click to cycle)
 - **Options > Use Modern UI** to enable modern skin engine
 - Requires restart to switch modes
 - Modern skins use `skin.json` format
+- Portable modern skin bundles use `.nsz` (ZIP) and can be imported via **UI > Modern > Load Skin...**
 - Bundled modern skins: NeonWave (default), Skulls
 
 ### Double Size Mode
-- Toggle via **2X button** or context menu → **Double Size**
+- **Modern UI**: toggle via context menu → **Double Size**
+- **Classic UI**: toggle via **2X button** or context menu → **Double Size**
 - Scales all windows by 2x
 - Persists across restarts
 - **Modern UI**: toggles live instantly
@@ -203,6 +225,11 @@ Spectrum, Fire, Enhanced, Ultra, JWST, Lightning, Matrix (double-click to cycle)
 - **Z**: Previous track
 - **←/→**: Seek backward/forward 5s
 - **↑/↓**: Volume up/down
+
+### vis_classic Profiles
+- **Main window**: **, / .** previous/next profile
+- **Spectrum window**: **[ / ]** previous/next profile (left/right also cycle profiles in vis_classic mode)
+- **Transparent Background**: right-click in vis_classic mode and toggle per window (main and spectrum persist separately)
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

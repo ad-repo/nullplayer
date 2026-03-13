@@ -2846,4 +2846,248 @@ final class NullPlayerTests: XCTestCase {
         
         XCTAssertNil(decoded.customSkinPath)
     }
+
+    // MARK: - AudioEngine Radio Transition Tests
+
+    func testShouldStopRadioForIncomingTrackWhenActiveAndSameURL() {
+        let stationURL = URL(string: "https://radio.example.com/live.mp3")
+        let shouldStop = AudioEngine.shouldStopRadioForIncomingTrack(
+            isRadioActive: true,
+            currentStationURL: stationURL,
+            incomingTrackURL: stationURL
+        )
+
+        XCTAssertFalse(shouldStop)
+    }
+
+    func testShouldStopRadioForIncomingTrackWhenActiveAndDifferentLocalURL() {
+        let stationURL = URL(string: "https://radio.example.com/live.mp3")
+        let localURL = URL(fileURLWithPath: "/tmp/local-song.mp3")
+        let shouldStop = AudioEngine.shouldStopRadioForIncomingTrack(
+            isRadioActive: true,
+            currentStationURL: stationURL,
+            incomingTrackURL: localURL
+        )
+
+        XCTAssertTrue(shouldStop)
+    }
+
+    func testShouldStopRadioForIncomingTrackWhenActiveAndDifferentHTTPURL() {
+        let stationURL = URL(string: "https://radio.example.com/live.mp3")
+        let remoteURL = URL(string: "https://media.example.com/song.mp3")
+        let shouldStop = AudioEngine.shouldStopRadioForIncomingTrack(
+            isRadioActive: true,
+            currentStationURL: stationURL,
+            incomingTrackURL: remoteURL
+        )
+
+        XCTAssertTrue(shouldStop)
+    }
+
+    func testShouldStopRadioForIncomingTrackWhenRadioInactive() {
+        let stationURL = URL(string: "https://radio.example.com/live.mp3")
+        let localURL = URL(fileURLWithPath: "/tmp/local-song.mp3")
+        let shouldStop = AudioEngine.shouldStopRadioForIncomingTrack(
+            isRadioActive: false,
+            currentStationURL: stationURL,
+            incomingTrackURL: localURL
+        )
+
+        XCTAssertFalse(shouldStop)
+    }
+
+    // MARK: - AudioEngine Playback Pipeline Reload Tests
+
+    func testShouldReloadPlaybackPipelineForStreamingTrackWhenEngineIsLocal() {
+        let streamingURL = URL(string: "https://media.example.com/song.mp3")!
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: streamingURL,
+            isStreamingPlayback: false,
+            hasStreamingPlayer: false,
+            hasLocalAudioFile: true
+        )
+
+        XCTAssertTrue(shouldReload)
+    }
+
+    func testShouldReloadPlaybackPipelineForStreamingTrackWhenStreamingPlayerMissing() {
+        let streamingURL = URL(string: "https://media.example.com/song.mp3")!
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: streamingURL,
+            isStreamingPlayback: true,
+            hasStreamingPlayer: false,
+            hasLocalAudioFile: false
+        )
+
+        XCTAssertTrue(shouldReload)
+    }
+
+    func testShouldReloadPlaybackPipelineForLocalTrackWhenEngineIsStreaming() {
+        let localURL = URL(fileURLWithPath: "/tmp/local-song.mp3")
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: localURL,
+            isStreamingPlayback: true,
+            hasStreamingPlayer: true,
+            hasLocalAudioFile: false
+        )
+
+        XCTAssertTrue(shouldReload)
+    }
+
+    func testShouldReloadPlaybackPipelineForLocalTrackWhenAudioFileMissing() {
+        let localURL = URL(fileURLWithPath: "/tmp/local-song.mp3")
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: localURL,
+            isStreamingPlayback: false,
+            hasStreamingPlayer: false,
+            hasLocalAudioFile: false
+        )
+
+        XCTAssertTrue(shouldReload)
+    }
+
+    func testShouldNotReloadPlaybackPipelineWhenStreamingStateMatches() {
+        let streamingURL = URL(string: "https://media.example.com/song.mp3")!
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: streamingURL,
+            isStreamingPlayback: true,
+            hasStreamingPlayer: true,
+            hasLocalAudioFile: false
+        )
+
+        XCTAssertFalse(shouldReload)
+    }
+
+    func testShouldNotReloadPlaybackPipelineWhenLocalStateMatches() {
+        let localURL = URL(fileURLWithPath: "/tmp/local-song.mp3")
+        let shouldReload = AudioEngine.shouldReloadPlaybackPipelineForCurrentTrack(
+            trackURL: localURL,
+            isStreamingPlayback: false,
+            hasStreamingPlayer: false,
+            hasLocalAudioFile: true
+        )
+
+        XCTAssertFalse(shouldReload)
+    }
+
+    // MARK: - Streaming Placeholder Resolution Tests
+
+    func testTrackStreamingPlaceholderDetection() {
+        let placeholder = Track(url: URL(string: "about:blank")!, title: "Placeholder")
+        let realStream = Track(url: URL(string: "https://media.example.com/song.mp3")!, title: "Real")
+
+        XCTAssertTrue(placeholder.isStreamingPlaceholder)
+        XCTAssertFalse(realStream.isStreamingPlaceholder)
+    }
+
+    func testTrackResolvableStreamingServiceTrackRequirements() {
+        let plexTrack = Track(
+            url: URL(string: "about:blank")!,
+            title: "Plex Placeholder",
+            plexRatingKey: "plex-1"
+        )
+        let subsonicMissingServer = Track(
+            url: URL(string: "about:blank")!,
+            title: "Sub Placeholder",
+            subsonicId: "sub-1"
+        )
+        let jellyfinComplete = Track(
+            url: URL(string: "about:blank")!,
+            title: "Jellyfin Placeholder",
+            jellyfinId: "jf-1",
+            jellyfinServerId: "jf-server"
+        )
+
+        XCTAssertTrue(plexTrack.isResolvableStreamingServiceTrack)
+        XCTAssertFalse(subsonicMissingServer.isResolvableStreamingServiceTrack)
+        XCTAssertTrue(jellyfinComplete.isResolvableStreamingServiceTrack)
+    }
+
+    func testSavedTrackFromServiceTrackPreservesIdentityFields() {
+        let subTrack = Track(
+            url: URL(string: "https://sub.example.com/stream")!,
+            title: "Sub",
+            subsonicId: "sub-42",
+            subsonicServerId: "sub-server"
+        )
+        let jellyTrack = Track(
+            url: URL(string: "https://jf.example.com/stream")!,
+            title: "Jelly",
+            jellyfinId: "jf-42",
+            jellyfinServerId: "jf-server"
+        )
+        let embyTrack = Track(
+            url: URL(string: "https://emby.example.com/stream")!,
+            title: "Emby",
+            embyId: "emby-42",
+            embyServerId: "emby-server"
+        )
+
+        let savedSub = AppStateManager.SavedTrack.from(subTrack)
+        let savedJelly = AppStateManager.SavedTrack.from(jellyTrack)
+        let savedEmby = AppStateManager.SavedTrack.from(embyTrack)
+
+        XCTAssertEqual(savedSub.subsonicId, "sub-42")
+        XCTAssertEqual(savedSub.subsonicServerId, "sub-server")
+        XCTAssertEqual(savedJelly.jellyfinId, "jf-42")
+        XCTAssertEqual(savedJelly.jellyfinServerId, "jf-server")
+        XCTAssertEqual(savedEmby.embyId, "emby-42")
+        XCTAssertEqual(savedEmby.embyServerId, "emby-server")
+    }
+
+    func testShouldAttemptStreamingURLRefreshAfterErrorForEligibleTrack() {
+        let track = Track(
+            url: URL(string: "https://media.example.com/stream")!,
+            title: "Song",
+            subsonicId: "sub-1",
+            subsonicServerId: "sub-server"
+        )
+
+        let shouldRetry = AudioEngine.shouldAttemptStreamingURLRefreshAfterError(
+            track: track,
+            isRadioActive: false,
+            previouslyRetriedServiceIdentity: nil
+        )
+
+        XCTAssertTrue(shouldRetry)
+    }
+
+    func testShouldNotAttemptStreamingURLRefreshAfterErrorWhenAlreadyRetried() {
+        let track = Track(
+            url: URL(string: "https://media.example.com/stream")!,
+            title: "Song",
+            jellyfinId: "jf-1",
+            jellyfinServerId: "jf-server"
+        )
+
+        let shouldRetry = AudioEngine.shouldAttemptStreamingURLRefreshAfterError(
+            track: track,
+            isRadioActive: false,
+            previouslyRetriedServiceIdentity: track.streamingServiceIdentity
+        )
+
+        XCTAssertFalse(shouldRetry)
+    }
+
+    func testShouldNotAttemptStreamingURLRefreshAfterErrorForPlaceholderOrRadio() {
+        let placeholder = Track(
+            url: URL(string: "about:blank")!,
+            title: "Placeholder",
+            plexRatingKey: "plex-1"
+        )
+
+        let shouldRetryPlaceholder = AudioEngine.shouldAttemptStreamingURLRefreshAfterError(
+            track: placeholder,
+            isRadioActive: false,
+            previouslyRetriedServiceIdentity: nil
+        )
+        let shouldRetryRadio = AudioEngine.shouldAttemptStreamingURLRefreshAfterError(
+            track: Track(url: URL(string: "https://radio.example.com/live")!, title: "Radio"),
+            isRadioActive: true,
+            previouslyRetriedServiceIdentity: nil
+        )
+
+        XCTAssertFalse(shouldRetryPlaceholder)
+        XCTAssertFalse(shouldRetryRadio)
+    }
 }

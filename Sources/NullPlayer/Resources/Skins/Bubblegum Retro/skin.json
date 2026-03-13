@@ -57,7 +57,45 @@
         "borderWidth": 1.5,
         "borderColor": "#ff9cc8",
         "cornerRadius": 6,
-        "seamlessDocking": 1.0
+        "opacity": 1,
+        "seamlessDocking": 1.0,
+        "areaOpacity": {
+            "mainWindow": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "timeDisplay": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "trackDisplay": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "volumeArea": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "spectrumArea": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "eqFaderBackground": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "curveBackground": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            }
+        }
     },
     "elements": {
         "titlebar": {
@@ -97,6 +135,32 @@
             "duration": 2.6,
             "minValue": 0.5,
             "maxValue": 1.0
+        }
+    },
+    "visualization": {
+        "mainWindowMode": "vis_classic",
+        "spectrumWindowMode": "vis_classic",
+        "visClassic": {
+            "mainWindowProfile": "Northern Lights",
+            "spectrumWindowProfile": "Northern Lights",
+            "mainWindowFitToWidth": true,
+            "spectrumWindowFitToWidth": true
+        },
+        "fire": {
+            "mainWindowStyle": "Electric",
+            "mainWindowIntensity": "Intense",
+            "spectrumWindowStyle": "Electric",
+            "spectrumWindowIntensity": "Intense"
+        },
+        "lightning": {
+            "mainWindowStyle": "Neon",
+            "spectrumWindowStyle": "Neon"
+        },
+        "matrix": {
+            "mainWindowColorScheme": "Neon",
+            "mainWindowIntensity": "Intense",
+            "spectrumWindowColorScheme": "Neon",
+            "spectrumWindowIntensity": "Intense"
         }
     }
 }

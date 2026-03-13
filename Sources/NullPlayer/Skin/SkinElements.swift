@@ -1062,6 +1062,32 @@ struct SkinElements {
             static let shadeOffset: CGFloat = 20
         }
     }
+
+    struct WaveformWindow {
+        /// Window size matches main window dimensions for center-stack docking.
+        static let windowSize = NSSize(width: 275 * Skin.scaleFactor, height: 116 * Skin.scaleFactor)
+
+        /// Minimum window size.
+        static let minSize = NSSize(width: 275 * Skin.scaleFactor, height: 116 * Skin.scaleFactor)
+
+        /// Title bar height shared with other classic utility windows.
+        static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
+
+        /// Content area inside the waveform chrome.
+        static let contentArea = NSRect(
+            x: 3 * Skin.scaleFactor,
+            y: 3 * Skin.scaleFactor,
+            width: 269 * Skin.scaleFactor,
+            height: 93 * Skin.scaleFactor
+        )
+
+        struct Layout {
+            static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
+            static let leftBorder: CGFloat = 3 * Skin.scaleFactor
+            static let rightBorder: CGFloat = 3 * Skin.scaleFactor
+            static let bottomBorder: CGFloat = 3 * Skin.scaleFactor
+        }
+    }
     
     // MARK: - GEN.BMP (Generic/AVS/ProjectM window)
     

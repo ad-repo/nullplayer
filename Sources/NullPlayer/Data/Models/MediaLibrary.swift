@@ -271,6 +271,16 @@ struct LibraryFilter: Codable {
     }
 }
 
+/// Per-watch-folder library counts used by folder-management UI.
+struct WatchFolderSummary {
+    let url: URL
+    let trackCount: Int
+    let movieCount: Int
+    let episodeCount: Int
+
+    var totalCount: Int { trackCount + movieCount + episodeCount }
+}
+
 /// The main media library manager
 class MediaLibrary {
     
@@ -311,9 +321,12 @@ class MediaLibrary {
     
     /// Whether the library is currently scanning (main thread only)
     private(set) var isScanning = false
-    
+
     /// Scan progress (0.0 - 1.0) (main thread only)
     private(set) var scanProgress: Double = 0
+
+    /// Incremented whenever a clear is requested; in-flight scans check this to discard stale results (main thread only)
+    private var scanGeneration: Int = 0
     
     /// Notification names
     static let libraryDidChangeNotification = Notification.Name("MediaLibraryDidChange")
@@ -342,6 +355,75 @@ class MediaLibrary {
     
     var watchFoldersSnapshot: [URL] {
         dataQueue.sync { watchFolders }
+    }
+
+    /// Summaries for each watched folder with local-library item counts by type.
+    func watchFolderSummaries() -> [WatchFolderSummary] {
+        let folders = watchFoldersSnapshot
+        let tracks = tracksSnapshot
+        let movies = moviesSnapshot
+        let episodes = episodesSnapshot
+
+        return folders.map { folder in
+            let folderPath = Self.normalizedPath(for: folder)
+            let trackCount = tracks.reduce(0) { count, track in
+                count + (Self.isPath(Self.normalizedPath(for: track.url), insideFolderPath: folderPath) ? 1 : 0)
+            }
+            let movieCount = movies.reduce(0) { count, movie in
+                count + (Self.isPath(Self.normalizedPath(for: movie.url), insideFolderPath: folderPath) ? 1 : 0)
+            }
+            let episodeCount = episodes.reduce(0) { count, episode in
+                count + (Self.isPath(Self.normalizedPath(for: episode.url), insideFolderPath: folderPath) ? 1 : 0)
+            }
+            return WatchFolderSummary(
+                url: folder,
+                trackCount: trackCount,
+                movieCount: movieCount,
+                episodeCount: episodeCount
+            )
+        }.sorted {
+            $0.url.path.localizedCaseInsensitiveCompare($1.url.path) == .orderedAscending
+        }
+    }
+
+    /// Returns the number of entries that would be removed if this watch folder is removed
+    /// with `removeEntries = true` (overlap-safe with remaining watch folders).
+    func removalCountsForWatchFolder(_ url: URL) -> (tracks: Int, movies: Int, episodes: Int) {
+        let removedFolderPath = Self.normalizedPath(for: url)
+        return dataQueue.sync {
+            let remainingFolderPaths = watchFolders
+                .map { Self.normalizedPath(for: $0) }
+                .filter { $0 != removedFolderPath }
+
+            let trackCount = tracks.reduce(0) { count, track in
+                let path = Self.normalizedPath(for: track.url)
+                return count + (Self.shouldRemovePath(
+                    path,
+                    whenRemovingFolderPath: removedFolderPath,
+                    remainingFolderPaths: remainingFolderPaths
+                ) ? 1 : 0)
+            }
+
+            let movieCount = movies.reduce(0) { count, movie in
+                let path = Self.normalizedPath(for: movie.url)
+                return count + (Self.shouldRemovePath(
+                    path,
+                    whenRemovingFolderPath: removedFolderPath,
+                    remainingFolderPaths: remainingFolderPaths
+                ) ? 1 : 0)
+            }
+
+            let episodeCount = episodes.reduce(0) { count, episode in
+                let path = Self.normalizedPath(for: episode.url)
+                return count + (Self.shouldRemovePath(
+                    path,
+                    whenRemovingFolderPath: removedFolderPath,
+                    remainingFolderPaths: remainingFolderPaths
+                ) ? 1 : 0)
+            }
+
+            return (trackCount, movieCount, episodeCount)
+        }
     }
 
     var moviesSnapshot: [LocalVideo] {
@@ -445,10 +527,12 @@ class MediaLibrary {
     
     /// Remove tracks by URL
     func removeTracks(urls: [URL]) {
+        let pathsToRemove = Set(urls.map(\.path))
+        guard !pathsToRemove.isEmpty else { return }
+
         dataQueue.sync {
-            for url in urls {
-                let path = url.path
-                tracks.removeAll { $0.url.path == path }
+            tracks.removeAll { pathsToRemove.contains($0.url.path) }
+            for path in pathsToRemove {
                 tracksByPath.removeValue(forKey: path)
             }
         }
@@ -456,11 +540,57 @@ class MediaLibrary {
         saveLibrary()
     }
     
-    /// Clear the entire library
+    /// Clear all local media entries from the library (tracks, movies, episodes).
+    /// Watch folders are preserved.
     func clearLibrary() {
+        scanGeneration += 1
         dataQueue.sync {
             tracks.removeAll()
             tracksByPath.removeAll()
+            movies.removeAll()
+            moviesByPath.removeAll()
+            episodes.removeAll()
+            episodesByPath.removeAll()
+            albumRatings.removeAll()
+            artistRatings.removeAll()
+        }
+        notifyChange()
+        saveLibrary()
+    }
+
+    /// Clear music entries only (tracks + track-derived ratings).
+    /// Movies, TV episodes, and watch folders are preserved.
+    func clearMusicLibrary() {
+        scanGeneration += 1
+        dataQueue.sync {
+            tracks.removeAll()
+            tracksByPath.removeAll()
+            albumRatings.removeAll()
+            artistRatings.removeAll()
+        }
+        notifyChange()
+        saveLibrary()
+    }
+
+    /// Clear movie entries only.
+    /// Music tracks, TV episodes, and watch folders are preserved.
+    func clearMovieLibrary() {
+        scanGeneration += 1
+        dataQueue.sync {
+            movies.removeAll()
+            moviesByPath.removeAll()
+        }
+        notifyChange()
+        saveLibrary()
+    }
+
+    /// Clear TV entries only (episodes/shows).
+    /// Music tracks, movies, and watch folders are preserved.
+    func clearTVLibrary() {
+        scanGeneration += 1
+        dataQueue.sync {
+            episodes.removeAll()
+            episodesByPath.removeAll()
         }
         notifyChange()
         saveLibrary()
@@ -566,18 +696,38 @@ class MediaLibrary {
 
     /// Remove a movie from the library (file is not deleted)
     func removeMovie(_ movie: LocalVideo) {
+        removeMovies(urls: [movie.url])
+    }
+
+    /// Remove movies by URL
+    func removeMovies(urls: [URL]) {
+        let pathsToRemove = Set(urls.map(\.path))
+        guard !pathsToRemove.isEmpty else { return }
+
         dataQueue.sync {
-            movies.removeAll { $0.id == movie.id }
-            moviesByPath.removeValue(forKey: movie.url.path)
+            movies.removeAll { pathsToRemove.contains($0.url.path) }
+            for path in pathsToRemove {
+                moviesByPath.removeValue(forKey: path)
+            }
         }
         notifyChange(); saveLibrary()
     }
 
     /// Remove an episode from the library (file is not deleted)
     func removeEpisode(_ episode: LocalEpisode) {
+        removeEpisodes(urls: [episode.url])
+    }
+
+    /// Remove episodes by URL
+    func removeEpisodes(urls: [URL]) {
+        let pathsToRemove = Set(urls.map(\.path))
+        guard !pathsToRemove.isEmpty else { return }
+
         dataQueue.sync {
-            episodes.removeAll { $0.id == episode.id }
-            episodesByPath.removeValue(forKey: episode.url.path)
+            episodes.removeAll { pathsToRemove.contains($0.url.path) }
+            for path in pathsToRemove {
+                episodesByPath.removeValue(forKey: path)
+            }
         }
         notifyChange(); saveLibrary()
     }
@@ -608,13 +758,49 @@ class MediaLibrary {
     }
     
     // MARK: - Folder Scanning
+
+    /// Return a canonical filesystem URL representation for watch-folder matching.
+    static func normalizedWatchFolderURL(_ url: URL) -> URL {
+        url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    /// Return canonical path string for matching.
+    static func normalizedPath(for url: URL) -> String {
+        normalizedWatchFolderURL(url).path
+    }
+
+    /// Whether a file path is in (or equals) a folder path.
+    static func isPath(_ filePath: String, insideFolderPath folderPath: String) -> Bool {
+        if folderPath == "/" { return true }
+        return filePath == folderPath || filePath.hasPrefix(folderPath + "/")
+    }
+
+    /// Whether a file path is inside any folder path in the provided list.
+    static func isPath(_ filePath: String, insideAnyFolderPaths folderPaths: [String]) -> Bool {
+        folderPaths.contains { isPath(filePath, insideFolderPath: $0) }
+    }
+
+    /// Folder-removal policy for path-level cleanup.
+    static func shouldRemovePath(
+        _ filePath: String,
+        whenRemovingFolderPath removedFolderPath: String,
+        remainingFolderPaths: [String]
+    ) -> Bool {
+        guard isPath(filePath, insideFolderPath: removedFolderPath) else { return false }
+        return !isPath(filePath, insideAnyFolderPaths: remainingFolderPaths)
+    }
     
     /// Add a watch folder
     func addWatchFolder(_ url: URL) {
+        let normalized = Self.normalizedWatchFolderURL(url)
+        let normalizedPath = Self.normalizedPath(for: normalized)
         var didAdd = false
         dataQueue.sync {
-            if !watchFolders.contains(url) {
-                watchFolders.append(url)
+            let alreadyPresent = watchFolders.contains {
+                Self.normalizedPath(for: $0) == normalizedPath
+            }
+            if !alreadyPresent {
+                watchFolders.append(normalized)
                 didAdd = true
             }
         }
@@ -623,10 +809,70 @@ class MediaLibrary {
         }
     }
     
-    /// Remove a watch folder
+    /// Remove a watch folder while keeping existing indexed entries for compatibility.
     func removeWatchFolder(_ url: URL) {
+        removeWatchFolder(url, removeEntries: false)
+    }
+
+    /// Remove a watch folder
+    func removeWatchFolder(_ url: URL, removeEntries: Bool) {
+        let removedFolderPath = Self.normalizedPath(for: url)
+        var didMutateWatchFolders = false
+        var removalCounts = (tracks: 0, movies: 0, episodes: 0)
+
         dataQueue.sync {
-            watchFolders.removeAll { $0 == url }
+            let originalCount = watchFolders.count
+            watchFolders.removeAll {
+                Self.normalizedPath(for: $0) == removedFolderPath
+            }
+            didMutateWatchFolders = watchFolders.count != originalCount
+
+            guard removeEntries, didMutateWatchFolders else { return }
+
+            let remainingFolderPaths = watchFolders.map { Self.normalizedPath(for: $0) }
+
+            tracks.removeAll { track in
+                let normalizedTrackPath = Self.normalizedPath(for: track.url)
+                guard Self.shouldRemovePath(
+                    normalizedTrackPath,
+                    whenRemovingFolderPath: removedFolderPath,
+                    remainingFolderPaths: remainingFolderPaths
+                ) else { return false }
+                tracksByPath.removeValue(forKey: track.url.path)
+                removalCounts.tracks += 1
+                return true
+            }
+
+            movies.removeAll { movie in
+                let normalizedMoviePath = Self.normalizedPath(for: movie.url)
+                guard Self.shouldRemovePath(
+                    normalizedMoviePath,
+                    whenRemovingFolderPath: removedFolderPath,
+                    remainingFolderPaths: remainingFolderPaths
+                ) else { return false }
+                moviesByPath.removeValue(forKey: movie.url.path)
+                removalCounts.movies += 1
+                return true
+            }
+
+            episodes.removeAll { episode in
+                let normalizedEpisodePath = Self.normalizedPath(for: episode.url)
+                guard Self.shouldRemovePath(
+                    normalizedEpisodePath,
+                    whenRemovingFolderPath: removedFolderPath,
+                    remainingFolderPaths: remainingFolderPaths
+                ) else { return false }
+                episodesByPath.removeValue(forKey: episode.url.path)
+                removalCounts.episodes += 1
+                return true
+            }
+        }
+
+        guard didMutateWatchFolders else { return }
+
+        if removeEntries,
+           (removalCounts.tracks > 0 || removalCounts.movies > 0 || removalCounts.episodes > 0) {
+            notifyChange()
         }
         saveLibrary()
     }
@@ -645,12 +891,13 @@ class MediaLibrary {
     /// Scan a folder for audio files
     func scanFolder(_ url: URL, recursive: Bool = true) {
         guard !isScanning else { return }
-        
+
+        let gen = scanGeneration
         DispatchQueue.main.async {
             self.isScanning = true
             self.scanProgress = 0
         }
-        
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
@@ -709,18 +956,32 @@ class MediaLibrary {
             }
             
             DispatchQueue.main.async {
+                guard self.scanGeneration == gen else { return }
                 self.isScanning = false
                 self.scanProgress = 1.0
                 NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: nil)
             }
-            
+
             self.saveLibrary()
         }
     }
     
-    /// Rescan all watch folders
-    func rescanWatchFolders() {
-        for folder in watchFoldersSnapshot {
+    /// Rescan one watch folder.
+    func rescanWatchFolder(_ url: URL, cleanMissing: Bool = true) {
+        let normalized = Self.normalizedWatchFolderURL(url)
+        if cleanMissing {
+            _ = removeMissingItemsInWatchedFolders([normalized])
+        }
+        scanFolder(normalized)
+    }
+
+    /// Rescan all watch folders.
+    func rescanWatchFolders(cleanMissing: Bool = true) {
+        let folders = watchFoldersSnapshot.map { Self.normalizedWatchFolderURL($0) }
+        if cleanMissing {
+            _ = removeMissingItemsInWatchedFolders(folders)
+        }
+        for folder in folders {
             scanFolder(folder)
         }
     }
@@ -1085,9 +1346,10 @@ class MediaLibrary {
             let data = try Data(contentsOf: libraryURL)
             let decoder = JSONDecoder()
             let libraryData = try decoder.decode(LibraryData.self, from: data)
+            let normalizedWatchFolders = Self.normalizedUniqueWatchFolderURLs(libraryData.watchFolders)
             dataQueue.sync {
                 tracks = libraryData.tracks
-                watchFolders = libraryData.watchFolders
+                watchFolders = normalizedWatchFolders
                 movies = libraryData.movies
                 episodes = libraryData.episodes
                 albumRatings = libraryData.albumRatings
@@ -1171,6 +1433,7 @@ class MediaLibrary {
         let data = try Data(contentsOf: backupURL)
         let decoder = JSONDecoder()
         let libraryData = try decoder.decode(LibraryData.self, from: data)
+        let normalizedWatchFolders = Self.normalizedUniqueWatchFolderURLs(libraryData.watchFolders)
         
         // Create auto-backup of current library before restoring
         if fileManager.fileExists(atPath: libraryURL.path) {
@@ -1186,7 +1449,7 @@ class MediaLibrary {
         // Reload the library
         dataQueue.sync {
             tracks = libraryData.tracks
-            watchFolders = libraryData.watchFolders
+            watchFolders = normalizedWatchFolders
             movies = libraryData.movies
             episodes = libraryData.episodes
 
@@ -1296,7 +1559,10 @@ class MediaLibrary {
         return Array(filtered.prefix(limit))
     }
 
-    private func filterLocalForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = 2) -> [Track] {
+    private func filterLocalForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = RadioPlaybackOptions.maxTracksPerArtist) -> [Track] {
+        if maxPerArtist <= RadioPlaybackOptions.unlimitedMaxTracksPerArtist {
+            return Array(tracks.prefix(limit))
+        }
         var result: [Track] = []
         var artistCounts: [String: Int] = [:]
         for track in tracks {
@@ -1335,6 +1601,64 @@ class MediaLibrary {
                 }
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private static func normalizedUniqueWatchFolderURLs(_ urls: [URL]) -> [URL] {
+        var seen = Set<String>()
+        var result: [URL] = []
+        for url in urls {
+            let normalized = normalizedWatchFolderURL(url)
+            let path = normalized.path
+            if seen.insert(path).inserted {
+                result.append(normalized)
+            }
+        }
+        return result
+    }
+
+    @discardableResult
+    private func removeMissingItemsInWatchedFolders(_ folders: [URL]) -> (tracks: Int, movies: Int, episodes: Int) {
+        let folderPaths = Array(Set(folders.map { Self.normalizedPath(for: $0) }))
+        guard !folderPaths.isEmpty else { return (0, 0, 0) }
+
+        let fileManager = FileManager.default
+        var counts = (tracks: 0, movies: 0, episodes: 0)
+
+        dataQueue.sync {
+            tracks.removeAll { track in
+                let normalizedTrackPath = Self.normalizedPath(for: track.url)
+                guard Self.isPath(normalizedTrackPath, insideAnyFolderPaths: folderPaths) else { return false }
+                guard !fileManager.fileExists(atPath: track.url.path) else { return false }
+                tracksByPath.removeValue(forKey: track.url.path)
+                counts.tracks += 1
+                return true
+            }
+
+            movies.removeAll { movie in
+                let normalizedMoviePath = Self.normalizedPath(for: movie.url)
+                guard Self.isPath(normalizedMoviePath, insideAnyFolderPaths: folderPaths) else { return false }
+                guard !fileManager.fileExists(atPath: movie.url.path) else { return false }
+                moviesByPath.removeValue(forKey: movie.url.path)
+                counts.movies += 1
+                return true
+            }
+
+            episodes.removeAll { episode in
+                let normalizedEpisodePath = Self.normalizedPath(for: episode.url)
+                guard Self.isPath(normalizedEpisodePath, insideAnyFolderPaths: folderPaths) else { return false }
+                guard !fileManager.fileExists(atPath: episode.url.path) else { return false }
+                episodesByPath.removeValue(forKey: episode.url.path)
+                counts.episodes += 1
+                return true
+            }
+        }
+
+        if counts.tracks > 0 || counts.movies > 0 || counts.episodes > 0 {
+            notifyChange()
+            saveLibrary()
+        }
+
+        return counts
     }
 }
 

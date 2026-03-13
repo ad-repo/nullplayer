@@ -238,6 +238,150 @@ When windows are docked, the `seamlessDocking` property controls shared-edge bor
 
 At 1.0, shared edges are clipped entirely, also removing glow effects on those edges.
 
+## Glass Skin Darkening and Seam Stability
+
+This section documents the March 2026 fix for modern glass skins where windows could become too dark or flicker over time, and docked interior edges could show dark seam lines.
+
+### Symptoms
+
+- Main and EQ glass windows appeared darker than expected.
+- Library window remained darker than main/EQ (inconsistent opacity behavior).
+- Timer-driven redraw regions (especially library chrome) could visually fluctuate.
+- Docked interior edges could show a dark 1px seam.
+
+### Root Causes
+
+1. **Alpha accumulation risk in partial redraws**  
+   Translucent background passes composited over existing pixels can drift darker when repeatedly redrawn in dirty regions.
+
+2. **Near-full docking interval gaps**  
+   Window docking geometry can produce occlusion intervals that are visually full-edge but numerically short by ~1-3 px, leaving tiny unsuppressed border slivers.
+
+3. **Area opacity semantics mismatch**  
+   Glass skins used:
+   - `window.opacity` around `0.5`
+   - `window.areaOpacity.*` around `0.8`
+   
+   Treating `areaOpacity` as absolute alpha made windows too opaque/dark. These channels are now interpreted as multipliers of `window.opacity`.
+
+4. **Library draw path inconsistency**  
+   `ModernLibraryBrowserView` did not apply resolved `mainWindow` area channels for background/border/content, so its appearance diverged from main/EQ.
+
+### Implementation
+
+- `ModernSkinRenderer.drawWindowBackground(...)`
+  - Uses `.copy` for the base background fill pass to make repeated redraws idempotent.
+
+- `ModernSkinRenderer.drawWindowBorder(...)`
+  - Normalizes near-full occlusion intervals before suppression.
+  - Merges close segment gaps and increases suppression strip coverage to remove tiny interior seam slivers.
+
+- `ModernSkin.resolvedOpacity(for:)`
+  - Area channels are resolved as:
+    - `resolved = clamp(window.opacity) * clamp(areaChannelOr1.0)`
+  - Missing area/channel defaults to multiplier `1.0`.
+
+- `ModernLibraryBrowserView.draw(_:)`
+  - Uses `skin.resolvedOpacity(for: .mainWindow)` and applies:
+    - `backgroundOpacity` in `drawWindowBackground(...)`
+    - `borderOpacity` in `drawWindowBorder(...)`
+    - `content` alpha around foreground chrome/content drawing
+
+### Files Changed
+
+- `Sources/NullPlayer/ModernSkin/ModernSkinRenderer.swift`
+- `Sources/NullPlayer/ModernSkin/ModernSkin.swift`
+- `Sources/NullPlayer/ModernSkin/ModernSkinConfig.swift`
+- `Sources/NullPlayer/Windows/ModernLibraryBrowser/ModernLibraryBrowserView.swift`
+- `Tests/NullPlayerTests/ModernSkinOpacityConfigTests.swift`
+
+### Regression Tests
+
+- `testWindowBackgroundDrawIsStableAcrossRepeatedRedraws`
+- `testSeamSuppressedBorderIsStableAcrossRepeatedRedraws`
+- `testAreaOpacityFallbackUsesWindowOpacityAndMultiplierSemantics`
+
+### Verification Command
+
+```bash
+DYLD_LIBRARY_PATH="/Users/ad/Projects/nullplayer/Frameworks" \
+/Applications/Xcode.app/Contents/Developer/usr/bin/xctest \
+  -XCTest ModernSkinOpacityConfigTests \
+  .build/arm64-apple-macosx/debug/NullPlayerPackageTests.xctest
+```
+
+## Text-Only Opacity Channel (`window.textOpacity`)
+
+Modern skins support a dedicated text opacity multiplier that is independent from window/panel translucency:
+
+- `window.opacity`: background/border/content base alpha channels.
+- `window.areaOpacity.*`: per-area multipliers for those channels.
+- `window.textOpacity`: global multiplier for string text alpha only.
+
+### Why this exists
+
+Glass skins often need darker text for readability while keeping the same translucent window body.  
+`window.textOpacity` lets you tune text darkness without changing panel/background opacity.
+
+### Behavior
+
+- Optional field, range `0.0...1.0`, default `1.0`.
+- Applied to modern text-like channels:
+  - modern string text (`NSAttributedString` foreground colors) across main/EQ/playlist/library,
+  - marquee text (main + playlist),
+  - main time digits (sprite and programmatic 7-segment fallback).
+- Text paths are rendered at full context alpha so `window.areaOpacity.*.content` does not re-attenuate text.
+- Not applied to non-text rendering (fills, borders, strokes, panel backgrounds, icon/shape geometry).
+- Resolved as:
+  - `resolvedTextAlpha = clamp(inputTextAlpha) * clamp(window.textOpacity)`
+
+### Example
+
+```json
+"window": {
+    "opacity": 0.52,
+    "textOpacity": 0.8,
+    "areaOpacity": {
+        "mainWindow": { "background": 0.8, "border": 0.8, "content": 0.8 }
+    }
+}
+```
+
+With this configuration:
+- Window translucency remains driven by `window.opacity` and `areaOpacity`.
+- Text alpha is reduced to 80% of its original text color alpha.
+
+### Practical Notes
+
+- If `textOpacity` is `1.0`, text keeps its original alpha (no additional dimming).
+- To verify quickly, set `textOpacity` to `0.4` temporarily; library row data, marquee text, and time digits should visibly darken while window glass opacity remains unchanged.
+
+## Main Window Spectrum Opacity (`window.mainSpectrumOpacity`)
+
+Modern skins also support an independent opacity override for the main window's mini spectrum analyzer.
+
+- `window.mainSpectrumOpacity`: optional `0.0...1.0` override.
+- Applies only to the main-window spectrum region:
+  - 8-bar CPU spectrum content,
+  - embedded Metal overlay modes shown in the same panel.
+- Does not override spectrum panel fill/border alpha; those follow `window.opacity` + `window.areaOpacity.spectrumArea` so panel border weight stays consistent with other main-window panels.
+- Does not affect standalone spectrum window opacity.
+- Does not alter base window translucency (`window.opacity`) or text opacity (`window.textOpacity`).
+- If omitted, mini spectrum opacity follows existing `window.opacity` + `window.areaOpacity.spectrumArea` resolution.
+
+### Example
+
+```json
+"window": {
+    "opacity": 0.52,
+    "textOpacity": 0.8,
+    "mainSpectrumOpacity": 0.9,
+    "areaOpacity": {
+        "spectrumArea": { "background": 0.8, "border": 0.8, "content": 0.8 }
+    }
+}
+```
+
 ## Double Size (2x) Mode
 
 Toggle via the **2X** button on the main window or right-click context menu → **Double Size** (available in both modern and classic UI). Doubles all window dimensions and rendering scale.

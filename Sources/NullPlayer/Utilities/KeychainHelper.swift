@@ -10,9 +10,12 @@ class KeychainHelper {
     
     static let shared = KeychainHelper()
     
-    /// Set to true for production builds with proper code signing
-    /// Set to false for development to avoid keychain permission prompts
-    private let useKeychain = false
+    /// Only use Keychain when running as a signed .app bundle.
+    /// Raw binaries from `swift build` are unsigned and generate per-item
+    /// Keychain prompts. Falls back to UserDefaults in dev.
+    private var useKeychain: Bool {
+        return Bundle.main.bundlePath.hasSuffix(".app")
+    }
     
     private init() {}
     
@@ -264,7 +267,14 @@ class KeychainHelper {
     
     private func getData(forKey key: String) -> Data? {
         if useKeychain {
-            return getDataKeychain(forKey: key)
+            if let existing = getDataKeychain(forKey: key) { return existing }
+            // Migrate from UserDefaults (credentials saved before keychain was used)
+            if let ud = getDataUserDefaults(forKey: key) {
+                _ = setDataKeychain(ud, forKey: key)
+                deleteUserDefaults(forKey: key)
+                return ud
+            }
+            return nil
         } else {
             return getDataUserDefaults(forKey: key)
         }
@@ -296,44 +306,49 @@ class KeychainHelper {
     // MARK: - Keychain Storage (Production)
     
     private func setDataKeychain(_ data: Data, forKey key: String) -> Bool {
-        // Delete any existing item first
         deleteKeychain(forKey: key)
-        
-        let query: [String: Any] = [
+
+        // Permissive ACL: any app can access without a prompt.
+        // Required because ad-hoc code signatures change on every rebuild —
+        // a strict ACL would prompt users on every app update.
+        var access: SecAccess?
+        SecAccessCreate("NullPlayer" as CFString, nil, &access)
+
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Keys.service,
             kSecAttrAccount as String: key,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked
         ]
-        
+        if let access = access {
+            query[kSecAttrAccess as String] = access
+        }
+
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
     }
-    
+
     private func getDataKeychain(forKey key: String) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Keys.service,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
         ]
-        
+
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        
         guard status == errSecSuccess else { return nil }
         return result as? Data
     }
-    
+
     private func deleteKeychain(forKey key: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Keys.service,
-            kSecAttrAccount as String: key
+            kSecAttrAccount as String: key,
         ]
-        
         SecItemDelete(query as CFDictionary)
     }
 }

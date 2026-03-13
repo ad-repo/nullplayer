@@ -3,6 +3,14 @@ import AppKit
 
 /// Singleton managing internet radio station connections and state
 class RadioManager {
+    private struct SomaChannelsResponse: Decodable {
+        let channels: [SomaChannel]
+    }
+
+    private struct SomaChannel: Decodable {
+        let id: String
+        let lastPlaying: String?
+    }
     
     // MARK: - Singleton
     
@@ -29,6 +37,8 @@ class RadioManager {
         didSet {
             if oldValue?.id != currentStation?.id {
                 currentStreamTitle = nil
+                currentSomaLastPlaying = nil
+                stopSomaMetadataPolling()
                 reconnectAttempts = 0
             }
         }
@@ -40,11 +50,19 @@ class RadioManager {
     private(set) var currentStreamTitle: String? {
         didSet {
             if oldValue != currentStreamTitle {
-                NotificationCenter.default.post(
-                    name: Self.streamMetadataDidChangeNotification,
-                    object: self,
-                    userInfo: currentStreamTitle.map { ["streamTitle": $0] }
-                )
+                publishStreamMetadataChangeIfNeeded()
+                if currentStreamTitle != nil {
+                    stopSomaMetadataPolling()
+                }
+            }
+        }
+    }
+
+    /// Fallback title from SomaFM channels API (`lastPlaying`) when ICY metadata is missing.
+    private(set) var currentSomaLastPlaying: String? {
+        didSet {
+            if oldValue != currentSomaLastPlaying {
+                publishStreamMetadataChangeIfNeeded()
             }
         }
     }
@@ -92,6 +110,15 @@ class RadioManager {
     
     /// Timer for reconnect delay
     private var reconnectTimer: Timer?
+
+    /// Poll timer for SomaFM metadata fallback when stream ICY metadata is unavailable.
+    private var somaMetadataTimer: Timer?
+
+    private var somaMetadataRequestInFlight = false
+    private var lastPublishedStreamTitle: String?
+
+    private let somaChannelsURL = URL(string: "https://somafm.com/channels.json")!
+    private let somaMetadataPollInterval: TimeInterval = 45
     
     /// Whether a manual stop was requested (don't auto-reconnect)
     private var manualStopRequested = false
@@ -100,6 +127,14 @@ class RadioManager {
     
     private let stationsKey = "RadioStations"
     private let deletedDefaultsKey = "RadioDeletedDefaults"
+    private let smartGenreOverridesKey = "RadioSmartGenreOverrides"
+    private let smartRegionOverridesKey = "RadioSmartRegionOverrides"
+    private static let defaultURLAliases: [String: String] = [
+        "https://wgbh-live.streamguys1.com/wgbh": "https://wgbh-live.streamguys1.com/wgbh.mp3",
+        "https://wgbh-live.streamguys1.com/wgbh.mp3": "https://wgbh-live.streamguys1.com/wgbh"
+    ]
+    private let ratingsStore = RadioStationRatingsStore.shared
+    private let foldersStore = RadioStationFoldersStore.shared
     
     /// URLs of default stations the user has intentionally deleted (won't be re-added)
     private var deletedDefaultURLs: Set<String> {
@@ -113,7 +148,108 @@ class RadioManager {
     
     /// Check if a URL is a default station URL
     private func isDefaultStationURL(_ url: URL) -> Bool {
-        Self.defaultStations.contains { $0.url == url }
+        Self.defaultStations.contains { areEquivalentStationURLs($0.url, url) }
+    }
+
+    private func areEquivalentStationURLs(_ lhs: URL, _ rhs: URL) -> Bool {
+        if lhs == rhs { return true }
+        let left = lhs.absoluteString
+        let right = rhs.absoluteString
+        return Self.defaultURLAliases[left] == right || Self.defaultURLAliases[right] == left
+    }
+
+    private var smartGenreOverrides: [String: String] {
+        get { UserDefaults.standard.dictionary(forKey: smartGenreOverridesKey) as? [String: String] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: smartGenreOverridesKey) }
+    }
+
+    private var smartRegionOverrides: [String: String] {
+        get { UserDefaults.standard.dictionary(forKey: smartRegionOverridesKey) as? [String: String] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: smartRegionOverridesKey) }
+    }
+
+    private func equivalentURLKeys(for url: URL) -> Set<String> {
+        var keys: Set<String> = [url.absoluteString]
+        if let alias = Self.defaultURLAliases[url.absoluteString] {
+            keys.insert(alias)
+        }
+        for (key, value) in Self.defaultURLAliases where value == url.absoluteString {
+            keys.insert(key)
+        }
+        return keys
+    }
+
+    private func normalizedOverrideLabel(_ value: String?) -> String? {
+        let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func overrideValue(for url: URL, in map: [String: String]) -> String? {
+        for key in equivalentURLKeys(for: url) {
+            if let value = normalizedOverrideLabel(map[key]) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func setOverrideValue(_ value: String?, for url: URL, in map: inout [String: String]) -> Bool {
+        let normalized = normalizedOverrideLabel(value)
+        let keys = equivalentURLKeys(for: url)
+        var changed = false
+        for key in keys {
+            let old = map[key]
+            if let normalized {
+                if old != normalized {
+                    map[key] = normalized
+                    changed = true
+                }
+            } else if map.removeValue(forKey: key) != nil {
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    private func clearSmartFolderOverrides(for url: URL) {
+        var genres = smartGenreOverrides
+        var regions = smartRegionOverrides
+        let genreChanged = setOverrideValue(nil, for: url, in: &genres)
+        let regionChanged = setOverrideValue(nil, for: url, in: &regions)
+        if genreChanged { smartGenreOverrides = genres }
+        if regionChanged { smartRegionOverrides = regions }
+    }
+
+    private func moveSmartFolderOverrides(from oldURL: URL, to newURL: URL) {
+        guard oldURL != newURL else { return }
+        let oldGenre = overrideValue(for: oldURL, in: smartGenreOverrides)
+        let oldRegion = overrideValue(for: oldURL, in: smartRegionOverrides)
+
+        var genres = smartGenreOverrides
+        var regions = smartRegionOverrides
+        _ = setOverrideValue(nil, for: oldURL, in: &genres)
+        _ = setOverrideValue(nil, for: oldURL, in: &regions)
+        _ = setOverrideValue(oldGenre, for: newURL, in: &genres)
+        _ = setOverrideValue(oldRegion, for: newURL, in: &regions)
+
+        smartGenreOverrides = genres
+        smartRegionOverrides = regions
+    }
+
+    /// Combined stream title used by UI: ICY metadata first, then Soma fallback.
+    private var effectiveStreamTitle: String? {
+        currentStreamTitle ?? currentSomaLastPlaying
+    }
+
+    private func publishStreamMetadataChangeIfNeeded() {
+        let streamTitle = effectiveStreamTitle
+        guard streamTitle != lastPublishedStreamTitle else { return }
+        lastPublishedStreamTitle = streamTitle
+        NotificationCenter.default.post(
+            name: Self.streamMetadataDidChangeNotification,
+            object: self,
+            userInfo: streamTitle.map { ["streamTitle": $0] }
+        )
     }
     
     // MARK: - Initialization
@@ -133,198 +269,64 @@ class RadioManager {
         }
         stations = decoded
         NSLog("RadioManager: Loaded %d saved stations", stations.count)
+
+        // Ensure existing users receive newly added defaults while still honoring
+        // deleted-default tracking.
+        addMissingDefaults()
     }
     
     private func saveStations() {
         guard let data = try? JSONEncoder().encode(stations) else { return }
         UserDefaults.standard.set(data, forKey: stationsKey)
     }
-    
+
+    private func postStationsDidChange() {
+        NotificationCenter.default.post(name: Self.stationsDidChangeNotification, object: self)
+    }
+    /// Seed model for bundled default stations JSON.
+    private struct DefaultStationSeed: Decodable {
+        let name: String
+        let url: String
+        let genre: String?
+        let iconURL: String?
+    }
+
     /// Default stations to show for new users
-    private static let defaultStations: [RadioStation] = [
-        // MARK: - Ambient/Chill (Original defaults)
-        RadioStation(
-            name: "SomaFM Groove Salad",
-            url: URL(string: "https://ice5.somafm.com/groovesalad-128-mp3")!,
-            genre: "Ambient/Chill"
-        ),
-        RadioStation(
-            name: "SomaFM DEF CON Radio",
-            url: URL(string: "https://ice5.somafm.com/defcon-128-mp3")!,
-            genre: "Electronic"
-        ),
-        RadioStation(
-            name: "SomaFM Drone Zone",
-            url: URL(string: "https://ice5.somafm.com/dronezone-128-mp3")!,
-            genre: "Ambient"
-        ),
-        
-        // MARK: - Metal
-        RadioStation(
-            name: "SomaFM Metal Detector",
-            url: URL(string: "https://ice5.somafm.com/metal-128-mp3")!,
-            genre: "Metal"
-        ),
-        RadioStation(
-            name: "Nightride FM Darksynth",
-            url: URL(string: "https://stream.nightride.fm/darksynth.mp3")!,
-            genre: "Metal"
-        ),
-        RadioStation(
-            name: "SomaFM Doomed",
-            url: URL(string: "https://ice5.somafm.com/doomed-128-mp3")!,
-            genre: "Metal"
-        ),
-        
-        // MARK: - Rock
-        RadioStation(
-            name: "Radio Paradise Rock",
-            url: URL(string: "http://stream.radioparadise.com/rock-128")!,
-            genre: "Rock"
-        ),
-        RadioStation(
-            name: "SomaFM Indie Pop Rocks",
-            url: URL(string: "https://ice5.somafm.com/indiepop-128-mp3")!,
-            genre: "Rock"
-        ),
-        RadioStation(
-            name: "Nightride FM",
-            url: URL(string: "https://stream.nightride.fm/nightride.mp3")!,
-            genre: "Rock"
-        ),
-        
-        // MARK: - Classic Rock
-        RadioStation(
-            name: "SomaFM Left Coast 70s",
-            url: URL(string: "https://ice5.somafm.com/seventies-128-mp3")!,
-            genre: "Classic Rock"
-        ),
-        RadioStation(
-            name: "Radio Paradise",
-            url: URL(string: "http://stream.radioparadise.com/aac-128")!,
-            genre: "Classic Rock"
-        ),
-        RadioStation(
-            name: "SomaFM Underground 80s",
-            url: URL(string: "https://ice5.somafm.com/u80s-128-mp3")!,
-            genre: "Classic Rock"
-        ),
-        
-        // MARK: - Hip Hop
-        RadioStation(
-            name: "SomaFM Fluid",
-            url: URL(string: "https://ice5.somafm.com/fluid-128-mp3")!,
-            genre: "Hip Hop"
-        ),
-        RadioStation(
-            name: "SomaFM Seven Inch Soul",
-            url: URL(string: "https://ice5.somafm.com/7soul-128-mp3")!,
-            genre: "Hip Hop"
-        ),
-        RadioStation(
-            name: "SomaFM Beat Blender",
-            url: URL(string: "https://ice5.somafm.com/beatblender-128-mp3")!,
-            genre: "Hip Hop"
-        ),
-        
-        // MARK: - Rap
-        RadioStation(
-            name: "SomaFM PopTron",
-            url: URL(string: "https://ice5.somafm.com/poptron-128-mp3")!,
-            genre: "Rap"
-        ),
-        RadioStation(
-            name: "Nightride FM EBSM",
-            url: URL(string: "https://stream.nightride.fm/ebsm.mp3")!,
-            genre: "Rap"
-        ),
-        RadioStation(
-            name: "SomaFM Black Rock FM",
-            url: URL(string: "https://ice5.somafm.com/brfm-128-mp3")!,
-            genre: "Rap"
-        ),
-        
-        // MARK: - Jazz
-        RadioStation(
-            name: "SomaFM Sonic Universe",
-            url: URL(string: "https://ice5.somafm.com/sonicuniverse-128-mp3")!,
-            genre: "Jazz"
-        ),
-        RadioStation(
-            name: "SomaFM Secret Agent",
-            url: URL(string: "https://ice5.somafm.com/secretagent-128-mp3")!,
-            genre: "Jazz"
-        ),
-        RadioStation(
-            name: "SomaFM Illinois Street Lounge",
-            url: URL(string: "https://ice5.somafm.com/illstreet-128-mp3")!,
-            genre: "Jazz"
-        ),
-        
-        // MARK: - Classical
-        RadioStation(
-            name: "SomaFM Bossa Beyond",
-            url: URL(string: "https://ice5.somafm.com/bossa-128-mp3")!,
-            genre: "Classical"
-        ),
-        RadioStation(
-            name: "Classical KING FM",
-            url: URL(string: "https://classicalking.streamguys1.com/king-fm-aac")!,
-            genre: "Classical"
-        ),
-        RadioStation(
-            name: "SomaFM ThistleRadio",
-            url: URL(string: "https://ice5.somafm.com/thistle-128-mp3")!,
-            genre: "Classical"
-        ),
-        
-        // MARK: - EDM
-        RadioStation(
-            name: "SomaFM The Trip",
-            url: URL(string: "https://ice5.somafm.com/thetrip-128-mp3")!,
-            genre: "EDM"
-        ),
-        RadioStation(
-            name: "SomaFM Dub Step Beyond",
-            url: URL(string: "https://ice5.somafm.com/dubstep-128-mp3")!,
-            genre: "EDM"
-        ),
-        RadioStation(
-            name: "Nightride FM Chillsynth",
-            url: URL(string: "https://stream.nightride.fm/chillsynth.mp3")!,
-            genre: "EDM"
-        ),
-        
-        // MARK: - NPR
-        RadioStation(
-            name: "NPR Program Stream",
-            url: URL(string: "http://npr-ice.streamguys1.com/live.mp3")!,
-            genre: "NPR"
-        ),
-        RadioStation(
-            name: "WNYC 93.9 FM",
-            url: URL(string: "https://fm939.wnyc.org/wnycfm")!,
-            genre: "NPR"
-        ),
-        RadioStation(
-            name: "WBUR Boston 90.9",
-            url: URL(string: "http://wbur-sc.streamguys.com/wbur")!,
-            genre: "NPR"
-        ),
-        RadioStation(
-            name: "GBH Boston 89.7",
-            url: URL(string: "https://wgbh-live.streamguys1.com/wgbh")!,
-            genre: "NPR"
-        ),
-        
-        // MARK: - News
-        RadioStation(
-            name: "BBC World Service",
-            url: URL(string: "http://stream.live.vc.bbcmedia.co.uk/bbc_world_service")!,
-            genre: "News"
-        )
-    ]
-    
+    private static let defaultStations: [RadioStation] = loadDefaultStations()
+
+    private static func loadDefaultStations() -> [RadioStation] {
+        guard let resourceURL = BundleHelper.url(forResource: "default_stations", withExtension: "json", subdirectory: "Radio") else {
+            NSLog("RadioManager: Missing bundled default_stations.json")
+            return []
+        }
+
+        do {
+            let data = try Data(contentsOf: resourceURL)
+            let decoder = JSONDecoder()
+            let seeds = try decoder.decode([DefaultStationSeed].self, from: data)
+
+            let stations = seeds.compactMap { seed -> RadioStation? in
+                guard let url = URL(string: seed.url) else {
+                    NSLog("RadioManager: Skipping invalid default station URL for '%@': %@", seed.name, seed.url)
+                    return nil
+                }
+                let icon = seed.iconURL.flatMap(URL.init(string:))
+                return RadioStation(name: seed.name, url: url, genre: seed.genre, iconURL: icon)
+            }
+
+            if stations.isEmpty {
+                NSLog("RadioManager: Bundled default_stations.json decoded to 0 valid stations")
+                return []
+            }
+
+            NSLog("RadioManager: Loaded %d bundled default stations", stations.count)
+            return stations
+        } catch {
+            NSLog("RadioManager: Failed to load bundled default_stations.json (%@)", error.localizedDescription)
+            return []
+        }
+    }
+
     // MARK: - Station Management
     
     /// Add a new radio station
@@ -336,6 +338,12 @@ class RadioManager {
     /// Update an existing station
     func updateStation(_ station: RadioStation) {
         if let index = stations.firstIndex(where: { $0.id == station.id }) {
+            let oldURL = stations[index].url
+            if oldURL != station.url {
+                moveRating(fromURL: oldURL, toURL: station.url)
+                foldersStore.moveStationURLReferences(from: oldURL, to: station.url)
+                moveSmartFolderOverrides(from: oldURL, to: station.url)
+            }
             stations[index] = station
             NSLog("RadioManager: Updated station '%@'", station.name)
         }
@@ -350,6 +358,9 @@ class RadioManager {
             deletedDefaultURLs = deleted
             NSLog("RadioManager: Tracking deleted default station '%@'", station.name)
         }
+        removeRating(for: station)
+        foldersStore.removeStationURLEverywhere(station.url)
+        clearSmartFolderOverrides(for: station.url)
         stations.removeAll { $0.id == station.id }
         NSLog("RadioManager: Removed station '%@'", station.name)
     }
@@ -370,6 +381,8 @@ class RadioManager {
     func resetToDefaults() {
         // Clear the deleted defaults tracking so all defaults come back
         deletedDefaultURLs = []
+        smartGenreOverrides = [:]
+        smartRegionOverrides = [:]
         stations = Self.defaultStations
         NSLog("RadioManager: Reset to %d default stations", stations.count)
     }
@@ -381,17 +394,512 @@ class RadioManager {
         var added = 0
         for defaultStation in Self.defaultStations {
             // Skip if user previously deleted this default
-            if deleted.contains(defaultStation.url.absoluteString) {
+            let wasDeleted = deleted.contains { deletedURL in
+                deletedURL == defaultStation.url.absoluteString ||
+                Self.defaultURLAliases[deletedURL] == defaultStation.url.absoluteString ||
+                Self.defaultURLAliases[defaultStation.url.absoluteString] == deletedURL
+            }
+            if wasDeleted {
                 continue
             }
             // Check if station with same URL already exists
-            let exists = stations.contains { $0.url == defaultStation.url }
+            let exists = stations.contains { areEquivalentStationURLs($0.url, defaultStation.url) }
             if !exists {
                 stations.append(defaultStation)
                 added += 1
             }
         }
         NSLog("RadioManager: Added %d missing default stations (skipped %d deleted)", added, deleted.count)
+    }
+
+    // MARK: - Search
+
+    /// Search internet radio stations by metadata.
+    ///
+    /// Matches against station name, effective genre, effective region, URL host, and full URL.
+    /// Query tokens are case-insensitive and all tokens must match.
+    func searchStations(query: String) -> [RadioStation] {
+        searchStations(in: stations, query: query)
+    }
+
+    /// Search a provided station list by internet-radio metadata.
+    func searchStations(in candidateStations: [RadioStation], query: String) -> [RadioStation] {
+        let tokens = searchTokens(from: query)
+        guard !tokens.isEmpty else { return [] }
+        return stationsSortedBySearchName(
+            candidateStations.filter { stationMatchesSearchTokens($0, tokens: tokens) }
+        )
+    }
+
+    // MARK: - Station Ratings
+
+    /// Return a station rating on a 0-5 scale (0 = unrated).
+    func rating(for station: RadioStation) -> Int {
+        ratingsStore.rating(for: station.url)
+    }
+
+    /// Set a station rating on a 0-5 scale (0 clears the rating).
+    func setRating(_ rating: Int, for station: RadioStation) {
+        ratingsStore.setRating(rating, for: station.url)
+        postStationsDidChange()
+    }
+
+    /// Move an existing rating from an old stream URL to a new URL.
+    func moveRating(fromURL oldURL: URL, toURL newURL: URL) {
+        ratingsStore.moveRating(from: oldURL, to: newURL)
+    }
+
+    /// Remove a station's persisted rating.
+    func removeRating(for station: RadioStation) {
+        ratingsStore.removeRating(for: station.url)
+        postStationsDidChange()
+    }
+
+    // MARK: - Smart Folder Overrides
+
+    func smartGenreOverride(for station: RadioStation) -> String? {
+        overrideValue(for: station.url, in: smartGenreOverrides)
+    }
+
+    func smartRegionOverride(for station: RadioStation) -> String? {
+        overrideValue(for: station.url, in: smartRegionOverrides)
+    }
+
+    func effectiveRegion(for station: RadioStation) -> String {
+        effectiveRegionLabel(for: station)
+    }
+
+    func autoRegion(for station: RadioStation) -> String {
+        derivedRegion(for: station)
+    }
+
+    @discardableResult
+    func setSmartGenreOverride(_ genre: String?, for station: RadioStation) -> Bool {
+        let base = normalizeGenreLabel(station.genre)
+        let target = normalizedOverrideLabel(genre)
+        var map = smartGenreOverrides
+        let changed = setOverrideValue(target == base ? nil : target, for: station.url, in: &map)
+        if changed {
+            smartGenreOverrides = map
+            postStationsDidChange()
+        }
+        return changed
+    }
+
+    @discardableResult
+    func setSmartRegionOverride(_ region: String?, for station: RadioStation) -> Bool {
+        let base = derivedRegion(for: station)
+        let target = normalizedOverrideLabel(region)
+        var map = smartRegionOverrides
+        let changed = setOverrideValue(target == base ? nil : target, for: station.url, in: &map)
+        if changed {
+            smartRegionOverrides = map
+            postStationsDidChange()
+        }
+        return changed
+    }
+
+    func smartGenreOptions(including station: RadioStation? = nil) -> [String] {
+        var labels = Set(availableGenres())
+        if let station {
+            labels.insert(normalizeGenreLabel(station.genre))
+            labels.insert(effectiveGenreLabel(for: station))
+        }
+        return labels.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    func smartRegionOptions(including station: RadioStation? = nil) -> [String] {
+        var labels = Set(availableRegions())
+        if let station {
+            labels.insert(derivedRegion(for: station))
+            labels.insert(effectiveRegionLabel(for: station))
+        }
+        return labels.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    // MARK: - Folder Organization
+
+    func userRadioFolders() -> [RadioUserFolder] {
+        foldersStore.folders()
+    }
+
+    @discardableResult
+    func createUserFolder(named name: String) -> RadioUserFolder? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if userRadioFolders().contains(where: { $0.name.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) {
+            return nil
+        }
+        let folder = foldersStore.createFolder(name: trimmed)
+        if folder != nil {
+            postStationsDidChange()
+        }
+        return folder
+    }
+
+    @discardableResult
+    func renameUserFolder(id: UUID, to name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if userRadioFolders().contains(where: { $0.id != id && $0.name.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) {
+            return false
+        }
+        let renamed = foldersStore.renameFolder(id: id, name: trimmed)
+        if renamed {
+            postStationsDidChange()
+        }
+        return renamed
+    }
+
+    @discardableResult
+    func deleteUserFolder(id: UUID) -> Bool {
+        let deleted = foldersStore.deleteFolder(id: id)
+        if deleted {
+            postStationsDidChange()
+        }
+        return deleted
+    }
+
+    @discardableResult
+    func addStation(_ station: RadioStation, toUserFolderID folderID: UUID) -> Bool {
+        let added = foldersStore.addStationURL(station.url, toFolder: folderID)
+        if added {
+            postStationsDidChange()
+        }
+        return added
+    }
+
+    @discardableResult
+    func removeStation(_ station: RadioStation, fromUserFolderID folderID: UUID) -> Bool {
+        let removed = foldersStore.removeStationURL(station.url, fromFolder: folderID)
+        if removed {
+            postStationsDidChange()
+        }
+        return removed
+    }
+
+    func userFolderIDs(containing station: RadioStation) -> Set<UUID> {
+        var ids = foldersStore.folderIDs(containing: station.url)
+        if let alias = Self.defaultURLAliases[station.url.absoluteString],
+           let aliasURL = URL(string: alias) {
+            ids.formUnion(foldersStore.folderIDs(containing: aliasURL))
+        }
+        return ids
+    }
+
+    func isStation(_ station: RadioStation, inUserFolderID folderID: UUID) -> Bool {
+        userFolderIDs(containing: station).contains(folderID)
+    }
+
+    func internetRadioFolderDescriptors() -> [RadioFolderDescriptor] {
+        let genres = availableGenres()
+        let regions = availableRegions()
+        let userFolders = userRadioFolders()
+        let hasStations: (RadioFolderKind) -> Bool = { [self] kind in
+            !stations(inFolder: kind).isEmpty
+        }
+
+        var result: [RadioFolderDescriptor] = [
+            RadioFolderDescriptor(
+                id: RadioFolderKind.allStations.id,
+                title: "All Stations",
+                kind: .allStations,
+                parentID: nil,
+                sortOrder: 10,
+                hasChildren: hasStations(.allStations)
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.favorites.id,
+                title: "Favorites",
+                kind: .favorites,
+                parentID: nil,
+                sortOrder: 20,
+                hasChildren: hasStations(.favorites)
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.topRated.id,
+                title: "Top Rated",
+                kind: .topRated,
+                parentID: nil,
+                sortOrder: 30,
+                hasChildren: hasStations(.topRated)
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.unrated.id,
+                title: "Unrated",
+                kind: .unrated,
+                parentID: nil,
+                sortOrder: 40,
+                hasChildren: hasStations(.unrated)
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.recentlyPlayed.id,
+                title: "Recently Played",
+                kind: .recentlyPlayed,
+                parentID: nil,
+                sortOrder: 50,
+                hasChildren: hasStations(.recentlyPlayed)
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.byGenre.id,
+                title: "By Genre",
+                kind: .byGenre,
+                parentID: nil,
+                sortOrder: 100,
+                hasChildren: !genres.isEmpty
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.byRegion.id,
+                title: "By Region",
+                kind: .byRegion,
+                parentID: nil,
+                sortOrder: 200,
+                hasChildren: !regions.isEmpty
+            ),
+            RadioFolderDescriptor(
+                id: RadioFolderKind.userFoldersRoot.id,
+                title: "My Folders",
+                kind: .userFoldersRoot,
+                parentID: nil,
+                sortOrder: 300,
+                hasChildren: !userFolders.isEmpty
+            )
+        ]
+
+        for (index, genre) in genres.enumerated() {
+            result.append(
+                RadioFolderDescriptor(
+                    id: RadioFolderKind.genre(genre).id,
+                    title: genre,
+                    kind: .genre(genre),
+                    parentID: RadioFolderKind.byGenre.id,
+                    sortOrder: 1000 + index,
+                    hasChildren: hasStations(.genre(genre))
+                )
+            )
+        }
+
+        for (index, region) in regions.enumerated() {
+            result.append(
+                RadioFolderDescriptor(
+                    id: RadioFolderKind.region(region).id,
+                    title: region,
+                    kind: .region(region),
+                    parentID: RadioFolderKind.byRegion.id,
+                    sortOrder: 2000 + index,
+                    hasChildren: hasStations(.region(region))
+                )
+            )
+        }
+
+        for (index, folder) in userFolders.enumerated() {
+            result.append(
+                RadioFolderDescriptor(
+                    id: RadioFolderKind.manual(folder.id).id,
+                    title: folder.name,
+                    kind: .manual(folder.id),
+                    parentID: RadioFolderKind.userFoldersRoot.id,
+                    sortOrder: 3000 + index,
+                    hasChildren: hasStations(.manual(folder.id))
+                )
+            )
+        }
+
+        return result
+    }
+
+    func stations(inFolder kind: RadioFolderKind) -> [RadioStation] {
+        switch kind {
+        case .allStations:
+            return stationsSortedByGenreAndName(stations)
+        case .favorites:
+            let filtered = stations.filter { rating(for: $0) >= 4 }
+            return stationsSortedByName(filtered)
+        case .topRated:
+            return stations
+                .map { ($0, rating(for: $0)) }
+                .filter { $0.1 > 0 }
+                .sorted {
+                    if $0.1 != $1.1 { return $0.1 > $1.1 }
+                    return $0.0.name.localizedCaseInsensitiveCompare($1.0.name) == .orderedAscending
+                }
+                .map(\.0)
+        case .unrated:
+            let filtered = stations.filter { rating(for: $0) == 0 }
+            return stationsSortedByName(filtered)
+        case .recentlyPlayed:
+            let history = foldersStore.lastPlayedTimestampsByURL()
+            return stations
+                .compactMap { station -> (RadioStation, Date)? in
+                    if let date = history[station.url.absoluteString] {
+                        return (station, date)
+                    }
+                    if let alias = Self.defaultURLAliases[station.url.absoluteString], let date = history[alias] {
+                        return (station, date)
+                    }
+                    return nil
+                }
+                .sorted { $0.1 > $1.1 }
+                .map(\.0)
+        case .genre(let genre):
+            let target = normalizeGenreLabel(genre)
+            let filtered = stations.filter {
+                effectiveGenreLabel(for: $0).localizedCaseInsensitiveCompare(target) == .orderedSame
+            }
+            return stationsSortedByName(filtered)
+        case .region(let region):
+            let filtered = stations.filter { effectiveRegionLabel(for: $0) == region }
+            return stationsSortedByName(filtered)
+        case .manual(let folderID):
+            let urls = foldersStore.stationURLs(inFolder: folderID)
+            let filtered = stations.filter { station in
+                if urls.contains(station.url.absoluteString) { return true }
+                if let alias = Self.defaultURLAliases[station.url.absoluteString] {
+                    return urls.contains(alias)
+                }
+                return false
+            }
+            return stationsSortedByName(filtered)
+        case .byGenre, .byRegion, .userFoldersRoot:
+            return []
+        }
+    }
+
+    private func stationsSortedByName(_ items: [RadioStation]) -> [RadioStation] {
+        items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func stationsSortedBySearchName(_ items: [RadioStation]) -> [RadioStation] {
+        items.sorted { lhs, rhs in
+            let nameOrder = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+            if nameOrder != .orderedSame {
+                return nameOrder == .orderedAscending
+            }
+            let urlOrder = lhs.url.absoluteString.localizedCaseInsensitiveCompare(rhs.url.absoluteString)
+            if urlOrder != .orderedSame {
+                return urlOrder == .orderedAscending
+            }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+    }
+
+    private func searchTokens(from query: String) -> [String] {
+        query
+            .split(whereSeparator: \.isWhitespace)
+            .map { String($0) }
+            .filter { !$0.isEmpty }
+            .map { normalizedSearchToken($0) }
+    }
+
+    private func normalizedSearchToken(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+
+    private func stationSearchText(_ station: RadioStation) -> String {
+        var fields: [String] = [
+            station.name,
+            effectiveGenreLabel(for: station),
+            effectiveRegionLabel(for: station),
+            station.url.absoluteString
+        ]
+        if let host = station.url.host {
+            fields.append(host)
+        }
+        return normalizedSearchToken(fields.joined(separator: " "))
+    }
+
+    private func stationMatchesSearchTokens(_ station: RadioStation, tokens: [String]) -> Bool {
+        let searchText = stationSearchText(station)
+        return tokens.allSatisfy { searchText.contains($0) }
+    }
+
+    private func stationsSortedByGenreAndName(_ items: [RadioStation]) -> [RadioStation] {
+        items.sorted { a, b in
+            let ga = effectiveGenreLabel(for: a)
+            let gb = effectiveGenreLabel(for: b)
+            if ga.caseInsensitiveCompare(gb) != .orderedSame {
+                return ga.localizedCaseInsensitiveCompare(gb) == .orderedAscending
+            }
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+    }
+
+    func normalizedGenre(for station: RadioStation) -> String {
+        effectiveGenreLabel(for: station)
+    }
+
+    private func effectiveGenreLabel(for station: RadioStation) -> String {
+        smartGenreOverride(for: station) ?? normalizeGenreLabel(station.genre)
+    }
+
+    private func effectiveRegionLabel(for station: RadioStation) -> String {
+        smartRegionOverride(for: station) ?? derivedRegion(for: station)
+    }
+
+    private func normalizeGenreLabel(_ genre: String?) -> String {
+        let trimmed = (genre ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Unknown" : trimmed
+    }
+
+    private func availableGenres() -> [String] {
+        let genres = Set(stations.map { effectiveGenreLabel(for: $0) })
+        return genres.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func availableRegions() -> [String] {
+        let regions = Set(stations.map { effectiveRegionLabel(for: $0) })
+        return regions.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func derivedRegion(for station: RadioStation) -> String {
+        let text = "\(station.name) \(station.genre ?? "") \(station.url.host ?? "")".lowercased()
+
+        if containsAny(text, [
+            "brazil", "argentina", "colombia", "chile", "peru", "ecuador",
+            "venezuela", "bolivia", "paraguay", "uruguay", "medellin",
+            "bogota", "santiago", "asuncion", "guayaquil", "la paz"
+        ]) {
+            return "South America"
+        }
+
+        if containsAny(text, [
+            "jamaica", "barbados", "trinidad", "caribbean", "dancehall", "soca"
+        ]) {
+            return "Caribbean"
+        }
+
+        if containsAny(text, [
+            "africa", "abidjan", "lagos", "dakar", "senegal", "ivoire", "afro"
+        ]) {
+            return "Africa"
+        }
+
+        if containsAny(text, [
+            "india", "hindi", "tamil", "thai", "japan", "k-pop", "kpop", "asia",
+            "bollywood", "bangkok", "korea", "gensokyo"
+        ]) {
+            return "Asia"
+        }
+
+        if containsAny(text, [
+            "london", "uk", "france", "germany", "spain", "italy", "netherlands",
+            "sweden", "norway", "belgium", "austria", "europe", "rtl2", "qmusic",
+            "orf", "studio brussel", "los 40", "capital fm"
+        ]) {
+            return "Europe"
+        }
+
+        if containsAny(text, [
+            "somafm", "npr", "kexp", "wgbh", "wfmu", "seattle", "new orleans", "boston", "cambridge", "massachusetts"
+        ]) {
+            return "North America"
+        }
+
+        return "Global"
+    }
+
+    private func containsAny(_ haystack: String, _ needles: [String]) -> Bool {
+        needles.contains(where: { haystack.contains($0) })
     }
     
     // MARK: - Playback
@@ -402,6 +910,8 @@ class RadioManager {
         currentStation = station
         connectionState = .connecting
         reconnectAttempts = 0
+        foldersStore.recordPlayed(station.url)
+        postStationsDidChange()
         
         NSLog("RadioManager: Playing station '%@' at %@", station.name, station.url.absoluteString)
         
@@ -458,7 +968,7 @@ class RadioManager {
         }
     }
     
-    /// Resolve a playlist URL (.pls, .m3u) to get the actual stream URL
+    /// Resolve a playlist URL (.pls, .m3u, .m3u8) to get the actual stream URL
     private func resolvePlaylistURL(_ url: URL, completion: @escaping (URL?) -> Void) {
         NSLog("RadioManager: Resolving playlist URL: %@", url.absoluteString)
         
@@ -481,6 +991,12 @@ class RadioManager {
                 
                 // Parse the playlist content
                 let streamURL = self.parsePlaylistForStreamURL(content, sourceURL: url)
+                // Block SSRF: don't follow playlist redirects from public URLs to private IPs
+                if let resolved = streamURL, self.isPrivateIPRedirect(from: url, to: resolved) {
+                    NSLog("RadioManager: Blocked playlist redirect to private IP: %@", resolved.absoluteString)
+                    completion(nil)
+                    return
+                }
                 completion(streamURL)
             }
         }.resume()
@@ -490,6 +1006,32 @@ class RadioManager {
     private func parsePlaylistForStreamURL(_ content: String, sourceURL: URL) -> URL? {
         let lines = content.components(separatedBy: .newlines)
         let ext = sourceURL.pathExtension.lowercased()
+
+        // HLS manifests:
+        // - Master playlist: return first variant URL (can be relative path)
+        // - Media playlist: keep original manifest URL (stream client follows segments)
+        if ext == "m3u8" || content.contains("#EXTM3U") {
+            if content.uppercased().contains("#EXT-X-STREAM-INF") {
+                for (index, line) in lines.enumerated() {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    guard trimmed.uppercased().hasPrefix("#EXT-X-STREAM-INF") else { continue }
+
+                    var nextIndex = index + 1
+                    while nextIndex < lines.count {
+                        let candidate = lines[nextIndex].trimmingCharacters(in: .whitespaces)
+                        if candidate.isEmpty {
+                            nextIndex += 1
+                            continue
+                        }
+                        if candidate.hasPrefix("#") {
+                            break
+                        }
+                        return resolvedPlaylistEntryURL(candidate, sourceURL: sourceURL)
+                    }
+                }
+            }
+            return sourceURL
+        }
         
         // PLS format
         if ext == "pls" || content.lowercased().contains("[playlist]") {
@@ -498,7 +1040,7 @@ class RadioManager {
                 if trimmed.lowercased().hasPrefix("file") {
                     if let equalIndex = trimmed.firstIndex(of: "=") {
                         let urlString = String(trimmed[trimmed.index(after: equalIndex)...])
-                        if let url = URL(string: urlString) {
+                        if let url = resolvedPlaylistEntryURL(urlString, sourceURL: sourceURL) {
                             return url
                         }
                     }
@@ -513,17 +1055,65 @@ class RadioManager {
             if trimmed.isEmpty || trimmed.hasPrefix("#") {
                 continue
             }
-            // Check if it's a valid URL
-            if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
-                if let url = URL(string: trimmed) {
-                    return url
-                }
+            if let url = resolvedPlaylistEntryURL(trimmed, sourceURL: sourceURL) {
+                return url
             }
         }
         
         return nil
     }
+
+    private func resolvedPlaylistEntryURL(_ entry: String, sourceURL: URL) -> URL? {
+        let trimmed = entry.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if trimmed.hasPrefix("//") {
+            return URL(string: "https:\(trimmed)")
+        }
+
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            return URL(string: trimmed)
+        }
+
+        if trimmed.contains("://") {
+            guard let url = URL(string: trimmed),
+                  ["http", "https", "rtsp", "rtmp", "mms", "icyx"].contains(url.scheme?.lowercased() ?? "") else {
+                return nil
+            }
+            return url
+        }
+
+        if let absolute = URL(string: trimmed, relativeTo: sourceURL)?.absoluteURL {
+            return absolute
+        }
+
+        let base = sourceURL.deletingLastPathComponent()
+        return URL(string: trimmed, relativeTo: base)?.absoluteURL
+    }
     
+    private func isPrivateIPRedirect(from sourceURL: URL, to resolvedURL: URL) -> Bool {
+        // Allow if source is already a local/private host (user-configured LAN radio)
+        guard let sourceHost = sourceURL.host, !isPrivateHost(sourceHost) else { return false }
+        guard let resolvedHost = resolvedURL.host else { return false }
+        return isPrivateHost(resolvedHost)
+    }
+
+    private func isPrivateHost(_ host: String) -> Bool {
+        // Strip IPv6 bracket notation: [::1] → ::1
+        let h = host.hasPrefix("[") ? String(host.dropFirst().dropLast()) : host
+
+        let privateRanges = ["127.", "10.", "192.168.", "localhost"]
+        if privateRanges.contains(where: { h.hasPrefix($0) }) { return true }
+        // 172.16.0.0/12
+        if h.hasPrefix("172."), let second = h.split(separator: ".").dropFirst().first,
+           let octet = Int(second), (16...31).contains(octet) { return true }
+        // IPv6 loopback, link-local, unique-local
+        let lower = h.lowercased()
+        if lower == "::1" || lower.hasPrefix("fe80:") ||
+           lower.hasPrefix("fc") || lower.hasPrefix("fd") { return true }
+        return false
+    }
+
     /// Stop radio playback
     func stop() {
         manualStopRequested = true
@@ -544,6 +1134,7 @@ class RadioManager {
         guard currentStation != nil else { return }
         connectionState = .connected
         reconnectAttempts = 0
+        startSomaMetadataFallbackIfNeeded()
         NSLog("RadioManager: Stream connected")
     }
     
@@ -561,18 +1152,60 @@ class RadioManager {
         
         connectionState = .connected
         reconnectAttempts = 0
+        startSomaMetadataFallbackIfNeeded()
         NSLog("RadioManager: Cast connected")
     }
     
     /// Called when stream metadata is received (ICY)
     func streamDidReceiveMetadata(_ metadata: [String: String]) {
-        // Extract stream title (format: "Artist - Song" or just station info)
-        if let streamTitle = metadata["StreamTitle"] ?? metadata["icy-name"] {
-            let trimmed = streamTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                currentStreamTitle = trimmed
-                NSLog("RadioManager: Stream title: %@", trimmed)
+        guard let station = currentStation else { return }
+        var candidates: [String] = []
+
+        // If artist and title arrive separately, combine them first.
+        if let artist = metadataValue("artist", in: metadata),
+           let title = metadataValue("title", in: metadata),
+           let normArtist = normalizeMetadataTitle(artist),
+           let normTitle = normalizeMetadataTitle(title) {
+            candidates.append("\(normArtist) - \(normTitle)")
+        }
+
+        // Prefer standard title fields.
+        let preferredKeys = [
+            "StreamTitle", "icy-title", "title", "song", "track",
+            "now_playing", "nowplaying", "np"
+        ]
+        for key in preferredKeys {
+            if let value = metadataValue(key, in: metadata),
+               let normalized = normalizeMetadataTitle(value) {
+                candidates.append(normalized)
             }
+        }
+
+        // Some streams embed StreamTitle in a larger metadata blob value.
+        for (_, rawValue) in metadata {
+            if let embedded = extractEmbeddedStreamTitle(from: rawValue),
+               let normalized = normalizeMetadataTitle(embedded) {
+                candidates.append(normalized)
+            }
+        }
+
+        var seen = Set<String>()
+        for candidate in candidates where seen.insert(candidate).inserted {
+            guard !isLikelyStationLabel(candidate, station: station) else { continue }
+            currentStreamTitle = candidate
+            NSLog("RadioManager: Stream title: %@", candidate)
+            return
+        }
+
+        // `icy-name` is usually a static station label. Only use it for non-Soma
+        // streams when it is clearly not the station name.
+        if somaChannelID(for: station) == nil,
+           let icyName = metadataValue("icy-name", in: metadata)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+           !icyName.isEmpty,
+           !isLikelyStationLabel(icyName, station: station) {
+            currentStreamTitle = icyName
+            NSLog("RadioManager: Stream title: %@", icyName)
         }
     }
     
@@ -632,6 +1265,154 @@ class RadioManager {
         reconnectTimer?.invalidate()
         reconnectTimer = nil
     }
+
+    // MARK: - SomaFM Metadata Fallback
+
+    private func somaChannelID(for station: RadioStation) -> String? {
+        let host = station.url.host?.lowercased() ?? ""
+        guard host.contains("somafm.com") else { return nil }
+
+        let leaf = station.url.lastPathComponent.lowercased()
+        guard !leaf.isEmpty else { return nil }
+
+        // PLS endpoints: /<id>.pls
+        if station.url.pathExtension.lowercased() == "pls" {
+            let channelID = station.url.deletingPathExtension().lastPathComponent.lowercased()
+            return channelID.isEmpty ? nil : channelID
+        }
+
+        // Stream endpoints: /<id>-128-mp3
+        if let dash = leaf.firstIndex(of: "-") {
+            let channelID = String(leaf[..<dash]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return channelID.isEmpty ? nil : channelID
+        }
+
+        let channelID = station.url.deletingPathExtension().lastPathComponent.lowercased()
+        return channelID.isEmpty ? nil : channelID
+    }
+
+    private func metadataValue(_ key: String, in metadata: [String: String]) -> String? {
+        metadata.first { $0.key.caseInsensitiveCompare(key) == .orderedSame }?.value
+    }
+
+    private func extractEmbeddedStreamTitle(from raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Parse `StreamTitle='Artist - Song';` payloads.
+        if let range = trimmed.range(of: "StreamTitle=", options: .caseInsensitive) {
+            let remainder = trimmed[range.upperBound...]
+            if let firstQuote = remainder.firstIndex(where: { $0 == "'" || $0 == "\"" }) {
+                let quote = remainder[firstQuote]
+                let contentStart = remainder.index(after: firstQuote)
+                if let endQuote = remainder[contentStart...].firstIndex(of: quote) {
+                    return String(remainder[contentStart..<endQuote])
+                }
+            }
+            return String(remainder).components(separatedBy: ";").first
+        }
+
+        return nil
+    }
+
+    private func normalizeMetadataTitle(_ raw: String) -> String? {
+        var title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+
+        if let embedded = extractEmbeddedStreamTitle(from: title) {
+            title = embedded.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if (title.hasPrefix("'") && title.hasSuffix("'")) ||
+            (title.hasPrefix("\"") && title.hasSuffix("\"")) {
+            title = String(title.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        guard !title.isEmpty else { return nil }
+
+        // Ignore placeholder/non-song values.
+        let lower = title.lowercased()
+        if lower == "unknown" || lower == "-" || lower == "n/a" {
+            return nil
+        }
+
+        return title
+    }
+
+    private func isLikelyStationLabel(_ value: String, station: RadioStation?) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return true }
+
+        if let stationName = station?.name,
+           normalized.caseInsensitiveCompare(stationName) == .orderedSame {
+            return true
+        }
+
+        let lower = normalized.lowercased()
+        if lower.hasPrefix("somafm") || lower.contains("somafm.com") {
+            return true
+        }
+
+        return false
+    }
+
+    private func startSomaMetadataFallbackIfNeeded() {
+        guard currentStreamTitle == nil else { return }
+        guard let station = currentStation, let channelID = somaChannelID(for: station) else {
+            stopSomaMetadataPolling()
+            currentSomaLastPlaying = nil
+            return
+        }
+
+        if somaMetadataTimer == nil {
+            somaMetadataTimer = Timer.scheduledTimer(withTimeInterval: somaMetadataPollInterval, repeats: true) { [weak self] _ in
+                guard let self = self,
+                      let station = self.currentStation,
+                      let channelID = self.somaChannelID(for: station) else {
+                    return
+                }
+                self.fetchSomaLastPlaying(channelID: channelID, stationID: station.id)
+            }
+        }
+
+        fetchSomaLastPlaying(channelID: channelID, stationID: station.id)
+    }
+
+    private func stopSomaMetadataPolling() {
+        somaMetadataTimer?.invalidate()
+        somaMetadataTimer = nil
+    }
+
+    private func fetchSomaLastPlaying(channelID: String, stationID: UUID) {
+        guard !somaMetadataRequestInFlight else { return }
+        somaMetadataRequestInFlight = true
+
+        URLSession.shared.dataTask(with: somaChannelsURL) { [weak self] data, _, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.somaMetadataRequestInFlight = false
+
+                guard error == nil, let data = data else {
+                    NSLog("RadioManager: Soma metadata fetch failed: %@", error?.localizedDescription ?? "unknown")
+                    return
+                }
+
+                guard let response = try? JSONDecoder().decode(SomaChannelsResponse.self, from: data) else {
+                    NSLog("RadioManager: Soma metadata decode failed")
+                    return
+                }
+
+                guard self.currentStation?.id == stationID else { return }
+
+                let nowPlaying = response.channels.first(where: { $0.id.caseInsensitiveCompare(channelID) == .orderedSame })?.lastPlaying?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                if self.currentStreamTitle == nil {
+                    self.currentSomaLastPlaying = (nowPlaying?.isEmpty == false) ? nowPlaying : nil
+                }
+            }
+        }.resume()
+    }
     
     // MARK: - Status Display
     
@@ -646,7 +1427,7 @@ class RadioManager {
             return "Connection failed: \(message)"
         case .connected:
             // Return stream title if available, otherwise station name
-            if let title = currentStreamTitle {
+            if let title = effectiveStreamTitle {
                 return title
             }
             return currentStation?.name

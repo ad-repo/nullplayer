@@ -1,0 +1,178 @@
+{
+    "meta": {
+        "name": "SmoothGlass",
+        "author": "NullPlayer",
+        "version": "1.0",
+        "description": "Frosted glass skin with bright edge highlights, soft bloom, and deep translucency"
+    },
+    "palette": {
+        "primary": "#d4efff",
+        "secondary": "#addcff",
+        "accent": "#edf8ff",
+        "highlight": "#ffffff",
+        "background": "#121c28",
+        "surface": "#243244",
+        "text": "#f2fbff",
+        "textDim": "#93adbf",
+        "positive": "#8fffc9",
+        "negative": "#ff9fab",
+        "warning": "#ffd18a",
+        "border": "#e6f5ff",
+        "timeColor": "#f8fdff",
+        "marqueeColor": "#f3fbff",
+        "dataColor": "#edf8ff",
+        "eqLow": "#9ce5ff",
+        "eqMid": "#caf1ff",
+        "eqHigh": "#f3fcff"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 9,
+        "bodySize": 10,
+        "smallSize": 7,
+        "timeSize": 22,
+        "infoSize": 6.5,
+        "eqLabelSize": 7,
+        "eqValueSize": 6,
+        "marqueeSize": 11.5,
+        "playlistSize": 8
+    },
+    "background": {
+        "grid": {
+            "color": "#eef9ff",
+            "spacing": 34,
+            "angle": 78,
+            "opacity": 0.02,
+            "perspective": false
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 12,
+        "intensity": 0.28,
+        "threshold": 0.78,
+        "color": "#e8f6ff",
+        "elementBlur": 0.5
+    },
+    "window": {
+        "borderWidth": 1,
+        "borderColor": "#eaf7ff",
+        "cornerRadius": 14,
+        "opacity": 0.54,
+        "textOpacity": 0.8,
+        "mainSpectrumOpacity": 0.9,
+        "seamlessDocking": 1.0,
+        "areaOpacity": {
+            "mainWindow": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "timeDisplay": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "trackDisplay": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "volumeArea": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "spectrumArea": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "eqFaderBackground": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "curveBackground": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            }
+        }
+    },
+    "marquee": {
+        "scrollSpeed": 28,
+        "scrollGap": 56
+    },
+    "elements": {
+        "titlebar": {
+            "color": "#2c3c50"
+        },
+        "spectrum_titlebar": {
+            "color": "#2c3c50"
+        },
+        "playlist_titlebar": {
+            "color": "#2c3c50"
+        },
+        "eq_titlebar": {
+            "color": "#2c3c50"
+        },
+        "library_titlebar": {
+            "color": "#2c3c50"
+        },
+        "projectm_titlebar": {
+            "color": "#2c3c50"
+        },
+        "marquee_bg": {
+            "color": "#28384b"
+        },
+        "spectrum_area": {
+            "color": "#e7f8ff"
+        },
+        "seek_fill": {
+            "color": "#e7f8ff"
+        },
+        "info_cast": {
+            "color": "#e7f8ff"
+        }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 3.2,
+            "minValue": 0.5,
+            "maxValue": 0.95
+        }
+    },
+    "visualization": {
+        "mainWindowMode": "vis_classic",
+        "spectrumWindowMode": "vis_classic",
+        "visClassic": {
+            "mainWindowProfile": "Matches",
+            "spectrumWindowProfile": "Matches",
+            "mainWindowFitToWidth": true,
+            "spectrumWindowFitToWidth": true,
+            "mainWindowTransparentBackground": true,
+            "spectrumWindowTransparentBackground": true,
+            "mainWindowOpacity": 0.8,
+            "spectrumWindowOpacity": 0.8
+        },
+        "fire": {
+            "mainWindowStyle": "Ocean",
+            "mainWindowIntensity": "Mellow",
+            "spectrumWindowStyle": "Ocean",
+            "spectrumWindowIntensity": "Mellow"
+        },
+        "lightning": {
+            "mainWindowStyle": "Arctic",
+            "spectrumWindowStyle": "Arctic"
+        },
+        "matrix": {
+            "mainWindowColorScheme": "Blue Pill",
+            "mainWindowIntensity": "Subtle",
+            "spectrumWindowColorScheme": "Blue Pill",
+            "spectrumWindowIntensity": "Subtle"
+        }
+    }
+}

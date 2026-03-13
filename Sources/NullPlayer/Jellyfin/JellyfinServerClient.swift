@@ -19,6 +19,12 @@ class JellyfinServerClient {
     /// Number of retry attempts for failed requests
     private let maxRetries = 3
     
+    /// Pagination size tuned for large libraries to avoid oversized payload stalls.
+    private let defaultPageSize = 1000
+    
+    /// Slow-request threshold for diagnostics
+    private let slowRequestThresholdMs: Double = 1200
+    
     /// File extensions that are not video — used as a safety net to filter out
     /// image files, metadata files, and subtitle files that Jellyfin may return
     private static let nonVideoExtensions: Set<String> = [
@@ -171,11 +177,17 @@ class JellyfinServerClient {
     
     /// Perform a request with retry logic
     private func performRequest<T: Decodable>(_ request: URLRequest, retryCount: Int = 0) async throws -> T {
+        let startTime = Date()
         do {
             let (data, response) = try await session.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw JellyfinClientError.invalidResponse
+            }
+            
+            let elapsedMs = Date().timeIntervalSince(startTime) * 1000
+            if elapsedMs >= slowRequestThresholdMs {
+                NSLog("JellyfinServerClient: Slow request \(Int(elapsedMs))ms \(request.url?.path ?? "unknown") (status: \(httpResponse.statusCode), bytes: \(data.count), retry: \(retryCount))")
             }
             
             guard httpResponse.statusCode == 200 else {
@@ -199,6 +211,9 @@ class JellyfinServerClient {
         } catch {
             // Retry on network errors
             if retryCount < maxRetries && isRetryableError(error) {
+                let elapsedMs = Date().timeIntervalSince(startTime) * 1000
+                NSLog("JellyfinServerClient: Retryable request error after %.0fms for %@: %@",
+                      elapsedMs, request.url?.path ?? "unknown", error.localizedDescription)
                 try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(retryCount)) * 1_000_000_000))
                 return try await performRequest(request, retryCount: retryCount + 1)
             }
@@ -310,9 +325,13 @@ class JellyfinServerClient {
     func fetchMovies(libraryId: String? = nil) async throws -> [JellyfinMovie] {
         var allMovies: [JellyfinMovie] = []
         var offset = 0
-        let pageSize = 10000
+        let pageSize = defaultPageSize
+        var seenItemIDs = Set<String>()
+        var pageCount = 0
+        let maxPages = 500
 
         while true {
+            try Task.checkCancellation()
             var params = [
                 URLQueryItem(name: "IncludeItemTypes", value: "Movie"),
                 URLQueryItem(name: "MediaTypes", value: "Video"),
@@ -332,12 +351,28 @@ class JellyfinServerClient {
             }
             
             let response: JellyfinQueryResult = try await performRequest(request)
-            let movies = response.Items
+            let newItems = response.Items.filter { seenItemIDs.insert($0.Id).inserted }
+            let movies = newItems
                 .filter { Self.isVideoItem($0) }
                 .map { $0.toMovie() }
             allMovies.append(contentsOf: movies)
             
+            if response.Items.isEmpty {
+                break
+            }
+            if let total = response.TotalRecordCount, seenItemIDs.count >= total {
+                break
+            }
+            if newItems.isEmpty {
+                NSLog("JellyfinServerClient: fetchMovies pagination stopped early (no new item IDs at offset \(offset))")
+                break
+            }
             if response.Items.count < pageSize {
+                break
+            }
+            pageCount += 1
+            if pageCount >= maxPages {
+                NSLog("[WARNING] JellyfinServerClient: fetchMovies reached max page limit (\(maxPages)) — results may be incomplete")
                 break
             }
             offset += pageSize
@@ -362,9 +397,13 @@ class JellyfinServerClient {
     func fetchShows(libraryId: String? = nil) async throws -> [JellyfinShow] {
         var allShows: [JellyfinShow] = []
         var offset = 0
-        let pageSize = 10000
+        let pageSize = defaultPageSize
+        var seenItemIDs = Set<String>()
+        var pageCount = 0
+        let maxPages = 500
 
         while true {
+            try Task.checkCancellation()
             var params = [
                 URLQueryItem(name: "IncludeItemTypes", value: "Series"),
                 URLQueryItem(name: "Recursive", value: "true"),
@@ -383,10 +422,26 @@ class JellyfinServerClient {
             }
             
             let response: JellyfinQueryResult = try await performRequest(request)
-            let shows = response.Items.map { $0.toShow() }
+            let newItems = response.Items.filter { seenItemIDs.insert($0.Id).inserted }
+            let shows = newItems.map { $0.toShow() }
             allShows.append(contentsOf: shows)
             
-            if shows.count < pageSize {
+            if response.Items.isEmpty {
+                break
+            }
+            if let total = response.TotalRecordCount, seenItemIDs.count >= total {
+                break
+            }
+            if newItems.isEmpty {
+                NSLog("JellyfinServerClient: fetchShows pagination stopped early (no new item IDs at offset \(offset))")
+                break
+            }
+            if response.Items.count < pageSize {
+                break
+            }
+            pageCount += 1
+            if pageCount >= maxPages {
+                NSLog("[WARNING] JellyfinServerClient: fetchShows reached max page limit (\(maxPages)) — results may be incomplete")
                 break
             }
             offset += pageSize
@@ -442,9 +497,13 @@ class JellyfinServerClient {
     func fetchAllArtists(libraryId: String? = nil) async throws -> [JellyfinArtist] {
         var allArtists: [JellyfinArtist] = []
         var offset = 0
-        let pageSize = 10000
+        let pageSize = defaultPageSize
+        var seenItemIDs = Set<String>()
+        var pageCount = 0
+        let maxPages = 500
         
         while true {
+            try Task.checkCancellation()
             var params = [
                 URLQueryItem(name: "userId", value: server.userId),
                 URLQueryItem(name: "Recursive", value: "true"),
@@ -463,10 +522,26 @@ class JellyfinServerClient {
             }
             
             let response: JellyfinQueryResult = try await performRequest(request)
-            let artists = response.Items.map { $0.toArtist() }
+            let newItems = response.Items.filter { seenItemIDs.insert($0.Id).inserted }
+            let artists = newItems.map { $0.toArtist() }
             allArtists.append(contentsOf: artists)
             
-            if artists.count < pageSize {
+            if response.Items.isEmpty {
+                break
+            }
+            if let total = response.TotalRecordCount, seenItemIDs.count >= total {
+                break
+            }
+            if newItems.isEmpty {
+                NSLog("JellyfinServerClient: fetchAllArtists pagination stopped early (no new item IDs at offset \(offset))")
+                break
+            }
+            if response.Items.count < pageSize {
+                break
+            }
+            pageCount += 1
+            if pageCount >= maxPages {
+                NSLog("[WARNING] JellyfinServerClient: fetchAllArtists reached max page limit (\(maxPages)) — results may be incomplete")
                 break
             }
             offset += pageSize
@@ -509,9 +584,13 @@ class JellyfinServerClient {
     func fetchAllAlbums(libraryId: String? = nil) async throws -> [JellyfinAlbum] {
         var allAlbums: [JellyfinAlbum] = []
         var offset = 0
-        let pageSize = 10000
+        let pageSize = defaultPageSize
+        var seenItemIDs = Set<String>()
+        var pageCount = 0
+        let maxPages = 500
         
         while true {
+            try Task.checkCancellation()
             var params = [
                 URLQueryItem(name: "IncludeItemTypes", value: "MusicAlbum"),
                 URLQueryItem(name: "Recursive", value: "true"),
@@ -530,10 +609,26 @@ class JellyfinServerClient {
             }
             
             let response: JellyfinQueryResult = try await performRequest(request)
-            let albums = response.Items.map { $0.toAlbum() }
+            let newItems = response.Items.filter { seenItemIDs.insert($0.Id).inserted }
+            let albums = newItems.map { $0.toAlbum() }
             allAlbums.append(contentsOf: albums)
             
-            if albums.count < pageSize {
+            if response.Items.isEmpty {
+                break
+            }
+            if let total = response.TotalRecordCount, seenItemIDs.count >= total {
+                break
+            }
+            if newItems.isEmpty {
+                NSLog("JellyfinServerClient: fetchAllAlbums pagination stopped early (no new item IDs at offset \(offset))")
+                break
+            }
+            if response.Items.count < pageSize {
+                break
+            }
+            pageCount += 1
+            if pageCount >= maxPages {
+                NSLog("[WARNING] JellyfinServerClient: fetchAllAlbums reached max page limit (\(maxPages)) — results may be incomplete")
                 break
             }
             offset += pageSize
@@ -697,7 +792,7 @@ class JellyfinServerClient {
             throw JellyfinClientError.invalidURL
         }
         try await performVoidRequest(request)
-        NSLog("JellyfinServerClient: Set rating %d for item %@", rating, itemId)
+        NSLog("JellyfinServerClient: Set rating \(rating) for item \(itemId)")
     }
     
     // MARK: - Scrobbling / Playback Reporting

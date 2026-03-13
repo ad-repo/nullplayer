@@ -15,9 +15,9 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.16.2</string>
+    <string>0.17.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
@@ -43,7 +43,7 @@
     <dict>
         <key>NSAllowsLocalNetworking</key>
         <true/>
-        <key>NSAllowsArbitraryLoads</key>
+        <key>NSAllowsArbitraryLoadsForMedia</key>
         <true/>
     </dict>
     

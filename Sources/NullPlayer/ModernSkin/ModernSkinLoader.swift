@@ -1,15 +1,21 @@
 import AppKit
 import ZIPFoundation
 
-/// Loads modern skins from directory paths or `.nps` (ZIP) bundles.
+/// Loads modern skins from directory paths or `.nsz` (ZIP) bundles.
 /// Returns a fully configured `ModernSkin` with images, fonts, and config.
 class ModernSkinLoader {
     
     // MARK: - Singleton
     
     static let shared = ModernSkinLoader()
+
+    static let bundleExtension = "nsz"
     
     private init() {}
+
+    static func isSupportedBundleExtension(_ ext: String) -> Bool {
+        ext.lowercased() == bundleExtension
+    }
     
     // MARK: - Loading
     
@@ -45,7 +51,7 @@ class ModernSkinLoader {
         return skin
     }
     
-    /// Load a skin from a `.nps` ZIP bundle
+    /// Load a skin from a `.nsz` ZIP bundle
     func loadFromBundle(at url: URL) throws -> ModernSkin {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ModernSkin_\(UUID().uuidString)")
@@ -101,12 +107,12 @@ class ModernSkinLoader {
         return appSupport.appendingPathComponent("NullPlayer").appendingPathComponent("ModernSkins")
     }
     
-    /// Get all available modern skins (bundled + user)
-    func availableSkins() -> [(name: String, path: URL, isBundled: Bool)] {
+    /// Get all available modern skins (bundled + user by default).
+    func availableSkins(includeBundled: Bool = true, userDirectory: URL? = nil) -> [(name: String, path: URL, isBundled: Bool)] {
         var skins: [(name: String, path: URL, isBundled: Bool)] = []
         
         // Bundled skins
-        if let bundledDir = findBundledSkinsDirectory() {
+        if includeBundled, let bundledDir = findBundledSkinsDirectory() {
             if let contents = try? FileManager.default.contentsOfDirectory(at: bundledDir, includingPropertiesForKeys: [.isDirectoryKey]) {
                 for item in contents {
                     var isDir: ObjCBool = false
@@ -122,7 +128,7 @@ class ModernSkinLoader {
         }
         
         // User skins directory
-        let userDir = userSkinsDirectory
+        let userDir = userDirectory ?? userSkinsDirectory
         try? FileManager.default.createDirectory(at: userDir, withIntermediateDirectories: true)
         
         if let contents = try? FileManager.default.contentsOfDirectory(at: userDir, includingPropertiesForKeys: nil) {
@@ -136,7 +142,7 @@ class ModernSkinLoader {
                     if FileManager.default.fileExists(atPath: skinJSON.path) {
                         skins.append((name: item.lastPathComponent, path: item, isBundled: false))
                     }
-                } else if item.pathExtension.lowercased() == "nps" {
+                } else if Self.isSupportedBundleExtension(item.pathExtension) {
                     // ZIP-bundled skin
                     let name = item.deletingPathExtension().lastPathComponent
                     skins.append((name: name, path: item, isBundled: false))
@@ -274,7 +280,9 @@ class ModernSkinLoader {
                 grid: GridConfig(color: "#00ffcc", spacing: 18, angle: 75, opacity: 0.06, perspective: true)
             ),
             glow: GlowConfig(enabled: true, radius: 6, intensity: 0.7, threshold: 0.5, color: nil, elementBlur: nil),
-            window: WindowConfig(borderWidth: 1.5, borderColor: "#00ffcc", cornerRadius: 6, scale: nil, seamlessDocking: 1.0),
+            window: WindowConfig(borderWidth: 1.5, borderColor: "#00ffcc", cornerRadius: 6, scale: nil, opacity: 0.94, textOpacity: nil, mainSpectrumOpacity: nil, seamlessDocking: 1.0, areaOpacity: nil),
+            visualization: nil,
+            waveform: nil,
             marquee: nil,
             titleText: nil,
             elements: nil,
@@ -294,6 +302,7 @@ enum ModernSkinError: Error, LocalizedError {
     case configNotFound(String)
     case invalidConfig(String)
     case imageLoadFailed(String)
+    case unsupportedBundleExtension(String)
     
     var errorDescription: String? {
         switch self {
@@ -303,6 +312,8 @@ enum ModernSkinError: Error, LocalizedError {
             return "Invalid skin config: \(message)"
         case .imageLoadFailed(let path):
             return "Failed to load image: \(path)"
+        case .unsupportedBundleExtension(let ext):
+            return "Unsupported skin bundle extension: .\(ext)"
         }
     }
 }

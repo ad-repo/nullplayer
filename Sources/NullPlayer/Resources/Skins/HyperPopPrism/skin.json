@@ -1,84 +1,166 @@
 {
-  "meta": {
-    "name": "HyperPopPrism",
-    "author": "NullPlayer",
-    "version": "1.0",
-    "description": "Wild, super-bright hyperpop prism skin: neon rainbow accents, high-contrast dark surfaces, candy highlights, and loud analyzer colors"
-  },
-  "titleText": {
-    "mode": "image",
-    "charSpacing": 2,
-    "charHeight": 10,
-    "alignment": "center",
-    "tintColor": "#00F5FF"
-  },
-  "palette": {
-    "primary": "#00F5FF",
-    "secondary": "#B8FF00",
-    "accent": "#FF2ED1",
-    "highlight": "#FFFFFF",
-    "background": "#060018",
-    "surface": "#0B0530",
-    "text": "#F7FFFB",
-    "textDim": "#9AD7FF",
-    "positive": "#25FF6A",
-    "negative": "#FF2B3A",
-    "warning": "#FFD400",
-    "border": "#7C4DFF",
-    "timeColor": "#FF7AF6",
-    "marqueeColor": "#00F5FF",
-    "dataColor": "#FF8A00",
-    "eqMid": "#B8FF00"
-  },
-  "fonts": {
-    "primaryName": "DepartureMono-Regular",
-    "fallbackName": "Menlo",
-    "titleSize": 10,
-    "bodySize": 11,
-    "smallSize": 7,
-    "timeSize": 24
-  },
-  "background": {
-    "grid": {
-      "color": "#7C4DFF",
-      "spacing": 16,
-      "angle": 68,
-      "opacity": 0.08,
-      "perspective": true
+    "meta": {
+        "name": "HyperPopPrism",
+        "author": "NullPlayer",
+        "version": "1.0",
+        "description": "Wild, super-bright hyperpop prism skin: neon rainbow accents, high-contrast dark surfaces, candy highlights, and loud analyzer colors"
+    },
+    "titleText": {
+        "mode": "image",
+        "charSpacing": 2,
+        "charHeight": 10,
+        "alignment": "center",
+        "tintColor": "#00F5FF"
+    },
+    "palette": {
+        "primary": "#00F5FF",
+        "secondary": "#B8FF00",
+        "accent": "#FF2ED1",
+        "highlight": "#FFFFFF",
+        "background": "#060018",
+        "surface": "#0B0530",
+        "text": "#F7FFFB",
+        "textDim": "#9AD7FF",
+        "positive": "#25FF6A",
+        "negative": "#FF2B3A",
+        "warning": "#FFD400",
+        "border": "#7C4DFF",
+        "timeColor": "#FF7AF6",
+        "marqueeColor": "#00F5FF",
+        "dataColor": "#FF8A00",
+        "eqMid": "#B8FF00"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 10,
+        "bodySize": 11,
+        "smallSize": 7,
+        "timeSize": 24
+    },
+    "background": {
+        "grid": {
+            "color": "#7C4DFF",
+            "spacing": 16,
+            "angle": 68,
+            "opacity": 0.08,
+            "perspective": true
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 9,
+        "intensity": 0.7,
+        "threshold": 0.5
+    },
+    "window": {
+        "borderWidth": 1.75,
+        "borderColor": "#7C4DFF",
+        "cornerRadius": 8,
+        "opacity": 1,
+        "seamlessDocking": 1.0,
+        "areaOpacity": {
+            "mainWindow": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "timeDisplay": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "trackDisplay": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "volumeArea": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "spectrumArea": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "eqFaderBackground": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "curveBackground": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            }
+        }
+    },
+    "elements": {
+        "titlebar": {
+            "color": "#12084A"
+        },
+        "marquee_bg": {
+            "color": "#0E0440"
+        },
+        "info_cast": {
+            "color": "#FF2ED1"
+        },
+        "spectrum_area": {
+            "color": "#00F5FF"
+        },
+        "seek_fill": {
+            "color": "#FF8A00"
+        },
+        "spectrum_titlebar": {
+            "color": "#12084A"
+        },
+        "playlist_titlebar": {
+            "color": "#12084A"
+        },
+        "eq_titlebar": {
+            "color": "#12084A"
+        },
+        "library_titlebar": {
+            "color": "#12084A"
+        },
+        "projectm_titlebar": {
+            "color": "#12084A"
+        }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 2.2,
+            "minValue": 0.55,
+            "maxValue": 1.0
+        }
+    },
+    "visualization": {
+        "mainWindowMode": "vis_classic",
+        "spectrumWindowMode": "vis_classic",
+        "visClassic": {
+            "mainWindowProfile": "Trippy",
+            "spectrumWindowProfile": "Trippy",
+            "mainWindowFitToWidth": true,
+            "spectrumWindowFitToWidth": true
+        },
+        "fire": {
+            "mainWindowStyle": "Electric",
+            "mainWindowIntensity": "Intense",
+            "spectrumWindowStyle": "Electric",
+            "spectrumWindowIntensity": "Intense"
+        },
+        "lightning": {
+            "mainWindowStyle": "Rainbow",
+            "spectrumWindowStyle": "Rainbow"
+        },
+        "matrix": {
+            "mainWindowColorScheme": "Neon",
+            "mainWindowIntensity": "Intense",
+            "spectrumWindowColorScheme": "Neon",
+            "spectrumWindowIntensity": "Intense"
+        }
     }
-  },
-  "glow": {
-    "enabled": true,
-    "radius": 9,
-    "intensity": 0.7,
-    "threshold": 0.5
-  },
-  "window": {
-    "borderWidth": 1.75,
-    "borderColor": "#7C4DFF",
-    "cornerRadius": 8,
-    "seamlessDocking": 1.0
-  },
-  "elements": {
-    "titlebar": { "color": "#12084A" },
-    "marquee_bg": { "color": "#0E0440" },
-    "info_cast": { "color": "#FF2ED1" },
-
-    "spectrum_area": { "color": "#00F5FF" },
-    "seek_fill": { "color": "#FF8A00" },
-
-    "spectrum_titlebar": { "color": "#12084A" },
-    "playlist_titlebar": { "color": "#12084A" },
-    "eq_titlebar": { "color": "#12084A" },
-    "library_titlebar": { "color": "#12084A" },
-    "projectm_titlebar": { "color": "#12084A" }
-  },
-  "animations": {
-    "seek_fill": {
-      "type": "glow",
-      "duration": 2.2,
-      "minValue": 0.55,
-      "maxValue": 1.0
-    }
-  }
 }

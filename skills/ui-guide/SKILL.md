@@ -160,6 +160,32 @@ Valid widths: 275, 300, 425, 450, 475, 500, 550px
 
 **Non-Retina displays**: Even with aligned widths, tile seams may be visible on 1x displays. See the non-retina-fixes skill for techniques like background fill, tile overlap, and bottom-to-top drawing.
 
+## Menu Bar Integration (AppKit)
+
+When adding or refactoring top menu bar content:
+
+- Build dedicated menu-bar trees (`buildMenuBar*`) instead of reusing context-menu `NSMenuItem` instances.
+- Avoid `NSMenuItem.copy()` for action-bearing items; copied items can lose expected target/action behavior in this app.
+- Keep side effects (network discovery, long-running work) out of menu construction.
+- Prefer lifecycle startup for services and `menuNeedsUpdate(_:)` for state refresh when a menu opens.
+- For Sonos room selection UX, use `SonosRoomCheckboxView` when persistent-open submenu behavior is required.
+
+## Dockable Center-Stack Windows
+
+Main, EQ, Playlist, Spectrum, and Waveform all participate in the center stack managed by `WindowManager`.
+
+- Width is normalized to the main stack
+- Height is window-specific
+- Saved frames are restored through `WindowManager` rather than ad hoc per-window logic
+- Modern and classic implementations should expose a provider protocol in `App/` so `WindowManager` can manage both without mode-specific branching outside window creation
+
+For new center-stack windows, follow the waveform/spectrum pattern:
+
+1. Shared non-UI logic in a neutral folder (for example `Waveform/`)
+2. Classic chrome in `Windows/...`
+3. Modern chrome in `Windows/Modern...`
+4. Registration and docking behavior in `WindowManager`
+
 ## Custom Sprites
 
 For on/off states, stack vertically in NSImage:
@@ -440,6 +466,11 @@ The Spectrum Analyzer participates in the docking system alongside Main, EQ, and
 |------|---------|
 | `Visualization/SpectrumAnalyzerView.swift` | Metal-based spectrum view component |
 | `Visualization/SpectrumShaders.metal` | GPU shaders for bar rendering |
+| `Visualization/FlameShaders.metal` | Fire mode shaders (compute + render) |
+| `Visualization/CosmicShaders.metal` | JWST mode shader |
+| `Visualization/ElectricityShaders.metal` | Lightning mode shader |
+| `Visualization/MatrixShaders.metal` | Matrix mode shader |
+| `Visualization/SnowShaders.metal` | Snow mode shader |
 | `Windows/Spectrum/SpectrumWindowController.swift` | Window controller |
 | `Windows/Spectrum/SpectrumView.swift` | Container view with skin chrome |
 
@@ -452,6 +483,9 @@ The Spectrum Analyzer participates in the docking system alongside Main, EQ, and
 | **Ultra** | Maximum fidelity seamless gradient with smooth exponential decay, perceptual gamma, and warm color trails |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues in 4 color styles |
 | **JWST** | Deep space flythrough with 3D star field, vivid JWST diffraction flares as intensity indicators, and rare giant flare events |
+| **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks and multiple color schemes |
+| **Matrix** | Falling digital rain with procedural glyphs and selectable color/intensity styles |
+| **Snow** | Audio-reactive layered snowfall with smooth flurry-to-blizzard intensity shifts |
 
 ### Decay/Responsiveness Modes
 
@@ -474,10 +508,14 @@ Controls how quickly spectrum bars fall after peaks:
 ### Context Menu
 
 Right-click on the spectrum window for:
-- **Mode** submenu - Switch between Winamp/Enhanced/Fire/JWST modes
+- **Mode** submenu - Switch between Winamp/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow modes
 - **Responsiveness** submenu - Adjust decay behavior
+- **Normalization** submenu - Choose Accurate/Adaptive/Dynamic scaling
 - **Flame Style** - Choose flame color preset (Fire mode only)
 - **Fire Intensity** - Choose Mellow or Intense reactivity (Fire mode only)
+- **Lightning Style** - Choose lightning palette (Lightning mode only)
+- **Matrix Color** - Choose matrix palette (Matrix mode only)
+- **Matrix Intensity** - Choose matrix reactivity profile (Matrix mode only)
 - **Close** - Close the window
 
 Settings are persisted across app restarts.

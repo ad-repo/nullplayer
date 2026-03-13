@@ -24,6 +24,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
         menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
+        menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
@@ -64,8 +65,9 @@ class ContextMenuBuilder {
             menu.addItem(hideTitleBars)
         }
         
-        // Double Size (both modern and classic UI)
-        let doubleSize = NSMenuItem(title: "Double Size", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
+        // Large UI in classic mode, Double Size in modern mode
+        let sizeToggleTitle = wm.isRunningModernUI ? "Double Size" : "Large UI"
+        let doubleSize = NSMenuItem(title: sizeToggleTitle, action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
         doubleSize.state = wm.isDoubleSize ? .on : .off
         menu.addItem(doubleSize)
@@ -91,6 +93,163 @@ class ContextMenuBuilder {
         menu.autoenablesItems = false
         return menu
     }
+
+    // MARK: - Menu Bar Builders
+
+    /// Builds the top-level "Windows" menu content for the macOS menu bar.
+    static func buildMenuBarWindowsMenu() -> NSMenu {
+        let menu = NSMenu()
+        let wm = WindowManager.shared
+
+        menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
+        menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
+        menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
+        menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
+        menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
+        menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
+        menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
+
+        menu.addItem(NSMenuItem.separator())
+
+        let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
+        alwaysOnTop.target = MenuActions.shared
+        alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
+        menu.addItem(alwaysOnTop)
+
+        if wm.isModernUIEnabled {
+            let hideTitleBars = NSMenuItem(title: "Hide Title Bars", action: #selector(MenuActions.toggleHideTitleBars), keyEquivalent: "")
+            hideTitleBars.target = MenuActions.shared
+            hideTitleBars.state = wm.hideTitleBars ? .on : .off
+            menu.addItem(hideTitleBars)
+        }
+
+        let sizeToggleTitle = wm.isRunningModernUI ? "Double Size" : "Large UI"
+        let doubleSize = NSMenuItem(title: sizeToggleTitle, action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
+        doubleSize.target = MenuActions.shared
+        doubleSize.state = wm.isDoubleSize ? .on : .off
+        menu.addItem(doubleSize)
+
+        let snapToDefault = NSMenuItem(title: "Snap To Default", action: #selector(MenuActions.snapToDefault), keyEquivalent: "")
+        snapToDefault.target = MenuActions.shared
+        menu.addItem(snapToDefault)
+
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "UI" menu content for the macOS menu bar.
+    static func buildMenuBarUIMenu() -> NSMenu {
+        let menu = buildUIMenu()
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "Playback" menu content for the macOS menu bar.
+    static func buildMenuBarPlaybackMenu() -> NSMenu {
+        let menu = NSMenu()
+        let wm = WindowManager.shared
+
+        let aboutPlaying = NSMenuItem(title: "About Playing", action: #selector(MenuActions.showAboutPlaying), keyEquivalent: "")
+        aboutPlaying.target = MenuActions.shared
+        let hasAudioContent = wm.audioEngine.currentTrack != nil
+        let hasVideoContent = wm.currentVideoTitle != nil
+        aboutPlaying.isEnabled = hasAudioContent || hasVideoContent
+        menu.addItem(aboutPlaying)
+        menu.addItem(NSMenuItem.separator())
+
+        let optionsMenu = buildOptionsMenu()
+        moveMenuItems(from: optionsMenu, to: menu)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let rememberState = NSMenuItem(title: "Remember State On Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
+        rememberState.target = MenuActions.shared
+        rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
+        menu.addItem(rememberState)
+
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "Visuals" menu content for the macOS menu bar.
+    static func buildMenuBarVisualsMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(buildVisualizationsMenuItem())
+        menu.addItem(buildSpectrumAnalyzerMenuItem())
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "Libraries" menu content for the macOS menu bar.
+    static func buildMenuBarLibrariesMenu() -> NSMenu {
+        let menu = buildLibrariesMenu()
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "Output" menu content for the macOS menu bar.
+    static func buildMenuBarOutputMenu() -> NSMenu {
+        let menu = buildMenuBarOutputDevicesMenu()
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    // MARK: - Modern Skins Menu
+
+    /// Public access to a modern-skins-only menu (used by modern skin SK button)
+    static func buildModernSkinsMenu() -> NSMenu {
+        let modernMenu = NSMenu()
+        modernMenu.autoenablesItems = false
+
+        let isModern = WindowManager.shared.isModernUIEnabled
+
+        // Last used modern skin for quick switch (shown at top when in classic mode)
+        let lastModernSkin = UserDefaults.standard.string(forKey: "modernSkinName")
+        if !isModern {
+            let switchItem = NSMenuItem(
+                title: "Switch to Modern" + (lastModernSkin.map { " (\($0))" } ?? ""),
+                action: #selector(MenuActions.setModernMode),
+                keyEquivalent: ""
+            )
+            switchItem.target = MenuActions.shared
+            modernMenu.addItem(switchItem)
+            modernMenu.addItem(NSMenuItem.separator())
+        }
+
+        let loadModernSkin = NSMenuItem(title: "Load Skin...", action: #selector(MenuActions.loadModernSkinFromFile), keyEquivalent: "")
+        loadModernSkin.target = MenuActions.shared
+        modernMenu.addItem(loadModernSkin)
+        modernMenu.addItem(NSMenuItem.separator())
+
+        // Modern skin list
+        let modernSkins = ModernSkinEngine.shared.loader.availableSkins()
+        let currentModernSkin = ModernSkinEngine.shared.currentSkinName
+
+        if modernSkins.isEmpty {
+            let noSkins = NSMenuItem(title: "No skins available", action: nil, keyEquivalent: "")
+            noSkins.isEnabled = false
+            modernMenu.addItem(noSkins)
+        } else {
+            for skinInfo in modernSkins {
+                let item = NSMenuItem(title: skinInfo.name, action: #selector(MenuActions.selectModernSkin(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = skinInfo.name
+                if isModern && skinInfo.name == currentModernSkin {
+                    item.state = .on
+                }
+                modernMenu.addItem(item)
+            }
+        }
+
+        modernMenu.addItem(NSMenuItem.separator())
+
+        // Open modern skins folder
+        let openModernFolder = NSMenuItem(title: "Open Skins Folder...", action: #selector(MenuActions.openModernSkinsFolder), keyEquivalent: "")
+        openModernFolder.target = MenuActions.shared
+        modernMenu.addItem(openModernFolder)
+
+        return modernMenu
+    }
     
     // MARK: - Window Toggle Items
     
@@ -100,11 +259,25 @@ class ContextMenuBuilder {
         item.state = visible ? .on : .off
         return item
     }
-    
+
+    private static func moveMenuItems(from source: NSMenu, to destination: NSMenu) {
+        while let item = source.items.first {
+            source.removeItem(item)
+            destination.addItem(item)
+        }
+    }
+
     // MARK: - UI Submenu (unified Modern/Classic with skin selection)
     
     private static func buildUIMenuItem() -> NSMenuItem {
         let uiItem = NSMenuItem(title: "UI", action: nil, keyEquivalent: "")
+        let uiMenu = buildUIMenu()
+        uiMenu.autoenablesItems = false
+        uiItem.submenu = uiMenu
+        return uiItem
+    }
+
+    private static func buildUIMenu() -> NSMenu {
         let uiMenu = NSMenu()
         uiMenu.autoenablesItems = false
         
@@ -127,6 +300,11 @@ class ContextMenuBuilder {
             modernMenu.addItem(switchItem)
             modernMenu.addItem(NSMenuItem.separator())
         }
+
+        let loadModernSkin = NSMenuItem(title: "Load Skin...", action: #selector(MenuActions.loadModernSkinFromFile), keyEquivalent: "")
+        loadModernSkin.target = MenuActions.shared
+        modernMenu.addItem(loadModernSkin)
+        modernMenu.addItem(NSMenuItem.separator())
         
         // Modern skin list
         let modernSkins = ModernSkinEngine.shared.loader.availableSkins()
@@ -184,6 +362,11 @@ class ContextMenuBuilder {
         loadSkin.target = MenuActions.shared
         classicMenu.addItem(loadSkin)
         
+        // Get More Skins...
+        let getMoreSkins = NSMenuItem(title: "Get More Skins...", action: #selector(MenuActions.getMoreClassicSkins), keyEquivalent: "")
+        getMoreSkins.target = MenuActions.shared
+        classicMenu.addItem(getMoreSkins)
+        
         classicMenu.addItem(NSMenuItem.separator())
         
         // Default Skin (Silver)
@@ -222,14 +405,18 @@ class ContextMenuBuilder {
         classicItem.submenu = classicMenu
         uiMenu.addItem(classicItem)
         
-        uiItem.submenu = uiMenu
-        return uiItem
+        return uiMenu
     }
     
     // MARK: - Visualizations Submenu
     
     private static func buildVisualizationsMenuItem() -> NSMenuItem {
         let visItem = NSMenuItem(title: "Visualizations", action: nil, keyEquivalent: "")
+        visItem.submenu = buildVisualizationsMenu()
+        return visItem
+    }
+
+    private static func buildVisualizationsMenu() -> NSMenu {
         let visMenu = NSMenu()
         visMenu.autoenablesItems = false
         
@@ -286,14 +473,18 @@ class ContextMenuBuilder {
         showBundledItem.target = MenuActions.shared
         visMenu.addItem(showBundledItem)
         
-        visItem.submenu = visMenu
-        return visItem
+        return visMenu
     }
     
     // MARK: - Options Submenu
     
     private static func buildOptionsMenuItem() -> NSMenuItem {
         let optionsItem = NSMenuItem(title: "Playback Options", action: nil, keyEquivalent: "")
+        optionsItem.submenu = buildOptionsMenu()
+        return optionsItem
+    }
+
+    private static func buildOptionsMenu() -> NSMenu {
         let optionsMenu = NSMenu()
         optionsMenu.autoenablesItems = false
         
@@ -323,6 +514,29 @@ class ContextMenuBuilder {
         shuffleItem.target = MenuActions.shared
         shuffleItem.state = engine.shuffleEnabled ? .on : .off
         optionsMenu.addItem(shuffleItem)
+
+        // Radio variety (applies to non-sonic radio generation across sources)
+        let radioArtistLimitItem = NSMenuItem(title: "Radio Max Tracks Per Artist", action: nil, keyEquivalent: "")
+        let radioArtistLimitMenu = NSMenu()
+        radioArtistLimitMenu.autoenablesItems = false
+        let currentRadioArtistLimit = RadioPlaybackOptions.maxTracksPerArtist
+        for limit in RadioPlaybackOptions.menuChoices {
+            let title: String
+            if limit == RadioPlaybackOptions.unlimitedMaxTracksPerArtist {
+                title = "Unlimited"
+            } else if limit == 1 {
+                title = "1 track"
+            } else {
+                title = "\(limit) tracks"
+            }
+            let item = NSMenuItem(title: title, action: #selector(MenuActions.setRadioMaxTracksPerArtist(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = limit
+            item.state = currentRadioArtistLimit == limit ? .on : .off
+            radioArtistLimitMenu.addItem(item)
+        }
+        radioArtistLimitItem.submenu = radioArtistLimitMenu
+        optionsMenu.addItem(radioArtistLimitItem)
         
         optionsMenu.addItem(NSMenuItem.separator())
         
@@ -375,15 +589,19 @@ class ContextMenuBuilder {
         artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
         optionsMenu.addItem(artworkBgItem)
 
+        // Group all source-specific radio history entries under one parent item.
+        optionsMenu.addItem(NSMenuItem.separator())
+
+        let radioHistoryItem = NSMenuItem(title: "Radio History", action: nil, keyEquivalent: "")
+        let radioHistoryMenu = NSMenu()
+        radioHistoryMenu.autoenablesItems = false
+
         // Plex Radio History (only when Plex is connected)
         if PlexManager.shared.isLinked {
-            optionsMenu.addItem(NSMenuItem.separator())
-
-            let historyItem = NSMenuItem(title: "Plex Radio History", action: nil, keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "Plex", action: nil, keyEquivalent: "")
             let historyMenu = NSMenu()
             historyMenu.autoenablesItems = false
 
-            // Retention interval submenu
             let intervalItem = NSMenuItem(title: "History Interval", action: nil, keyEquivalent: "")
             let intervalMenu = NSMenu()
             intervalMenu.autoenablesItems = false
@@ -402,7 +620,6 @@ class ContextMenuBuilder {
             }
             intervalItem.submenu = intervalMenu
             historyMenu.addItem(intervalItem)
-
             historyMenu.addItem(NSMenuItem.separator())
 
             let viewItem = NSMenuItem(
@@ -422,14 +639,12 @@ class ContextMenuBuilder {
             historyMenu.addItem(clearItem)
 
             historyItem.submenu = historyMenu
-            optionsMenu.addItem(historyItem)
+            radioHistoryMenu.addItem(historyItem)
         }
 
         // Subsonic Radio History (shown whenever at least one server has been configured)
         if !SubsonicManager.shared.servers.isEmpty {
-            optionsMenu.addItem(NSMenuItem.separator())
-
-            let historyItem = NSMenuItem(title: "Subsonic Radio History", action: nil, keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "Subsonic", action: nil, keyEquivalent: "")
             let historyMenu = NSMenu()
             historyMenu.autoenablesItems = false
 
@@ -457,14 +672,12 @@ class ContextMenuBuilder {
             historyMenu.addItem(clearItem)
 
             historyItem.submenu = historyMenu
-            optionsMenu.addItem(historyItem)
+            radioHistoryMenu.addItem(historyItem)
         }
 
         // Jellyfin Radio History (shown whenever at least one server has been configured)
         if !JellyfinManager.shared.servers.isEmpty {
-            optionsMenu.addItem(NSMenuItem.separator())
-
-            let historyItem = NSMenuItem(title: "Jellyfin Radio History", action: nil, keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "Jellyfin", action: nil, keyEquivalent: "")
             let historyMenu = NSMenu()
             historyMenu.autoenablesItems = false
 
@@ -492,14 +705,12 @@ class ContextMenuBuilder {
             historyMenu.addItem(clearItem)
 
             historyItem.submenu = historyMenu
-            optionsMenu.addItem(historyItem)
+            radioHistoryMenu.addItem(historyItem)
         }
 
         // Emby Radio History (shown whenever at least one server has been configured)
         if !EmbyManager.shared.servers.isEmpty {
-            optionsMenu.addItem(NSMenuItem.separator())
-
-            let historyItem = NSMenuItem(title: "Emby Radio History", action: nil, keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "Emby", action: nil, keyEquivalent: "")
             let historyMenu = NSMenu()
             historyMenu.autoenablesItems = false
 
@@ -527,14 +738,12 @@ class ContextMenuBuilder {
             historyMenu.addItem(clearItem)
 
             historyItem.submenu = historyMenu
-            optionsMenu.addItem(historyItem)
+            radioHistoryMenu.addItem(historyItem)
         }
 
         // Local Radio History
         do {
-            optionsMenu.addItem(NSMenuItem.separator())
-
-            let historyItem = NSMenuItem(title: "Local Radio History", action: nil, keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "Local", action: nil, keyEquivalent: "")
             let historyMenu = NSMenu()
             historyMenu.autoenablesItems = false
 
@@ -562,13 +771,15 @@ class ContextMenuBuilder {
             historyMenu.addItem(clearItem)
 
             historyItem.submenu = historyMenu
-            optionsMenu.addItem(historyItem)
+            radioHistoryMenu.addItem(historyItem)
         }
+
+        radioHistoryItem.submenu = radioHistoryMenu
+        optionsMenu.addItem(radioHistoryItem)
 
         optionsMenu.addItem(NSMenuItem.separator())
 
-        optionsItem.submenu = optionsMenu
-        return optionsItem
+        return optionsMenu
     }
     
     // MARK: - Main Window Visualization Submenu
@@ -740,6 +951,61 @@ class ContextMenuBuilder {
             matrixIntensityItem.submenu = matrixIntensityMenu
             visMenu.addItem(matrixIntensityItem)
         }
+
+        // vis_classic profile controls (only when vis_classic mode active)
+        if currentMode == .visClassicExact {
+            let profilesMenuItem = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
+            let profilesMenu = NSMenu()
+            profilesMenu.autoenablesItems = false
+
+            let currentName = VisClassicBridge.lastProfileName(for: .mainWindow)
+            let profiles = VisClassicBridge.availableProfilesCatalog()
+            if profiles.isEmpty {
+                let none = NSMenuItem(title: "No Profiles", action: nil, keyEquivalent: "")
+                none.isEnabled = false
+                profilesMenu.addItem(none)
+            } else {
+                for entry in profiles {
+                    let item = NSMenuItem(title: entry.name, action: #selector(MenuActions.loadMainVisClassicProfile(_:)), keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = entry.name
+                    item.state = (entry.name == currentName) ? .on : .off
+                    profilesMenu.addItem(item)
+                }
+            }
+
+            profilesMenuItem.submenu = profilesMenu
+            visMenu.addItem(profilesMenuItem)
+            visMenu.addItem(NSMenuItem.separator())
+
+            let fitEnabled = VisClassicBridge.fitToWidthDefault(for: .mainWindow)
+            let fitItem = NSMenuItem(title: "Fit to Width", action: #selector(MenuActions.toggleMainVisClassicFitToWidth), keyEquivalent: "")
+            fitItem.target = MenuActions.shared
+            fitItem.state = fitEnabled ? .on : .off
+            visMenu.addItem(fitItem)
+
+            let transparentBgEnabledMain = VisClassicBridge.transparentBgDefault(for: .mainWindow)
+            let transparentBgItemMain = NSMenuItem(title: "Transparent Background", action: #selector(MenuActions.toggleMainVisClassicTransparentBg), keyEquivalent: "")
+            transparentBgItemMain.target = MenuActions.shared
+            transparentBgItemMain.state = transparentBgEnabledMain ? .on : .off
+            visMenu.addItem(transparentBgItemMain)
+
+            let nextItem = NSMenuItem(title: "Next Profile", action: #selector(MenuActions.nextMainVisClassicProfile), keyEquivalent: "")
+            nextItem.target = MenuActions.shared
+            visMenu.addItem(nextItem)
+
+            let prevItem = NSMenuItem(title: "Previous Profile", action: #selector(MenuActions.previousMainVisClassicProfile), keyEquivalent: "")
+            prevItem.target = MenuActions.shared
+            visMenu.addItem(prevItem)
+
+            let importItem = NSMenuItem(title: "Import INI...", action: #selector(MenuActions.importMainVisClassicProfile), keyEquivalent: "")
+            importItem.target = MenuActions.shared
+            visMenu.addItem(importItem)
+
+            let exportItem = NSMenuItem(title: "Export Current INI...", action: #selector(MenuActions.exportMainVisClassicProfile), keyEquivalent: "")
+            exportItem.target = MenuActions.shared
+            visMenu.addItem(exportItem)
+        }
         
         return visMenu
     }
@@ -748,6 +1014,11 @@ class ContextMenuBuilder {
     
     private static func buildSpectrumAnalyzerMenuItem() -> NSMenuItem {
         let spectrumItem = NSMenuItem(title: "Spectrum Analyzer", action: nil, keyEquivalent: "")
+        spectrumItem.submenu = buildSpectrumAnalyzerMenu()
+        return spectrumItem
+    }
+
+    private static func buildSpectrumAnalyzerMenu() -> NSMenu {
         let spectrumMenu = NSMenu()
         spectrumMenu.autoenablesItems = false
         
@@ -931,26 +1202,116 @@ class ContextMenuBuilder {
             matrixIntensityItem.submenu = matrixIntensityMenu
             spectrumWindowMenu.addItem(matrixIntensityItem)
         }
+
+        // vis_classic profile controls (only when vis_classic mode active)
+        if currentQuality == .visClassicExact {
+            let profilesMenuItem = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
+            let profilesMenu = NSMenu()
+            profilesMenu.autoenablesItems = false
+
+            let currentName = VisClassicBridge.lastProfileName(for: .spectrumWindow)
+            let profiles = VisClassicBridge.availableProfilesCatalog()
+            if profiles.isEmpty {
+                let none = NSMenuItem(title: "No Profiles", action: nil, keyEquivalent: "")
+                none.isEnabled = false
+                profilesMenu.addItem(none)
+            } else {
+                for entry in profiles {
+                    let item = NSMenuItem(title: entry.name, action: #selector(MenuActions.loadVisClassicProfile(_:)), keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = entry.name
+                    item.state = (entry.name == currentName) ? .on : .off
+                    profilesMenu.addItem(item)
+                }
+            }
+
+            profilesMenuItem.submenu = profilesMenu
+            spectrumWindowMenu.addItem(profilesMenuItem)
+            spectrumWindowMenu.addItem(NSMenuItem.separator())
+
+            let fitEnabled = VisClassicBridge.fitToWidthDefault(for: .spectrumWindow)
+            let fitItem = NSMenuItem(title: "Fit to Width", action: #selector(MenuActions.toggleVisClassicFitToWidth), keyEquivalent: "")
+            fitItem.target = MenuActions.shared
+            fitItem.state = fitEnabled ? .on : .off
+            spectrumWindowMenu.addItem(fitItem)
+
+            let transparentEnabled = VisClassicBridge.transparentBgDefault(for: .spectrumWindow)
+            let transparentItem = NSMenuItem(title: "Transparent Background", action: #selector(MenuActions.toggleVisClassicTransparentBg), keyEquivalent: "")
+            transparentItem.target = MenuActions.shared
+            transparentItem.state = transparentEnabled ? .on : .off
+            spectrumWindowMenu.addItem(transparentItem)
+
+            let nextItem = NSMenuItem(title: "Next Profile", action: #selector(MenuActions.nextVisClassicProfile), keyEquivalent: "")
+            nextItem.target = MenuActions.shared
+            spectrumWindowMenu.addItem(nextItem)
+
+            let prevItem = NSMenuItem(title: "Previous Profile", action: #selector(MenuActions.previousVisClassicProfile), keyEquivalent: "")
+            prevItem.target = MenuActions.shared
+            spectrumWindowMenu.addItem(prevItem)
+
+            let importItem = NSMenuItem(title: "Import INI...", action: #selector(MenuActions.importVisClassicProfile), keyEquivalent: "")
+            importItem.target = MenuActions.shared
+            spectrumWindowMenu.addItem(importItem)
+
+            let exportItem = NSMenuItem(title: "Export Current INI...", action: #selector(MenuActions.exportVisClassicProfile), keyEquivalent: "")
+            exportItem.target = MenuActions.shared
+            spectrumWindowMenu.addItem(exportItem)
+        }
         
         spectrumWindowItem.submenu = spectrumWindowMenu
         spectrumMenu.addItem(spectrumWindowItem)
         
-        spectrumItem.submenu = spectrumMenu
-        return spectrumItem
+        return spectrumMenu
+    }
+
+    static func buildWaveformWindowContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let rerender = NSMenuItem(title: "Re-render Waveform", action: #selector(MenuActions.rerenderCurrentWaveform), keyEquivalent: "")
+        rerender.target = MenuActions.shared
+        menu.addItem(rerender)
+
+        let clearCache = NSMenuItem(title: "Clear Cached Waveform", action: #selector(MenuActions.clearCurrentWaveformCache), keyEquivalent: "")
+        clearCache.target = MenuActions.shared
+        menu.addItem(clearCache)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let cuePoints = NSMenuItem(title: "Show CUE Points", action: #selector(MenuActions.toggleWaveformCuePoints), keyEquivalent: "")
+        cuePoints.target = MenuActions.shared
+        cuePoints.state = UserDefaults.standard.bool(forKey: "waveformShowCuePoints") ? .on : .off
+        menu.addItem(cuePoints)
+
+        let transparentBackground = NSMenuItem(title: "Transparent Background", action: #selector(MenuActions.toggleWaveformTransparentBackground), keyEquivalent: "")
+        transparentBackground.target = MenuActions.shared
+        transparentBackground.state = WindowManager.shared.isWaveformTransparentBackgroundEnabled() ? .on : .off
+        menu.addItem(transparentBackground)
+
+        let hideTooltip = NSMenuItem(title: "Hide Waveform Tooltip", action: #selector(MenuActions.toggleWaveformTooltip), keyEquivalent: "")
+        hideTooltip.target = MenuActions.shared
+        hideTooltip.state = UserDefaults.standard.bool(forKey: "waveformHideTooltip") ? .on : .off
+        menu.addItem(hideTooltip)
+
+        return menu
     }
     
     // MARK: - Libraries Submenu
 
     private static func buildLibrariesMenuItem() -> NSMenuItem {
         let librariesItem = NSMenuItem(title: "Libraries", action: nil, keyEquivalent: "")
+        librariesItem.submenu = buildLibrariesMenu()
+        return librariesItem
+    }
+
+    private static func buildLibrariesMenu() -> NSMenu {
         let librariesMenu = NSMenu()
         librariesMenu.addItem(buildLocalLibraryMenuItem())
         librariesMenu.addItem(buildPlexMenuItem())
         librariesMenu.addItem(buildSubsonicMenuItem())
         librariesMenu.addItem(buildJellyfinMenuItem())
         librariesMenu.addItem(buildEmbyMenuItem())
-        librariesItem.submenu = librariesMenu
-        return librariesItem
+        return librariesMenu
     }
 
     // MARK: - Local Library Submenu
@@ -961,9 +1322,16 @@ class ContextMenuBuilder {
         libraryMenu.autoenablesItems = false
         
         let trackCount = MediaLibrary.shared.tracksSnapshot.count
+        let movieCount = MediaLibrary.shared.moviesSnapshot.count
+        let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+        let totalLocalItems = trackCount + movieCount + episodeCount
         
         // Library info header
-        let infoItem = NSMenuItem(title: "\(trackCount) tracks in library", action: nil, keyEquivalent: "")
+        let infoItem = NSMenuItem(
+            title: "\(totalLocalItems) items (\(trackCount) tracks, \(movieCount) movies, \(episodeCount) episodes)",
+            action: nil,
+            keyEquivalent: ""
+        )
         libraryMenu.addItem(infoItem)
         
         libraryMenu.addItem(NSMenuItem.separator())
@@ -1025,10 +1393,34 @@ class ContextMenuBuilder {
         
         libraryMenu.addItem(NSMenuItem.separator())
         
-        // Clear Library (with confirmation)
-        let clearItem = NSMenuItem(title: "Clear Library...", action: #selector(MenuActions.clearLibrary), keyEquivalent: "")
-        clearItem.target = MenuActions.shared
-        clearItem.isEnabled = trackCount > 0
+        // Clear Library submenu (with confirmations)
+        let clearItem = NSMenuItem(title: "Clear...", action: nil, keyEquivalent: "")
+        let clearMenu = NSMenu()
+        clearMenu.autoenablesItems = false
+
+        let clearMusicItem = NSMenuItem(title: "Clear Music...", action: #selector(MenuActions.clearLocalMusic), keyEquivalent: "")
+        clearMusicItem.target = MenuActions.shared
+        clearMusicItem.isEnabled = trackCount > 0
+        clearMenu.addItem(clearMusicItem)
+
+        let clearMoviesItem = NSMenuItem(title: "Clear Movies...", action: #selector(MenuActions.clearLocalMovies), keyEquivalent: "")
+        clearMoviesItem.target = MenuActions.shared
+        clearMoviesItem.isEnabled = movieCount > 0
+        clearMenu.addItem(clearMoviesItem)
+
+        let clearTVItem = NSMenuItem(title: "Clear TV...", action: #selector(MenuActions.clearLocalTV), keyEquivalent: "")
+        clearTVItem.target = MenuActions.shared
+        clearTVItem.isEnabled = episodeCount > 0
+        clearMenu.addItem(clearTVItem)
+
+        clearMenu.addItem(NSMenuItem.separator())
+
+        let clearAllItem = NSMenuItem(title: "Clear Everything...", action: #selector(MenuActions.clearLibrary), keyEquivalent: "")
+        clearAllItem.target = MenuActions.shared
+        clearAllItem.isEnabled = totalLocalItems > 0
+        clearMenu.addItem(clearAllItem)
+
+        clearItem.submenu = clearMenu
         libraryMenu.addItem(clearItem)
         
         libraryItem.submenu = libraryMenu
@@ -1526,6 +1918,188 @@ class ContextMenuBuilder {
         let item = buildOutputDevicesMenuItem()
         return item.submenu ?? NSMenu()
     }
+
+    private static func buildMenuBarOutputDevicesMenu() -> NSMenu {
+        let outputMenu = NSMenu()
+        outputMenu.autoenablesItems = false
+
+        let audioManager = AudioOutputManager.shared
+        let castManager = CastManager.shared
+        let coreAudioDevices = audioManager.outputDevices
+        let airPlayDevices = audioManager.discoveredAirPlayDevices
+        let currentDeviceID = WindowManager.shared.audioEngine.currentOutputDeviceID
+
+        // Local Audio
+        outputMenu.addItem(NSMenuItem(title: "Local Audio", action: nil, keyEquivalent: ""))
+
+        let defaultItem = NSMenuItem(title: "System Default", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+        defaultItem.target = MenuActions.shared
+        defaultItem.representedObject = nil as AudioDeviceID?
+        defaultItem.state = currentDeviceID == nil ? .on : .off
+        outputMenu.addItem(defaultItem)
+
+        let localDevices = coreAudioDevices.filter { !$0.isWireless }
+        for device in localDevices {
+            let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+            deviceItem.target = MenuActions.shared
+            deviceItem.representedObject = device.id
+            deviceItem.state = currentDeviceID == device.id ? .on : .off
+            outputMenu.addItem(deviceItem)
+        }
+
+        // AirPlay
+        let coreAudioWireless = coreAudioDevices.filter { $0.isWireless }
+        if !coreAudioWireless.isEmpty || !airPlayDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+
+            let airPlayItem = NSMenuItem(title: "AirPlay", action: nil, keyEquivalent: "")
+            let airPlayMenu = NSMenu()
+            airPlayMenu.autoenablesItems = false
+
+            if !coreAudioWireless.isEmpty {
+                airPlayMenu.addItem(NSMenuItem(title: "Connected", action: nil, keyEquivalent: ""))
+                for device in coreAudioWireless {
+                    let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
+                    deviceItem.target = MenuActions.shared
+                    deviceItem.representedObject = device.id
+                    deviceItem.state = currentDeviceID == device.id ? .on : .off
+                    airPlayMenu.addItem(deviceItem)
+                }
+            }
+
+            if !airPlayDevices.isEmpty {
+                if !coreAudioWireless.isEmpty {
+                    airPlayMenu.addItem(NSMenuItem.separator())
+                }
+
+                airPlayMenu.addItem(NSMenuItem(title: "Available (Connect in Sound Settings)", action: nil, keyEquivalent: ""))
+                for device in airPlayDevices {
+                    let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectAirPlayDevice(_:)), keyEquivalent: "")
+                    deviceItem.target = MenuActions.shared
+                    deviceItem.representedObject = device.name
+                    airPlayMenu.addItem(deviceItem)
+                }
+            }
+
+            airPlayMenu.addItem(NSMenuItem.separator())
+            let settingsItem = NSMenuItem(title: "Sound Settings...", action: #selector(MenuActions.openSoundSettings), keyEquivalent: "")
+            settingsItem.target = MenuActions.shared
+            airPlayMenu.addItem(settingsItem)
+
+            airPlayItem.submenu = airPlayMenu
+            outputMenu.addItem(airPlayItem)
+        }
+
+        // Sonos
+        let sonosRooms = castManager.sonosRooms
+        if !sonosRooms.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+
+            let sonosItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
+            let sonosMenu = NSMenu()
+            sonosMenu.autoenablesItems = false
+
+            let castTargetUDN = castManager.activeSession?.device.id
+            let isCastingToSonos = castManager.activeSession?.device.type == .sonos
+
+            for room in sonosRooms {
+                let isChecked: Bool
+                if isCastingToSonos, let targetUDN = castTargetUDN {
+                    if room.id == targetUDN {
+                        isChecked = true
+                    } else if room.groupCoordinatorUDN == targetUDN {
+                        isChecked = true
+                    } else if room.isGroupCoordinator {
+                        let targetRoom = sonosRooms.first { $0.id == targetUDN }
+                        isChecked = targetRoom?.groupCoordinatorUDN == room.id
+                    } else {
+                        isChecked = false
+                    }
+                } else {
+                    isChecked = castManager.selectedSonosRooms.contains(room.id)
+                }
+
+                let toggleInfo = SonosRoomToggle(
+                    roomUDN: room.id,
+                    roomName: room.name,
+                    coordinatorUDN: castTargetUDN ?? room.groupCoordinatorUDN ?? sonosRooms.first?.id ?? "",
+                    coordinatorName: room.groupCoordinatorName ?? sonosRooms.first?.name ?? "",
+                    isCurrentlyInGroup: isChecked,
+                    isCoordinator: room.id == castTargetUDN
+                )
+
+                // Match the context menu behavior: toggling a room keeps the Sonos submenu open.
+                let roomItem = NSMenuItem()
+                roomItem.view = SonosRoomCheckboxView(info: toggleInfo, isChecked: isChecked, menu: sonosMenu)
+                sonosMenu.addItem(roomItem)
+            }
+
+            sonosMenu.addItem(NSMenuItem.separator())
+
+            if isCastingToSonos {
+                let stopItem = NSMenuItem(title: "🔴 Stop Casting", action: #selector(MenuActions.stopCasting), keyEquivalent: "")
+                stopItem.target = MenuActions.shared
+                sonosMenu.addItem(stopItem)
+            } else {
+                let castItem = NSMenuItem(title: "🟢 Start Casting", action: #selector(MenuActions.castToSonosRoom(_:)), keyEquivalent: "")
+                castItem.target = MenuActions.shared
+                sonosMenu.addItem(castItem)
+            }
+
+            let refreshItem = NSMenuItem(title: "Refresh", action: #selector(MenuActions.refreshSonosRooms), keyEquivalent: "")
+            refreshItem.target = MenuActions.shared
+            sonosMenu.addItem(refreshItem)
+
+            sonosItem.submenu = sonosMenu
+            outputMenu.addItem(sonosItem)
+        }
+
+        // Other cast devices
+        let activeSession = castManager.activeSession
+
+        if !castManager.chromecastDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+            outputMenu.addItem(NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: ""))
+
+            for device in castManager.chromecastDevices {
+                let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device
+                deviceItem.state = activeSession?.device.id == device.id ? .on : .off
+                outputMenu.addItem(deviceItem)
+            }
+        }
+
+        if !castManager.dlnaTVDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+            outputMenu.addItem(NSMenuItem(title: "TVs (DLNA)", action: nil, keyEquivalent: ""))
+
+            for device in castManager.dlnaTVDevices {
+                let displayName = device.manufacturer != nil ? "\(device.name) [\(device.manufacturer!)]" : device.name
+                let deviceItem = NSMenuItem(title: displayName, action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                deviceItem.target = MenuActions.shared
+                deviceItem.representedObject = device
+                deviceItem.state = activeSession?.device.id == device.id ? .on : .off
+                outputMenu.addItem(deviceItem)
+            }
+        }
+
+        if !castManager.chromecastDevices.isEmpty || !castManager.dlnaTVDevices.isEmpty {
+            outputMenu.addItem(NSMenuItem.separator())
+
+            if let activeDevice = activeSession?.device {
+                let activeItem = NSMenuItem(title: "Stop Casting to \(activeDevice.name)", action: #selector(MenuActions.stopCasting), keyEquivalent: "")
+                activeItem.target = MenuActions.shared
+                outputMenu.addItem(activeItem)
+            }
+
+            let refreshCastItem = NSMenuItem(title: "Refresh Cast Devices", action: #selector(MenuActions.refreshCastDevices), keyEquivalent: "")
+            refreshCastItem.target = MenuActions.shared
+            outputMenu.addItem(refreshCastItem)
+        }
+
+        return outputMenu
+    }
     
     private static func buildOutputDevicesMenuItem() -> NSMenuItem {
         let outputItem = NSMenuItem(title: "Output Devices", action: nil, keyEquivalent: "")
@@ -1698,7 +2272,6 @@ class ContextMenuBuilder {
         
         // ========== Other Cast Devices ==========
         let chromecastDevices = castManager.chromecastDevices
-        let sonosDevices = castManager.sonosDevices
         let tvDevices = castManager.dlnaTVDevices
         let activeSession = castManager.activeSession
         
@@ -1868,6 +2441,7 @@ class SonosRoomCheckboxView: NSView {
         
         // Keep menu open by canceling the close - the menu stays open because we're in a custom view
     }
+
 }
 
 /// Info for toggling a room in/out of a group
@@ -1941,9 +2515,33 @@ class MenuActions: NSObject {
     @objc func toggleSpectrum() {
         WindowManager.shared.toggleSpectrum()
     }
+
+    @objc func toggleWaveform() {
+        WindowManager.shared.toggleWaveform()
+    }
     
     @objc func toggleDebugConsole() {
         WindowManager.shared.toggleDebugWindow()
+    }
+
+    @objc func rerenderCurrentWaveform() {
+        WindowManager.shared.reloadWaveform(force: true)
+    }
+
+    @objc func clearCurrentWaveformCache() {
+        WindowManager.shared.clearCurrentWaveformCache()
+    }
+
+    @objc func toggleWaveformCuePoints() {
+        WindowManager.shared.toggleWaveformCuePoints()
+    }
+
+    @objc func toggleWaveformTransparentBackground() {
+        WindowManager.shared.toggleWaveformTransparentBackground()
+    }
+
+    @objc func toggleWaveformTooltip() {
+        WindowManager.shared.toggleWaveformTooltip()
     }
     
     // MARK: - About Playing
@@ -2402,16 +3000,20 @@ class MenuActions: NSObject {
     
     @objc func loadDefaultClassicSkin() {
         let wm = WindowManager.shared
+        let previousSkinPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath")
         // Clear the last used skin so the bundled default loads
         UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
         
-        if wm.isModernUIEnabled {
+        if wm.isRunningModernUI {
             // Switch to classic mode with default skin on next launch
-            wm.isModernUIEnabled = false
-            if !showRestartAlert() {
-                // User cancelled — revert
-                wm.isModernUIEnabled = true
-                UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+            if !showRestartAlert(beforeRelaunch: {
+                wm.isModernUIEnabled = false
+            }) {
+                if let previousSkinPath = previousSkinPath {
+                    UserDefaults.standard.set(previousSkinPath, forKey: "lastClassicSkinPath")
+                } else {
+                    UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+                }
             }
         } else {
             // Already in classic mode - load bundled default skin now
@@ -2425,10 +3027,65 @@ class MenuActions: NSObject {
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.init(filenameExtension: "wsz")!]
         
-        if panel.runModal() == .OK, let url = panel.url {
-            WindowManager.shared.loadSkin(from: url)
-            UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let wm = WindowManager.shared
+        do {
+            let importedURL = try wm.importClassicSkin(from: url)
+            if !wm.loadSkin(from: importedURL) {
+                let alert = NSAlert()
+                alert.messageText = "Failed to Load Classic Skin"
+                alert.informativeText = "The skin was imported but could not be loaded."
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Failed to Import Classic Skin"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
         }
+    }
+
+    @objc func loadModernSkinFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.init(filenameExtension: ModernSkinLoader.bundleExtension)!]
+        panel.message = "Select a .\(ModernSkinLoader.bundleExtension) modern skin bundle"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let previousSkinName = UserDefaults.standard.string(forKey: "modernSkinName")
+        do {
+            let importedSkinName = try ModernSkinEngine.shared.importSkinBundle(from: url)
+            if WindowManager.shared.isRunningModernUI {
+                if !ModernSkinEngine.shared.loadSkin(named: importedSkinName) {
+                    if let previousSkinName = previousSkinName {
+                        UserDefaults.standard.set(previousSkinName, forKey: "modernSkinName")
+                    } else {
+                        UserDefaults.standard.removeObject(forKey: "modernSkinName")
+                    }
+                    let alert = NSAlert()
+                    alert.messageText = "Failed to Load Modern Skin"
+                    alert.informativeText = "The skin was imported but could not be loaded."
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Failed to Import Modern Skin"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+    
+    @objc func getMoreClassicSkins() {
+        guard let url = URL(string: "https://skins.webamp.org") else { return }
+        NSWorkspace.shared.open(url)
     }
     
     @objc func loadSkin(_ sender: NSMenuItem) {
@@ -2446,12 +3103,12 @@ class MenuActions: NSObject {
         let previousSkinPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath")
         UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
         
-        if wm.isModernUIEnabled {
+        if wm.isRunningModernUI {
             // Switch to classic mode and load this skin on next launch
-            wm.isModernUIEnabled = false
-            if !showRestartAlert() {
+            if !showRestartAlert(beforeRelaunch: {
+                wm.isModernUIEnabled = false
+            }) {
                 // User cancelled — revert
-                wm.isModernUIEnabled = true
                 if let previousSkinPath = previousSkinPath {
                     UserDefaults.standard.set(previousSkinPath, forKey: "lastClassicSkinPath")
                 } else {
@@ -2474,12 +3131,12 @@ class MenuActions: NSObject {
         let previousSkinName = UserDefaults.standard.string(forKey: "modernSkinName")
         UserDefaults.standard.set(name, forKey: "modernSkinName")
         
-        if !wm.isModernUIEnabled {
+        if !wm.isRunningModernUI {
             // Switch to modern mode — skin will load on next launch
-            wm.isModernUIEnabled = true
-            if !showRestartAlert() {
+            if !showRestartAlert(beforeRelaunch: {
+                wm.isModernUIEnabled = true
+            }) {
                 // User cancelled — revert
-                wm.isModernUIEnabled = false
                 if let previousSkinName = previousSkinName {
                     UserDefaults.standard.set(previousSkinName, forKey: "modernSkinName")
                 } else {
@@ -2499,25 +3156,26 @@ class MenuActions: NSObject {
     // MARK: - UI Mode Switching
     
     @objc func setClassicMode() {
-        WindowManager.shared.isModernUIEnabled = false
-        if !showRestartAlert() {
-            // User cancelled — revert
-            WindowManager.shared.isModernUIEnabled = true
-        }
+        let wm = WindowManager.shared
+        guard wm.isRunningModernUI else { return }
+        _ = showRestartAlert(beforeRelaunch: {
+            wm.isModernUIEnabled = false
+        })
     }
     
     @objc func setModernMode() {
-        WindowManager.shared.isModernUIEnabled = true
-        if !showRestartAlert() {
-            // User cancelled — revert
-            WindowManager.shared.isModernUIEnabled = false
-        }
+        let wm = WindowManager.shared
+        guard !wm.isRunningModernUI else { return }
+        _ = showRestartAlert(beforeRelaunch: {
+            wm.isModernUIEnabled = true
+        })
     }
     
     /// Shows a restart confirmation alert. Returns `true` if the user confirmed and the app is restarting.
     @discardableResult
     private func showRestartAlert(
-        informativeText: String = "NullPlayer needs to restart to apply the UI mode change. Restart now?"
+        informativeText: String = "NullPlayer needs to restart to apply the UI mode change. Restart now?",
+        beforeRelaunch: (() -> Void)? = nil
     ) -> Bool {
         let alert = NSAlert()
         alert.messageText = "Restart Required"
@@ -2529,6 +3187,7 @@ class MenuActions: NSObject {
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             // User confirmed — relaunch the app
+            beforeRelaunch?()
             relaunchApp()
             return true
         }
@@ -2539,13 +3198,15 @@ class MenuActions: NSObject {
     private func relaunchApp() {
         guard let bundleURL = Bundle.main.bundleURL as URL? else { return }
         
-        // Use a small delay so the current process can begin terminating
-        // before the new instance tries to launch
+        // Spawn a detached shell that sleeps 0.5s then opens the bundle.
+        // Must be launched BEFORE NSApp.terminate so it survives the parent's exit
+        // (macOS reparents orphaned children to launchd). Pass the path as $1
+        // (positional arg) to avoid any shell-injection risk.
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "sleep 0.5; open \"\(bundleURL.path)\""]
+        task.arguments = ["-c", "sleep 0.5 && /usr/bin/open \"$1\"", "--", bundleURL.path]
         try? task.run()
-        
+
         NSApp.terminate(nil)
     }
     
@@ -2582,6 +3243,11 @@ class MenuActions: NSObject {
     @objc func setSweetFadeDuration(_ sender: NSMenuItem) {
         guard let duration = sender.representedObject as? Double else { return }
         WindowManager.shared.audioEngine.sweetFadeDuration = duration
+    }
+
+    @objc func setRadioMaxTracksPerArtist(_ sender: NSMenuItem) {
+        guard let maxTracks = sender.representedObject as? Int else { return }
+        RadioPlaybackOptions.maxTracksPerArtist = maxTracks
     }
     
     @objc func toggleBrowserArtworkBackground() {
@@ -2858,6 +3524,124 @@ class MenuActions: NSObject {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
         UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
         // Normalization mode is read each frame, no notification needed
+    }
+
+    @objc func loadVisClassicProfile(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "load", "profileName": name, "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func nextVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "next", "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func previousVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "previous", "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func importVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "import", "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func exportVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "export", "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func toggleVisClassicFitToWidth() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "fitToWidth", "target": "spectrumWindow"]
+        )
+    }
+
+    @objc func toggleVisClassicTransparentBg() {
+        let enabled = !VisClassicBridge.transparentBgDefault(for: .spectrumWindow)
+        UserDefaults.standard.set(enabled, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "transparentBg", "target": "spectrumWindow", "enabled": enabled]
+        )
+    }
+
+    @objc func loadMainVisClassicProfile(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "load", "profileName": name, "target": "mainWindow"]
+        )
+    }
+
+    @objc func nextMainVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "next", "target": "mainWindow"]
+        )
+    }
+
+    @objc func previousMainVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "previous", "target": "mainWindow"]
+        )
+    }
+
+    @objc func importMainVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "import", "target": "mainWindow"]
+        )
+    }
+
+    @objc func exportMainVisClassicProfile() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "export", "target": "mainWindow"]
+        )
+    }
+
+    @objc func toggleMainVisClassicFitToWidth() {
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "fitToWidth", "target": "mainWindow"]
+        )
+    }
+
+    @objc func toggleMainVisClassicTransparentBg() {
+        let enabled = !VisClassicBridge.transparentBgDefault(for: .mainWindow)
+        UserDefaults.standard.set(enabled, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "transparentBg", "target": "mainWindow", "enabled": enabled]
+        )
     }
     
     @objc func toggleRememberState() {
@@ -3678,29 +4462,127 @@ class MenuActions: NSObject {
         MediaLibrary.shared.showBackupsInFinder()
     }
     
+    @objc func clearLocalMusic() {
+        performLocalLibraryClear(.music)
+    }
+
+    @objc func clearLocalMovies() {
+        performLocalLibraryClear(.movies)
+    }
+
+    @objc func clearLocalTV() {
+        performLocalLibraryClear(.tv)
+    }
+
     @objc func clearLibrary() {
+        performLocalLibraryClear(.all)
+    }
+
+    private enum LocalLibraryClearScope {
+        case music
+        case movies
+        case tv
+        case all
+
+        var dialogTitle: String {
+            switch self {
+            case .music: return "Clear Music?"
+            case .movies: return "Clear Movies?"
+            case .tv: return "Clear TV?"
+            case .all: return "Clear Library?"
+            }
+        }
+
+        var backupName: String {
+            switch self {
+            case .music: return "pre_clear_music_auto_backup"
+            case .movies: return "pre_clear_movies_auto_backup"
+            case .tv: return "pre_clear_tv_auto_backup"
+            case .all: return "pre_clear_auto_backup"
+            }
+        }
+    }
+
+    private func performLocalLibraryClear(_ scope: LocalLibraryClearScope) {
         let trackCount = MediaLibrary.shared.tracksSnapshot.count
+        let movieCount = MediaLibrary.shared.moviesSnapshot.count
+        let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+        let totalCount = trackCount + movieCount + episodeCount
+
+        let targetCount: Int
+        let targetLabel: String
+        let informativeText: String
+        let confirmTitle: String
+
+        switch scope {
+        case .music:
+            targetCount = trackCount
+            targetLabel = "music track\(targetCount == 1 ? "" : "s")"
+            informativeText = "This will remove \(targetCount) \(targetLabel) from your library. Files on disk will NOT be deleted.\n\nA backup will be created automatically before clearing."
+            confirmTitle = "Clear Music"
+        case .movies:
+            targetCount = movieCount
+            targetLabel = "movie\(targetCount == 1 ? "" : "s")"
+            informativeText = "This will remove \(targetCount) \(targetLabel) from your library. Files on disk will NOT be deleted.\n\nA backup will be created automatically before clearing."
+            confirmTitle = "Clear Movies"
+        case .tv:
+            targetCount = episodeCount
+            targetLabel = "TV episode\(targetCount == 1 ? "" : "s")"
+            informativeText = "This will remove \(targetCount) \(targetLabel) from your library. Files on disk will NOT be deleted.\n\nA backup will be created automatically before clearing."
+            confirmTitle = "Clear TV"
+        case .all:
+            targetCount = totalCount
+            targetLabel = "local item\(targetCount == 1 ? "" : "s")"
+            informativeText = "This will remove \(targetCount) \(targetLabel) from your library (\(trackCount) tracks, \(movieCount) movies, \(episodeCount) episodes). Files on disk will NOT be deleted.\n\nA backup will be created automatically before clearing."
+            confirmTitle = "Clear Library"
+        }
+
+        guard targetCount > 0 else {
+            let alert = NSAlert()
+            alert.messageText = "Nothing to Clear"
+            switch scope {
+            case .music:
+                alert.informativeText = "No local music tracks are currently in the library."
+            case .movies:
+                alert.informativeText = "No local movies are currently in the library."
+            case .tv:
+                alert.informativeText = "No local TV episodes are currently in the library."
+            case .all:
+                alert.informativeText = "No local tracks, movies, or episodes are currently in the library."
+            }
+            alert.alertStyle = .informational
+            alert.runModal()
+            return
+        }
         
         let alert = NSAlert()
-        alert.messageText = "Clear Library?"
-        alert.informativeText = "This will remove all \(trackCount) tracks from your library. The audio files will NOT be deleted from disk.\n\nA backup will be created automatically before clearing."
+        alert.messageText = scope.dialogTitle
+        alert.informativeText = informativeText
         alert.alertStyle = .critical
-        alert.addButton(withTitle: "Clear Library")
+        alert.addButton(withTitle: confirmTitle)
         alert.addButton(withTitle: "Cancel")
         
         if alert.runModal() == .alertFirstButtonReturn {
-            // Create backup before clearing
             do {
-                try MediaLibrary.shared.backupLibrary(customName: "pre_clear_auto_backup")
+                try MediaLibrary.shared.backupLibrary(customName: scope.backupName)
             } catch {
                 NSLog("Failed to create pre-clear backup: %@", error.localizedDescription)
             }
-            
-            MediaLibrary.shared.clearLibrary()
+
+            switch scope {
+            case .music:
+                MediaLibrary.shared.clearMusicLibrary()
+            case .movies:
+                MediaLibrary.shared.clearMovieLibrary()
+            case .tv:
+                MediaLibrary.shared.clearTVLibrary()
+            case .all:
+                MediaLibrary.shared.clearLibrary()
+            }
             
             let successAlert = NSAlert()
-            successAlert.messageText = "Library Cleared"
-            successAlert.informativeText = "Your library has been cleared. A backup was saved automatically."
+            successAlert.messageText = "Library Updated"
+            successAlert.informativeText = "Removed \(targetCount) \(targetLabel). A backup was saved automatically."
             successAlert.alertStyle = .informational
             successAlert.runModal()
         }

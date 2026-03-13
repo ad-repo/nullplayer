@@ -411,12 +411,10 @@ class SkinRenderer {
         return CGFloat(text.count) * charWidth
     }
     
-    /// Draw text in white using the skin's text.bmp font as a reference
-    /// Renders each character to an offscreen buffer with direct pixel conversion, then draws the result
+    /// Draw text in white using the cached white-tinted version of the skin's text.bmp font
     @discardableResult
     func drawSkinTextWhite(_ text: String, at position: NSPoint, in context: CGContext) -> CGFloat {
-        guard let textImage = skin.text,
-              let cgTextImage = textImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        guard let textImage = whiteTextImage else {
             let attrs: [NSAttributedString.Key: Any] = [
                 .foregroundColor: NSColor.white,
                 .font: NSFont.monospacedSystemFont(ofSize: 6, weight: .regular)
@@ -424,91 +422,19 @@ class SkinRenderer {
             text.draw(at: position, withAttributes: attrs)
             return CGFloat(text.count) * 5
         }
-        
-        let charWidth = Int(SkinElements.TextFont.charWidth)
-        let charHeight = Int(SkinElements.TextFont.charHeight)
+
+        let charWidth = SkinElements.TextFont.charWidth
+        let charHeight = SkinElements.TextFont.charHeight
         var xPos = position.x
-        
+
         for char in text.uppercased() {
             let charRect = SkinElements.TextFont.character(char)
-            let destRect = NSRect(x: xPos, y: position.y, width: CGFloat(charWidth), height: CGFloat(charHeight))
-            
-            // Crop the character from the text image
-            let cropRect = CGRect(x: charRect.origin.x, y: charRect.origin.y, 
-                                  width: charRect.width, height: charRect.height)
-            guard let charImage = cgTextImage.cropping(to: cropRect) else {
-                xPos += CGFloat(charWidth)
-                continue
-            }
-            
-            // Create offscreen buffer and draw character
-            guard let offscreenContext = CGContext(
-                data: nil,
-                width: charWidth,
-                height: charHeight,
-                bitsPerComponent: 8,
-                bytesPerRow: charWidth * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else {
-                xPos += CGFloat(charWidth)
-                continue
-            }
-            
-            offscreenContext.draw(charImage, in: CGRect(x: 0, y: 0, width: charWidth, height: charHeight))
-            
-            // Direct pixel conversion: green (0, G, 0) -> white (G, G, G)
-            // This preserves the brightness while making it white
-            guard let data = offscreenContext.data else {
-                xPos += CGFloat(charWidth)
-                continue
-            }
-            
-            let pixels = data.bindMemory(to: UInt8.self, capacity: charWidth * charHeight * 4)
-            for i in 0..<(charWidth * charHeight) {
-                let offset = i * 4
-                let r = pixels[offset]
-                let g = pixels[offset + 1]
-                let b = pixels[offset + 2]
-                let a = pixels[offset + 3]
-                
-                // Skip fully transparent pixels
-                if a == 0 { continue }
-                
-                // Use the green channel as brightness (text is green)
-                // Also check if it's magenta background (skip those)
-                let isMagenta = r > 200 && g < 50 && b > 200
-                if isMagenta {
-                    // Make magenta transparent
-                    pixels[offset + 3] = 0
-                } else {
-                    // Convert green to white: use green value for all channels
-                    let brightness = g
-                    pixels[offset] = brightness     // R
-                    pixels[offset + 1] = brightness // G
-                    pixels[offset + 2] = brightness // B
-                    // Keep alpha as-is
-                }
-            }
-            
-            // Get the converted image
-            guard let whiteCharImage = offscreenContext.makeImage() else {
-                xPos += CGFloat(charWidth)
-                continue
-            }
-            
-            // Draw to main context with proper flipping
-            context.saveGState()
-            context.translateBy(x: destRect.origin.x, y: destRect.origin.y + destRect.height)
-            context.scaleBy(x: 1, y: -1)
-            context.interpolationQuality = .none
-            context.draw(whiteCharImage, in: CGRect(x: 0, y: 0, width: destRect.width, height: destRect.height))
-            context.restoreGState()
-            
-            xPos += CGFloat(charWidth)
+            let destRect = NSRect(x: xPos, y: position.y, width: charWidth, height: charHeight)
+            drawSprite(from: textImage, sourceRect: charRect, to: destRect, in: context)
+            xPos += charWidth
         }
-        
-        return CGFloat(text.count * charWidth)
+
+        return CGFloat(text.count) * charWidth
     }
     
     /// Creates a white-tinted version of the skin's text image
@@ -542,43 +468,37 @@ class SkinRenderer {
         guard let data = context.data else { return nil }
         let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
         
-        // Debug: check first few pixels
-        var textPixels = 0
-        var bgPixels = 0
-        
-        // Convert pixels: if it's text (not background), make it white
-        // Background is either transparent (alpha=0) or magenta-ish
+        // Convert pixels: use green channel as brightness (text is green-tinted;
+        // dark opaque background stays dark → transparent-looking over dark skin bg).
+        // Magenta pixels become fully transparent.
         for i in 0..<(width * height) {
             let offset = i * 4
             let r = pixels[offset]
             let g = pixels[offset + 1]
             let b = pixels[offset + 2]
             let a = pixels[offset + 3]
-            
-            // Check if this is a text pixel (not transparent and not magenta)
-            // Magenta is high R, low G, high B
+
+            if a == 0 {
+                continue
+            }
+
             let isMagenta = r > 200 && g < 50 && b > 200
-            let isTransparent = a == 0
-            
-            if !isTransparent && !isMagenta {
-                // This is text - make it white
-                pixels[offset] = 255     // R
-                pixels[offset + 1] = 255 // G
-                pixels[offset + 2] = 255 // B
-                pixels[offset + 3] = 255 // A (fully opaque)
-                textPixels += 1
-            } else {
-                // This is background - make it fully transparent
-                pixels[offset] = 0
+            if isMagenta {
+                pixels[offset]     = 0
                 pixels[offset + 1] = 0
                 pixels[offset + 2] = 0
                 pixels[offset + 3] = 0
-                bgPixels += 1
+            } else {
+                // Use green channel as brightness: text pixels (bright green) → white;
+                // dark background pixels (green ≈ 0) → black (invisible on dark backgrounds)
+                let brightness = g
+                pixels[offset]     = brightness
+                pixels[offset + 1] = brightness
+                pixels[offset + 2] = brightness
+                // keep alpha as-is
             }
         }
-        
-        FileHandle.standardError.write("createWhiteTextImage: \(width)x\(height), text pixels: \(textPixels), bg pixels: \(bgPixels)\n".data(using: .utf8)!)
-        
+
         guard let newCGImage = context.makeImage() else { return nil }
         
         // Create NSImage with explicit size matching
@@ -1412,34 +1332,14 @@ class SkinRenderer {
             let sourceRect = NSRect(x: 0, y: 0, width: 275, height: 116)
             drawSprite(from: eqImage, sourceRect: sourceRect, to: bounds, in: context)
             
-            // Draw title bar using PLEDIT tiles (no custom text)
-            let titleHeight: CGFloat = 20  // Native PLEDIT sprite height
-            if let pleditImage = skin.pledit {
-                let leftCornerWidth: CGFloat = 25
-                let rightCornerWidth: CGFloat = 25
-                let tileWidth: CGFloat = 25
-                
-                let leftCorner = isActive ? SkinElements.Playlist.TitleBarActive.leftCorner : SkinElements.Playlist.TitleBarInactive.leftCorner
-                let tileSprite = isActive ? SkinElements.Playlist.TitleBarActive.tile : SkinElements.Playlist.TitleBarInactive.tile
-                let rightCorner = isActive ? SkinElements.Playlist.TitleBarActive.rightCorner : SkinElements.Playlist.TitleBarInactive.rightCorner
-                
-                drawSprite(from: pleditImage, sourceRect: leftCorner,
-                          to: NSRect(x: 0, y: 0, width: leftCornerWidth, height: titleHeight), in: context)
-                drawSprite(from: pleditImage, sourceRect: rightCorner,
-                          to: NSRect(x: bounds.width - rightCornerWidth, y: 0, width: rightCornerWidth, height: titleHeight), in: context)
-                
-                let middleStart = leftCornerWidth
-                let middleEnd = bounds.width - rightCornerWidth
-                var x: CGFloat = middleStart
-                while x < middleEnd {
-                    let w = min(tileWidth, middleEnd - x)
-                    drawSprite(from: pleditImage, sourceRect: tileSprite,
-                              to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
-                    x += tileWidth
-                }
-            }
-            
-            // Note: Custom "NULLPLAYER EQUALIZER" text removed - let skin title show through
+            // Draw title bar from EQMAIN.BMP (active/inactive strips in skin file)
+            let titleSourceRect = isActive ? SkinElements.Equalizer.titleActive : SkinElements.Equalizer.titleInactive
+            drawSprite(
+                from: eqImage,
+                sourceRect: titleSourceRect,
+                to: NSRect(x: 0, y: 0, width: bounds.width, height: titleSourceRect.height),
+                in: context
+            )
         } else {
             // Fallback EQ background
             drawFallbackEQBackground(in: context, bounds: bounds)
@@ -2541,9 +2441,21 @@ class SkinRenderer {
         let tileWidth: CGFloat = 25
         
         // Get the correct sprite set for active/inactive state
-        let leftCorner = isActive ? SkinElements.Playlist.TitleBarActive.leftCorner : SkinElements.Playlist.TitleBarInactive.leftCorner
-        let tileSprite = isActive ? SkinElements.Playlist.TitleBarActive.tile : SkinElements.Playlist.TitleBarInactive.tile
-        let rightCorner = isActive ? SkinElements.Playlist.TitleBarActive.rightCorner : SkinElements.Playlist.TitleBarInactive.rightCorner
+        let leftCorner: NSRect
+        let titleSprite: NSRect
+        let tileSprite: NSRect
+        let rightCorner: NSRect
+        if isActive {
+            leftCorner = SkinElements.Playlist.TitleBarActive.leftCorner
+            titleSprite = SkinElements.Playlist.TitleBarActive.title
+            tileSprite = SkinElements.Playlist.TitleBarActive.tile
+            rightCorner = SkinElements.Playlist.TitleBarActive.rightCorner
+        } else {
+            leftCorner = SkinElements.Playlist.TitleBarInactive.leftCorner
+            titleSprite = SkinElements.Playlist.TitleBarInactive.title
+            tileSprite = SkinElements.Playlist.TitleBarInactive.tile
+            rightCorner = SkinElements.Playlist.TitleBarInactive.rightCorner
+        }
         
         // On non-Retina, fill background first to prevent seam gaps
         let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
@@ -2555,13 +2467,34 @@ class SkinRenderer {
         // Calculate available space for middle section
         let middleStart = leftCornerWidth
         let middleEnd = bounds.width - rightCornerWidth
-        let middleWidth = middleEnd - middleStart
+        let middleWidth = max(0, middleEnd - middleStart)
         
-        // Fill the entire middle section with tiles FIRST
+        // Draw the skin's playlist title sprite centered in the middle section.
+        // This preserves the titlebar artwork from PLEDIT.BMP instead of replacing it.
+        let titleWidth = min(titleSprite.width, middleWidth)
+        let centeredTitleX = floor(middleStart + (middleWidth - titleWidth) / 2)
+        let titleX = max(middleStart, min(centeredTitleX, middleEnd - titleWidth))
+        let titleEndX = titleX + titleWidth
+        
+        // Fill the left side of the middle section with tiles FIRST
         // Overlap tiles by 1px on non-Retina to avoid seam artifacts
         let tileStep = backingScale < 1.5 ? tileWidth - 1 : tileWidth
-        
         var x: CGFloat = middleStart
+        while x < titleX {
+            let w = min(tileWidth, titleX - x)
+            drawSprite(from: pleditImage, sourceRect: tileSprite,
+                      to: NSRect(x: x, y: 0, width: w, height: titleHeight), in: context)
+            x += tileStep
+        }
+        
+        // Draw centered title sprite from the skin
+        if titleWidth > 0 {
+            drawSprite(from: pleditImage, sourceRect: titleSprite,
+                      to: NSRect(x: titleX, y: 0, width: titleWidth, height: titleHeight), in: context)
+        }
+        
+        // Fill the right side of the middle section with tiles
+        x = titleEndX
         while x < middleEnd {
             let w = min(tileWidth, middleEnd - x)
             drawSprite(from: pleditImage, sourceRect: tileSprite,
@@ -2577,8 +2510,6 @@ class SkinRenderer {
         
         drawSprite(from: pleditImage, sourceRect: rightCorner,
                   to: NSRect(x: bounds.width - rightCornerWidth - cornerOverlap, y: 0, width: rightCornerWidth + cornerOverlap, height: titleHeight), in: context)
-        
-        // Note: Custom text removed - let the skin's title bar show through
         
         // Draw window control button pressed states if needed
         if pressedButton == .close {

@@ -29,9 +29,9 @@ class ModernSkinAnimation {
     /// All active animations, keyed by element ID
     private var activeAnimations: [String: ActiveAnimation] = [:]
     
-    /// Display link for driving animations
-    private var displayLink: CVDisplayLink?
-    
+    /// Timer for driving animations on the main thread
+    private var timer: Timer?
+
     /// Last frame timestamp
     private var lastTimestamp: TimeInterval = 0
     
@@ -81,47 +81,35 @@ class ModernSkinAnimation {
         return activeAnimations[elementId]?.currentFrame
     }
     
-    // MARK: - Display Link
-    
+    // MARK: - Timer
+
+    // Animations (pulse, glow, sprite, etc.) are smooth enough at 20fps —
+    // the slowest animation period is 3s, so 20fps gives 60 ticks per cycle.
+    // Running on the main RunLoop directly avoids the per-frame closure allocation
+    // and mach-port wakeup cost of the old CVDisplayLink + DispatchQueue.main.async pattern.
+    private static let animationInterval: TimeInterval = 1.0 / 20.0
+
     private func startDisplayLink() {
         guard !isRunning else { return }
         isRunning = true
         lastTimestamp = CACurrentMediaTime()
-        
-        var link: CVDisplayLink?
-        CVDisplayLinkCreateWithActiveCGDisplays(&link)
-        guard let displayLink = link else { return }
-        
-        self.displayLink = displayLink
-        
-        let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, context -> CVReturn in
-            guard let context = context else { return kCVReturnError }
-            let engine = Unmanaged<ModernSkinAnimation>.fromOpaque(context).takeUnretainedValue()
-            
+
+        let t = Timer(timeInterval: Self.animationInterval, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
             let now = CACurrentMediaTime()
-            let dt = CGFloat(now - engine.lastTimestamp)
-            engine.lastTimestamp = now
-            
-            DispatchQueue.main.async {
-                engine.update(dt: dt)
-            }
-            
-            return kCVReturnSuccess
+            let dt = CGFloat(now - self.lastTimestamp)
+            self.lastTimestamp = now
+            self.update(dt: dt)
         }
-        
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        CVDisplayLinkSetOutputCallback(displayLink, callback, selfPtr)
-        CVDisplayLinkStart(displayLink)
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
-    
+
     private func stopDisplayLink() {
         guard isRunning else { return }
         isRunning = false
-        
-        if let link = displayLink {
-            CVDisplayLinkStop(link)
-            displayLink = nil
-        }
+        timer?.invalidate()
+        timer = nil
     }
     
     // MARK: - Update

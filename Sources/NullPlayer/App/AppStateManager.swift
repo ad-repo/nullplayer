@@ -5,8 +5,8 @@ import AppKit
 /// on quit and restores on launch.
 ///
 /// ## Saved State (AppState struct, v2)
-/// - **Window visibility**: playlist, EQ, browser, ProjectM, spectrum
-/// - **Window frames**: main, playlist, EQ, browser, ProjectM, spectrum; ProjectM fullscreen
+/// - **Window visibility**: playlist, EQ, browser, ProjectM, spectrum, waveform
+/// - **Window frames**: main, playlist, EQ, browser, ProjectM, spectrum, waveform; ProjectM fullscreen
 /// - **Audio**: volume, balance, shuffle, repeat, gapless, normalization
 /// - **Sweet Fades**: enabled, duration
 /// - **EQ**: enabled, auto, preamp, 10 bands
@@ -184,6 +184,7 @@ class AppStateManager {
         var isPlexBrowserVisible: Bool
         var isProjectMVisible: Bool
         var isSpectrumVisible: Bool = false
+        var isWaveformVisible: Bool = false
         
         // Window frames (as strings for NSRect compatibility)
         var mainWindowFrame: String?
@@ -192,6 +193,7 @@ class AppStateManager {
         var plexBrowserWindowFrame: String?
         var projectMWindowFrame: String?
         var spectrumWindowFrame: String?
+        var waveformWindowFrame: String?
         var isProjectMFullscreen: Bool = false
         
         // Audio settings
@@ -253,8 +255,8 @@ class AppStateManager {
         // MARK: - Custom Decoding for Backward Compatibility
         
         enum CodingKeys: String, CodingKey {
-            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible
-            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, isProjectMFullscreen
+            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isWaveformVisible
+            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, waveformWindowFrame, isProjectMFullscreen
             case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
             case sweetFadeEnabled, sweetFadeDuration
             case eqEnabled, eqAutoEnabled, eqPreamp, eqBands
@@ -277,6 +279,7 @@ class AppStateManager {
             isPlexBrowserVisible = try container.decode(Bool.self, forKey: .isPlexBrowserVisible)
             isProjectMVisible = try container.decode(Bool.self, forKey: .isProjectMVisible)
             isSpectrumVisible = try container.decodeIfPresent(Bool.self, forKey: .isSpectrumVisible) ?? false
+            isWaveformVisible = try container.decodeIfPresent(Bool.self, forKey: .isWaveformVisible) ?? false
             
             // Window frames
             mainWindowFrame = try container.decodeIfPresent(String.self, forKey: .mainWindowFrame)
@@ -285,6 +288,7 @@ class AppStateManager {
             plexBrowserWindowFrame = try container.decodeIfPresent(String.self, forKey: .plexBrowserWindowFrame)
             projectMWindowFrame = try container.decodeIfPresent(String.self, forKey: .projectMWindowFrame)
             spectrumWindowFrame = try container.decodeIfPresent(String.self, forKey: .spectrumWindowFrame)
+            waveformWindowFrame = try container.decodeIfPresent(String.self, forKey: .waveformWindowFrame)
             isProjectMFullscreen = try container.decodeIfPresent(Bool.self, forKey: .isProjectMFullscreen) ?? false
             
             // Audio settings
@@ -350,12 +354,14 @@ class AppStateManager {
             isPlexBrowserVisible: Bool,
             isProjectMVisible: Bool,
             isSpectrumVisible: Bool = false,
+            isWaveformVisible: Bool = false,
             mainWindowFrame: String?,
             playlistWindowFrame: String?,
             equalizerWindowFrame: String?,
             plexBrowserWindowFrame: String?,
             projectMWindowFrame: String?,
             spectrumWindowFrame: String? = nil,
+            waveformWindowFrame: String? = nil,
             isProjectMFullscreen: Bool = false,
             volume: Float,
             balance: Float,
@@ -389,12 +395,14 @@ class AppStateManager {
             self.isPlexBrowserVisible = isPlexBrowserVisible
             self.isProjectMVisible = isProjectMVisible
             self.isSpectrumVisible = isSpectrumVisible
+            self.isWaveformVisible = isWaveformVisible
             self.mainWindowFrame = mainWindowFrame
             self.playlistWindowFrame = playlistWindowFrame
             self.equalizerWindowFrame = equalizerWindowFrame
             self.plexBrowserWindowFrame = plexBrowserWindowFrame
             self.projectMWindowFrame = projectMWindowFrame
             self.spectrumWindowFrame = spectrumWindowFrame
+            self.waveformWindowFrame = waveformWindowFrame
             self.isProjectMFullscreen = isProjectMFullscreen
             self.volume = volume
             self.balance = balance
@@ -474,6 +482,7 @@ class AppStateManager {
             isPlexBrowserVisible: wm.isPlexBrowserVisible,
             isProjectMVisible: wm.isProjectMVisible,
             isSpectrumVisible: wm.isSpectrumVisible,
+            isWaveformVisible: wm.isWaveformVisible,
             
             // Window frames
             mainWindowFrame: wm.mainWindowController?.window.map { NSStringFromRect($0.frame) },
@@ -483,6 +492,7 @@ class AppStateManager {
             // Don't save frame when fullscreen (it would be screen bounds)
             projectMWindowFrame: wm.isProjectMVisible && !wm.isProjectMFullscreen ? wm.projectMWindowFrame.map { NSStringFromRect($0) } : nil,
             spectrumWindowFrame: wm.spectrumWindowFrame.map { NSStringFromRect($0) },
+            waveformWindowFrame: wm.waveformWindowFrame.map { NSStringFromRect($0) },
             isProjectMFullscreen: wm.isProjectMFullscreen,
             
             // Audio settings
@@ -526,7 +536,7 @@ class AppStateManager {
             modernSkinName: UserDefaults.standard.string(forKey: "modernSkinName"),
             selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
             browserBrowseMode: browserBrowseMode,
-            savedInModernMode: wm.isModernUIEnabled
+            savedInModernMode: wm.isRunningModernUI
         )
         
         // Encode and save
@@ -617,6 +627,7 @@ class AppStateManager {
     private func applySettingsState(_ state: AppState) {
         let wm = WindowManager.shared
         let engine = wm.audioEngine
+        let runningModernMode = wm.isRunningModernUI
         
         NSLog("AppStateManager: Restoring settings state - volume: %.2f", state.volume)
         
@@ -656,7 +667,7 @@ class AppStateManager {
         }
         
         // Restore modern skin name (if saved and modern UI is active)
-        if wm.isModernUIEnabled, let modernSkin = state.modernSkinName {
+        if runningModernMode, let modernSkin = state.modernSkinName {
             UserDefaults.standard.set(modernSkin, forKey: "modernSkinName")
             // ModernSkinEngine.loadPreferredSkin() is called in AppDelegate before state restore,
             // but we set the UserDefaults value here so subsequent launches use it
@@ -670,11 +681,11 @@ class AppStateManager {
         // Check if the saved state's UI mode matches the current mode.
         // If mismatched (e.g. saved in modern, now running classic), skip window frame
         // restoration since the windows have different sizes and constraints.
-        let modeMatches = state.savedInModernMode == wm.isModernUIEnabled
+        let modeMatches = state.savedInModernMode == runningModernMode
         if !modeMatches {
             NSLog("AppStateManager: UI mode changed (saved=%@, current=%@) - skipping window frame restoration",
                   state.savedInModernMode ? "modern" : "classic",
-                  wm.isModernUIEnabled ? "modern" : "classic")
+                  runningModernMode ? "modern" : "classic")
         }
         
         // Restore window frames (only if mode matches)
@@ -690,6 +701,7 @@ class AppStateManager {
         let browserFrame = modeMatches ? state.plexBrowserWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let projectMFrame = modeMatches ? state.projectMWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let spectrumFrame = modeMatches ? state.spectrumWindowFrame.flatMap({ NSRectFromString($0) }) : nil
+        let waveformFrame = modeMatches ? state.waveformWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let projectMPresetIndex = state.projectMPresetIndex
         let projectMFullscreen = state.isProjectMFullscreen
         let savedBrowseMode = state.browserBrowseMode
@@ -713,6 +725,9 @@ class AppStateManager {
             }
             if state.isSpectrumVisible {
                 wm.showSpectrum(at: spectrumFrame)
+            }
+            if state.isWaveformVisible {
+                wm.showWaveform(at: waveformFrame)
             }
             if state.isPlexBrowserVisible {
                 wm.showPlexBrowser(at: browserFrame)
@@ -742,6 +757,10 @@ class AppStateManager {
                     }
                 }
             }
+
+            // One-time self-heal for classic sessions affected by cross-mode frame contamination:
+            // if EQ/playlist are still docked below main but widths differ, normalize to main width.
+            self.repairClassicDockedStackWidthsIfNeeded()
         }
         
         NSLog("AppStateManager: Settings state restored (eqAutoEnabled: %d, doubleSize: %d)", state.eqAutoEnabled ? 1 : 0, state.isDoubleSize ? 1 : 0)
@@ -765,13 +784,10 @@ class AppStateManager {
         
         // Build the complete track list in original order.
         // Local and radio tracks are fully resolved immediately.
-        // Streaming tracks (Plex/Subsonic/Jellyfin) get placeholder Track objects
-        // with saved metadata, which are replaced when async fetches complete.
+        // Streaming tracks get placeholder Track objects carrying service IDs,
+        // then those placeholders are replaced as async fetches complete.
         var allTracks: [Track] = []
-        var plexIndicesToFetch: [(SavedTrack, Int)] = []
-        var subsonicIndicesToFetch: [(SavedTrack, Int)] = []
-        var jellyfinIndicesToFetch: [(SavedTrack, Int)] = []
-        var embyIndicesToFetch: [(SavedTrack, Int)] = []
+        var placeholderIndicesToResolve: [Int] = []
         var skippedIndices: Set<Int> = []
         
         for (index, savedTrack) in state.playlistTracks.enumerated() {
@@ -804,9 +820,11 @@ class AppStateManager {
                     artist: savedTrack.artist,
                     album: savedTrack.album,
                     duration: savedTrack.duration,
+                    plexRatingKey: savedTrack.plexRatingKey,
+                    plexServerId: savedTrack.plexServerId,
                     contentType: savedTrack.contentType
                 )
-                plexIndicesToFetch.append((savedTrack, allTracks.count))
+                placeholderIndicesToResolve.append(allTracks.count)
                 allTracks.append(placeholder)
             } else if savedTrack.isSubsonic {
                 let placeholder = Track(
@@ -815,9 +833,11 @@ class AppStateManager {
                     artist: savedTrack.artist,
                     album: savedTrack.album,
                     duration: savedTrack.duration,
+                    subsonicId: savedTrack.subsonicId,
+                    subsonicServerId: savedTrack.subsonicServerId,
                     contentType: savedTrack.contentType
                 )
-                subsonicIndicesToFetch.append((savedTrack, allTracks.count))
+                placeholderIndicesToResolve.append(allTracks.count)
                 allTracks.append(placeholder)
             } else if savedTrack.isJellyfin {
                 let placeholder = Track(
@@ -826,9 +846,11 @@ class AppStateManager {
                     artist: savedTrack.artist,
                     album: savedTrack.album,
                     duration: savedTrack.duration,
+                    jellyfinId: savedTrack.jellyfinId,
+                    jellyfinServerId: savedTrack.jellyfinServerId,
                     contentType: savedTrack.contentType
                 )
-                jellyfinIndicesToFetch.append((savedTrack, allTracks.count))
+                placeholderIndicesToResolve.append(allTracks.count)
                 allTracks.append(placeholder)
             } else if savedTrack.isEmby {
                 let placeholder = Track(
@@ -837,9 +859,11 @@ class AppStateManager {
                     artist: savedTrack.artist,
                     album: savedTrack.album,
                     duration: savedTrack.duration,
+                    embyId: savedTrack.embyId,
+                    embyServerId: savedTrack.embyServerId,
                     contentType: savedTrack.contentType
                 )
-                embyIndicesToFetch.append((savedTrack, allTracks.count))
+                placeholderIndicesToResolve.append(allTracks.count)
                 allTracks.append(placeholder)
             } else {
                 // Unknown type - skip
@@ -860,10 +884,9 @@ class AppStateManager {
         }
         
         // Determine if the current track is a streaming placeholder (real URL not yet available)
-        let currentIsPlaceholder = plexIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
-            || subsonicIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
-            || jellyfinIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
-            || embyIndicesToFetch.contains(where: { $0.1 == adjustedIndex })
+        let currentIsPlaceholder = adjustedIndex >= 0
+            && adjustedIndex < allTracks.count
+            && allTracks[adjustedIndex].isStreamingPlaceholder
 
         // Select the current track (load it without playing)
         if adjustedIndex >= 0 && adjustedIndex < allTracks.count {
@@ -889,96 +912,30 @@ class AppStateManager {
         }
         
         // Fetch streaming tracks asynchronously and replace placeholders
-        let hasStreamingTracks = !plexIndicesToFetch.isEmpty || !subsonicIndicesToFetch.isEmpty || !jellyfinIndicesToFetch.isEmpty || !embyIndicesToFetch.isEmpty
-        if hasStreamingTracks {
+        if !placeholderIndicesToResolve.isEmpty {
             let savedCurrentIndex = adjustedIndex
-            Task.detached { [self] in
+            Task {
                 var replacements: [(Track, Int)] = []  // (realTrack, playlistIndex)
-
-                // Fetch Plex tracks
-                if !plexIndicesToFetch.isEmpty, let client = await waitForPlexClient() {
-                    for (savedTrack, playlistIndex) in plexIndicesToFetch {
-                        if let ratingKey = savedTrack.plexRatingKey {
-                            do {
-                                if let plexTrack = try await client.fetchTrackDetails(trackID: ratingKey),
-                                   let track = PlexManager.shared.convertToTrack(plexTrack) {
-                                    replacements.append((track, playlistIndex))
-                                }
-                            } catch {
-                                NSLog("AppStateManager: Failed to fetch Plex track %@: %@",
-                                      savedTrack.title, error.localizedDescription)
-                            }
-                        }
+                for playlistIndex in placeholderIndicesToResolve {
+                    let placeholderTrack = allTracks[playlistIndex]
+                    if let resolvedTrack = await StreamingTrackResolver.resolve(placeholderTrack) {
+                        replacements.append((resolvedTrack, playlistIndex))
+                    } else {
+                        NSLog("AppStateManager: Failed to resolve placeholder track '%@'", placeholderTrack.title)
                     }
                 }
-                
-                // Fetch Subsonic tracks
-                for (savedTrack, playlistIndex) in subsonicIndicesToFetch {
-                    if let songId = savedTrack.subsonicId,
-                       let serverId = savedTrack.subsonicServerId,
-                       SubsonicManager.shared.servers.contains(where: { $0.id == serverId }),
-                       let credentials = KeychainHelper.shared.getSubsonicServer(id: serverId),
-                       let client = SubsonicServerClient(credentials: credentials) {
-                        do {
-                            if let song = try await client.fetchSong(id: songId),
-                               let track = SubsonicManager.shared.convertToTrack(song) {
-                                replacements.append((track, playlistIndex))
-                            }
-                        } catch {
-                            NSLog("AppStateManager: Failed to fetch Subsonic track %@: %@",
-                                  savedTrack.title, error.localizedDescription)
-                        }
-                    }
-                }
-                
-                // Fetch Jellyfin tracks
-                for (savedTrack, playlistIndex) in jellyfinIndicesToFetch {
-                    if let jellyfinId = savedTrack.jellyfinId,
-                       let serverId = savedTrack.jellyfinServerId,
-                       JellyfinManager.shared.servers.contains(where: { $0.id == serverId }),
-                       let credentials = KeychainHelper.shared.getJellyfinServer(id: serverId),
-                       let client = JellyfinServerClient(credentials: credentials) {
-                        do {
-                            if let song = try await client.fetchSong(id: jellyfinId),
-                               let track = JellyfinManager.shared.convertToTrack(song) {
-                                replacements.append((track, playlistIndex))
-                            }
-                        } catch {
-                            NSLog("AppStateManager: Failed to fetch Jellyfin track %@: %@",
-                                  savedTrack.title, error.localizedDescription)
-                        }
-                    }
-                }
-
-                // Fetch Emby tracks
-                for (savedTrack, playlistIndex) in embyIndicesToFetch {
-                    if let embyId = savedTrack.embyId,
-                       let serverId = savedTrack.embyServerId,
-                       EmbyManager.shared.servers.contains(where: { $0.id == serverId }),
-                       let credentials = KeychainHelper.shared.getEmbyServer(id: serverId),
-                       let client = EmbyServerClient(credentials: credentials) {
-                        do {
-                            if let song = try await client.fetchSong(id: embyId),
-                               let track = EmbyManager.shared.convertToTrack(song) {
-                                replacements.append((track, playlistIndex))
-                            }
-                        } catch {
-                            NSLog("AppStateManager: Failed to fetch Emby track %@: %@",
-                                  savedTrack.title, error.localizedDescription)
-                        }
-                    }
-                }
+                let resolvedReplacements = replacements
 
                 // Replace placeholder tracks with real ones on the main thread
                 await MainActor.run {
                     var replacedCurrentTrack = false
-                    for (realTrack, playlistIndex) in replacements {
+                    for (realTrack, playlistIndex) in resolvedReplacements {
                         engine.replaceTrack(at: playlistIndex, with: realTrack)
                         if playlistIndex == savedCurrentIndex {
                             replacedCurrentTrack = true
                         }
                     }
-                    NSLog("AppStateManager: Replaced %d streaming track placeholders", replacements.count)
+                    NSLog("AppStateManager: Replaced %d streaming track placeholders", resolvedReplacements.count)
                     
                     // If the current track was a streaming placeholder, reload it
                     // now that we have the real URL
@@ -1027,28 +984,188 @@ class AppStateManager {
                 window.setFrame(frame, display: true)
             }
         }
+
+        // Modern HT sessions may contain stale full-height frames from older runs.
+        // Normalize immediately so launch never reserves titlebar space in HT mode.
+        if wm.isRunningModernUI {
+            wm.normalizeModernMainWindowForHTIfNeeded()
+        }
         
         // Note: Playlist, EQ, Browser, and ProjectM frames are passed directly to their
         // show methods in applyState() since those windows are created lazily and don't
         // exist yet when this function is called.
     }
+
+    struct ClassicCenterStackRepairResult {
+        let mainFrame: NSRect
+        let equalizerFrame: NSRect?
+        let playlistFrame: NSRect?
+        let spectrumFrame: NSRect?
+        let waveformFrame: NSRect?
+        let repaired: Bool
+    }
+
+    /// Pure geometry helper for restoring classic center-stack windows
+    /// (Main/EQ/Playlist/Spectrum/Waveform).
+    /// Repairs near-docked gaps, normalizes width/X to main, and snaps repaired windows flush below
+    /// the current anchor in stack order.
+    static func repairClassicCenterStackFrames(
+        mainFrame: NSRect,
+        equalizerFrame: NSRect?,
+        playlistFrame: NSRect?,
+        spectrumFrame: NSRect?,
+        waveformFrame: NSRect?,
+        scale: CGFloat
+    ) -> ClassicCenterStackRepairResult {
+        let widthEpsilon: CGFloat = 0.5
+        let minMainHeight = Skin.mainWindowSize.height * scale
+        let nearDockTolerance = max(20.0, 24.0 * scale)
+
+        var repaired = false
+        var adjustedMain = mainFrame
+        if adjustedMain.height + widthEpsilon < minMainHeight {
+            let topY = adjustedMain.maxY
+            adjustedMain.size.height = minMainHeight
+            adjustedMain.origin.y = topY - minMainHeight
+            repaired = true
+        }
+
+        var anchorFrame = adjustedMain
+
+        func shouldRepairCandidate(_ candidate: NSRect, below anchor: NSRect) -> Bool {
+            let verticalGap = abs(candidate.maxY - anchor.minY)
+            let horizontalOverlap = candidate.minX < anchor.maxX && candidate.maxX > anchor.minX
+            let leftAligned = abs(candidate.minX - anchor.minX) <= nearDockTolerance
+            return verticalGap <= nearDockTolerance && horizontalOverlap && leftAligned
+        }
+
+        func normalizedFlushFrame(for candidate: NSRect, below anchor: NSRect) -> NSRect {
+            NSRect(
+                x: adjustedMain.minX,
+                y: anchor.minY - candidate.height,
+                width: adjustedMain.width,
+                height: candidate.height
+            )
+        }
+
+        func frameChanged(_ lhs: NSRect, _ rhs: NSRect) -> Bool {
+            abs(lhs.minX - rhs.minX) > widthEpsilon ||
+            abs(lhs.minY - rhs.minY) > widthEpsilon ||
+            abs(lhs.width - rhs.width) > widthEpsilon
+        }
+
+        func repairCandidate(_ candidate: NSRect?) -> NSRect? {
+            guard let candidate else { return nil }
+            guard shouldRepairCandidate(candidate, below: anchorFrame) else { return candidate }
+
+            let repairedFrame = normalizedFlushFrame(for: candidate, below: anchorFrame)
+            if frameChanged(candidate, repairedFrame) {
+                repaired = true
+            }
+            anchorFrame = repairedFrame
+            return repairedFrame
+        }
+
+        let adjustedEQ = repairCandidate(equalizerFrame)
+        let adjustedPlaylist = repairCandidate(playlistFrame)
+        let adjustedSpectrum = repairCandidate(spectrumFrame)
+        let adjustedWaveform = repairCandidate(waveformFrame)
+
+        return ClassicCenterStackRepairResult(
+            mainFrame: adjustedMain,
+            equalizerFrame: adjustedEQ,
+            playlistFrame: adjustedPlaylist,
+            spectrumFrame: adjustedSpectrum,
+            waveformFrame: adjustedWaveform,
+            repaired: repaired
+        )
+    }
+
+    /// Repair classic-mode docked stack geometry if corrupted by cross-mode frame restore.
+    /// Applies only to near-docked center-stack windows directly below main.
+    private func repairClassicDockedStackWidthsIfNeeded() {
+        let wm = WindowManager.shared
+        guard !wm.isRunningModernUI else { return }
+        guard let mainWindow = wm.mainWindowController?.window else { return }
+
+        let scale: CGFloat = wm.isDoubleSize ? 1.5 : 1.0
+        let equalizerWindow = wm.equalizerWindowController?.window
+        let playlistWindow = wm.playlistWindowController?.window
+        let spectrumWindow = wm.spectrumWindow
+        let waveformWindow = wm.waveformWindow
+
+        let equalizerFrame: NSRect?
+        if let equalizerWindow, equalizerWindow.isVisible {
+            equalizerFrame = equalizerWindow.frame
+        } else {
+            equalizerFrame = nil
+        }
+
+        let playlistFrame: NSRect?
+        if let playlistWindow, playlistWindow.isVisible {
+            playlistFrame = playlistWindow.frame
+        } else {
+            playlistFrame = nil
+        }
+
+        let spectrumFrame: NSRect?
+        if let spectrumWindow, spectrumWindow.isVisible {
+            spectrumFrame = spectrumWindow.frame
+        } else {
+            spectrumFrame = nil
+        }
+
+        let waveformFrame: NSRect?
+        if let waveformWindow, waveformWindow.isVisible {
+            waveformFrame = waveformWindow.frame
+        } else {
+            waveformFrame = nil
+        }
+
+        let repairedFrames = Self.repairClassicCenterStackFrames(
+            mainFrame: mainWindow.frame,
+            equalizerFrame: equalizerFrame,
+            playlistFrame: playlistFrame,
+            spectrumFrame: spectrumFrame,
+            waveformFrame: waveformFrame,
+            scale: scale
+        )
+
+        if repairedFrames.mainFrame != mainWindow.frame {
+            mainWindow.setFrame(repairedFrames.mainFrame, display: true)
+        }
+        if let equalizerWindow,
+           equalizerWindow.isVisible,
+           let repairedFrame = repairedFrames.equalizerFrame,
+           repairedFrame != equalizerWindow.frame {
+            equalizerWindow.setFrame(repairedFrame, display: true)
+        }
+        if let playlistWindow,
+           playlistWindow.isVisible,
+           let repairedFrame = repairedFrames.playlistFrame,
+           repairedFrame != playlistWindow.frame {
+            playlistWindow.setFrame(repairedFrame, display: true)
+        }
+        if let spectrumWindow,
+           spectrumWindow.isVisible,
+           let repairedFrame = repairedFrames.spectrumFrame,
+           repairedFrame != spectrumWindow.frame {
+            spectrumWindow.setFrame(repairedFrame, display: true)
+        }
+        if let waveformWindow,
+           waveformWindow.isVisible,
+           let repairedFrame = repairedFrames.waveformFrame,
+           repairedFrame != waveformWindow.frame {
+            waveformWindow.setFrame(repairedFrame, display: true)
+        }
+
+        if repairedFrames.repaired {
+            NSLog("AppStateManager: Repaired classic docked stack geometry to remove near-docked gaps")
+            wm.updateDockedChildWindows()
+        }
+    }
     
     // MARK: - Helpers
-
-    /// Wait up to `timeout` seconds for Plex to connect and return its serverClient.
-    private func waitForPlexClient(timeout: TimeInterval = 15) async -> PlexServerClient? {
-        if let client = PlexManager.shared.serverClient { return client }
-        NSLog("AppStateManager: Waiting for Plex connection to restore streaming tracks...")
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            try? await Task.sleep(nanoseconds: 250_000_000) // poll every 0.25s
-            if let client = PlexManager.shared.serverClient { return client }
-        }
-        // One final check in case client connected during the last sleep window
-        if let client = PlexManager.shared.serverClient { return client }
-        NSLog("AppStateManager: Plex did not connect within %.0fs — skipping Plex track restoration", timeout)
-        return nil
-    }
 
     /// Get the custom skin path if a non-default skin is loaded
     private func getCustomSkinPath() -> String? {

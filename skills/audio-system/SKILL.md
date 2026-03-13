@@ -5,18 +5,18 @@ description: Audio engine architecture, local/streaming pipelines, EQ, spectrum 
 
 # Audio System Architecture
 
-This guide describes NullPlayer's audio playback system, including local file playback, streaming audio, equalization, and spectrum analysis.
+This guide describes NullPlayer's audio playback system, including local file playback, streaming audio, equalization, spectrum analysis, and waveform generation.
 
 ## Overview
 
 NullPlayer uses two parallel audio pipelines to handle different content types:
 
-| Content Type | Pipeline | EQ Support | Spectrum |
-|-------------|----------|------------|----------|
-| Local files (.mp3, .flac, etc.) | AVAudioEngine | Yes | Yes |
-| HTTP streaming (Plex/Subsonic/Jellyfin) | AudioStreaming library | Yes | Yes |
+| Content Type | Pipeline | EQ Support | Spectrum | Waveform |
+|-------------|----------|------------|----------|----------|
+| Local files (.mp3, .flac, etc.) | AVAudioEngine | Yes | Yes | Cached 4096-bucket snapshot |
+| HTTP streaming (Plex/Subsonic/Jellyfin/Emby/radio) | AudioStreaming library | Yes | Yes | Live stream accumulator from 576-sample PCM chunks |
 
-Both pipelines support full 10-band EQ and real-time spectrum visualization. EQ settings are automatically synchronized between them.
+Both pipelines support full 10-band EQ and real-time spectrum visualization. EQ settings are automatically synchronized between them. The waveform window reuses the same playback sources but splits into two modes: cached snapshots for local files and live waveform accumulation for streams.
 
 ## Architecture Diagram
 
@@ -93,6 +93,7 @@ Main audio controller managing:
 - Sweet Fades crossfade (both pipelines)
 - Output device selection
 - Delegate notifications for UI updates
+- Separate consumer gating for FFT/spectrum work vs live waveform chunk generation
 
 **Key Properties:**
 ```swift
@@ -115,6 +116,7 @@ Wrapper around [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) li
 - HTTP audio streaming with buffering
 - Its own AVAudioUnitEQ (stays synchronized)
 - Spectrum analysis via frame filtering
+- Optional 576-sample waveform chunk generation for live waveform consumers
 - State change callbacks
 
 **Why separate EQ?** AVAudioNode instances can only be attached to one AVAudioEngine. Since AudioStreaming uses its own internal engine, we maintain a separate EQ node that stays synchronized with the main engine's EQ.
@@ -168,6 +170,19 @@ func streamingPlayerDidFinishPlaying() {
 - **Disabled by default** to preserve original audio quality
 - Transparent limiter (threshold: -1 dB) prevents clipping
 
+### Modern EQ UI Controls
+
+| Control | Behavior |
+|---------|----------|
+| ON toggle | Enable/disable EQ |
+| AUTO toggle | Apply genre-based preset for current track; auto-enables EQ if off |
+| FLAT ROCK POP ELEC HIP JAZZ CLSC buttons | Apply preset and highlight active button; auto-enables EQ if off; clicking active button deactivates (applies flat, no highlight) |
+| Drag a fader | Adjust band/preamp; clears active preset highlight |
+| Double-click a fader | Reset that band only to 0 dB (not all bands) |
+| Double-click preamp | Reset preamp only to 0 dB |
+
+Preset buttons stretch to fill all remaining horizontal space after the AUTO button.
+
 ### EQ Synchronization
 
 When EQ settings change, both pipelines are updated:
@@ -218,6 +233,36 @@ Spectrum analyzer and ProjectM show audio levels independently of user volume:
 **Local:** Tap on `mixerNode` before volume control (mainMixerNode.outputVolume)
 
 **Streaming:** AudioStreaming's `frameFiltering` captures after volume, so `processAudioBuffer()` compensates by dividing samples by current volume (capped at 20x).
+
+## Waveform Window Pipeline
+
+The waveform window shares the audio engine but intentionally does not share the same demand gate as FFT/spectrum analysis.
+
+### Local Files
+
+- `WaveformCacheService` opens the active file with `AVAudioFile`
+- Decodes PCM in chunks and stores max absolute amplitude into 4096 buckets
+- Persists snapshots under `~/Library/Application Support/NullPlayer/WaveformCache/`
+- Cache key is based on canonical path + file size + modification date
+
+### Streams
+
+- `AudioEngine` and `StreamingAudioPlayer` emit `.audioWaveform576DataUpdated`
+- `BaseWaveformView` listens only for non-file audio tracks
+- `StreamingWaveformAccumulator` builds:
+  - progressive seekable waveforms for timed streams
+  - rolling non-seekable waveforms for live/radio streams
+
+### Consumer Gating
+
+Do not assume spectrum demand implies waveform demand.
+
+- `AudioEngine.spectrumConsumers` controls FFT/spectrum work
+- `AudioEngine.waveformConsumers` controls 576-sample waveform chunk generation
+- The waveform window registers a waveform consumer only while visible on a non-file audio track
+- `SpectrumAnalyzerView` registers a waveform consumer only while `qualityMode == .visClassicExact` and the analyzer is actively rendering
+
+This split matters for CPU usage: hidden waveform windows and inactive `vis_classic` views should not keep paying the live waveform callback cost.
 
 ## BPM Detection
 

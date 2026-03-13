@@ -5,6 +5,7 @@ import AppKit
 class AppDelegate: NSObject, NSApplicationDelegate {
     
     private var windowManager: WindowManager!
+    private var dynamicMenuBuilders: [ObjectIdentifier: () -> NSMenu] = [:]
     
     /// Whether the app is running in UI testing mode
     private(set) var isUITesting = false
@@ -44,10 +45,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager.audioEngine.addSpectrumConsumer("mainWindowSpectrum")
 
         // Load skin from environment variable if set (for testing)
+        #if DEBUG
         if let skinPath = ProcessInfo.processInfo.environment["NULLPLAYER_SKIN"] {
             let skinURL = URL(fileURLWithPath: skinPath)
             windowManager.loadSkin(from: skinURL)
         }
+        #endif
         
         // Initialize modern skin engine if modern mode is enabled
         if windowManager.isModernUIEnabled {
@@ -63,6 +66,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up the application menu
         setupMainMenu()
+
+        // Start cast discovery from app lifecycle, not from menu construction.
+        CastManager.shared.startDiscovery()
         
         // Restore settings state (skin, volume, EQ, windows)
         AppStateManager.shared.restoreSettingsState()
@@ -120,6 +126,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up the application menu
         setupMainMenu()
+
+        // Skip network discovery in UI testing mode.
         
         // Mark app as ready for file opens
         isAppReady = true
@@ -221,14 +229,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenuItem.submenu = appMenu
         
         appMenu.addItem(
-            withTitle: "nullPlayer-\(BundleHelper.appVersion ?? "Unknown")",
+            withTitle: "About nullPlayer",
             action: #selector(showAbout),
             keyEquivalent: ""
-        )        
+        )
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Quit nullPlayer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        addDynamicTopLevelMenu(title: "Windows", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarWindowsMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "UI", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarUIMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Playback", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarPlaybackMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Visuals", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarVisualsMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Libraries", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarLibrariesMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Output", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarOutputMenu, refreshOnOpen: true)
         
         NSApplication.shared.mainMenu = mainMenu
+    }
+
+    private func addDynamicTopLevelMenu(title: String, to mainMenu: NSMenu, builder: @escaping () -> NSMenu, refreshOnOpen: Bool = false) {
+        let topLevelItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        mainMenu.addItem(topLevelItem)
+
+        let submenu = builder()
+        submenu.title = title
+        if refreshOnOpen {
+            submenu.delegate = self
+            dynamicMenuBuilders[ObjectIdentifier(submenu)] = builder
+        }
+        topLevelItem.submenu = submenu
     }
     
     // MARK: - Menu Actions
@@ -236,7 +264,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAbout() {
         // Create custom About window
         let windowWidth: CGFloat = 340
-        let windowHeight: CGFloat = 480
+        let windowHeight: CGFloat = 516
         
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
@@ -283,7 +311,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 28
         
         // Tagline
-        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback player for modern personal media setups")
+        let taglineLabel = NSTextField(wrappingLabelWithString: "A throwback player for modern personal media")
         taglineLabel.font = NSFont.systemFont(ofSize: 14)
         taglineLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         taglineLabel.alignment = .center
@@ -298,13 +326,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= 20
         
         // Credits
-        let thanksLabel = NSTextField(labelWithString: "Please add a ⭐star⭐ on github")
-        thanksLabel.font = NSFont.systemFont(ofSize: 14)
+        let thanksLabel = NSTextField(labelWithString: "Please add a ⭐ star ⭐ on github")
+        thanksLabel.font = NSFont.systemFont(ofSize: 15)
         thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
         thanksLabel.alignment = .center
-        thanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
+        thanksLabel.frame = NSRect(x: 20, y: y - 18, width: windowWidth - 40, height: 18)
         contentView.addSubview(thanksLabel)
         y -= 36
+
+        // // sthanks
+        // let sthanksLabel = NSTextField(labelWithString: "Thanks to u/SpaXter25 for QE and PD")
+        // sthanksLabel.font = NSFont.systemFont(ofSize: 12)
+        // sthanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
+        // sthanksLabel.alignment = .center
+        // sthanksLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
+        // contentView.addSubview(sthanksLabel)
+        // y -= 36
         
         // Buttons (3 on one row)
         let buttonWidth: CGFloat = 90
@@ -348,8 +385,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         y -= buttonHeight + 12
         
         // Disclaimer
-        let disclaimerLabel = NSTextField(wrappingLabelWithString: "This is a clean room open source project")
-        disclaimerLabel.font = NSFont.systemFont(ofSize: 10)
+        let disclaimerLabel = NSTextField(wrappingLabelWithString: "This is a clean room project")
+        disclaimerLabel.font = NSFont.systemFont(ofSize: 12)
         disclaimerLabel.textColor = NSColor(white: 0.4, alpha: 1.0)
         disclaimerLabel.alignment = .center
         disclaimerLabel.frame = NSRect(x: 20, y: y - 28, width: windowWidth - 40, height: 28)
@@ -398,6 +435,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
 }
 
+extension AppDelegate: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let builder = dynamicMenuBuilders[ObjectIdentifier(menu)] else { return }
+
+        let rebuiltMenu = builder()
+        menu.removeAllItems()
+
+        while let item = rebuiltMenu.items.first {
+            rebuiltMenu.removeItem(item)
+            menu.addItem(item)
+        }
+    }
+}
+
 // MARK: - AudioEngineDelegate
 
 extension AppDelegate: AudioEngineDelegate {
@@ -409,10 +460,12 @@ extension AppDelegate: AudioEngineDelegate {
         // Don't update main window time if video session is active (video has its own time source)
         guard !windowManager.isVideoActivePlayback else { return }
         windowManager.mainWindowController?.updateTime(current: current, duration: duration)
+        windowManager.updateWaveformTime(current: current, duration: duration)
     }
     
     func audioEngineDidChangeTrack(_ track: Track?) {
         windowManager.mainWindowController?.updateTrackInfo(track)
+        windowManager.updateWaveformTrack(track)
     }
     
     func audioEngineDidUpdateSpectrum(_ levels: [Float]) {

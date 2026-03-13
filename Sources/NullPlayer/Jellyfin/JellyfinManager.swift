@@ -344,8 +344,10 @@ class JellyfinManager {
             
             NSLog("JellyfinManager: Connected to '%@' with %d music libraries, %d video libraries", server.name, libraries.count, vidLibraries.count)
             
-            // Preload library content in background
-            await preloadLibraryContent()
+            // Start preload in background without blocking browser connection flow.
+            Task.detached(priority: .utility) { [weak self] in
+                await self?.preloadLibraryContent()
+            }
             
         } catch {
             await MainActor.run {
@@ -436,44 +438,26 @@ class JellyfinManager {
         NSLog("JellyfinManager: Starting library content preload (library: %@)", libraryId ?? "all")
         
         do {
-            // Fetch artists, albums, and playlists in parallel
+            // Keep startup preload music-focused for faster browser readiness.
             async let artistsTask = client.fetchAllArtists(libraryId: libraryId)
             async let albumsTask = client.fetchAllAlbums(libraryId: libraryId)
             async let playlistsTask = client.fetchPlaylists()
-            
+
             let (artists, albums, playlists) = try await (artistsTask, albumsTask, playlistsTask)
-            
-            // Also preload movies and shows
-            var movies: [JellyfinMovie] = []
-            var shows: [JellyfinShow] = []
 
-            do {
-                movies = try await client.fetchMovies(libraryId: currentMovieLibrary?.id)
-            } catch {
-                NSLog("JellyfinManager: Movie preload failed: %@", error.localizedDescription)
-            }
-
-            do {
-                shows = try await client.fetchShows(libraryId: currentShowLibrary?.id)
-            } catch {
-                NSLog("JellyfinManager: Show preload failed: %@", error.localizedDescription)
-            }
-            
             await MainActor.run {
                 self.cachedArtists = artists
                 self.cachedAlbums = albums
                 self.cachedPlaylists = playlists
-                self.cachedMovies = movies
-                self.cachedShows = shows
                 self.isContentPreloaded = true
                 self.isPreloading = false
-                
-                NSLog("JellyfinManager: Preloaded %d artists, %d albums, %d playlists, %d movies, %d shows",
-                      artists.count, albums.count, playlists.count, movies.count, shows.count)
-                
+
+                NSLog("JellyfinManager: Preloaded music content - %d artists, %d albums, %d playlists",
+                      artists.count, albums.count, playlists.count)
+
                 NotificationCenter.default.post(name: Self.libraryContentDidPreloadNotification, object: self)
             }
-            
+
         } catch {
             NSLog("JellyfinManager: Library preload failed: %@", error.localizedDescription)
             await MainActor.run {
@@ -927,7 +911,10 @@ class JellyfinManager {
 
     // MARK: - Radio Helpers
 
-    private func filterForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = 2) -> [Track] {
+    private func filterForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = RadioPlaybackOptions.maxTracksPerArtist) -> [Track] {
+        if maxPerArtist <= RadioPlaybackOptions.unlimitedMaxTracksPerArtist {
+            return Array(tracks.prefix(limit))
+        }
         var result: [Track] = []
         var artistCounts: [String: Int] = [:]
         for track in tracks {

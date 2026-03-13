@@ -216,31 +216,50 @@ vertex FlameVertexOut flame_vertex(uint vertexID [[vertex_id]]) {
     return out;
 }
 
-fragment float4 flame_fragment(
+// Separable Gaussian blur — horizontal pass.
+// Samples the low-res fire grid texture horizontally and writes a single-channel
+// (r16Float) intermediate texture at full drawable resolution.
+fragment float4 flame_blur_h(
     FlameVertexOut in [[stage_in]],
     texture2d<float, access::sample> fireTex [[texture(0)]],
     constant FlameParams& params [[buffer(0)]]
 ) {
     constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
+    float texelX = 1.0 / params.gridSize.x;
+    float blurred = 0.0;
+    float wt = 0.0;
+    for (int dx = -5; dx <= 5; dx++) {
+        float w = exp(-float(dx * dx) * 0.08);
+        blurred += fireTex.sample(s, in.uv + float2(float(dx) * texelX * 2.0, 0.0)).r * w;
+        wt += w;
+    }
+    return float4(blurred / wt, 0.0, 0.0, 1.0);
+}
 
-    // Massive Gaussian blur for silky smooth upscaling from low-res grid
-    // Sample at 2-texel steps for wider coverage (effectively 20+ texel radius)
-    float2 texel = 1.0 / params.gridSize;
+// Separable Gaussian blur — vertical pass + color mapping.
+// Samples the intermediate (viewport-sized) horizontal-blur texture vertically,
+// applies the palette, and writes the final bgra8Unorm drawable.
+fragment float4 flame_blur_v(
+    FlameVertexOut in [[stage_in]],
+    texture2d<float, access::sample> hBlurTex [[texture(0)]],
+    constant FlameParams& params [[buffer(0)]]
+) {
+    constexpr sampler s(mag_filter::linear, min_filter::linear, address::clamp_to_edge);
+    // The H-pass rendered to a texture where y=0 is top of screen (Metal render-target
+    // convention), but in.uv.y=0 means bottom of screen.  Flip y so we read the correct row.
+    float2 baseUV = float2(in.uv.x, 1.0 - in.uv.y);
+    // Use the same grid-space texel size so the vertical blur radius matches the horizontal.
+    float texelY = 1.0 / params.gridSize.y;
     float blurred = 0.0;
     float wt = 0.0;
     for (int dy = -5; dy <= 5; dy++) {
-        for (int dx = -5; dx <= 5; dx++) {
-            float d2 = float(dx * dx + dy * dy);
-            float w = exp(-d2 * 0.08);  // Wide sigma
-            float2 offset = float2(float(dx), float(dy)) * texel * 2.0;  // 2-texel step
-            blurred += fireTex.sample(s, in.uv + offset).r * w;
-            wt += w;
-        }
+        float w = exp(-float(dy * dy) * 0.08);
+        blurred += hBlurTex.sample(s, baseUV + float2(0.0, float(dy) * texelY * 2.0)).r * w;
+        wt += w;
     }
     blurred /= wt;
 
     float final_t = pow(blurred, 0.8);
-
     float3 color = flameColor(final_t, params.colorScheme);
 
     // Soft edge fade

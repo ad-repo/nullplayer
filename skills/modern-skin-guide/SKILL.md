@@ -97,6 +97,9 @@ MySkin/
         "borderColor": "#00ffcc",
         "cornerRadius": 8,
         "scale": 1.25,
+        "opacity": 0.9,
+        "textOpacity": 1.0,
+        "mainSpectrumOpacity": 1.0,
         "seamlessDocking": 1.0
     },
     "marquee": {
@@ -181,7 +184,14 @@ The simplest skin is just a `skin.json` with palette colors:
     "fonts": { "primaryName": "DepartureMono-Regular", "fallbackName": "Menlo" },
     "background": { "grid": { "color": "#332200", "spacing": 15, "angle": 80, "opacity": 0.1 } },
     "glow": { "enabled": true, "radius": 6, "intensity": 0.5, "threshold": 0.6 },
-    "window": { "borderWidth": 1, "cornerRadius": 6, "seamlessDocking": 1.0 }
+    "window": {
+        "borderWidth": 1,
+        "cornerRadius": 6,
+        "opacity": 0.9,
+        "textOpacity": 1.0,
+        "mainSpectrumOpacity": 1.0,
+        "seamlessDocking": 1.0
+    }
 }
 ```
 
@@ -205,14 +215,14 @@ All elements render programmatically using the palette colors.
 
 ## Packaging for Distribution
 
-ZIP your skin directory and rename to `.nps`:
+ZIP your skin directory and rename to `.nsz`:
 
 ```bash
 cd MySkin/
-zip -r ../MySkin.nps .
+zip -r ../MySkin.nsz .
 ```
 
-Users place `.nps` files or folders in:
+Users place `.nsz` files or folders in:
 ```
 ~/Library/Application Support/NullPlayer/ModernSkins/
 ```
@@ -221,7 +231,7 @@ Users place `.nps` files or folders in:
 
 ### Selecting a Skin
 
-Right-click the player → **Modern UI** → **Select Skin** → choose from the list.
+Right-click the player → **UI** → **Modern** → choose from the list (or use **Load Skin...** to import a `.nsz` bundle).
 
 Skin changes take effect immediately. Switching between Classic and Modern mode requires a restart.
 

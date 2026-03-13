@@ -9,7 +9,9 @@ This guide covers Sonos speaker discovery, casting, and multi-room grouping in N
 
 ## Quick Start
 
-1. Right-click anywhere in NullPlayer → **Output Devices → Sonos**
+1. Open Sonos from either:
+   - Right-click anywhere in NullPlayer → **Output Devices → Sonos**
+   - Top menu bar → **Output → Sonos**
 2. Check the rooms you want to cast to (checkboxes stay open for multi-select)
 3. Click **🟢 Start Casting** to begin playback
 4. Click **🔴 Stop Casting** to end the session
@@ -110,6 +112,10 @@ Sonos                          ▸
 ### Multi-Select Feature
 
 The room checkboxes use `SonosRoomCheckboxView` which **keeps the menu open** when clicked, allowing you to select multiple rooms without the menu closing.
+
+This behavior is intentionally the same in both:
+- Context menu Sonos submenu
+- Top menu bar `Output > Sonos` submenu
 
 ## Casting Workflow
 

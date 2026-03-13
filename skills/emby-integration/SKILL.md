@@ -48,6 +48,8 @@ The key differences from Jellyfin:
 ## Library Browsing
 
 - **All libraries/views**: `GET /Users/{userId}/Views`
+  - `fetchMusicLibraries()` returns all views (unfiltered).
+  - `fetchVideoLibraries()` uses the same endpoint but filters out non-video library types (`music`, `musicvideos`, `books`, `photos`, `playlists`, `livetv`).
 - **Artists**: `GET /Artists/AlbumArtists?parentId={libId}&userId={userId}&Recursive=true&SortBy=SortName`
 - **Albums**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=MusicAlbum&Recursive=true`
 - **Artist albums**: `GET /Users/{userId}/Items?AlbumArtistIds={artistId}&IncludeItemTypes=MusicAlbum`
@@ -180,6 +182,7 @@ Emby tracks support casting to Sonos, Chromecast, and DLNA devices:
 Emby credentials are stored using `KeychainHelper`:
 - Key: `emby_servers`
 - Stores: `[EmbyServerCredentials]` (includes access token and userId)
+- Uses the macOS login keychain with a permissive `SecAccessCreate` ACL. Do NOT add `kSecUseDataProtectionKeychain` or `kSecAttrAccessible` — they require entitlements that ad-hoc signed DMG builds don't have and cause `-34018 errSecMissingEntitlement`.
 
 ## State Persistence
 

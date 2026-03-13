@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vis Classic Guide"
+  short_description: "Help with Vis Classic Guide tasks"
+  default_prompt: "Use the vis_classic references to analyze implementation details, profile behavior, and profile-to-skin mapping decisions."

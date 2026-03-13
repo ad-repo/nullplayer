@@ -22,6 +22,12 @@ struct ModernSkinConfig: Codable {
     
     /// Window chrome configuration
     let window: WindowConfig
+
+    /// Visualization defaults and mode-specific preset/profile mappings
+    let visualization: VisualizationConfig?
+
+    /// Waveform window appearance defaults
+    let waveform: WaveformConfig?
     
     /// Marquee/scrolling text configuration
     let marquee: MarqueeConfig?
@@ -37,6 +43,62 @@ struct ModernSkinConfig: Codable {
 }
 
 // MARK: - Sub-Configs
+
+/// Per-skin visualization defaults.
+/// Allows skins to set default modes and per-mode preset/profile mappings.
+struct VisualizationConfig: Codable {
+    /// Default visualization mode for main window (`MainWindowVisMode.rawValue`)
+    let mainWindowMode: String?
+
+    /// Default visualization mode for spectrum window (`SpectrumQualityMode.rawValue`)
+    let spectrumWindowMode: String?
+
+    /// vis_classic profile defaults (only applies when mode is `vis_classic`)
+    let visClassic: VisClassicVisualizationConfig?
+
+    /// Fire mode preset defaults
+    let fire: FireVisualizationConfig?
+
+    /// Lightning mode preset defaults
+    let lightning: LightningVisualizationConfig?
+
+    /// Matrix mode preset defaults
+    let matrix: MatrixVisualizationConfig?
+}
+
+struct WaveformConfig: Codable {
+    let transparentBackgroundStyle: WaveformTransparentBackgroundStyle?
+}
+
+struct VisClassicVisualizationConfig: Codable {
+    let mainWindowProfile: String?
+    let spectrumWindowProfile: String?
+    let mainWindowFitToWidth: Bool?
+    let spectrumWindowFitToWidth: Bool?
+    let mainWindowTransparentBackground: Bool?
+    let spectrumWindowTransparentBackground: Bool?
+    let mainWindowOpacity: CGFloat?
+    let spectrumWindowOpacity: CGFloat?
+}
+
+struct FireVisualizationConfig: Codable {
+    let mainWindowStyle: String?
+    let mainWindowIntensity: String?
+    let spectrumWindowStyle: String?
+    let spectrumWindowIntensity: String?
+}
+
+struct LightningVisualizationConfig: Codable {
+    let mainWindowStyle: String?
+    let spectrumWindowStyle: String?
+}
+
+struct MatrixVisualizationConfig: Codable {
+    let mainWindowColorScheme: String?
+    let mainWindowIntensity: String?
+    let spectrumWindowColorScheme: String?
+    let spectrumWindowIntensity: String?
+}
 
 struct SkinMeta: Codable {
     let name: String
@@ -138,7 +200,63 @@ struct WindowConfig: Codable {
     let borderColor: String?
     let cornerRadius: CGFloat?
     let scale: CGFloat?        // UI scale factor (defaults to 1.25)
+    let opacity: CGFloat       // Window background opacity 0.0-1.0 (defaults to 1.0 for old skins)
+    let textOpacity: CGFloat?  // Global text opacity multiplier 0.0-1.0 (defaults to 1.0)
+    let mainSpectrumOpacity: CGFloat?  // Main-window spectrum opacity override 0.0-1.0 (optional)
     let seamlessDocking: CGFloat?  // 0.0 (full borders) to 1.0 (fully hidden on docked edges). Default 0.
+    let areaOpacity: AreaOpacityConfig? // Optional per-area opacity overrides
+
+    init(borderWidth: CGFloat?, borderColor: String?, cornerRadius: CGFloat?, scale: CGFloat?,
+         opacity: CGFloat, textOpacity: CGFloat?, mainSpectrumOpacity: CGFloat?,
+         seamlessDocking: CGFloat?, areaOpacity: AreaOpacityConfig?) {
+        self.borderWidth = borderWidth
+        self.borderColor = borderColor
+        self.cornerRadius = cornerRadius
+        self.scale = scale
+        self.opacity = opacity
+        self.textOpacity = textOpacity
+        self.mainSpectrumOpacity = mainSpectrumOpacity
+        self.seamlessDocking = seamlessDocking
+        self.areaOpacity = areaOpacity
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        borderWidth         = try c.decodeIfPresent(CGFloat.self, forKey: .borderWidth)
+        borderColor         = try c.decodeIfPresent(String.self,  forKey: .borderColor)
+        cornerRadius        = try c.decodeIfPresent(CGFloat.self, forKey: .cornerRadius)
+        scale               = try c.decodeIfPresent(CGFloat.self, forKey: .scale)
+        opacity             = try c.decodeIfPresent(CGFloat.self, forKey: .opacity) ?? 1.0
+        textOpacity         = try c.decodeIfPresent(CGFloat.self, forKey: .textOpacity)
+        mainSpectrumOpacity = try c.decodeIfPresent(CGFloat.self, forKey: .mainSpectrumOpacity)
+        seamlessDocking     = try c.decodeIfPresent(CGFloat.self, forKey: .seamlessDocking)
+        areaOpacity         = try c.decodeIfPresent(AreaOpacityConfig.self, forKey: .areaOpacity)
+    }
+}
+
+/// Per-area opacity styles for Modern UI regions.
+/// Channel values are multipliers (0..1) applied to `window.opacity`.
+/// Missing areas/channels default to multiplier `1.0`.
+struct AreaOpacityConfig: Codable, Equatable {
+    let mainWindow: AreaOpacityStyle?
+    let timeDisplay: AreaOpacityStyle?
+    let trackDisplay: AreaOpacityStyle?
+    let volumeArea: AreaOpacityStyle?
+    let spectrumArea: AreaOpacityStyle?
+    let waveformArea: AreaOpacityStyle?
+    let eqFaderBackground: AreaOpacityStyle?
+    let curveBackground: AreaOpacityStyle?
+}
+
+/// Opacity channels for a UI area.
+/// - background: panel/background fills
+/// - border: border strokes/glow around that area
+/// - content: text/icons/bars/foreground content in that area
+/// Values are multiplier factors applied to `window.opacity`.
+struct AreaOpacityStyle: Codable, Equatable {
+    let background: CGFloat?
+    let border: CGFloat?
+    let content: CGFloat?
 }
 
 struct MarqueeConfig: Codable {

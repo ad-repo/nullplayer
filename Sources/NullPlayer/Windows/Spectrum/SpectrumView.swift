@@ -20,6 +20,9 @@ class SpectrumView: NSView {
     /// Shade mode state
     private(set) var isShadeMode = false
     
+    /// Fullscreen mode state (hides window chrome)
+    private(set) var isFullscreen = false
+    
     /// Button being pressed (for visual feedback)
     private var pressedButton: SkinRenderer.ProjectMButtonType?
     
@@ -65,6 +68,8 @@ class SpectrumView: NSView {
         ) { [weak self] notification in
             self?.handleSpectrumUpdate(notification)
         }
+        NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
+                                               name: .visClassicProfileCommand, object: nil)
         WindowManager.shared.audioEngine.addSpectrumConsumer("spectrumView")
     }
     
@@ -91,6 +96,10 @@ class SpectrumView: NSView {
     }
     
     private func calculateContentArea() -> NSRect {
+        if isFullscreen {
+            return bounds
+        }
+        
         // Content area inside the chrome
         let titleHeight = WindowManager.shared.hideTitleBars ? CGFloat(0) : Layout.titleBarHeight
         let leftBorder = Layout.leftBorder
@@ -110,6 +119,7 @@ class SpectrumView: NSView {
         if let observer = spectrumObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        NotificationCenter.default.removeObserver(self)
         WindowManager.shared.audioEngine.removeSpectrumConsumer("spectrumView")
     }
     
@@ -138,6 +148,13 @@ class SpectrumView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
+        // Native fullscreen: render visualization content edge-to-edge with no chrome.
+        if isFullscreen {
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(bounds)
+            return
+        }
+        
         // Use current skin
         let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
         let renderer = SkinRenderer(skin: skin)
@@ -158,6 +175,13 @@ class SpectrumView: NSView {
                                             pressedButton: pressedButton, isShadeMode: isShadeMode)
         
         context.restoreGState()
+
+        // In standalone vis_classic transparent mode, clear the analyzer content area
+        // so transparent pixels reveal what's behind the window instead of painted chrome.
+        if spectrumAnalyzerView?.qualityMode == .visClassicExact,
+           spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() == true {
+            context.clear(calculateContentArea())
+        }
     }
     
     // MARK: - Spectrum Data
@@ -165,12 +189,26 @@ class SpectrumView: NSView {
     /// Handle spectrum data notification from audio engine
     private func handleSpectrumUpdate(_ notification: Notification) {
         guard !isShadeMode else { return }
+        guard let window = window,
+              window.isVisible,
+              !window.isMiniaturized,
+              window.occlusionState.contains(.visible) else { return }
         
         guard let userInfo = notification.userInfo,
               let spectrum = userInfo["spectrum"] as? [Float] else { return }
         
         // Forward spectrum data to Metal view
         spectrumAnalyzerView?.updateSpectrum(spectrum)
+    }
+
+    @objc private func handleVisClassicProfileCommand(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let command = userInfo["command"] as? String,
+              (command == "transparentBg" || command == "opacity") else { return }
+
+        let target = userInfo["target"] as? String
+        guard target == nil || target == "spectrumWindow" else { return }
+        needsDisplay = true
     }
     
     // MARK: - Public Methods
@@ -187,6 +225,13 @@ class SpectrumView: NSView {
         spectrumAnalyzerView?.isHidden = enabled
         
         needsDisplay = true
+    }
+    
+    func setFullscreen(_ enabled: Bool) {
+        isFullscreen = enabled
+        updateSpectrumFrame()
+        needsDisplay = true
+        needsLayout = true
     }
     
     func updateSpectrumFrame() {
@@ -216,6 +261,7 @@ class SpectrumView: NSView {
     // MARK: - Hit Testing
     
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
+        if isFullscreen { return false }
         if WindowManager.shared.hideTitleBars {
             // Invisible drag zone at the very top of the visible window
             return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
@@ -225,6 +271,7 @@ class SpectrumView: NSView {
     }
     
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
+        if isFullscreen { return false }
         if WindowManager.shared.hideTitleBars { return false }
         let titleHeight = Layout.titleBarHeight
         let closeRect = NSRect(x: bounds.width - 25, y: 0, width: 25, height: titleHeight)
@@ -238,6 +285,10 @@ class SpectrumView: NSView {
     }
     
     override func mouseDown(with event: NSEvent) {
+        if isFullscreen {
+            return
+        }
+        
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
         
@@ -299,6 +350,10 @@ class SpectrumView: NSView {
     }
     
     override func mouseDragged(with event: NSEvent) {
+        if isFullscreen {
+            return
+        }
+        
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
             let deltaX = currentPoint.x - windowDragStartPoint.x
@@ -314,6 +369,12 @@ class SpectrumView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
+        if isFullscreen {
+            isDraggingWindow = false
+            pressedButton = nil
+            return
+        }
+        
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
         
@@ -372,15 +433,27 @@ class SpectrumView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
+        if spectrumAnalyzerView?.qualityMode == .visClassicExact,
+           let chars = event.charactersIgnoringModifiers {
+            if chars == "[" {
+                _ = spectrumAnalyzerView?.loadPreviousVisClassicProfile()
+                return
+            }
+            if chars == "]" {
+                _ = spectrumAnalyzerView?.loadNextVisClassicProfile()
+                return
+            }
+        }
+
         switch event.keyCode {
         case 53: // Escape - close window or exit fullscreen
-            if window?.styleMask.contains(.fullScreen) == true {
-                window?.toggleFullScreen(nil)
+            if isFullscreen {
+                controller?.toggleFullscreen()
             } else {
                 window?.close()
             }
         case 3: // F key - toggle fullscreen
-            window?.toggleFullScreen(nil)
+            controller?.toggleFullscreen()
         case 123: // Left arrow - previous style (flame/lightning/matrix mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
                 cycleFlameStyle(forward: false)
@@ -388,6 +461,8 @@ class SpectrumView: NSView {
                 cycleLightningStyle(forward: false)
             } else if spectrumAnalyzerView?.qualityMode == .matrix {
                 cycleMatrixColor(forward: false)
+            } else if spectrumAnalyzerView?.qualityMode == .visClassicExact {
+                _ = spectrumAnalyzerView?.loadPreviousVisClassicProfile()
             } else { super.keyDown(with: event) }
         case 124: // Right arrow - next style (flame/lightning/matrix mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
@@ -396,6 +471,8 @@ class SpectrumView: NSView {
                 cycleLightningStyle(forward: true)
             } else if spectrumAnalyzerView?.qualityMode == .matrix {
                 cycleMatrixColor(forward: true)
+            } else if spectrumAnalyzerView?.qualityMode == .visClassicExact {
+                _ = spectrumAnalyzerView?.loadNextVisClassicProfile()
             } else { super.keyDown(with: event) }
         default:
             super.keyDown(with: event)
@@ -560,11 +637,65 @@ class SpectrumView: NSView {
             matrixIntensityMenuItem.submenu = matrixIntensityMenu
             menu.addItem(matrixIntensityMenuItem)
         }
+
+        // vis_classic profile controls (only when vis_classic mode is active)
+        if spectrumAnalyzerView?.qualityMode == .visClassicExact {
+            let profilesMenu = NSMenu()
+            let fitToWidthEnabled = spectrumAnalyzerView?.visClassicFitToWidthEnabled() ?? true
+
+            if let profiles = spectrumAnalyzerView?.visClassicProfiles(), !profiles.isEmpty {
+                let current = spectrumAnalyzerView?.visClassicCurrentProfileName()
+                for entry in profiles {
+                    let item = NSMenuItem(title: entry.name, action: #selector(setVisClassicProfile(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = entry.name
+                    item.state = (entry.name == current) ? .on : .off
+                    profilesMenu.addItem(item)
+                }
+            } else {
+                let noneItem = NSMenuItem(title: "No Profiles", action: nil, keyEquivalent: "")
+                noneItem.isEnabled = false
+                profilesMenu.addItem(noneItem)
+            }
+
+            let profilesRoot = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
+            profilesRoot.submenu = profilesMenu
+            menu.addItem(profilesRoot)
+
+            menu.addItem(NSMenuItem.separator())
+
+            let fitItem = NSMenuItem(title: "Fit to Width", action: #selector(toggleVisClassicFitToWidth(_:)), keyEquivalent: "")
+            fitItem.target = self
+            fitItem.state = fitToWidthEnabled ? .on : .off
+            menu.addItem(fitItem)
+
+            let transparentBgEnabled = spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() ?? false
+            let transparentBgItem = NSMenuItem(title: "Transparent Background", action: #selector(toggleVisClassicTransparentBg(_:)), keyEquivalent: "")
+            transparentBgItem.target = self
+            transparentBgItem.state = transparentBgEnabled ? .on : .off
+            menu.addItem(transparentBgItem)
+
+            let nextItem = NSMenuItem(title: "Next Profile", action: #selector(loadNextVisClassicProfile(_:)), keyEquivalent: "")
+            nextItem.target = self
+            menu.addItem(nextItem)
+
+            let prevItem = NSMenuItem(title: "Previous Profile", action: #selector(loadPreviousVisClassicProfile(_:)), keyEquivalent: "")
+            prevItem.target = self
+            menu.addItem(prevItem)
+
+            let importItem = NSMenuItem(title: "Import INI...", action: #selector(importVisClassicProfile(_:)), keyEquivalent: "")
+            importItem.target = self
+            menu.addItem(importItem)
+
+            let exportItem = NSMenuItem(title: "Export Current INI...", action: #selector(exportVisClassicProfile(_:)), keyEquivalent: "")
+            exportItem.target = self
+            menu.addItem(exportItem)
+        }
         
         menu.addItem(NSMenuItem.separator())
         
         // Fullscreen toggle
-        let isFullscreen = window?.styleMask.contains(.fullScreen) ?? false
+        let isFullscreen = controller?.isFullscreen ?? false
         let fullscreenItem = NSMenuItem(
             title: isFullscreen ? "Exit Full Screen" : "Enter Full Screen",
             action: #selector(toggleFullScreen(_:)),
@@ -584,7 +715,7 @@ class SpectrumView: NSView {
     }
     
     @objc private func toggleFullScreen(_ sender: Any?) {
-        window?.toggleFullScreen(sender)
+        controller?.toggleFullscreen()
     }
     
     @objc private func setQualityMode(_ sender: NSMenuItem) {
@@ -625,6 +756,36 @@ class SpectrumView: NSView {
     @objc private func setMatrixIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? MatrixIntensity else { return }
         spectrumAnalyzerView?.matrixIntensity = intensity
+    }
+
+    @objc private func setVisClassicProfile(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        _ = spectrumAnalyzerView?.loadVisClassicProfile(named: name)
+    }
+
+    @objc private func loadNextVisClassicProfile(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.loadNextVisClassicProfile()
+    }
+
+    @objc private func loadPreviousVisClassicProfile(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.loadPreviousVisClassicProfile()
+    }
+
+    @objc private func importVisClassicProfile(_ sender: Any?) {
+        spectrumAnalyzerView?.importVisClassicProfile()
+    }
+
+    @objc private func exportVisClassicProfile(_ sender: Any?) {
+        spectrumAnalyzerView?.exportCurrentVisClassicProfile()
+    }
+
+    @objc private func toggleVisClassicFitToWidth(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.toggleVisClassicFitToWidth()
+    }
+
+    @objc private func toggleVisClassicTransparentBg(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.toggleVisClassicTransparentBackground()
+        needsDisplay = true
     }
     
     @objc private func closeWindow(_ sender: Any?) {

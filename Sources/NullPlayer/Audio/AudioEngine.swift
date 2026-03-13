@@ -19,6 +19,9 @@ extension Notification.Name {
     /// Posted when playback state changes (playing, paused, stopped)
     /// userInfo contains: "state" (PlaybackState)
     static let audioPlaybackStateChanged = Notification.Name("audioPlaybackStateChanged")
+
+    /// Posted when playback option state changes (repeat, shuffle, gapless, normalization, crossfade)
+    static let audioPlaybackOptionsChanged = Notification.Name("audioPlaybackOptionsChanged")
     
     /// Posted when the current track changes
     /// userInfo contains: "track" (Track?) - may be nil when playback stops
@@ -94,6 +97,12 @@ class AudioEngine {
     
     /// Guard against concurrent loadTrack() calls which can cause both local and streaming players to be active
     private var isLoadingTrack: Bool = false
+
+    /// In-flight placeholder resolution tasks keyed by playlist index.
+    private var placeholderResolutionTasks: [Int: Task<Void, Never>] = [:]
+
+    /// One-shot stale URL refresh guard for the current playback attempt.
+    private var staleStreamingRefreshRetriedServiceIdentity: String?
     
     /// Current playback state
     private(set) var state: PlaybackState = .stopped {
@@ -158,10 +167,18 @@ class AudioEngine {
     }
     
     /// Shuffle enabled
-    var shuffleEnabled: Bool = false
+    var shuffleEnabled: Bool = false {
+        didSet {
+            notifyPlaybackOptionsChanged()
+        }
+    }
     
     /// Repeat mode
-    var repeatEnabled: Bool = false
+    var repeatEnabled: Bool = false {
+        didSet {
+            notifyPlaybackOptionsChanged()
+        }
+    }
     
     /// Gapless playback mode - pre-schedules next track for seamless transitions
     var gaplessPlaybackEnabled: Bool = false {
@@ -171,6 +188,7 @@ class AudioEngine {
             if gaplessPlaybackEnabled && state == .playing {
                 scheduleNextTrackForGapless()
             }
+            notifyPlaybackOptionsChanged()
         }
     }
     
@@ -185,6 +203,7 @@ class AudioEngine {
                 normalizationGain = 1.0
                 applyNormalizationGain()
             }
+            notifyPlaybackOptionsChanged()
         }
     }
     
@@ -201,6 +220,7 @@ class AudioEngine {
         didSet {
             UserDefaults.standard.set(sweetFadeEnabled, forKey: "sweetFadeEnabled")
             NSLog("AudioEngine: Sweet Fades %@", sweetFadeEnabled ? "enabled" : "disabled")
+            notifyPlaybackOptionsChanged()
         }
     }
     
@@ -209,6 +229,7 @@ class AudioEngine {
         didSet {
             UserDefaults.standard.set(sweetFadeDuration, forKey: "sweetFadeDuration")
             NSLog("AudioEngine: Sweet Fades duration set to %.1fs", sweetFadeDuration)
+            notifyPlaybackOptionsChanged()
         }
     }
     
@@ -283,6 +304,19 @@ class AudioEngine {
     /// PCM sample rate for visualization timing
     private(set) var pcmSampleRate: Double = 44100
     
+    /// Reusable userInfo dict for PCM notifications (avoids per-callback allocation)
+    private var pcmUserInfo: [String: Any] = [:]
+
+    /// Reusable 576-sample stereo waveform buffers for vis_classic exact mode
+    private var waveformLeftU8 = [UInt8](repeating: 128, count: 576)
+    private var waveformRightU8 = [UInt8](repeating: 128, count: 576)
+    private var waveformUserInfo: [String: Any] = [:]
+    private var waveformLeftRing = [Float](repeating: 0, count: 8192)
+    private var waveformRightRing = [Float](repeating: 0, count: 8192)
+    private var waveformRingReadIndex = 0
+    private var waveformRingWriteIndex = 0
+    private var waveformRingCount = 0
+
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
     private let fftSize: Int = 2048  // Match streaming FFT for consistent display
@@ -300,6 +334,9 @@ class AudioEngine {
 
     /// Spectrum consumers — FFT is skipped entirely when this set is empty
     private var spectrumConsumers = Set<String>()
+    
+    /// Live waveform consumers — 576-sample waveform chunk generation is skipped entirely when this set is empty.
+    private var waveformConsumers = Set<String>()
 
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
     private var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
@@ -315,6 +352,18 @@ class AudioEngine {
     }
 
     var spectrumNeeded: Bool { !spectrumConsumers.isEmpty }
+
+    func addWaveformConsumer(_ id: String) {
+        waveformConsumers.insert(id)
+        streamingPlayer?.waveformNeeded = !waveformConsumers.isEmpty
+    }
+
+    func removeWaveformConsumer(_ id: String) {
+        waveformConsumers.remove(id)
+        streamingPlayer?.waveformNeeded = !waveformConsumers.isEmpty
+    }
+
+    var waveformNeeded: Bool { !waveformConsumers.isEmpty }
 
     // MARK: - Pre-allocated FFT Buffers (Memory Optimization)
 
@@ -451,6 +500,10 @@ class AudioEngine {
         engine.stop()
         // FFT setup is automatically released when set to nil
         fftSetup = nil
+    }
+
+    private func notifyPlaybackOptionsChanged() {
+        NotificationCenter.default.post(name: .audioPlaybackOptionsChanged, object: self)
     }
     
     @objc private func handleSpectrumSettingsChanged() {
@@ -701,12 +754,24 @@ class AudioEngine {
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard spectrumNeeded else { return }
-        guard let channelData = buffer.floatChannelData,
-              let fftSetup = fftSetup else { return }
+        guard spectrumNeeded || waveformNeeded else { return }
+        guard let channelData = buffer.floatChannelData else { return }
 
         let frameCount = Int(buffer.frameLength)
-        guard frameCount >= fftSize else { return }
+        guard frameCount > 0 else { return }
+        let channelCount = Int(buffer.format.channelCount)
+        let bufferSampleRate = buffer.format.sampleRate
+
+        if waveformNeeded {
+            enqueueWaveformSamplesAndPost(
+                channelData: channelData,
+                channelCount: channelCount,
+                frameCount: frameCount,
+                sampleRate: bufferSampleRate
+            )
+        }
+
+        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
         
         // Throttle updates to 60Hz max to prevent memory buildup
         let now = CFAbsoluteTimeGetCurrent()
@@ -715,8 +780,6 @@ class AudioEngine {
         lastSpectrumUpdateTime = now
         
         // Get audio samples (mono mix if stereo) - use pre-allocated buffer
-        let channelCount = Int(buffer.format.channelCount)
-        
         if channelCount == 1 {
             memcpy(&fftSamples, channelData[0], fftSize * MemoryLayout<Float>.size)
         } else {
@@ -742,17 +805,18 @@ class AudioEngine {
         for i in 0..<pcmSize {
             fftPcmSamples[i] = fftSamples[i * pcmStride]
         }
-        let bufferSampleRate = buffer.format.sampleRate
         
         // Post notification for low-latency visualization (direct from audio tap)
         // Copy to avoid data races since we reuse the buffer
         let pcmCopy = Array(fftPcmSamples)
+        pcmUserInfo["pcm"] = pcmCopy
+        pcmUserInfo["sampleRate"] = bufferSampleRate
         NotificationCenter.default.post(
             name: .audioPCMDataUpdated,
             object: self,
-            userInfo: ["pcm": pcmCopy, "sampleRate": bufferSampleRate]
+            userInfo: pcmUserInfo
         )
-        
+
         // Also store in property for legacy access - coalesce dispatches
         if !pendingPcmUpdate {
             pendingPcmUpdate = true
@@ -936,6 +1000,62 @@ class AudioEngine {
             )
         }
     }
+
+    private func enqueueWaveformSamplesAndPost(
+        channelData: UnsafePointer<UnsafeMutablePointer<Float>>,
+        channelCount: Int,
+        frameCount: Int,
+        sampleRate: Double
+    ) {
+        guard channelCount > 0 else { return }
+        for i in 0..<frameCount {
+            let left = channelData[0][i]
+            let right = channelCount > 1 ? channelData[1][i] : left
+            appendWaveformSample(left: left, right: right)
+        }
+        postAvailableWaveformChunks(sampleRate: sampleRate)
+    }
+
+    private func appendWaveformSample(left: Float, right: Float) {
+        if waveformRingCount == waveformLeftRing.count {
+            waveformRingReadIndex = (waveformRingReadIndex + 1) % waveformLeftRing.count
+            waveformRingCount -= 1
+        }
+
+        waveformLeftRing[waveformRingWriteIndex] = left
+        waveformRightRing[waveformRingWriteIndex] = right
+        waveformRingWriteIndex = (waveformRingWriteIndex + 1) % waveformLeftRing.count
+        waveformRingCount += 1
+    }
+
+    private func postAvailableWaveformChunks(sampleRate: Double) {
+        let chunkSize = waveformLeftU8.count
+        while waveformRingCount >= chunkSize {
+            var index = waveformRingReadIndex
+            for i in 0..<chunkSize {
+                let leftInt = Int((waveformLeftRing[index] * 127.0) + 128.0)
+                let rightInt = Int((waveformRightRing[index] * 127.0) + 128.0)
+                waveformLeftU8[i] = UInt8(clamping: leftInt)
+                waveformRightU8[i] = UInt8(clamping: rightInt)
+                index += 1
+                if index == waveformLeftRing.count {
+                    index = 0
+                }
+            }
+
+            waveformRingReadIndex = index
+            waveformRingCount -= chunkSize
+
+            waveformUserInfo["left"] = waveformLeftU8
+            waveformUserInfo["right"] = waveformRightU8
+            waveformUserInfo["sampleRate"] = sampleRate
+            NotificationCenter.default.post(
+                name: .audioWaveform576DataUpdated,
+                object: self,
+                userInfo: waveformUserInfo
+            )
+        }
+    }
     
     // MARK: - Playback Control
     
@@ -960,12 +1080,70 @@ class AudioEngine {
             }
             return
         }
+
+        if state != .playing {
+            staleStreamingRefreshRetriedServiceIdentity = nil
+        }
         
         guard currentTrack != nil || !playlist.isEmpty else { return }
         
         if currentTrack == nil && !playlist.isEmpty {
             currentIndex = 0
             loadTrack(at: currentIndex)
+            if currentTrack == nil,
+               currentIndex >= 0,
+               currentIndex < playlist.count,
+               playlist[currentIndex].isStreamingPlaceholder {
+                currentTrack = playlist[currentIndex]
+                resolvePlaceholderTrackAndOptionallyPlay(at: currentIndex, autoPlayOnSuccess: true)
+                return
+            }
+        }
+
+        if let track = currentTrack {
+            if track.isStreamingPlaceholder,
+               currentIndex >= 0 && currentIndex < playlist.count {
+                resolvePlaceholderTrackAndOptionallyPlay(at: currentIndex, autoPlayOnSuccess: true)
+                return
+            }
+
+            let trackIsStreaming = track.url.scheme == "http"
+                || track.url.scheme == "https"
+                || track.isStreamingPlaceholder
+            let hasStreamingPlayer = streamingPlayer != nil
+            let hasLocalAudioFile = audioFile != nil
+            let needsPipelineReload = Self.shouldReloadPlaybackPipelineForCurrentTrack(
+                trackURL: track.url,
+                isStreamingPlayback: isStreamingPlayback,
+                hasStreamingPlayer: hasStreamingPlayer,
+                hasLocalAudioFile: hasLocalAudioFile,
+                isStreamingPlaceholder: track.isStreamingPlaceholder
+            )
+
+            if needsPipelineReload {
+                // Resolve stale playback pipeline state before resuming.
+                // This prevents local/streaming mismatches after cast handoffs.
+                let reloadIndex: Int
+                if currentIndex >= 0 && currentIndex < playlist.count && playlist[currentIndex].id == track.id {
+                    reloadIndex = currentIndex
+                } else if let foundIndex = playlist.firstIndex(where: { $0.id == track.id }) {
+                    currentIndex = foundIndex
+                    reloadIndex = foundIndex
+                } else {
+                    NSLog("play(): unable to reload current track '%@' - not found in playlist", track.title)
+                    return
+                }
+
+                NSLog("play(): reloading track due to pipeline mismatch (trackStreaming=%d, isStreamingPlayback=%d, hasStreamingPlayer=%d, hasAudioFile=%d)",
+                      trackIsStreaming ? 1 : 0,
+                      isStreamingPlayback ? 1 : 0,
+                      hasStreamingPlayer ? 1 : 0,
+                      hasLocalAudioFile ? 1 : 0)
+                loadTrack(at: reloadIndex)
+
+                // Streaming load starts playback internally.
+                if trackIsStreaming { return }
+            }
         }
         
         if isStreamingPlayback {
@@ -1135,11 +1313,8 @@ class AudioEngine {
             streamingPlayer?.stop()
         } else {
             playerNode.stop()
-            // Also stop crossfade player and reset to playerNode as primary
-            crossfadePlayerNode.stop()
-            crossfadePlayerNode.volume = 0
-            crossfadePlayerIsActive = false
         }
+        resetLocalCrossfadeStateForDirectPlayback()
         
         playbackStartDate = nil
         _currentTime = 0  // Reset to beginning
@@ -1187,15 +1362,18 @@ class AudioEngine {
             _currentTime += Date().timeIntervalSince(startDate)
         }
         playbackStartDate = nil
-        
-        // Fully stop streaming player to release the connection
-        // This is critical for Subsonic/Navidrome which limits concurrent streams per user
-        if isStreamingPlayback {
-            streamingPlayer?.stop()
-            NSLog("AudioEngine: Stopped streaming player - connection released")
-        } else {
-            playerNode.stop()
-        }
+
+        // Invalidate pending completion handlers so stale callbacks can't restart local flow
+        playbackGeneration += 1
+
+        // Force-stop any in-progress crossfade before casting handoff.
+        // This avoids mixed local+cast playback when crossfade players are active.
+        resetLocalCrossfadeStateForDirectPlayback()
+
+        // Fully stop ALL local playback paths (primary + crossfade, local + streaming).
+        // This ensures no local audio leaks while cast playback is active.
+        streamingPlayer?.stop()
+        playerNode.stop()
         
         state = .stopped
         stopTimeUpdates()
@@ -2072,6 +2250,61 @@ class AudioEngine {
         NSLog("loadFiles: %d tracks created (%d invalid)", tracks.count, validation.invalidFiles.count)
         loadTracks(tracks)
     }
+
+    static func shouldStopRadioForIncomingTrack(
+        isRadioActive: Bool,
+        currentStationURL: URL?,
+        incomingTrackURL: URL?
+    ) -> Bool {
+        guard isRadioActive else { return false }
+        guard let stationURL = currentStationURL, let incomingTrackURL else { return true }
+        return stationURL != incomingTrackURL
+    }
+
+    static func shouldReloadPlaybackPipelineForCurrentTrack(
+        trackURL: URL,
+        isStreamingPlayback: Bool,
+        hasStreamingPlayer: Bool,
+        hasLocalAudioFile: Bool,
+        isStreamingPlaceholder: Bool = false
+    ) -> Bool {
+        let trackIsStreaming = isStreamingPlaceholder
+            || trackURL.scheme == "http"
+            || trackURL.scheme == "https"
+        return (trackIsStreaming && (!isStreamingPlayback || !hasStreamingPlayer)) ||
+            (!trackIsStreaming && (isStreamingPlayback || !hasLocalAudioFile))
+    }
+
+    static func shouldAttemptStreamingURLRefreshAfterError(
+        track: Track?,
+        isRadioActive: Bool,
+        previouslyRetriedServiceIdentity: String?
+    ) -> Bool {
+        guard !isRadioActive,
+              let track,
+              !track.isStreamingPlaceholder,
+              track.url.scheme == "http" || track.url.scheme == "https",
+              let serviceIdentity = track.streamingServiceIdentity else {
+            return false
+        }
+        return previouslyRetriedServiceIdentity != serviceIdentity
+    }
+
+    @discardableResult
+    private func stopRadioIfLoadingNonRadioContent(incomingTrackURL: URL?, context: String) -> Bool {
+        let shouldStopRadio = Self.shouldStopRadioForIncomingTrack(
+            isRadioActive: RadioManager.shared.isActive,
+            currentStationURL: RadioManager.shared.currentStation?.url,
+            incomingTrackURL: incomingTrackURL
+        )
+
+        if shouldStopRadio {
+            NSLog("%@: stopping RadioManager (loading non-radio content)", context)
+            RadioManager.shared.stop()
+        }
+
+        return RadioManager.shared.isActive && !shouldStopRadio
+    }
     
     /// Load tracks with metadata (for Plex and other sources with pre-populated info)
     func loadTracks(_ tracks: [Track]) {
@@ -2107,21 +2340,10 @@ class AudioEngine {
         
         NSLog("loadTracks: %d valid tracks (%d skipped)", validTracks.count, missingCount)
         
-        // Stop RadioManager if we're loading non-radio content
-        // Radio content is identified by matching the current station's URL
-        let isRadioContent: Bool
-        if RadioManager.shared.isActive {
-            isRadioContent = validTracks.first.map { track in
-                RadioManager.shared.currentStation?.url == track.url
-            } ?? false
-            
-            if !isRadioContent {
-                NSLog("loadTracks: stopping RadioManager (loading non-radio content)")
-                RadioManager.shared.stop()
-            }
-        } else {
-            isRadioContent = false
-        }
+        let isRadioContent = stopRadioIfLoadingNonRadioContent(
+            incomingTrackURL: validTracks.first?.url,
+            context: "loadTracks"
+        )
         
         // Check if we're currently casting - we want to keep the cast session active
         let wasCasting = isCastingActive
@@ -2267,6 +2489,74 @@ class AudioEngine {
         playlist[index] = track
         delegate?.audioEngineDidChangePlaylist()
     }
+
+    private func resolvePlaceholderTrackAndOptionallyPlay(at index: Int, autoPlayOnSuccess: Bool) {
+        guard index >= 0 && index < playlist.count else { return }
+        let placeholder = playlist[index]
+        guard placeholder.isStreamingPlaceholder else {
+            if autoPlayOnSuccess {
+                loadTrack(at: index)
+                if state != .playing {
+                    play()
+                }
+            }
+            return
+        }
+
+        guard placeholder.isResolvableStreamingServiceTrack else {
+            let message = "Cannot refresh streaming URL for \(placeholder.title)"
+            let error = NSError(
+                domain: "AudioEngine",
+                code: 1001,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+            notifyTrackLoadFailure(track: placeholder, error: error, message: message)
+            return
+        }
+
+        if placeholderResolutionTasks[index] != nil {
+            NSLog("AudioEngine: placeholder resolve already in progress for index %d", index)
+            return
+        }
+
+        NSLog("AudioEngine: resolving placeholder track '%@' at index %d", placeholder.title, index)
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let resolvedTrack = await StreamingTrackResolver.resolve(placeholder)
+
+            await MainActor.run {
+                self.placeholderResolutionTasks[index] = nil
+                guard index >= 0 && index < self.playlist.count else { return }
+
+                // Only replace if the same placeholder is still at this index.
+                guard self.playlist[index].id == placeholder.id,
+                      self.playlist[index].isStreamingPlaceholder else {
+                    return
+                }
+
+                guard let resolvedTrack else {
+                    let message = "Cannot refresh streaming URL for \(placeholder.title)"
+                    let error = NSError(
+                        domain: "AudioEngine",
+                        code: 1002,
+                        userInfo: [NSLocalizedDescriptionKey: message]
+                    )
+                    self.notifyTrackLoadFailure(track: placeholder, error: error, message: message)
+                    return
+                }
+
+                self.replaceTrack(at: index, with: resolvedTrack)
+                if self.currentIndex == index {
+                    self.loadTrack(at: index)
+                    if autoPlayOnSuccess && self.state != .playing {
+                        self.play()
+                    }
+                }
+            }
+        }
+
+        placeholderResolutionTasks[index] = task
+    }
     
     /// Insert tracks immediately after the current position.
     /// If nothing is playing (currentIndex == -1), inserts at index 0.
@@ -2346,6 +2636,11 @@ class AudioEngine {
             NSLog("AudioEngine: playNow() blocked - local file cast in progress")
             return
         }
+
+        _ = stopRadioIfLoadingNonRadioContent(
+            incomingTrackURL: tracks.first?.url,
+            context: "playNow"
+        )
         
         let insertIndex = currentIndex >= 0 ? currentIndex + 1 : 0
         
@@ -2443,12 +2738,21 @@ class AudioEngine {
         defer { isLoadingTrack = false }
         
         let track = playlist[index]
+        if staleStreamingRefreshRetriedServiceIdentity != nil,
+           staleStreamingRefreshRetriedServiceIdentity != track.streamingServiceIdentity {
+            staleStreamingRefreshRetriedServiceIdentity = nil
+        }
 
         // Skip about:blank placeholder tracks — streaming URL not yet resolved via async fetch
-        if track.url.absoluteString == "about:blank" {
-            NSLog("loadTrack: skipping placeholder track '%@' — waiting for async URL fetch", track.title ?? "")
+        if track.isStreamingPlaceholder {
+            NSLog("loadTrack: skipping placeholder track '%@' — waiting for async URL fetch", track.title)
             return
         }
+
+        _ = stopRadioIfLoadingNonRadioContent(
+            incomingTrackURL: track.url,
+            context: "loadTrack"
+        )
 
         // Route video tracks to the video player
         if track.mediaType == .video {
@@ -2516,11 +2820,9 @@ class AudioEngine {
         stopStreamingPlayer()
         isStreamingPlayback = false
         
-        // Ensure crossfade player is stopped and reset to playerNode as primary
-        // (after a completed crossfade, crossfadePlayerNode may still be playing)
-        crossfadePlayerNode.stop()
-        crossfadePlayerNode.volume = 0
-        crossfadePlayerIsActive = false
+        // Reset crossfade state and force local primary node to audible unity gain.
+        // Rapid source switches can otherwise leave playerNode.volume at 0.
+        resetLocalCrossfadeStateForDirectPlayback()
         
         // Reset AudioEngine's adaptive normalization peaks for clean start
         // When streaming was active, AudioEngine just forwarded StreamingAudioPlayer's
@@ -2629,6 +2931,7 @@ class AudioEngine {
     /// Stop playback completely when a track fails to load
     private func stopPlaybackOnError() {
         playerNode.stop()
+        resetLocalCrossfadeStateForDirectPlayback()
         audioFile = nil
         currentTrack = nil
         _currentTime = 0
@@ -2675,6 +2978,7 @@ class AudioEngine {
             streamingPlayer = StreamingAudioPlayer()
             streamingPlayer?.delegate = self
             streamingPlayer?.spectrumNeeded = spectrumNeeded
+            streamingPlayer?.waveformNeeded = waveformNeeded
             streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         }
         
@@ -3136,10 +3440,12 @@ class AudioEngine {
         let masterVolume = volume
         startCrossfadeVolumeRamp(
             outgoingVolume: { [weak self] v in
-                self?.streamingPlayer?.volume = masterVolume * v
+                guard let self, self.isCrossfading else { return }
+                self.streamingPlayer?.volume = masterVolume * v
             },
             incomingVolume: { [weak self] v in
-                self?.crossfadeStreamingPlayer?.volume = masterVolume * v
+                guard let self, self.isCrossfading else { return }
+                self.crossfadeStreamingPlayer?.volume = masterVolume * v
             },
             completion: { [weak self] in
                 self?.completeStreamingCrossfade(nextIndex: nextIndex)
@@ -3288,6 +3594,7 @@ class AudioEngine {
         // Set delegate on new primary player
         streamingPlayer?.delegate = self
         streamingPlayer?.spectrumNeeded = spectrumNeeded
+        streamingPlayer?.waveformNeeded = waveformNeeded
         streamingPlayer?.isModernUIEnabled = isModernUIEnabled
         // crossfadeStreamingPlayer (old primary) already has nil delegate from above
         
@@ -3380,6 +3687,26 @@ class AudioEngine {
         // Reset to playerNode as primary (crossfade was incomplete, outgoing player continues)
         crossfadePlayerIsActive = false
         NSLog("Sweet Fades: Crossfade cancelled")
+    }
+
+    /// Reset all crossfade internals and restore direct local playback defaults.
+    /// This is used when loading/stopping tracks to prevent stale crossfade state
+    /// from leaving local playback silent after rapid source switches.
+    private func resetLocalCrossfadeStateForDirectPlayback() {
+        crossfadeTimer?.invalidate()
+        crossfadeTimer = nil
+        isCrossfading = false
+        crossfadeTargetIndex = -1
+
+        crossfadeStreamingPlayer?.stop()
+        crossfadeStreamingPlayer?.volume = 0
+        crossfadePlayerNode.stop()
+        crossfadePlayerNode.volume = 0
+        crossfadeAudioFile = nil
+        crossfadePlayerIsActive = false
+
+        // Local playback is scheduled on playerNode; keep it at unity gain.
+        playerNode.volume = 1.0
     }
     
     // MARK: - Volume Normalization
@@ -3602,6 +3929,9 @@ class AudioEngine {
     
     func clearPlaylist() {
         NSLog("clearPlaylist: isStreamingPlayback=%d", isStreamingPlayback)
+        placeholderResolutionTasks.values.forEach { $0.cancel() }
+        placeholderResolutionTasks.removeAll()
+        staleStreamingRefreshRetriedServiceIdentity = nil
         stop()
         stopStreamingPlayer()
         isStreamingPlayback = false
@@ -3688,10 +4018,20 @@ class AudioEngine {
         let wasCasting = isCastingActive
         
         currentIndex = index
+        staleStreamingRefreshRetriedServiceIdentity = nil
+        let track = playlist[index]
+
+        if track.isStreamingPlaceholder {
+            currentTrack = track
+            _currentTime = 0
+            lastReportedTime = 0
+            state = .stopped
+            resolvePlaceholderTrackAndOptionallyPlay(at: index, autoPlayOnSuccess: true)
+            return
+        }
         
         if wasCasting {
             // When casting, don't set up local playback - just update track metadata and cast
-            let track = playlist[index]
             let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
             
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
@@ -3920,10 +4260,12 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         
         // Post notification for low-latency visualization
         // Use pcmData (not samples) to ensure consistency with stored property
+        pcmUserInfo["pcm"] = pcmData
+        pcmUserInfo["sampleRate"] = pcmSampleRate
         NotificationCenter.default.post(
             name: .audioPCMDataUpdated,
             object: self,
-            userInfo: ["pcm": pcmData, "sampleRate": pcmSampleRate]
+            userInfo: pcmUserInfo
         )
     }
     
@@ -3981,15 +4323,50 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             RadioManager.shared.streamDidDisconnect(error: error)
             return
         }
-        
-        // Check if this is the M4A packet table error (non-optimized M4A file)
+
         let errorDescription = String(describing: error)
-        let isPacketTableError = errorDescription.contains("packet table") || 
-                                  errorDescription.contains("streamParseBytesFailure")
-        
+        if Self.shouldAttemptStreamingURLRefreshAfterError(
+            track: currentTrack,
+            isRadioActive: RadioManager.shared.isActive,
+            previouslyRetriedServiceIdentity: staleStreamingRefreshRetriedServiceIdentity
+        ), let failingTrack = currentTrack,
+           let retryIdentity = failingTrack.streamingServiceIdentity,
+           currentIndex >= 0 {
+            staleStreamingRefreshRetriedServiceIdentity = retryIdentity
+            let retryIndex = currentIndex
+            NSLog("AudioEngine: attempting one-time stream URL refresh for '%@'", failingTrack.title)
+
+            Task { [weak self] in
+                guard let self else { return }
+                if let refreshedTrack = await StreamingTrackResolver.resolve(failingTrack) {
+                    await MainActor.run {
+                        guard retryIndex >= 0 && retryIndex < self.playlist.count else { return }
+                        // Ensure we're still looking at the same logical service track.
+                        guard self.playlist[retryIndex].streamingServiceIdentity == retryIdentity else { return }
+                        self.replaceTrack(at: retryIndex, with: refreshedTrack)
+                        if self.currentIndex == retryIndex {
+                            self.loadTrack(at: retryIndex)
+                        }
+                    }
+                } else {
+                    await MainActor.run {
+                        self.handleStreamingErrorFallback(error, errorDescription: errorDescription)
+                    }
+                }
+            }
+            return
+        }
+
+        handleStreamingErrorFallback(error, errorDescription: errorDescription)
+    }
+
+    private func handleStreamingErrorFallback(_ error: AudioPlayerError, errorDescription: String) {
+        let isPacketTableError = errorDescription.contains("packet table")
+            || errorDescription.contains("streamParseBytesFailure")
+
         if isPacketTableError {
             NSLog("AudioEngine: M4A parsing error - file may not be optimized for streaming")
-            
+
             // Show error in marquee briefly, then advance to next track
             if let track = currentTrack {
                 let errorMessage = "Cannot play: \(track.title) (format not supported for streaming)"
@@ -3999,7 +4376,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                     userInfo: ["track": track, "error": error, "message": errorMessage]
                 )
             }
-            
+
             // Advance to next track after a brief delay to let error state settle
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 guard let self = self else { return }

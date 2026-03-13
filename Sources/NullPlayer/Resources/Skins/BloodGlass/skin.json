@@ -1,0 +1,178 @@
+{
+    "meta": {
+        "name": "BloodGlass",
+        "author": "NullPlayer",
+        "version": "1.0",
+        "description": "Crimson frosted-glass skin with deep translucency and sharp red highlights"
+    },
+    "palette": {
+        "primary": "#ff6b7d",
+        "secondary": "#ff4d63",
+        "accent": "#ff9aaa",
+        "highlight": "#ffd6dd",
+        "background": "#1a0f13",
+        "surface": "#311820",
+        "text": "#ffdfe5",
+        "textDim": "#a36d78",
+        "positive": "#9ef2c2",
+        "negative": "#ff6b7d",
+        "warning": "#ffbf7a",
+        "border": "#ff9aaa",
+        "timeColor": "#ffe8ed",
+        "marqueeColor": "#ffd8df",
+        "dataColor": "#ffd0d8",
+        "eqLow": "#ff7a8c",
+        "eqMid": "#ff9aaa",
+        "eqHigh": "#ffd6dd"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 9,
+        "bodySize": 10,
+        "smallSize": 7,
+        "timeSize": 22,
+        "infoSize": 6.5,
+        "eqLabelSize": 7,
+        "eqValueSize": 6,
+        "marqueeSize": 11.5,
+        "playlistSize": 8
+    },
+    "background": {
+        "grid": {
+            "color": "#ffb2bf",
+            "spacing": 34,
+            "angle": 78,
+            "opacity": 0.02,
+            "perspective": false
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 11,
+        "intensity": 0.34,
+        "threshold": 0.74,
+        "color": "#ff9aaa",
+        "elementBlur": 0.55
+    },
+    "window": {
+        "borderWidth": 1,
+        "borderColor": "#ffb8c4",
+        "cornerRadius": 14,
+        "opacity": 0.5,
+        "textOpacity": 0.8,
+        "mainSpectrumOpacity": 0.9,
+        "seamlessDocking": 1.0,
+        "areaOpacity": {
+            "mainWindow": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "timeDisplay": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "trackDisplay": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "volumeArea": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "spectrumArea": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "eqFaderBackground": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            },
+            "curveBackground": {
+                "background": 0.8,
+                "border": 0.8,
+                "content": 0.8
+            }
+        }
+    },
+    "marquee": {
+        "scrollSpeed": 28,
+        "scrollGap": 56
+    },
+    "elements": {
+        "titlebar": {
+            "color": "#3a1d26"
+        },
+        "spectrum_titlebar": {
+            "color": "#3a1d26"
+        },
+        "playlist_titlebar": {
+            "color": "#3a1d26"
+        },
+        "eq_titlebar": {
+            "color": "#3a1d26"
+        },
+        "library_titlebar": {
+            "color": "#3a1d26"
+        },
+        "projectm_titlebar": {
+            "color": "#3a1d26"
+        },
+        "marquee_bg": {
+            "color": "#341a23"
+        },
+        "spectrum_area": {
+            "color": "#ffb2bf"
+        },
+        "seek_fill": {
+            "color": "#ffb2bf"
+        },
+        "info_cast": {
+            "color": "#ffb2bf"
+        }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 2.8,
+            "minValue": 0.5,
+            "maxValue": 1.0
+        }
+    },
+    "visualization": {
+        "mainWindowMode": "vis_classic",
+        "spectrumWindowMode": "vis_classic",
+        "visClassic": {
+            "mainWindowProfile": "Northern Lights",
+            "spectrumWindowProfile": "Northern Lights",
+            "mainWindowFitToWidth": true,
+            "spectrumWindowFitToWidth": true,
+            "mainWindowTransparentBackground": true,
+            "spectrumWindowTransparentBackground": true,
+            "mainWindowOpacity": 0.8,
+            "spectrumWindowOpacity": 0.8
+        },
+        "fire": {
+            "mainWindowStyle": "Inferno",
+            "mainWindowIntensity": "Intense",
+            "spectrumWindowStyle": "Inferno",
+            "spectrumWindowIntensity": "Intense"
+        },
+        "lightning": {
+            "mainWindowStyle": "Ember",
+            "spectrumWindowStyle": "Ember"
+        },
+        "matrix": {
+            "mainWindowColorScheme": "Bloodshot",
+            "mainWindowIntensity": "Intense",
+            "spectrumWindowColorScheme": "Bloodshot",
+            "spectrumWindowIntensity": "Intense"
+        }
+    }
+}

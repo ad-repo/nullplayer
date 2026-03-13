@@ -74,6 +74,8 @@ class ModernProjectMView: NSView {
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
+    private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
+    private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
     
     // MARK: - Initialization
     
@@ -214,10 +216,10 @@ class ModernProjectMView: NSView {
         }
         
         // Draw window background
-        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
 
         // Draw window border with glow (seamless docking suppresses adjacent edges)
-        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
+        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
         
         // Draw title bar -- always in shade mode, gated by HT otherwise
         if isShadeMode || !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
@@ -265,12 +267,22 @@ class ModernProjectMView: NSView {
     @objc private func windowLayoutDidChange() {
         guard let window = window else { return }
         let newEdges = WindowManager.shared.computeAdjacentEdges(for: window)
-        if newEdges != adjacentEdges {
+        let newSharp = WindowManager.shared.computeSharpCorners(for: window)
+        let newSegments = WindowManager.shared.computeEdgeOcclusionSegments(for: window)
+        let seamless = min(1.0, max(0.0, ModernSkinEngine.shared.currentSkin?.config.window.seamlessDocking ?? 0))
+        let shouldHaveShadow = !(seamless > 0 && !newEdges.isEmpty)
+        if window.hasShadow != shouldHaveShadow {
+            window.hasShadow = shouldHaveShadow
+            window.invalidateShadow()
+        }
+        if newEdges != adjacentEdges || newSharp != sharpCorners || newSegments != edgeOcclusionSegments {
             adjacentEdges = newEdges
+            sharpCorners = newSharp
+            edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
     }
-    
+
     // MARK: - Visualization Data
     
     /// Handle PCM data notification from audio tap (called on audio thread for low latency)
@@ -846,11 +858,8 @@ class ModernProjectMView: NSView {
         layer.cornerRadius = cornerRadius
         layer.masksToBounds = cornerRadius > 0
         guard cornerRadius > 0 else { return }
-        var masked: CACornerMask = []
-        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
-        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
-        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
-        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
-        layer.maskedCorners = masked
+        let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
+                                         .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        layer.maskedCorners = allCorners.subtracting(sharpCorners)
     }
 }

@@ -1,5 +1,17 @@
+import Accelerate
+import AppKit
 import MetalKit
 import os.lock
+
+extension Notification.Name {
+    /// Posted when a 576-sample stereo waveform frame is available for vis_classic exact mode.
+    /// userInfo: "left" ([UInt8]), "right" ([UInt8]), "sampleRate" (Double)
+    static let audioWaveform576DataUpdated = Notification.Name("audioWaveform576DataUpdated")
+
+    /// Posted by menu actions that operate on vis_classic profiles.
+    /// userInfo: "command" (String), optional "profileName" (String)
+    static let visClassicProfileCommand = Notification.Name("visClassicProfileCommand")
+}
 
 // =============================================================================
 // SPECTRUM ANALYZER VIEW - Metal-based real-time audio visualization
@@ -17,12 +29,15 @@ import os.lock
 /// Quality mode for spectrum analyzer rendering
 enum SpectrumQualityMode: String, CaseIterable {
     case classic = "Classic"     // Discrete colors, pixel-art aesthetic
+    case punch = "Punch"         // Peak-forward metal spectrum (15-25 bars, bars-only)
     case enhanced = "Enhanced"   // LED matrix with rainbow
     case ultra = "Ultra"         // Maximum visual quality with effects
     case flame = "Fire"          // GPU fire simulation driven by audio
     case cosmic = "JWST"         // Procedural nebula inspired by JWST Pillars of Creation
     case electricity = "Lightning" // GPU lightning storm driven by peak frequencies
     case matrix = "Matrix"           // Falling digital rain driven by spectrum
+    case snow = "Snow"               // Audio-reactive snowfall driven by spectrum density
+    case visClassicExact = "vis_classic" // Exact-port vis_classic analyzer core (CPU frame path)
     
     var displayName: String { rawValue }
     
@@ -30,11 +45,13 @@ enum SpectrumQualityMode: String, CaseIterable {
     /// Returns nil if the mode shares a shader already checked by another mode.
     var requiredShaderFile: String {
         switch self {
-        case .classic, .enhanced, .ultra: return "SpectrumShaders"
+        case .classic, .punch, .enhanced, .ultra: return "SpectrumShaders"
         case .flame: return "FlameShaders"
         case .cosmic: return "CosmicShaders"
         case .electricity: return "ElectricityShaders"
         case .matrix: return "MatrixShaders"
+        case .snow: return "SnowShaders"
+        case .visClassicExact: return "SpectrumShaders" // Always bundled; keeps mode enabled in menus
         }
     }
 }
@@ -158,7 +175,11 @@ struct ElectricityParams {
     var beatIntensity: Float         // 4 bytes (offset 28)
     var dramaticIntensity: Float     // 4 bytes (offset 32) - rare dramatic strike
     var colorScheme: Int32 = 0       // 4 bytes (offset 36) - lightning color palette
-    var brightnessBoost: Float = 1.0 // 4 bytes (offset 40) → total 44
+    var brightnessBoost: Float = 1.0 // 4 bytes (offset 40)
+    var peak1Band: Float = 0.5       // 4 bytes (offset 44) - normalized position of loudest band
+    var peak1Energy: Float = 0.0     // 4 bytes (offset 48) - energy of loudest band
+    var peak2Band: Float = 0.3       // 4 bytes (offset 52) - normalized position of 2nd loudest band
+    var peak2Energy: Float = 0.0     // 4 bytes (offset 56) → total 60
 }
 
 /// Color scheme presets for Matrix mode
@@ -207,6 +228,21 @@ struct MatrixParams {
     var colorScheme: Int32 = 0       // 4 bytes (offset 40) - matrix color palette
     var intensity: Float = 1.0       // 4 bytes (offset 44) - 1.0=subtle, 2.0=intense
     var brightnessBoost: Float = 1.0 // 4 bytes (offset 48) → total 52 (padded to 56)
+}
+
+/// Parameters for Snow Metal shaders (must match Metal SnowParams struct)
+struct SnowParams {
+    var viewportSize: SIMD2<Float>  // 8 bytes (offset 0)
+    var time: Float                  // 4 bytes (offset 8)
+    var bassEnergy: Float            // 4 bytes (offset 12)
+    var midEnergy: Float             // 4 bytes (offset 16)
+    var trebleEnergy: Float          // 4 bytes (offset 20)
+    var totalEnergy: Float           // 4 bytes (offset 24)
+    var beatIntensity: Float         // 4 bytes (offset 28)
+    var fallOffset: Float            // 4 bytes (offset 32)
+    var windPhase: Float             // 4 bytes (offset 36)
+    var density: Float               // 4 bytes (offset 40)
+    var brightnessBoost: Float = 1.0 // 4 bytes (offset 44) → total 48
 }
 
 /// Decay mode controlling how quickly bars fall
@@ -285,6 +321,11 @@ struct UltraParams {
 
 /// Metal-based spectrum analyzer visualization view
 class SpectrumAnalyzerView: NSView {
+    private let waveformConsumerID = "visClassicWaveform.\(UUID().uuidString)"
+
+    private var visClassicPreferenceScope: VisClassicBridge.PreferenceScope {
+        isEmbedded ? .mainWindow : .spectrumWindow
+    }
     
     // MARK: - Shader Availability
     
@@ -299,13 +340,15 @@ class SpectrumAnalyzerView: NSView {
     /// Only valid after setupMetal() has run. Use isShaderAvailable() for pre-init checks.
     private func isPipelineAvailable(for mode: SpectrumQualityMode) -> Bool {
         switch mode {
-        case .classic: return barPipelineState != nil
+        case .classic, .punch: return barPipelineState != nil
         case .enhanced: return ledPipelineState != nil
         case .ultra: return ultraPipelineState != nil
-        case .flame: return flamePropPipeline != nil && flameRenderPipeline != nil
+        case .flame: return flamePropPipeline != nil && flameBlurHPipeline != nil && flameRenderPipeline != nil
         case .cosmic: return cosmicRenderPipeline != nil
         case .electricity: return electricityRenderPipeline != nil
         case .matrix: return matrixRenderPipeline != nil
+        case .snow: return snowRenderPipeline != nil
+        case .visClassicExact: return true
         }
     }
     
@@ -333,6 +376,25 @@ class SpectrumAnalyzerView: NSView {
             dataLock.withLock {
                 renderQualityMode = mode
             }
+
+            if mode == .visClassicExact && visClassicBridge == nil {
+                let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+                let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+                visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            }
+
+            // Heavy fullscreen shader modes can stall at Retina-scale pixel counts.
+            // Keep drawable scale in sync with the active mode.
+            DispatchQueue.main.async { [weak self] in
+                self?.syncMetalLayerScaleAndSize()
+            }
+
+            // Keep Punch mode's dynamic bar layout in sync when mode changes.
+            applyModeDrivenBarLayoutIfNeeded()
+            updateWaveformConsumerRegistration()
+            DispatchQueue.main.async { [weak self] in
+                self?.applyVisClassicOpacity()
+            }
             // Note: Don't change semaphore at runtime - it causes crashes when GPU work is in-flight
         }
     }
@@ -344,6 +406,45 @@ class SpectrumAnalyzerView: NSView {
         // Ensure we have valid values to avoid division issues
         guard time.timeValue > 0 && time.timeScale > 0 else { return 60.0 }
         return Double(time.timeScale) / Double(time.timeValue)
+    }
+
+    private let punchMinBarCount = 15
+    private let punchMaxBarCount = 25
+    private let punchBarTargetWidth: CGFloat = 12.0
+
+    private func recommendedPunchBarCount(for viewWidth: CGFloat) -> Int {
+        let width = max(1.0, viewWidth)
+        let estimated = Int((width / punchBarTargetWidth).rounded())
+        return max(punchMinBarCount, min(punchMaxBarCount, estimated))
+    }
+
+    private func applyModeDrivenBarLayoutIfNeeded() {
+        guard !isApplyingModeDrivenBarLayout else { return }
+        isApplyingModeDrivenBarLayout = true
+        defer { isApplyingModeDrivenBarLayout = false }
+
+        if qualityMode == .punch {
+            if !hasConfiguredBarLayoutBaseline {
+                configuredBarCount = barCount
+                configuredBarWidth = barWidth
+                configuredBarSpacing = barSpacing
+                hasConfiguredBarLayoutBaseline = true
+            }
+
+            let spacing = configuredBarSpacing
+            let count = recommendedPunchBarCount(for: bounds.width)
+            let totalSpacing = CGFloat(max(0, count - 1)) * spacing
+            let usableWidth = max(0, bounds.width - totalSpacing)
+            let width = max(2.0, floor(usableWidth / CGFloat(max(1, count))))
+
+            barCount = count
+            barWidth = width
+            barSpacing = spacing
+        } else {
+            barCount = configuredBarCount
+            barWidth = configuredBarWidth
+            barSpacing = configuredBarSpacing
+        }
     }
     
     /// Decay/responsiveness mode
@@ -362,6 +463,10 @@ class SpectrumAnalyzerView: NSView {
     /// Number of bars to display
     var barCount: Int = 19 {
         didSet {
+            if !isApplyingModeDrivenBarLayout && qualityMode != .punch {
+                configuredBarCount = barCount
+                hasConfiguredBarLayoutBaseline = true
+            }
             let count = barCount
             dataLock.withLock {
                 renderBarCount = count
@@ -372,6 +477,10 @@ class SpectrumAnalyzerView: NSView {
     /// Bar width in pixels (scaled in shader)
     var barWidth: CGFloat = 3.0 {
         didSet {
+            if !isApplyingModeDrivenBarLayout && qualityMode != .punch {
+                configuredBarWidth = barWidth
+                hasConfiguredBarLayoutBaseline = true
+            }
             let width = barWidth
             dataLock.withLock {
                 renderBarWidth = width
@@ -380,7 +489,21 @@ class SpectrumAnalyzerView: NSView {
     }
     
     /// Spacing between bars
-    var barSpacing: CGFloat = 1.0
+    var barSpacing: CGFloat = 1.0 {
+        didSet {
+            if !isApplyingModeDrivenBarLayout && qualityMode != .punch {
+                configuredBarSpacing = barSpacing
+                hasConfiguredBarLayoutBaseline = true
+            }
+        }
+    }
+
+    /// Last non-punch bar layout requested by host views; restored when leaving punch mode.
+    private var configuredBarCount: Int = 19
+    private var configuredBarWidth: CGFloat = 3.0
+    private var configuredBarSpacing: CGFloat = 1.0
+    private var hasConfiguredBarLayoutBaseline = false
+    private var isApplyingModeDrivenBarLayout = false
     
     /// Glow intensity for enhanced mode (0-1)
     var glowIntensity: Float = 0.5
@@ -486,9 +609,21 @@ class SpectrumAnalyzerView: NSView {
     private var matrixRenderPipeline: MTLRenderPipelineState?
     private var matrixParamsBuffer: MTLBuffer?
     
+    // Snow mode resources
+    private var snowRenderPipeline: MTLRenderPipelineState?
+    private var snowParamsBuffer: MTLBuffer?
+
+    // vis_classic exact mode resources (CPU-rendered frame uploaded to a Metal texture)
+    private var visClassicBridge: VisClassicBridge?
+    private var visClassicFrameTexture: MTLTexture?
+    private var visClassicFrameBytes: [UInt8] = []
+    
     // Flame mode resources
     private var flamePropPipeline: MTLComputePipelineState?
-    private var flameRenderPipeline: MTLRenderPipelineState?
+    private var flameRenderPipeline: MTLRenderPipelineState?   // vertical blur + color pass
+    private var flameBlurHPipeline: MTLRenderPipelineState?    // horizontal blur pass
+    private var flameBlurTexture: MTLTexture?                  // intermediate r16Float texture
+    private var flameBlurLastDrawableSize: CGSize = .zero
     private var flameSimTextureA: MTLTexture?
     private var flameSimTextureB: MTLTexture?
     private var flameSpectrumBuffer: MTLBuffer?
@@ -513,6 +648,11 @@ class SpectrumAnalyzerView: NSView {
     // They are protected by dataLock and marked nonisolated(unsafe) to allow cross-thread access.
     
     private let dataLock = OSAllocatedUnfairLock()
+    private let machTimebaseInfo: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
     nonisolated(unsafe) private var rawSpectrum: [Float] = []       // From audio engine (75 bands)
     nonisolated(unsafe) private var displaySpectrum: [Float] = []   // After decay smoothing (Enhanced/Classic)
     nonisolated(unsafe) private var ultraDisplaySpectrum: [Float] = []  // After decay smoothing (Ultra mode - 96 bars)
@@ -556,6 +696,12 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var electricityDramaticLPF: Float = 0  // Slow-moving energy baseline for peak detection
     nonisolated(unsafe) private var electricityDramaticCooldown: Int = 0  // Frames until next dramatic strike allowed
     nonisolated(unsafe) private var renderLightningStyle: LightningStyle = .classic
+
+    /// Timestamp of last rendered frame, for 60Hz cap on high-refresh displays
+    private var lastFrameHostTime: UInt64 = 0
+
+    /// Cached normalization mode — updated when settings change, not read every frame
+    private var cachedIsAccurateNormalization: Bool = false
     
     // Matrix mode state
     nonisolated(unsafe) private var matrixSmoothBass: Float = 0
@@ -568,6 +714,20 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var matrixDramaticCooldown: Int = 0  // Frames until next dramatic allowed
     nonisolated(unsafe) private var renderMatrixColorScheme: MatrixColorScheme = .classic
     nonisolated(unsafe) private var renderMatrixIntensity: MatrixIntensity = .subtle
+    
+    // Snow mode state
+    nonisolated(unsafe) private var snowSmoothBass: Float = 0
+    nonisolated(unsafe) private var snowSmoothMid: Float = 0
+    nonisolated(unsafe) private var snowSmoothTreble: Float = 0
+    nonisolated(unsafe) private var snowBeatIntensity: Float = 0
+    nonisolated(unsafe) private var snowFallOffset: Float = 0
+    nonisolated(unsafe) private var snowWindPhase: Float = 0
+    nonisolated(unsafe) private var snowDensity: Float = 0.2
+
+    // vis_classic waveform state (latest 576-sample stereo frame)
+    nonisolated(unsafe) private var visClassicWaveLeft: [UInt8] = Array(repeating: 128, count: 576)
+    nonisolated(unsafe) private var visClassicWaveRight: [UInt8] = Array(repeating: 128, count: 576)
+    nonisolated(unsafe) private var visClassicWaveSampleRate: Double = 44100
     
     // Flame mode state
     nonisolated(unsafe) private var renderFlameStyle: FlameStyle = .inferno
@@ -678,6 +838,8 @@ class SpectrumAnalyzerView: NSView {
             NSLog("SpectrumAnalyzerView: Pipeline not available for \(qualityMode.rawValue), falling back to Classic")
             qualityMode = .classic
         }
+
+        applyModeDrivenBarLayoutIfNeeded()
         
         // Load colors from current skin
         updateColorsFromSkin()
@@ -702,12 +864,24 @@ class SpectrumAnalyzerView: NSView {
         // Observe playback state changes to ensure display link restarts when playback begins
         NotificationCenter.default.addObserver(self, selector: #selector(handlePlaybackStateChange),
                                                name: .audioPlaybackStateChanged, object: nil)
+
+        // Observe 576-sample stereo waveform updates for vis_classic exact mode
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWaveform576Update(_:)),
+                                               name: .audioWaveform576DataUpdated, object: nil)
+
+        // Observe profile commands triggered from app/context menus
+        NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
+                                               name: .visClassicProfileCommand, object: nil)
         
+        // Initialize cached normalization mode
+        cachedIsAccurateNormalization = UserDefaults.standard.string(forKey: normalizationUserDefaultsKey) == SpectrumNormalizationMode.accurate.rawValue
+
         // Start rendering
         startRendering()
     }
     
     deinit {
+        WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
         NotificationCenter.default.removeObserver(self)
         stopRendering()
     }
@@ -791,14 +965,91 @@ class SpectrumAnalyzerView: NSView {
             }
         }
         
+        // Update cached normalization mode
+        cachedIsAccurateNormalization = UserDefaults.standard.string(forKey: normalizationUserDefaultsKey) == SpectrumNormalizationMode.accurate.rawValue
+
         // Note: We no longer reset state arrays on mode switch since pre-allocated
         // arrays handle all modes and the display naturally transitions. Resetting
         // was causing frame drops due to long lock hold times.
-        
+
         // Just reset idle tracking to ensure rendering continues smoothly
         dataLock.withLock {
             idleFrameCount = 0
             hasClearedAfterIdle = false
+        }
+    }
+
+    @objc private func handleWaveform576Update(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let left = userInfo["left"] as? [UInt8],
+              let right = userInfo["right"] as? [UInt8],
+              let sampleRate = userInfo["sampleRate"] as? Double else { return }
+
+        let hasData = left.contains { $0 != 128 } || right.contains { $0 != 128 }
+
+        dataLock.withLock {
+            visClassicWaveLeft = left
+            visClassicWaveRight = right
+            visClassicWaveSampleRate = sampleRate
+
+            if hasData {
+                stoppedDueToIdle = false
+                idleFrameCount = 0
+                hasClearedAfterIdle = false
+            }
+        }
+
+        if qualityMode == .visClassicExact && hasData && !isRendering {
+            DispatchQueue.main.async { [weak self] in
+                self?.startRendering()
+            }
+        }
+    }
+
+    @objc private func handleVisClassicProfileCommand(_ notification: Notification) {
+        guard qualityMode == .visClassicExact,
+              window?.isVisible == true else { return }
+        guard let userInfo = notification.userInfo,
+              let command = userInfo["command"] as? String else { return }
+        let target = userInfo["target"] as? String
+        switch target {
+        case "mainWindow":
+            guard isEmbedded else { return }
+        case "spectrumWindow", nil:
+            guard !isEmbedded else { return }
+        default:
+            return
+        }
+
+        switch command {
+        case "next":
+            _ = loadNextVisClassicProfile()
+        case "previous":
+            _ = loadPreviousVisClassicProfile()
+        case "import":
+            importVisClassicProfile()
+        case "export":
+            exportCurrentVisClassicProfile()
+        case "load":
+            if let name = userInfo["profileName"] as? String {
+                _ = loadVisClassicProfile(named: name)
+            }
+        case "fitToWidth":
+            if let enabled = userInfo["enabled"] as? Bool {
+                _ = setVisClassicFitToWidth(enabled)
+            } else {
+                _ = toggleVisClassicFitToWidth()
+            }
+        case "transparentBg":
+            if let enabled = userInfo["enabled"] as? Bool {
+                _ = setVisClassicTransparentBackground(enabled)
+            } else {
+                _ = toggleVisClassicTransparentBackground()
+            }
+        case "opacity":
+            applyVisClassicOpacity()
+        default:
+            break
         }
     }
     
@@ -852,8 +1103,10 @@ class SpectrumAnalyzerView: NSView {
         metalLayer.device = device
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.framebufferOnly = true
-        metalLayer.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        metalLayer.isOpaque = !VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope)
+        layer?.isOpaque = !VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope)
         metalLayer.frame = bounds
+        syncMetalLayerScaleAndSize()
         // CRITICAL: Limit drawable pool size to prevent unbounded memory growth
         // Without this, CAMetalLayer can create unlimited drawables during continuous rendering
         metalLayer.maximumDrawableCount = 3
@@ -868,9 +1121,55 @@ class SpectrumAnalyzerView: NSView {
         setupCosmicPipelines()
         setupElectricityPipelines()
         setupMatrixPipelines()
+        setupSnowPipelines()
         
         // Create buffers
         setupBuffers()
+        applyVisClassicOpacity()
+    }
+    
+    /// Returns the exact viewport size (in pixels) for the current drawable.
+    /// Prefer drawable texture dimensions over view bounds so fullscreen resizes
+    /// never use stale viewport values in fragment shaders.
+    private func drawableViewportSize(_ drawable: CAMetalDrawable?) -> SIMD2<Float> {
+        if let drawable {
+            return SIMD2<Float>(Float(drawable.texture.width), Float(drawable.texture.height))
+        }
+        let scale = metalLayer?.contentsScale ?? 2.0
+        return SIMD2<Float>(
+            Float(max(1, bounds.width * scale)),
+            Float(max(1, bounds.height * scale))
+        )
+    }
+    
+    /// Preferred layer scale for current mode/size.
+    /// Caps scale for heavy fullscreen shader modes to keep frame times stable.
+    private func preferredMetalContentsScale() -> CGFloat {
+        let baseScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        let isCustomFullscreenWindow = window?.level == .screenSaver
+        guard isCustomFullscreenWindow else { return baseScale }
+        
+        switch qualityMode {
+        case .electricity:
+            // Lightning is fragment-heavy at fullscreen sizes.
+            return 1.0
+        case .cosmic, .matrix, .snow:
+            // Slight cap keeps these smooth while preserving detail.
+            return min(baseScale, 1.25)
+        default:
+            return baseScale
+        }
+    }
+    
+    /// Keep CAMetalLayer scale and drawable size synchronized with bounds/mode.
+    private func syncMetalLayerScaleAndSize() {
+        guard let metalLayer = metalLayer else { return }
+        let scale = preferredMetalContentsScale()
+        metalLayer.contentsScale = scale
+        metalLayer.drawableSize = CGSize(
+            width: max(1, bounds.width * scale),
+            height: max(1, bounds.height * scale)
+        )
     }
     
     private func setupPipeline() {
@@ -946,7 +1245,7 @@ class SpectrumAnalyzerView: NSView {
             
             // Keep pipelineState for backward compatibility (points to current mode)
             switch qualityMode {
-            case .classic:
+            case .classic, .punch:
                 pipelineState = barPipelineState
             case .enhanced:
                 pipelineState = ledPipelineState
@@ -960,6 +1259,10 @@ class SpectrumAnalyzerView: NSView {
                 pipelineState = electricityRenderPipeline
             case .matrix:
                 pipelineState = matrixRenderPipeline
+            case .snow:
+                pipelineState = snowRenderPipeline
+            case .visClassicExact:
+                pipelineState = nil
             }
 
             NSLog("SpectrumAnalyzerView: Metal pipelines created successfully")
@@ -1032,6 +1335,9 @@ class SpectrumAnalyzerView: NSView {
         
         // Matrix mode buffers
         matrixParamsBuffer = device.makeBuffer(length: MemoryLayout<MatrixParams>.stride, options: .storageModeShared)
+        
+        // Snow mode buffers
+        snowParamsBuffer = device.makeBuffer(length: MemoryLayout<SnowParams>.stride, options: .storageModeShared)
     }
     
     /// Set up flame compute and render pipelines
@@ -1048,9 +1354,16 @@ class SpectrumAnalyzerView: NSView {
                 flamePropPipeline = try device.makeComputePipelineState(function: fn)
             }
             if let vf = lib.makeFunction(name: "flame_vertex"),
-               let ff = lib.makeFunction(name: "flame_fragment") {
+               let hf = lib.makeFunction(name: "flame_blur_h") {
                 let d = MTLRenderPipelineDescriptor()
-                d.vertexFunction = vf; d.fragmentFunction = ff
+                d.vertexFunction = vf; d.fragmentFunction = hf
+                d.colorAttachments[0].pixelFormat = .r16Float  // single-channel intermediate
+                flameBlurHPipeline = try device.makeRenderPipelineState(descriptor: d)
+            }
+            if let vf = lib.makeFunction(name: "flame_vertex"),
+               let vf2 = lib.makeFunction(name: "flame_blur_v") {
+                let d = MTLRenderPipelineDescriptor()
+                d.vertexFunction = vf; d.fragmentFunction = vf2
                 d.colorAttachments[0].pixelFormat = .bgra8Unorm
                 d.colorAttachments[0].isBlendingEnabled = true
                 d.colorAttachments[0].rgbBlendOperation = .add
@@ -1151,12 +1464,46 @@ class SpectrumAnalyzerView: NSView {
             NSLog("SpectrumAnalyzerView: Matrix shader error: \(error)")
         }
     }
+    
+    /// Set up Snow mode render pipeline
+    private func setupSnowPipelines() {
+        guard let device = device else { return }
+        guard let url = BundleHelper.url(forResource: "SnowShaders", withExtension: "metal"),
+              let src = try? String(contentsOf: url, encoding: .utf8) else {
+            NSLog("SpectrumAnalyzerView: SnowShaders.metal not found")
+            return
+        }
+        do {
+            let lib = try device.makeLibrary(source: src, options: nil)
+            if let vf = lib.makeFunction(name: "snow_vertex"),
+               let ff = lib.makeFunction(name: "snow_fragment") {
+                let d = MTLRenderPipelineDescriptor()
+                d.vertexFunction = vf
+                d.fragmentFunction = ff
+                d.colorAttachments[0].pixelFormat = .bgra8Unorm
+                snowRenderPipeline = try device.makeRenderPipelineState(descriptor: d)
+            }
+            NSLog("SpectrumAnalyzerView: Snow pipeline created")
+        } catch {
+            NSLog("SpectrumAnalyzerView: Snow shader error: \(error)")
+        }
+    }
 
     // MARK: - Display Link
     
+    /// Rendering should only run while this analyzer view is actually visible.
+    private func isRenderEligible() -> Bool {
+        guard let window = window else { return false }
+        guard window.isVisible, !window.isMiniaturized else { return false }
+        guard !isHiddenOrHasHiddenAncestor else { return false }
+        return window.occlusionState.contains(.visible)
+    }
+    
     private func startRendering() {
+        guard isRenderEligible() else { return }
         guard !isRendering else { return }
         isRendering = true
+        updateWaveformConsumerRegistration()
         
         // Reset idle tracking state (protected by dataLock)
         dataLock.withLock {
@@ -1171,6 +1518,8 @@ class SpectrumAnalyzerView: NSView {
         
         guard let displayLink = link else {
             NSLog("SpectrumAnalyzerView: Failed to create display link")
+            isRendering = false
+            updateWaveformConsumerRegistration()
             return
         }
         
@@ -1194,6 +1543,7 @@ class SpectrumAnalyzerView: NSView {
     private func stopRendering() {
         guard isRendering else { return }
         isRendering = false
+        updateWaveformConsumerRegistration()
         
         if let displayLink = displayLink {
             CVDisplayLinkStop(displayLink)
@@ -1240,7 +1590,32 @@ class SpectrumAnalyzerView: NSView {
     /// Called by display link at 60Hz
     /// Note: This is internal (not private) so the display link callback can access it
     func render() {
-        
+        var modeForPacing: SpectrumQualityMode = .classic
+        dataLock.withLock {
+            modeForPacing = renderQualityMode
+        }
+
+        // Throttle to a mode-appropriate FPS on high-refresh-rate displays.
+        // Embedded vis_classic is capped lower to avoid high CPU cost in the main window.
+        let minFrameIntervalNs: UInt64
+        switch modeForPacing {
+        case .visClassicExact:
+            minFrameIntervalNs = isEmbedded ? 30_000_000 : 20_000_000
+        case .punch:
+            minFrameIntervalNs = 0
+        default:
+            minFrameIntervalNs = 14_000_000
+        }
+
+        let hostTime = mach_absolute_time()
+        if lastFrameHostTime != 0 {
+            let elapsedNs = (hostTime - lastFrameHostTime) * UInt64(machTimebaseInfo.numer) / UInt64(machTimebaseInfo.denom)
+            if elapsedNs < minFrameIntervalNs {
+                return
+            }
+        }
+        lastFrameHostTime = hostTime
+
         guard isRendering, let metalLayer = metalLayer else { return }
 
         // Adaptive row count: avoid sub-pixel cells in small views (e.g. main window spectrum is 18pt tall).
@@ -1263,28 +1638,37 @@ class SpectrumAnalyzerView: NSView {
         var currentMode: SpectrumQualityMode = .classic
         
         dataLock.withLock {
-            // Update display spectrum with decay
-            hadData = updateDisplaySpectrumLocked()
-            
-            // Check idle state
-            if !hadData {
-                idleFrameCount += 1
-                
-                if idleFrameCount >= idleFrameThreshold {
-                    stoppedDueToIdle = true
-                    shouldStopDueToIdle = true
-                } else if hasClearedAfterIdle {
-                    shouldSkipFrame = true
-                } else {
-                    hasClearedAfterIdle = true
-                }
-            } else {
+            // Get current mode first so per-mode update/idle rules can be applied.
+            currentMode = renderQualityMode
+
+            if currentMode == .visClassicExact {
+                // vis_classic uses waveform-driven frames and its own decay logic.
+                // Skipping generic spectrum idle handling prevents visible stutter/flashing.
+                hadData = true
                 idleFrameCount = 0
                 hasClearedAfterIdle = false
+                stoppedDueToIdle = false
+            } else {
+                // Update display spectrum with decay
+                hadData = updateDisplaySpectrumLocked()
+
+                // Check idle state
+                if !hadData {
+                    idleFrameCount += 1
+
+                    if idleFrameCount >= idleFrameThreshold {
+                        stoppedDueToIdle = true
+                        shouldStopDueToIdle = true
+                    } else if hasClearedAfterIdle {
+                        shouldSkipFrame = true
+                    } else {
+                        hasClearedAfterIdle = true
+                    }
+                } else {
+                    idleFrameCount = 0
+                    hasClearedAfterIdle = false
+                }
             }
-            
-            // Get current mode for pipeline selection
-            currentMode = renderQualityMode
         }
         
         if shouldStopDueToIdle {
@@ -1331,10 +1715,18 @@ class SpectrumAnalyzerView: NSView {
             renderMatrix(drawable: drawable)
             return
         }
+        if currentMode == .snow {
+            renderSnow(drawable: drawable)
+            return
+        }
+        if currentMode == .visClassicExact {
+            renderVisClassicExact(drawable: drawable)
+            return
+        }
         
         let activePipeline: MTLRenderPipelineState?
         switch currentMode {
-        case .classic:
+        case .classic, .punch:
             activePipeline = barPipelineState
         case .enhanced:
             activePipeline = ledPipelineState
@@ -1348,6 +1740,10 @@ class SpectrumAnalyzerView: NSView {
             activePipeline = nil  // Handled by renderElectricity() above
         case .matrix:
             activePipeline = nil  // Handled by renderMatrix() above
+        case .snow:
+            activePipeline = nil  // Handled by renderSnow() above
+        case .visClassicExact:
+            activePipeline = nil  // Handled by renderVisClassicExact() above
         }
 
         guard let pipeline = activePipeline,
@@ -1415,7 +1811,7 @@ class SpectrumAnalyzerView: NSView {
             let vertexCount = ultraBarCount * ultraLedRowCount * 6
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
             
-        case .classic:
+        case .classic, .punch:
             // Classic bar mode - bind bar buffers
             if let buffer = heightBuffer {
                 encoder.setVertexBuffer(buffer, offset: 0, index: 0)
@@ -1445,6 +1841,10 @@ class SpectrumAnalyzerView: NSView {
             break  // Handled by renderElectricity() above
         case .matrix:
             break  // Handled by renderMatrix() above
+        case .snow:
+            break  // Handled by renderSnow() above
+        case .visClassicExact:
+            break  // Handled by renderVisClassicExact() above
         }
         
         encoder.endEncoding()
@@ -1464,9 +1864,22 @@ class SpectrumAnalyzerView: NSView {
         // Creating an encoder without calling endEncoding() leaves the command buffer in an invalid state.
         guard let cb = commandQueue?.makeCommandBuffer(),
               let simA = flameSimTextureA, let simB = flameSimTextureB,
-              let computePL = flamePropPipeline, let renderPL = flameRenderPipeline else {
+              let computePL = flamePropPipeline,
+              let blurHPL = flameBlurHPipeline, let renderPL = flameRenderPipeline else {
             inFlightSemaphore.signal(); return
         }
+        // Create or resize the intermediate r16Float horizontal-blur texture
+        let drawableW = drawable.texture.width
+        let drawableH = drawable.texture.height
+        let drawableSize = CGSize(width: drawableW, height: drawableH)
+        if flameBlurTexture == nil || flameBlurLastDrawableSize != drawableSize {
+            let td = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .r16Float, width: drawableW, height: drawableH, mipmapped: false)
+            td.usage = [.shaderRead, .renderTarget]; td.storageMode = .private
+            flameBlurTexture = device?.makeTexture(descriptor: td)
+            flameBlurLastDrawableSize = drawableSize
+        }
+        guard let blurTex = flameBlurTexture else { inFlightSemaphore.signal(); return }
         var localSpectrum: [Float] = []; var localStyle: FlameStyle = .inferno; var localTime: Float = 0
         var localIntensity: FlameIntensity = .mellow
         dataLock.withLock {
@@ -1495,12 +1908,12 @@ class SpectrumAnalyzerView: NSView {
                 p[i] = val
             }
         }
-        let scale = metalLayer?.contentsScale ?? 2.0
+        let viewport = drawableViewportSize(drawable)
         if let buf = flameParamsBuffer {
             let p = buf.contents().bindMemory(to: FlameParams.self, capacity: 1)
             p.pointee = FlameParams(
                 gridSize: SIMD2<Float>(Float(flameGridWidth), Float(flameGridHeight)),
-                viewportSize: SIMD2<Float>(Float(bounds.width * scale), Float(bounds.height * scale)),
+                viewportSize: viewport,
                 time: localTime, dt: 1.0 / 60.0,
                 bassEnergy: flameSmoothBass, midEnergy: flameSmoothMid, trebleEnergy: flameSmoothTreble,
                 buoyancy: localStyle.buoyancy, cooling: localStyle.cooling, turbulence: localStyle.turbulence,
@@ -1519,13 +1932,24 @@ class SpectrumAnalyzerView: NSView {
             enc.setBuffer(flameSpectrumBuffer, offset: 0, index: 1)
             enc.dispatchThreadgroups(tgs, threadsPerThreadgroup: tgSize); enc.endEncoding()
         }
-        let rpd = MTLRenderPassDescriptor()
-        rpd.colorAttachments[0].texture = drawable.texture
-        rpd.colorAttachments[0].loadAction = .clear; rpd.colorAttachments[0].storeAction = .store
-        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
-            enc.setRenderPipelineState(renderPL)
+        // Pass 2: horizontal blur (fire grid → intermediate r16Float texture)
+        let rpdH = MTLRenderPassDescriptor()
+        rpdH.colorAttachments[0].texture = blurTex
+        rpdH.colorAttachments[0].loadAction = .dontCare; rpdH.colorAttachments[0].storeAction = .store
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpdH) {
+            enc.setRenderPipelineState(blurHPL)
             enc.setFragmentTexture(writeTex, index: 0)
+            enc.setFragmentBuffer(flameParamsBuffer, offset: 0, index: 0)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6); enc.endEncoding()
+        }
+        // Pass 3: vertical blur + color mapping (intermediate → drawable)
+        let rpdV = MTLRenderPassDescriptor()
+        rpdV.colorAttachments[0].texture = drawable.texture
+        rpdV.colorAttachments[0].loadAction = .clear; rpdV.colorAttachments[0].storeAction = .store
+        rpdV.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpdV) {
+            enc.setRenderPipelineState(renderPL)
+            enc.setFragmentTexture(blurTex, index: 0)
             enc.setFragmentBuffer(flameParamsBuffer, offset: 0, index: 0)
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6); enc.endEncoding()
         }
@@ -1561,11 +1985,11 @@ class SpectrumAnalyzerView: NSView {
             cosmicSmoothMid += (mid - cosmicSmoothMid) * (mid > cosmicSmoothMid ? 0.3 : 0.08)
             cosmicSmoothTreble += (treble - cosmicSmoothTreble) * (treble > cosmicSmoothTreble ? 0.3 : 0.08)
             
-            // Beat detection: bass spike above smoothed level
-            if bass > cosmicSmoothBass + 0.12 {
-                cosmicBeatIntensity = min(1.0, cosmicBeatIntensity + 0.5)
+            // Beat detection: keep JWST calmer (smaller, less frequent pulse boosts)
+            if bass > cosmicSmoothBass + 0.16 {
+                cosmicBeatIntensity = min(0.5, cosmicBeatIntensity + 0.22)
             }
-            cosmicBeatIntensity *= 0.92
+            cosmicBeatIntensity *= 0.88
             
             // Rare big flare: only on strong peaks, with long cooldown
             // While active, suppresses all small flares — the giant owns the screen
@@ -1581,15 +2005,14 @@ class SpectrumAnalyzerView: NSView {
             cosmicFlareLPF += (instantEnergy - cosmicFlareLPF) * 0.02  // Very slow follower
             let flareDelta = instantEnergy - cosmicFlareLPF
             
-            if flareDelta > 0.10 && cosmicFlareCooldown == 0 && cosmicFlareIntensity < 0.05 {
+            if flareDelta > 0.15 && cosmicFlareCooldown == 0 && cosmicFlareIntensity < 0.05 {
                 // Energy spike above low-pass baseline — fire the giant
-                cosmicFlareIntensity = 1.0
+                cosmicFlareIntensity = 0.7
                 cosmicFlareScrollSnapshot = cosmicScrollOffset
-                cosmicFlareCooldown = 420  // ~7 seconds cooldown at 60fps
+                cosmicFlareCooldown = 720  // ~12 seconds cooldown at 60fps
             }
-            // Very slow decay: ~5.5 seconds to fade from 1.0 to ~0.05
-            // 0.991^330 ≈ 0.05 → 330 frames = 5.5 seconds
-            cosmicFlareIntensity *= 0.991
+            // Slightly faster decay to reduce dominant flare persistence
+            cosmicFlareIntensity *= 0.986
             
             // Accumulate scroll distance based on music intensity
             // Gentle drift always, slightly faster when loud — chill ride through space
@@ -1600,12 +2023,12 @@ class SpectrumAnalyzerView: NSView {
         }
         
         // Update cosmic params (no spectrum buffer — pure atmospheric mode)
-        let scale = metalLayer?.contentsScale ?? 2.0
+        let viewport = drawableViewportSize(drawable)
         let totalE = (cosmicSmoothBass + cosmicSmoothMid + cosmicSmoothTreble) / 3.0
         if let buf = cosmicParamsBuffer {
             let p = buf.contents().bindMemory(to: CosmicParams.self, capacity: 1)
             p.pointee = CosmicParams(
-                viewportSize: SIMD2<Float>(Float(bounds.width * scale), Float(bounds.height * scale)),
+                viewportSize: viewport,
                 time: localTime,
                 scrollOffset: localScroll,
                 bassEnergy: cosmicSmoothBass,
@@ -1683,11 +2106,11 @@ class SpectrumAnalyzerView: NSView {
             electricitySmoothMid += (mid - electricitySmoothMid) * (mid > electricitySmoothMid ? 0.2 : 0.06)
             electricitySmoothTreble += (treble - electricitySmoothTreble) * (treble > electricitySmoothTreble ? 0.2 : 0.06)
             
-            // Beat detection: gentle
-            if bass > electricitySmoothBass + 0.14 {
-                electricityBeatIntensity = min(0.6, electricityBeatIntensity + 0.25)
+            // Beat detection: calmer pulse behavior
+            if bass > electricitySmoothBass + 0.18 {
+                electricityBeatIntensity = min(0.35, electricityBeatIntensity + 0.14)
             }
-            electricityBeatIntensity *= 0.94
+            electricityBeatIntensity *= 0.90
             
             // Dramatic strike detection — JWST-style rare event with long cooldown
             // LPF tracks slow-moving energy baseline, dramatic fires on spikes above it
@@ -1698,14 +2121,13 @@ class SpectrumAnalyzerView: NSView {
             electricityDramaticLPF += (instantEnergy - electricityDramaticLPF) * 0.02  // Very slow follower
             let dramaticDelta = instantEnergy - electricityDramaticLPF
             
-            if dramaticDelta > 0.10 && electricityDramaticCooldown == 0 && electricityDramaticIntensity < 0.05 {
+            if dramaticDelta > 0.14 && electricityDramaticCooldown == 0 && electricityDramaticIntensity < 0.05 {
                 // Energy spike above baseline — fire dramatic strike
-                electricityDramaticIntensity = 1.0
-                electricityDramaticCooldown = 480  // ~8 seconds cooldown at 60fps
+                electricityDramaticIntensity = 0.75
+                electricityDramaticCooldown = 720  // ~12 seconds cooldown at 60fps
             }
-            // Very slow decay: ~5 seconds to fade (like JWST giant flare)
-            // 0.991^300 ≈ 0.05
-            electricityDramaticIntensity *= 0.991
+            // Faster decay for less persistent dramatic activity
+            electricityDramaticIntensity *= 0.986
         }
         
         // Update spectrum buffer (reuse flameSpectrumBuffer like cosmic does)
@@ -1720,16 +2142,37 @@ class SpectrumAnalyzerView: NSView {
                 p[i] = val
             }
         }
-        
+
+        // Find top 2 spectrum peaks on CPU (avoids per-pixel scan in shader)
+        var peak1Band: Float = 0.5
+        var peak1Energy: Float = 0.0
+        var peak2Band: Float = 0.3
+        var peak2Energy: Float = 0.0
+        let specCount = localSpectrum.count
+        if specCount > 0 {
+            for i in 0..<specCount {
+                let e = localSpectrum[i]
+                if e > peak1Energy {
+                    peak2Energy = peak1Energy
+                    peak2Band = peak1Band
+                    peak1Energy = e
+                    peak1Band = Float(i) / Float(specCount - 1)
+                } else if e > peak2Energy {
+                    peak2Energy = e
+                    peak2Band = Float(i) / Float(specCount - 1)
+                }
+            }
+        }
+
         // Update electricity params
-        let scale = metalLayer?.contentsScale ?? 2.0
+        let viewport = drawableViewportSize(drawable)
         let totalE = (electricitySmoothBass + electricitySmoothMid + electricitySmoothTreble) / 3.0
         if let buf = electricityParamsBuffer {
             let p = buf.contents().bindMemory(to: ElectricityParams.self, capacity: 1)
             var localColorScheme: Int32 = 0
             dataLock.withLock { localColorScheme = renderLightningStyle.colorScheme }
             p.pointee = ElectricityParams(
-                viewportSize: SIMD2<Float>(Float(bounds.width * scale), Float(bounds.height * scale)),
+                viewportSize: viewport,
                 time: localTime,
                 bassEnergy: electricitySmoothBass,
                 midEnergy: electricitySmoothMid,
@@ -1738,7 +2181,11 @@ class SpectrumAnalyzerView: NSView {
                 beatIntensity: electricityBeatIntensity,
                 dramaticIntensity: electricityDramaticIntensity,
                 colorScheme: localColorScheme,
-                brightnessBoost: brightnessBoost
+                brightnessBoost: brightnessBoost,
+                peak1Band: peak1Band,
+                peak1Energy: peak1Energy,
+                peak2Band: peak2Band,
+                peak2Energy: peak2Energy
             )
         }
         
@@ -1846,12 +2293,12 @@ class SpectrumAnalyzerView: NSView {
         }
         
         // Update matrix params
-        let scale = metalLayer?.contentsScale ?? 2.0
+        let viewport = drawableViewportSize(drawable)
         let totalE = (matrixSmoothBass + matrixSmoothMid + matrixSmoothTreble) / 3.0
         if let buf = matrixParamsBuffer {
             let p = buf.contents().bindMemory(to: MatrixParams.self, capacity: 1)
             p.pointee = MatrixParams(
-                viewportSize: SIMD2<Float>(Float(bounds.width * scale), Float(bounds.height * scale)),
+                viewportSize: viewport,
                 time: localTime,
                 bassEnergy: matrixSmoothBass,
                 midEnergy: matrixSmoothMid,
@@ -1890,6 +2337,202 @@ class SpectrumAnalyzerView: NSView {
         cb.present(drawable); cb.commit()
     }
     
+    /// Render snow mode: procedural layered snowfall with spectrum-driven density and gusts
+    private func renderSnow(drawable: CAMetalDrawable) {
+        guard let cb = commandQueue?.makeCommandBuffer() else {
+            inFlightSemaphore.signal(); return
+        }
+        
+        var localTime: Float = 0
+        var localFallOffset: Float = 0
+        var localWindPhase: Float = 0
+        var localDensity: Float = 0.05
+        
+        dataLock.withLock {
+            animationTime += 1.0 / 60.0
+            localTime = animationTime
+            
+            var bass: Float = 0
+            var mid: Float = 0
+            var treble: Float = 0
+            if !rawSpectrum.isEmpty {
+                for i in 0..<min(16, rawSpectrum.count) { bass += rawSpectrum[i] }
+                bass /= 16.0
+                for i in 16..<min(50, rawSpectrum.count) { mid += rawSpectrum[i] }
+                mid /= 34.0
+                for i in 50..<min(75, rawSpectrum.count) { treble += rawSpectrum[i] }
+                treble /= 25.0
+            }
+            bass *= bassAttenuation
+            
+            snowSmoothBass += (bass - snowSmoothBass) * (bass > snowSmoothBass ? 0.34 : 0.05)
+            snowSmoothMid += (mid - snowSmoothMid) * (mid > snowSmoothMid ? 0.28 : 0.045)
+            snowSmoothTreble += (treble - snowSmoothTreble) * (treble > snowSmoothTreble ? 0.32 : 0.05)
+            
+            let totalEnergy = (snowSmoothBass + snowSmoothMid + snowSmoothTreble) / 3.0
+            if bass > snowSmoothBass + 0.10 || treble > snowSmoothTreble + 0.12 || totalEnergy > snowDensity + 0.10 {
+                snowBeatIntensity = min(1.0, snowBeatIntensity + 0.42)
+            }
+            snowBeatIntensity *= 0.90
+            
+            let energyCurve = pow(min(1.0, totalEnergy), 1.55)
+            let targetDensity = min(1.0, 0.006 + energyCurve * 0.72 + snowSmoothTreble * 0.06)
+            snowDensity += (targetDensity - snowDensity) * (targetDensity > snowDensity ? 0.16 : 0.03)
+            let fallSpeed: Float = 0.014 + energyCurve * 0.42 + snowSmoothTreble * 0.05
+            let windSpeed: Float = 0.03 + snowSmoothBass * 0.09
+            
+            snowFallOffset += fallSpeed * (1.0 / 60.0)
+            snowWindPhase += windSpeed * (1.0 / 60.0)
+            
+            localFallOffset = snowFallOffset
+            localWindPhase = snowWindPhase
+            localDensity = snowDensity
+        }
+        
+        var localSpectrum: [Float] = []
+        dataLock.withLock { localSpectrum = displaySpectrum }
+        if let buf = flameSpectrumBuffer {
+            let p = buf.contents().bindMemory(to: Float.self, capacity: 75)
+            let bassAtten = bassAttenuation
+            for i in 0..<75 {
+                var val: Float = i < localSpectrum.count ? localSpectrum[i] : 0
+                if i < 16 { val *= bassAtten }
+                p[i] = val
+            }
+        }
+        
+        let viewport = drawableViewportSize(drawable)
+        let totalEnergy = (snowSmoothBass + snowSmoothMid + snowSmoothTreble) / 3.0
+        if let buf = snowParamsBuffer {
+            let p = buf.contents().bindMemory(to: SnowParams.self, capacity: 1)
+            p.pointee = SnowParams(
+                viewportSize: viewport,
+                time: localTime,
+                bassEnergy: snowSmoothBass,
+                midEnergy: snowSmoothMid,
+                trebleEnergy: snowSmoothTreble,
+                totalEnergy: totalEnergy,
+                beatIntensity: snowBeatIntensity,
+                fallOffset: localFallOffset,
+                windPhase: localWindPhase,
+                density: localDensity,
+                brightnessBoost: brightnessBoost
+            )
+        }
+        
+        guard let pl = snowRenderPipeline else {
+            inFlightSemaphore.signal(); return
+        }
+        
+        let rpd = MTLRenderPassDescriptor()
+        rpd.colorAttachments[0].texture = drawable.texture
+        rpd.colorAttachments[0].loadAction = .clear
+        rpd.colorAttachments[0].storeAction = .store
+        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0.02, green: 0.04, blue: 0.07, alpha: 1)
+        
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
+            enc.setRenderPipelineState(pl)
+            enc.setFragmentBuffer(snowParamsBuffer, offset: 0, index: 0)
+            enc.setFragmentBuffer(flameSpectrumBuffer, offset: 0, index: 1)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+            enc.endEncoding()
+        }
+        
+        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
+        cb.present(drawable)
+        cb.commit()
+    }
+
+    /// Render vis_classic exact mode: CPU frame generation in C++ core, then blit to drawable.
+    private func renderVisClassicExact(drawable: CAMetalDrawable) {
+        guard let device = device,
+              let commandQueue = commandQueue else {
+            inFlightSemaphore.signal()
+            return
+        }
+
+        let width = drawable.texture.width
+        let height = drawable.texture.height
+        guard width > 0, height > 0 else {
+            inFlightSemaphore.signal()
+            return
+        }
+
+        if visClassicBridge == nil {
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        guard let bridge = visClassicBridge else {
+            inFlightSemaphore.signal()
+            return
+        }
+
+        var left: [UInt8] = []
+        var right: [UInt8] = []
+        var sampleRate: Double = 44100
+        dataLock.withLock {
+            left = visClassicWaveLeft
+            right = visClassicWaveRight
+            sampleRate = visClassicWaveSampleRate
+        }
+        bridge.updateWaveform(left: left, right: right, sampleRate: sampleRate)
+
+        guard bridge.renderFrame(width: width, height: height, into: &visClassicFrameBytes),
+              visClassicFrameBytes.count == width * height * 4 else {
+            inFlightSemaphore.signal()
+            return
+        }
+
+        if visClassicFrameTexture == nil ||
+            visClassicFrameTexture?.width != width ||
+            visClassicFrameTexture?.height != height {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .bgra8Unorm,
+                width: width,
+                height: height,
+                mipmapped: false
+            )
+            descriptor.usage = [.shaderRead]
+            descriptor.storageMode = .shared
+            visClassicFrameTexture = device.makeTexture(descriptor: descriptor)
+        }
+
+        guard let sourceTexture = visClassicFrameTexture,
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let blit = commandBuffer.makeBlitCommandEncoder() else {
+            inFlightSemaphore.signal()
+            return
+        }
+
+        visClassicFrameBytes.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            sourceTexture.replace(
+                region: MTLRegionMake2D(0, 0, width, height),
+                mipmapLevel: 0,
+                withBytes: base,
+                bytesPerRow: width * 4
+            )
+        }
+
+        blit.copy(
+            from: sourceTexture,
+            sourceSlice: 0,
+            sourceLevel: 0,
+            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: width, height: height, depth: 1),
+            to: drawable.texture,
+            destinationSlice: 0,
+            destinationLevel: 0,
+            destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
+        )
+        blit.endEncoding()
+
+        commandBuffer.addCompletedHandler { [weak self] _ in
+            self?.inFlightSemaphore.signal()
+        }
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+    
     /// Update display spectrum with decay and return whether there's visible data
     /// Thread-safe version that acquires the lock
     /// - Returns: true if any bar has visible data (> 0.01), false if all bars are essentially zero
@@ -1908,9 +2551,11 @@ class SpectrumAnalyzerView: NSView {
         let decay = renderDecayFactor
         let outputCount = renderBarCount
         let ultraOutputCount = ultraBarCount
+        let isPunchMode = renderQualityMode == .punch
+        let effectiveDecay: Float = isPunchMode ? 0.0 : decay
         
         // Check normalization mode - Accurate uses full height for max dynamic range
-        let isAccurateMode = UserDefaults.standard.string(forKey: normalizationUserDefaultsKey) == SpectrumNormalizationMode.accurate.rawValue
+        let isAccurateMode = cachedIsAccurateNormalization
         
         // Scale factor: Accurate mode uses full height, others leave headroom for peaks
         let displayScale: Float = isAccurateMode ? 1.0 : 0.95
@@ -1919,18 +2564,20 @@ class SpectrumAnalyzerView: NSView {
         if rawSpectrum.isEmpty {
             // Decay existing values when no input
             for i in 0..<displaySpectrum.count {
-                displaySpectrum[i] *= decay
+                displaySpectrum[i] *= effectiveDecay
                 if displaySpectrum[i] < 0.01 {
                     displaySpectrum[i] = 0
                 } else {
                     hasData = true
                 }
             }
-            // Also decay Ultra spectrum
-            for i in 0..<ultraDisplaySpectrum.count {
-                ultraDisplaySpectrum[i] *= decay
-                if ultraDisplaySpectrum[i] < 0.01 {
-                    ultraDisplaySpectrum[i] = 0
+            // Also decay Ultra spectrum (only when in ultra mode)
+            if renderQualityMode == .ultra {
+                for i in 0..<ultraDisplaySpectrum.count {
+                    ultraDisplaySpectrum[i] *= effectiveDecay
+                    if ultraDisplaySpectrum[i] < 0.01 {
+                        ultraDisplaySpectrum[i] = 0
+                    }
                 }
             }
         } else {
@@ -1947,27 +2594,27 @@ class SpectrumAnalyzerView: NSView {
                 ultraDisplaySpectrum = Array(repeating: 0, count: ultraOutputCount)
             }
             
-            // Update standard display spectrum (for Enhanced/Classic)
-            if inputCount >= outputCount {
-                let bandsPerBar = inputCount / outputCount
-                for barIndex in 0..<outputCount {
-                    let start = barIndex * bandsPerBar
+            // Update standard display spectrum (for Enhanced/Classic/Punch)
+            if isPunchMode {
+                // Punch mode: follow dominant frequencies only.
+                // 1) Peak-map to bars, 2) compute dominance focus, 3) suppress non-dominant bars.
+                var mapped = Array(repeating: Float(0), count: outputCount)
+                let denom = Float(max(outputCount - 1, 1))
+
+                if inputCount >= outputCount {
+                    let bandsPerBar = inputCount / outputCount
+                    for barIndex in 0..<outputCount {
+                        let start = barIndex * bandsPerBar
                         let end = min(start + bandsPerBar, inputCount)
-                        var sum: Float = 0
+                        var peak: Float = 0
                         for i in start..<end {
-                            sum += rawSpectrum[i]
+                            peak = max(peak, rawSpectrum[i])
                         }
-                        let newValue = (sum / Float(end - start)) * displayScale
-                        
-                        if newValue > displaySpectrum[barIndex] {
-                            displaySpectrum[barIndex] = newValue
-                        } else {
-                            displaySpectrum[barIndex] = displaySpectrum[barIndex] * decay + newValue * (1 - decay)
-                        }
-                        
-                        if displaySpectrum[barIndex] > 0.01 {
-                            hasData = true
-                        }
+                        let normPos = Float(barIndex) / denom
+                        let highTilt = 1.02 + 0.34 * pow(normPos, 0.70)
+                        let bassLift = 1.0 + 0.24 * exp(-pow(normPos / 0.16, 2.0))
+                        let lowMidNotch = 1.0 - 0.05 * exp(-pow((normPos - 0.18) / 0.07, 2.0))
+                        mapped[barIndex] = peak * displayScale * highTilt * bassLift * lowMidNotch
                     }
                 } else {
                     for barIndex in 0..<outputCount {
@@ -1975,36 +2622,136 @@ class SpectrumAnalyzerView: NSView {
                         let lowerIndex = Int(sourceIndex)
                         let upperIndex = min(lowerIndex + 1, inputCount - 1)
                         let fraction = sourceIndex - Float(lowerIndex)
-                        let newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
-                        
-                        if newValue > displaySpectrum[barIndex] {
-                            displaySpectrum[barIndex] = newValue
-                        } else {
-                            displaySpectrum[barIndex] = displaySpectrum[barIndex] * decay + newValue * (1 - decay)
-                        }
-                        
-                        if displaySpectrum[barIndex] > 0.01 {
-                            hasData = true
-                        }
+                        let normPos = Float(barIndex) / denom
+                        let highTilt = 1.02 + 0.34 * pow(normPos, 0.70)
+                        let bassLift = 1.0 + 0.24 * exp(-pow(normPos / 0.16, 2.0))
+                        let lowMidNotch = 1.0 - 0.05 * exp(-pow((normPos - 0.18) / 0.07, 2.0))
+                        let v = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+                        mapped[barIndex] = v * highTilt * bassLift * lowMidNotch
                     }
                 }
+
+                // Light spatial smoothing removes single-bin flicker/artifacts
+                // while keeping the dominant-frequency focus intact.
+                if outputCount >= 3 {
+                    var smoothed = mapped
+                    for barIndex in 0..<outputCount {
+                        let left = mapped[max(0, barIndex - 1)]
+                        let center = mapped[barIndex]
+                        let right = mapped[min(outputCount - 1, barIndex + 1)]
+                        let neighborhood = (left + center + right) / 3.0
+                        smoothed[barIndex] = center * 0.66 + neighborhood * 0.34
+                    }
+                    mapped = smoothed
+                }
+
+                var framePeak: Float = 0
+                var frameSum: Float = 0
+                for v in mapped {
+                    framePeak = max(framePeak, v)
+                    frameSum += v
+                }
+
+                let frameMean = frameSum / Float(max(1, outputCount))
+                let floor = frameMean * 0.9
+                let span = max(0.0001, framePeak - floor)
+                let peakDenom = max(0.0001, framePeak)
+                let dominant = mapped.enumerated().sorted { $0.element > $1.element }.prefix(3)
+
+                // Narrow focus width keeps the "spotlight" on dominant regions.
+                let sigma = max(1.0, Float(outputCount) * 0.11)
+                let twoSigmaSq = 2.0 * sigma * sigma
+
+                for barIndex in 0..<outputCount {
+                    let prominence = max(0, mapped[barIndex] - floor) / span
+                    let curved = pow(prominence, 1.95)
+
+                    var focus: Float = 0
+                    for dom in dominant {
+                        let domWeight = dom.element / peakDenom
+                        if domWeight <= 0.001 { continue }
+                        let distance = Float(abs(barIndex - dom.offset))
+                        let gaussian = exp(-(distance * distance) / twoSigmaSq)
+                        focus = max(focus, gaussian * domWeight)
+                    }
+
+                    let focusGain = max(0.08, min(1.0, focus))
+                    let normPos = Float(barIndex) / denom
+                    let extraHighBias = 1.00 + 0.18 * pow(normPos, 0.75)
+                    let lowMidSuppress = 1.0 - (0.04 * exp(-pow((normPos - 0.18) / 0.08, 2.0)) * (1.0 - focusGain))
+                    let bassPostLift = 1.0 + 0.12 * exp(-pow(normPos / 0.18, 2.0))
+                    let suppressionMix = max(0.40, (0.08 + 0.92 * focusGain) * lowMidSuppress)
+                    let target = min(0.98, curved * suppressionMix * extraHighBias * bassPostLift)
+
+                    // Keep response very fast but less twitchy than pure frame-to-frame assignment.
+                    let previous = displaySpectrum[barIndex]
+                    let response: Float = target >= previous ? 0.82 : 0.88
+                    let newValue = max(0, min(0.98, previous + (target - previous) * response))
+                    displaySpectrum[barIndex] = newValue
+
+                    if newValue > 0.01 {
+                        hasData = true
+                    }
+                }
+            } else if inputCount >= outputCount {
+                let bandsPerBar = inputCount / outputCount
+                for barIndex in 0..<outputCount {
+                    let start = barIndex * bandsPerBar
+                    let end = min(start + bandsPerBar, inputCount)
+                    var sum: Float = 0
+                    for i in start..<end {
+                        sum += rawSpectrum[i]
+                    }
+                    let newValue = (sum / Float(end - start)) * displayScale
+
+                    if newValue > displaySpectrum[barIndex] {
+                        displaySpectrum[barIndex] = newValue
+                    } else {
+                        displaySpectrum[barIndex] = displaySpectrum[barIndex] * effectiveDecay + newValue * (1 - effectiveDecay)
+                    }
+
+                    if displaySpectrum[barIndex] > 0.01 {
+                        hasData = true
+                    }
+                }
+            } else {
+                for barIndex in 0..<outputCount {
+                    let sourceIndex = Float(barIndex) * Float(inputCount - 1) / Float(outputCount - 1)
+                    let lowerIndex = Int(sourceIndex)
+                    let upperIndex = min(lowerIndex + 1, inputCount - 1)
+                    let fraction = sourceIndex - Float(lowerIndex)
+                    let newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
+
+                    if newValue > displaySpectrum[barIndex] {
+                        displaySpectrum[barIndex] = newValue
+                    } else {
+                        displaySpectrum[barIndex] = displaySpectrum[barIndex] * effectiveDecay + newValue * (1 - effectiveDecay)
+                    }
+
+                    if displaySpectrum[barIndex] > 0.01 {
+                        hasData = true
+                    }
+                }
+            }
                 
-                // Update Ultra display spectrum (96 bars - interpolate from raw spectrum)
+            // Update Ultra display spectrum (96 bars - only computed when in ultra mode)
+            if renderQualityMode == .ultra {
                 for barIndex in 0..<ultraOutputCount {
                     let sourceIndex = Float(barIndex) * Float(inputCount - 1) / Float(ultraOutputCount - 1)
                     let lowerIndex = Int(sourceIndex)
                     let upperIndex = min(lowerIndex + 1, inputCount - 1)
                     let fraction = sourceIndex - Float(lowerIndex)
                     let newValue = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
-                    
+
                     if newValue > ultraDisplaySpectrum[barIndex] {
                         ultraDisplaySpectrum[barIndex] = newValue
                     } else {
-                        ultraDisplaySpectrum[barIndex] = ultraDisplaySpectrum[barIndex] * decay + newValue * (1 - decay)
+                        ultraDisplaySpectrum[barIndex] = ultraDisplaySpectrum[barIndex] * effectiveDecay + newValue * (1 - effectiveDecay)
                     }
                 }
             }
-            
+        }
+
         // Update LED matrix / peak state based on mode
         switch renderQualityMode {
         case .enhanced:
@@ -2013,6 +2760,8 @@ class SpectrumAnalyzerView: NSView {
             updateUltraMatrixState()
         case .classic:
             updateClassicPeakState()
+        case .punch:
+            break  // Punch mode is bars-only (no peak-hold indicators)
         case .flame:
             break  // Flame handles its own state in renderFlame()
         case .cosmic:
@@ -2021,6 +2770,10 @@ class SpectrumAnalyzerView: NSView {
             break  // Electricity handles its own state in renderElectricity()
         case .matrix:
             break  // Matrix handles its own state in renderMatrix()
+        case .snow:
+            break  // Snow handles its own state in renderSnow()
+        case .visClassicExact:
+            break  // vis_classic exact mode renders from CPU frame output
         }
 
         hasVisibleData = hasData
@@ -2135,7 +2888,7 @@ class SpectrumAnalyzerView: NSView {
             }
         }
     }
-    
+
     /// Updates state for Ultra mode with physics-based peaks and higher resolution
     /// Designed for maximum fluidity: smooth exponential decay, gradient bar tops,
     /// no hard cutoffs -- everything flows and breathes naturally
@@ -2187,29 +2940,40 @@ class SpectrumAnalyzerView: NSView {
                 ultraPeakPositions[col] = max(0, min(1.0, ultraPeakPositions[col]))
             }
             
-            // Smooth per-cell brightness with gradient bar top and exponential decay
-            for row in 0..<rowCount {
-                let rowNorm = Float(row) / rowCountF
-                let current = ultraCellBrightness[col][row]
-                
-                if rowNorm < currentLevel - gradientZone {
-                    // Well below bar top - instant full brightness (no smoothing here,
-                    // smoothing in the interior causes visible pulsing from audio jitter)
-                    ultraCellBrightness[col][row] = 1.0
-                } else if rowNorm < currentLevel {
-                    // Gradient zone at bar top - smooth ramp for soft edge
+            // Smooth per-cell brightness with gradient bar top and exponential decay.
+            // Uses pointer-direct access + vDSP to minimise bounds-check overhead and
+            // SIMD-accelerate the decay multiply over the above-bar rows.
+            ultraCellBrightness[col].withUnsafeMutableBufferPointer { ptr in
+                let base = ptr.baseAddress!
+                let count = ptr.count
+
+                // Integer row boundaries (clamped to valid range)
+                let litEndRow  = max(0, min(count, Int((currentLevel - gradientZone) * rowCountF)))
+                let gradEndRow = max(0, min(count, Int(currentLevel * rowCountF)))
+
+                // Below gradient zone: fill with 1.0 (vDSP_vfill = vectorised store)
+                if litEndRow > 0 {
+                    var one: Float = 1.0
+                    vDSP_vfill(&one, base, 1, vDSP_Length(litEndRow))
+                }
+
+                // Gradient zone (~3 rows): soft ramp, take max with decayed value
+                for row in litEndRow..<gradEndRow {
+                    let rowNorm = Float(row) / rowCountF
                     let t = (currentLevel - rowNorm) / gradientZone
                     let target = 0.4 + 0.6 * t
-                    ultraCellBrightness[col][row] = max(target, current * decayMultiplier)
-                } else {
-                    // Above bar - smooth exponential decay
-                    ultraCellBrightness[col][row] = current * decayMultiplier
+                    base[row] = max(target, base[row] * decayMultiplier)
                 }
-                
-                // Clean floor to avoid sub-perceptual ghost values
-                if ultraCellBrightness[col][row] < 0.003 {
-                    ultraCellBrightness[col][row] = 0
+
+                // Above bar: vectorised exponential decay via vDSP_vsmul
+                let aboveCount = count - gradEndRow
+                if aboveCount > 0 {
+                    var dm = decayMultiplier
+                    vDSP_vsmul(base + gradEndRow, 1, &dm, base + gradEndRow, 1, vDSP_Length(aboveCount))
                 }
+
+                // Floor cleanup: zero sub-perceptual ghost values
+                for i in 0..<count where base[i] < 0.003 { base[i] = 0 }
             }
         }
     }
@@ -2342,7 +3106,7 @@ class SpectrumAnalyzerView: NSView {
                 }
             }
             
-        case .classic:
+        case .classic, .punch:
             // Calculate cell dimensions for Classic mode - use exact bar width
             let cellSpacing: Float = 1.0 * Float(scale)
             let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
@@ -2369,13 +3133,22 @@ class SpectrumAnalyzerView: NSView {
                 for i in 0..<min(localBarCount, localSpectrum.count) {
                     ptr[i] = localSpectrum[i]
                 }
+                if localBarCount > localSpectrum.count {
+                    for i in localSpectrum.count..<localBarCount {
+                        ptr[i] = 0
+                    }
+                }
             }
             
-            // Update peak positions buffer for floating peak indicators
+            // Update peak positions buffer (Punch disables these markers)
             if let buffer = peakPositionsBuffer {
                 let ptr = buffer.contents().bindMemory(to: Float.self, capacity: localBarCount)
                 for col in 0..<localBarCount {
-                    ptr[col] = col < localPeakPositions.count ? localPeakPositions[col] : 0
+                    if localQualityMode == .punch {
+                        ptr[col] = 0  // Punch: bars-only, no peak indicators
+                    } else {
+                        ptr[col] = col < localPeakPositions.count ? localPeakPositions[col] : 0
+                    }
                 }
             }
             
@@ -2395,6 +3168,10 @@ class SpectrumAnalyzerView: NSView {
             break  // Electricity updates its own buffers in renderElectricity()
         case .matrix:
             break  // Matrix updates its own buffers in renderMatrix()
+        case .snow:
+            break  // Snow updates its own buffers in renderSnow()
+        case .visClassicExact:
+            break  // vis_classic exact mode does not use shader parameter buffers
         }
     }
     
@@ -2426,7 +3203,15 @@ class SpectrumAnalyzerView: NSView {
         rpd.colorAttachments[0].texture = drawable.texture
         rpd.colorAttachments[0].loadAction = .clear
         rpd.colorAttachments[0].storeAction = .store
-        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        let shouldClearTransparent =
+            qualityMode == .visClassicExact &&
+            visClassicTransparentBackgroundEnabled()
+        rpd.colorAttachments[0].clearColor = MTLClearColor(
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: shouldClearTransparent ? 0 : 1
+        )
         
         if let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: rpd) {
             encoder.endEncoding()
@@ -2478,8 +3263,157 @@ class SpectrumAnalyzerView: NSView {
             idleFrameCount = 0
             hasClearedAfterIdle = false
             stoppedDueToIdle = false
+
+            visClassicWaveLeft = Array(repeating: 128, count: 576)
+            visClassicWaveRight = Array(repeating: 128, count: 576)
         }
         NSLog("SpectrumAnalyzerView: State reset")
+    }
+
+    // MARK: - vis_classic Profiles
+
+    func visClassicProfiles() -> [VisClassicBridge.ProfileEntry] {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.availableProfiles() ?? []
+    }
+
+    func visClassicCurrentProfileName() -> String? {
+        visClassicBridge?.currentProfileName
+    }
+
+    @discardableResult
+    func loadVisClassicProfile(named name: String) -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.loadProfile(named: name) ?? false
+    }
+
+    @discardableResult
+    func loadNextVisClassicProfile() -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.loadNextProfile() ?? false
+    }
+
+    @discardableResult
+    func loadPreviousVisClassicProfile() -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.loadPreviousProfile() ?? false
+    }
+
+    func importVisClassicProfile() {
+        let panel = NSOpenPanel()
+        panel.allowedFileTypes = ["ini"]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Import a vis_classic profile (.ini)"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        _ = visClassicBridge?.importProfile(from: url)
+    }
+
+    func exportCurrentVisClassicProfile() {
+        guard let bridge = visClassicBridge else { return }
+
+        let panel = NSSavePanel()
+        panel.allowedFileTypes = ["ini"]
+        panel.nameFieldStringValue = (bridge.currentProfileName ?? "vis_classic_profile") + ".ini"
+        panel.message = "Export current vis_classic profile"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        _ = bridge.saveCurrentProfile(to: url)
+    }
+
+    func visClassicFitToWidthEnabled() -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.fitToWidthEnabled() ?? true
+    }
+
+    @discardableResult
+    func setVisClassicFitToWidth(_ enabled: Bool) -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.setFitToWidth(enabled) ?? false
+    }
+
+    @discardableResult
+    func toggleVisClassicFitToWidth() -> Bool {
+        let current = visClassicFitToWidthEnabled()
+        return setVisClassicFitToWidth(!current)
+    }
+
+    func visClassicTransparentBackgroundEnabled() -> Bool {
+        if visClassicBridge == nil {
+            return VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope)
+        }
+        return visClassicBridge?.transparentBackgroundEnabled() ?? false
+    }
+
+    private func resolvedVisClassicOpacity() -> CGFloat {
+        let resolved = VisClassicBridge.opacityDefault(for: visClassicPreferenceScope) ?? 1.0
+        return CGFloat(max(0.0, min(1.0, resolved)))
+    }
+
+    private func applyVisClassicOpacity() {
+        let alpha: CGFloat
+        if qualityMode == .visClassicExact && visClassicTransparentBackgroundEnabled() {
+            alpha = resolvedVisClassicOpacity()
+        } else {
+            alpha = 1.0
+        }
+        alphaValue = alpha
+        layer?.opacity = Float(alpha)
+    }
+
+    @discardableResult
+    func setVisClassicTransparentBackground(_ enabled: Bool) -> Bool {
+        if visClassicBridge == nil {
+            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
+            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
+            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+        }
+        let ok = visClassicBridge?.setTransparentBackground(enabled) ?? false
+        if ok {
+            metalLayer?.isOpaque = !enabled
+            layer?.isOpaque = !enabled
+            applyVisClassicOpacity()
+            if qualityMode == .visClassicExact && !isRendering {
+                renderBlackFrame()
+            }
+        }
+        return ok
+    }
+
+    @discardableResult
+    func toggleVisClassicTransparentBackground() -> Bool {
+        let current = visClassicTransparentBackgroundEnabled()
+        return setVisClassicTransparentBackground(!current)
     }
     
     /// Update spectrum data from audio engine (called from audio thread)
@@ -2579,24 +3513,43 @@ class SpectrumAnalyzerView: NSView {
     func startDisplayLink() {
         startRendering()
     }
+
+    private func updateWaveformConsumerRegistration() {
+        if qualityMode == .visClassicExact && isRendering {
+            WindowManager.shared.audioEngine.addWaveformConsumer(waveformConsumerID)
+        } else {
+            WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
+        }
+    }
     
     // MARK: - Layout
     
     override func layout() {
         super.layout()
+        applyModeDrivenBarLayoutIfNeeded()
         metalLayer?.frame = bounds
-        metalLayer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        syncMetalLayerScaleAndSize()
     }
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
-            metalLayer?.contentsScale = window?.backingScaleFactor ?? 2.0
+            syncMetalLayerScaleAndSize()
             startRendering()
         } else {
             // Window closed - stop the display link to release CPU
             stopRendering()
         }
+    }
+    
+    override func viewDidHide() {
+        super.viewDidHide()
+        stopRendering()
+    }
+    
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        startRendering()
     }
     
 }

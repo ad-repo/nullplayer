@@ -245,6 +245,29 @@ enum ModernSkinElements {
     /// Spectrum window close button (allows per-window skinning)
     static let spectrumBtnClose = Element("spectrum_btn_close", NSRect(x: 261, y: 102, width: 10, height: 10),
                                           states: ["normal", "pressed"])
+
+    // MARK: - Waveform Window
+
+    /// Waveform window default size (same geometry as the main window for center-stack docking).
+    static var waveformWindowSize: NSSize {
+        NSSize(width: baseMainSize.width * scaleFactor, height: baseMainSize.height * scaleFactor)
+    }
+
+    /// Waveform window minimum size.
+    static var waveformMinSize: NSSize { waveformWindowSize }
+
+    /// Waveform window title bar height.
+    static var waveformTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
+
+    /// Waveform window border width.
+    static var waveformBorderWidth: CGFloat { 3 * scaleFactor }
+
+    /// Waveform window title bar.
+    static let waveformTitleBar = Element("waveform_titlebar", NSRect(x: 0, y: 98, width: 275, height: 18))
+
+    /// Waveform window close button.
+    static let waveformBtnClose = Element("waveform_btn_close", NSRect(x: 261, y: 102, width: 10, height: 10),
+                                          states: ["normal", "pressed"])
     
     // MARK: - ProjectM Visualization Window
     

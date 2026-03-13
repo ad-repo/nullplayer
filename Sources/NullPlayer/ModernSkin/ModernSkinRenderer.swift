@@ -35,14 +35,13 @@ class ModernSkinRenderer {
 
     // MARK: - Corner Path Helper
 
-    /// Returns a CGPath for `rect` rounded only at corners NOT touching `adjacentEdges`.
-    private func makeRoundedCornerPath(rect: CGRect, radius: CGFloat, adjacentEdges: AdjacentEdges) -> CGPath {
+    /// Returns a CGPath for `rect` rounded only at corners NOT in `sharpCorners`.
+    private func makeRoundedCornerPath(rect: CGRect, radius: CGFloat, sharpCorners: CACornerMask) -> CGPath {
         guard radius > 0 else { return CGPath(rect: rect, transform: nil) }
-        // Each corner is square if EITHER neighboring edge is adjacent
-        let rBL: CGFloat = (adjacentEdges.contains(.bottom) || adjacentEdges.contains(.left))  ? 0 : radius
-        let rBR: CGFloat = (adjacentEdges.contains(.bottom) || adjacentEdges.contains(.right)) ? 0 : radius
-        let rTR: CGFloat = (adjacentEdges.contains(.top)    || adjacentEdges.contains(.right)) ? 0 : radius
-        let rTL: CGFloat = (adjacentEdges.contains(.top)    || adjacentEdges.contains(.left))  ? 0 : radius
+        let rBL: CGFloat = sharpCorners.contains(.layerMinXMinYCorner) ? 0 : radius
+        let rBR: CGFloat = sharpCorners.contains(.layerMaxXMinYCorner) ? 0 : radius
+        let rTR: CGFloat = sharpCorners.contains(.layerMaxXMaxYCorner) ? 0 : radius
+        let rTL: CGFloat = sharpCorners.contains(.layerMinXMaxYCorner) ? 0 : radius
         if rBL == 0 && rBR == 0 && rTR == 0 && rTL == 0 { return CGPath(rect: rect, transform: nil) }
 
         let path = CGMutablePath()
@@ -64,106 +63,248 @@ class ModernSkinRenderer {
     
     /// Draw an element by ID and state into the given rect.
     /// Uses skin image if available, otherwise falls back to programmatic rendering.
-    func drawElement(_ id: String, state: String = "normal", in rect: NSRect, context: CGContext) {
+    func drawElement(_ id: String, state: String = "normal", in rect: NSRect, contentOpacity: CGFloat = 1.0, context: CGContext) {
         // Scale the rect
         let scaledRect = scaledRect(rect)
+        let resolvedOpacity = min(1.0, max(0.0, contentOpacity))
         
         // Try image first
         if let image = skin.image(for: id, state: state) {
-            drawImage(image, in: scaledRect, context: context)
+            drawImage(image, in: scaledRect, context: context, fraction: resolvedOpacity)
             return
         }
         
         // Programmatic fallback
-        drawFallback(id, state: state, in: scaledRect, context: context)
+        drawFallback(id, state: state, in: scaledRect, contentOpacity: resolvedOpacity, context: context)
     }
     
     // MARK: - Specialized Drawing
     
     /// Draw the window background
-    func drawWindowBackground(in bounds: NSRect, context: CGContext, adjacentEdges: AdjacentEdges = []) {
+    func drawWindowBackground(
+        in bounds: NSRect,
+        context: CGContext,
+        adjacentEdges: AdjacentEdges = [],
+        sharpCorners: CACornerMask = [],
+        backgroundOpacity: CGFloat? = nil
+    ) {
         let cornerRadius = skin.config.window.cornerRadius ?? 0
+        let resolvedBackgroundOpacity = min(1.0, max(0.0, backgroundOpacity ?? skin.config.window.opacity))
         if cornerRadius > 0 {
-            let clipPath = makeRoundedCornerPath(rect: bounds, radius: cornerRadius, adjacentEdges: adjacentEdges)
+            let clipPath = makeRoundedCornerPath(rect: bounds, radius: cornerRadius, sharpCorners: sharpCorners)
             context.saveGState()
             context.addPath(clipPath)
             context.clip()
         }
+        context.saveGState()
+        // Use copy for the base fill so repeated partial redraws do not accumulate alpha.
+        // This keeps translucent modern backgrounds visually stable during timer-driven updates.
+        context.setBlendMode(.copy)
+        context.setAlpha(resolvedBackgroundOpacity)
         context.setFillColor(skin.backgroundColor.cgColor)
         context.fill(bounds)
+        context.setBlendMode(.normal)
         if let bgImage = skin.backgroundImage {
             drawImage(bgImage, in: bounds, context: context)
         }
+        context.restoreGState()
         if cornerRadius > 0 {
             context.restoreGState()
         }
     }
     
+    private func normalizedSegments(_ segments: [ClosedRange<CGFloat>], limit: CGFloat) -> [ClosedRange<CGFloat>] {
+        guard limit > 0 else { return [] }
+        return segments.compactMap { interval in
+            let lower = max(0, min(limit, interval.lowerBound))
+            let upper = max(0, min(limit, interval.upperBound))
+            guard upper > lower else { return nil }
+            return lower...upper
+        }
+    }
+
+    private func mergedSegments(_ segments: [ClosedRange<CGFloat>], gapTolerance: CGFloat = 1.0) -> [ClosedRange<CGFloat>] {
+        guard !segments.isEmpty else { return [] }
+        let sorted = segments.sorted {
+            if $0.lowerBound == $1.lowerBound { return $0.upperBound < $1.upperBound }
+            return $0.lowerBound < $1.lowerBound
+        }
+        var merged: [ClosedRange<CGFloat>] = [sorted[0]]
+        for interval in sorted.dropFirst() {
+            guard let last = merged.last else { continue }
+            if interval.lowerBound <= last.upperBound + gapTolerance {
+                merged[merged.count - 1] = last.lowerBound...max(last.upperBound, interval.upperBound)
+            } else {
+                merged.append(interval)
+            }
+        }
+        return merged
+    }
+
+    private func normalizeNearFullEdgeCoverage(
+        _ segments: [ClosedRange<CGFloat>],
+        limit: CGFloat,
+        tolerance: CGFloat = 3.0
+    ) -> [ClosedRange<CGFloat>] {
+        let normalized = mergedSegments(normalizedSegments(segments, limit: limit))
+        guard !normalized.isEmpty, limit > 0 else { return normalized }
+        let covered = normalized.reduce(CGFloat(0)) { partial, interval in
+            partial + (interval.upperBound - interval.lowerBound)
+        }
+        if covered >= limit - tolerance {
+            return [0...limit]
+        }
+        return normalized
+    }
+
+    private func normalizeNearFullOcclusionSegments(for bounds: NSRect, segments: EdgeOcclusionSegments) -> EdgeOcclusionSegments {
+        EdgeOcclusionSegments(
+            top: normalizeNearFullEdgeCoverage(segments.top, limit: bounds.width),
+            bottom: normalizeNearFullEdgeCoverage(segments.bottom, limit: bounds.width),
+            left: normalizeNearFullEdgeCoverage(segments.left, limit: bounds.height),
+            right: normalizeNearFullEdgeCoverage(segments.right, limit: bounds.height)
+        )
+    }
+
+    private func fallbackOcclusionSegments(for bounds: NSRect, adjacentEdges: AdjacentEdges) -> EdgeOcclusionSegments {
+        guard !adjacentEdges.isEmpty else { return .empty }
+        let fullX: ClosedRange<CGFloat> = 0...bounds.width
+        let fullY: ClosedRange<CGFloat> = 0...bounds.height
+        return EdgeOcclusionSegments(
+            top: adjacentEdges.contains(.top) ? [fullX] : [],
+            bottom: adjacentEdges.contains(.bottom) ? [fullX] : [],
+            left: adjacentEdges.contains(.left) ? [fullY] : [],
+            right: adjacentEdges.contains(.right) ? [fullY] : []
+        )
+    }
+
+    private func edgeStripRects(
+        for bounds: NSRect,
+        segments: EdgeOcclusionSegments,
+        thickness: CGFloat,
+        endpointPadding: CGFloat = 0
+    ) -> [CGRect] {
+        guard thickness > 0 else { return [] }
+        var strips: [CGRect] = []
+
+        for interval in normalizedSegments(segments.top, limit: bounds.width) {
+            let lower = max(0, interval.lowerBound - endpointPadding)
+            let upper = min(bounds.width, interval.upperBound + endpointPadding)
+            let width = upper - lower
+            guard width > 0 else { continue }
+            strips.append(CGRect(x: bounds.minX + lower,
+                                 y: bounds.maxY - thickness,
+                                 width: width,
+                                 height: thickness))
+        }
+        for interval in normalizedSegments(segments.bottom, limit: bounds.width) {
+            let lower = max(0, interval.lowerBound - endpointPadding)
+            let upper = min(bounds.width, interval.upperBound + endpointPadding)
+            let width = upper - lower
+            guard width > 0 else { continue }
+            strips.append(CGRect(x: bounds.minX + lower,
+                                 y: bounds.minY,
+                                 width: width,
+                                 height: thickness))
+        }
+        for interval in normalizedSegments(segments.left, limit: bounds.height) {
+            let lower = max(0, interval.lowerBound - endpointPadding)
+            let upper = min(bounds.height, interval.upperBound + endpointPadding)
+            let height = upper - lower
+            guard height > 0 else { continue }
+            strips.append(CGRect(x: bounds.minX,
+                                 y: bounds.minY + lower,
+                                 width: thickness,
+                                 height: height))
+        }
+        for interval in normalizedSegments(segments.right, limit: bounds.height) {
+            let lower = max(0, interval.lowerBound - endpointPadding)
+            let upper = min(bounds.height, interval.upperBound + endpointPadding)
+            let height = upper - lower
+            guard height > 0 else { continue }
+            strips.append(CGRect(x: bounds.maxX - thickness,
+                                 y: bounds.minY + lower,
+                                 width: thickness,
+                                 height: height))
+        }
+        return strips
+    }
+
     /// Draw the window border with optional glow.
-    /// When `adjacentEdges` is non-empty and `seamlessDocking` > 0 in the skin config,
-    /// borders on those edges are faded or fully hidden to make docked windows look seamless.
-    func drawWindowBorder(in bounds: NSRect, context: CGContext, adjacentEdges: AdjacentEdges = []) {
+    /// When occlusion segments are present and `seamlessDocking` > 0,
+    /// border suppression is applied only on the joined edge intervals.
+    func drawWindowBorder(
+        in bounds: NSRect,
+        context: CGContext,
+        adjacentEdges: AdjacentEdges = [],
+        sharpCorners: CACornerMask = [],
+        occlusionSegments: EdgeOcclusionSegments = .empty,
+        borderOpacity: CGFloat? = nil
+    ) {
         let borderWidth = skin.config.window.borderWidth ?? 1.0
         let cornerRadius = skin.config.window.cornerRadius ?? 0
-        let borderColor = skin.borderColor
+        let resolvedBorderOpacity = min(1.0, max(0.0, borderOpacity ?? skin.config.window.opacity))
+        let borderColor = skin.borderColor.withAlphaComponent(resolvedBorderOpacity)
         let seamless = min(1.0, max(0.0, skin.config.window.seamlessDocking ?? 0))
-        
-        context.saveGState()
-        
-        // For full seamless (1.0), clip away adjacent edges entirely before drawing
-        if seamless >= 1.0 && !adjacentEdges.isEmpty {
-            var clipRect = bounds
-            if adjacentEdges.contains(.top)    { clipRect.size.height -= borderWidth }
-            if adjacentEdges.contains(.bottom) { clipRect.origin.y += borderWidth; clipRect.size.height -= borderWidth }
-            if adjacentEdges.contains(.left)   { clipRect.origin.x += borderWidth; clipRect.size.width -= borderWidth }
-            if adjacentEdges.contains(.right)  { clipRect.size.width -= borderWidth }
-            context.clip(to: clipRect)
-        }
-        
+        let glowRadius = (skin.config.glow.radius ?? 8.0)
+
+        var effectiveSegments = occlusionSegments.isEmpty
+            ? fallbackOcclusionSegments(for: bounds, adjacentEdges: adjacentEdges)
+            : occlusionSegments
+
+        // Fractional window geometry (common with scaled modern skins) can leave
+        // tiny unsuppressed slivers on edges that are visually fully joined.
+        // Snap near-full coverage intervals to full-edge suppression to avoid
+        // dark interior seam lines between docked windows.
+        effectiveSegments = normalizeNearFullOcclusionSegments(for: bounds, segments: effectiveSegments)
+
         let borderRect = bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
-        let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, adjacentEdges: adjacentEdges)
-        
-        // Glow effect (draw border slightly larger and blurred behind)
+        let path = makeRoundedCornerPath(rect: borderRect, radius: cornerRadius, sharpCorners: sharpCorners)
+
+        context.saveGState()
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+
         if skin.config.glow.enabled {
             context.saveGState()
-            let glowRadius = skin.config.glow.radius ?? 8.0
-            context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5).cgColor)
+            context.setShadow(offset: .zero, blur: glowRadius, color: borderColor.withAlphaComponent(0.5 * resolvedBorderOpacity).cgColor)
             context.setStrokeColor(borderColor.cgColor)
             context.setLineWidth(borderWidth)
             context.addPath(path)
             context.strokePath()
             context.restoreGState()
         }
-        
-        // Actual border
+
         context.setStrokeColor(borderColor.cgColor)
         context.setLineWidth(borderWidth)
         context.addPath(path)
         context.strokePath()
-        
-        context.restoreGState()
-        
-        // For partial seamless (0 < value < 1), overdraw adjacent edges
-        // with background color at seamlessDocking alpha to progressively fade them
-        if seamless > 0 && seamless < 1.0 && !adjacentEdges.isEmpty {
-            let bgColor = skin.backgroundColor
-            context.saveGState()
-            context.setFillColor(bgColor.withAlphaComponent(seamless).cgColor)
-            let bw = borderWidth
-            if adjacentEdges.contains(.top) {
-                context.fill(CGRect(x: bounds.minX, y: bounds.maxY - bw, width: bounds.width, height: bw))
+
+        // Suppress only joined edge segments by subtracting from the border-only
+        // transparency layer. This keeps interior seams nearly invisible without
+        // repainting/darkening the content beneath.
+        if seamless > 0 && !effectiveSegments.isEmpty {
+            let stripThickness = borderWidth + (skin.config.glow.enabled
+                ? max(0.85, min(1.8, glowRadius * 0.2))
+                : 0.85)
+            let strips = edgeStripRects(
+                for: bounds,
+                segments: effectiveSegments,
+                thickness: stripThickness,
+                endpointPadding: max(0.75, borderWidth * 0.9)
+            )
+            if !strips.isEmpty {
+                context.saveGState()
+                context.setBlendMode(.destinationOut)
+                context.setFillColor(NSColor.black.withAlphaComponent(seamless).cgColor)
+                for strip in strips {
+                    context.fill(strip)
+                }
+                context.restoreGState()
             }
-            if adjacentEdges.contains(.bottom) {
-                context.fill(CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bw))
-            }
-            if adjacentEdges.contains(.left) {
-                context.fill(CGRect(x: bounds.minX, y: bounds.minY, width: bw, height: bounds.height))
-            }
-            if adjacentEdges.contains(.right) {
-                context.fill(CGRect(x: bounds.maxX - bw, y: bounds.minY, width: bw, height: bounds.height))
-            }
-            context.restoreGState()
         }
+
+        context.endTransparencyLayer()
+        context.restoreGState()
     }
     
     /// Draw the title bar with per-window prefix support and three-tier text fallback.
@@ -341,12 +482,14 @@ class ModernSkinRenderer {
                 // Font fallback for this single character
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: fallbackFont,
-                    .foregroundColor: tintColor ?? skin.textColor
+                    .foregroundColor: skin.applyTextOpacity(to: tintColor ?? skin.textColor)
                 ]
                 let charStr = NSAttributedString(string: String(glyph.char), attributes: attrs)
                 let charSize = charStr.size()
                 let charY = rect.midY - charSize.height / 2 + verticalOffset
-                charStr.draw(at: NSPoint(x: x, y: charY))
+                drawTextUnattenuated(in: context) {
+                    charStr.draw(at: NSPoint(x: x, y: charY))
+                }
             }
             x += glyph.width + charSpacing
         }
@@ -364,9 +507,10 @@ class ModernSkinRenderer {
     /// Draw title text using the system font (tier 3 fallback).
     private func drawTitleTextWithFont(_ title: String, in scaledR: NSRect, prefix: String = "", context: CGContext) {
         let titleFont = skin.titleBarFont()
+        let titleColor = skin.applyTextOpacity(to: skin.textColor)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: titleFont,
-            .foregroundColor: skin.textColor
+            .foregroundColor: titleColor
         ]
         let titleStr = NSAttributedString(string: title, attributes: attrs)
         let titleSize = titleStr.size()
@@ -387,9 +531,11 @@ class ModernSkinRenderer {
         // Draw title text
         let titleOrigin = NSPoint(x: drawX, y: textY)
         if skin.config.glow.enabled {
-            drawTextWithGlow(titleStr, at: titleOrigin, glowColor: skin.textColor, context: context)
+            drawTextWithGlow(titleStr, at: titleOrigin, glowColor: titleColor, context: context)
         } else {
-            titleStr.draw(at: titleOrigin)
+            drawTextUnattenuated(in: context) {
+                titleStr.draw(at: titleOrigin)
+            }
         }
         drawX += titleSize.width
         
@@ -483,6 +629,9 @@ class ModernSkinRenderer {
             return
         }
         
+        // Time digits are text-like content: keep them independent from parent window/content alpha.
+        context.saveGState()
+        context.setAlpha(skin.textOpacityMultiplier)
         if let img = skin.image(for: imageName) {
             // Use pixel art rendering for crisp scaling of small digit sprites
             drawPixelArtImage(img, in: scaledR, context: context)
@@ -490,6 +639,7 @@ class ModernSkinRenderer {
             // Programmatic 7-segment LED rendering
             draw7SegmentChar(character, in: scaledR, context: context)
         }
+        context.restoreGState()
     }
     
     /// Draw a character as a 7-segment LED display
@@ -741,7 +891,12 @@ class ModernSkinRenderer {
         let labelText = label ?? id.replacingOccurrences(of: "btn_", with: "").uppercased()
         
         // Toggle buttons with outlined boxes
-        let isBoxedButton = (id == "btn_eq" || id == "btn_playlist" || id == "btn_library" || id == "btn_projectm" || id == "btn_spectrum")
+        let isBoxedButton = (id == "btn_eq" ||
+                             id == "btn_playlist" ||
+                             id == "btn_library" ||
+                             id == "btn_projectm" ||
+                             id == "btn_spectrum" ||
+                             id == "btn_waveform")
         if isBoxedButton {
             let boxColor = isOn ? onColor : offColor
             context.saveGState()
@@ -756,7 +911,7 @@ class ModernSkinRenderer {
         
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: textColor
+            .foregroundColor: skin.applyTextOpacity(to: textColor)
         ]
         let str = NSAttributedString(string: labelText, attributes: attrs)
         let size = str.size()
@@ -766,9 +921,11 @@ class ModernSkinRenderer {
         )
         
         if isOn && skin.config.glow.enabled {
-            drawTextWithGlow(str, at: origin, glowColor: onColor, context: context)
+            drawTextWithGlow(str, at: origin, glowColor: skin.applyTextOpacity(to: onColor), context: context)
         } else {
-            str.draw(at: origin)
+            drawTextUnattenuated(in: context) {
+                str.draw(at: origin)
+            }
         }
     }
     
@@ -785,12 +942,14 @@ class ModernSkinRenderer {
         
         let attrs: [NSAttributedString.Key: Any] = [
             .font: drawFont,
-            .foregroundColor: drawColor,
+            .foregroundColor: skin.applyTextOpacity(to: drawColor),
             .paragraphStyle: style
         ]
         
         let str = NSAttributedString(string: text, attributes: attrs)
-        str.draw(in: scaledR)
+        drawTextUnattenuated(in: context) {
+            str.draw(in: scaledR)
+        }
     }
     
     /// Draw a text label with glow effect
@@ -800,13 +959,14 @@ class ModernSkinRenderer {
         let scaledR = scaledRect(rect)
         let drawFont = font ?? skin.smallLabelFont()
         let drawColor = color ?? skin.textColor
+        let resolvedTextColor = skin.applyTextOpacity(to: drawColor)
         
         let style = NSMutableParagraphStyle()
         style.alignment = alignment
         
         let attrs: [NSAttributedString.Key: Any] = [
             .font: drawFont,
-            .foregroundColor: drawColor,
+            .foregroundColor: resolvedTextColor,
             .paragraphStyle: style
         ]
         
@@ -815,10 +975,14 @@ class ModernSkinRenderer {
         // Draw with glow
         context.saveGState()
         context.setShadow(offset: .zero, blur: 3 * scaleFactor * glowMultiplier,
-                          color: drawColor.withAlphaComponent(0.7).cgColor)
-        str.draw(in: scaledR)
+                          color: resolvedTextColor.withAlphaComponent(0.7).cgColor)
+        drawTextUnattenuated(in: context) {
+            str.draw(in: scaledR)
+        }
         context.restoreGState()
-        str.draw(in: scaledR)
+        drawTextUnattenuated(in: context) {
+            str.draw(in: scaledR)
+        }
     }
     
     /// Draw a window control button (close, minimize, shade)
@@ -866,19 +1030,34 @@ class ModernSkinRenderer {
         context.restoreGState()
     }
     
-    /// Draw the mini spectrum bars
-    func drawMiniSpectrum(_ levels: [Float], in rect: NSRect, context: CGContext) {
+    /// Draw the mini spectrum bars.
+    /// Opacity channels are provided by callers from `window.areaOpacity.spectrumArea`
+    /// and optional main-spectrum-only multipliers.
+    func drawMiniSpectrum(
+        _ levels: [Float],
+        in rect: NSRect,
+        panelBackgroundOpacity: CGFloat = 1.0,
+        panelBorderOpacity: CGFloat = 1.0,
+        contentOpacity: CGFloat = 1.0,
+        context: CGContext
+    ) {
         let scaledR = scaledRect(rect)
         let barCount = min(levels.count, 8)
         guard barCount > 0 else { return }
         
         // Recessed panel background behind the bars
-        drawInsetPanelScaled(scaledR, context: context)
+        drawInsetPanelScaled(
+            scaledR,
+            context: context,
+            backgroundOpacity: panelBackgroundOpacity,
+            borderOpacity: panelBorderOpacity
+        )
         
         let barWidth = scaledR.width / CGFloat(barCount) - 1 * scaleFactor
         let gap = 1 * scaleFactor
         
         context.saveGState()
+        context.setAlpha(min(1.0, max(0.0, contentOpacity)))
         
         for i in 0..<barCount {
             let level = CGFloat(min(max(levels[i], 0), 1))
@@ -1005,7 +1184,7 @@ class ModernSkinRenderer {
             // Text label
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
-                .foregroundColor: color
+                .foregroundColor: skin.applyTextOpacity(to: color)
             ]
             let str = NSAttributedString(string: label, attributes: attrs)
             let size = str.size()
@@ -1013,7 +1192,9 @@ class ModernSkinRenderer {
                 x: buttonRect.midX - size.width / 2,
                 y: buttonRect.midY - size.height / 2
             )
-            str.draw(at: textOrigin)
+            drawTextUnattenuated(in: context) {
+                str.draw(at: textOrigin)
+            }
         }
     }
     
@@ -1028,10 +1209,10 @@ class ModernSkinRenderer {
     }
     
     /// Draw an NSImage into a CGContext
-    private func drawImage(_ image: NSImage, in rect: NSRect, context: CGContext) {
+    private func drawImage(_ image: NSImage, in rect: NSRect, context: CGContext, fraction: CGFloat = 1.0) {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
+        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: fraction)
         NSGraphicsContext.restoreGraphicsState()
     }
     
@@ -1052,30 +1233,61 @@ class ModernSkinRenderer {
         context.saveGState()
         context.setShadow(offset: .zero, blur: 4 * scaleFactor * glowMultiplier,
                           color: glowColor.withAlphaComponent(0.6).cgColor)
-        attributedString.draw(at: point)
+        drawTextUnattenuated(in: context) {
+            attributedString.draw(at: point)
+        }
         context.restoreGState()
         
         // Draw crisp text on top
-        attributedString.draw(at: point)
+        drawTextUnattenuated(in: context) {
+            attributedString.draw(at: point)
+        }
+    }
+
+    /// Draw string text at full context alpha so text-opacity is controlled only
+    /// by text color alpha channels (including `window.textOpacity`).
+    private func drawTextUnattenuated(in context: CGContext, draw: () -> Void) {
+        context.saveGState()
+        context.setAlpha(1.0)
+        draw()
+        context.restoreGState()
     }
     
     // MARK: - Shared Panel Drawing
     
     /// Draw a subtle recessed inset panel — dark fill with faint border.
+    /// Callers map these opacity channels from area-specific `window.areaOpacity.*` settings.
     /// Accepts base (unscaled) coordinates. Used for the time display and spectrum area.
-    func drawInsetPanel(in rect: NSRect, context: CGContext) {
-        drawInsetPanelScaled(scaledRect(rect), context: context)
+    func drawInsetPanel(
+        in rect: NSRect,
+        backgroundOpacity: CGFloat = 1.0,
+        borderOpacity: CGFloat = 1.0,
+        context: CGContext
+    ) {
+        drawInsetPanelScaled(
+            scaledRect(rect),
+            context: context,
+            backgroundOpacity: backgroundOpacity,
+            borderOpacity: borderOpacity
+        )
     }
     
     /// Same as drawInsetPanel but accepts an already-scaled rect (used from drawFallback).
-    private func drawInsetPanelScaled(_ scaledR: NSRect, context: CGContext) {
+    private func drawInsetPanelScaled(
+        _ scaledR: NSRect,
+        context: CGContext,
+        backgroundOpacity: CGFloat = 1.0,
+        borderOpacity: CGFloat = 1.0
+    ) {
         context.saveGState()
+        let resolvedBackgroundOpacity = min(1.0, max(0.0, backgroundOpacity))
+        let resolvedBorderOpacity = min(1.0, max(0.0, borderOpacity))
         let corner = 4 * scaleFactor
         let path = CGPath(roundedRect: scaledR, cornerWidth: corner, cornerHeight: corner, transform: nil)
-        context.setFillColor(skin.surfaceColor.withAlphaComponent(0.8).cgColor)
+        context.setFillColor(skin.surfaceColor.withAlphaComponent(resolvedBackgroundOpacity).cgColor)
         context.addPath(path)
         context.fillPath()
-        context.setStrokeColor(skin.borderColor.withAlphaComponent(0.3).cgColor)
+        context.setStrokeColor(skin.borderColor.withAlphaComponent(resolvedBorderOpacity).cgColor)
         context.setLineWidth(0.5 * scaleFactor)
         context.addPath(path)
         context.strokePath()
@@ -1084,11 +1296,11 @@ class ModernSkinRenderer {
     
     // MARK: - Programmatic Fallback Drawing
     
-    private func drawFallback(_ id: String, state: String, in rect: NSRect, context: CGContext) {
+    private func drawFallback(_ id: String, state: String, in rect: NSRect, contentOpacity: CGFloat, context: CGContext) {
         // Default fallback: filled rect with surface color and optional border
         switch id {
         case "marquee_bg":
-            drawInsetPanelScaled(rect, context: context)
+            drawInsetPanelScaled(rect, context: context, backgroundOpacity: contentOpacity, borderOpacity: contentOpacity)
             
         case _ where id.hasPrefix("btn_"):
             // Already handled by specific draw methods

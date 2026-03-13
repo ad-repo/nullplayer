@@ -3,12 +3,15 @@ import AppKit
 /// Visualization mode for the main window's built-in visualization area
 enum MainWindowVisMode: String, CaseIterable {
     case spectrum = "Spectrum"       // Classic 19-bar spectrum analyzer (CGContext)
+    case visClassicExact = "vis_classic" // Exact vis_classic port (CPU frame in Metal overlay)
+    case punch = "Punch"             // Peak-forward classic coloring (bars-only, no peak markers)
     case fire = "Fire"               // GPU flame simulation (Metal overlay)
     case enhanced = "Enhanced"       // LED matrix with rainbow (Metal overlay)
     case ultra = "Ultra"             // Maximum visual quality (Metal overlay)
     case cosmic = "JWST"             // Procedural nebula (Metal overlay)
     case electricity = "Lightning"   // GPU lightning storm (Metal overlay)
     case matrix = "Matrix"           // Falling digital rain (Metal overlay)
+    case snow = "Snow"               // Audio-reactive snowfall (Metal overlay)
     
     var displayName: String { rawValue }
     
@@ -19,12 +22,15 @@ enum MainWindowVisMode: String, CaseIterable {
     var spectrumQualityMode: SpectrumQualityMode? {
         switch self {
         case .spectrum: return nil
+        case .visClassicExact: return .visClassicExact
+        case .punch: return .punch
         case .fire: return .flame
         case .enhanced: return .enhanced
         case .ultra: return .ultra
         case .cosmic: return .cosmic
         case .electricity: return .electricity
         case .matrix: return .matrix
+        case .snow: return .snow
         }
     }
 }
@@ -145,7 +151,8 @@ class MainWindowView: NSView {
         
         // Enable layer-backed rendering for better performance
         layer?.backgroundColor = NSColor.clear.cgColor
-        
+        layer?.isOpaque = false
+
         // Only redraw when explicitly requested via setNeedsDisplay
         // This allows macOS to cache the layer contents between updates
         layerContentsRedrawPolicy = .onSetNeedsDisplay
@@ -223,6 +230,15 @@ class MainWindowView: NSView {
         // Observe playback state changes to clear/freeze spectrum on stop/pause
         NotificationCenter.default.addObserver(self, selector: #selector(playbackStateDidChange),
                                                name: .audioPlaybackStateChanged, object: nil)
+
+        // Observe playback option changes so menu-triggered toggles update button state.
+        NotificationCenter.default.addObserver(self, selector: #selector(playbackOptionsDidChange),
+                                               name: .audioPlaybackOptionsChanged, object: nil)
+
+        // Observe vis_classic profile commands so transparent-background toggles
+        // immediately update main-window skin drawing behind the Metal overlay.
+        NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
+                                               name: .visClassicProfileCommand, object: nil)
         
     }
     
@@ -366,6 +382,7 @@ class MainWindowView: NSView {
         metalOverlay = overlay
         
         updateMetalOverlayFrame()
+        updateMainVisClassicOverlayOpacity()
     }
     
     /// Update Metal overlay position to match the visualization area in scaled skin coordinates
@@ -380,7 +397,10 @@ class MainWindowView: NSView {
         
         let scale = scaleFactor
         let originalSize = Skin.baseMainSize
-        let visArea = SkinElements.Visualization.displayArea  // x: 24, y: 43, width: 76, height: 16
+        var visArea = SkinElements.Visualization.displayArea  // x: 24, y: 43, width: 76, height: 16
+        if mainVisMode == .visClassicExact && isMainVisClassicTransparentEnabled() {
+            visArea = visArea.insetBy(dx: 1, dy: 1)
+        }
         
         // Calculate centering offset (same as in draw())
         let scaledWidth = originalSize.width * scale
@@ -411,6 +431,7 @@ class MainWindowView: NSView {
             metalOverlay?.isHidden = false
             metalOverlay?.startDisplayLink()
             updateMetalOverlayFrame()
+            updateMainVisClassicOverlayOpacity()
             
             // Force layout to ensure Metal layer gets sized properly
             metalOverlay?.needsLayout = true
@@ -424,6 +445,7 @@ class MainWindowView: NSView {
         } else {
             metalOverlay?.isHidden = true
             metalOverlay?.stopDisplayLink()
+            metalOverlay?.alphaValue = 1.0
         }
         needsDisplay = true
     }
@@ -501,7 +523,36 @@ class MainWindowView: NSView {
                let mode = SpectrumDecayMode(rawValue: savedDecay) {
                 overlay.decayMode = mode
             }
+            updateMainVisClassicOverlayOpacity()
         }
+    }
+    
+    private func updateMainVisClassicOverlayOpacity() {
+        guard let overlay = metalOverlay else { return }
+        if mainVisMode == .visClassicExact && VisClassicBridge.transparentBgDefault(for: .mainWindow) {
+            let visClassicOpacity = CGFloat(VisClassicBridge.opacityDefault(for: .mainWindow) ?? 1.0)
+            let clamped = min(1.0, max(0.0, visClassicOpacity))
+            overlay.alphaValue = clamped
+            overlay.layer?.opacity = Float(clamped)
+        } else {
+            overlay.alphaValue = 1.0
+            overlay.layer?.opacity = 1.0
+        }
+
+        guard mainVisMode == .visClassicExact else { return }
+        // Force-sync the vis_classic core option from persisted main-window state.
+        // This avoids stale bridge state where the menu checkmark changes but
+        // background alpha in the rendered frame lags behind.
+        let enabled = VisClassicBridge.transparentBgDefault(for: .mainWindow)
+        _ = overlay.setVisClassicTransparentBackground(enabled)
+    }
+
+    private func isMainVisClassicTransparentEnabled() -> Bool {
+        if let overlay = metalOverlay {
+            return overlay.visClassicTransparentBackgroundEnabled()
+                || VisClassicBridge.transparentBgDefault(for: .mainWindow)
+        }
+        return VisClassicBridge.transparentBgDefault(for: .mainWindow)
     }
     
     // MARK: - Accessibility Children (for custom drawn controls)
@@ -697,6 +748,20 @@ class MainWindowView: NSView {
         case .playing:
             break
         }
+    }
+
+    @objc private func playbackOptionsDidChange() {
+        needsDisplay = true
+    }
+
+    @objc private func handleVisClassicProfileCommand(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let command = userInfo["command"] as? String,
+              (command == "transparentBg" || command == "opacity"),
+              (userInfo["target"] as? String) == "mainWindow" else { return }
+        updateMainVisClassicOverlayOpacity()
+        updateMetalOverlayFrame()
+        needsDisplay = true
     }
     
     @objc private func castLoadingStateDidChange(_ notification: Notification) {
@@ -945,6 +1010,12 @@ class MainWindowView: NSView {
     private func drawNormalModeScaled(renderer: SkinRenderer, context: CGContext, isActive: Bool, drawBounds: NSRect) {
         // Draw main window background
         renderer.drawMainWindowBackground(in: context, bounds: drawBounds, isActive: isActive)
+
+        if mainVisMode == .visClassicExact {
+            if isMainVisClassicTransparentEnabled() {
+                context.clear(SkinElements.Visualization.displayArea.insetBy(dx: 1, dy: 1))
+            }
+        }
         
         // Draw time display - support elapsed/remaining modes
         let displayTime: TimeInterval
@@ -1724,6 +1795,19 @@ class MainWindowView: NSView {
     override func keyDown(with event: NSEvent) {
         let engine = WindowManager.shared.audioEngine
         let isVideoActive = WindowManager.shared.isVideoActivePlayback
+
+        if mainVisMode == .visClassicExact,
+           let overlay = metalOverlay,
+           let chars = event.charactersIgnoringModifiers {
+            if chars == "," {
+                _ = overlay.loadPreviousVisClassicProfile()
+                return
+            }
+            if chars == "." {
+                _ = overlay.loadNextVisClassicProfile()
+                return
+            }
+        }
         
         switch event.keyCode {
         case 49: // Space - Play/Pause

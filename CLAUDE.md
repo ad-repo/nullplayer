@@ -99,8 +99,8 @@ Skills contain detailed technical documentation. Key skills include:
 - **user-guide**: Features, menus, keyboard shortcuts
 - **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations (Plex, Jellyfin, Navidrome/Subsonic, Emby)
 - **sonos-casting**, **chromecast-casting**: Casting protocols
-- **radio-streaming**: Internet radio support
-- **visualizations**: Album art and ProjectM
+- **radio-streaming**: Internet radio + library radio support (metadata, folders, ratings, history)
+- **visualizations**: Album art, ProjectM, spectrum modes, and vis_classic exact mode
 - **testing**: UI testing workflows
 - **non-retina-fixes**: Display artifact fixes
 
@@ -113,7 +113,7 @@ Sources/NullPlayer/
 ├── App/              # AppDelegate, WindowManager, menus, MainWindowProviding protocol
 ├── Audio/            # AudioEngine, StreamingAudioPlayer, EQ
 ├── Casting/          # Chromecast, Sonos, DLNA casting
-├── Radio/            # Internet radio (Shoutcast/Icecast) support
+├── Radio/            # Internet radio (stations, metadata fallback, ratings, folders)
 ├── Skin/             # Classic .wsz skin loading and rendering
 ├── ModernSkin/       # Modern skin engine (independent of classic system)
 ├── Windows/          # All window views (MainWindow, ModernMainWindow, ModernSpectrum, ModernPlaylist, ModernEQ, ModernProjectM, ModernLibraryBrowser, Playlist, EQ, etc.)
@@ -121,7 +121,8 @@ Sources/NullPlayer/
 ├── Subsonic/         # Navidrome/Subsonic server integration
 ├── Jellyfin/         # Jellyfin media server integration
 ├── Emby/             # Emby media server integration
-├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer + flame mode
+├── Visualization/    # ProjectM wrapper, Metal spectrum analyzer, vis_classic bridge/core integration
+├── Waveform/         # Shared waveform models, cache service, drawing, and stream accumulation
 └── Models/           # Track, Playlist, MediaLibrary
 ```
 
@@ -132,14 +133,15 @@ Sources/NullPlayer/
 | Skin (Classic) | `Skin/SkinElements.swift`, `Skin/SkinRenderer.swift`, `Skin/SkinLoader.swift` |
 | Skin (Modern) | `ModernSkin/ModernSkinEngine.swift`, `ModernSkin/ModernSkinConfig.swift`, `ModernSkin/ModernSkinRenderer.swift`, `ModernSkin/ModernSkinLoader.swift`, `ModernSkin/ModernSkinElements.swift` |
 | Audio | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift`, `Audio/BPMDetector.swift` |
-| Windows | `Windows/MainWindow/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, `Windows/ModernLibraryBrowser/`, `Windows/Playlist/`, `Windows/Equalizer/` |
-| Visualization | `Windows/ProjectM/`, `Windows/Spectrum/`, `Visualization/VisualizationGLView.swift`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/SpectrumShaders.metal`, `Visualization/FlameShaders.metal`, `Visualization/CosmicShaders.metal`, `Visualization/ElectricityShaders.metal`, `Visualization/MatrixShaders.metal`, `Visualization/ProjectMWrapper.swift` |
+| Windows | `Windows/MainWindow/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernWaveform/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, `Windows/ModernLibraryBrowser/`, `Windows/Waveform/`, `Windows/Playlist/`, `Windows/Equalizer/` |
+| Visualization | `Windows/ProjectM/`, `Windows/Spectrum/`, `Visualization/VisualizationGLView.swift`, `Visualization/SpectrumAnalyzerView.swift`, `Visualization/VisClassicBridge.swift`, `Visualization/SpectrumShaders.metal`, `Visualization/FlameShaders.metal`, `Visualization/CosmicShaders.metal`, `Visualization/ElectricityShaders.metal`, `Visualization/MatrixShaders.metal`, `Visualization/ProjectMWrapper.swift`, `Sources/CVisClassicCore/` |
+| Waveform | `Waveform/WaveformModels.swift`, `Waveform/WaveformCacheService.swift`, `Waveform/WaveformDrawing.swift`, `Waveform/BaseWaveformView.swift`, `App/WaveformWindowProviding.swift` |
 | Marquee | `Skin/MarqueeLayer.swift` (classic), `ModernSkin/ModernMarqueeLayer.swift` (modern), `Windows/Playlist/PlaylistView.swift` |
 | Plex | `Plex/PlexManager.swift`, `Plex/PlexServerClient.swift`, `Plex/PlexRadioHistory.swift` |
 | Subsonic | `Subsonic/SubsonicManager.swift`, `Subsonic/SubsonicServerClient.swift`, `Subsonic/SubsonicModels.swift` |
 | Jellyfin | `Jellyfin/JellyfinManager.swift`, `Jellyfin/JellyfinServerClient.swift`, `Jellyfin/JellyfinModels.swift`, `Jellyfin/JellyfinPlaybackReporter.swift` |
 | Emby | `Emby/EmbyManager.swift`, `Emby/EmbyServerClient.swift`, `Emby/EmbyModels.swift`, `Emby/EmbyPlaybackReporter.swift`, `Emby/EmbyVideoPlaybackReporter.swift` |
-| Radio | `Radio/RadioManager.swift`, `Data/Models/RadioStation.swift`, `Windows/Radio/AddRadioStationSheet.swift` |
+| Radio | `Radio/RadioManager.swift`, `Radio/RadioStationRatingsStore.swift`, `Radio/RadioFolderModels.swift`, `Radio/RadioStationFoldersStore.swift`, `Data/Models/RadioStation.swift`, `Resources/Radio/default_stations.json`, `Windows/Radio/AddRadioStationSheet.swift` |
 | Casting | `Casting/CastManager.swift`, `Casting/CastProtocol.swift`, `Casting/ChromecastManager.swift`, `Casting/UPnPManager.swift`, `Casting/LocalMediaServer.swift`, `Casting/CastDevice.swift` |
 | App | `App/WindowManager.swift`, `App/AppStateManager.swift`, `App/ContextMenuBuilder.swift`, `App/MainWindowProviding.swift`, `App/SpectrumWindowProviding.swift`, `App/PlaylistWindowProviding.swift`, `App/EQWindowProviding.swift`, `App/ProjectMWindowProviding.swift`, `App/LibraryBrowserWindowProviding.swift` |
 
@@ -157,6 +159,7 @@ Sources/NullPlayer/
 1. Create folder in `Windows/`
 2. Add WindowController + View
 3. Register in `WindowManager.swift`
+4. If the window has shared classic/modern behavior, add a provider protocol in `App/` and shared infrastructure outside `Skin/`/`ModernSkin/`
 
 ### Modifying skin rendering (classic)
 1. Check sprite coordinates in `SkinElements.swift`
@@ -188,9 +191,13 @@ Sources/NullPlayer/
 
 ## Gotchas
 
-- **Remember State On Quit**: `AppStateManager` saves/restores complete session state (v2). Two-phase restoration: settings first (`restoreSettingsState` — skin, volume, EQ, windows, double size), then playlist (`restorePlaylistState` — tracks with ordering preserved, current track index, seek position). Streaming tracks (Plex/Subsonic/Jellyfin/Emby) are loaded as placeholder `Track` objects with saved metadata, then replaced asynchronously via `engine.replaceTrack(at:with:)`. Radio tracks are saved via `SavedTrack.radioURL`. Many other settings (visualization modes, browser columns, radio stations, hide title bars) persist independently via UserDefaults and are NOT part of `AppState`. When adding new state: if it's a preference that should always persist, use UserDefaults directly; if it's session state that should only persist when "Remember State" is enabled, add it to the `AppState` struct with `decodeIfPresent` defaults
+- **Remember State On Quit**: `AppStateManager` saves/restores complete session state (v2). Two-phase restoration: settings first (`restoreSettingsState` — skin, volume, EQ, windows, double size), then playlist (`restorePlaylistState` — tracks with ordering preserved, current track index, seek position). Streaming tracks (Plex/Subsonic/Jellyfin/Emby) are loaded as placeholder `Track` objects with saved metadata, then replaced asynchronously via `engine.replaceTrack(at:with:)`. Radio tracks are saved via `SavedTrack.radioURL`. Many other settings (visualization modes, browser columns, radio stations, hide title bars) persist independently via UserDefaults and are NOT part of `AppState`. Internet radio station ratings/folders/play-history persistence is SQLite-backed and URL-keyed (`radio_station_ratings.db`, `radio_station_folders.db`) and also not part of `AppState`. When adding new state: if it's a preference that should always persist, use UserDefaults directly; if it's session state that should only persist when "Remember State" is enabled, add it to the `AppState` struct with `decodeIfPresent` defaults
+- **vis_classic state is window-scoped**: Main window and spectrum window keep independent profile, fit, and transparent-background settings. Use `VisClassicBridge.PreferenceScope` and scoped keys (`visClassicLastProfileName.mainWindow` / `.spectrumWindow`, `visClassicFitToWidth.mainWindow` / `.spectrumWindow`, `visClassicTransparentBg.mainWindow` / `.spectrumWindow`). Do not use shared keys for menu checkmarks or restore logic.
+- **vis_classic transparent background has host-window responsibilities**: `SpectrumAnalyzerView` toggles analyzer-layer opacity, but host views must also redraw/clear their analyzer region where chrome was already painted. Main-window views and classic `SpectrumView` explicitly invalidate/clear host content on `transparentBg` commands (target-scoped via `.visClassicProfileCommand`).
 - **Modern main window layout split**: The time panel's visual boundary is hardcoded as a `drawInsetPanel` call in `ModernMainWindowView.swift` `draw()` — it is NOT an element in `ModernSkinElements`. The display panel uses `marqueeBackground` from `ModernSkinElements`. When adjusting time-panel geometry, update **both** the `drawInsetPanel` rect in `ModernMainWindowView.swift` and the dependent element rects (`timeDisplay`, `statusPlay/Pause/Stop`) in `ModernSkinElements.swift`.
 - **Modern skin system is completely independent**: Files in `ModernSkin/`, `Windows/ModernMainWindow/`, `Windows/ModernSpectrum/`, `Windows/ModernPlaylist/`, `Windows/ModernEQ/`, `Windows/ModernProjectM/`, and `Windows/ModernLibraryBrowser/` must NEVER import or reference anything from `Skin/` or `Windows/MainWindow/`. The coupling points are only: `AppDelegate` (mode selection), `WindowManager` (via `MainWindowProviding`, `SpectrumWindowProviding`, `PlaylistWindowProviding`, `EQWindowProviding`, `ProjectMWindowProviding`, and `LibraryBrowserWindowProviding` protocols), and shared infrastructure (`AudioEngine`, `Track`, `PlaybackState`)
+- **Waveform window follows the same split**: `Windows/Waveform/` and `Windows/ModernWaveform/` own their respective chrome, but shared waveform logic lives in `Waveform/` and is coordinated through `WaveformWindowProviding`. Keep waveform rendering/cache/stream accumulation out of both `Skin/` and `ModernSkin/`.
+- **Modern glass opacity + seam debugging doc**: Detailed implementation notes for the 2026-03 glass darkening/seam fix live in `skills/modern-skin-guide/advanced-features.md` under the section "Glass Skin Darkening and Seam Stability".
 - **UI mode switching requires restart**: The `modernUIEnabled` UserDefaults preference selects which `MainWindowProviding` implementation `WindowManager` creates. Changing it at runtime shows a "Restart / Cancel" confirmation dialog — choosing Restart relaunches the app automatically, choosing Cancel reverts the preference
 - **Mode-specific features must be guarded at all layers**: When a feature only applies to one UI mode (modern or classic), enforce it in three places:
   1. **Menu/UI**: Wrap the menu item or button in an `if wm.isModernUIEnabled` check so it's not shown in the wrong mode
@@ -216,18 +223,24 @@ Sources/NullPlayer/
   }
   ```
 - **Skin coordinates**: skin skins use top-left origin, macOS uses bottom-left
-- **Library browser expand tasks must use `Task.detached`**: In `ModernLibraryBrowserView`, expand tasks (artist → albums, album → songs, etc.) for Jellyfin, Emby, and Subsonic must use `Task.detached { @MainActor ... }` instead of `Task { @MainActor ... }`. Regular `Task { }` can inherit cancellation state from the calling context on the main actor, causing the task to be immediately cancelled. Artist expansion should also prefer filtering cached albums by `artistId` (instant) before falling back to a network request
-- **Jellyfin/Emby library selector is browse-mode-aware**: The "Lib:" click zone in the library browser shows a music library picker when in music tabs (Artists/Albums/Tracks/Plists) and a video library picker when in Movies/Shows tabs. Both `JellyfinManager` and `EmbyManager` have separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification (`musicLibraryDidChangeNotification`, `videoLibraryDidChangeNotification`). `fetchMusicLibraries()` and `fetchVideoLibraries()` both return ALL views without `CollectionType` filtering. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
-- **Subsonic music folders**: `SubsonicManager` now tracks `musicFolders: [SubsonicMusicFolder]` and `currentMusicFolder: SubsonicMusicFolder?` (nil = all folders). Fetched via `getMusicFolders` on connect. `musicFolderId` is passed to `getArtists` and `getAlbumList2` when a folder is selected. Persisted via `SubsonicCurrentMusicFolderID` UserDefaults key. Posts `musicFolderDidChangeNotification` on change.
+- **Library browser expand tasks must use `Task.detached` (modern + classic)**: In both `ModernLibraryBrowserView` and classic `PlexBrowserView`, expand tasks (artist → albums, album → songs, etc.) for Jellyfin, Emby, and Subsonic must use `Task.detached { @MainActor ... }` instead of `Task { @MainActor ... }`. Regular `Task { }` can inherit cancellation state from the calling context on the main actor, causing requests to be cancelled (for Jellyfin this often appears as `NSURLErrorDomain Code=-999 "cancelled"`). Artist expansion should also prefer filtering cached albums by `artistId` (instant) before falling back to a network request.
+- **Jellyfin large-library slowness is often server-side query cost**: Jellyfin can be slower than Emby/Plex/Subsonic on very large libraries when handling deep `Recursive=true` item queries (artists/albums/movies/shows) with large page scans. App-side mitigations:
+  - Use smaller Jellyfin page sizes (`1000`) with duplicate-page guards to avoid long/hanging scans.
+  - Keep preload music-focused (`artists/albums/playlists`) so initial browser load is not blocked by video library scans.
+  - In both classic and modern artist views, render artists first and warm albums cache in background.
+  - Log slow Jellyfin API requests in `JellyfinServerClient.performRequest` for endpoint-level diagnosis.
+- **Jellyfin/Emby library selector is browse-mode-aware (modern + classic)**: The "Lib:" click zone in both `ModernLibraryBrowserView` and classic `PlexBrowserView` shows a music library picker when in music tabs (Artists/Albums/Tracks/Plists) and a video library picker when in Movies/Shows tabs. Both `JellyfinManager` and `EmbyManager` have separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification (`musicLibraryDidChangeNotification`, `videoLibraryDidChangeNotification`). `fetchMusicLibraries()` and `fetchVideoLibraries()` both return ALL views without `CollectionType` filtering. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
+- **Subsonic music folders (modern + classic)**: `SubsonicManager` tracks `musicFolders: [SubsonicMusicFolder]` and `currentMusicFolder: SubsonicMusicFolder?` (nil = all folders). Fetched via `getMusicFolders` on connect. `musicFolderId` is passed to `getArtists` and `getAlbumList2` when a folder is selected. Persisted via `SubsonicCurrentMusicFolderID` UserDefaults key. Posts `musicFolderDidChangeNotification` on change. In both `ModernLibraryBrowserView` and classic `PlexBrowserView`, the "Lib:" click zone opens an "All Folders" + folders picker for Subsonic/Navidrome sources.
 - **Streaming audio**: Uses `AudioStreaming` library, different from local `AVAudioEngine`
+- **Waveform generation has two paths**: local files decode and cache via `WaveformCacheService`; non-file audio tracks build live waveform snapshots from the existing 576-sample PCM notifications. Engine-side waveform chunk generation is gated by explicit waveform consumers (`AudioEngine.waveformConsumers`) so hidden waveform windows and inactive `vis_classic` exact views do not keep paying the callback cost.
 - **Local file completion handler**: Must use `scheduleFile(_:at:completionCallbackType:completionHandler:)` with `.dataPlayedBack` - NOT the deprecated 3-parameter `scheduleFile(_:at:completionHandler:)` which defaults to `.dataConsumed` and fires before audio finishes playing, causing premature track advancement and UI desync
 - **Window docking**: Complex snapping logic in `WindowManager` - test edge cases
   - Multi-monitor: Screen edge snapping is skipped if it would cause docked windows to end up on different screens
   - `Snap to Default` centers main window on its current screen (not always the primary display)
   - Coordinated minimize: uses `addChildWindow`/`removeChildWindow` in `windowWillMiniaturize`/`windowDidDeminiaturize` to temporarily make docked windows children of the main window so they animate into the dock together. Child relationships are removed on restore so windows remain independent for normal docking/dragging
-  - **Center stack collapse**: `slideUpWindowsBelow(closingFrame:)` in `WindowManager` slides docked windows up when a stack window is hidden. Called from `toggleEqualizer/Playlist/Spectrum` — capture the frame BEFORE `orderOut`, then call it. Uses BFS over `dockThreshold`-adjacent windows (by vertical gap + horizontal overlap). Must set `isSnappingWindow = true` during moves to prevent the docking feedback loop.
+  - **Center stack collapse**: `slideUpWindowsBelow(closingFrame:)` in `WindowManager` slides docked windows up when a stack window is hidden. Called from `toggleEqualizer/Playlist/Spectrum/Waveform` — capture the frame BEFORE `orderOut`, then call it. Uses BFS over `dockThreshold`-adjacent windows (by vertical gap + horizontal overlap). Must set `isSnappingWindow = true` during moves to prevent the docking feedback loop.
 - **Hide Title Bars mode** (modern UI only): Two-tier behavior controlled by `effectiveHideTitleBars(for:)` in `WindowManager`:
-  - **HT Off (default baseline)**: EQ/Playlist/Spectrum always hide titlebars when docked, regardless of the HT setting. Main, ProjectM, and Library Browser show titlebars. There is no mode where all titlebars are visible simultaneously.
+  - **HT Off (default baseline)**: EQ/Playlist/Spectrum/Waveform always hide titlebars when docked, regardless of the HT setting. Main, ProjectM, and Library Browser show titlebars. There is no mode where all titlebars are visible simultaneously.
   - **HT On**: ALL 6 windows hide titlebars unconditionally (docked or not). Main window shrinks by `titleBarBaseHeight` (base 275×116 → 275×98) so content fills the frame — no gap at top.
   - `effectiveHideTitleBars(for:)` implements both tiers: check sub-window + docked first; then fall through to `hideTitleBars` for all-window hiding.
   - `toggleHideTitleBars()` resizes the main window (anchor top-left, update `minSize` BEFORE `setFrame`) then refreshes all 6 window views.
@@ -235,7 +248,7 @@ Sources/NullPlayer/
   - Each view's `titleBarHeight` computed property returns `borderWidth` (not 0) when hidden, preserving the top border line.
   - ProjectM shade mode is always drawn (uses `isShadeMode || !effectiveHideTitleBars` condition) so HT + shade never produces a blank window.
   - Library Browser uses lazy drag: `mouseDown` records `windowDragStartPoint`; `mouseDragged` starts the actual drag on first movement when HT is on (so content clicks are not broken). `mouseUp` calls `windowDidFinishDragging`.
-- **Double Size mode** (both modern and classic UI): Toggle via 2X button on main window or context menu.
+- **Double Size mode** (both modern and classic UI): Toggle via the main-window 2X button in classic UI, or via the context menu in either UI.
   - **Modern UI**: live toggle — `ModernSkinElements.scaleFactor` is a computed property (`baseScaleFactor * sizeMultiplier`). `baseScaleFactor` is set by skin.json `window.scale`; `sizeMultiplier` is set to 2.0 by double size mode. Do NOT cache `scaleFactor` in a `let` property -- use a computed `var` or reference it inline. Views must observe `.doubleSizeDidChange` and recreate their renderer. Side windows (Library Browser, ProjectM) scale width by `sizeMultiplier` and match stack height; their layout constants and hardcoded pixel padding must also multiply by `sizeMultiplier`
   - **Classic UI**: requires restart (same pattern as classic/modern mode switching). `MenuActions.toggleDoubleSize()` shows a "Restart Required" dialog before touching the UI, then toggles `isDoubleSize` and calls `relaunchApp()` if confirmed. The toggle happens before relaunch so `applicationWillTerminate` → `saveState()` captures the new value. `applyDoubleSize()` is not guarded by `isModernUIEnabled` — it runs for both modes.
   - **Startup restoration**: `isDoubleSize` is restored in `AppStateManager.restoreSettingsState()` BEFORE sub-windows are shown (at the top of the `+0.1s` dispatch block). This ensures `applyDoubleSize` runs while sub-windows are not yet visible, so it only updates the main window's `minSize`/frame — it does NOT re-scale sub-window frames that are already at their saved 2x sizes. If the flag is restored after sub-windows appear, the playlist height (which is relative to current frame) gets doubled again (4x) instead of staying at 2x.
@@ -246,6 +259,8 @@ Sources/NullPlayer/
 - **Sonos coordinator transfer**: When unchecking the coordinator while other rooms remain grouped, `CastManager.transferSonosCast()` saves session state, stops the old coordinator, casts to the new coordinator, and re-joins other rooms. Uses `UPnPManager.disconnectSession()` to clear the session without sending Stop (old coordinator already standalone). `stopCasting()` ungroups all member rooms before stopping to prevent stale group topology
 - **Subsonic→Sonos casting**: Uses LocalMediaServer proxy because Sonos can't handle URLs with query params (auth tokens). The proxy also handles localhost-bound Navidrome servers. Stream URLs omit `f=json` (only for API responses, not binary streams)
 - **Internet radio state management**: `loadTracks()` must use `stopLocalOnly()` instead of `stop()` when loading radio content - calling `stop()` triggers `RadioManager.stop()` which clears state and breaks auto-reconnect/metadata. The `isRadioContent` check detects radio by matching track URL with `currentStation.url`
+- **Internet radio metadata fallback**: `RadioManager` publishes `effectiveStreamTitle` (ICY `currentStreamTitle` first, SomaFM `currentSomaLastPlaying` fallback). UI should listen to `streamMetadataDidChangeNotification`, not raw ICY-only fields.
+- **Internet radio ratings/folders are URL-keyed**: Ratings and folder membership are keyed by station URL (not station UUID). `RadioManager.updateStation` must migrate URL references via `moveRating(fromURL:toURL:)` and `foldersStore.moveStationURLReferences(from:to:)`; `removeStation` must purge both stores.
 - **Radio playlist URL resolution**: When resolving `.pls`/`.m3u` URLs, check `CastManager.shared.isCasting` fresh inside the async callback, not captured before the network request (up to 10s timeout). User may start casting during resolution
 - **Video casting has TWO paths** - handle both in control logic:
   - **Player path**: Cast button in video player → `VideoPlayerWindowController.isCastingVideo`
@@ -278,6 +293,8 @@ Sources/NullPlayer/
   }
   cb.commit()
   ```
+- **Metal render-to-texture UV y-flip**: When doing multi-pass rendering (render pass A writes to an intermediate texture, render pass B samples that texture), the intermediate texture is stored with y=0 at the TOP (Metal render-target convention). But the fullscreen-quad vertex shader maps `in.uv.y=0` to the BOTTOM of the screen (NDC y=-1). So pass B must flip y when sampling: `float2(in.uv.x, 1.0 - in.uv.y)`. Failing to flip produces an upside-down result. Example: `FlameShaders.metal` `flame_blur_v` uses `baseUV = float2(in.uv.x, 1.0 - in.uv.y)` to read the horizontal-blur intermediate texture correctly.
+- **Fire mode uses 3 Metal passes**: (1) compute `propagate_fire` (128×96 grid), (2) render `flame_blur_h` (horizontal blur, fire grid → r16Float intermediate texture at drawable size), (3) render `flame_blur_v` (vertical blur + color mapping → drawable). The `flameBlurTexture` intermediate is lazily created/resized when drawable size changes (`flameBlurLastDrawableSize`). `isPipelineAvailable(.flame)` requires all three pipelines.
 - **Spectrum shader availability**: Use `SpectrumAnalyzerView.isShaderAvailable(for:)` to check if a mode's shader file exists before switching to it. This static method works without a view instance and should be used when restoring modes from UserDefaults and when building menus. The instance method `isPipelineAvailable(for:)` checks the actual compiled pipeline and is used after `setupMetal()`
 - **NSTextField background**: Setting `backgroundColor` on an `NSTextField` has no visible effect unless `drawsBackground = true` is also set. Always pair them — missing this causes the custom color to be silently ignored (e.g. light text invisible on white in light mode)
 - **Edit panel input fields**: Editable `NSTextField` inputs use black text on white background — not the window's dark theme colors. Read-only labels and window chrome may follow the dark theme
@@ -318,7 +335,7 @@ Manual QA for UI/playback changes:
 - Subsonic/Navidrome streaming
 - Jellyfin streaming
 - Emby streaming
-- Internet radio (playback, auto-reconnect, ICY metadata display)
+- Internet radio (playback, auto-reconnect, metadata including Soma fallback, folder/rating UI behavior)
 - Multiple skins
 - Window snapping/docking
 - Visualizations
@@ -368,4 +385,3 @@ Common issues:
 - **Silent crash on receive**: Check Data slice indexing (use `startIndex`)
 - **Timeout waiting for transportId**: Check receive loop is processing buffer
 - **TLS errors**: Chromecast uses self-signed certs, must accept in verify block
-

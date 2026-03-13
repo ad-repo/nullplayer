@@ -57,19 +57,77 @@
         "borderWidth": 1.5,
         "borderColor": "#6fb9e6",
         "cornerRadius": 6,
-        "seamlessDocking": 1.0
+        "opacity": 1,
+        "seamlessDocking": 1.0,
+        "areaOpacity": {
+            "mainWindow": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "timeDisplay": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "trackDisplay": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "volumeArea": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "spectrumArea": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "eqFaderBackground": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            },
+            "curveBackground": {
+                "background": 1,
+                "border": 1,
+                "content": 1
+            }
+        }
     },
     "elements": {
-        "titlebar": { "color": "#161c22" },
-        "marquee_bg": { "color": "#121820" },
-        "info_cast": { "color": "#6fb9e6" },
-        "spectrum_area": { "color": "#4c6f8a" },
-        "seek_fill": { "color": "#9fd8ff" },
-        "spectrum_titlebar": { "color": "#161c22" },
-        "playlist_titlebar": { "color": "#161c22" },
-        "eq_titlebar": { "color": "#161c22" },
-        "library_titlebar": { "color": "#161c22" },
-        "projectm_titlebar": { "color": "#161c22" }
+        "titlebar": {
+            "color": "#161c22"
+        },
+        "marquee_bg": {
+            "color": "#121820"
+        },
+        "info_cast": {
+            "color": "#6fb9e6"
+        },
+        "spectrum_area": {
+            "color": "#4c6f8a"
+        },
+        "seek_fill": {
+            "color": "#9fd8ff"
+        },
+        "spectrum_titlebar": {
+            "color": "#161c22"
+        },
+        "playlist_titlebar": {
+            "color": "#161c22"
+        },
+        "eq_titlebar": {
+            "color": "#161c22"
+        },
+        "library_titlebar": {
+            "color": "#161c22"
+        },
+        "projectm_titlebar": {
+            "color": "#161c22"
+        }
     },
     "animations": {
         "seek_fill": {
@@ -77,6 +135,32 @@
             "duration": 3.0,
             "minValue": 0.4,
             "maxValue": 1.0
+        }
+    },
+    "visualization": {
+        "mainWindowMode": "vis_classic",
+        "spectrumWindowMode": "vis_classic",
+        "visClassic": {
+            "mainWindowProfile": "City Night",
+            "spectrumWindowProfile": "City Night",
+            "mainWindowFitToWidth": true,
+            "spectrumWindowFitToWidth": true
+        },
+        "fire": {
+            "mainWindowStyle": "Ocean",
+            "mainWindowIntensity": "Mellow",
+            "spectrumWindowStyle": "Ocean",
+            "spectrumWindowIntensity": "Mellow"
+        },
+        "lightning": {
+            "mainWindowStyle": "Arctic",
+            "spectrumWindowStyle": "Arctic"
+        },
+        "matrix": {
+            "mainWindowColorScheme": "Blue Pill",
+            "mainWindowIntensity": "Subtle",
+            "spectrumWindowColorScheme": "Blue Pill",
+            "spectrumWindowIntensity": "Subtle"
         }
     }
 }

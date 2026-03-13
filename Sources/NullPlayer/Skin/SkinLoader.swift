@@ -66,27 +66,21 @@ class SkinLoader {
     private func loadSkin(from directory: URL) throws -> Skin {
         // Some skins extract to a subdirectory - detect and use it if present
         let skinDirectory = findSkinDirectory(in: directory)
+        let fileIndex = buildCaseInsensitiveFileIndex(in: skinDirectory)
         
         // Check if we're on a non-Retina display
         let isNonRetina = (NSScreen.main?.backingScaleFactor ?? 2.0) < 1.5
         
-        // Helper to load BMP with case-insensitive filename matching
+        // Helper to load BMP with true case-insensitive filename matching
         func loadImage(_ name: String) -> NSImage? {
-            let possibleNames = [name, name.lowercased(), name.uppercased()]
-            let extensions = ["bmp", "BMP", "Bmp"]
-            
-            for n in possibleNames {
-                for ext in extensions {
-                    let url = skinDirectory.appendingPathComponent("\(n).\(ext)")
-                    if var image = loadBMP(from: url) {
-                        // On non-Retina displays, convert blue-tinted pixels to grayscale
-                        // to prevent blue line artifacts
-                        if isNonRetina {
-                            image = processForNonRetina(image)
-                        }
-                        return image
-                    }
+            guard let url = resolveFileURL(named: name, ext: "bmp", in: fileIndex) else { return nil }
+            if var image = loadBMP(from: url) {
+                // On non-Retina displays, convert blue-tinted pixels to grayscale
+                // to prevent blue line artifacts
+                if isNonRetina {
+                    image = processForNonRetina(image)
                 }
+                return image
             }
             return nil
         }
@@ -104,8 +98,8 @@ class SkinLoader {
         let cursors = loadCursors(from: skinDirectory)
         
         // Load NullPlayer custom PNG assets (bundled inside .wsz packages)
-        let libraryWindow = loadPNG(named: "library-window", from: skinDirectory)
-        let nullPlayerLogo = loadPNG(named: "null_outline", from: skinDirectory)
+        let libraryWindow = loadPNG(named: "library-window", from: skinDirectory, fileIndex: fileIndex)
+        let nullPlayerLogo = loadPNG(named: "null_outline", from: skinDirectory, fileIndex: fileIndex)
         
         return Skin(
             main: loadImage("main"),
@@ -123,7 +117,7 @@ class SkinLoader {
             eqmain: loadImage("eqmain"),
             eqEx: loadImage("eq_ex"),
             pledit: loadImage("pledit"),
-            gen: loadImage("gen") ?? loadPNG(named: "gen", from: skinDirectory),
+            gen: loadImage("gen") ?? loadPNG(named: "gen", from: skinDirectory, fileIndex: fileIndex),
             libraryWindow: libraryWindow,
             nullPlayerLogo: nullPlayerLogo,
             playlistColors: playlistColors,
@@ -168,9 +162,34 @@ class SkinLoader {
         return directory
     }
     
+    /// Build a lookup table for case-insensitive file resolution inside a skin directory.
+    private func buildCaseInsensitiveFileIndex(in directory: URL) -> [String: URL] {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+            return [:]
+        }
+        
+        var index: [String: URL] = [:]
+        for fileURL in contents where !fileURL.hasDirectoryPath {
+            index[fileURL.lastPathComponent.lowercased()] = fileURL
+        }
+        return index
+    }
+    
+    /// Resolve a file by name/extension using case-insensitive matching.
+    private func resolveFileURL(named name: String, ext: String, in fileIndex: [String: URL]) -> URL? {
+        let key = "\(name.lowercased()).\(ext.lowercased())"
+        return fileIndex[key]
+    }
+    
     /// Load a PNG image from a skin directory (for NullPlayer custom assets inside .wsz)
-    private func loadPNG(named name: String, from directory: URL) -> NSImage? {
-        let url = directory.appendingPathComponent("\(name).png")
+    private func loadPNG(named name: String, from directory: URL, fileIndex: [String: URL]? = nil) -> NSImage? {
+        let url: URL
+        if let fileIndex, let resolvedURL = resolveFileURL(named: name, ext: "png", in: fileIndex) {
+            url = resolvedURL
+        } else {
+            url = directory.appendingPathComponent("\(name).png")
+        }
+        
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         return NSImage(contentsOf: url)
     }

@@ -20,6 +20,10 @@ struct ElectricityParams {
     float dramaticIntensity;  // Rare dramatic strike (JWST-style, slow decay)
     int colorScheme;          // 0=classic, 1=plasma, 2=matrix, 3=ember, 4=arctic
     float brightnessBoost;    // Brightness multiplier (1.0 = default, >1.0 = brighter)
+    float peak1Band;          // Normalized position (0.0-1.0) of loudest band
+    float peak1Energy;        // Energy of loudest band
+    float peak2Band;          // Normalized position (0.0-1.0) of 2nd loudest band
+    float peak2Energy;        // Energy of 2nd loudest band
 };
 
 // MARK: - Noise
@@ -275,7 +279,7 @@ float3 lightning_burst(float2 uv, float2 origin, float burstSeed,
     float3 total = float3(0.0);
     
     // Energy gate — higher threshold, less activity overall
-    float gate = smoothstep(0.18, 0.45, energy);
+    float gate = smoothstep(0.25, 0.55, energy);
     if (gate < 0.01) return total;
     
     // 1-2 bolts max — keep it sparse
@@ -301,7 +305,7 @@ float3 lightning_burst(float2 uv, float2 origin, float burstSeed,
         float flashEnvelope = exp(-phase * decaySpeed);
         
         flashEnvelope *= gate;
-        if (flashEnvelope < 0.02) continue;
+        if (flashEnvelope < 0.04) continue;
         
         // Seed from epoch so shape is stable within each bolt's own cycle
         float bSeed = elec_hash(float2(epoch + fi * 41.3, burstSeed * 67.0 + fi));
@@ -350,7 +354,7 @@ float3 lightning_burst(float2 uv, float2 origin, float burstSeed,
         if (i == 0 && flashEnvelope > 0.15) {
             // Number of branches: 0 for short bolts, up to 6 for massive ones
             int branchCount = int(reach * 3.0);
-            branchCount = clamp(branchCount, 0, 6);
+            branchCount = clamp(branchCount, 0, 4);
             
             for (int f = 0; f < branchCount; f++) {
                 float ff = float(f);
@@ -456,7 +460,7 @@ float3 dramatic_strike(float2 uv, float aspect, float time, float intensity, int
     float mainSa = sin(mainAngle), mainCa = cos(mainAngle);
     
     // === BRANCH EXPLOSION ===
-    for (int f = 0; f < 7; f++) {
+    for (int f = 0; f < 5; f++) {
         float ff = float(f);
         float fSeed = elec_hash(float2(strikeSeed * 47.0 + ff * 31.0, ff * 13.0));
         // Each branch can get its own color in multicolor modes
@@ -487,7 +491,7 @@ float3 dramatic_strike(float2 uv, float aspect, float time, float intensity, int
         total += COLOR_BOLT(mb, branchColorSeed) * branchBright;
         
         if (forkT > 0.5) {
-            for (int s = 0; s < 2; s++) {
+            for (int s = 0; s < 1; s++) {
                 float ss = float(s);
                 float subSeed = elec_hash(float2(fSeed * 37.0 + ss * 29.0, strikeSeed + ff * 19.0));
                 float subT = 0.3 + subSeed * 0.4;
@@ -547,7 +551,7 @@ fragment float4 electricity_fragment(
     // Cloud tint uses the outer color for atmospheric glow
     float3 cloudTint = bolt_outer_default(cs) * 0.08;
     color += cloudTint * clouds * heightGrad * smoothstep(0.05, 0.25, energy);
-    color += cloudTint * 1.5 * energy * clouds * heightGrad;
+    color += cloudTint * 1.1 * energy * clouds * heightGrad;
     
     // ================================================================
     // LIGHTNING BURSTS (suppressed during dramatic strike)
@@ -555,46 +559,35 @@ fragment float4 electricity_fragment(
     
     float dramaticSuppress = 1.0 - smoothstep(0.0, 0.1, dramatic);
     
-    int peakBands[2] = {-1, -1};
-    float peakVals[2] = {0, 0};
-    float peakThreshold = max(0.18, 0.45 - energy * 0.5);
-    
-    for (int b = 1; b < 74; b++) {
-        float val = spectrum[b];
-        if (val < peakThreshold) continue;
-        if (val >= spectrum[b - 1] && val >= spectrum[b + 1]) {
-            for (int s = 0; s < 2; s++) {
-                if (val > peakVals[s]) {
-                    for (int k = 1; k > s; k--) {
-                        peakBands[k] = peakBands[k - 1];
-                        peakVals[k] = peakVals[k - 1];
-                    }
-                    peakBands[s] = b;
-                    peakVals[s] = val;
-                    break;
-                }
-            }
-        }
-    }
-    
+    float peak1Energy = params.peak1Energy;
+    float peak1Freq = params.peak1Band;
+    float peak2Energy = params.peak2Energy;
+    float peak2Freq = params.peak2Band;
+
     float3 totalBolt = float3(0.0);
-    
-    for (int pi = 0; pi < 2; pi++) {
-        if (peakBands[pi] < 0) continue;
-        
-        float peakVal = peakVals[pi];
-        float bandNorm = float(peakBands[pi]) / 74.0;
-        
+
+    {
+        float peakVal = peak1Energy;
+        float bandNorm = peak1Freq;
         float originX = (bandNorm - 0.5) * aspect * 0.85;
         float2 origin = float2(originX, 0.5);
-        
-        float burstSeed = float(peakBands[pi]) * 0.137 + float(pi) * 3.7;
+        float burstSeed = bandNorm * 54.0 + 0.0 * 3.7;
         float burstEnergy = clamp(peakVal * 1.5, 0.0, 1.0);
-        float rankScale = (pi == 0) ? 1.0 : 0.35;
-        
         float3 burst = lightning_burst(centered, origin, burstSeed,
                                        burstEnergy, aspect, t, cs);
-        totalBolt += burst * rankScale * dramaticSuppress;
+        totalBolt += burst * 1.0 * dramaticSuppress;
+    }
+
+    {
+        float peakVal = peak2Energy;
+        float bandNorm = peak2Freq;
+        float originX = (bandNorm - 0.5) * aspect * 0.85;
+        float2 origin = float2(originX, 0.5);
+        float burstSeed = bandNorm * 54.0 + 1.0 * 3.7;
+        float burstEnergy = clamp(peakVal * 1.5, 0.0, 1.0);
+        float3 burst = lightning_burst(centered, origin, burstSeed,
+                                       burstEnergy, aspect, t, cs);
+        totalBolt += burst * 0.35 * dramaticSuppress;
     }
     
     // ================================================================
@@ -617,7 +610,7 @@ fragment float4 electricity_fragment(
     
     // Extra dramatic sky glow
     if (dramatic > 0.05) {
-        float skyGlow = dramatic * 0.15 * clouds;
+        float skyGlow = dramatic * 0.09 * clouds;
         color += mix(bolt_outer_default(cs), bolt_inner_default(cs), 0.5) * 0.2 * skyGlow;
     }
     
@@ -633,7 +626,7 @@ fragment float4 electricity_fragment(
     // POST-PROCESSING
     // ================================================================
     
-    color *= 1.0 + beat * 0.04;
+    color *= 1.0 + beat * 0.02;
     
     float3 lum = float3(dot(color, float3(0.299, 0.587, 0.114)));
     color = mix(lum, color, 1.05 + energy * 0.15);

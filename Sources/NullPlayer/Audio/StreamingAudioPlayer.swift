@@ -33,6 +33,9 @@ class StreamingAudioPlayer {
 
     /// Whether spectrum FFT should run — bridged from AudioEngine.spectrumNeeded
     var spectrumNeeded: Bool = false
+    
+    /// Whether 576-sample waveform frames should be generated for consumers like vis_classic or the stream waveform window.
+    var waveformNeeded: Bool = false
 
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
     var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
@@ -128,6 +131,14 @@ class StreamingAudioPlayer {
     private var fftMagnitudes = [Float](repeating: 0, count: 1024)
     private var fftNewSpectrum = [Float](repeating: 0, count: 75)
     private var fftPcmSamples = [Float](repeating: 0, count: 512)
+    private var waveformLeftU8 = [UInt8](repeating: 128, count: 576)
+    private var waveformRightU8 = [UInt8](repeating: 128, count: 576)
+    private var waveformUserInfo: [String: Any] = [:]
+    private var waveformLeftRing = [Float](repeating: 0, count: 8192)
+    private var waveformRightRing = [Float](repeating: 0, count: 8192)
+    private var waveformRingReadIndex = 0
+    private var waveformRingWriteIndex = 0
+    private var waveformRingCount = 0
     
     /// Standard classic skin EQ frequencies
     static let eqFrequencies: [Float] = [
@@ -153,8 +164,14 @@ class StreamingAudioPlayer {
     /// Volume level (0.0 - 1.0)
     var volume: Float {
         get { player.volume }
-        set { player.volume = newValue }
+        set {
+            player.volume = newValue
+            _cachedVolume = newValue
+        }
     }
+
+    /// Cached volume for use inside tap callbacks (avoids mainMixerNode access from realtime thread)
+    private var _cachedVolume: Float = 1.0
     
     /// Playback rate (1.0 = normal speed)
     var rate: Float {
@@ -377,10 +394,9 @@ class StreamingAudioPlayer {
         // Skip FFT processing when paused or stopped to save CPU
         // The frame filter still receives buffers but we don't need to process them
         guard state == .playing else { return }
-        guard spectrumNeeded else { return }
+        guard spectrumNeeded || waveformNeeded else { return }
 
-        guard let channelData = buffer.floatChannelData,
-              let fftSetup = fftSetup else { return }
+        guard let channelData = buffer.floatChannelData else { return }
         
         // Report format info once per track
         if !hasReportedFormat {
@@ -392,18 +408,26 @@ class StreamingAudioPlayer {
             }
         }
         
-        // Throttle updates to 60Hz max to prevent memory buildup
-        let now = CFAbsoluteTimeGetCurrent()
-        let shouldUpdate = now - lastSpectrumUpdateTime >= spectrumUpdateInterval
-        guard shouldUpdate else { return }
-        lastSpectrumUpdateTime = now
-        
         let frameCount = Int(buffer.frameLength)
-        guard frameCount >= fftSize else { return }
+        guard frameCount > 0 else { return }
         
-        // Get audio samples (mono mix if stereo) - use pre-allocated buffer
         let channelCount = Int(buffer.format.channelCount)
-        
+        let effectiveVolume = max(0.05, _cachedVolume)  // Use cached value; volume.getter acquires AVAudioEngine lock (deadlocks from tap callback)
+        let volumeCompensation = min(20.0, 1.0 / effectiveVolume)  // Cap at 20x
+
+        if waveformNeeded {
+            enqueueWaveformSamplesAndPost(
+                channelData: channelData,
+                channelCount: channelCount,
+                frameCount: frameCount,
+                sampleRate: buffer.format.sampleRate,
+                volumeCompensation: volumeCompensation
+            )
+        }
+
+        guard spectrumNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
+
+        // Get audio samples (mono mix if stereo) - use pre-allocated buffer
         if channelCount == 1 {
             memcpy(&fftSamples, channelData[0], fftSize * MemoryLayout<Float>.size)
         } else {
@@ -412,17 +436,20 @@ class StreamingAudioPlayer {
                 fftSamples[i] = (channelData[0][i] + channelData[1][i]) / 2.0
             }
         }
-        
+
         // Compensate for volume so visualization is volume-independent
         // The frameFiltering tap captures audio after volume is applied, so we divide by volume
         // to recover the original signal level for visualization purposes
-        let effectiveVolume = max(0.05, volume)  // Min 5% to avoid extreme amplification
-        let volumeCompensation = min(20.0, 1.0 / effectiveVolume)  // Cap at 20x
         if volumeCompensation > 1.0 {
-            // Apply compensation using Accelerate for efficiency
             var compensation = volumeCompensation
             vDSP_vsmul(fftSamples, 1, &compensation, &fftSamples, 1, vDSP_Length(fftSize))
         }
+
+        // Throttle updates to 60Hz max to prevent memory buildup
+        let now = CFAbsoluteTimeGetCurrent()
+        let shouldUpdate = now - lastSpectrumUpdateTime >= spectrumUpdateInterval
+        guard shouldUpdate else { return }
+        lastSpectrumUpdateTime = now
         
         // Feed BPM detector with raw mono samples (before windowing) — modern UI only
         if isModernUIEnabled {
@@ -451,7 +478,7 @@ class StreamingAudioPlayer {
                 self.delegate?.streamingPlayerDidUpdatePCM(pcmCopy)
             }
         }
-        
+
         // Apply Hann window - use pre-allocated buffers
         vDSP_hann_window(&fftWindow, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
         vDSP_vmul(fftSamples, 1, fftWindow, 1, &fftSamples, 1, vDSP_Length(fftSize))
@@ -619,6 +646,63 @@ class StreamingAudioPlayer {
                 }
                 self.delegate?.streamingPlayerDidUpdateSpectrum(self.spectrumData)
             }
+        }
+    }
+
+    private func enqueueWaveformSamplesAndPost(
+        channelData: UnsafePointer<UnsafeMutablePointer<Float>>,
+        channelCount: Int,
+        frameCount: Int,
+        sampleRate: Double,
+        volumeCompensation: Float
+    ) {
+        guard channelCount > 0 else { return }
+        for i in 0..<frameCount {
+            let left = channelData[0][i] * volumeCompensation
+            let right = (channelCount > 1 ? channelData[1][i] : channelData[0][i]) * volumeCompensation
+            appendWaveformSample(left: left, right: right)
+        }
+        postAvailableWaveformChunks(sampleRate: sampleRate)
+    }
+
+    private func appendWaveformSample(left: Float, right: Float) {
+        if waveformRingCount == waveformLeftRing.count {
+            waveformRingReadIndex = (waveformRingReadIndex + 1) % waveformLeftRing.count
+            waveformRingCount -= 1
+        }
+
+        waveformLeftRing[waveformRingWriteIndex] = left
+        waveformRightRing[waveformRingWriteIndex] = right
+        waveformRingWriteIndex = (waveformRingWriteIndex + 1) % waveformLeftRing.count
+        waveformRingCount += 1
+    }
+
+    private func postAvailableWaveformChunks(sampleRate: Double) {
+        let chunkSize = waveformLeftU8.count
+        while waveformRingCount >= chunkSize {
+            var index = waveformRingReadIndex
+            for i in 0..<chunkSize {
+                let leftInt = Int((waveformLeftRing[index] * 127.0) + 128.0)
+                let rightInt = Int((waveformRightRing[index] * 127.0) + 128.0)
+                waveformLeftU8[i] = UInt8(clamping: leftInt)
+                waveformRightU8[i] = UInt8(clamping: rightInt)
+                index += 1
+                if index == waveformLeftRing.count {
+                    index = 0
+                }
+            }
+
+            waveformRingReadIndex = index
+            waveformRingCount -= chunkSize
+
+            waveformUserInfo["left"] = waveformLeftU8
+            waveformUserInfo["right"] = waveformRightU8
+            waveformUserInfo["sampleRate"] = sampleRate
+            NotificationCenter.default.post(
+                name: .audioWaveform576DataUpdated,
+                object: self,
+                userInfo: waveformUserInfo
+            )
         }
     }
     

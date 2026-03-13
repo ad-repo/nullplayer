@@ -26,6 +26,9 @@ class ModernSpectrumView: NSView {
     /// Shade mode state
     private(set) var isShadeMode = false
     
+    /// Fullscreen mode state (hides window chrome)
+    private(set) var isFullscreen = false
+    
     /// Button being pressed (for visual feedback)
     private var pressedButton: String?
     
@@ -39,6 +42,11 @@ class ModernSpectrumView: NSView {
     /// Scale factor for hit testing (computed to track double-size changes)
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
     
+    /// Whether the window is currently in fullscreen mode.
+    private var isWindowFullscreen: Bool {
+        isFullscreen
+    }
+    
     // MARK: - Layout Constants
     
     private var titleBarHeight: CGFloat {
@@ -49,7 +57,9 @@ class ModernSpectrumView: NSView {
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
-    
+    private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
+    private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -137,6 +147,10 @@ class ModernSpectrumView: NSView {
     }
     
     private func calculateContentArea() -> NSRect {
+        if isWindowFullscreen {
+            return bounds
+        }
+        
         // Content area inside the chrome (standard macOS bottom-left coordinates)
         return NSRect(
             x: borderWidth,
@@ -156,12 +170,19 @@ class ModernSpectrumView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
+        // Native fullscreen: render visualization content edge-to-edge with no chrome.
+        if isWindowFullscreen {
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(bounds)
+            return
+        }
+        
         // Draw window background
-        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges)
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
 
         // Draw window border with glow (seamless docking suppresses adjacent edges)
-        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges)
-        
+        renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
+
         // Draw title bar (unless hidden by docking)
         if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             // Draw title bar with spectrum prefix (handles per-window titlebar image + title text)
@@ -202,8 +223,18 @@ class ModernSpectrumView: NSView {
     @objc private func windowLayoutDidChange() {
         guard let window = window else { return }
         let newEdges = WindowManager.shared.computeAdjacentEdges(for: window)
-        if newEdges != adjacentEdges {
+        let newSharp = WindowManager.shared.computeSharpCorners(for: window)
+        let newSegments = WindowManager.shared.computeEdgeOcclusionSegments(for: window)
+        let seamless = min(1.0, max(0.0, ModernSkinEngine.shared.currentSkin?.config.window.seamlessDocking ?? 0))
+        let shouldHaveShadow = !(seamless > 0 && !newEdges.isEmpty)
+        if window.hasShadow != shouldHaveShadow {
+            window.hasShadow = shouldHaveShadow
+            window.invalidateShadow()
+        }
+        if newEdges != adjacentEdges || newSharp != sharpCorners || newSegments != edgeOcclusionSegments {
             adjacentEdges = newEdges
+            sharpCorners = newSharp
+            edgeOcclusionSegments = newSegments
             needsDisplay = true
             needsLayout = true
         }
@@ -213,6 +244,10 @@ class ModernSpectrumView: NSView {
     
     private func handleSpectrumUpdate(_ notification: Notification) {
         guard !isShadeMode else { return }
+        guard let window = window,
+              window.isVisible,
+              !window.isMiniaturized,
+              window.occlusionState.contains(.visible) else { return }
         
         guard let userInfo = notification.userInfo,
               let spectrum = userInfo["spectrum"] as? [Float] else { return }
@@ -230,6 +265,14 @@ class ModernSpectrumView: NSView {
         spectrumAnalyzerView?.isHidden = enabled
         
         needsDisplay = true
+    }
+    
+    func setFullscreen(_ enabled: Bool) {
+        isFullscreen = enabled
+        updateSpectrumFrame()
+        updateCornerMask()
+        needsDisplay = true
+        needsLayout = true
     }
     
     func updateSpectrumFrame() {
@@ -263,6 +306,7 @@ class ModernSpectrumView: NSView {
     }
     
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
+        if isWindowFullscreen { return false }
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             return point.y >= bounds.height - 6  // invisible drag zone
         }
@@ -273,6 +317,7 @@ class ModernSpectrumView: NSView {
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
+        if isWindowFullscreen { return false }
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) { return false }
         let closeRect = renderer.scaledRect(ModernSkinElements.spectrumBtnClose.defaultRect)
         // Expand hit area slightly for usability
@@ -283,6 +328,10 @@ class ModernSpectrumView: NSView {
     // MARK: - Mouse Events
     
     override func hitTest(_ point: NSPoint) -> NSView? {
+        if isWindowFullscreen {
+            return super.hitTest(point)
+        }
+        
         // When title bars are hidden, intercept clicks that would go to the spectrum
         // analyzer subview so ModernSpectrumView.mouseDown handles them for drag-to-undock
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode {
@@ -298,6 +347,10 @@ class ModernSpectrumView: NSView {
     }
     
     override func mouseDown(with event: NSEvent) {
+        if isWindowFullscreen {
+            return
+        }
+        
         let point = convert(event.locationInWindow, from: nil)
         
         // Check for double-click on title bar to toggle shade mode
@@ -359,6 +412,10 @@ class ModernSpectrumView: NSView {
     }
     
     override func mouseDragged(with event: NSEvent) {
+        if isWindowFullscreen {
+            return
+        }
+        
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
             let deltaX = currentPoint.x - windowDragStartPoint.x
@@ -374,6 +431,12 @@ class ModernSpectrumView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
+        if isWindowFullscreen {
+            isDraggingWindow = false
+            pressedButton = nil
+            return
+        }
+        
         let point = convert(event.locationInWindow, from: nil)
         
         // End window dragging
@@ -421,15 +484,27 @@ class ModernSpectrumView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
+        if spectrumAnalyzerView?.qualityMode == .visClassicExact,
+           let chars = event.charactersIgnoringModifiers {
+            if chars == "[" {
+                _ = spectrumAnalyzerView?.loadPreviousVisClassicProfile()
+                return
+            }
+            if chars == "]" {
+                _ = spectrumAnalyzerView?.loadNextVisClassicProfile()
+                return
+            }
+        }
+
         switch event.keyCode {
         case 53: // Escape - close window or exit fullscreen
-            if window?.styleMask.contains(.fullScreen) == true {
-                window?.toggleFullScreen(nil)
+            if isFullscreen {
+                controller?.toggleFullscreen()
             } else {
                 window?.close()
             }
         case 3: // F key - toggle fullscreen
-            window?.toggleFullScreen(nil)
+            controller?.toggleFullscreen()
         case 123: // Left arrow - previous style (flame/lightning/matrix mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
                 cycleFlameStyle(forward: false)
@@ -437,6 +512,8 @@ class ModernSpectrumView: NSView {
                 cycleLightningStyle(forward: false)
             } else if spectrumAnalyzerView?.qualityMode == .matrix {
                 cycleMatrixColor(forward: false)
+            } else if spectrumAnalyzerView?.qualityMode == .visClassicExact {
+                _ = spectrumAnalyzerView?.loadPreviousVisClassicProfile()
             } else { super.keyDown(with: event) }
         case 124: // Right arrow - next style (flame/lightning/matrix mode)
             if spectrumAnalyzerView?.qualityMode == .flame {
@@ -445,6 +522,8 @@ class ModernSpectrumView: NSView {
                 cycleLightningStyle(forward: true)
             } else if spectrumAnalyzerView?.qualityMode == .matrix {
                 cycleMatrixColor(forward: true)
+            } else if spectrumAnalyzerView?.qualityMode == .visClassicExact {
+                _ = spectrumAnalyzerView?.loadNextVisClassicProfile()
             } else { super.keyDown(with: event) }
         default:
             super.keyDown(with: event)
@@ -611,11 +690,65 @@ class ModernSpectrumView: NSView {
             matrixIntensityMenuItem.submenu = matrixIntensityMenu
             menu.addItem(matrixIntensityMenuItem)
         }
+
+        // vis_classic profile controls (only when vis_classic mode is active)
+        if spectrumAnalyzerView?.qualityMode == .visClassicExact {
+            let profilesMenu = NSMenu()
+            let fitToWidthEnabled = spectrumAnalyzerView?.visClassicFitToWidthEnabled() ?? true
+
+            if let profiles = spectrumAnalyzerView?.visClassicProfiles(), !profiles.isEmpty {
+                let current = spectrumAnalyzerView?.visClassicCurrentProfileName()
+                for entry in profiles {
+                    let item = NSMenuItem(title: entry.name, action: #selector(setVisClassicProfile(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = entry.name
+                    item.state = (entry.name == current) ? .on : .off
+                    profilesMenu.addItem(item)
+                }
+            } else {
+                let noneItem = NSMenuItem(title: "No Profiles", action: nil, keyEquivalent: "")
+                noneItem.isEnabled = false
+                profilesMenu.addItem(noneItem)
+            }
+
+            let profilesRoot = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
+            profilesRoot.submenu = profilesMenu
+            menu.addItem(profilesRoot)
+
+            menu.addItem(NSMenuItem.separator())
+
+            let fitItem = NSMenuItem(title: "Fit to Width", action: #selector(toggleVisClassicFitToWidth(_:)), keyEquivalent: "")
+            fitItem.target = self
+            fitItem.state = fitToWidthEnabled ? .on : .off
+            menu.addItem(fitItem)
+
+            let transparentBgEnabled = spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() ?? false
+            let transparentBgItem = NSMenuItem(title: "Transparent Background", action: #selector(toggleVisClassicTransparentBg(_:)), keyEquivalent: "")
+            transparentBgItem.target = self
+            transparentBgItem.state = transparentBgEnabled ? .on : .off
+            menu.addItem(transparentBgItem)
+
+            let nextItem = NSMenuItem(title: "Next Profile", action: #selector(loadNextVisClassicProfile(_:)), keyEquivalent: "")
+            nextItem.target = self
+            menu.addItem(nextItem)
+
+            let prevItem = NSMenuItem(title: "Previous Profile", action: #selector(loadPreviousVisClassicProfile(_:)), keyEquivalent: "")
+            prevItem.target = self
+            menu.addItem(prevItem)
+
+            let importItem = NSMenuItem(title: "Import INI...", action: #selector(importVisClassicProfile(_:)), keyEquivalent: "")
+            importItem.target = self
+            menu.addItem(importItem)
+
+            let exportItem = NSMenuItem(title: "Export Current INI...", action: #selector(exportVisClassicProfile(_:)), keyEquivalent: "")
+            exportItem.target = self
+            menu.addItem(exportItem)
+        }
         
         menu.addItem(NSMenuItem.separator())
         
         // Fullscreen toggle
-        let isFullscreen = window?.styleMask.contains(.fullScreen) ?? false
+        let isFullscreen = controller?.isFullscreen ?? false
         let fullscreenItem = NSMenuItem(
             title: isFullscreen ? "Exit Full Screen" : "Enter Full Screen",
             action: #selector(toggleFullScreen(_:)),
@@ -637,7 +770,7 @@ class ModernSpectrumView: NSView {
     // MARK: - Menu Actions
     
     @objc private func toggleFullScreen(_ sender: Any?) {
-        window?.toggleFullScreen(sender)
+        controller?.toggleFullscreen()
     }
     
     @objc private func setQualityMode(_ sender: NSMenuItem) {
@@ -679,6 +812,35 @@ class ModernSpectrumView: NSView {
         guard let intensity = sender.representedObject as? MatrixIntensity else { return }
         spectrumAnalyzerView?.matrixIntensity = intensity
     }
+
+    @objc private func setVisClassicProfile(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        _ = spectrumAnalyzerView?.loadVisClassicProfile(named: name)
+    }
+
+    @objc private func loadNextVisClassicProfile(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.loadNextVisClassicProfile()
+    }
+
+    @objc private func loadPreviousVisClassicProfile(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.loadPreviousVisClassicProfile()
+    }
+
+    @objc private func importVisClassicProfile(_ sender: Any?) {
+        spectrumAnalyzerView?.importVisClassicProfile()
+    }
+
+    @objc private func exportVisClassicProfile(_ sender: Any?) {
+        spectrumAnalyzerView?.exportCurrentVisClassicProfile()
+    }
+
+    @objc private func toggleVisClassicFitToWidth(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.toggleVisClassicFitToWidth()
+    }
+
+    @objc private func toggleVisClassicTransparentBg(_ sender: Any?) {
+        _ = spectrumAnalyzerView?.toggleVisClassicTransparentBackground()
+    }
     
     @objc private func closeWindow(_ sender: Any?) {
         window?.close()
@@ -700,15 +862,21 @@ class ModernSpectrumView: NSView {
 
     private func updateCornerMask() {
         guard let layer = self.layer else { return }
+        
+        // Fullscreen should never clip to rounded corners.
+        if isWindowFullscreen {
+            layer.cornerRadius = 0
+            layer.masksToBounds = false
+            layer.maskedCorners = []
+            return
+        }
+        
         let cornerRadius = (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()).config.window.cornerRadius ?? 0
         layer.cornerRadius = cornerRadius
         layer.masksToBounds = cornerRadius > 0
         guard cornerRadius > 0 else { return }
-        var masked: CACornerMask = []
-        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMinYCorner) }
-        if !adjacentEdges.contains(.bottom) && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMinYCorner) }
-        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.left)  { masked.insert(.layerMinXMaxYCorner) }
-        if !adjacentEdges.contains(.top)    && !adjacentEdges.contains(.right) { masked.insert(.layerMaxXMaxYCorner) }
-        layer.maskedCorners = masked
+        let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
+                                         .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        layer.maskedCorners = allCorners.subtracting(sharpCorners)
     }
 }

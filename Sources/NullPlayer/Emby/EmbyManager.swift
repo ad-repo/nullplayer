@@ -937,7 +937,10 @@ class EmbyManager {
 
     // MARK: - Radio Helpers
 
-    private func filterForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = 2) -> [Track] {
+    private func filterForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = RadioPlaybackOptions.maxTracksPerArtist) -> [Track] {
+        if maxPerArtist <= RadioPlaybackOptions.unlimitedMaxTracksPerArtist {
+            return Array(tracks.prefix(limit))
+        }
         var result: [Track] = []
         var artistCounts: [String: Int] = [:]
         for track in tracks {

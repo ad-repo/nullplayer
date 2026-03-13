@@ -1,5 +1,22 @@
 import AppKit
 
+enum ModernOpacityArea: CaseIterable {
+    case mainWindow
+    case timeDisplay
+    case trackDisplay
+    case volumeArea
+    case spectrumArea
+    case waveformArea
+    case eqFaderBackground
+    case curveBackground
+}
+
+struct ResolvedAreaOpacityStyle: Equatable {
+    let background: CGFloat
+    let border: CGFloat
+    let content: CGFloat
+}
+
 /// A fully loaded modern skin with config, resolved images, and fallback rendering data.
 /// This is the runtime representation of a skin, ready for rendering.
 class ModernSkin {
@@ -128,6 +145,80 @@ class ModernSkin {
             return NSColor.from(hex: colorHex)
         }
         return textColor
+    }
+
+    // MARK: - Opacity Resolution
+
+    /// Resolve area-specific opacity channels from `window.areaOpacity`,
+    /// treating per-area channels as multipliers of `window.opacity`.
+    /// Missing areas/channels default to multiplier `1.0`.
+    func resolvedOpacity(for area: ModernOpacityArea) -> ResolvedAreaOpacityStyle {
+        let baseOpacity = clampedOpacity(config.window.opacity)
+        let areaStyle = areaOpacityStyle(for: area)
+        return ResolvedAreaOpacityStyle(
+            background: resolvedChannelOpacity(multiplier: areaStyle?.background, baseOpacity: baseOpacity),
+            border: resolvedChannelOpacity(multiplier: areaStyle?.border, baseOpacity: baseOpacity),
+            content: resolvedChannelOpacity(multiplier: areaStyle?.content, baseOpacity: baseOpacity)
+        )
+    }
+
+    private func areaOpacityStyle(for area: ModernOpacityArea) -> AreaOpacityStyle? {
+        let areaOpacity = config.window.areaOpacity
+        switch area {
+        case .mainWindow:
+            return areaOpacity?.mainWindow
+        case .timeDisplay:
+            return areaOpacity?.timeDisplay
+        case .trackDisplay:
+            return areaOpacity?.trackDisplay
+        case .volumeArea:
+            return areaOpacity?.volumeArea
+        case .spectrumArea:
+            return areaOpacity?.spectrumArea
+        case .waveformArea:
+            return areaOpacity?.waveformArea
+        case .eqFaderBackground:
+            return areaOpacity?.eqFaderBackground
+        case .curveBackground:
+            return areaOpacity?.curveBackground
+        }
+    }
+
+    private func clampedOpacity(_ value: CGFloat) -> CGFloat {
+        min(1.0, max(0.0, value))
+    }
+
+    private func resolvedChannelOpacity(multiplier: CGFloat?, baseOpacity: CGFloat) -> CGFloat {
+        let m = clampedOpacity(multiplier ?? 1.0)
+        return clampedOpacity(baseOpacity * m)
+    }
+
+    /// Global text opacity multiplier for modern string rendering.
+    /// Defaults to 1.0 when `window.textOpacity` is omitted.
+    var textOpacityMultiplier: CGFloat {
+        clampedOpacity(config.window.textOpacity ?? 1.0)
+    }
+
+    /// Apply global text opacity to a color used for string drawing.
+    func applyTextOpacity(to color: NSColor) -> NSColor {
+        let alpha = clampedOpacity(color.alphaComponent * textOpacityMultiplier)
+        return color.withAlphaComponent(alpha)
+    }
+
+    /// Optional main-window spectrum opacity override for the mini analyzer panel and bars.
+    /// When nil, spectrum opacity follows legacy resolved area/window channels.
+    var mainSpectrumOpacityOverride: CGFloat? {
+        guard let value = config.window.mainSpectrumOpacity else { return nil }
+        return clampedOpacity(value)
+    }
+
+    /// Apply main-window spectrum opacity override when present; otherwise return clamped input.
+    func applyMainSpectrumOpacity(to opacity: CGFloat) -> CGFloat {
+        mainSpectrumOpacityOverride ?? clampedOpacity(opacity)
+    }
+
+    var waveformTransparentBackgroundStyle: WaveformTransparentBackgroundStyle {
+        config.waveform?.transparentBackgroundStyle ?? .glass
     }
     
     /// Get resolved rect for an element, applying any config overrides

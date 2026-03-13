@@ -12,7 +12,7 @@ enum RadioConfig {
     static let defaultLimit = 100
     
     /// Maximum tracks per artist in a radio playlist (for variety)
-    static let maxTracksPerArtist = 2
+    static var maxTracksPerArtist: Int { RadioPlaybackOptions.maxTracksPerArtist }
     
     /// Multiplier for over-fetching to allow for artist deduplication
     static let overFetchMultiplier = 3
@@ -753,8 +753,15 @@ class PlexServerClient {
             throw PlexServerError.invalidURL
         }
         
-        NSLog("PlexServerClient: Final smart playlist URL: %@", finalURL.absoluteString)
-        
+        #if DEBUG
+        if var sanitized = URLComponents(url: finalURL, resolvingAgainstBaseURL: false) {
+            sanitized.queryItems = sanitized.queryItems?.map {
+                $0.name == "X-Plex-Token" ? URLQueryItem(name: $0.name, value: "<redacted>") : $0
+            }
+            NSLog("PlexServerClient: Final smart playlist URL: %@", sanitized.url?.absoluteString ?? "?")
+        }
+        #endif
+
         var request = URLRequest(url: finalURL)
         for (key, value) in standardHeaders {
             request.setValue(value, forHTTPHeaderField: key)
