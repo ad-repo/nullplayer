@@ -129,12 +129,220 @@ class RadioManager {
     private let deletedDefaultsKey = "RadioDeletedDefaults"
     private let smartGenreOverridesKey = "RadioSmartGenreOverrides"
     private let smartRegionOverridesKey = "RadioSmartRegionOverrides"
+    private let defaultGenreMigrationVersionKey = "RadioDefaultGenreMigrationVersion"
+    private let defaultURLMigrationVersionKey = "RadioDefaultURLMigrationVersion"
     private static let defaultURLAliases: [String: String] = [
         "https://wgbh-live.streamguys1.com/wgbh": "https://wgbh-live.streamguys1.com/wgbh.mp3",
         "https://wgbh-live.streamguys1.com/wgbh.mp3": "https://wgbh-live.streamguys1.com/wgbh"
     ]
+    private static let channelSourceURLs: [String: Set<String>] = [
+        "Audiophile.fm": Set([
+            "https://admin.biasradio.com/listen/bias_radio/flac",
+            "https://admin.biasradio.com/listen/bias_radio/live",
+            "https://amp.cesnet.cz:8443/cro3.flac",
+            "https://amp1.cesnet.cz:8443/cro-d-dur.flac",
+            "https://amp1.cesnet.cz:8443/cro-jazz.flac",
+            "https://amp1.cesnet.cz:8443/cro-radio-wave.flac",
+            "https://audio-edge-cmc51.fra.h.radiomast.io/radioblues-flac",
+            "https://audio.opensky.radio:8082/flac",
+            "https://audio.opensky.radio:8082/oise",
+            "https://azura.wbor.org/listen/wbor/flac",
+            "https://azura.wbor.org/listen/wbor/stream",
+            "https://bcast.vigormultimedia.com:48888/sjcompl320mp3",
+            "https://bcast.vigormultimedia.com:48888/sjcomplflac",
+            "https://blueswave.radio:8002/blues320",
+            "https://blueswave.radio:8100/FlacBlues",
+            "https://cdn05.radio.cloud:8128/AIDA-OMNIA-GAI",
+            "https://cdn06-us-east.radio.cloud/80ba63862a97bd69c593cc7a2ccaab1c_hq",
+            "https://cdn1.zetcast.net/flac",
+            "https://cdn1.zetcast.net/stream",
+            "https://dancewave.online/dance.flac.ogg",
+            "https://dancewave.online/dance.mp3",
+            "https://edge2.sr.se/p2-flac",
+            "https://edge62.streamonkey.net/aidaradio-meergefuehl",
+            "https://futura.fm/stream.ogg",
+            "https://gmusto.radioca.st/mp3",
+            "https://http-live.sr.se/p2musik-aac-320",
+            "https://ice.radiorandom.org/WBJM",
+            "https://ice.radiorandom.org/WBJM-FLAC",
+            "https://icecast.centaury.cl:7550/SuperStereo1",
+            "https://icecast.centaury.cl:7550/SuperStereo1Plus",
+            "https://icecast.centaury.cl:7550/SuperStereo2",
+            "https://icecast.centaury.cl:7550/SuperStereo3",
+            "https://icecast.centaury.cl:7550/SuperStereo3Plus",
+            "https://icecast.centaury.cl:7550/SuperStereo4",
+            "https://icecast.centaury.cl:7550/SuperStereo4Plus",
+            "https://icecast.centaury.cl:7550/SuperStereo5",
+            "https://icecast.centaury.cl:7550/SuperStereo6",
+            "https://icecast.centaury.cl:7550/SuperStereo7",
+            "https://icecast.centaury.cl:7570/SuperStereoHiRes1",
+            "https://icecast.centaury.cl:7570/SuperStereoHiRes1Plus",
+            "https://icecast.centaury.cl:7570/SuperStereoHiRes2",
+            "https://icecast.centaury.cl:7570/SuperStereoHiRes3",
+            "https://icecast.centaury.cl:7570/SuperStereoHiRes3Plus",
+            "https://icecast.centaury.cl:7570/SuperStereoHiRes4",
+            "https://icecast.centaury.cl:7570/SuperStereoHiRes4Plus",
+            "https://icecast.centaury.cl:7570/SuperStereoHiRes5",
+            "https://icecast.centaury.cl:7570/SuperStereoHiRes6",
+            "https://icecast.centaury.cl:7570/SuperStereoHiRes7",
+            "https://icecast.radiosega.net/live",
+            "https://icecast.radiosega.net/rs-flac.ogg",
+            "https://iradio.fi/klasu-hi.mp3",
+            "https://iradio.fi/klasu.flac",
+            "https://iradio.fi/klasupro-hi.mp3",
+            "https://iradio.fi/klasupro.flac",
+            "https://listen.teknivalradio.com/listen/teknivalradio/radio.flac",
+            "https://listen.teknivalradio.com/listen/teknivalradio/radio.mp3",
+            "https://live.easyradio.bg/aac?type=.mp3",
+            "https://live.easyradio.bg/flac",
+            "https://manager.dhectar.fr:1065/stream",
+            "https://manager.dhectar.fr:1080/stream",
+            "https://mediacp.jb-radio.net:8001/aac",
+            "https://mediacp.jb-radio.net:8001/flac",
+            "https://mp3.magic-radio.net/320",
+            "https://mp3.magic-radio.net/flac",
+            "https://mscp3.live-streams.nl:8252/class-flac.flac",
+            "https://mscp3.live-streams.nl:8252/class-high.aac",
+            "https://mscp3.live-streams.nl:8342/jazz-flac.flac",
+            "https://mscp3.live-streams.nl:8342/jazz-high.aac",
+            "https://mscp3.live-streams.nl:8362/flac.flac",
+            "https://mscp3.live-streams.nl:8362/high.aac",
+            "https://mscp4.live-streams.nl:8142/flac.ogg",
+            "https://mscp4.live-streams.nl:8142/live.mp3",
+            "https://mscp4.live-streams.nl:8142/lounge.mp3",
+            "https://mscp4.live-streams.nl:8142/lounge.ogg",
+            "https://online.jamminvibezradio.com/listen/caribbean/live.flac",
+            "https://online.jamminvibezradio.com/listen/caribbean/stream",
+            "https://online.jamminvibezradio.com/listen/christmas/live.flac",
+            "https://online.jamminvibezradio.com/listen/christmas/stream",
+            "https://online.jamminvibezradio.com/listen/oldies/live.flac",
+            "https://online.jamminvibezradio.com/listen/oldies/stream",
+            "https://online.jamminvibezradio.com/listen/reggae/live.flac",
+            "https://online.jamminvibezradio.com/listen/reggae/stream",
+            "https://radio.lapfoxradio.com/radio/8000/stream-flac.flac",
+            "https://radio.lapfoxradio.com/radio/8000/stream-mp3-320.mp3",
+            "https://radio3.radio-calico.com:8443/calico",
+            "https://radio3.radio-calico.com:8443/calico.mp3",
+            "https://radioemisoras.cl/distorsion.flac",
+            "https://radioemisoras.cl/distorsion.mp3",
+            "https://radiosputnik.nl:8443",
+            "https://radiosputnik.nl:8443/flac",
+            "https://radiotalas.dckrov.rs/listen/dckrov/aac",
+            "https://radiotalas.dckrov.rs/listen/dckrov/flac",
+            "https://retro.dancewave.online/retrodance.flac.ogg",
+            "https://retro.dancewave.online/retrodance.mp3",
+            "https://rozhlas.stream/ddur.mp3",
+            "https://rozhlas.stream/jazz.mp3",
+            "https://rozhlas.stream/radio_wave.mp3",
+            "https://rozhlas.stream/vltava.mp3",
+            "https://s2.audiostream.hu/bdpstrock_320k",
+            "https://s2.audiostream.hu/bdpstrock_FLAC",
+            "https://s2.audiostream.hu/juventus_320k",
+            "https://s2.audiostream.hu/juventus_FLAC",
+            "https://s2.audiostream.hu/roxy_320k",
+            "https://s2.audiostream.hu/roxy_FLAC",
+            "https://secure.live-streams.nl/flac.ogg",
+            "https://secure.live-streams.nl/live",
+            "https://station.thecheese.co.nz/listen/the_cheese/aac",
+            "https://station.thecheese.co.nz/listen/the_cheese/flac",
+            "https://stream.and-stuff.nl:8443/riverside",
+            "https://stream.and-stuff.nl:8443/riversideMp3",
+            "https://stream.danubiusradio.hu/danubius_320k",
+            "https://stream.danubiusradio.hu/danubius_HiFi",
+            "https://stream.motherearthradio.de/listen/motherearth/motherearth",
+            "https://stream.motherearthradio.de/listen/motherearth/motherearth.aac",
+            "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental",
+            "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental.aac",
+            "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz",
+            "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz.mp4",
+            "https://stream.motherearthradio.de/listen/motherearth_klassik/motherearth.klassik",
+            "https://stream.motherearthradio.de/listen/motherearth_klassik/motherearth.klassik.aac",
+            "https://stream.openbroadcast.ch/16bit.flac",
+            "https://stream.openbroadcast.ch/320.mp3",
+            "https://stream.p-node.org/piano.flac",
+            "https://stream.p-node.org/piano.mp3",
+            "https://stream.radio90.fm:2002/stream",
+            "https://stream.radio90.fm:2002/web",
+            "https://stream.radiobergeijk.nl/listen/radio_bergeijk/flac",
+            "https://stream.radiobergeijk.nl/listen/radio_bergeijk/mp3",
+            "https://stream.radioclub80.cl:8002/clasicos80.flac",
+            "https://stream.radioclub80.cl:8002/clasicos80.mp3",
+            "https://stream.radioclub80.cl:8012/espanol80.flac",
+            "https://stream.radioclub80.cl:8012/live.mp3",
+            "https://stream.radioclub80.cl:8022/retro80.flac",
+            "https://stream.radioclub80.cl:8022/retro80.mp3",
+            "https://stream.radioclub80.cl:8032/stream.euro80flac",
+            "https://stream.radioclub80.cl:8032/stream.euro80mp3",
+            "https://stream.radioclub80.cl:8042/baladas80.flac",
+            "https://stream.radioclub80.cl:8042/baladas80.mp3",
+            "https://stream.radioclub80.cl:8052/trance80.flac",
+            "https://stream.radioclub80.cl:8052/trancelive80.mp3",
+            "https://stream.radioenergy.to/stream",
+            "https://stream.radioparadise.com/aac-320",
+            "https://stream.radioparadise.com/beyond-320",
+            "https://stream.radioparadise.com/beyond-flac",
+            "https://stream.radioparadise.com/flac",
+            "https://stream.radioparadise.com/global-320",
+            "https://stream.radioparadise.com/global-flac",
+            "https://stream.radioparadise.com/mellow-320",
+            "https://stream.radioparadise.com/mellow-flac",
+            "https://stream.radioparadise.com/radio2050-320",
+            "https://stream.radioparadise.com/radio2050-flac",
+            "https://stream.radioparadise.com/rock-320",
+            "https://stream.radioparadise.com/rock-flac",
+            "https://stream.rcs.revma.com/vbp5ag77xs3vv",
+            "https://stream.rjrradio.fr/rjr-dab.flac",
+            "https://stream.rjrradio.fr/rjr.mp3",
+            "https://stream.trance.ie/stream",
+            "https://stream.trance.ie/tpmixes",
+            "https://stream10.xdevel.com/audio13s976748-2017/stream/icecast.audio",
+            "https://stream10.xdevel.com/audio15s976748-2280/stream/icecast.audio",
+            "https://stream10.xdevel.com/audio17s976748-2218/stream/icecast.audio",
+            "https://stream9.xdevel.com/audio1s976748-1515/stream/icecast.audio",
+            "https://streams.95bfm.com/stream112",
+            "https://streams.95bfm.com/stream95",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_dance_channel/flac",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_dance_channel/ultra",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_dj_r.i.ps_podcast/flac",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_dj_r.i.ps_podcast/ultra",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_downtempo_channel/flac",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_downtempo_channel/ultra",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_hardcore_channel/flac",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_hardcore_channel/ultra",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_live-party_channel/flac",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_live-party_channel/ultra",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_rap__hip-hop_channel/flac",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_rap__hip-hop_channel/ultra",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_trance-electro_channel/flac",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_trance-electro_channel/ultra",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_various_channel/flac",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_-_various_channel/ultra",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_the_underground_channel/flac",
+            "https://streamserver.pure-isp.eu/listen/pure_radio_holland_the_underground_channel/ultra",
+            "https://tuneintoradio1.com/listen/vfr_80s/radio.mp3",
+            "https://tuneintoradio1.com/listen/vfr_80s/stream.flac",
+            "https://tuneintoradio1.com/listen/violent_forces_radio/radio.mp3",
+            "https://tuneintoradio1.com/listen/violent_forces_radio/stream.flac",
+            "https://www.streamvortex.com:8444/s/10280",
+        ])
+    ]
+    private static let channelHostAliases: [String: String] = [
+        "somafm.com": "SomaFM",
+        "radioparadise.com": "Radio Paradise",
+        "nightride.fm": "Nightride FM",
+        "ntslive.net": "NTS",
+        "kcrw.com": "KCRW",
+        "wfmu.org": "WFMU",
+        "streamguys1.com": "StreamGuys",
+        "1.fm": "1.FM"
+    ]
     private let ratingsStore = RadioStationRatingsStore.shared
     private let foldersStore = RadioStationFoldersStore.shared
+    private static let defaultURLMigrationCurrentVersion = 2
+    private static let removedDefaultStationURLs: Set<String> = [
+        "https://stream.radioparadise.com/rock-flac",
+        "https://audio-edge-cmc51.fra.h.radiomast.io/radioblues-flac"
+    ]
     
     /// URLs of default stations the user has intentionally deleted (won't be re-added)
     private var deletedDefaultURLs: Set<String> {
@@ -264,11 +472,22 @@ class RadioManager {
         guard let data = UserDefaults.standard.data(forKey: stationsKey),
               let decoded = try? JSONDecoder().decode([RadioStation].self, from: data) else {
             // Add some default stations for first-time users
+            UserDefaults.standard.set(Self.defaultGenreMigrationCurrentVersion, forKey: defaultGenreMigrationVersionKey)
+            UserDefaults.standard.set(Self.defaultURLMigrationCurrentVersion, forKey: defaultURLMigrationVersionKey)
             stations = Self.defaultStations
             return
         }
-        stations = decoded
+        var migrated = decoded
+        let changedByURLMigration = applyDefaultURLMigrationIfNeeded(to: &migrated)
+        let changedByMigration = applyDefaultGenreMigrationIfNeeded(to: &migrated)
+        stations = migrated
         NSLog("RadioManager: Loaded %d saved stations", stations.count)
+        if changedByURLMigration > 0 {
+            NSLog("RadioManager: Migrated %d saved station URLs to latest defaults", changedByURLMigration)
+        }
+        if changedByMigration > 0 {
+            NSLog("RadioManager: Migrated %d saved station genres to latest defaults", changedByMigration)
+        }
 
         // Ensure existing users receive newly added defaults while still honoring
         // deleted-default tracking.
@@ -280,6 +499,36 @@ class RadioManager {
         UserDefaults.standard.set(data, forKey: stationsKey)
     }
 
+    @discardableResult
+    private func applyDefaultURLMigrationIfNeeded(to stations: inout [RadioStation]) -> Int {
+        let defaults = UserDefaults.standard
+        let appliedVersion = defaults.integer(forKey: defaultURLMigrationVersionKey)
+        guard appliedVersion < Self.defaultURLMigrationCurrentVersion else { return 0 }
+
+        let migration = Self.applyingDefaultURLCorrections(to: stations)
+        if migration.changedCount > 0 {
+            stations = migration.stations
+        }
+
+        defaults.set(Self.defaultURLMigrationCurrentVersion, forKey: defaultURLMigrationVersionKey)
+        return migration.changedCount
+    }
+
+    @discardableResult
+    private func applyDefaultGenreMigrationIfNeeded(to stations: inout [RadioStation]) -> Int {
+        let defaults = UserDefaults.standard
+        let appliedVersion = defaults.integer(forKey: defaultGenreMigrationVersionKey)
+        guard appliedVersion < Self.defaultGenreMigrationCurrentVersion else { return 0 }
+
+        let migration = Self.applyingDefaultGenreCorrections(to: stations)
+        if migration.changedCount > 0 {
+            stations = migration.stations
+        }
+
+        defaults.set(Self.defaultGenreMigrationCurrentVersion, forKey: defaultGenreMigrationVersionKey)
+        return migration.changedCount
+    }
+
     private func postStationsDidChange() {
         NotificationCenter.default.post(name: Self.stationsDidChangeNotification, object: self)
     }
@@ -289,6 +538,160 @@ class RadioManager {
         let url: String
         let genre: String?
         let iconURL: String?
+    }
+
+    private struct DefaultGenreCorrection {
+        let from: String
+        let to: String
+    }
+
+    static let defaultGenreMigrationCurrentVersion = 1
+
+    private static let defaultGenreCorrections: [String: DefaultGenreCorrection] = [
+        "https://ice5.somafm.com/bossa-128-mp3": DefaultGenreCorrection(from: "Classical", to: "Bossa Nova"),
+        "https://radio11.plathong.net/7138/;stream.mp3": DefaultGenreCorrection(from: "Thai", to: "News"),
+        "https://breakz-2012-high.rautemusik.fm/?ref=radiobrowser-top100-clubcharts": DefaultGenreCorrection(from: "Rap/Hip Hop", to: "Dance/EDM"),
+        "https://0n-indie.radionetz.de/0n-indie.mp3": DefaultGenreCorrection(from: "Rap/Hip Hop", to: "Alternative Rock"),
+        "https://www.radioking.com/play/alternative-radio-1": DefaultGenreCorrection(from: "Rap/Hip Hop", to: "Alternative Rock"),
+        "http://ice.stream101.com:9016/stream": DefaultGenreCorrection(from: "Rap/Hip Hop", to: "Country"),
+        "https://stream.zeno.fm/muzrp86994zuv": DefaultGenreCorrection(from: "Rap/Hip Hop", to: "Afrobeats"),
+        "https://workout-high.rautemusik.fm/?ref=radiobrowser": DefaultGenreCorrection(from: "Nature Sounds", to: "Workout"),
+        "http://bayerwaldradio.deg.net:8000/allesoberkrain": DefaultGenreCorrection(from: "Nature Sounds", to: "Polka/Folk"),
+        "http://fluxfm.streamabc.net/flx-70er-mp3-320-4383769?sABC=6202qr25%230%237osorqnn86p8nnp979o1124290qqo247%23fgernzf.syhksz.qr&amsparams=playerid:streams.fluxfm.de;skey:1644355109": DefaultGenreCorrection(from: "Nature Sounds", to: "Classic Rock"),
+        "https://fluxfm.streamabc.net/flx-80er-mp3-320-9596107?sABC=6202qrr6%230%23sorr1p583723p06268o324o2ps5n399q%23fgernzf.syhksz.qr&amsparams=playerid:streams.fluxfm.de;skey:1644355302": DefaultGenreCorrection(from: "Nature Sounds", to: "Classic Rock"),
+        "http://streams.radiobob.de/bob-90srock/mp3-192/mediaplayer": DefaultGenreCorrection(from: "Nature Sounds", to: "Classic Rock"),
+        "http://streams.radiobob.de/gothic/mp3-192/mediaplayer": DefaultGenreCorrection(from: "Nature Sounds", to: "Gothic Rock"),
+        "http://streams.radiobob.de/bob-metal/mp3-192/mediaplayer": DefaultGenreCorrection(from: "Nature Sounds", to: "Metal"),
+        "http://streams.radiobob.de/metalcore/mp3-192/mediaplayer": DefaultGenreCorrection(from: "Nature Sounds", to: "Metal"),
+        "http://streams.radiobob.de/metallica/mp3-192/mediaplayer/": DefaultGenreCorrection(from: "Nature Sounds", to: "Metal"),
+        "http://streams.radiobob.de/rockparty/mp3-192/mediaplayer/": DefaultGenreCorrection(from: "Nature Sounds", to: "Rock"),
+        "http://streams.radiobob.de/bob-wacken/mp3-192/mediaplayer": DefaultGenreCorrection(from: "Nature Sounds", to: "Metal"),
+        "http://lux.radio.tvstitch.com/kyiv/lux_adv_sd": DefaultGenreCorrection(from: "Nature Sounds", to: "Top 40"),
+        "http://streams.radio.co/s79fbbb432/listen": DefaultGenreCorrection(from: "Nature Sounds", to: "World"),
+        "https://streaming.radiostreamlive.com/miamibeachradio_devices": DefaultGenreCorrection(from: "Nature Sounds", to: "Dance"),
+        "http://streams.radiobob.de/bob-wacken/mp3-192/streams.radiobob.de/": DefaultGenreCorrection(from: "Nature Sounds", to: "Metal"),
+        "http://213.141.131.10:8004/forestpsytrance": DefaultGenreCorrection(from: "Nature Sounds", to: "Psytrance"),
+        "http://195.95.206.13:8000/RadioROKS": DefaultGenreCorrection(from: "Nature Sounds", to: "Rock"),
+        "http://online.radioroks.ua/RadioROKS_Ukr_HD": DefaultGenreCorrection(from: "Nature Sounds", to: "Rock"),
+        "http://www.segenswelle.de:8000/ukrainisch": DefaultGenreCorrection(from: "Nature Sounds", to: "World"),
+        "https://listen9.myradio24.com/6262": DefaultGenreCorrection(from: "Nature Sounds", to: "Easy Listening"),
+        "http://online.hitfm.ua/HitFM_Ukr": DefaultGenreCorrection(from: "Nature Sounds", to: "Top 40"),
+        "https://online-news.radioplayer.ua/RadioNews": DefaultGenreCorrection(from: "Nature Sounds", to: "News"),
+        "https://stream.antiradio.net/radio/8000/mp3": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "http://stream.laut.fm/deep-house-sounds": DefaultGenreCorrection(from: "College Indie", to: "Deep House"),
+        "https://stream.radiojar.com/cthtwxk5yvduv.mp3": DefaultGenreCorrection(from: "College Indie", to: "Easy Listening"),
+        "http://streams.fluxfm.de/live/mp3-320/audio/": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "https://orf-live.ors-shoutcast.at/fm4-q1a": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "http://stream.radio.co/s1cffd7347/listen": DefaultGenreCorrection(from: "College Indie", to: "Hip Hop"),
+        "http://kathy.torontocast.com:2690/stream": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "http://naxidigital-rock128.streaming.rs:8180/;stream.nsv": DefaultGenreCorrection(from: "College Indie", to: "Rock"),
+        "http://mr-stream.mediaconnect.hu/4737/mr2.aac": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "http://streams.radiobob.de/bob-alternative/mp3-192/streams.radiobob.de/": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "http://streams.radiobob.de/bob-bestofrock/mp3-192/streams.radiobob.de/": DefaultGenreCorrection(from: "College Indie", to: "Rock"),
+        "http://stream.zeno.fm/sri2de2qdlivv": DefaultGenreCorrection(from: "College Indie", to: "Top 40"),
+        "http://f121.rndfnk.com/ard/rbb/radioeins/live/mp3/128/stream.mp3?cid=01FC1WH12KJ93TCQPDSE2E5PZ9&sid=38HoeEhwMU9ZjQaArYLcNuLu9LN&token=VXH8C52tOJ6o_G5uLXexxjt84DXyHGfH0RABfQljedk&tvf=8PpblQ7uihhmMTIxLnJuZGZuay5jb20": DefaultGenreCorrection(from: "College Indie", to: "Public Radio"),
+        "http://novazz.ice.infomaniak.ch/novazz-128.mp3": DefaultGenreCorrection(from: "College Indie", to: "Jazz"),
+        "http://stream.radioparadise.com/mellow-320": DefaultGenreCorrection(from: "College Indie", to: "Eclectic"),
+        "http://stream.radioparadise.com/rock-320": DefaultGenreCorrection(from: "College Indie", to: "Rock"),
+        "https://stream.radioparadise.com/rock-flac": DefaultGenreCorrection(from: "College Indie", to: "Rock"),
+        "http://nashe1.hostingradio.ru/ultra-192.mp3": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "http://media-the.musicradio.com/RadioXUK": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "http://stream.rockantenne.de/alternative": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "https://ice5.somafm.com/folkfwd-128-aac": DefaultGenreCorrection(from: "College Indie", to: "Folk"),
+        "https://ice1.somafm.com/folkfwd-128-mp3": DefaultGenreCorrection(from: "College Indie", to: "Folk"),
+        "https://ice6.somafm.com/indiepop-128-aac": DefaultGenreCorrection(from: "College Indie", to: "Alternative/Pop"),
+        "https://ice2.somafm.com/poptron-128-mp3": DefaultGenreCorrection(from: "College Indie", to: "Pop"),
+        "http://live.slovakradio.sk:8000/FM_256.mp3": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "https://listen.radioking.com/radio/293701/stream/340084": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "http://stream.tilos.hu/tilos": DefaultGenreCorrection(from: "College Indie", to: "Eclectic"),
+        "https://listen-msmn.sharp-stream.com/nme1.mp3": DefaultGenreCorrection(from: "College Indie", to: "Alternative Rock"),
+        "http://stream.laut.fm/ultradarkradio": DefaultGenreCorrection(from: "College Indie", to: "Gothic Rock"),
+        "https://0n-gothic.radionetz.de/0n-gothic.mp3": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Gothic Rock"),
+        "https://play-radio0.jump.bg:7049/live": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Hard Rock"),
+        "http://51.255.235.165:5528/stream": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Ska"),
+        "http://stream.laut.fm/darkzeroradio": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Gothic Rock"),
+        "https://nl4.mystreaming.net/er/greenday/icecast.audio": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Punk Rock"),
+        "https://nl4.mystreaming.net/er/ramones/icecast.audio": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Punk Rock"),
+        "https://audio-edge-3mayu.fra.h.radiomast.io/73055724-1141-41e2-a69b-24a6ca96c8e7": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Hard Dance"),
+        "https://www.happyhardcore.com/livestreams/p/u9/": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Hard Dance"),
+        "http://stream.laut.fm/hardstyle-and-hardcore": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Hard Dance"),
+        "https://kniteforce.out.airtime.pro/kniteforce_a": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Hard Dance"),
+        "https://playerservices.streamtheworld.com/api/livestream-redirect/Q_DANCE.mp3": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Hard Dance"),
+        "http://79.120.12.130:8004/cyberpunk": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Synthwave"),
+        "https://radiorecord.hostingradio.ru/teo96.aacp": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Hard Dance"),
+        "http://happyhardcore-high.rautemusik.fm/": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Hard Dance"),
+        "https://ice4.somafm.com/metal-128-aac": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Metal"),
+        "http://lw2.mp3.tb-group.fm/tb.mp3": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Techno"),
+        "http://cast1.asurahosting.com:8621/med": DefaultGenreCorrection(from: "Punk/Surf/Hardcore", to: "Rock"),
+        "https://cast1.torontocast.com:4660/stream": DefaultGenreCorrection(from: "Extreme Music", to: "Metal"),
+        "https://bestofrockfm.stream.vip/metallica/mp3-256/bestofrock.fm/": DefaultGenreCorrection(from: "Extreme Music", to: "Metal"),
+        "http://usa17.fastcast4u.com:5508/stream": DefaultGenreCorrection(from: "Extreme Music", to: "Metalcore"),
+        "http://stream.laut.fm/core-mix": DefaultGenreCorrection(from: "Extreme Music", to: "Metalcore"),
+        "http://streams.radiobob.de/progrock/mp3-192/mediaplayer/": DefaultGenreCorrection(from: "Extreme Music", to: "Progressive Rock"),
+        "https://securestream.us/radio/8050/radio.mp3": DefaultGenreCorrection(from: "Extreme Music", to: "Rock"),
+        "https://streaming.galaxywebsolutions.com:9046/stream": DefaultGenreCorrection(from: "Extreme Music", to: "Doom Metal")
+    ]
+
+    static func correctedDefaultGenre(for stationURL: URL, currentGenre: String?) -> String? {
+        guard let correction = defaultGenreCorrections[stationURL.absoluteString] else { return nil }
+        let normalizedCurrent = (currentGenre ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedFrom = correction.from.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedCurrent.compare(normalizedFrom, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame else {
+            return nil
+        }
+        return correction.to
+    }
+
+    static func applyingDefaultGenreCorrections(to stations: [RadioStation]) -> (stations: [RadioStation], changedCount: Int) {
+        var changedCount = 0
+        let migrated = stations.map { station -> RadioStation in
+            guard let corrected = correctedDefaultGenre(for: station.url, currentGenre: station.genre) else { return station }
+            var copy = station
+            copy.genre = corrected
+            changedCount += 1
+            return copy
+        }
+        return (migrated, changedCount)
+    }
+
+    private static func normalizedStationNameKey(_ name: String) -> String {
+        name
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func applyingDefaultURLCorrections(to stations: [RadioStation]) -> (stations: [RadioStation], changedCount: Int) {
+        let legacyAudiophileURLs = channelSourceURLs["Audiophile.fm"] ?? []
+
+        var canonicalURLByName: [String: URL] = [:]
+        for station in defaultStations {
+            let key = normalizedStationNameKey(station.name)
+            if canonicalURLByName[key] == nil {
+                canonicalURLByName[key] = station.url
+            }
+        }
+
+        var changedCount = 0
+        let filtered = stations.filter { station in
+            guard !removedDefaultStationURLs.contains(station.url.absoluteString) else {
+                changedCount += 1
+                return false
+            }
+            return true
+        }
+
+        let migrated = filtered.map { station -> RadioStation in
+            let key = normalizedStationNameKey(station.name)
+            guard let canonicalURL = canonicalURLByName[key] else { return station }
+            guard canonicalURL != station.url else { return station }
+            guard legacyAudiophileURLs.contains(station.url.absoluteString) else { return station }
+
+            var copy = station
+            copy.url = canonicalURL
+            changedCount += 1
+            return copy
+        }
+        return (migrated, changedCount)
     }
 
     /// Default stations to show for new users
@@ -592,6 +995,7 @@ class RadioManager {
     }
 
     func internetRadioFolderDescriptors() -> [RadioFolderDescriptor] {
+        let channels = availableChannels()
         let genres = availableGenres()
         let regions = availableRegions()
         let userFolders = userRadioFolders()
@@ -641,6 +1045,14 @@ class RadioManager {
                 hasChildren: hasStations(.recentlyPlayed)
             ),
             RadioFolderDescriptor(
+                id: RadioFolderKind.byChannel.id,
+                title: "By Channel",
+                kind: .byChannel,
+                parentID: nil,
+                sortOrder: 80,
+                hasChildren: !channels.isEmpty
+            ),
+            RadioFolderDescriptor(
                 id: RadioFolderKind.byGenre.id,
                 title: "By Genre",
                 kind: .byGenre,
@@ -665,6 +1077,19 @@ class RadioManager {
                 hasChildren: !userFolders.isEmpty
             )
         ]
+
+        for (index, channel) in channels.enumerated() {
+            result.append(
+                RadioFolderDescriptor(
+                    id: RadioFolderKind.channel(channel).id,
+                    title: channel,
+                    kind: .channel(channel),
+                    parentID: RadioFolderKind.byChannel.id,
+                    sortOrder: 900 + index,
+                    hasChildren: hasStations(.channel(channel))
+                )
+            )
+        }
 
         for (index, genre) in genres.enumerated() {
             result.append(
@@ -741,6 +1166,11 @@ class RadioManager {
                 }
                 .sorted { $0.1 > $1.1 }
                 .map(\.0)
+        case .channel(let channel):
+            let filtered = stations.filter {
+                derivedChannel(for: $0).localizedCaseInsensitiveCompare(channel) == .orderedSame
+            }
+            return stationsSortedByName(filtered)
         case .genre(let genre):
             let target = normalizeGenreLabel(genre)
             let filtered = stations.filter {
@@ -760,7 +1190,7 @@ class RadioManager {
                 return false
             }
             return stationsSortedByName(filtered)
-        case .byGenre, .byRegion, .userFoldersRoot:
+        case .byChannel, .byGenre, .byRegion, .userFoldersRoot:
             return []
         }
     }
@@ -802,6 +1232,7 @@ class RadioManager {
             effectiveRegionLabel(for: station),
             station.url.absoluteString
         ]
+        fields.append(derivedChannel(for: station))
         if let host = station.url.host {
             fields.append(host)
         }
@@ -849,6 +1280,48 @@ class RadioManager {
     private func availableRegions() -> [String] {
         let regions = Set(stations.map { effectiveRegionLabel(for: $0) })
         return regions.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func availableChannels() -> [String] {
+        var counts: [String: Int] = [:]
+        for station in stations {
+            let channel = derivedChannel(for: station)
+            counts[channel, default: 0] += 1
+        }
+
+        let labels = counts
+            .filter { $0.value >= 2 || $0.key == "Audiophile.fm" }
+            .map(\.key)
+
+        return labels.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func derivedChannel(for station: RadioStation) -> String {
+        let keys = equivalentURLKeys(for: station.url)
+        for (label, urls) in Self.channelSourceURLs where !urls.isDisjoint(with: keys) {
+            return label
+        }
+
+        let host = station.url.host?.lowercased() ?? ""
+        if !host.isEmpty {
+            for (pattern, label) in Self.channelHostAliases where host.contains(pattern) {
+                return label
+            }
+        }
+
+        return normalizedChannelLabel(fromHost: host)
+    }
+
+    private func normalizedChannelLabel(fromHost host: String) -> String {
+        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Unknown Source" }
+
+        let components = trimmed.split(separator: ".")
+        if components.count >= 2 {
+            let label = components.suffix(2).joined(separator: ".")
+            return label.lowercased()
+        }
+        return trimmed.lowercased()
     }
 
     private func derivedRegion(for station: RadioStation) -> String {
