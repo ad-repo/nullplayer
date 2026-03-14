@@ -1392,7 +1392,14 @@ class ContextMenuBuilder {
         libraryMenu.addItem(showBackupsItem)
         
         libraryMenu.addItem(NSMenuItem.separator())
-        
+
+        // Manage Watch Folders
+        let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(MenuActions.manageFolders), keyEquivalent: "")
+        manageFoldersItem.target = MenuActions.shared
+        libraryMenu.addItem(manageFoldersItem)
+
+        libraryMenu.addItem(NSMenuItem.separator())
+
         // Clear Library submenu (with confirmations)
         let clearItem = NSMenuItem(title: "Clear...", action: nil, keyEquivalent: "")
         let clearMenu = NSMenu()
@@ -4454,10 +4461,14 @@ class MenuActions: NSObject {
         }
     }
     
+    @objc func manageFolders() {
+        WatchFolderManagerDialog.present {}
+    }
+
     @objc func showLibraryInFinder() {
         MediaLibrary.shared.showLibraryInFinder()
     }
-    
+
     @objc func showBackupsInFinder() {
         MediaLibrary.shared.showBackupsInFinder()
     }
