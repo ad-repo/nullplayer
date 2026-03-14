@@ -267,7 +267,10 @@ class AudioEngine {
     /// When a crossfade completes, the crossfade player becomes the primary
     private var crossfadePlayerIsActive: Bool = false
 
-    /// Token used to invalidate stale in-flight Sweet Fades file opens.
+    /// Secondary guard for stale in-flight Sweet Fades file opens.
+    /// Incremented on each `startLocalCrossfade` call so a late-arriving callback can
+    /// detect it has been superseded. Primary cancellation signal is `isCrossfading`:
+    /// both guards must pass before a deferred callback modifies engine state.
     private var crossfadeFileLoadToken: UInt64 = 0
 
     /// Pre-scheduled next file for gapless playback
