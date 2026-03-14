@@ -416,6 +416,105 @@ final class MediaLibraryStore {
         }
     }
 
+    // MARK: - Alphabet Index Queries
+
+    /// Returns a map of sort-letter → first DB offset for that letter, across all artists.
+    func artistLetterOffsets(sort: ModernBrowserSortOption) -> [String: Int] {
+        guard let db = db else { return [:] }
+        let orderClause: String
+        switch sort {
+        case .nameAsc:
+            orderClause = "ORDER BY coalesce(album_artist, artist, 'Unknown Artist') ASC"
+        case .nameDesc:
+            orderClause = "ORDER BY coalesce(album_artist, artist, 'Unknown Artist') DESC"
+        case .dateAddedDesc:
+            orderClause = "ORDER BY max(date_added) DESC, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+        case .dateAddedAsc:
+            orderClause = "ORDER BY min(date_added) ASC, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+        case .yearDesc:
+            orderClause = "ORDER BY max(year) DESC NULLS LAST, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+        case .yearAsc:
+            orderClause = "ORDER BY min(year) ASC NULLS LAST, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+        }
+        let sql = """
+            SELECT coalesce(album_artist, artist, 'Unknown Artist') as artist_name
+            FROM library_tracks
+            GROUP BY artist_name
+            \(orderClause)
+            """
+        do {
+            var result: [String: Int] = [:]
+            var offset = 0
+            for row in try db.prepare(sql) {
+                if let name = row[0] as? String {
+                    let letter = Self.sortLetterForString(name)
+                    if result[letter] == nil { result[letter] = offset }
+                    offset += 1
+                }
+            }
+            return result
+        } catch {
+            NSLog("MediaLibraryStore: artistLetterOffsets failed: %@", error.localizedDescription)
+            return [:]
+        }
+    }
+
+    /// Returns a map of sort-letter → first DB offset for that letter, across all albums.
+    func albumLetterOffsets(sort: ModernBrowserSortOption) -> [String: Int] {
+        guard let db = db else { return [:] }
+        let orderClause: String
+        switch sort {
+        case .nameAsc:
+            orderClause = "ORDER BY coalesce(album, 'Unknown Album') ASC"
+        case .nameDesc:
+            orderClause = "ORDER BY coalesce(album, 'Unknown Album') DESC"
+        case .dateAddedDesc:
+            orderClause = "ORDER BY min(date_added) DESC"
+        case .dateAddedAsc:
+            orderClause = "ORDER BY min(date_added) ASC"
+        case .yearDesc:
+            orderClause = "ORDER BY min(year) DESC NULLS LAST"
+        case .yearAsc:
+            orderClause = "ORDER BY min(year) ASC NULLS LAST"
+        }
+        let sql = """
+            SELECT
+                coalesce(album, 'Unknown Album') as album_name,
+                coalesce(album_artist, artist) as artist_name
+            FROM library_tracks
+            GROUP BY coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album')
+            \(orderClause)
+            """
+        do {
+            var result: [String: Int] = [:]
+            var offset = 0
+            for row in try db.prepare(sql) {
+                if let albumName = row[0] as? String {
+                    let artistName = row[1] as? String
+                    let displayName: String
+                    if let artist = artistName, !artist.isEmpty {
+                        displayName = "\(artist) - \(albumName)"
+                    } else {
+                        displayName = albumName
+                    }
+                    let letter = Self.sortLetterForString(displayName)
+                    if result[letter] == nil { result[letter] = offset }
+                    offset += 1
+                }
+            }
+            return result
+        } catch {
+            NSLog("MediaLibraryStore: albumLetterOffsets failed: %@", error.localizedDescription)
+            return [:]
+        }
+    }
+
+    private static func sortLetterForString(_ title: String) -> String {
+        let sortTitle = LibraryTextSorter.normalized(title, ignoreLeadingArticles: true).uppercased()
+        guard let firstChar = sortTitle.first else { return "#" }
+        return firstChar.isLetter ? String(firstChar) : "#"
+    }
+
     // MARK: - Paginated Queries (display layer)
 
     func artistCount() -> Int {

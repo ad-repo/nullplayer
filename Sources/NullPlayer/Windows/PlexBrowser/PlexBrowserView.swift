@@ -260,6 +260,8 @@ class PlexBrowserView: NSView {
     private var currentSort: BrowserSortOption = .nameAsc {
         didSet {
             currentSort.save()
+            localArtistPageOffset = 0; localAlbumPageOffset = 0
+            localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
             rebuildCurrentModeItems()
             needsDisplay = true
         }
@@ -637,6 +639,8 @@ class PlexBrowserView: NSView {
     private let localPageSize = 200
     private var localArtistTotal = 0
     private var localAlbumTotal = 0
+    private var localArtistLetterOffsets: [String: Int] = [:]
+    private var localAlbumLetterOffsets: [String: Int] = [:]
     private var expandedLocalArtists: Set<String> = []
     private var expandedLocalAlbums: Set<String> = []
 
@@ -4928,8 +4932,14 @@ class PlexBrowserView: NSView {
         // Build set of sort letters that exist in current items
         // Uses sortLetter() to match how items are actually sorted (strips "The ", "A ", etc.)
         var availableLetters = Set<String>()
-        for item in displayItems {
-            availableLetters.insert(sortLetter(for: item.title))
+        if currentSource == .local && browseMode == .artists {
+            availableLetters = Set(localArtistLetterOffsets.keys)
+        } else if currentSource == .local && browseMode == .albums {
+            availableLetters = Set(localAlbumLetterOffsets.keys)
+        } else {
+            for item in displayItems {
+                availableLetters.insert(sortLetter(for: item.title))
+            }
         }
         
         for (index, letter) in alphabetLetters.enumerated() {
@@ -8116,9 +8126,30 @@ class PlexBrowserView: NSView {
     }
     
     private func scrollToLetter(_ letter: String) {
+        if currentSource == .local {
+            switch browseMode {
+            case .artists:
+                if let dbOffset = localArtistLetterOffsets[letter] {
+                    localArtistPageOffset = dbOffset
+                    buildLocalArtistItems()
+                    scrollOffset = 0
+                    needsDisplay = true
+                }
+                return
+            case .albums:
+                if let dbOffset = localAlbumLetterOffsets[letter] {
+                    localAlbumPageOffset = dbOffset
+                    buildLocalAlbumItems()
+                    scrollOffset = 0
+                    needsDisplay = true
+                }
+                return
+            default:
+                break
+            }
+        }
         for (index, item) in displayItems.enumerated() {
             let itemLetter = sortLetter(for: item.title)
-            
             if itemLetter == letter {
                 var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
                 if browseMode == .search {
@@ -8126,7 +8157,6 @@ class PlexBrowserView: NSView {
                 }
                 let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
                 let maxScroll = max(0, CGFloat(displayItems.count) * itemHeight - listHeight)
-                
                 scrollOffset = min(maxScroll, CGFloat(index) * itemHeight)
                 selectedIndices = [index]
                 needsDisplay = true
@@ -14043,6 +14073,9 @@ class PlexBrowserView: NSView {
     private func buildLocalArtistItems() {
         displayItems.removeAll()
         let store = MediaLibraryStore.shared
+        if localArtistPageOffset == 0 {
+            localArtistLetterOffsets = store.artistLetterOffsets(sort: currentSort.asModernSort)
+        }
         let names = store.artistNames(limit: localPageSize, offset: localArtistPageOffset, sort: currentSort.asModernSort)
         let albumsByArtist = store.albumsForArtistsBatch(names)
         for name in names {
@@ -14089,6 +14122,9 @@ class PlexBrowserView: NSView {
     private func buildLocalAlbumItems() {
         displayItems.removeAll()
         let store = MediaLibraryStore.shared
+        if localAlbumPageOffset == 0 {
+            localAlbumLetterOffsets = store.albumLetterOffsets(sort: currentSort.asModernSort)
+        }
         let summaries = store.albumSummaries(limit: localPageSize, offset: localAlbumPageOffset, sort: currentSort.asModernSort)
         for summary in summaries {
             let expanded = expandedLocalAlbums.contains(summary.id)

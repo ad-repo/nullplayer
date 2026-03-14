@@ -195,7 +195,13 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private var currentSort: ModernBrowserSortOption = .nameAsc {
-        didSet { currentSort.save(); rebuildCurrentModeItems(); needsDisplay = true }
+        didSet {
+            currentSort.save()
+            localArtistPageOffset = 0; localAlbumPageOffset = 0
+            localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
+            rebuildCurrentModeItems()
+            needsDisplay = true
+        }
     }
     private var searchQuery: String = ""
     private var typeAheadQuery: String = ""
@@ -258,6 +264,8 @@ class ModernLibraryBrowserView: NSView {
     private let localPageSize = 200
     private var localArtistTotal = 0
     private var localAlbumTotal = 0
+    private var localArtistLetterOffsets: [String: Int] = [:]
+    private var localAlbumLetterOffsets: [String: Int] = [:]
     private var cachedLocalMovies: [LocalVideo] = []
     private var cachedLocalShows: [LocalShow] = []
     private var localLibraryReloadWorkItem: DispatchWorkItem?
@@ -1792,8 +1800,14 @@ class ModernLibraryBrowserView: NSView {
         let fontSize = min(9 * ModernSkinElements.sizeMultiplier, letterHeight * 0.8)
         
         var availableLetters = Set<String>()
-        for item in displayItems {
-            availableLetters.insert(sortLetter(for: item.title))
+        if case .local = currentSource, browseMode == .artists {
+            availableLetters = Set(localArtistLetterOffsets.keys)
+        } else if case .local = currentSource, browseMode == .albums {
+            availableLetters = Set(localAlbumLetterOffsets.keys)
+        } else {
+            for item in displayItems {
+                availableLetters.insert(sortLetter(for: item.title))
+            }
         }
         
         for (index, letter) in alphabetLetters.enumerated() {
@@ -3378,6 +3392,28 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func scrollToLetter(_ letter: String) {
+        if case .local = currentSource {
+            switch browseMode {
+            case .artists:
+                if let dbOffset = localArtistLetterOffsets[letter] {
+                    localArtistPageOffset = dbOffset
+                    buildLocalArtistItems()
+                    scrollOffset = 0
+                    needsDisplay = true
+                }
+                return
+            case .albums:
+                if let dbOffset = localAlbumLetterOffsets[letter] {
+                    localAlbumPageOffset = dbOffset
+                    buildLocalAlbumItems()
+                    scrollOffset = 0
+                    needsDisplay = true
+                }
+                return
+            default:
+                break
+            }
+        }
         for (index, item) in displayItems.enumerated() {
             if sortLetter(for: item.title) == letter {
                 var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
@@ -8213,6 +8249,9 @@ class ModernLibraryBrowserView: NSView {
     private func buildLocalArtistItems() {
         displayItems.removeAll()
         let store = MediaLibraryStore.shared
+        if localArtistPageOffset == 0 {
+            localArtistLetterOffsets = store.artistLetterOffsets(sort: currentSort)
+        }
         let names = store.artistNames(limit: localPageSize, offset: localArtistPageOffset, sort: currentSort)
         let albumsByArtist = store.albumsForArtistsBatch(names)
         for name in names {
@@ -8269,6 +8308,9 @@ class ModernLibraryBrowserView: NSView {
     private func buildLocalAlbumItems() {
         displayItems.removeAll()
         let store = MediaLibraryStore.shared
+        if localAlbumPageOffset == 0 {
+            localAlbumLetterOffsets = store.albumLetterOffsets(sort: currentSort)
+        }
         let summaries = store.albumSummaries(limit: localPageSize, offset: localAlbumPageOffset, sort: currentSort)
         for summary in summaries {
             let expanded = expandedLocalAlbums.contains(summary.id)
