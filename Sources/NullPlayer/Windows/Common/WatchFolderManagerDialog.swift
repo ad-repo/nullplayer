@@ -1,80 +1,260 @@
 import AppKit
 
-/// Modal helper for managing watched local-library folders.
-enum WatchFolderManagerDialog {
+/// Window-based manager for watched local-library folders.
+final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
+                                      NSTableViewDataSource, NSTableViewDelegate {
+
+    private var tableView: NSTableView!
+    private var rescanBtn: NSButton!
+    private var finderBtn: NSButton!
+    private var removeBtn: NSButton!
+    private var summaries: [WatchFolderSummary] = []
+    private var onLibraryChanged: (() -> Void)?
+
+    // MARK: - Public entry point
+
+    private static var shared: WatchFolderManagerWindow?
+
     static func present(onLibraryChanged: (() -> Void)? = nil) {
-        while true {
-            let summaries = MediaLibrary.shared.watchFolderSummaries()
-            guard !summaries.isEmpty else {
-                showNoFoldersAlert()
-                return
-            }
+        if let existing = shared {
+            existing.onLibraryChanged = onLibraryChanged
+            existing.reload()
+            existing.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let controller = WatchFolderManagerWindow(onLibraryChanged: onLibraryChanged)
+        shared = controller
+        controller.window?.center()
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
-            let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 520, height: 24), pullsDown: false)
-            popup.translatesAutoresizingMaskIntoConstraints = false
-            for summary in summaries {
-                popup.addItem(withTitle: summary.url.path)
-            }
-            popup.selectItem(at: 0)
+    // MARK: - Init
 
-            let detailsLabel = NSTextField(labelWithString: summaryDescription(summaries[0]))
-            detailsLabel.translatesAutoresizingMaskIntoConstraints = false
-            detailsLabel.alignment = .left
-            detailsLabel.lineBreakMode = .byTruncatingTail
+    private init(onLibraryChanged: (() -> Void)?) {
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 310),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        w.title = "Manage Watch Folders"
+        w.minSize = NSSize(width: 420, height: 240)
+        super.init(window: w)
+        self.onLibraryChanged = onLibraryChanged
+        w.delegate = self
+        setupUI()
+        reload()
+    }
 
-            popup.target = PopupObserver.shared
-            popup.action = #selector(PopupObserver.popupSelectionChanged(_:))
-            PopupObserver.shared.onSelectionChanged = { [weak detailsLabel] index in
-                guard index >= 0 && index < summaries.count else { return }
-                detailsLabel?.stringValue = summaryDescription(summaries[index])
-            }
+    required init?(coder: NSCoder) { fatalError() }
 
-            let stack = NSStackView(views: [popup, detailsLabel])
-            stack.orientation = .vertical
-            stack.alignment = .leading
-            stack.spacing = 8
-            stack.translatesAutoresizingMaskIntoConstraints = false
+    // MARK: - UI Setup
 
-            let alert = NSAlert()
-            alert.messageText = "Manage Watch Folders"
-            alert.informativeText = "Choose a watched folder, then rescan, reveal, or remove it."
-            alert.accessoryView = stack
-            alert.addButton(withTitle: "Rescan")
-            alert.addButton(withTitle: "Show in Finder")
-            alert.addButton(withTitle: "Remove Folder...")
-            alert.addButton(withTitle: "Done")
+    private func setupUI() {
+        guard let cv = window?.contentView else { return }
 
-            let response = alert.runModal()
-            let selectedIndex = max(0, popup.indexOfSelectedItem)
-            guard selectedIndex < summaries.count else { return }
-            let selected = summaries[selectedIndex]
+        // Bottom button bar (frame-based; autoresizingMask handles resize)
+        let bh: CGFloat = 28, by: CGFloat = 12
+        let gap: CGFloat = 8
+        let cw: CGFloat = 560   // matches contentRect width
 
-            switch response {
-            case .alertFirstButtonReturn:
-                MediaLibrary.shared.rescanWatchFolder(selected.url, cleanMissing: true)
-            case .alertSecondButtonReturn:
-                NSWorkspace.shared.activateFileViewerSelecting([selected.url])
-            case .alertThirdButtonReturn:
-                let counts = MediaLibrary.shared.removalCountsForWatchFolder(selected.url)
-                if confirmRemoval(of: selected.url, removalCounts: counts) {
-                    MediaLibrary.shared.removeWatchFolder(selected.url, removeEntries: true)
-                    onLibraryChanged?()
-                }
-            default:
-                return
-            }
+        let doneBtn  = makeButton("Done",            action: #selector(done))
+        removeBtn    = makeButton("Remove...",      action: #selector(removeSelected))
+        finderBtn    = makeButton("Show in Finder", action: #selector(showInFinder))
+        rescanBtn    = makeButton("Rescan",         action: #selector(rescanSelected))
+        let addBtn   = makeButton("Add Folder...",  action: #selector(addFolder))
+
+        doneBtn.frame   = NSRect(x: cw - 20 - 80,                            y: by, width: 80,  height: bh)
+        removeBtn.frame = NSRect(x: doneBtn.frame.minX - gap - 88,           y: by, width: 88,  height: bh)
+        finderBtn.frame = NSRect(x: removeBtn.frame.minX - gap - 120,        y: by, width: 120, height: bh)
+        rescanBtn.frame = NSRect(x: finderBtn.frame.minX - gap - 70,         y: by, width: 70,  height: bh)
+        addBtn.frame    = NSRect(x: 20,                                       y: by, width: 100, height: bh)
+
+        doneBtn.autoresizingMask   = [.minXMargin]
+        removeBtn.autoresizingMask = [.minXMargin]
+        finderBtn.autoresizingMask = [.minXMargin]
+        rescanBtn.autoresizingMask = [.minXMargin]
+        addBtn.autoresizingMask    = [.maxXMargin]
+
+        for btn in [addBtn, rescanBtn!, finderBtn!, removeBtn!, doneBtn] {
+            cv.addSubview(btn)
+        }
+
+        // Separator above buttons
+        let sepY: CGFloat = by + bh + 8
+        let sep = NSBox()
+        sep.boxType = .separator
+        sep.frame = NSRect(x: 0, y: sepY, width: cw, height: 1)
+        sep.autoresizingMask = [.width]
+        cv.addSubview(sep)
+
+        // Scroll view + table filling the rest
+        let tableTop: CGFloat = sepY + 2
+        let scrollView = NSScrollView(
+            frame: NSRect(x: 0, y: tableTop, width: cw, height: 310 - tableTop)
+        )
+        scrollView.autoresizingMask = [.width, .height]
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .noBorder
+
+        let tv = NSTableView()
+        tv.usesAlternatingRowBackgroundColors = true
+        tv.rowHeight = 22
+
+        let nameCol = NSTableColumn(identifier: .init("name"))
+        nameCol.title = "Folder"
+        nameCol.width = 150
+        nameCol.minWidth = 80
+        tv.addTableColumn(nameCol)
+
+        let pathCol = NSTableColumn(identifier: .init("path"))
+        pathCol.title = "Path"
+        pathCol.width = 280
+        pathCol.minWidth = 100
+        tv.addTableColumn(pathCol)
+
+        let itemsCol = NSTableColumn(identifier: .init("items"))
+        itemsCol.title = "Items"
+        itemsCol.width = 80
+        itemsCol.minWidth = 60
+        tv.addTableColumn(itemsCol)
+
+        tv.dataSource = self
+        tv.delegate = self
+        tv.target = self
+        tv.doubleAction = #selector(tableDoubleClicked)
+
+        scrollView.documentView = tv
+        cv.addSubview(scrollView)
+        tableView = tv
+
+        updateButtonStates()
+    }
+
+    private func makeButton(_ title: String, action: Selector) -> NSButton {
+        let b = NSButton(title: title, target: self, action: action)
+        b.bezelStyle = .rounded
+        return b
+    }
+
+    // MARK: - Data
+
+    private func reload() {
+        summaries = MediaLibrary.shared.watchFolderSummaries()
+        tableView?.reloadData()
+        updateButtonStates()
+    }
+
+    private func updateButtonStates() {
+        let hasSelection = (tableView?.selectedRow ?? -1) >= 0
+        rescanBtn?.isEnabled = hasSelection
+        finderBtn?.isEnabled = hasSelection
+        removeBtn?.isEnabled = hasSelection
+    }
+
+    // MARK: - NSTableViewDataSource
+
+    func numberOfRows(in tableView: NSTableView) -> Int { summaries.count }
+
+    // MARK: - NSTableViewDelegate
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard row < summaries.count else { return nil }
+        let id = tableColumn?.identifier ?? .init("")
+        var cell = tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
+        if cell == nil {
+            cell = NSTableCellView()
+            cell?.identifier = id
+            let tf = NSTextField(labelWithString: "")
+            tf.translatesAutoresizingMaskIntoConstraints = false
+            cell?.addSubview(tf)
+            cell?.textField = tf
+            NSLayoutConstraint.activate([
+                tf.leadingAnchor.constraint(equalTo: cell!.leadingAnchor, constant: 4),
+                tf.trailingAnchor.constraint(equalTo: cell!.trailingAnchor, constant: -4),
+                tf.centerYAnchor.constraint(equalTo: cell!.centerYAnchor),
+            ])
+        }
+        let s = summaries[row]
+        switch id.rawValue {
+        case "name":
+            cell?.textField?.stringValue = s.url.lastPathComponent
+            cell?.textField?.lineBreakMode = .byTruncatingTail
+        case "path":
+            cell?.textField?.stringValue = s.url.path
+            cell?.textField?.lineBreakMode = .byTruncatingMiddle
+        case "items":
+            let n = s.totalCount
+            cell?.textField?.stringValue = "\(n) item\(n == 1 ? "" : "s")"
+            cell?.textField?.lineBreakMode = .byTruncatingTail
+        default: break
+        }
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        updateButtonStates()
+    }
+
+    // MARK: - Actions
+
+    @objc private func addFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Select a folder to add to your library"
+        let folderDelegate = TopLevelFolderPickerDelegate()
+        panel.delegate = folderDelegate
+        withExtendedLifetime(folderDelegate) {
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            MediaLibrary.shared.addWatchFolder(url)
+            MediaLibrary.shared.scanFolder(url)
+            onLibraryChanged?()
+            reload()
         }
     }
 
-    private static func showNoFoldersAlert() {
-        let alert = NSAlert()
-        alert.messageText = "No Watch Folders"
-        alert.informativeText = "You have not added any watched folders yet."
-        alert.alertStyle = .informational
-        alert.runModal()
+    @objc private func rescanSelected() {
+        let row = tableView.selectedRow
+        guard row >= 0 && row < summaries.count else { return }
+        MediaLibrary.shared.rescanWatchFolder(summaries[row].url, cleanMissing: true)
+        onLibraryChanged?()
+        reload()
     }
 
-    private static func confirmRemoval(
+    @objc private func showInFinder() {
+        let row = tableView.selectedRow
+        guard row >= 0 && row < summaries.count else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([summaries[row].url])
+    }
+
+    @objc private func removeSelected() {
+        let row = tableView.selectedRow
+        guard row >= 0 && row < summaries.count else { return }
+        let summary = summaries[row]
+        let counts = MediaLibrary.shared.removalCountsForWatchFolder(summary.url)
+        guard confirmRemoval(of: summary.url, removalCounts: counts) else { return }
+        MediaLibrary.shared.removeWatchFolder(summary.url, removeEntries: true)
+        onLibraryChanged?()
+        reload()
+    }
+
+    @objc private func done() {
+        window?.close()
+    }
+
+    @objc private func tableDoubleClicked() {
+        let row = tableView.clickedRow
+        guard row >= 0 && row < summaries.count else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([summaries[row].url])
+    }
+
+    // MARK: - Helpers
+
+    private func confirmRemoval(
         of folderURL: URL,
         removalCounts: (tracks: Int, movies: Int, episodes: Int)
     ) -> Bool {
@@ -95,17 +275,17 @@ enum WatchFolderManagerDialog {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private static func summaryDescription(_ summary: WatchFolderSummary) -> String {
-        "\(summary.totalCount) item\(summary.totalCount == 1 ? "" : "s") in library (\(summary.trackCount) tracks, \(summary.movieCount) movies, \(summary.episodeCount) episodes)"
+    // MARK: - NSWindowDelegate
+
+    func windowWillClose(_ notification: Notification) {
+        WatchFolderManagerWindow.shared = nil
     }
 }
 
-/// Lightweight popup target holder (NSPopUpButton target is weak).
-private final class PopupObserver: NSObject {
-    static let shared = PopupObserver()
-    var onSelectionChanged: ((Int) -> Void)?
+// MARK: - Compatibility shim (preserves the existing call sites)
 
-    @objc func popupSelectionChanged(_ sender: NSPopUpButton) {
-        onSelectionChanged?(sender.indexOfSelectedItem)
+enum WatchFolderManagerDialog {
+    static func present(onLibraryChanged: (() -> Void)? = nil) {
+        WatchFolderManagerWindow.present(onLibraryChanged: onLibraryChanged)
     }
 }

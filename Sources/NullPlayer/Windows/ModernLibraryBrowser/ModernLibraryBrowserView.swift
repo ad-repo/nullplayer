@@ -2914,6 +2914,12 @@ class ModernLibraryBrowserView: NSView {
             let item = displayItems[clickedIndex]
             showContextMenu(for: item, at: event); return
         }
+        if case .local = currentSource {
+            let menu = NSMenu()
+            let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
+            manageFoldersItem.target = self; menu.addItem(manageFoldersItem)
+            NSMenu.popUpContextMenu(menu, with: event, for: self); return
+        }
         super.rightMouseDown(with: event)
     }
     
@@ -3526,6 +3532,9 @@ class ModernLibraryBrowserView: NSView {
             let episodeCount = MediaLibrary.shared.episodesSnapshot.count
             let totalLocalItems = trackCount + movieCount + episodeCount
             menu.addItem(NSMenuItem.separator())
+            let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
+            manageFoldersItem.target = self; menu.addItem(manageFoldersItem)
+            menu.addItem(NSMenuItem.separator())
             let clearItem = NSMenuItem(title: "Clear Local Library", action: nil, keyEquivalent: "")
             let clearSubmenu = NSMenu()
 
@@ -3731,8 +3740,6 @@ class ModernLibraryBrowserView: NSView {
         addVideoFilesItem.target = self; menu.addItem(addVideoFilesItem)
         let addFolderItem = NSMenuItem(title: "Add Folder...", action: #selector(addWatchFolder), keyEquivalent: "")
         addFolderItem.target = self; menu.addItem(addFolderItem)
-        let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
-        manageFoldersItem.target = self; menu.addItem(manageFoldersItem)
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
     }
