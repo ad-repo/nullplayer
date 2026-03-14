@@ -419,23 +419,21 @@ class MediaLibrary {
         let movies = moviesSnapshot
         let episodes = episodesSnapshot
 
-        return folders.map { folder in
-            let folderPath = Self.normalizedPath(for: folder)
-            let trackCount = tracks.reduce(0) { count, track in
-                count + (Self.isPath(Self.normalizedPath(for: track.url), insideFolderPath: folderPath) ? 1 : 0)
-            }
-            let movieCount = movies.reduce(0) { count, movie in
-                count + (Self.isPath(Self.normalizedPath(for: movie.url), insideFolderPath: folderPath) ? 1 : 0)
-            }
-            let episodeCount = episodes.reduce(0) { count, episode in
-                count + (Self.isPath(Self.normalizedPath(for: episode.url), insideFolderPath: folderPath) ? 1 : 0)
-            }
-            return WatchFolderSummary(
-                url: folder,
-                trackCount: trackCount,
-                movieCount: movieCount,
-                episodeCount: episodeCount
-            )
+        // Pre-compute paths once outside the per-folder loop. Tracks are scanned from the
+        // already-normalized watch folder URL, so url.path is already resolved — calling
+        // resolvingSymlinksInPath() inside the loop (O(N×M) filesystem hits) hangs the
+        // window on large libraries backed by network volumes.
+        let folderPaths = folders.map { Self.normalizedPath(for: $0) }
+        let trackPaths   = tracks.map   { $0.url.path }
+        let moviePaths   = movies.map   { $0.url.path }
+        let episodePaths = episodes.map { $0.url.path }
+
+        return zip(folders, folderPaths).map { folder, folderPath in
+            let trackCount   = trackPaths.reduce(0)   { $0 + (Self.isPath($1, insideFolderPath: folderPath) ? 1 : 0) }
+            let movieCount   = moviePaths.reduce(0)   { $0 + (Self.isPath($1, insideFolderPath: folderPath) ? 1 : 0) }
+            let episodeCount = episodePaths.reduce(0) { $0 + (Self.isPath($1, insideFolderPath: folderPath) ? 1 : 0) }
+            return WatchFolderSummary(url: folder, trackCount: trackCount,
+                                     movieCount: movieCount, episodeCount: episodeCount)
         }.sorted {
             $0.url.path.localizedCaseInsensitiveCompare($1.url.path) == .orderedAscending
         }
