@@ -2,6 +2,13 @@ import Foundation
 import CVisClassicCore
 
 final class VisClassicBridge {
+    // Serializes all calls into the C++ core, which is not thread-safe.
+    // The CVDisplayLink thread calls renderFrame() concurrently with main-thread
+    // profile/option mutations — without this lock, setupFFT() (which calls
+    // fft_.CleanUp() and sets bitrevtable=0) races with time_to_frequency_domain
+    // reading bitrevtable, producing a null-dereference crash.
+    private let coreLock = NSLock()
+
     enum PreferenceScope {
         case spectrumWindow
         case mainWindow
@@ -81,15 +88,17 @@ final class VisClassicBridge {
         guard let core else { return }
         guard !left.isEmpty, !right.isEmpty else { return }
 
-        left.withUnsafeBufferPointer { l in
-            right.withUnsafeBufferPointer { r in
-                vc_set_waveform_u8(
-                    core,
-                    l.baseAddress,
-                    r.baseAddress,
-                    min(l.count, r.count),
-                    sampleRate
-                )
+        coreLock.withLock {
+            left.withUnsafeBufferPointer { l in
+                right.withUnsafeBufferPointer { r in
+                    vc_set_waveform_u8(
+                        core,
+                        l.baseAddress,
+                        r.baseAddress,
+                        min(l.count, r.count),
+                        sampleRate
+                    )
+                }
             }
         }
     }
@@ -97,9 +106,11 @@ final class VisClassicBridge {
     func renderFrame(width: Int, height: Int) -> Data {
         guard let core, width > 0, height > 0 else { return Data() }
         var data = Data(count: width * height * 4)
-        data.withUnsafeMutableBytes { raw in
-            guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-            vc_render_rgba(core, base, Int32(width), Int32(height), width * 4)
+        coreLock.withLock {
+            data.withUnsafeMutableBytes { raw in
+                guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
+                vc_render_rgba(core, base, Int32(width), Int32(height), width * 4)
+            }
         }
         return data
     }
@@ -111,18 +122,22 @@ final class VisClassicBridge {
         if buffer.count != expectedCount {
             buffer = Array(repeating: 0, count: expectedCount)
         }
-        return buffer.withUnsafeMutableBufferPointer { ptr in
-            guard let base = ptr.baseAddress else { return false }
-            vc_render_rgba(core, base, Int32(width), Int32(height), width * 4)
-            return true
+        return coreLock.withLock {
+            buffer.withUnsafeMutableBufferPointer { ptr in
+                guard let base = ptr.baseAddress else { return false }
+                vc_render_rgba(core, base, Int32(width), Int32(height), width * 4)
+                return true
+            }
         }
     }
 
     @discardableResult
     func loadProfile(url: URL) -> Bool {
         guard let core else { return false }
-        let ok = url.path.withCString { cPath in
-            vc_load_profile_ini(core, cPath) == 1
+        let ok = coreLock.withLock {
+            url.path.withCString { cPath in
+                vc_load_profile_ini(core, cPath) == 1
+            }
         }
         if ok {
             currentProfileURL = url
@@ -138,7 +153,7 @@ final class VisClassicBridge {
     func setFitToWidth(_ enabled: Bool) -> Bool {
         guard let core else { return false }
         let value: Int32 = enabled ? 1 : 0
-        let ok = vc_set_option(core, "FitToWidth", value) == 1
+        let ok = coreLock.withLock { vc_set_option(core, "FitToWidth", value) == 1 }
         if ok {
             UserDefaults.standard.set(enabled, forKey: preferenceScope.fitToWidthKey)
         }
@@ -148,15 +163,15 @@ final class VisClassicBridge {
     func fitToWidthEnabled() -> Bool {
         guard let core else { return true }
         var value: Int32 = 1
-        guard vc_get_option(core, "FitToWidth", &value) == 1 else { return true }
-        return value != 0
+        let got = coreLock.withLock { vc_get_option(core, "FitToWidth", &value) == 1 }
+        return got ? value != 0 : true
     }
 
     @discardableResult
     func setTransparentBackground(_ enabled: Bool) -> Bool {
         guard let core else { return false }
         let value: Int32 = enabled ? 1 : 0
-        let ok = vc_set_option(core, "transparentbg", value) == 1
+        let ok = coreLock.withLock { vc_set_option(core, "transparentbg", value) == 1 }
         if ok {
             UserDefaults.standard.set(enabled, forKey: preferenceScope.transparentBgKey)
         }
@@ -166,8 +181,8 @@ final class VisClassicBridge {
     func transparentBackgroundEnabled() -> Bool {
         guard let core else { return false }
         var value: Int32 = 0
-        guard vc_get_option(core, "transparentbg", &value) == 1 else { return false }
-        return value != 0
+        let got = coreLock.withLock { vc_get_option(core, "transparentbg", &value) == 1 }
+        return got ? value != 0 : false
     }
 
     @discardableResult
@@ -181,8 +196,10 @@ final class VisClassicBridge {
     @discardableResult
     func saveCurrentProfile(to url: URL) -> Bool {
         guard let core else { return false }
-        let ok = url.path.withCString { cPath in
-            vc_save_profile_ini(core, cPath) == 1
+        let ok = coreLock.withLock {
+            url.path.withCString { cPath in
+                vc_save_profile_ini(core, cPath) == 1
+            }
         }
         if ok {
             currentProfileURL = url
