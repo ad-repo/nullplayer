@@ -520,6 +520,38 @@ Right-click on the spectrum window for:
 
 Settings are persisted across app restarts.
 
+## Hide Title Bars Mode (Modern UI Only)
+
+Two-tier behavior controlled by `effectiveHideTitleBars(for:)` in `WindowManager`:
+
+- **HT Off (default baseline)**: EQ/Playlist/Spectrum/Waveform always hide titlebars when docked, regardless of the HT setting. Main, ProjectM, and Library Browser show titlebars.
+- **HT On**: ALL 6 windows hide titlebars unconditionally (docked or not). Main window shrinks by `titleBarBaseHeight` (base 275×116 → 275×98) so content fills the frame — no gap at top.
+
+Key implementation details:
+- `toggleHideTitleBars()` resizes the main window (anchor top-left, update `minSize` BEFORE `setFrame`) then refreshes all 6 window views
+- **Startup**: `showMainWindow()` corrects `minSize` immediately after window creation if `hideTitleBars` is already `true` in UserDefaults, so the saved (smaller) frame isn't clamped
+- Each view's `titleBarHeight` computed property returns `borderWidth` (not 0) when hidden, preserving the top border line
+- ProjectM shade mode is always drawn (uses `isShadeMode || !effectiveHideTitleBars` condition) so HT + shade never produces a blank window
+- Library Browser uses lazy drag: `mouseDown` records `windowDragStartPoint`; `mouseDragged` starts the drag on first movement when HT is on
+
+## Double Size Mode (Both UI Modes)
+
+Toggle via the 2X button in classic UI, or via context menu in either UI.
+
+- **Modern UI**: live toggle — `ModernSkinElements.scaleFactor` is a computed property (`baseScaleFactor * sizeMultiplier`). Do NOT cache `scaleFactor` in a `let` property — use a computed `var` or reference it inline. Views must observe `.doubleSizeDidChange` and recreate their renderer. Side windows (Library Browser, ProjectM) scale width by `sizeMultiplier`; their layout constants and hardcoded pixel padding must also multiply by `sizeMultiplier`.
+- **Classic UI**: requires restart. `MenuActions.toggleDoubleSize()` shows a "Restart Required" dialog, toggles `isDoubleSize`, and calls `relaunchApp()` if confirmed. `applyDoubleSize()` is not guarded by `isModernUIEnabled` — it runs for both modes.
+- **Startup restoration**: `isDoubleSize` is restored in `AppStateManager.restoreSettingsState()` BEFORE sub-windows are shown (at the top of the `+0.1s` dispatch block). This ensures `applyDoubleSize` runs while sub-windows are not yet visible, so it only updates the main window's frame — it does NOT re-scale sub-window frames that are already at their saved 2x sizes.
+- When title bars are hidden, all window drags pass `fromTitleBar: true` to allow undocking
+- Classic windows use drawing transform offset (`translateBy`) to shift the skin image up; modern windows use conditional `titleBarHeight`
+
+## Window Docking
+
+Complex snapping logic in `WindowManager`:
+- Multi-monitor: Screen edge snapping is skipped if it would cause docked windows to end up on different screens
+- `Snap to Default` centers main window on its current screen (not always the primary display)
+- Coordinated minimize: uses `addChildWindow`/`removeChildWindow` in `windowWillMiniaturize`/`windowDidDeminiaturize` to temporarily make docked windows children of the main window so they animate into the dock together. Child relationships are removed on restore.
+- **Center stack collapse**: `slideUpWindowsBelow(closingFrame:)` in `WindowManager` slides docked windows up when a stack window is hidden. Called from `toggleEqualizer/Playlist/Spectrum/Waveform` — capture the frame BEFORE `orderOut`, then call it. Uses BFS over `dockThreshold`-adjacent windows (by vertical gap + horizontal overlap). Must set `isSnappingWindow = true` during moves to prevent the docking feedback loop.
+
 ## Related Documentation
 
 - **non-retina-fixes skill** - Fixes for rendering artifacts on 1x displays (blue lines, tile seams, text shimmering)

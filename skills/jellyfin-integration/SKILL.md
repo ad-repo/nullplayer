@@ -203,3 +203,21 @@ Jellyfin credentials are stored using `KeychainHelper`:
 - Current movie library ID: `JellyfinCurrentMovieLibraryID` (UserDefaults) — nil = all libraries
 - Current show library ID: `JellyfinCurrentShowLibraryID` (UserDefaults) — nil = all libraries
 - Playlist tracks with `jellyfinId`/`jellyfinServerId` are saved/restored by `AppStateManager`
+
+## Implementation Gotchas
+
+### Large Library Slowness
+
+Jellyfin can be slower than Emby/Plex/Subsonic on very large libraries when handling deep `Recursive=true` item queries with large page scans. App-side mitigations:
+- Use smaller page sizes (`1000`) with duplicate-page guards to avoid long/hanging scans
+- Keep preload music-focused (`artists/albums/playlists`) so initial browser load is not blocked by video library scans
+- In both classic and modern artist views, render artists first and warm albums cache in background
+- Log slow Jellyfin API requests in `JellyfinServerClient.performRequest` for endpoint-level diagnosis
+
+### Library Selector Is Browse-Mode-Aware
+
+The "Lib:" click zone in both `ModernLibraryBrowserView` and classic `PlexBrowserView` shows a music library picker in music tabs (Artists/Albums/Tracks/Plists) and a video library picker in Movies/Shows tabs. `JellyfinManager` has separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification (`musicLibraryDidChangeNotification`, `videoLibraryDidChangeNotification`). `fetchMusicLibraries()` and `fetchVideoLibraries()` both return ALL views without `CollectionType` filtering. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
+
+### Streaming URL Content Type (Sonos)
+
+Jellyfin streaming URLs (`/Audio/{id}/stream`) have no file extension, so `detectAudioContentType(for:)` defaults to `audio/mpeg`. This breaks Sonos casting for non-MP3 formats. Always prefer `Track.contentType` (set by the server client from API metadata) or upstream HEAD detection via `prepareProxyURL()`. The `SavedTrack.contentType` field preserves this across app restarts.

@@ -208,6 +208,31 @@ Volume is controlled via the receiver namespace (not media):
 {"type":"SET_VOLUME","volume":{"muted":true},"requestId":N}
 ```
 
+## Video Casting — Two Paths
+
+Video casting has two distinct code paths — both must be handled in control logic:
+
+- **Player path**: Cast button in video player → `VideoPlayerWindowController.isCastingVideo`
+- **Menu path**: Right-click → Cast to... → `CastManager.shared.isVideoCasting` (no video player window)
+
+Controls must check both: `WindowManager.toggleVideoCastPlayPause()` handles routing.
+
+## Debugging
+
+The Chromecast implementation uses Google Cast Protocol v2:
+- TLS connection to port 8009, self-signed certificate (must accept in verify block)
+- Protobuf-framed messages (4-byte big-endian length prefix)
+- Key namespaces: `connection`, `heartbeat`, `receiver`, `media`
+
+Test with: `swift scripts/test_chromecast.swift`
+
+Common issues:
+- **Silent crash on receive**: Check Data slice indexing (use `startIndex` — see Swift Data slicing pitfall in CLAUDE.md)
+- **Timeout waiting for transportId**: Check receive loop is processing buffer
+- **TLS errors**: Chromecast uses self-signed certs, must accept in verify block
+
+Standalone test scripts are useful for debugging complex protocol integrations — faster iteration, isolated environment, easier to add debug output. Create them under `scripts/` and run with `swift scripts/<name>.swift`.
+
 ## References
 
 - [Google Cast SDK Documentation](https://developers.google.com/cast/docs/developers)

@@ -396,3 +396,21 @@ Priority order:
 - [ ] History menu visible after disconnecting server (not only while connected)
 - [ ] History page sorts Played column correctly (newest last when ↑)
 - [ ] Starred radio respects current music folder selection
+
+## Implementation Gotchas
+
+### State Management — Use `stopLocalOnly()` not `stop()`
+
+`loadTracks()` must use `stopLocalOnly()` instead of `stop()` when loading radio content. Calling `stop()` triggers `RadioManager.stop()` which clears state and breaks auto-reconnect/metadata. The `isRadioContent` check detects radio by matching track URL with `currentStation.url`.
+
+### Metadata Fallback — `effectiveStreamTitle`
+
+`RadioManager` publishes `effectiveStreamTitle` (ICY `currentStreamTitle` first, SomaFM `currentSomaLastPlaying` fallback). UI should listen to `streamMetadataDidChangeNotification`, not raw ICY-only fields.
+
+### Ratings and Folders Are URL-Keyed
+
+Ratings and folder membership are keyed by station URL (not station UUID). `RadioManager.updateStation` must migrate URL references via `moveRating(fromURL:toURL:)` and `foldersStore.moveStationURLReferences(from:to:)`; `removeStation` must purge both stores.
+
+### Playlist URL Resolution — Check `isCasting` Inside Async Callback
+
+When resolving `.pls`/`.m3u` URLs, check `CastManager.shared.isCasting` fresh inside the async callback, not captured before the network request (up to 10s timeout). User may start casting during resolution.

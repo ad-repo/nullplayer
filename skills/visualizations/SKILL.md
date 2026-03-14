@@ -476,3 +476,38 @@ Controls how quickly bars fall:
 **Null texture pointer crash:**
 - Fixed by removing direct OpenGL calls from `reshape()` method
 - Render thread now handles all viewport updates safely
+
+## Metal Gotchas
+
+### Metal Command Encoders
+
+Never use `if let enc = cb.makeRenderCommandEncoder(...), let pl = pipeline { ... }` — if `pipeline` is nil, the encoder is created but never ended, leaving the command buffer in an invalid state and causing a Metal API violation crash on `commit()`. Always guard the pipeline BEFORE creating the encoder:
+
+```swift
+// WRONG - encoder created but never ended if pipeline is nil:
+if let enc = cb.makeRenderCommandEncoder(descriptor: rpd), let pl = pipeline {
+    enc.setRenderPipelineState(pl)
+    enc.endEncoding()
+}
+cb.commit()  // Crashes!
+
+// CORRECT - guard pipeline first, then create encoder:
+guard let pl = pipeline else { inFlightSemaphore.signal(); return }
+if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
+    enc.setRenderPipelineState(pl)
+    enc.endEncoding()
+}
+cb.commit()
+```
+
+### Metal Render-to-Texture UV Y-Flip
+
+When doing multi-pass rendering (render pass A writes to an intermediate texture, render pass B samples that texture), the intermediate texture is stored with y=0 at the TOP (Metal render-target convention). But the fullscreen-quad vertex shader maps `in.uv.y=0` to the BOTTOM of the screen (NDC y=-1). So pass B must flip y when sampling: `float2(in.uv.x, 1.0 - in.uv.y)`. Failing to flip produces an upside-down result. Example: `FlameShaders.metal` `flame_blur_v` uses `baseUV = float2(in.uv.x, 1.0 - in.uv.y)` to read the horizontal-blur intermediate texture correctly.
+
+### Fire Mode — 3 Metal Passes
+
+Fire mode uses 3 Metal passes: (1) compute `propagate_fire` (128×96 grid), (2) render `flame_blur_h` (horizontal blur, fire grid → r16Float intermediate texture at drawable size), (3) render `flame_blur_v` (vertical blur + color mapping → drawable). The `flameBlurTexture` intermediate is lazily created/resized when drawable size changes (`flameBlurLastDrawableSize`). `isPipelineAvailable(.flame)` requires all three pipelines.
+
+### Spectrum Shader Availability
+
+Use `SpectrumAnalyzerView.isShaderAvailable(for:)` to check if a mode's shader file exists before switching to it. This static method works without a view instance and should be used when restoring modes from UserDefaults and when building menus. The instance method `isPipelineAvailable(for:)` checks the actual compiled pipeline and is used after `setupMetal()`.
