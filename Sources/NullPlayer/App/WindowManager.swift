@@ -1956,15 +1956,17 @@ class WindowManager {
     /// Bring all visible app windows to front (called when any app window gets focus)
     func bringAllWindowsToFront() {
         // Order all visible windows to front without making them key
+        // Center-stack windows first, side/overlay windows last so they end up on top
+        // when overlapping the center stack (library browser and projectM can be dragged to overlay)
         let windows: [NSWindow?] = [
             mainWindowController?.window,
             equalizerWindowController?.window,
             playlistWindowController?.window,
-            plexBrowserWindowController?.window,
+            spectrumWindowController?.window,
+            waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
-            spectrumWindowController?.window,
-            waveformWindowController?.window
+            plexBrowserWindowController?.window
         ]
         
         for window in windows {
