@@ -1035,7 +1035,15 @@ class ModernLibraryBrowserView: NSView {
 
             // Item count (only in list mode, not art-only)
             if !isArtOnlyMode {
-                let countText = "\(displayItems.count) items"
+                let totalCount: Int
+                if browseMode == .artists {
+                    totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
+                } else if browseMode == .albums {
+                    totalCount = localAlbumTotal > 0 ? localAlbumTotal : displayItems.count
+                } else {
+                    totalCount = displayItems.count
+                }
+                let countText = "\(totalCount) items"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
                 drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)

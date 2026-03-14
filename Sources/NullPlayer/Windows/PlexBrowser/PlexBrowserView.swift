@@ -1978,7 +1978,15 @@ class PlexBrowserView: NSView {
                 rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
             } else if !isArtOnlyMode {
                 // Item count (only in list mode)
-                let countNumber = "\(displayItems.count)"
+                let totalCount: Int
+                if browseMode == .artists {
+                    totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
+                } else if browseMode == .albums {
+                    totalCount = localAlbumTotal > 0 ? localAlbumTotal : displayItems.count
+                } else {
+                    totalCount = displayItems.count
+                }
+                let countNumber = "\(totalCount)"
                 let countLabel = " items"
                 let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
                 let countX = visX - countWidth - 24
