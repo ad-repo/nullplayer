@@ -106,6 +106,8 @@ Manual QA for UI/playback changes: local file playback, Plex/Subsonic/Jellyfin/E
 
 - **Remember State On Quit**: `AppStateManager` saves/restores complete session state (v2). Two-phase restoration: settings first (`restoreSettingsState`), then playlist (`restorePlaylistState`). Streaming tracks are loaded as placeholder `Track` objects then replaced asynchronously via `engine.replaceTrack(at:with:)`. When adding new state: persistent preferences → UserDefaults directly; session state → `AppState` struct with `decodeIfPresent` defaults.
 
+- **Never call `normalizedPath(for:)` / `resolvingSymlinksInPath()` in a loop over library items**: Each call is a filesystem operation; on NFS/SMB volumes this is a network round-trip. Pre-compute paths once outside any loop, then do string comparisons. The pattern in `watchFolderSummaries()` is the reference: folder paths normalized once (5 calls), track/movie/episode paths from `url.path` directly. Violating this caused the Manage Folders window to hang permanently on 60k-track libraries (300k filesystem calls blocked the background thread).
+
 - **Library browser expand tasks must use `Task.detached`**: In both `ModernLibraryBrowserView` and classic `PlexBrowserView`, expand tasks for Jellyfin, Emby, and Subsonic must use `Task.detached { @MainActor ... }` instead of `Task { @MainActor ... }`. Regular `Task {}` can inherit cancellation state from the main actor context.
 
 - **vis_classic state is window-scoped**: Main window and spectrum window keep independent profile, fit, and transparent-background settings. Use `VisClassicBridge.PreferenceScope` and scoped keys (e.g. `visClassicLastProfileName.mainWindow`). Do not use shared keys.

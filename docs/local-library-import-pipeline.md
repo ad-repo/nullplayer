@@ -1,6 +1,6 @@
 # Local Library Import Pipeline (Current State)
 
-Last updated: 2026-03-13 (incremental batch flushing added; post-import UI hang fixed)
+Last updated: 2026-03-14 (Manage Folders window hang on network-volume libraries fixed)
 
 This document captures the current implementation status for local-library scanning/import and NAS responsiveness work so another agent can continue without re-discovery.
 
@@ -159,6 +159,17 @@ Fixes applied:
 - `MediaLibraryStore`: schema v2 migration adds expression index `idx_tracks_artist_expr ON library_tracks (coalesce(album_artist, artist, 'Unknown Artist'))`. New DBs created at v2. Existing v1 DBs migrated automatically on next open.
 - `MediaLibraryStore.albumsForArtistsBatch(_:)`: new method that fetches album summaries for a full page of artists in a single SQL query (using IN clause) instead of one per artist. Reduces 200 queries → 1.
 - Both `ModernLibraryBrowserView.buildLocalArtistItems()` and `PlexBrowserView.buildLocalArtistItems()` (including the scroll/load-more paths) use the batch method.
+
+## Fixed: Manage Folders Window Empty on Network-Volume Libraries
+
+Root cause: `watchFolderSummaries()` called `normalizedPath(for: track.url)` — which calls `resolvingSymlinksInPath()` — inside a nested loop: once per track **per folder** (O(N×M) filesystem hits). With 60k tracks and 5 watch folders = 300,000 `resolvingSymlinksInPath()` calls. On network-mounted volumes (`/Volumes/home/`, NFS/SMB), each call is a network filesystem operation. The background thread blocked indefinitely, leaving the window permanently empty.
+
+Fix applied in `MediaLibrary.watchFolderSummaries()`:
+- Folder paths are still normalized with `normalizedPath(for:)` — only 5 calls, negligible.
+- Track/movie/episode paths now use `url.path` directly (pre-computed once, outside the folder loop).
+- This is safe because tracks are scanned from the **already-normalized** watch folder URL (`rescanWatchFolder` passes `normalizedWatchFolderURL(url)` to the file enumerator), so track paths are already resolved — re-running `resolvingSymlinksInPath()` per track per folder was redundant.
+
+**Pattern to follow**: never call `normalizedPath(for:)` / `resolvingSymlinksInPath()` inside a loop over library items. Pre-compute paths once, then do string comparisons.
 
 ## Resume Checklist For Next Agent
 
