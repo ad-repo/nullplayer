@@ -3834,6 +3834,7 @@ class AudioEngine {
         }
         
         isCrossfading = false
+        crossfadeFileLoadToken &+= 1  // cancel any in-flight deferredIOQueue file open
         crossfadeTargetIndex = -1
         // Reset to playerNode as primary (crossfade was incomplete, outgoing player continues)
         crossfadePlayerIsActive = false
@@ -3847,6 +3848,7 @@ class AudioEngine {
         crossfadeTimer?.invalidate()
         crossfadeTimer = nil
         isCrossfading = false
+        crossfadeFileLoadToken &+= 1  // cancel any in-flight deferredIOQueue file open
         crossfadeTargetIndex = -1
 
         crossfadeStreamingPlayer?.stop()
