@@ -1710,9 +1710,13 @@ class PlexBrowserView: NSView {
         } else {
             let colors = skin.playlistColors
 
-            // Fast path: scroll timer marks only server bar area dirty — skip window frame + list
+            // Fast path: scroll timer marks only server bar area dirty — skip tab bar + list
+            // Must still draw the window chrome (borders) so the border tiles aren't missing in that row
             let serverBarMinY = bounds.height - CGFloat(Layout.titleBarHeight + Layout.serverBarHeight)
             if dirtyRect.minY >= serverBarMinY {
+                let scrollPosition = calculateScrollPosition()
+                renderer.drawPlexBrowserWindow(in: context, bounds: drawBounds, isActive: isActive,
+                                               pressedButton: pressedButton, scrollPosition: scrollPosition)
                 drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
             } else {
                 // Calculate scroll position for scrollbar (0-1)
