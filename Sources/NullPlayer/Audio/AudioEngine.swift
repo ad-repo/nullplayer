@@ -266,7 +266,10 @@ class AudioEngine {
     /// Track whether primary or crossfade player is currently "active" for local playback
     /// When a crossfade completes, the crossfade player becomes the primary
     private var crossfadePlayerIsActive: Bool = false
-    
+
+    /// Token used to invalidate stale in-flight Sweet Fades file opens.
+    private var crossfadeFileLoadToken: UInt64 = 0
+
     /// Pre-scheduled next file for gapless playback
     private var nextScheduledFile: AVAudioFile?
     private var nextScheduledTrackIndex: Int = -1
@@ -3493,56 +3496,71 @@ class AudioEngine {
         }
     }
     
-    /// Start crossfade for local file playback
     private func startLocalCrossfade(to nextTrack: Track, nextIndex: Int) {
-        do {
-            let nextFile = try AVAudioFile(forReading: nextTrack.url)
-            
-            // Invalidate the outgoing player's completion handler from loadLocalTrack()
-            // so it doesn't call trackDidFinish() when the outgoing track's audio finishes
-            playbackGeneration += 1
-            let currentGeneration = playbackGeneration
-            
-            // Determine which player is currently active and which will be the crossfade target
-            let outgoingPlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
-            let incomingPlayer = crossfadePlayerIsActive ? playerNode : crossfadePlayerNode
-            
-            // Schedule on incoming player with proper completion handler
-            // Uses .dataPlayedBack so trackDidFinish fires when this track ends after crossfade
-            incomingPlayer.stop()
-            incomingPlayer.volume = 0
-            incomingPlayer.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.handlePlaybackComplete(generation: currentGeneration)
+        // Open the next track's file off the main thread — synchronous AVAudioFile opens
+        // on NAS/network volumes block the main thread for seconds.
+        // isCrossfading = true was already set by startCrossfade() before calling us,
+        // so the periodic timer cannot start a duplicate crossfade while the open is in flight.
+        crossfadeFileLoadToken &+= 1
+        let token = crossfadeFileLoadToken
+
+        deferredIOQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                let nextFile = try AVAudioFile(forReading: nextTrack.url)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          self.crossfadeFileLoadToken == token,
+                          self.isCrossfading else { return }
+
+                    // Invalidate the outgoing player's completion handler from loadLocalTrack()
+                    // so it doesn't call trackDidFinish() when the outgoing track's audio finishes
+                    self.playbackGeneration += 1
+                    let currentGeneration = self.playbackGeneration
+
+                    // Determine which player is currently active and which will be the crossfade target
+                    let outgoingPlayer = self.crossfadePlayerIsActive ? self.crossfadePlayerNode : self.playerNode
+                    let incomingPlayer = self.crossfadePlayerIsActive ? self.playerNode : self.crossfadePlayerNode
+
+                    // Schedule on incoming player with proper completion handler
+                    // Uses .dataPlayedBack so trackDidFinish fires when this track ends after crossfade
+                    incomingPlayer.stop()
+                    incomingPlayer.volume = 0
+                    incomingPlayer.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                        DispatchQueue.main.async {
+                            self?.handlePlaybackComplete(generation: currentGeneration)
+                        }
+                    }
+
+                    // Start the incoming player
+                    incomingPlayer.play()
+
+                    // Store the file for later
+                    if self.crossfadePlayerIsActive {
+                        self.audioFile = nextFile
+                    } else {
+                        self.crossfadeAudioFile = nextFile
+                    }
+
+                    // Start volume ramp
+                    self.startCrossfadeVolumeRamp(
+                        outgoingVolume: { v in outgoingPlayer.volume = v },
+                        incomingVolume: { v in incomingPlayer.volume = v },
+                        completion: { [weak self] in
+                            self?.completeCrossfade(nextFile: nextFile, nextIndex: nextIndex)
+                        }
+                    )
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          self.crossfadeFileLoadToken == token,
+                          self.isCrossfading else { return }
+                    NSLog("Sweet Fades: Failed to load next track: %@", error.localizedDescription)
+                    self.isCrossfading = false
+                    self.crossfadeTargetIndex = -1
                 }
             }
-            
-            // Start the incoming player
-            incomingPlayer.play()
-            
-            // Store the file for later
-            if crossfadePlayerIsActive {
-                audioFile = nextFile
-            } else {
-                crossfadeAudioFile = nextFile
-            }
-            
-            // Start volume ramp
-            startCrossfadeVolumeRamp(
-                outgoingVolume: { v in
-                    outgoingPlayer.volume = v
-                },
-                incomingVolume: { v in
-                    incomingPlayer.volume = v
-                },
-                completion: { [weak self] in
-                    self?.completeCrossfade(nextFile: nextFile, nextIndex: nextIndex)
-                }
-            )
-        } catch {
-            NSLog("Sweet Fades: Failed to load next track: %@", error.localizedDescription)
-            isCrossfading = false
-            crossfadeTargetIndex = -1
         }
     }
     
