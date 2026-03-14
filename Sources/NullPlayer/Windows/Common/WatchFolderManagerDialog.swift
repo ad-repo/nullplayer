@@ -142,9 +142,16 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
     // MARK: - Data
 
     private func reload() {
-        summaries = MediaLibrary.shared.watchFolderSummaries()
-        tableView?.reloadData()
-        updateButtonStates()
+        // watchFolderSummaries() blocks on dataQueue.sync, which is held for extended
+        // periods during import scans. Load off-main to avoid beachballing.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = MediaLibrary.shared.watchFolderSummaries()
+            DispatchQueue.main.async {
+                self?.summaries = result
+                self?.tableView?.reloadData()
+                self?.updateButtonStates()
+            }
+        }
     }
 
     private func updateButtonStates() {
