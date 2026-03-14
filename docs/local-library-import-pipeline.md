@@ -135,10 +135,15 @@ Implemented:
 - Cue-sheet parsing moved off main in waveform base view:
   - async/cancellable cue parse task (`cueLoadTask`)
 
-### Known Remaining Risk
+## NAS Deferred Open — Fully Resolved
 
-- Some non-direct local transitions still use synchronous `loadTrack -> loadLocalTrack` (for example parts of auto-advance/crossfade paths).  
-  If NAS stalls are still observed outside direct playlist clicks, migrate those paths to deferred open with the same token model.
+All local file-open paths are now async on `deferredIOQueue`:
+- **Direct click** (`playTrack`): `loadLocalTrackForImmediatePlayback` (existing)
+- **Auto-advance** (`trackDidFinish`): `advanceToLocalTrackAsync` → `loadLocalTrackForImmediatePlayback`
+- **Sweet Fades** (`startLocalCrossfade`): inline `deferredIOQueue.async` with `crossfadeFileLoadToken`
+- **Gapless pre-schedule** (`scheduleNextTrackForGapless`): `deferredIOQueue.async` (existing)
+
+No synchronous `AVAudioFile(forReading:)` calls remain on the main thread for local playback.
 
 ## Verification State
 
