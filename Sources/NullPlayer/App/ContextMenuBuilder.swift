@@ -4403,7 +4403,7 @@ class MenuActions: NSObject {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.json]
+        panel.allowedContentTypes = [.init(filenameExtension: "db")!, .json]
         panel.title = "Select Library Backup"
         panel.message = "Choose a library backup file to restore"
         

@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import AppKit
+import SQLite
 
 /// Represents an entry in the media library with full metadata
 struct LibraryTrack: Identifiable, Codable, Hashable {
@@ -166,6 +167,15 @@ struct Artist: Identifiable, Hashable {
     }
 }
 
+/// Lightweight summary of an album for paginated display (no tracks loaded).
+struct AlbumSummary: Identifiable {
+    let id: String       // "albumArtist|album" key
+    let name: String
+    let artist: String?
+    let year: Int?
+    let trackCount: Int
+}
+
 /// Represents a local video file (movie) in the library
 struct LocalVideo: Identifiable, Codable {
     let id: UUID
@@ -183,6 +193,16 @@ struct LocalVideo: Identifiable, Codable {
         self.duration = 0
         self.fileSize = 0
         self.dateAdded = Date()
+    }
+
+    init(id: UUID, url: URL, title: String, year: Int?, duration: TimeInterval, fileSize: Int64, dateAdded: Date) {
+        self.id = id
+        self.url = url
+        self.title = title
+        self.year = year
+        self.duration = duration
+        self.fileSize = fileSize
+        self.dateAdded = dateAdded
     }
 
     var formattedDuration: String {
@@ -218,6 +238,19 @@ struct LocalEpisode: Identifiable, Codable {
         self.duration = 0
         self.fileSize = 0
         self.dateAdded = Date()
+    }
+
+    init(id: UUID, url: URL, title: String, showTitle: String, seasonNumber: Int, episodeNumber: Int?,
+         duration: TimeInterval, fileSize: Int64, dateAdded: Date) {
+        self.id = id
+        self.url = url
+        self.title = title
+        self.showTitle = showTitle
+        self.seasonNumber = seasonNumber
+        self.episodeNumber = episodeNumber
+        self.duration = duration
+        self.fileSize = fileSize
+        self.dateAdded = dateAdded
     }
 
     var formattedDuration: String {
@@ -295,8 +328,13 @@ class MediaLibrary {
     
     // MARK: - Properties
     
-    /// Serial queue to guard library state
+    /// Serial queue to guard library state (tracks, movies, episodes, signatures)
     private let dataQueue = DispatchQueue(label: "NullPlayer.MediaLibrary.data")
+
+    /// Separate queue for ratings — must NOT share dataQueue because draw() calls
+    /// albumRating/artistRating on the main thread, and dataQueue is held for extended
+    /// periods during import (O(N) pass, batch flushes), which blocks every frame.
+    private let ratingsQueue = DispatchQueue(label: "NullPlayer.MediaLibrary.ratings")
     
     /// All tracks in the library (guarded by dataQueue)
     private var tracks: [LibraryTrack] = []
@@ -317,7 +355,7 @@ class MediaLibrary {
     private var moviesByPath: [String: LocalVideo] = [:]
     private var episodesByPath: [String: LocalEpisode] = [:]
 
-    /// Album and artist ratings keyed by id (guarded by dataQueue)
+    /// Album and artist ratings keyed by id (guarded by ratingsQueue, NOT dataQueue)
     private var albumRatings: [String: Int] = [:]   // Key: album.id ("artist|album")
     private var artistRatings: [String: Int] = [:]  // Key: artist.id (artist name)
 
@@ -340,10 +378,8 @@ class MediaLibrary {
     private var lastScanProgressEmitTime: CFAbsoluteTime = 0
     private var lastScanProgressValue: Double = 0
 
-    /// Debounced save state for bulk imports.
-    private let saveQueue = DispatchQueue(label: "NullPlayer.MediaLibrary.save", qos: .utility)
-    private let saveStateQueue = DispatchQueue(label: "NullPlayer.MediaLibrary.saveState")
-    private var pendingSaveWorkItem: DispatchWorkItem?
+    private let store = MediaLibraryStore.shared
+
     private let scanProgressStateQueue = DispatchQueue(label: "NullPlayer.MediaLibrary.scanProgressState")
     
     /// Notification names
@@ -360,8 +396,9 @@ class MediaLibrary {
         
         try? FileManager.default.createDirectory(at: libraryDir, withIntermediateDirectories: true)
         
-        libraryURL = libraryDir.appendingPathComponent("library.json")
-        
+        libraryURL = libraryDir.appendingPathComponent("library.db")
+
+        store.open()
         loadLibrary()
     }
 
@@ -514,12 +551,13 @@ class MediaLibrary {
         }
         
         if didAdd {
+            store.upsertTrack(track, sig: signature)
             notifyChange()
         }
-        
+
         return result
     }
-    
+
     /// Add multiple tracks to the library (quick validates all files first)
     func addTracks(urls: [URL]) {
         guard !urls.isEmpty else { return }
@@ -549,10 +587,10 @@ class MediaLibrary {
             tracksByPath.removeValue(forKey: track.url.path)
             scanSignaturesByPath.removeValue(forKey: track.url.path)
         }
+        store.deleteTrackByPath(track.url.path)
         notifyChange()
-        saveLibrary()
     }
-    
+
     /// Remove tracks by URL
     func removeTracks(urls: [URL]) {
         let pathsToRemove = Set(urls.map(\.path))
@@ -565,14 +603,16 @@ class MediaLibrary {
                 scanSignaturesByPath.removeValue(forKey: path)
             }
         }
+        for path in pathsToRemove { store.deleteTrackByPath(path) }
         notifyChange()
-        saveLibrary()
     }
     
     /// Clear all local media entries from the library (tracks, movies, episodes).
     /// Watch folders are preserved.
     func clearLibrary() {
+        NSLog("MediaLibrary: Clearing entire library")
         scanGeneration += 1
+        cancelScanIfActive()
         dataQueue.sync {
             tracks.removeAll()
             tracksByPath.removeAll()
@@ -581,34 +621,42 @@ class MediaLibrary {
             episodes.removeAll()
             episodesByPath.removeAll()
             scanSignaturesByPath.removeAll()
+        }
+        ratingsQueue.sync {
             albumRatings.removeAll()
             artistRatings.removeAll()
         }
+        store.deleteAllMedia()
         notifyChange()
-        saveLibrary()
     }
 
     /// Clear music entries only (tracks + track-derived ratings).
     /// Movies, TV episodes, and watch folders are preserved.
     func clearMusicLibrary() {
+        NSLog("MediaLibrary: Clearing music library")
         scanGeneration += 1
+        cancelScanIfActive()
         dataQueue.sync {
             tracks.removeAll()
             tracksByPath.removeAll()
             scanSignaturesByPath = scanSignaturesByPath.filter { path, _ in
                 moviesByPath[path] != nil || episodesByPath[path] != nil
             }
+        }
+        ratingsQueue.sync {
             albumRatings.removeAll()
             artistRatings.removeAll()
         }
+        store.deleteAllTracks()
         notifyChange()
-        saveLibrary()
     }
 
     /// Clear movie entries only.
     /// Music tracks, TV episodes, and watch folders are preserved.
     func clearMovieLibrary() {
+        NSLog("MediaLibrary: Clearing movie library")
         scanGeneration += 1
+        cancelScanIfActive()
         dataQueue.sync {
             movies.removeAll()
             moviesByPath.removeAll()
@@ -616,14 +664,16 @@ class MediaLibrary {
                 tracksByPath[path] != nil || episodesByPath[path] != nil
             }
         }
+        store.deleteAllMovies()
         notifyChange()
-        saveLibrary()
     }
 
     /// Clear TV entries only (episodes/shows).
     /// Music tracks, movies, and watch folders are preserved.
     func clearTVLibrary() {
+        NSLog("MediaLibrary: Clearing TV library")
         scanGeneration += 1
+        cancelScanIfActive()
         dataQueue.sync {
             episodes.removeAll()
             episodesByPath.removeAll()
@@ -631,24 +681,22 @@ class MediaLibrary {
                 tracksByPath[path] != nil || moviesByPath[path] != nil
             }
         }
+        store.deleteAllEpisodes()
         notifyChange()
-        saveLibrary()
     }
     
     /// Update play statistics for a track
     func recordPlay(for track: LibraryTrack) {
-        var didUpdate = false
+        var updatedTrack: LibraryTrack?
         dataQueue.sync {
             guard let index = tracks.firstIndex(where: { $0.id == track.id }) else { return }
-            
             tracks[index].playCount += 1
             tracks[index].lastPlayed = Date()
             tracksByPath[track.url.path] = tracks[index]
-            didUpdate = true
+            updatedTrack = tracks[index]
         }
-        
-        if didUpdate {
-            saveLibrary()
+        if let t = updatedTrack {
+            store.updatePlayStats(trackId: t.id, playCount: t.playCount, lastPlayed: t.lastPlayed ?? Date())
         }
     }
     
@@ -660,14 +708,12 @@ class MediaLibrary {
         var didUpdate = false
         dataQueue.sync {
             guard let index = tracks.firstIndex(where: { $0.id == trackId }) else { return }
-            
             tracks[index].rating = rating
             tracksByPath[tracks[index].url.path] = tracks[index]
             didUpdate = true
         }
-        
         if didUpdate {
-            saveLibrary()
+            store.updateTrackRating(trackId: trackId, rating: rating)
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: Self.trackRatingDidChangeNotification, object: trackId)
             }
@@ -675,30 +721,30 @@ class MediaLibrary {
     }
     
     func albumRating(for albumId: String) -> Int? {
-        dataQueue.sync { albumRatings[albumId] }
+        ratingsQueue.sync { albumRatings[albumId] }
     }
 
     func artistRating(for artistId: String) -> Int? {
-        dataQueue.sync { artistRatings[artistId] }
+        ratingsQueue.sync { artistRatings[artistId] }
     }
 
     func setAlbumRating(albumId: String, rating: Int?) {
-        dataQueue.sync {
+        ratingsQueue.sync {
             if let rating = rating { albumRatings[albumId] = rating }
             else { albumRatings.removeValue(forKey: albumId) }
         }
-        saveLibrary()
+        store.setAlbumRating(albumId: albumId, rating: rating)
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: nil)
         }
     }
 
     func setArtistRating(artistId: String, rating: Int?) {
-        dataQueue.sync {
+        ratingsQueue.sync {
             if let rating = rating { artistRatings[artistId] = rating }
             else { artistRatings.removeValue(forKey: artistId) }
         }
-        saveLibrary()
+        store.setArtistRating(artistId: artistId, rating: rating)
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: nil)
         }
@@ -707,39 +753,39 @@ class MediaLibrary {
     /// Update a track's metadata in the library (in-app only, no file write-back)
     func updateTrack(_ track: LibraryTrack) {
         var didUpdate = false
+        var sig: FileScanSignature?
         dataQueue.sync {
             guard let index = tracks.firstIndex(where: { $0.id == track.id }) else { return }
             tracks[index] = track; tracksByPath[track.url.path] = track; didUpdate = true
-            if let signature = signatureFromFileSystem(url: track.url, fallbackFileSize: track.fileSize) {
-                scanSignaturesByPath[track.url.path] = signature
-            }
+            sig = signatureFromFileSystem(url: track.url, fallbackFileSize: track.fileSize)
+            if let s = sig { scanSignaturesByPath[track.url.path] = s }
         }
-        if didUpdate { notifyChange(); saveLibrary() }
+        if didUpdate { store.upsertTrack(track, sig: sig); notifyChange() }
     }
 
     /// Update a movie's metadata in the library (in-app only, no file write-back)
     func updateMovie(_ movie: LocalVideo) {
+        var sig: FileScanSignature?
         dataQueue.sync {
             guard let index = movies.firstIndex(where: { $0.id == movie.id }) else { return }
             movies[index] = movie; moviesByPath[movie.url.path] = movie
-            if let signature = signatureFromFileSystem(url: movie.url, fallbackFileSize: movie.fileSize) {
-                scanSignaturesByPath[movie.url.path] = signature
-            }
+            sig = signatureFromFileSystem(url: movie.url, fallbackFileSize: movie.fileSize)
+            if let s = sig { scanSignaturesByPath[movie.url.path] = s }
         }
-        notifyChange(); saveLibrary()
+        store.upsertMovie(movie, sig: sig); notifyChange()
     }
 
     /// Update an episode's metadata in the library (in-app only, no file write-back)
     func updateEpisode(_ episode: LocalEpisode) {
+        var sig: FileScanSignature?
         dataQueue.sync {
             guard let index = episodes.firstIndex(where: { $0.id == episode.id }) else { return }
             episodesByPath.removeValue(forKey: episodes[index].url.path)
             episodes[index] = episode; episodesByPath[episode.url.path] = episode
-            if let signature = signatureFromFileSystem(url: episode.url, fallbackFileSize: episode.fileSize) {
-                scanSignaturesByPath[episode.url.path] = signature
-            }
+            sig = signatureFromFileSystem(url: episode.url, fallbackFileSize: episode.fileSize)
+            if let s = sig { scanSignaturesByPath[episode.url.path] = s }
         }
-        notifyChange(); saveLibrary()
+        store.upsertEpisode(episode, sig: sig); notifyChange()
     }
 
     /// Remove a movie from the library (file is not deleted)
@@ -759,7 +805,8 @@ class MediaLibrary {
                 scanSignaturesByPath.removeValue(forKey: path)
             }
         }
-        notifyChange(); saveLibrary()
+        for path in pathsToRemove { store.deleteMovieByPath(path) }
+        notifyChange()
     }
 
     /// Remove an episode from the library (file is not deleted)
@@ -779,33 +826,40 @@ class MediaLibrary {
                 scanSignaturesByPath.removeValue(forKey: path)
             }
         }
-        notifyChange(); saveLibrary()
+        for path in pathsToRemove { store.deleteEpisodeByPath(path) }
+        notifyChange()
     }
 
     /// Remove all episodes for a given show title from the library
     func removeShow(title: String) {
+        var pathsToRemove: [String] = []
         dataQueue.sync {
             let toRemove = episodes.filter { $0.showTitle == title }
             toRemove.forEach {
                 episodesByPath.removeValue(forKey: $0.url.path)
                 scanSignaturesByPath.removeValue(forKey: $0.url.path)
+                pathsToRemove.append($0.url.path)
             }
             episodes.removeAll { $0.showTitle == title }
         }
-        notifyChange(); saveLibrary()
+        for path in pathsToRemove { store.deleteEpisodeByPath(path) }
+        notifyChange()
     }
 
     /// Remove all episodes for a given season of a show from the library
     func removeSeason(showTitle: String, seasonNumber: Int) {
+        var pathsToRemove: [String] = []
         dataQueue.sync {
             let toRemove = episodes.filter { $0.showTitle == showTitle && $0.seasonNumber == seasonNumber }
             toRemove.forEach {
                 episodesByPath.removeValue(forKey: $0.url.path)
                 scanSignaturesByPath.removeValue(forKey: $0.url.path)
+                pathsToRemove.append($0.url.path)
             }
             episodes.removeAll { $0.showTitle == showTitle && $0.seasonNumber == seasonNumber }
         }
-        notifyChange(); saveLibrary()
+        for path in pathsToRemove { store.deleteEpisodeByPath(path) }
+        notifyChange()
     }
 
     /// Find a library track by its file URL
@@ -861,7 +915,8 @@ class MediaLibrary {
             }
         }
         if didAdd {
-            saveLibrary()
+            NSLog("MediaLibrary: Added watch folder: %@", normalized.path)
+            store.insertWatchFolder(normalized)
         }
     }
     
@@ -929,11 +984,14 @@ class MediaLibrary {
 
         guard didMutateWatchFolders else { return }
 
+        NSLog("MediaLibrary: Removed watch folder: %@ (removed entries: %d tracks, %d movies, %d episodes)",
+              removedFolderPath, removalCounts.tracks, removalCounts.movies, removalCounts.episodes)
+        store.deleteWatchFolder(removedFolderPath)
+
         if removeEntries,
            (removalCounts.tracks > 0 || removalCounts.movies > 0 || removalCounts.episodes > 0) {
             notifyChange()
         }
-        saveLibrary()
     }
     
     /// Adds individual video files to the library (movies or episodes based on classification).
@@ -944,7 +1002,6 @@ class MediaLibrary {
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: nil)
         }
-        saveLibrary()
     }
 
     /// Scan a folder incrementally using discover -> diff -> process.
@@ -986,6 +1043,15 @@ class MediaLibrary {
         )
     }
 
+    /// Cancels an in-flight library scan by resetting isScanning and notifying observers.
+    /// Must be called on the main thread after incrementing scanGeneration.
+    private func cancelScanIfActive() {
+        guard isScanning else { return }
+        isScanning = false
+        scanProgress = 0
+        NotificationCenter.default.post(name: Self.scanProgressNotification, object: 0.0)
+    }
+
     private func importMedia(
         urls: [URL],
         recursiveDirectories: Bool,
@@ -998,6 +1064,7 @@ class MediaLibrary {
 
         let generation = scanGeneration
         if isLibraryScan {
+            NSLog("MediaLibrary: Starting library scan of %d folder(s)", urls.count)
             scanProgressStateQueue.sync {
                 lastScanProgressEmitTime = 0
                 lastScanProgressValue = 0
@@ -1013,21 +1080,69 @@ class MediaLibrary {
             guard let self else { return }
             if isLibraryScan, self.scanGeneration != generation { return }
 
-            let discovery = LocalFileDiscovery.discoverMedia(
-                from: urls,
-                recursiveDirectories: recursiveDirectories,
-                includeVideo: includeVideo,
-                includeLegacyWMA: isLibraryScan
-            )
-            let discoveredPaths = Set(discovery.audioFiles.map(\.path) + discovery.videoFiles.map(\.path))
-            let cleanFolderPathSet = Set(cleanMissingFolderPaths)
-            let cleanFolderPaths = Array(cleanFolderPathSet)
-
             var audioMetadataTasks: [LocalDiscoveredMediaFile] = []
             var videoRescanTasks: [LocalDiscoveredMediaFile] = []
             var skippedCount = 0
             var didQuickMutate = false
+            var cleanedTrackPaths: [String] = []
+            var cleanedMoviePaths: [String] = []
+            var cleanedEpisodePaths: [String] = []
+            var quickAddedTracks: [(track: LibraryTrack, sig: FileScanSignature?)] = []
+            var discoveredPaths = Set<String>()
 
+            // Stream discovery: process audio in 500-file batches as the enumerator yields them.
+            // Tracks appear in the library immediately rather than waiting for full enumeration.
+            let discovery = LocalFileDiscovery.discoverMediaStreaming(
+                from: urls,
+                recursiveDirectories: recursiveDirectories,
+                includeVideo: includeVideo,
+                includeLegacyWMA: isLibraryScan,
+                audioBatchSize: 500
+            ) { audioBatch in
+                if isLibraryScan, self.scanGeneration != generation { return }
+                discoveredPaths.formUnion(audioBatch.map(\.path))
+
+                var batchAdded: [(track: LibraryTrack, sig: FileScanSignature?)] = []
+                self.dataQueue.sync {
+                    for file in audioBatch {
+                        let signature = self.signature(for: file)
+                        if self.tracksByPath[file.path] == nil {
+                            let track = self.makeFastTrack(from: file)
+                            self.tracks.append(track)
+                            self.tracksByPath[file.path] = track
+                            self.scanSignaturesByPath[file.path] = signature
+                            audioMetadataTasks.append(file)
+                            batchAdded.append((track: track, sig: signature))
+                        } else if self.scanSignaturesByPath[file.path] == signature {
+                            skippedCount += 1
+                        } else {
+                            if let idx = self.tracks.firstIndex(where: { $0.url.path == file.path }) {
+                                var existing = self.tracks[idx]
+                                existing.fileSize = file.fileSize
+                                self.tracks[idx] = existing
+                                self.tracksByPath[file.path] = existing
+                            }
+                            self.scanSignaturesByPath[file.path] = signature
+                            audioMetadataTasks.append(file)
+                        }
+                    }
+                }
+
+                if !batchAdded.isEmpty {
+                    quickAddedTracks.append(contentsOf: batchAdded)
+                    self.store.upsertTracks(batchAdded)
+                    didQuickMutate = true
+                    self.notifyChangeCoalesced()
+                }
+            }
+
+            NSLog("MediaLibrary: Discovery complete — %d audio, %d video files found", discovery.audioFiles.count, discovery.videoFiles.count)
+            discoveredPaths.formUnion(discovery.videoFiles.map(\.path))
+            let cleanFolderPathSet = Set(cleanMissingFolderPaths)
+            let cleanFolderPaths = Array(cleanFolderPathSet)
+
+            // Cleanup pass: remove stale files from watched folders (runs after full discovery
+            // so discoveredPaths is complete). New tracks already visible from streaming above.
             self.dataQueue.sync {
                 if !cleanFolderPathSet.isEmpty {
                     self.tracks.removeAll { track in
@@ -1036,6 +1151,7 @@ class MediaLibrary {
                               !discoveredPaths.contains(track.url.path) else { return false }
                         self.tracksByPath.removeValue(forKey: track.url.path)
                         self.scanSignaturesByPath.removeValue(forKey: track.url.path)
+                        cleanedTrackPaths.append(track.url.path)
                         didQuickMutate = true
                         return true
                     }
@@ -1045,6 +1161,7 @@ class MediaLibrary {
                               !discoveredPaths.contains(movie.url.path) else { return false }
                         self.moviesByPath.removeValue(forKey: movie.url.path)
                         self.scanSignaturesByPath.removeValue(forKey: movie.url.path)
+                        cleanedMoviePaths.append(movie.url.path)
                         didQuickMutate = true
                         return true
                     }
@@ -1054,36 +1171,10 @@ class MediaLibrary {
                               !discoveredPaths.contains(episode.url.path) else { return false }
                         self.episodesByPath.removeValue(forKey: episode.url.path)
                         self.scanSignaturesByPath.removeValue(forKey: episode.url.path)
+                        cleanedEpisodePaths.append(episode.url.path)
                         didQuickMutate = true
                         return true
                     }
-                }
-
-                for file in discovery.audioFiles {
-                    let signature = self.signature(for: file)
-                    if self.tracksByPath[file.path] == nil {
-                        let track = self.makeFastTrack(from: file)
-                        self.tracks.append(track)
-                        self.tracksByPath[file.path] = track
-                        self.scanSignaturesByPath[file.path] = signature
-                        audioMetadataTasks.append(file)
-                        didQuickMutate = true
-                        continue
-                    }
-
-                    if self.scanSignaturesByPath[file.path] == signature {
-                        skippedCount += 1
-                        continue
-                    }
-
-                    if let index = self.tracks.firstIndex(where: { $0.url.path == file.path }) {
-                        var existing = self.tracks[index]
-                        existing.fileSize = file.fileSize
-                        self.tracks[index] = existing
-                        self.tracksByPath[file.path] = existing
-                    }
-                    self.scanSignaturesByPath[file.path] = signature
-                    audioMetadataTasks.append(file)
                 }
 
                 for file in discovery.videoFiles {
@@ -1099,6 +1190,8 @@ class MediaLibrary {
                         self.moviesByPath.removeValue(forKey: file.path)
                         self.episodes.removeAll { $0.url.path == file.path }
                         self.episodesByPath.removeValue(forKey: file.path)
+                        cleanedMoviePaths.append(file.path)
+                        cleanedEpisodePaths.append(file.path)
                         didQuickMutate = true
                     }
 
@@ -1107,9 +1200,17 @@ class MediaLibrary {
                 }
             }
 
-            if didQuickMutate {
+            // Persist cleanup removals to DB and notify
+            if !cleanedTrackPaths.isEmpty || !cleanedMoviePaths.isEmpty || !cleanedEpisodePaths.isEmpty {
+                for path in cleanedTrackPaths { self.store.deleteTrackByPath(path) }
+                for path in cleanedMoviePaths { self.store.deleteMovieByPath(path) }
+                for path in cleanedEpisodePaths { self.store.deleteEpisodeByPath(path) }
                 self.notifyChangeCoalesced()
-                self.saveLibrary(coalesced: true)
+            }
+
+            if didQuickMutate {
+                NSLog("MediaLibrary: Quick pass — added %d tracks, removed %d tracks/%d movies/%d episodes",
+                      quickAddedTracks.count, cleanedTrackPaths.count, cleanedMoviePaths.count, cleanedEpisodePaths.count)
             }
 
             let totalDiscovered = max(discovery.audioFiles.count + discovery.videoFiles.count, 1)
@@ -1140,7 +1241,30 @@ class MediaLibrary {
             let metadataSemaphore = DispatchSemaphore(value: metadataWorkerCount)
             let metadataGroup = DispatchGroup()
             let metadataResultsQueue = DispatchQueue(label: "NullPlayer.MediaLibrary.metadataResults")
-            var metadataResults: [(track: LibraryTrack, signature: FileScanSignature)] = []
+            var pendingMetadata: [(track: LibraryTrack, signature: FileScanSignature)] = []
+            let metadataFlushBatchSize = 500
+            var didMetadataMutate = false
+
+            // Must be called on metadataResultsQueue (serial queue) to avoid races on pendingMetadata
+            let flushPendingMetadata: () -> Void = {
+                let batch = pendingMetadata
+                pendingMetadata.removeAll(keepingCapacity: true)
+                guard !batch.isEmpty, !isLibraryScan || self.scanGeneration == generation else { return }
+                didMetadataMutate = true
+                // Update dict (O(1) per track) — skip the O(N) firstIndex array scan here.
+                // The tracks array is synced in a single O(N) pass after metadataGroup.wait().
+                self.dataQueue.sync {
+                    for result in batch {
+                        let path = result.track.url.path
+                        self.tracksByPath[path] = result.track
+                        self.scanSignaturesByPath[path] = result.signature
+                    }
+                }
+                let dbBatch = batch.map { (track: $0.track, sig: Optional($0.signature)) }
+                self.store.upsertTracks(dbBatch)
+                NSLog("MediaLibrary: Flushed %d enriched tracks to DB", batch.count)
+                self.notifyChangeCoalesced()
+            }
 
             for file in audioMetadataTasks {
                 metadataGroup.enter()
@@ -1156,45 +1280,53 @@ class MediaLibrary {
                         self.tracksByPath[file.path] ?? self.makeFastTrack(from: file)
                     }
                     track.fileSize = file.fileSize
-                    self.parseMetadata(for: &track)
+                    autoreleasepool {
+                        self.parseMetadata(for: &track)
+                    }
                     let signature = self.signature(for: file)
                     metadataResultsQueue.sync {
-                        metadataResults.append((track: track, signature: signature))
+                        pendingMetadata.append((track: track, signature: signature))
+                        if pendingMetadata.count >= metadataFlushBatchSize {
+                            flushPendingMetadata()
+                        }
                     }
                 }
             }
 
             metadataGroup.wait()
 
-            var didMetadataMutate = false
-            if !metadataResults.isEmpty, (!isLibraryScan || self.scanGeneration == generation) {
+            // Flush any remaining tracks not yet written
+            metadataResultsQueue.sync {
+                flushPendingMetadata()
+            }
+
+            // Sync tracks array from tracksByPath in one O(N) pass.
+            // flushPendingMetadata updated only the dict (O(1) per track) to avoid the
+            // O(N) firstIndex scan per flush that made this O(N²) overall for large libraries.
+            if didMetadataMutate {
                 self.dataQueue.sync {
-                    for result in metadataResults {
-                        let path = result.track.url.path
-                        if let index = self.tracks.firstIndex(where: { $0.url.path == path }) {
-                            self.tracks[index] = result.track
-                        } else {
-                            self.tracks.append(result.track)
+                    for i in 0..<self.tracks.count {
+                        let path = self.tracks[i].url.path
+                        if let enriched = self.tracksByPath[path] {
+                            self.tracks[i] = enriched
                         }
-                        self.tracksByPath[path] = result.track
-                        self.scanSignaturesByPath[path] = result.signature
                     }
-                    didMetadataMutate = true
                 }
             }
+            NSLog("MediaLibrary: Metadata enrichment complete — all tracks flushed")
 
             if didVideoMutate || didMetadataMutate {
                 self.notifyChangeCoalesced()
-                self.saveLibrary(coalesced: true)
             }
 
             let didMutate = didQuickMutate || didVideoMutate || didMetadataMutate
             if didMutate {
                 self.notifyChange()
-                self.saveLibrary(force: true)
             }
 
             if isLibraryScan {
+                let totalTracks = self.dataQueue.sync { self.tracks.count }
+                NSLog("MediaLibrary: Scan complete — %d total tracks in library (skipped %d unchanged)", totalTracks, skippedCount)
                 self.emitScanProgress(processed: totalDiscovered, total: totalDiscovered, force: true)
                 DispatchQueue.main.async {
                     guard self.scanGeneration == generation else { return }
@@ -1436,24 +1568,36 @@ class MediaLibrary {
             episode.title = titleFromMetadata ?? filename
             episode.duration = duration
             episode.fileSize = fileSize
+            var resolvedSig: FileScanSignature?
+            var didAdd = false
             dataQueue.sync {
                 guard episodesByPath[path] == nil else { return }
+                let sig = signature ?? signatureFromFileSystem(url: url, fallbackFileSize: fileSize)
+                resolvedSig = sig
                 episodes.append(episode)
                 episodesByPath[path] = episode
-                scanSignaturesByPath[path] = signature ?? signatureFromFileSystem(url: url, fallbackFileSize: fileSize)
+                scanSignaturesByPath[path] = sig ?? FileScanSignature(fileSize: fileSize, contentModificationDate: nil)
+                didAdd = true
             }
+            if didAdd { store.upsertEpisode(episode, sig: resolvedSig) }
         } else {
             var movie = LocalVideo(url: url)
             movie.title = titleFromMetadata ?? filename
             movie.year = yearFromMetadata
             movie.duration = duration
             movie.fileSize = fileSize
+            var resolvedSig: FileScanSignature?
+            var didAdd = false
             dataQueue.sync {
                 guard moviesByPath[path] == nil else { return }
+                let sig = signature ?? signatureFromFileSystem(url: url, fallbackFileSize: fileSize)
+                resolvedSig = sig
                 movies.append(movie)
                 moviesByPath[path] = movie
-                scanSignaturesByPath[path] = signature ?? signatureFromFileSystem(url: url, fallbackFileSize: fileSize)
+                scanSignaturesByPath[path] = sig ?? FileScanSignature(fileSize: fileSize, contentModificationDate: nil)
+                didAdd = true
             }
+            if didAdd { store.upsertMovie(movie, sig: resolvedSig) }
         }
     }
 
@@ -1546,87 +1690,39 @@ class MediaLibrary {
         }
     }
     
-    // MARK: - Persistence
-    
-    private func saveLibrary(coalesced: Bool = false, force: Bool = false) {
-        if force {
-            saveStateQueue.sync {
-                pendingSaveWorkItem?.cancel()
-                pendingSaveWorkItem = nil
-            }
-            performSaveLibrary()
-            return
-        }
+    // MARK: - Persistence (SQLite-backed — individual mutations are persisted immediately via store)
 
-        guard coalesced else {
-            performSaveLibrary()
-            return
-        }
-
-        saveStateQueue.sync {
-            pendingSaveWorkItem?.cancel()
-            var workItem: DispatchWorkItem?
-            workItem = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                self.performSaveLibrary()
-                self.saveStateQueue.sync {
-                    if self.pendingSaveWorkItem === workItem {
-                        self.pendingSaveWorkItem = nil
-                    }
-                }
-            }
-            guard let workItem else { return }
-            pendingSaveWorkItem = workItem
-            saveQueue.asyncAfter(deadline: .now() + 0.75, execute: workItem)
-        }
-    }
-
-    private func performSaveLibrary() {
-        let data = dataQueue.sync {
-            LibraryData(tracks: tracks, watchFolders: watchFolders, movies: movies,
-                        episodes: episodes, albumRatings: albumRatings, artistRatings: artistRatings,
-                        scanSignaturesByPath: scanSignaturesByPath)
-        }
-        
-        do {
-            let encoder = JSONEncoder()
-            let jsonData = try encoder.encode(data)
-            try jsonData.write(to: libraryURL)
-        } catch {
-            print("Failed to save library: \(error)")
-        }
-    }
-    
     private func loadLibrary() {
-        guard FileManager.default.fileExists(atPath: libraryURL.path) else { return }
-        
-        do {
-            let data = try Data(contentsOf: libraryURL)
-            let decoder = JSONDecoder()
-            let libraryData = try decoder.decode(LibraryData.self, from: data)
-            let normalizedWatchFolders = Self.normalizedUniqueWatchFolderURLs(libraryData.watchFolders)
-            dataQueue.sync {
-                tracks = libraryData.tracks
-                watchFolders = normalizedWatchFolders
-                movies = libraryData.movies
-                episodes = libraryData.episodes
-                albumRatings = libraryData.albumRatings
-                artistRatings = libraryData.artistRatings
-                scanSignaturesByPath = libraryData.scanSignaturesByPath
+        let loadedTracks = store.allTracks()
+        let loadedMovies = store.allMovies()
+        let loadedEpisodes = store.allEpisodes()
+        let loadedWatchFolders = store.allWatchFolders()
+        let loadedAlbumRatings = store.albumRatings()
+        let loadedArtistRatings = store.artistRatings()
+        let loadedSignatures = store.allSignatures()
 
-                // Rebuild indices
-                tracksByPath.removeAll()
-                for track in tracks { tracksByPath[track.url.path] = track }
-                moviesByPath.removeAll()
-                for movie in movies { moviesByPath[movie.url.path] = movie }
-                episodesByPath.removeAll()
-                for episode in episodes { episodesByPath[episode.url.path] = episode }
-                scanSignaturesByPath = scanSignaturesByPath.filter { path, _ in
-                    tracksByPath[path] != nil || moviesByPath[path] != nil || episodesByPath[path] != nil
-                }
+        let normalizedWatchFolders = Self.normalizedUniqueWatchFolderURLs(loadedWatchFolders)
+        ratingsQueue.sync {
+            albumRatings = loadedAlbumRatings
+            artistRatings = loadedArtistRatings
+        }
+        dataQueue.sync {
+            tracks = loadedTracks
+            watchFolders = normalizedWatchFolders
+            movies = loadedMovies
+            episodes = loadedEpisodes
+            scanSignaturesByPath = loadedSignatures
+
+            // Rebuild indices
+            tracksByPath.removeAll()
+            for track in tracks { tracksByPath[track.url.path] = track }
+            moviesByPath.removeAll()
+            for movie in movies { moviesByPath[movie.url.path] = movie }
+            episodesByPath.removeAll()
+            for episode in episodes { episodesByPath[episode.url.path] = episode }
+            scanSignaturesByPath = scanSignaturesByPath.filter { path, _ in
+                tracksByPath[path] != nil || moviesByPath[path] != nil || episodesByPath[path] != nil
             }
-        } catch {
-            print("Failed to load library: \(error)")
         }
     }
     
@@ -1648,111 +1744,90 @@ class MediaLibrary {
     @discardableResult
     func backupLibrary(customName: String? = nil) throws -> URL {
         let fileManager = FileManager.default
-        
+
         // Ensure backups directory exists
         try fileManager.createDirectory(at: backupsDirectory, withIntermediateDirectories: true)
-        
+
         // Generate backup filename with timestamp
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let timestamp = dateFormatter.string(from: Date())
-        
+
         let backupName: String
         if let custom = customName, !custom.isEmpty {
-            backupName = "\(custom)_\(timestamp).json"
+            backupName = "\(custom)_\(timestamp).db"
         } else {
-            backupName = "library_backup_\(timestamp).json"
+            backupName = "library_backup_\(timestamp).db"
         }
-        
+
         let backupURL = backupsDirectory.appendingPathComponent(backupName)
-        
-        // Copy the current library file - ensure it exists first
-        if !fileManager.fileExists(atPath: libraryURL.path) {
-            // If no library file exists, save current state first
-            saveLibrary(force: true)
-        }
-        
+
         guard fileManager.fileExists(atPath: libraryURL.path) else {
             throw LibraryError.noLibraryFile
         }
-        
+
         try fileManager.copyItem(at: libraryURL, to: backupURL)
-        print("Library backed up to: \(backupURL.path)")
-        
+        NSLog("MediaLibrary: Library backed up to: %@", backupURL.path)
+
         return backupURL
     }
     
-    /// Restore library from a backup file
+    /// Restore library from a backup file (.db format)
     /// - Parameter backupURL: URL of the backup file to restore
     func restoreLibrary(from backupURL: URL) throws {
         let fileManager = FileManager.default
-        saveLibrary(force: true)
-        
+
         guard fileManager.fileExists(atPath: backupURL.path) else {
             throw LibraryError.backupNotFound
         }
-        
-        // Validate the backup file is valid JSON
-        let data = try Data(contentsOf: backupURL)
-        let decoder = JSONDecoder()
-        let libraryData = try decoder.decode(LibraryData.self, from: data)
-        let normalizedWatchFolders = Self.normalizedUniqueWatchFolderURLs(libraryData.watchFolders)
-        
+
+        // Validate: try to open the backup as a SQLite DB
+        do {
+            _ = try Connection(backupURL.path)
+        } catch {
+            throw LibraryError.invalidBackupFile
+        }
+
         // Create auto-backup of current library before restoring
         if fileManager.fileExists(atPath: libraryURL.path) {
             _ = try? backupLibrary(customName: "pre_restore_auto_backup")
         }
-        
-        // Replace current library
+
+        // Close DB, replace file, reopen
+        store.close()
+
         if fileManager.fileExists(atPath: libraryURL.path) {
             try fileManager.removeItem(at: libraryURL)
         }
         try fileManager.copyItem(at: backupURL, to: libraryURL)
-        
-        // Reload the library
-        dataQueue.sync {
-                tracks = libraryData.tracks
-                watchFolders = normalizedWatchFolders
-                movies = libraryData.movies
-                episodes = libraryData.episodes
-                scanSignaturesByPath = libraryData.scanSignaturesByPath
 
-                // Rebuild indices
-                tracksByPath.removeAll()
-            for track in tracks { tracksByPath[track.url.path] = track }
-            moviesByPath.removeAll()
-                for movie in movies { moviesByPath[movie.url.path] = movie }
-                episodesByPath.removeAll()
-                for episode in episodes { episodesByPath[episode.url.path] = episode }
-                scanSignaturesByPath = scanSignaturesByPath.filter { path, _ in
-                    tracksByPath[path] != nil || moviesByPath[path] != nil || episodesByPath[path] != nil
-                }
-            }
-        
+        store.open()
+        loadLibrary()
+
         notifyChange()
-        print("Library restored from: \(backupURL.path)")
+        NSLog("MediaLibrary: Library restored from: %@", backupURL.path)
     }
     
     /// List available backup files
     /// - Returns: Array of backup file URLs sorted by date (newest first)
     func listBackups() -> [URL] {
         let fileManager = FileManager.default
-        
+
         guard fileManager.fileExists(atPath: backupsDirectory.path) else {
             return []
         }
-        
+
         do {
             let contents = try fileManager.contentsOfDirectory(at: backupsDirectory, includingPropertiesForKeys: [.creationDateKey])
             return contents
-                .filter { $0.pathExtension == "json" }
+                .filter { $0.pathExtension == "db" || $0.pathExtension == "json" }
                 .sorted { url1, url2 in
                     let date1 = (try? url1.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
                     let date2 = (try? url2.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
                     return date1 > date2
                 }
         } catch {
-            print("Failed to list backups: \(error)")
+            NSLog("MediaLibrary: Failed to list backups: %@", error.localizedDescription)
             return []
         }
     }
@@ -1954,6 +2029,9 @@ class MediaLibrary {
 
         let fileManager = FileManager.default
         var counts = (tracks: 0, movies: 0, episodes: 0)
+        var removedTrackPaths: [String] = []
+        var removedMoviePaths: [String] = []
+        var removedEpisodePaths: [String] = []
 
         dataQueue.sync {
             tracks.removeAll { track in
@@ -1962,6 +2040,7 @@ class MediaLibrary {
                 guard !fileManager.fileExists(atPath: track.url.path) else { return false }
                 tracksByPath.removeValue(forKey: track.url.path)
                 scanSignaturesByPath.removeValue(forKey: track.url.path)
+                removedTrackPaths.append(track.url.path)
                 counts.tracks += 1
                 return true
             }
@@ -1972,6 +2051,7 @@ class MediaLibrary {
                 guard !fileManager.fileExists(atPath: movie.url.path) else { return false }
                 moviesByPath.removeValue(forKey: movie.url.path)
                 scanSignaturesByPath.removeValue(forKey: movie.url.path)
+                removedMoviePaths.append(movie.url.path)
                 counts.movies += 1
                 return true
             }
@@ -1982,14 +2062,17 @@ class MediaLibrary {
                 guard !fileManager.fileExists(atPath: episode.url.path) else { return false }
                 episodesByPath.removeValue(forKey: episode.url.path)
                 scanSignaturesByPath.removeValue(forKey: episode.url.path)
+                removedEpisodePaths.append(episode.url.path)
                 counts.episodes += 1
                 return true
             }
         }
 
         if counts.tracks > 0 || counts.movies > 0 || counts.episodes > 0 {
+            for path in removedTrackPaths { store.deleteTrackByPath(path) }
+            for path in removedMoviePaths { store.deleteMovieByPath(path) }
+            for path in removedEpisodePaths { store.deleteEpisodeByPath(path) }
             notifyChange()
-            saveLibrary()
         }
 
         return counts

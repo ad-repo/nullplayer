@@ -1,6 +1,6 @@
 # Local Library Import Pipeline (Current State)
 
-Last updated: 2026-03-13
+Last updated: 2026-03-13 (incremental batch flushing added; post-import UI hang fixed)
 
 This document captures the current implementation status for local-library scanning/import and NAS responsiveness work so another agent can continue without re-discovery.
 
@@ -49,7 +49,8 @@ Implemented:
      - queue changed/new files
   3. Process:
      - fast-track insertion (`makeFastTrack`) for audio
-     - async metadata parse pool (bounded workers)
+     - async metadata parse pool (bounded workers) with `autoreleasepool` per file
+     - incremental 500-track SQLite flushes during enrichment (rolling buffer)
      - video classification refresh
 - APIs now using this path:
   - `scanFolder`
@@ -100,10 +101,13 @@ Implemented:
 - Mode-aware `loadLocalData()` in both browsers (load only required datasets for current mode).
 - Scan progress throttling:
   - emit when delta >= 0.02 or >= 0.20s elapsed, plus forced boundary emits.
-- Save coalescing:
-  - `saveLibrary(coalesced: true)` with delayed work-item queue
-  - forced final flush via `saveLibrary(force: true)` at end of bulk import
-- JSON save no longer pretty-prints.
+- Incremental batch flushing (replaces old JSON save coalescing):
+  - Metadata enrichment uses a rolling 500-track `pendingMetadata` buffer
+  - Each full batch is flushed immediately to SQLite and in-memory state via `flushPendingMetadata()`
+  - Remaining tracks flushed after `metadataGroup.wait()`
+  - `autoreleasepool` wraps `parseMetadata` per file to release AVAsset objects promptly
+  - Prevents unbounded memory accumulation for large libraries (60k+ tracks)
+- SQLite is the persistence layer — no JSON library file.
 
 ## NAS Playback Responsiveness State
 
@@ -138,7 +142,7 @@ Implemented:
 
 ## Verification State
 
-Latest run (2026-03-13):
+Latest run (2026-03-13, post incremental-flush):
 
 - Command: `swift test --filter NullPlayerTests`
 - Result: 317 tests executed, 0 failures
@@ -146,6 +150,15 @@ Latest run (2026-03-13):
 Added tests:
 
 - `Tests/NullPlayerTests/LocalFileDiscoveryTests.swift`
+
+## Fixed: Post-Import UI Freeze (60k+ libraries)
+
+Root cause: `buildLocalArtistItems()` called `store.albumsForArtist(name)` once per artist on the current page (200 calls). Each query used `WHERE coalesce(album_artist, artist, 'Unknown Artist') = ?` which could not use the existing `idx_tracks_artist` column index — SQLite cannot index through a coalesce() expression. Each query was a full table scan of 60k rows. 200 queries × full scan = ~12M row reads on the main thread → minutes-long UI freeze.
+
+Fixes applied:
+- `MediaLibraryStore`: schema v2 migration adds expression index `idx_tracks_artist_expr ON library_tracks (coalesce(album_artist, artist, 'Unknown Artist'))`. New DBs created at v2. Existing v1 DBs migrated automatically on next open.
+- `MediaLibraryStore.albumsForArtistsBatch(_:)`: new method that fetches album summaries for a full page of artists in a single SQL query (using IN clause) instead of one per artist. Reduces 200 queries → 1.
+- Both `ModernLibraryBrowserView.buildLocalArtistItems()` and `PlexBrowserView.buildLocalArtistItems()` (including the scroll/load-more paths) use the batch method.
 
 ## Resume Checklist For Next Agent
 
