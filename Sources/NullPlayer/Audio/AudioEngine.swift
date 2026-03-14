@@ -3289,28 +3289,47 @@ class AudioEngine {
             if shuffleEnabled {
                 // Repeat mode + shuffle: pick a random track
                 currentIndex = Int.random(in: 0..<playlist.count)
-                loadTrack(at: currentIndex)
-                play()
+                advanceToLocalTrackAsync(at: currentIndex)
             } else {
                 // Repeat mode: loop current track
-                loadTrack(at: currentIndex)
-                play()
+                advanceToLocalTrackAsync(at: currentIndex)
             }
         } else {
             // No repeat mode: check if we're at the end of playlist
             if shuffleEnabled {
-                // Shuffle without repeat: could play random tracks but eventually should stop
-                // For simplicity, just stop after current track
+                // Shuffle without repeat: stop after current track
                 stop()
             } else if currentIndex < playlist.count - 1 {
                 // More tracks to play
                 currentIndex += 1
-                loadTrack(at: currentIndex)
-                play()
+                advanceToLocalTrackAsync(at: currentIndex)
             } else {
                 // End of playlist, stop playback
                 stop()
             }
+        }
+    }
+
+    /// Advance playback to the track at `index` after a natural EOF.
+    /// Local audio files are opened asynchronously on deferredIOQueue to avoid
+    /// blocking the main thread on NAS/network-mounted volumes.
+    /// Streaming tracks and placeholders fall through to the synchronous loadTrack path.
+    private func advanceToLocalTrackAsync(at index: Int) {
+        guard index >= 0, index < playlist.count else { return }
+        let nextTrack = playlist[index]
+        if nextTrack.url.isFileURL && nextTrack.mediaType != .video {
+            // Defensive guard: loadLocalTrackForImmediatePlayback bypasses loadTrack's
+            // isLoadingTrack sentinel. Guard here in case a concurrent loadTrack call is
+            // on the same run-loop turn (both run on main thread, so this is advisory).
+            guard !isLoadingTrack else { return }
+            _ = stopRadioIfLoadingNonRadioContent(incomingTrackURL: nextTrack.url,
+                                                  context: "trackDidFinish")
+            loadLocalTrackForImmediatePlayback(nextTrack, at: index)
+        } else {
+            // Streaming tracks, placeholders (about:blank URL fails isFileURL),
+            // and video files use the existing synchronous path.
+            loadTrack(at: index)
+            play()
         }
     }
     
