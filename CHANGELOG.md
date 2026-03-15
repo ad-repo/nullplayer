@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.17.2
+
+### Waveform
+
+- **Horizontal stretch** — the waveform window can now be resized horizontally to any width, not just the default fixed size.
+- **Size preserved across sessions** — the waveform window no longer resets to its default size when reopened; the last user-set size is restored.
+
+### Visualizations
+
+- **Classic spectrum/waveform transparency** — the transparent-background setting for classic spectrum and waveform visualizations no longer resets to off on every launch.
+
 ## 0.17.1
 
 ### Local Library

@@ -30,8 +30,8 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
             let mainFrame = mainWindow.frame
             let scale = mainFrame.width / Skin.mainWindowSize.width
             let waveformHeight = SkinElements.WaveformWindow.minSize.height * scale
-            window.minSize = NSSize(width: mainFrame.width, height: waveformHeight)
-            window.maxSize = NSSize(width: mainFrame.width, height: CGFloat.greatestFiniteMagnitude)
+            window.minSize = NSSize(width: SkinElements.WaveformWindow.minSize.width, height: waveformHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             let newFrame = NSRect(
                 x: mainFrame.minX,
                 y: mainFrame.minY - waveformHeight,
@@ -41,7 +41,7 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
             window.setFrame(newFrame, display: true)
         } else {
             window.minSize = SkinElements.WaveformWindow.minSize
-            window.maxSize = NSSize(width: window.minSize.width, height: CGFloat.greatestFiniteMagnitude)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             window.center()
         }
         window.delegate = self
@@ -78,6 +78,17 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
 
     func stopLoadingForHide() {
         waveformView.stopLoadingForHide()
+    }
+
+    func resetToDefaultFrame() {
+        guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
+        let mainFrame = mainWindow.frame
+        let scale = mainFrame.width / Skin.mainWindowSize.width
+        let waveformHeight = SkinElements.WaveformWindow.minSize.height * scale
+        window.minSize = NSSize(width: SkinElements.WaveformWindow.minSize.width, height: waveformHeight)
+        let newFrame = NSRect(x: mainFrame.minX, y: mainFrame.minY - waveformHeight,
+                              width: mainFrame.width, height: waveformHeight)
+        window.setFrame(newFrame, display: false)
     }
 }
 

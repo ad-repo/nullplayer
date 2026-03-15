@@ -74,8 +74,7 @@ final class VisClassicBridge {
         let fitDefault = Self.fitToWidthDefault(for: scope)
         _ = setFitToWidth(fitDefault)
 
-        let transparentBgDefault = Self.transparentBgDefault(for: scope)
-        _ = setTransparentBackground(transparentBgDefault)
+        _ = setTransparentBackground(false)
     }
 
     deinit {

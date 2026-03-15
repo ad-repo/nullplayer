@@ -492,7 +492,7 @@ class AppStateManager {
             // Don't save frame when fullscreen (it would be screen bounds)
             projectMWindowFrame: wm.isProjectMVisible && !wm.isProjectMFullscreen ? wm.projectMWindowFrame.map { NSStringFromRect($0) } : nil,
             spectrumWindowFrame: wm.spectrumWindowFrame.map { NSStringFromRect($0) },
-            waveformWindowFrame: wm.waveformWindowFrame.map { NSStringFromRect($0) },
+            waveformWindowFrame: nil,
             isProjectMFullscreen: wm.isProjectMFullscreen,
             
             // Audio settings
@@ -1039,11 +1039,11 @@ class AppStateManager {
             return verticalGap <= nearDockTolerance && horizontalOverlap && leftAligned
         }
 
-        func normalizedFlushFrame(for candidate: NSRect, below anchor: NSRect) -> NSRect {
+        func normalizedFlushFrame(for candidate: NSRect, below anchor: NSRect, preserveWidth: Bool = false) -> NSRect {
             NSRect(
                 x: adjustedMain.minX,
                 y: anchor.minY - candidate.height,
-                width: adjustedMain.width,
+                width: preserveWidth ? candidate.width : adjustedMain.width,
                 height: candidate.height
             )
         }
@@ -1054,11 +1054,11 @@ class AppStateManager {
             abs(lhs.width - rhs.width) > widthEpsilon
         }
 
-        func repairCandidate(_ candidate: NSRect?) -> NSRect? {
+        func repairCandidate(_ candidate: NSRect?, preserveWidth: Bool = false) -> NSRect? {
             guard let candidate else { return nil }
             guard shouldRepairCandidate(candidate, below: anchorFrame) else { return candidate }
 
-            let repairedFrame = normalizedFlushFrame(for: candidate, below: anchorFrame)
+            let repairedFrame = normalizedFlushFrame(for: candidate, below: anchorFrame, preserveWidth: preserveWidth)
             if frameChanged(candidate, repairedFrame) {
                 repaired = true
             }
@@ -1069,7 +1069,7 @@ class AppStateManager {
         let adjustedEQ = repairCandidate(equalizerFrame)
         let adjustedPlaylist = repairCandidate(playlistFrame)
         let adjustedSpectrum = repairCandidate(spectrumFrame)
-        let adjustedWaveform = repairCandidate(waveformFrame)
+        let adjustedWaveform = repairCandidate(waveformFrame, preserveWidth: true)
 
         return ClassicCenterStackRepairResult(
             mainFrame: adjustedMain,

@@ -1103,8 +1103,8 @@ class SpectrumAnalyzerView: NSView {
         metalLayer.device = device
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.framebufferOnly = true
-        metalLayer.isOpaque = !VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope)
-        layer?.isOpaque = !VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope)
+        metalLayer.isOpaque = true
+        layer?.isOpaque = true
         metalLayer.frame = bounds
         syncMetalLayerScaleAndSize()
         // CRITICAL: Limit drawable pool size to prevent unbounded memory growth

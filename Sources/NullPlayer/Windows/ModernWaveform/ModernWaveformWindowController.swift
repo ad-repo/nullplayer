@@ -13,7 +13,7 @@ class ModernWaveformWindowController: NSWindowController, WaveformWindowProvidin
             backing: .buffered,
             defer: false
         )
-        window.allowedResizeEdges = [.bottom]
+        window.allowedResizeEdges = [.bottom, .left, .right]
         window.titleBarHeight = ModernSkinElements.waveformTitleBarHeight
         self.init(window: window)
         setupWindow()
@@ -29,7 +29,7 @@ class ModernWaveformWindowController: NSWindowController, WaveformWindowProvidin
         window.title = "NullPlayer Waveform"
         window.isReleasedWhenClosed = false
         window.minSize = ModernSkinElements.waveformMinSize
-        window.maxSize = NSSize(width: window.minSize.width, height: CGFloat.greatestFiniteMagnitude)
+        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         window.center()
         window.delegate = self
         window.acceptsMouseMovedEvents = true
