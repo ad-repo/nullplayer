@@ -6,6 +6,7 @@ extension Notification.Name {
     static let timeDisplayModeDidChange = Notification.Name("timeDisplayModeDidChange")
     static let doubleSizeDidChange = Notification.Name("doubleSizeDidChange")
     static let windowLayoutDidChange = Notification.Name("windowLayoutDidChange")
+    static let connectedWindowHighlightDidChange = Notification.Name("connectedWindowHighlightDidChange")
 }
 
 // MARK: - Time Display Mode
@@ -13,6 +14,13 @@ extension Notification.Name {
 enum TimeDisplayMode: String {
     case elapsed
     case remaining
+}
+
+/// Determines how a window drag affects its connected group.
+enum DragMode {
+    case pending   // mouseDown received, drag not yet started
+    case separate  // drag started before holdThreshold — window moves alone
+    case group     // holdThreshold elapsed before drag — connected windows move together
 }
 
 /// Joined edge intervals for seamless modern window border suppression.
@@ -310,8 +318,17 @@ class WindowManager {
     /// Should be small (≤2) so only truly touching windows are grouped
     private let dockThreshold: CGFloat = 2
     
-    /// Undock threshold - how far you need to drag a window to break it free from the group
-    private let undockThreshold: CGFloat = 10
+    /// Hold threshold - how long (seconds) before a drag moves the connected group
+    private let holdThreshold: TimeInterval = 0.4
+
+    /// Time when current drag's mouseDown was received
+    private var holdStartTime: CFTimeInterval?
+
+    /// Current drag mode, determined on first windowWillMove call
+    private var dragMode: DragMode = .pending
+
+    /// Whether a connectedWindowHighlightDidChange notification was posted for this drag
+    private var highlightWasPosted = false
     
     /// Track which window is currently being dragged
     private var draggingWindow: NSWindow?
