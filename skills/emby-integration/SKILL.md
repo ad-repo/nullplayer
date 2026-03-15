@@ -198,3 +198,8 @@ Emby and Jellyfin share the same MediaBrowser API ancestry. The REST endpoints a
 - **Auth header prefix**: Emby uses `Emby`, Jellyfin uses `MediaBrowser`
 - **UserId in header**: Emby includes `UserId=` in Authorization after login; Jellyfin does not
 - Emby and Jellyfin can coexist — all integration code is in separate `Emby/` files
+
+## Implementation Gotchas
+
+- **Library selector is browse-mode-aware**: The "Lib:" click zone shows a music library picker in music tabs (Artists/Albums/Tracks/Plists) and a video library picker in Movies/Shows tabs. `EmbyManager` has separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
+- **Streaming URL content type (Sonos)**: Emby stream URLs (`/Audio/{id}/stream`) have no file extension, so `detectAudioContentType(for:)` defaults to `audio/mpeg`. This breaks Sonos casting for non-MP3 formats. Prefer `Track.contentType` set by the server client from API metadata.

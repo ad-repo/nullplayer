@@ -1247,18 +1247,10 @@ class ModernPlaylistView: NSView {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
-            let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
-            var audioURLs: [URL] = []
-            if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) {
-                for case let fileURL as URL in enumerator {
-                    if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
-                        audioURLs.append(fileURL)
-                    }
-                }
-            }
-            if !audioURLs.isEmpty {
+            LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: false) { [weak self] audioURLs in
+                guard !audioURLs.isEmpty else { return }
                 WindowManager.shared.audioEngine.loadFiles(audioURLs)
-                needsDisplay = true
+                self?.needsDisplay = true
             }
         }
     }
@@ -1447,41 +1439,20 @@ class ModernPlaylistView: NSView {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
             return false
         }
-        
-        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac", "mp4", "mkv", "avi", "mov"]
-        var mediaURLs: [URL] = []
-        
-        for url in items {
-            var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
-                if isDirectory.boolValue {
-                    if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey]) {
-                        while let fileURL = enumerator.nextObject() as? URL {
-                            if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
-                                mediaURLs.append(fileURL)
-                            }
-                        }
-                    }
-                } else {
-                    if audioExtensions.contains(url.pathExtension.lowercased()) {
-                        mediaURLs.append(url)
-                    }
-                }
-            }
+
+        guard LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: true) else {
+            return false
         }
-        
-        mediaURLs.sort { $0.lastPathComponent < $1.lastPathComponent }
-        
-        if !mediaURLs.isEmpty {
+
+        LocalFileDiscovery.discoverMediaURLsAsync(from: items, includeVideo: true) { [weak self] mediaURLs in
+            guard !mediaURLs.isEmpty else { return }
             let audioEngine = WindowManager.shared.audioEngine
             let firstNewIndex = audioEngine.playlist.count
             audioEngine.appendFiles(mediaURLs)
             audioEngine.playTrack(at: firstNewIndex)
-            needsDisplay = true
-            return true
+            self?.needsDisplay = true
         }
-        
-        return false
+        return true
     }
     
     // MARK: - Context Menu

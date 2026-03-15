@@ -141,6 +141,8 @@ While casting is active:
 - **Uncheck the coordinator room (with other rooms still checked)** → Playback transfers to the next remaining room, which becomes the new coordinator. Brief (~1-2s) playback interruption during transfer. Menu closes to refresh state.
 - **Uncheck the coordinator room (only room in group)** → Casting stops entirely
 
+**Coordinator transfer implementation**: `CastManager.transferSonosCast()` saves session state, stops the old coordinator, casts to the new coordinator, and re-joins other rooms. Uses `UPnPManager.disconnectSession()` to clear the session without sending Stop (old coordinator is already standalone after leaving). `stopCasting()` ungroups all member rooms before stopping to prevent stale group topology.
+
 ### Stopping a Cast
 
 Click **🔴 Stop Casting** to:

@@ -178,6 +178,10 @@ xcodebuild test -scheme NullPlayer -enableCodeCoverage YES
 xcrun xccov view --report ~/Library/Developer/Xcode/DerivedData/nullplayer-*/Logs/Test/*.xcresult
 ```
 
+## Local Library Regression Checklist
+
+See `skills/local-library/SKILL.md` — Testing section.
+
 ## Writing Good Tests
 
 ### Test Structure

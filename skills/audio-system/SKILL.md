@@ -146,6 +146,10 @@ func streamingPlayerDidFinishPlaying() {
 }
 ```
 
+### NAS Responsiveness for Local Track Switches
+
+See `skills/local-library/SKILL.md` — NAS Responsiveness section.
+
 ## Equalizer
 
 ### Configuration

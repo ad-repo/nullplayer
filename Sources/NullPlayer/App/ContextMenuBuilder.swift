@@ -1321,9 +1321,10 @@ class ContextMenuBuilder {
         let libraryMenu = NSMenu()
         libraryMenu.autoenablesItems = false
         
-        let trackCount = MediaLibrary.shared.tracksSnapshot.count
-        let movieCount = MediaLibrary.shared.moviesSnapshot.count
-        let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+        let store = MediaLibraryStore.shared
+        let trackCount = store.trackCount()
+        let movieCount = store.movieCount()
+        let episodeCount = store.episodeCount()
         let totalLocalItems = trackCount + movieCount + episodeCount
         
         // Library info header
@@ -1392,7 +1393,14 @@ class ContextMenuBuilder {
         libraryMenu.addItem(showBackupsItem)
         
         libraryMenu.addItem(NSMenuItem.separator())
-        
+
+        // Manage Watch Folders
+        let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(MenuActions.manageFolders), keyEquivalent: "")
+        manageFoldersItem.target = MenuActions.shared
+        libraryMenu.addItem(manageFoldersItem)
+
+        libraryMenu.addItem(NSMenuItem.separator())
+
         // Clear Library submenu (with confirmations)
         let clearItem = NSMenuItem(title: "Clear...", action: nil, keyEquivalent: "")
         let clearMenu = NSMenu()
@@ -4403,7 +4411,7 @@ class MenuActions: NSObject {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.json]
+        panel.allowedContentTypes = [.init(filenameExtension: "db")!, .json]
         panel.title = "Select Library Backup"
         panel.message = "Choose a library backup file to restore"
         
@@ -4454,10 +4462,14 @@ class MenuActions: NSObject {
         }
     }
     
+    @objc func manageFolders() {
+        WatchFolderManagerDialog.present {}
+    }
+
     @objc func showLibraryInFinder() {
         MediaLibrary.shared.showLibraryInFinder()
     }
-    
+
     @objc func showBackupsInFinder() {
         MediaLibrary.shared.showBackupsInFinder()
     }
@@ -4504,9 +4516,10 @@ class MenuActions: NSObject {
     }
 
     private func performLocalLibraryClear(_ scope: LocalLibraryClearScope) {
-        let trackCount = MediaLibrary.shared.tracksSnapshot.count
-        let movieCount = MediaLibrary.shared.moviesSnapshot.count
-        let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+        let store = MediaLibraryStore.shared
+        let trackCount = store.trackCount()
+        let movieCount = store.movieCount()
+        let episodeCount = store.episodeCount()
         let totalCount = trackCount + movieCount + episodeCount
 
         let targetCount: Int

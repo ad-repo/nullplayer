@@ -187,6 +187,31 @@ struct Track: Identifiable, Equatable {
         self.genre = extractedGenre
         self.contentType = nil  // Local files use URL extension detection
     }
+
+    /// Fast path for bulk imports: avoid AVFoundation metadata parsing up-front.
+    init(lightweightURL url: URL) {
+        self.id = UUID()
+        self.url = url
+        self.title = url.deletingPathExtension().lastPathComponent
+        self.artist = nil
+        self.album = nil
+        self.duration = nil
+        self.bitrate = nil
+        self.sampleRate = nil
+        self.channels = nil
+        self.plexRatingKey = nil
+        self.plexServerId = nil
+        self.subsonicId = nil
+        self.subsonicServerId = nil
+        self.jellyfinId = nil
+        self.jellyfinServerId = nil
+        self.embyId = nil
+        self.embyServerId = nil
+        self.artworkThumb = nil
+        self.mediaType = AudioFileValidator.isVideoFile(url: url) ? .video : .audio
+        self.genre = nil
+        self.contentType = nil
+    }
     
     init(id: UUID = UUID(),
          url: URL,

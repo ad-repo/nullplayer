@@ -98,6 +98,18 @@ class AudioEngine {
     /// Guard against concurrent loadTrack() calls which can cause both local and streaming players to be active
     private var isLoadingTrack: Bool = false
 
+    /// Background queue for non-critical local/NAS file I/O (normalization analysis, gapless pre-open).
+    private let deferredIOQueue = DispatchQueue(label: "NullPlayer.AudioEngine.deferredIO", qos: .userInitiated)
+
+    /// Token used to invalidate stale in-flight normalization analyses.
+    private var normalizationAnalysisToken: UInt64 = 0
+
+    /// Token used to invalidate stale in-flight gapless pre-schedule requests.
+    private var gaplessPreparationToken: UInt64 = 0
+
+    /// Token used to invalidate stale deferred local track loads triggered by direct user selection.
+    private var deferredLocalTrackLoadToken: UInt64 = 0
+
     /// In-flight placeholder resolution tasks keyed by playlist index.
     private var placeholderResolutionTasks: [Int: Task<Void, Never>] = [:]
 
@@ -254,7 +266,13 @@ class AudioEngine {
     /// Track whether primary or crossfade player is currently "active" for local playback
     /// When a crossfade completes, the crossfade player becomes the primary
     private var crossfadePlayerIsActive: Bool = false
-    
+
+    /// Secondary guard for stale in-flight Sweet Fades file opens.
+    /// Incremented on each `startLocalCrossfade` call so a late-arriving callback can
+    /// detect it has been superseded. Primary cancellation signal is `isCrossfading`:
+    /// both guards must pass before a deferred callback modifies engine state.
+    private var crossfadeFileLoadToken: UInt64 = 0
+
     /// Pre-scheduled next file for gapless playback
     private var nextScheduledFile: AVAudioFile?
     private var nextScheduledTrackIndex: Int = -1
@@ -1302,6 +1320,9 @@ class AudioEngine {
     /// Stop local playback without affecting cast session
     /// Used when loading new tracks while casting - we want to keep the cast session active
     private func stopLocalOnly() {
+        // Invalidate any in-flight deferred local loads so they cannot restart playback after stop.
+        deferredLocalTrackLoadToken &+= 1
+
         // Capture position before stopping for Plex reporting
         let stopPosition = currentTime
         
@@ -2246,7 +2267,7 @@ class AudioEngine {
             AudioFileValidator.notifyInvalidFiles(validation.invalidFiles)
         }
         
-        let tracks = validation.validURLs.compactMap { Track(url: $0) }
+        let tracks = validation.validURLs.compactMap { Track(lightweightURL: $0) }
         NSLog("loadFiles: %d tracks created (%d invalid)", tracks.count, validation.invalidFiles.count)
         loadTracks(tracks)
     }
@@ -2417,20 +2438,11 @@ class AudioEngine {
     }
     
     func loadFolder(_ url: URL) {
-        let fileManager = FileManager.default
-        guard let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else { return }
-        
-        var urls: [URL] = []
-        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
-        
-        while let fileURL = enumerator.nextObject() as? URL {
-            if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
-                urls.append(fileURL)
-            }
+        LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: false) { [weak self] urls in
+            guard let self, !urls.isEmpty else { return }
+            // loadFiles will call the delegate
+            self.loadFiles(urls)
         }
-        
-        // loadFiles will call the delegate
-        loadFiles(urls.sorted { $0.lastPathComponent < $1.lastPathComponent })
     }
     
     /// Append files to the playlist without starting playback
@@ -2444,7 +2456,7 @@ class AudioEngine {
             AudioFileValidator.notifyInvalidFiles(validation.invalidFiles)
         }
         
-        let tracks = validation.validURLs.compactMap { Track(url: $0) }
+        let tracks = validation.validURLs.compactMap { Track(lightweightURL: $0) }
         playlist.append(contentsOf: tracks)
         delegate?.audioEngineDidChangePlaylist()
     }
@@ -2716,7 +2728,7 @@ class AudioEngine {
         
         NSLog("setPlaylistFiles: %d valid URLs (%d missing)", validURLs.count, missingCount)
         
-        let tracks = validURLs.compactMap { Track(url: $0) }
+        let tracks = validURLs.compactMap { Track(lightweightURL: $0) }
         
         // Clear and set playlist without loading or playing
         playlist.removeAll()
@@ -2728,6 +2740,9 @@ class AudioEngine {
     
     private func loadTrack(at index: Int) {
         guard index >= 0 && index < playlist.count else { return }
+
+        // Any explicit track load supersedes pending deferred local-load completions.
+        deferredLocalTrackLoadToken &+= 1
         
         // Prevent concurrent loads - skip if already loading to avoid dual playback
         guard !isLoadingTrack else {
@@ -2802,29 +2817,108 @@ class AudioEngine {
         }
     }
     
+    private func loadLocalTrackForImmediatePlayback(_ track: Track, at index: Int) {
+        NSLog("loadLocalTrackForImmediatePlayback: %@", track.url.lastPathComponent)
+
+        // Invalidate any prior deferred local opens; only latest selection should win.
+        deferredLocalTrackLoadToken &+= 1
+        let token = deferredLocalTrackLoadToken
+        let expectedTrackID = track.id
+
+        // Invalidate outgoing completion handlers now so stale EOF callbacks are ignored.
+        playbackGeneration += 1
+        let currentGeneration = playbackGeneration
+
+        // Stop video playback before loading audio track.
+        if WindowManager.shared.isVideoActivePlayback {
+            NSLog("loadLocalTrackForImmediatePlayback: Stopping video playback before loading audio track")
+            WindowManager.shared.stopVideo()
+        }
+
+        currentTrack = track
+        _currentTime = 0
+        lastReportedTime = 0
+        state = .stopped
+        stopTimeUpdates()
+
+        prepareForLocalTrackLoad()
+
+        let openStart = CFAbsoluteTimeGetCurrent()
+        deferredIOQueue.async { [weak self] in
+            guard let self else { return }
+
+            do {
+                let newAudioFile = try AVAudioFile(forReading: track.url)
+                let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
+                if openElapsed > 0.25 {
+                    NSLog(
+                        "loadLocalTrackForImmediatePlayback: Opened '%@' in %.2fs",
+                        track.url.lastPathComponent,
+                        openElapsed
+                    )
+                }
+
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    guard self.deferredLocalTrackLoadToken == token,
+                          index >= 0,
+                          index < self.playlist.count,
+                          self.currentIndex == index,
+                          self.playlist[index].id == expectedTrackID else { return }
+
+                    self.commitLoadedLocalTrack(newAudioFile, track: track, generation: currentGeneration)
+                    self.play()
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    guard self.deferredLocalTrackLoadToken == token else { return }
+                    self.handleLocalTrackLoadFailure(track: track, error: error)
+                }
+            }
+        }
+    }
+
     @discardableResult
     private func loadLocalTrack(_ track: Track) -> Bool {
         NSLog("loadLocalTrack: %@", track.url.lastPathComponent)
-        
-        // Check if file exists before attempting to load
-        let filePath = track.url.path
-        if !FileManager.default.fileExists(atPath: filePath) {
-            let errorMessage = "File does not exist: \(track.url.lastPathComponent)"
-            NSLog("loadLocalTrack: %@", errorMessage)
-            stopPlaybackOnError()
-            notifyTrackLoadFailure(track: track, error: NSError(domain: "AudioEngine", code: 1, userInfo: [NSLocalizedDescriptionKey: errorMessage]), message: errorMessage)
+
+        // Any synchronous load supersedes deferred opens.
+        deferredLocalTrackLoadToken &+= 1
+
+        // Invalidate outgoing completion handlers before opening a replacement file.
+        playbackGeneration += 1
+        let currentGeneration = playbackGeneration
+
+        prepareForLocalTrackLoad()
+
+        do {
+            let openStart = CFAbsoluteTimeGetCurrent()
+            let newAudioFile = try AVAudioFile(forReading: track.url)
+            let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
+            if openElapsed > 0.25 {
+                NSLog("loadLocalTrack: Opened '%@' in %.2fs", track.url.lastPathComponent, openElapsed)
+            }
+
+            commitLoadedLocalTrack(newAudioFile, track: track, generation: currentGeneration)
+            return true
+        } catch {
+            handleLocalTrackLoadFailure(track: track, error: error)
             return false
         }
-        
-        // Stop any streaming playback
+    }
+
+    private func prepareForLocalTrackLoad() {
+        // Stop any streaming playback.
         stopStreamingPlayer()
         isStreamingPlayback = false
-        
+
         // Reset crossfade state and force local primary node to audible unity gain.
         // Rapid source switches can otherwise leave playerNode.volume at 0.
         resetLocalCrossfadeStateForDirectPlayback()
-        
-        // Reset AudioEngine's adaptive normalization peaks for clean start
+        playerNode.stop()
+
+        // Reset AudioEngine's adaptive normalization peaks for clean start.
         // When streaming was active, AudioEngine just forwarded StreamingAudioPlayer's
         // pre-normalized data without updating its own peaks. These stale peaks
         // would cause erratic spectrum levels when switching back to local.
@@ -2832,100 +2926,94 @@ class AudioEngine {
         spectrumGlobalReferenceLevel = 0.0
         spectrumRegionPeaks = [0.0, 0.0, 0.0]
         spectrumRegionReferenceLevels = [0.0, 0.0, 0.0]
-        
-        // Reset spectrum analyzer state when switching sources
+
+        // Reset spectrum analyzer state when switching sources.
         NotificationCenter.default.post(name: NSNotification.Name("ResetSpectrumState"), object: nil)
-        
-        // Clear any pre-scheduled gapless track (we're loading a new track explicitly)
+
+        // Clear any pre-scheduled gapless track (we're loading a new track explicitly).
         nextScheduledFile = nil
         nextScheduledTrackIndex = -1
-        
-        do {
-            let newAudioFile = try AVAudioFile(forReading: track.url)
-            NSLog("loadLocalTrack: file loaded successfully, format: %@", newAudioFile.processingFormat.description)
-            
-            // Install spectrum analyzer tap
-            installSpectrumTap(format: nil)
-            
-            audioFile = newAudioFile
-            currentTrack = track
-            _currentTime = 0  // Reset time for new track
-            lastReportedTime = 0
-            
-            // Analyze and apply volume normalization if enabled
-            if volumeNormalizationEnabled {
-                analyzeAndApplyNormalization(file: newAudioFile)
-            } else {
-                normalizationGain = 1.0
-                applyNormalizationGain()
-            }
-            
-            // Increment generation to invalidate any old completion handlers
-            playbackGeneration += 1
-            let currentGeneration = playbackGeneration
-            
-            NSLog("loadLocalTrack: Stopping playerNode and scheduling file...")
-            playerNode.stop()
-            playerNode.scheduleFile(audioFile!, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.handlePlaybackComplete(generation: currentGeneration)
-                }
-            }
-            
-            // Pre-schedule next track for gapless playback
-            if gaplessPlaybackEnabled {
-                scheduleNextTrackForGapless()
-            }
-            
-            // Report track start to Plex (no-op for local files without plexRatingKey)
-            PlexPlaybackReporter.shared.trackDidStart(track, at: 0)
-            
-            // Report track start to Subsonic
-            if let subsonicId = track.subsonicId,
-               let serverId = track.subsonicServerId,
-               let trackDuration = track.duration {
-                SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
-            }
-            
-            // Report track start to Jellyfin
-            if let jellyfinId = track.jellyfinId,
-               let serverId = track.jellyfinServerId,
-               let trackDuration = track.duration {
-                JellyfinPlaybackReporter.shared.trackStarted(trackId: jellyfinId, serverId: serverId, duration: trackDuration)
-            }
+    }
 
-            // Report track start to Emby
-            if let embyId = track.embyId,
-               let serverId = track.embyServerId,
-               let trackDuration = track.duration {
-                EmbyPlaybackReporter.shared.trackStarted(trackId: embyId, serverId: serverId, duration: trackDuration)
-            }
+    private func commitLoadedLocalTrack(_ newAudioFile: AVAudioFile, track: Track, generation: Int) {
+        NSLog("loadLocalTrack: file loaded successfully, format: %@", newAudioFile.processingFormat.description)
 
-            NSLog("loadLocalTrack: file scheduled, EQ bypass = %d, normGain = %.2f", eqNode.bypass, normalizationGain)
-            return true
-        } catch {
-            // Build detailed error message for diagnostics
-            let fileExtension = track.url.pathExtension.lowercased()
-            var errorMessage = "Failed to load '\(track.url.lastPathComponent)': \(error.localizedDescription)"
-            
-            // Add format-specific hints
-            if fileExtension == "wav" {
-                errorMessage += " (WAV files with compressed audio or unusual formats may not be supported)"
-            }
-            
-            // Log detailed info for debugging
-            NSLog("loadLocalTrack: FAILED to load file")
-            NSLog("  File: %@", track.url.path)
-            NSLog("  Extension: %@", fileExtension)
-            NSLog("  Error: %@", error.localizedDescription)
-            if let nsError = error as NSError? {
-                NSLog("  Error domain: %@, code: %d", nsError.domain, nsError.code)
-            }
-            
-            stopPlaybackOnError()
-            notifyTrackLoadFailure(track: track, error: error, message: errorMessage)
-            return false
+        // Install spectrum analyzer tap.
+        installSpectrumTap(format: nil)
+
+        audioFile = newAudioFile
+        currentTrack = track
+        _currentTime = 0
+        lastReportedTime = 0
+
+        // Analyze and apply volume normalization asynchronously to avoid blocking
+        // UI/playback startup on slow disks or NAS volumes.
+        if volumeNormalizationEnabled {
+            analyzeAndApplyNormalization(file: newAudioFile, generation: generation)
+        } else {
+            normalizationGain = 1.0
+            applyNormalizationGain()
         }
+
+        NSLog("loadLocalTrack: Stopping playerNode and scheduling file...")
+        playerNode.stop()
+        playerNode.scheduleFile(newAudioFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.handlePlaybackComplete(generation: generation)
+            }
+        }
+
+        // Pre-schedule next track for gapless playback.
+        if gaplessPlaybackEnabled {
+            scheduleNextTrackForGapless()
+        }
+
+        // Report track start to Plex (no-op for local files without plexRatingKey).
+        PlexPlaybackReporter.shared.trackDidStart(track, at: 0)
+
+        // Report track start to Subsonic.
+        if let subsonicId = track.subsonicId,
+           let serverId = track.subsonicServerId,
+           let trackDuration = track.duration {
+            SubsonicPlaybackReporter.shared.trackStarted(trackId: subsonicId, serverId: serverId, duration: trackDuration)
+        }
+
+        // Report track start to Jellyfin.
+        if let jellyfinId = track.jellyfinId,
+           let serverId = track.jellyfinServerId,
+           let trackDuration = track.duration {
+            JellyfinPlaybackReporter.shared.trackStarted(trackId: jellyfinId, serverId: serverId, duration: trackDuration)
+        }
+
+        // Report track start to Emby.
+        if let embyId = track.embyId,
+           let serverId = track.embyServerId,
+           let trackDuration = track.duration {
+            EmbyPlaybackReporter.shared.trackStarted(trackId: embyId, serverId: serverId, duration: trackDuration)
+        }
+
+        NSLog("loadLocalTrack: file scheduled, EQ bypass = %d, normGain = %.2f", eqNode.bypass, normalizationGain)
+    }
+
+    private func handleLocalTrackLoadFailure(track: Track, error: Error) {
+        let fileExtension = track.url.pathExtension.lowercased()
+        var errorMessage = "Failed to load '\(track.url.lastPathComponent)': \(error.localizedDescription)"
+
+        // Add format-specific hints.
+        if fileExtension == "wav" {
+            errorMessage += " (WAV files with compressed audio or unusual formats may not be supported)"
+        }
+
+        NSLog("loadLocalTrack: FAILED to load file")
+        NSLog("  File: %@", track.url.path)
+        NSLog("  Extension: %@", fileExtension)
+        NSLog("  Error: %@", error.localizedDescription)
+        if let nsError = error as NSError? {
+            NSLog("  Error domain: %@, code: %d", nsError.domain, nsError.code)
+        }
+
+        stopPlaybackOnError()
+        notifyTrackLoadFailure(track: track, error: error, message: errorMessage)
     }
     
     /// Stop playback completely when a track fails to load
@@ -3207,28 +3295,47 @@ class AudioEngine {
             if shuffleEnabled {
                 // Repeat mode + shuffle: pick a random track
                 currentIndex = Int.random(in: 0..<playlist.count)
-                loadTrack(at: currentIndex)
-                play()
+                advanceToLocalTrackAsync(at: currentIndex)
             } else {
                 // Repeat mode: loop current track
-                loadTrack(at: currentIndex)
-                play()
+                advanceToLocalTrackAsync(at: currentIndex)
             }
         } else {
             // No repeat mode: check if we're at the end of playlist
             if shuffleEnabled {
-                // Shuffle without repeat: could play random tracks but eventually should stop
-                // For simplicity, just stop after current track
+                // Shuffle without repeat: stop after current track
                 stop()
             } else if currentIndex < playlist.count - 1 {
                 // More tracks to play
                 currentIndex += 1
-                loadTrack(at: currentIndex)
-                play()
+                advanceToLocalTrackAsync(at: currentIndex)
             } else {
                 // End of playlist, stop playback
                 stop()
             }
+        }
+    }
+
+    /// Advance playback to the track at `index` after a natural EOF.
+    /// Local audio files are opened asynchronously on deferredIOQueue to avoid
+    /// blocking the main thread on NAS/network-mounted volumes.
+    /// Streaming tracks and placeholders fall through to the synchronous loadTrack path.
+    private func advanceToLocalTrackAsync(at index: Int) {
+        guard index >= 0, index < playlist.count else { return }
+        let nextTrack = playlist[index]
+        if nextTrack.url.isFileURL && nextTrack.mediaType != .video {
+            // Defensive guard: loadLocalTrackForImmediatePlayback bypasses loadTrack's
+            // isLoadingTrack sentinel. Guard here in case a concurrent loadTrack call is
+            // on the same run-loop turn (both run on main thread, so this is advisory).
+            guard !isLoadingTrack else { return }
+            _ = stopRadioIfLoadingNonRadioContent(incomingTrackURL: nextTrack.url,
+                                                  context: "trackDidFinish")
+            loadLocalTrackForImmediatePlayback(nextTrack, at: index)
+        } else {
+            // Streaming tracks, placeholders (about:blank URL fails isFileURL),
+            // and video files use the existing synchronous path.
+            loadTrack(at: index)
+            play()
         }
     }
     
@@ -3236,6 +3343,7 @@ class AudioEngine {
     
     /// Pre-schedule the next track for gapless playback
     private func scheduleNextTrackForGapless() {
+        gaplessPreparationToken &+= 1
         guard gaplessPlaybackEnabled else { return }
         
         // Don't queue if Sweet Fades is enabled - it handles transitions
@@ -3283,23 +3391,51 @@ class AudioEngine {
                 NSLog("Gapless: Next track is streaming, can't queue for local gapless")
                 return
             }
-            
-            do {
-                let nextFile = try AVAudioFile(forReading: nextTrack.url)
-                
-                // Schedule the next file to play after the current one
-                // Use the currently active player node
-                let activePlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
-                activePlayer.scheduleFile(nextFile, at: nil, completionHandler: nil)
-                
-                nextScheduledFile = nextFile
-                nextScheduledTrackIndex = nextIndex
-                
-                NSLog("Gapless: Pre-scheduled next track: %@", nextTrack.title)
-            } catch {
-                NSLog("Gapless: Failed to pre-schedule next track: %@", error.localizedDescription)
-                nextScheduledFile = nil
-                nextScheduledTrackIndex = -1
+
+            // Clear the currently prepared local file while we asynchronously prepare the next one.
+            nextScheduledFile = nil
+            nextScheduledTrackIndex = -1
+
+            let token = gaplessPreparationToken
+            let expectedPlaybackGeneration = playbackGeneration
+            let expectedCurrentIndex = currentIndex
+            let nextTrackURL = nextTrack.url
+            let nextTrackTitle = nextTrack.title
+
+            deferredIOQueue.async { [weak self] in
+                guard let self else { return }
+                let openStart = CFAbsoluteTimeGetCurrent()
+                do {
+                    let nextFile = try AVAudioFile(forReading: nextTrackURL)
+                    let elapsed = CFAbsoluteTimeGetCurrent() - openStart
+                    if elapsed > 0.25 {
+                        NSLog("Gapless: Opened next track '%@' in %.2fs", nextTrackTitle, elapsed)
+                    }
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        guard self.gaplessPreparationToken == token,
+                              self.playbackGeneration == expectedPlaybackGeneration,
+                              self.currentIndex == expectedCurrentIndex,
+                              self.gaplessPlaybackEnabled,
+                              !self.sweetFadeEnabled,
+                              !self.isCastingActive,
+                              !self.isStreamingPlayback else { return }
+
+                        let activePlayer = self.crossfadePlayerIsActive ? self.crossfadePlayerNode : self.playerNode
+                        activePlayer.scheduleFile(nextFile, at: nil, completionHandler: nil)
+                        self.nextScheduledFile = nextFile
+                        self.nextScheduledTrackIndex = nextIndex
+                        NSLog("Gapless: Pre-scheduled next track: %@", nextTrackTitle)
+                    }
+                } catch {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        guard self.gaplessPreparationToken == token else { return }
+                        NSLog("Gapless: Failed to pre-schedule next track: %@", error.localizedDescription)
+                        self.nextScheduledFile = nil
+                        self.nextScheduledTrackIndex = -1
+                    }
+                }
             }
         }
     }
@@ -3363,56 +3499,71 @@ class AudioEngine {
         }
     }
     
-    /// Start crossfade for local file playback
     private func startLocalCrossfade(to nextTrack: Track, nextIndex: Int) {
-        do {
-            let nextFile = try AVAudioFile(forReading: nextTrack.url)
-            
-            // Invalidate the outgoing player's completion handler from loadLocalTrack()
-            // so it doesn't call trackDidFinish() when the outgoing track's audio finishes
-            playbackGeneration += 1
-            let currentGeneration = playbackGeneration
-            
-            // Determine which player is currently active and which will be the crossfade target
-            let outgoingPlayer = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
-            let incomingPlayer = crossfadePlayerIsActive ? playerNode : crossfadePlayerNode
-            
-            // Schedule on incoming player with proper completion handler
-            // Uses .dataPlayedBack so trackDidFinish fires when this track ends after crossfade
-            incomingPlayer.stop()
-            incomingPlayer.volume = 0
-            incomingPlayer.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.handlePlaybackComplete(generation: currentGeneration)
+        // Open the next track's file off the main thread — synchronous AVAudioFile opens
+        // on NAS/network volumes block the main thread for seconds.
+        // isCrossfading = true was already set by startCrossfade() before calling us,
+        // so the periodic timer cannot start a duplicate crossfade while the open is in flight.
+        crossfadeFileLoadToken &+= 1
+        let token = crossfadeFileLoadToken
+
+        deferredIOQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                let nextFile = try AVAudioFile(forReading: nextTrack.url)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          self.crossfadeFileLoadToken == token,
+                          self.isCrossfading else { return }
+
+                    // Invalidate the outgoing player's completion handler from loadLocalTrack()
+                    // so it doesn't call trackDidFinish() when the outgoing track's audio finishes
+                    self.playbackGeneration += 1
+                    let currentGeneration = self.playbackGeneration
+
+                    // Determine which player is currently active and which will be the crossfade target
+                    let outgoingPlayer = self.crossfadePlayerIsActive ? self.crossfadePlayerNode : self.playerNode
+                    let incomingPlayer = self.crossfadePlayerIsActive ? self.playerNode : self.crossfadePlayerNode
+
+                    // Schedule on incoming player with proper completion handler
+                    // Uses .dataPlayedBack so trackDidFinish fires when this track ends after crossfade
+                    incomingPlayer.stop()
+                    incomingPlayer.volume = 0
+                    incomingPlayer.scheduleFile(nextFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                        DispatchQueue.main.async {
+                            self?.handlePlaybackComplete(generation: currentGeneration)
+                        }
+                    }
+
+                    // Start the incoming player
+                    incomingPlayer.play()
+
+                    // Store the file for later
+                    if self.crossfadePlayerIsActive {
+                        self.audioFile = nextFile
+                    } else {
+                        self.crossfadeAudioFile = nextFile
+                    }
+
+                    // Start volume ramp
+                    self.startCrossfadeVolumeRamp(
+                        outgoingVolume: { v in outgoingPlayer.volume = v },
+                        incomingVolume: { v in incomingPlayer.volume = v },
+                        completion: { [weak self] in
+                            self?.completeCrossfade(nextFile: nextFile, nextIndex: nextIndex)
+                        }
+                    )
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          self.crossfadeFileLoadToken == token,
+                          self.isCrossfading else { return }
+                    NSLog("Sweet Fades: Failed to load next track: %@", error.localizedDescription)
+                    self.isCrossfading = false
+                    self.crossfadeTargetIndex = -1
                 }
             }
-            
-            // Start the incoming player
-            incomingPlayer.play()
-            
-            // Store the file for later
-            if crossfadePlayerIsActive {
-                audioFile = nextFile
-            } else {
-                crossfadeAudioFile = nextFile
-            }
-            
-            // Start volume ramp
-            startCrossfadeVolumeRamp(
-                outgoingVolume: { v in
-                    outgoingPlayer.volume = v
-                },
-                incomingVolume: { v in
-                    incomingPlayer.volume = v
-                },
-                completion: { [weak self] in
-                    self?.completeCrossfade(nextFile: nextFile, nextIndex: nextIndex)
-                }
-            )
-        } catch {
-            NSLog("Sweet Fades: Failed to load next track: %@", error.localizedDescription)
-            isCrossfading = false
-            crossfadeTargetIndex = -1
         }
     }
     
@@ -3683,6 +3834,7 @@ class AudioEngine {
         }
         
         isCrossfading = false
+        crossfadeFileLoadToken &+= 1  // cancel any in-flight deferredIOQueue file open
         crossfadeTargetIndex = -1
         // Reset to playerNode as primary (crossfade was incomplete, outgoing player continues)
         crossfadePlayerIsActive = false
@@ -3696,6 +3848,7 @@ class AudioEngine {
         crossfadeTimer?.invalidate()
         crossfadeTimer = nil
         isCrossfading = false
+        crossfadeFileLoadToken &+= 1  // cancel any in-flight deferredIOQueue file open
         crossfadeTargetIndex = -1
 
         crossfadeStreamingPlayer?.stop()
@@ -3711,25 +3864,68 @@ class AudioEngine {
     
     // MARK: - Volume Normalization
     
-    /// Analyze audio file and apply normalization gain
-    private func analyzeAndApplyNormalization(file: AVAudioFile) {
+    /// Analyze audio file and apply normalization gain asynchronously.
+    /// Uses a separate file handle so playback startup stays responsive.
+    private func analyzeAndApplyNormalization(file: AVAudioFile, generation: Int? = nil) {
         guard volumeNormalizationEnabled else {
             normalizationGain = 1.0
             applyNormalizationGain()
             return
         }
-        
-        // Analyze the file's peak and RMS levels
-        let (peakDB, rmsDB) = analyzeAudioLevels(file: file)
-        
+
+        let analysisURL = file.url
+        let expectedGeneration = generation ?? playbackGeneration
+        normalizationGain = 1.0
+        applyNormalizationGain()
+
+        normalizationAnalysisToken &+= 1
+        let token = normalizationAnalysisToken
+
+        deferredIOQueue.async { [weak self] in
+            guard let self else { return }
+            let openStart = CFAbsoluteTimeGetCurrent()
+            do {
+                let analysisFile = try AVAudioFile(forReading: analysisURL)
+                let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
+                if openElapsed > 0.25 {
+                    NSLog("Normalization: opened '%@' in %.2fs", analysisURL.lastPathComponent, openElapsed)
+                }
+
+                let (peakDB, rmsDB) = self.analyzeAudioLevels(file: analysisFile)
+                let gain = self.calculateNormalizationGain(peakDB: peakDB, rmsDB: rmsDB)
+
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    guard self.normalizationAnalysisToken == token,
+                          self.volumeNormalizationEnabled,
+                          self.playbackGeneration == expectedGeneration,
+                          self.currentTrack?.url == analysisURL,
+                          !self.isStreamingPlayback else { return }
+                    self.normalizationGain = gain
+                    self.applyNormalizationGain()
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    guard self.normalizationAnalysisToken == token,
+                          self.currentTrack?.url == analysisURL else { return }
+                    NSLog("Normalization: analysis skipped for '%@': %@", analysisURL.lastPathComponent, error.localizedDescription)
+                    self.normalizationGain = 1.0
+                    self.applyNormalizationGain()
+                }
+            }
+        }
+    }
+
+    private func calculateNormalizationGain(peakDB: Float, rmsDB: Float) -> Float {
         // Calculate gain needed to reach target loudness
         // Use RMS as a rough estimate of perceived loudness
         let gainNeededDB = targetLoudnessDB - rmsDB
-        
+
         // Limit the gain to prevent excessive boost or cut
         // Max boost: +12 dB, Max cut: -12 dB
         let clampedGainDB = max(-12.0, min(12.0, gainNeededDB))
-        
+
         // Also ensure we don't clip - reduce gain if peaks would exceed 0 dB
         let peakAfterGain = peakDB + clampedGainDB
         let finalGainDB: Float
@@ -3739,14 +3935,11 @@ class AudioEngine {
         } else {
             finalGainDB = clampedGainDB
         }
-        
-        // Convert dB to linear gain
-        normalizationGain = pow(10.0, finalGainDB / 20.0)
-        
-        NSLog("Normalization: peak=%.1fdB, rms=%.1fdB, gain=%.1fdB (%.2fx)", 
-              peakDB, rmsDB, finalGainDB, normalizationGain)
-        
-        applyNormalizationGain()
+
+        let gain = pow(10.0, finalGainDB / 20.0)
+        NSLog("Normalization: peak=%.1fdB, rms=%.1fdB, gain=%.1fdB (%.2fx)",
+              peakDB, rmsDB, finalGainDB, gain)
+        return gain
     }
     
     /// Analyze audio file and return (peak dB, RMS dB)
@@ -4062,8 +4255,18 @@ class AudioEngine {
                 }
             }
         } else {
-            loadTrack(at: index)
-            play()
+            _ = stopRadioIfLoadingNonRadioContent(
+                incomingTrackURL: track.url,
+                context: "playTrack"
+            )
+
+            let isDirectLocalAudio = track.url.isFileURL && track.mediaType != .video
+            if isDirectLocalAudio {
+                loadLocalTrackForImmediatePlayback(track, at: index)
+            } else {
+                loadTrack(at: index)
+                play()
+            }
         }
     }
     

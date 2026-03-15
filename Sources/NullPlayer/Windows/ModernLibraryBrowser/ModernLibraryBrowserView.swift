@@ -195,7 +195,13 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private var currentSort: ModernBrowserSortOption = .nameAsc {
-        didSet { currentSort.save(); rebuildCurrentModeItems(); needsDisplay = true }
+        didSet {
+            currentSort.save()
+            localArtistPageOffset = 0; localAlbumPageOffset = 0
+            localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
+            rebuildCurrentModeItems()
+            needsDisplay = true
+        }
     }
     private var searchQuery: String = ""
     private var typeAheadQuery: String = ""
@@ -252,11 +258,17 @@ class ModernLibraryBrowserView: NSView {
     private var artistAlbumsByName: [String: [PlexAlbum]] = [:]
     
     // Cached data - Local
-    private var cachedLocalArtists: [Artist] = []
-    private var cachedLocalAlbums: [Album] = []
-    private var cachedLocalTracks: [LibraryTrack] = []
+    // Paginated local data state (replaces full in-memory caches)
+    private var localArtistPageOffset = 0
+    private var localAlbumPageOffset = 0
+    private let localPageSize = 200
+    private var localArtistTotal = 0
+    private var localAlbumTotal = 0
+    private var localArtistLetterOffsets: [String: Int] = [:]
+    private var localAlbumLetterOffsets: [String: Int] = [:]
     private var cachedLocalMovies: [LocalVideo] = []
     private var cachedLocalShows: [LocalShow] = []
+    private var localLibraryReloadWorkItem: DispatchWorkItem?
     
     // Cached data - Subsonic
     private var cachedSubsonicArtists: [SubsonicArtist] = []
@@ -342,6 +354,8 @@ class ModernLibraryBrowserView: NSView {
     // Animation
     private var loadingAnimationTimer: Timer?
     private var loadingAnimationFrame: Int = 0
+    /// Local library scan animation (server bar spinner)
+    private var isLibraryScanning = false
     private var serverNameScrollOffset: CGFloat = 0
     private var libraryNameScrollOffset: CGFloat = 0
     private var serverScrollTimer: Timer?
@@ -632,7 +646,9 @@ class ModernLibraryBrowserView: NSView {
                                                name: NSWindow.didDeminiaturizeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeOcclusionState),
                                                name: NSWindow.didChangeOcclusionStateNotification, object: nil)
-        
+        NotificationCenter.default.addObserver(self, selector: #selector(libraryScanProgressChanged),
+                                               name: MediaLibrary.scanProgressNotification, object: nil)
+
         // Register for drag and drop
         registerForDraggedTypes([.fileURL])
         
@@ -656,8 +672,9 @@ class ModernLibraryBrowserView: NSView {
     
     deinit {
         cancelPendingArtSingleClickAction()
+        localLibraryReloadWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
-        stopLoadingAnimation()
+        stopLoadingAnimation(force: true)
         stopServerNameScroll()
         stopVisualizerTimer()
     }
@@ -1019,19 +1036,48 @@ class ModernLibraryBrowserView: NSView {
             let sourceText = "Local Files"
             drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
-            
+
             let addText = "+ADD"
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
             drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
-            
+
             // Item count (only in list mode, not art-only)
             if !isArtOnlyMode {
-                let countText = "\(displayItems.count) items"
+                let totalCount: Int
+                if browseMode == .artists {
+                    totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
+                } else if browseMode == .albums {
+                    totalCount = localAlbumTotal > 0 ? localAlbumTotal : displayItems.count
+                } else {
+                    totalCount = displayItems.count
+                }
+                let countText = "\(totalCount) items"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m
                 drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             }
-            
+
+            // Scan animation: small spinner at center of bar while library is scanning
+            if isLibraryScanning {
+                let cx = barRect.midX
+                let cy = barRect.midY
+                let innerR: CGFloat = 3 * m
+                let outerR: CGFloat = 8 * m
+                let n = 8
+                let step = CGFloat.pi * 2 / CGFloat(n)
+                for i in 0..<n {
+                    let angle = CGFloat(i) * step - CGFloat.pi / 2 + CGFloat(loadingAnimationFrame) * step
+                    skin.accentColor.withAlphaComponent(CGFloat(i + 1) / CGFloat(n) * 0.9).setStroke()
+                    context.setLineWidth(1.5 * m)
+                    context.move(to: CGPoint(x: cx + cos(angle) * innerR, y: cy + sin(angle) * innerR))
+                    context.addLine(to: CGPoint(x: cx + cos(angle) * outerR, y: cy + sin(angle) * outerR))
+                    context.strokePath()
+                }
+                let scanText = "SCANNING"
+                let scanTextX = cx + outerR + 6 * m
+                drawText(scanText, at: NSPoint(x: scanTextX, y: textY), withAttributes: prefixAttrs, context: context)
+            }
+
         case .plex(let serverId):
             let manager = PlexManager.shared
             let configuredServer = manager.servers.first(where: { $0.id == serverId })
@@ -1754,8 +1800,14 @@ class ModernLibraryBrowserView: NSView {
         let fontSize = min(9 * ModernSkinElements.sizeMultiplier, letterHeight * 0.8)
         
         var availableLetters = Set<String>()
-        for item in displayItems {
-            availableLetters.insert(sortLetter(for: item.title))
+        if case .local = currentSource, browseMode == .artists {
+            availableLetters = Set(localArtistLetterOffsets.keys)
+        } else if case .local = currentSource, browseMode == .albums {
+            availableLetters = Set(localAlbumLetterOffsets.keys)
+        } else {
+            for item in displayItems {
+                availableLetters.insert(sortLetter(for: item.title))
+            }
         }
         
         for (index, letter) in alphabetLetters.enumerated() {
@@ -2862,6 +2914,12 @@ class ModernLibraryBrowserView: NSView {
             let item = displayItems[clickedIndex]
             showContextMenu(for: item, at: event); return
         }
+        if case .local = currentSource {
+            let menu = NSMenu()
+            let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
+            manageFoldersItem.target = self; menu.addItem(manageFoldersItem)
+            NSMenu.popUpContextMenu(menu, with: event, for: self); return
+        }
         super.rightMouseDown(with: event)
     }
     
@@ -2870,12 +2928,67 @@ class ModernLibraryBrowserView: NSView {
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
         let totalHeight = CGFloat(displayItems.count) * itemHeight
-        
+
         if totalHeight > listHeight && abs(event.deltaY) > 0 {
             scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - event.deltaY * 3))
-            
+
             let listRect = NSRect(x: 0, y: Layout.statusBarHeight, width: bounds.width, height: listHeight)
             setNeedsDisplay(listRect)
+        }
+        // Trigger next-page load when scrolled near the bottom of a local paginated list
+        if case .local = currentSource { loadNextLocalPageIfNeeded(listHeight: listHeight) }
+    }
+
+    private func loadNextLocalPageIfNeeded(listHeight: CGFloat) {
+        let threshold = itemHeight * 10   // start loading 10 rows from bottom
+        let loadedHeight = CGFloat(displayItems.count) * itemHeight
+        guard scrollOffset + listHeight + threshold >= loadedHeight else { return }
+        switch browseMode {
+        case .artists:
+            let nextOffset = localArtistPageOffset + localPageSize
+            guard nextOffset < localArtistTotal else { return }
+            localArtistPageOffset = nextOffset
+            let store = MediaLibraryStore.shared
+            let names = store.artistNames(limit: localPageSize, offset: localArtistPageOffset, sort: currentSort)
+            let albumsByArtist = store.albumsForArtistsBatch(names)
+            for name in names {
+                let albumSummaries = albumsByArtist[name] ?? []
+                let stubArtist = Artist(id: name, name: name, albums: [])
+                displayItems.append(ModernDisplayItem(
+                    id: "local-artist-\(name)",
+                    title: name,
+                    info: "\(albumSummaries.count) albums",
+                    indentLevel: 0,
+                    hasChildren: !albumSummaries.isEmpty,
+                    type: .localArtist(stubArtist)
+                ))
+            }
+            needsDisplay = true
+        case .albums:
+            let nextOffset = localAlbumPageOffset + localPageSize
+            guard nextOffset < localAlbumTotal else { return }
+            localAlbumPageOffset = nextOffset
+            let store = MediaLibraryStore.shared
+            let summaries = store.albumSummaries(limit: localPageSize, offset: localAlbumPageOffset, sort: currentSort)
+            for summary in summaries {
+                let album = Album(id: summary.id, name: summary.name, artist: summary.artist, year: summary.year, tracks: [])
+                let displayName: String
+                if let artist = summary.artist, !artist.isEmpty {
+                    displayName = "\(artist) - \(summary.name)"
+                } else {
+                    displayName = summary.name
+                }
+                displayItems.append(ModernDisplayItem(
+                    id: "local-album-\(album.id)",
+                    title: displayName,
+                    info: "\(summary.trackCount) tracks",
+                    indentLevel: 0,
+                    hasChildren: summary.trackCount > 0,
+                    type: .localAlbum(album)
+                ))
+            }
+            needsDisplay = true
+        default: break
         }
     }
     
@@ -3064,30 +3177,20 @@ class ModernLibraryBrowserView: NSView {
     
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else { return [] }
-        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
-        let playlistExtensions = ["m3u", "m3u8", "pls"]
-        for url in items {
-            let ext = url.pathExtension.lowercased()
-            var isDirectory: ObjCBool = false
-            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-            if isDirectory.boolValue || audioExtensions.contains(ext) || playlistExtensions.contains(ext) { return .copy }
-        }
-        return []
+        return LocalFileDiscovery.hasSupportedDropContent(items, includeVideo: false, includePlaylists: true) ? .copy : []
     }
     
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else { return false }
         var fileURLs: [URL] = []
         var processedDirectories = false
-        let audioExtensions = ["mp3", "m4a", "aac", "wav", "aiff", "flac", "ogg", "alac"]
         for url in items {
-            var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
-                if isDirectory.boolValue {
-                    MediaLibrary.shared.addWatchFolder(url); MediaLibrary.shared.scanFolder(url); processedDirectories = true
-                } else if audioExtensions.contains(url.pathExtension.lowercased()) {
-                    fileURLs.append(url)
-                }
+            if LocalFileDiscovery.isDirectory(url) {
+                MediaLibrary.shared.addWatchFolder(url)
+                MediaLibrary.shared.scanFolder(url)
+                processedDirectories = true
+            } else if LocalFileDiscovery.isSupportedAudioFile(url) {
+                fileURLs.append(url)
             }
         }
         if !fileURLs.isEmpty {
@@ -3295,6 +3398,28 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func scrollToLetter(_ letter: String) {
+        if case .local = currentSource {
+            switch browseMode {
+            case .artists:
+                if let dbOffset = localArtistLetterOffsets[letter] {
+                    localArtistPageOffset = dbOffset
+                    buildLocalArtistItems()
+                    scrollOffset = 0
+                    needsDisplay = true
+                }
+                return
+            case .albums:
+                if let dbOffset = localAlbumLetterOffsets[letter] {
+                    localAlbumPageOffset = dbOffset
+                    buildLocalAlbumItems()
+                    scrollOffset = 0
+                    needsDisplay = true
+                }
+                return
+            default:
+                break
+            }
+        }
         for (index, item) in displayItems.enumerated() {
             if sortLetter(for: item.title) == letter {
                 var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
@@ -3402,10 +3527,14 @@ class ModernLibraryBrowserView: NSView {
         menu.addItem(radioItem)
 
         if case .local = currentSource {
-            let trackCount = MediaLibrary.shared.tracksSnapshot.count
-            let movieCount = MediaLibrary.shared.moviesSnapshot.count
-            let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+            let store = MediaLibraryStore.shared
+            let trackCount = store.trackCount()
+            let movieCount = store.movieCount()
+            let episodeCount = store.episodeCount()
             let totalLocalItems = trackCount + movieCount + episodeCount
+            menu.addItem(NSMenuItem.separator())
+            let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
+            manageFoldersItem.target = self; menu.addItem(manageFoldersItem)
             menu.addItem(NSMenuItem.separator())
             let clearItem = NSMenuItem(title: "Clear Local Library", action: nil, keyEquivalent: "")
             let clearSubmenu = NSMenu()
@@ -3612,8 +3741,6 @@ class ModernLibraryBrowserView: NSView {
         addVideoFilesItem.target = self; menu.addItem(addVideoFilesItem)
         let addFolderItem = NSMenuItem(title: "Add Folder...", action: #selector(addWatchFolder), keyEquivalent: "")
         addFolderItem.target = self; menu.addItem(addFolderItem)
-        let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
-        manageFoldersItem.target = self; menu.addItem(manageFoldersItem)
         let menuLocation = NSPoint(x: event.locationInWindow.x, y: event.locationInWindow.y - 5)
         menu.popUp(positioning: nil, at: menuLocation, in: window?.contentView)
     }
@@ -4532,20 +4659,28 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func contextMenuRemoveLocalAlbum(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
-        let count = album.tracks.count
+        let tracks = resolvedTracksForLocalAlbum(album)
+        let count = tracks.count
         let alert = NSAlert()
         alert.messageText = "Remove \"\(album.name)\" from Library?"
         alert.informativeText = "This will remove \(count) track\(count == 1 ? "" : "s"). Files will not be deleted."
         alert.addButton(withTitle: "Remove"); alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        MediaLibrary.shared.removeTracks(urls: album.tracks.map { $0.url }); loadLocalData()
+        MediaLibrary.shared.removeTracks(urls: tracks.map { $0.url }); loadLocalData()
     }
     @objc private func contextMenuRemoveLocalArtist(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }
         let artistsToRemove = selectedLocalArtistsForContextAction(fallback: artist)
-        let trackURLs = artistsToRemove
-            .flatMap { $0.albums.flatMap { $0.tracks } }
-            .map { $0.url }
+        let store = MediaLibraryStore.shared
+        let trackURLs: [URL] = artistsToRemove.flatMap { a -> [URL] in
+            if a.albums.isEmpty {
+                // Paginated stub — load tracks from store
+                let summaries = store.albumsForArtist(a.name)
+                return summaries.flatMap { store.tracksForAlbum($0.id) }.map { $0.url }
+            } else {
+                return a.albums.flatMap { $0.tracks }.map { $0.url }
+            }
+        }
         let dedupedTrackURLs = dedupeURLsPreservingOrder(trackURLs)
         let count = dedupedTrackURLs.count
 
@@ -5021,12 +5156,18 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func contextMenuPlayLocalAlbumAndReplace(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
-        WindowManager.shared.audioEngine.loadTracks(album.tracks.map { $0.toTrack() })
+        WindowManager.shared.audioEngine.loadTracks(resolvedTracksForLocalAlbum(album).map { $0.toTrack() })
     }
     @objc private func contextMenuPlayLocalArtistAndReplace(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }
         var tracks: [Track] = []
-        for album in artist.albums { tracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+        if artist.albums.isEmpty {
+            let store = MediaLibraryStore.shared
+            let summaries = store.albumsForArtist(artist.name)
+            for summary in summaries { tracks.append(contentsOf: store.tracksForAlbum(summary.id).map { $0.toTrack() }) }
+        } else {
+            for album in artist.albums { tracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+        }
         WindowManager.shared.audioEngine.loadTracks(tracks)
     }
     @objc private func contextMenuPlaySubsonicSongAndReplace(_ sender: NSMenuItem) {
@@ -5214,12 +5355,12 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func contextMenuPlayLocalAlbumNext(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
-        let tracks = album.tracks.map { $0.toTrack() }
+        let tracks = resolvedTracksForLocalAlbum(album).map { $0.toTrack() }
         WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
     }
     @objc private func contextMenuAddLocalAlbumToQueue(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
-        let tracks = album.tracks.map { $0.toTrack() }
+        let tracks = resolvedTracksForLocalAlbum(album).map { $0.toTrack() }
         let engine = WindowManager.shared.audioEngine
         let wasEmpty = engine.playlist.isEmpty
         engine.appendTracks(tracks)
@@ -5284,16 +5425,24 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuPlayLocalArtistNext(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }
         var allTracks: [Track] = []
-        for album in artist.albums {
-            allTracks.append(contentsOf: album.tracks.map { $0.toTrack() })
+        if artist.albums.isEmpty {
+            let store = MediaLibraryStore.shared
+            let summaries = store.albumsForArtist(artist.name)
+            for summary in summaries { allTracks.append(contentsOf: store.tracksForAlbum(summary.id).map { $0.toTrack() }) }
+        } else {
+            for album in artist.albums { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
         }
         WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
     }
     @objc private func contextMenuAddLocalArtistToQueue(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }
         var allTracks: [Track] = []
-        for album in artist.albums {
-            allTracks.append(contentsOf: album.tracks.map { $0.toTrack() })
+        if artist.albums.isEmpty {
+            let store = MediaLibraryStore.shared
+            let summaries = store.albumsForArtist(artist.name)
+            for summary in summaries { allTracks.append(contentsOf: store.tracksForAlbum(summary.id).map { $0.toTrack() }) }
+        } else {
+            for album in artist.albums { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
         }
         let engine = WindowManager.shared.audioEngine
         let wasEmpty = engine.playlist.isEmpty
@@ -5489,7 +5638,7 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         case .localAlbum(let album):
-            WindowManager.shared.audioEngine.insertTracksAfterCurrent(album.tracks.map { $0.toTrack() }, startPlaybackIfEmpty: false)
+            WindowManager.shared.audioEngine.insertTracksAfterCurrent(resolvedTracksForLocalAlbum(album).map { $0.toTrack() }, startPlaybackIfEmpty: false)
         case .subsonicAlbum(let album):
             Task { @MainActor in
                 if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
@@ -5510,7 +5659,13 @@ class ModernLibraryBrowserView: NSView {
             }
         case .localArtist(let artist):
             var allTracks: [Track] = []
-            for album in artist.albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+            if artist.albums.isEmpty {
+                let store = MediaLibraryStore.shared
+                let summaries = store.albumsForArtist(artist.name).sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) })
+                for summary in summaries { allTracks.append(contentsOf: store.tracksForAlbum(summary.id).map { $0.toTrack() }) }
+            } else {
+                for album in artist.albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+            }
             WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks, startPlaybackIfEmpty: false)
         case .subsonicArtist(let artist):
             Task { @MainActor in
@@ -5615,7 +5770,7 @@ class ModernLibraryBrowserView: NSView {
                 }
             }
         case .localAlbum(let album):
-            engine.appendTracks(album.tracks.map { $0.toTrack() })
+            engine.appendTracks(resolvedTracksForLocalAlbum(album).map { $0.toTrack() })
         case .subsonicAlbum(let album):
             Task { @MainActor in
                 if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
@@ -5636,7 +5791,13 @@ class ModernLibraryBrowserView: NSView {
             }
         case .localArtist(let artist):
             var allTracks: [Track] = []
-            for album in artist.albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+            if artist.albums.isEmpty {
+                let store = MediaLibraryStore.shared
+                let summaries = store.albumsForArtist(artist.name).sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) })
+                for summary in summaries { allTracks.append(contentsOf: store.tracksForAlbum(summary.id).map { $0.toTrack() }) }
+            } else {
+                for album in artist.albums.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+            }
             engine.appendTracks(allTracks)
         case .subsonicArtist(let artist):
             Task { @MainActor in
@@ -5853,10 +6014,16 @@ class ModernLibraryBrowserView: NSView {
     
     @objc private func mediaLibraryDidChange() {
         guard case .local = currentSource, browseMode != .radio else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, self.browseMode != .radio else { return }
-            self.loadLocalData(); self.needsDisplay = true
+        localLibraryReloadWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self,
+                  case .local = self.currentSource,
+                  self.browseMode != .radio else { return }
+            self.loadLocalData()
+            self.needsDisplay = true
         }
+        localLibraryReloadWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: workItem)
     }
     
     @objc private func radioStationsDidChange() {
@@ -5978,7 +6145,8 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func clearLocalCachedData() {
-        cachedLocalArtists = []; cachedLocalAlbums = []; cachedLocalTracks = []
+        localArtistPageOffset = 0; localAlbumPageOffset = 0
+        localArtistTotal = 0; localAlbumTotal = 0
         cachedLocalMovies = []; cachedLocalShows = []
         expandedLocalArtists = []; expandedLocalAlbums = []
         expandedLocalShows = []; expandedLocalSeasons = []
@@ -6017,13 +6185,34 @@ class ModernLibraryBrowserView: NSView {
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.loadingAnimationFrame += 1
-            if self.isLoading { self.needsDisplay = true } else { self.stopLoadingAnimation() }
+            if self.isLoading {
+                self.needsDisplay = true
+            } else if self.isLibraryScanning {
+                // Redraw server bar only for the scan spinner
+                let serverBarY = self.bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
+                self.setNeedsDisplay(NSRect(x: 0, y: serverBarY, width: self.bounds.width, height: Layout.serverBarHeight))
+            } else {
+                self.stopLoadingAnimation()
+            }
         }
         RunLoop.main.add(timer, forMode: .common); loadingAnimationTimer = timer
     }
-    
-    private func stopLoadingAnimation() {
+
+    private func stopLoadingAnimation(force: Bool = false) {
+        guard force || !isLibraryScanning else { return }
         loadingAnimationTimer?.invalidate(); loadingAnimationTimer = nil; loadingAnimationFrame = 0
+    }
+
+    @objc private func libraryScanProgressChanged() {
+        let scanning = MediaLibrary.shared.isScanning
+        guard scanning != isLibraryScanning else { return }
+        isLibraryScanning = scanning
+        if scanning {
+            startLoadingAnimation()
+        } else {
+            if !isLoading { stopLoadingAnimation() }
+            needsDisplay = true
+        }
     }
     
     /// Returns the display name of the currently relevant Jellyfin library based on browse mode.
@@ -6839,11 +7028,12 @@ class ModernLibraryBrowserView: NSView {
             case .localTrack(let track):
                 image = await self.loadLocalArtwork(url: track.url)
             case .localAlbum(let album):
-                if let track = album.tracks.first {
+                let albumTrackForArt = album.tracks.first ?? MediaLibraryStore.shared.tracksForAlbum(album.id).first
+                if let track = albumTrackForArt {
                     image = await self.loadLocalArtwork(url: track.url)
                 }
             case .localArtist(let artist):
-                let artistTracks = self.cachedLocalTracks.filter { $0.artist == artist.name }
+                let artistTracks = MediaLibraryStore.shared.searchTracks(query: artist.name, limit: 1, offset: 0)
                 if let track = artistTracks.first {
                     image = await self.loadLocalArtwork(url: track.url)
                 }
@@ -6995,17 +7185,24 @@ class ModernLibraryBrowserView: NSView {
     private func loadLocalData() {
         isLoading = false; errorMessage = nil; stopLoadingAnimation()
         let library = MediaLibrary.shared
-        cachedLocalTracks = library.tracksSnapshot; cachedLocalArtists = library.allArtists(); cachedLocalAlbums = library.allAlbums()
+        let store = MediaLibraryStore.shared
         switch browseMode {
-        case .artists: buildLocalArtistItems()
-        case .albums: buildLocalAlbumItems()
-        case .search: buildLocalSearchItems()
+        case .artists:
+            localArtistPageOffset = 0
+            localArtistTotal = store.artistCount()
+            buildLocalArtistItems()
+        case .albums:
+            localAlbumPageOffset = 0
+            localAlbumTotal = store.albumCount()
+            buildLocalAlbumItems()
+        case .search:
+            buildLocalSearchItems()
         case .plists: displayItems = []
         case .movies:
-            cachedLocalMovies = MediaLibrary.shared.moviesSnapshot
+            cachedLocalMovies = library.moviesSnapshot
             buildLocalMovieItems()
         case .shows:
-            cachedLocalShows = MediaLibrary.shared.allShows()
+            cachedLocalShows = library.allShows()
             buildLocalShowItems()
         case .radio: loadLocalRadioStations()
         }
@@ -8061,16 +8258,56 @@ class ModernLibraryBrowserView: NSView {
     // Local items
     private func buildLocalArtistItems() {
         displayItems.removeAll()
-        for artist in sortArtists(cachedLocalArtists) {
-            let expanded = expandedLocalArtists.contains(artist.id)
-            displayItems.append(ModernDisplayItem(id: "local-artist-\(artist.id)", title: artist.name, info: "\(artist.albums.count) albums", indentLevel: 0, hasChildren: true, type: .localArtist(artist)))
+        let store = MediaLibraryStore.shared
+        if localArtistPageOffset == 0 {
+            localArtistLetterOffsets = store.artistLetterOffsets(sort: currentSort)
+        }
+        let names = store.artistNames(limit: localPageSize, offset: localArtistPageOffset, sort: currentSort)
+        let albumsByArtist = store.albumsForArtistsBatch(names)
+        for name in names {
+            let albumSummaries = albumsByArtist[name] ?? []
+            let albumCount = albumSummaries.count
+            // Build a minimal Artist stub — albums are populated lazily when expanded
+            let stubArtist = Artist(id: name, name: name, albums: [])
+            let expanded = expandedLocalArtists.contains(name)
+            displayItems.append(ModernDisplayItem(
+                id: "local-artist-\(name)",
+                title: name,
+                info: "\(albumCount) albums",
+                indentLevel: 0,
+                hasChildren: albumCount > 0,
+                type: .localArtist(stubArtist)
+            ))
             if expanded {
-                for album in sortAlbums(artist.albums) {
-                    let albumExpanded = expandedLocalAlbums.contains(album.id)
-                    displayItems.append(ModernDisplayItem(id: "local-album-\(album.id)", title: album.name, info: album.year.map { String($0) }, indentLevel: 1, hasChildren: true, type: .localAlbum(album)))
+                for summary in albumSummaries {
+                    let albumExpanded = expandedLocalAlbums.contains(summary.id)
+                    let tracks: [LibraryTrack] = albumExpanded ? store.tracksForAlbum(summary.id) : []
+                    let album = Album(
+                        id: summary.id,
+                        name: summary.name,
+                        artist: summary.artist,
+                        year: summary.year,
+                        tracks: tracks
+                    )
+                    displayItems.append(ModernDisplayItem(
+                        id: "local-album-\(album.id)",
+                        title: album.name,
+                        info: summary.year.map { String($0) },
+                        indentLevel: 1,
+                        hasChildren: summary.trackCount > 0,
+                        type: .localAlbum(album)
+                    ))
                     if albumExpanded {
-                        let sorted = album.tracks.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
-                        for track in sorted { displayItems.append(ModernDisplayItem(id: track.id.uuidString, title: track.title, info: track.formattedDuration, indentLevel: 2, hasChildren: false, type: .localTrack(track))) }
+                        for track in tracks {
+                            displayItems.append(ModernDisplayItem(
+                                id: track.id.uuidString,
+                                title: track.title,
+                                info: track.formattedDuration,
+                                indentLevel: 2,
+                                hasChildren: false,
+                                type: .localTrack(track)
+                            ))
+                        }
                     }
                 }
             }
@@ -8080,12 +8317,40 @@ class ModernLibraryBrowserView: NSView {
     
     private func buildLocalAlbumItems() {
         displayItems.removeAll()
-        for album in sortAlbums(cachedLocalAlbums) {
-            let expanded = expandedLocalAlbums.contains(album.id)
-            displayItems.append(ModernDisplayItem(id: "local-album-\(album.id)", title: album.displayName, info: "\(album.tracks.count) tracks", indentLevel: 0, hasChildren: true, type: .localAlbum(album)))
+        let store = MediaLibraryStore.shared
+        if localAlbumPageOffset == 0 {
+            localAlbumLetterOffsets = store.albumLetterOffsets(sort: currentSort)
+        }
+        let summaries = store.albumSummaries(limit: localPageSize, offset: localAlbumPageOffset, sort: currentSort)
+        for summary in summaries {
+            let expanded = expandedLocalAlbums.contains(summary.id)
+            let tracks: [LibraryTrack] = expanded ? store.tracksForAlbum(summary.id) : []
+            let album = Album(id: summary.id, name: summary.name, artist: summary.artist, year: summary.year, tracks: tracks)
+            let displayName: String
+            if let artist = summary.artist, !artist.isEmpty {
+                displayName = "\(artist) - \(summary.name)"
+            } else {
+                displayName = summary.name
+            }
+            displayItems.append(ModernDisplayItem(
+                id: "local-album-\(album.id)",
+                title: displayName,
+                info: "\(summary.trackCount) tracks",
+                indentLevel: 0,
+                hasChildren: summary.trackCount > 0,
+                type: .localAlbum(album)
+            ))
             if expanded {
-                let sorted = album.tracks.sorted { let d0 = $0.discNumber ?? 1; let d1 = $1.discNumber ?? 1; if d0 != d1 { return d0 < d1 }; return ($0.trackNumber ?? 0) < ($1.trackNumber ?? 0) }
-                for t in sorted { displayItems.append(ModernDisplayItem(id: t.id.uuidString, title: t.title, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .localTrack(t))) }
+                for t in tracks {
+                    displayItems.append(ModernDisplayItem(
+                        id: t.id.uuidString,
+                        title: t.title,
+                        info: t.formattedDuration,
+                        indentLevel: 1,
+                        hasChildren: false,
+                        type: .localTrack(t)
+                    ))
+                }
             }
         }
     }
@@ -8093,18 +8358,30 @@ class ModernLibraryBrowserView: NSView {
     private func buildLocalSearchItems() {
         displayItems.removeAll()
         guard !searchQuery.isEmpty else { return }
-        let query = searchQuery.lowercased()
-        let matchingArtists = sortArtists(cachedLocalArtists.filter { $0.name.lowercased().contains(query) })
-        if !matchingArtists.isEmpty {
-            displayItems.append(ModernDisplayItem(id: "header-local-artists", title: "Artists (\(matchingArtists.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for a in matchingArtists { displayItems.append(ModernDisplayItem(id: "local-artist-\(a.id)", title: a.name, info: "\(a.albums.count) albums", indentLevel: 1, hasChildren: true, type: .localArtist(a))) }
+        let store = MediaLibraryStore.shared
+        let matchingArtistNames = store.searchArtistNames(query: searchQuery)
+        if !matchingArtistNames.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-local-artists", title: "Artists (\(matchingArtistNames.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for name in matchingArtistNames {
+                let stub = Artist(id: name, name: name, albums: [])
+                displayItems.append(ModernDisplayItem(id: "local-artist-\(name)", title: name, info: nil, indentLevel: 1, hasChildren: true, type: .localArtist(stub)))
+            }
         }
-        let matchingAlbums = sortAlbums(cachedLocalAlbums.filter { $0.name.lowercased().contains(query) || ($0.artist?.lowercased().contains(query) ?? false) })
+        let matchingAlbums = store.searchAlbumSummaries(query: searchQuery)
         if !matchingAlbums.isEmpty {
             displayItems.append(ModernDisplayItem(id: "header-local-albums", title: "Albums (\(matchingAlbums.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
-            for a in matchingAlbums { displayItems.append(ModernDisplayItem(id: "local-album-\(a.id)", title: a.displayName, info: "\(a.tracks.count) tracks", indentLevel: 1, hasChildren: false, type: .localAlbum(a))) }
+            for summary in matchingAlbums {
+                let displayName: String
+                if let artist = summary.artist, !artist.isEmpty {
+                    displayName = "\(artist) - \(summary.name)"
+                } else {
+                    displayName = summary.name
+                }
+                let album = Album(id: summary.id, name: summary.name, artist: summary.artist, year: summary.year, tracks: [])
+                displayItems.append(ModernDisplayItem(id: "local-album-\(album.id)", title: displayName, info: "\(summary.trackCount) tracks", indentLevel: 1, hasChildren: false, type: .localAlbum(album)))
+            }
         }
-        let matchingTracks = sortTracks(MediaLibrary.shared.search(query: searchQuery))
+        let matchingTracks = store.searchTracks(query: searchQuery, limit: 200, offset: 0)
         if !matchingTracks.isEmpty {
             displayItems.append(ModernDisplayItem(id: "header-local-tracks", title: "Tracks (\(matchingTracks.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
             for t in matchingTracks { displayItems.append(ModernDisplayItem(id: t.id.uuidString, title: t.displayTitle, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .localTrack(t))) }
@@ -8305,95 +8582,6 @@ class ModernLibraryBrowserView: NSView {
 
     private func compareNameStrings(_ lhs: String, _ rhs: String, ascending: Bool) -> Bool {
         LibraryTextSorter.areInOrder(lhs, rhs, ascending: ascending, ignoreLeadingArticles: true)
-    }
-    
-    private func sortArtists(_ artists: [Artist]) -> [Artist] {
-        var newestAddedByArtist: [String: Date] = [:]
-        var oldestAddedByArtist: [String: Date] = [:]
-        var newestYearByArtist: [String: Int] = [:]
-        var oldestYearByArtist: [String: Int] = [:]
-
-        for artist in artists {
-            for album in artist.albums {
-                if let albumYear = album.year {
-                    let newestYear = newestYearByArtist[artist.id] ?? Int.min
-                    if albumYear > newestYear { newestYearByArtist[artist.id] = albumYear }
-
-                    let oldestYear = oldestYearByArtist[artist.id] ?? Int.max
-                    if albumYear < oldestYear { oldestYearByArtist[artist.id] = albumYear }
-                }
-
-                for track in album.tracks {
-                    let newestDate = newestAddedByArtist[artist.id] ?? .distantPast
-                    if track.dateAdded > newestDate { newestAddedByArtist[artist.id] = track.dateAdded }
-
-                    let oldestDate = oldestAddedByArtist[artist.id] ?? .distantFuture
-                    if track.dateAdded < oldestDate { oldestAddedByArtist[artist.id] = track.dateAdded }
-
-                    if let trackYear = track.year {
-                        let newestYear = newestYearByArtist[artist.id] ?? Int.min
-                        if trackYear > newestYear { newestYearByArtist[artist.id] = trackYear }
-
-                        let oldestYear = oldestYearByArtist[artist.id] ?? Int.max
-                        if trackYear < oldestYear { oldestYearByArtist[artist.id] = trackYear }
-                    }
-                }
-            }
-        }
-
-        switch currentSort {
-        case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
-        case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
-        case .dateAddedDesc:
-            return artists.sorted {
-                let d0 = newestAddedByArtist[$0.id] ?? .distantPast
-                let d1 = newestAddedByArtist[$1.id] ?? .distantPast
-                if d0 != d1 { return d0 > d1 }
-                return compareNameStrings($0.name, $1.name, ascending: true)
-            }
-        case .dateAddedAsc:
-            return artists.sorted {
-                let d0 = oldestAddedByArtist[$0.id] ?? .distantPast
-                let d1 = oldestAddedByArtist[$1.id] ?? .distantPast
-                if d0 != d1 { return d0 < d1 }
-                return compareNameStrings($0.name, $1.name, ascending: true)
-            }
-        case .yearDesc:
-            return artists.sorted {
-                let y0 = newestYearByArtist[$0.id] ?? 0
-                let y1 = newestYearByArtist[$1.id] ?? 0
-                if y0 != y1 { return y0 > y1 }
-                return compareNameStrings($0.name, $1.name, ascending: true)
-            }
-        case .yearAsc:
-            return artists.sorted {
-                let y0 = oldestYearByArtist[$0.id] ?? 0
-                let y1 = oldestYearByArtist[$1.id] ?? 0
-                if y0 != y1 { return y0 < y1 }
-                return compareNameStrings($0.name, $1.name, ascending: true)
-            }
-        }
-    }
-    
-    private func sortAlbums(_ albums: [Album]) -> [Album] {
-        switch currentSort {
-        case .nameAsc: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
-        case .nameDesc: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
-        case .yearDesc: return albums.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
-        case .yearAsc: return albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
-        default: return albums.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
-        }
-    }
-    
-    private func sortTracks(_ tracks: [LibraryTrack]) -> [LibraryTrack] {
-        switch currentSort {
-        case .nameAsc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: true) }
-        case .nameDesc: return tracks.sorted { compareNameStrings($0.title, $1.title, ascending: false) }
-        case .dateAddedDesc: return tracks.sorted { $0.dateAdded > $1.dateAdded }
-        case .dateAddedAsc: return tracks.sorted { $0.dateAdded < $1.dateAdded }
-        case .yearDesc: return tracks.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
-        case .yearAsc: return tracks.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
-        }
     }
     
     private func sortPlexArtists(_ artists: [PlexArtist]) -> [PlexArtist] {
@@ -9201,10 +9389,26 @@ class ModernLibraryBrowserView: NSView {
     private func playEmbyMovie(_ movie: EmbyMovie) { WindowManager.shared.playEmbyMovie(movie) }
     private func playEmbyEpisode(_ episode: EmbyEpisode) { WindowManager.shared.playEmbyEpisode(episode) }
     private func playLocalTrack(_ track: LibraryTrack) { WindowManager.shared.audioEngine.playNow([track.toTrack()]) }
-    private func playLocalAlbum(_ album: Album) { WindowManager.shared.audioEngine.playNow(album.tracks.map { $0.toTrack() }) }
+
+    /// Returns tracks for a local album, fetching from the store if the album was built as a stub (empty tracks).
+    private func resolvedTracksForLocalAlbum(_ album: Album) -> [LibraryTrack] {
+        if !album.tracks.isEmpty { return album.tracks }
+        return MediaLibraryStore.shared.tracksForAlbum(album.id)
+    }
+
+    private func playLocalAlbum(_ album: Album) { WindowManager.shared.audioEngine.playNow(resolvedTracksForLocalAlbum(album).map { $0.toTrack() }) }
     private func playLocalArtist(_ artist: Artist) {
+        // If albums are empty (stub from paginated view), load tracks from store
         var tracks: [Track] = []
-        for album in artist.albums { tracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+        if artist.albums.isEmpty {
+            let store = MediaLibraryStore.shared
+            let albumSummaries = store.albumsForArtist(artist.name)
+            for summary in albumSummaries.sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
+                tracks.append(contentsOf: store.tracksForAlbum(summary.id).map { $0.toTrack() })
+            }
+        } else {
+            for album in artist.albums { tracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
+        }
         WindowManager.shared.audioEngine.playNow(tracks)
     }
     private func playSubsonicSong(_ song: SubsonicSong) {
@@ -9706,7 +9910,13 @@ extension ModernDisplayItem {
         case .jellyfinArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
         case .embyArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
         case .localArtist(let a):
-            if column.id == "albums" { return String(a.albums.count) }
+            if column.id == "albums" {
+                if !a.albums.isEmpty { return String(a.albums.count) }
+                if let info,
+                   let first = info.split(separator: " ").first,
+                   let count = Int(first) { return String(count) }
+                return ""
+            }
             if column.id == "rating" {
                 guard let r = MediaLibrary.shared.artistRating(for: a.id), r > 0 else { return "" }
                 let stars = r / 2; return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)

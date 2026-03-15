@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.17.1
+
+### Local Library
+
+- **Manage Folders window** — the watch-folder list is now a proper resizable window instead of an alert sheet, with full editing support on large network-volume libraries that previously appeared empty.
+- **Manage Folders in context menu** — a direct "Manage Folders…" link is now available in the Local Library context menu.
+- **Import pipeline optimized** — the scan-to-import handoff is restructured to reduce redundant work on large libraries and NAS volumes; scan signatures are no longer persisted for fast-track entries before enrichment completes.
+- **NAS safety: skip cleanup on empty scan** — library cleanup is skipped when a NAS returns 0 files, preventing accidental removal of the entire library when the volume is temporarily unreachable.
+- **Scanning animation fixes** — the progress animation no longer stops mid-import or persists after a scan is cancelled.
+- **Library toolbar count** — the toolbar now shows the total track count instead of the paginated-page count.
+- **Alphabet navigation** — letter-jump navigation now works across all pages in the local library, not just the first.
+- **Library browser layering** — the library browser no longer appears behind main center-stack windows when they overlap.
+- **Border gap fixed** — the classic library browser no longer shows a gap at the scan-animation border.
+- **Context menu track count** — the library context menu now shows the correct track count; orphaned DB tracks that couldn't previously be cleared can now be removed.
+
+### Async Local Track Transitions
+
+- **Beachball-free auto-advance** — opening the next local file is now performed on a background I/O queue (`advanceToLocalTrackAsync`) so the main thread is never blocked during track transitions.
+- **Beachball-free Sweet Fades** — crossfade file opens are also moved to the background I/O queue and guarded by a `crossfadeFileLoadToken` to prevent stale loads from arriving late.
+
+### Visualizations
+
+- **vis_classic crash fix** — resolved a data race between the CVDisplayLink callback thread and the main thread accessing the C++ vis_classic core.
+- **Spectrum/waveform border fix** — the classic spectrum and waveform visualizations no longer occlude the left and right window borders.
+- **Double Size crash fix** — toggling Double Size no longer crashes with a stack overflow; the animated window repositioning triggered infinite recursion in the docked-window movement loop.
+
 ## 0.17.0
 
 ### Window System

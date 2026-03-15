@@ -126,10 +126,21 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 **Watch folders (remembered folders):**
 - Folders added via "Add Folder..." are persisted in the library database
 - They are **not** monitored automatically — there is no filesystem watcher
-- Press the **⟳ refresh button** to re-scan all remembered folders and pick up newly added files
-- Duplicate detection prevents re-adding files already in the library
+- Press the **⟳ refresh button** to run an **incremental** re-scan of all remembered folders (new/changed/removed files only)
+- Fast ingest behavior: newly discovered files appear quickly with filename/basic info, then metadata (duration/tags/sample rate) fills in asynchronously
+- Duplicate detection and per-file signatures prevent unnecessary metadata re-parse for unchanged files
+- Progress updates are throttled/coarse during large imports to keep UI responsive
 
 **Tabs:** Artists, Albums, Tracks, Playlists, Movies, Shows
+
+### Drag/Drop + Folder Import Behavior (Local/NAS)
+
+Import discovery is now unified across classic + modern entry points (main window, playlist windows, library browsers):
+
+- Directory traversal runs in background (no synchronous recursive UI-thread scans)
+- Extension filtering is consistent across add-folder and drag/drop paths
+- Supported content checks are shared before accepting a drop
+- Works for large local sets and NAS paths (SMB/AFP) with less UI churn during import
 
 ## Output Devices & Casting
 

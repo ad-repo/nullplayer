@@ -7,6 +7,7 @@ class BaseWaveformView: NSView {
     weak var waveformController: WaveformWindowProviding?
 
     private var loadTask: Task<Void, Never>?
+    private var cueLoadTask: Task<Void, Never>?
     private var trackingArea: NSTrackingArea?
     private var tooltipTag: NSView.ToolTipTag = 0
     private var streamWaveformObserver: NSObjectProtocol?
@@ -61,8 +62,7 @@ class BaseWaveformView: NSView {
         get { UserDefaults.standard.bool(forKey: "waveformShowCuePoints") }
         set {
             UserDefaults.standard.set(newValue, forKey: "waveformShowCuePoints")
-            cuePoints = WaveformCueSheetParser.parse(for: currentTrack)
-            setNeedsDisplay(waveformRect)
+            requestCuePoints(for: currentTrack)
         }
     }
 
@@ -120,7 +120,8 @@ class BaseWaveformView: NSView {
         currentTrack = track
         currentTime = 0
         dragTimeOverride = nil
-        cuePoints = WaveformCueSheetParser.parse(for: track)
+        cuePoints = []
+        requestCuePoints(for: track)
         streamingAccumulator = nil
         updateWaveformConsumerRegistration(enabled: false)
 
@@ -211,6 +212,7 @@ class BaseWaveformView: NSView {
 
     func stopLoadingForHide() {
         loadTask?.cancel()
+        cueLoadTask?.cancel()
         isDraggingWaveform = false
         dragTimeOverride = nil
         updateWaveformConsumerRegistration(enabled: false)
@@ -287,6 +289,36 @@ class BaseWaveformView: NSView {
         setNeedsDisplay(waveformRect)
     }
 
+    private func requestCuePoints(for track: Track?) {
+        cueLoadTask?.cancel()
+
+        guard showsCuePoints, let track else {
+            cuePoints = []
+            setNeedsDisplay(waveformRect)
+            return
+        }
+
+        let expectedTrackID = track.id
+        cueLoadTask = Task { [weak self] in
+            let parseTask = Task.detached(priority: .utility) {
+                WaveformCueSheetParser.parse(for: track)
+            }
+            let points = await withTaskCancellationHandler {
+                await parseTask.value
+            } onCancel: {
+                parseTask.cancel()
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self,
+                      self.showsCuePoints,
+                      self.currentTrack?.id == expectedTrackID else { return }
+                self.cuePoints = points
+                self.setNeedsDisplay(self.waveformRect)
+            }
+        }
+    }
+
     private func time(for point: NSPoint) -> TimeInterval {
         guard duration > 0 else { return 0 }
         let fraction = min(max((point.x - waveformRect.minX) / max(waveformRect.width, 1), 0), 1)
@@ -361,6 +393,8 @@ class BaseWaveformView: NSView {
     }
 
     deinit {
+        loadTask?.cancel()
+        cueLoadTask?.cancel()
         WindowManager.shared.audioEngine.removeWaveformConsumer(waveformConsumerID)
         if let streamWaveformObserver {
             NotificationCenter.default.removeObserver(streamWaveformObserver)
