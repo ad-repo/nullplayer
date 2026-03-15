@@ -180,19 +180,7 @@ xcrun xccov view --report ~/Library/Developer/Xcode/DerivedData/nullplayer-*/Log
 
 ## Local Library Regression Checklist
 
-When touching local-library scanning/import or NAS performance, run these checks in addition to normal suites:
-
-1. `swift test --filter LocalFileDiscoveryTests`
-2. `swift test --filter MediaLibraryWatchFolderPathTests`
-3. `swift test --filter NullPlayerTests`
-
-Manual validation passes to include:
-
-1. First scan of a large folder imports all supported media.
-2. Second scan with unchanged files skips metadata re-parse and duplicate inserts.
-3. Changed file (mtime/size) is re-enriched; removed file is pruned.
-4. Drag/drop folder, add-folder, and playlist/main-window import paths produce consistent file sets.
-5. NAS scenario: switching from large WAV to MP3 should keep UI responsive (no sustained beachball impression).
+See `skills/local-library/SKILL.md` — Testing section.
 
 ## Writing Good Tests
 

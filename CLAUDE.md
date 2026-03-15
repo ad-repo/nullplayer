@@ -25,8 +25,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **visualizations**: Album art, ProjectM, spectrum modes, Metal gotchas
 - **testing**: UI testing workflows
 - **non-retina-fixes**: Display artifact fixes
-
-Local-library import/scan notes: `docs/local-library-import-pipeline.md`
+- **local-library**: SQLite schema, scan pipeline, NAS responsiveness, display-layer query patterns
 
 ## Architecture
 
@@ -105,8 +104,6 @@ Manual QA for UI/playback changes: local file playback, Plex/Subsonic/Jellyfin/E
 - **Mode-specific features must be guarded at all layers**: When a feature only applies to one UI mode, enforce it in three places: (1) menu/UI check (`if wm.isModernUIEnabled`), (2) property getter returns safe default in wrong mode, (3) action function has `guard isModernUIEnabled else { return }`.
 
 - **Remember State On Quit**: `AppStateManager` saves/restores complete session state (v2). Two-phase restoration: settings first (`restoreSettingsState`), then playlist (`restorePlaylistState`). Streaming tracks are loaded as placeholder `Track` objects then replaced asynchronously via `engine.replaceTrack(at:with:)`. When adding new state: persistent preferences → UserDefaults directly; session state → `AppState` struct with `decodeIfPresent` defaults.
-
-- **Never call `normalizedPath(for:)` / `resolvingSymlinksInPath()` in a loop over library items**: Each call is a filesystem operation; on NFS/SMB volumes this is a network round-trip. Pre-compute paths once outside any loop, then do string comparisons. The pattern in `watchFolderSummaries()` is the reference: folder paths normalized once (5 calls), track/movie/episode paths from `url.path` directly. Violating this caused the Manage Folders window to hang permanently on 60k-track libraries (300k filesystem calls blocked the background thread).
 
 - **Library browser expand tasks must use `Task.detached`**: In both `ModernLibraryBrowserView` and classic `PlexBrowserView`, expand tasks for Jellyfin, Emby, and Subsonic must use `Task.detached { @MainActor ... }` instead of `Task { @MainActor ... }`. Regular `Task {}` can inherit cancellation state from the main actor context.
 
