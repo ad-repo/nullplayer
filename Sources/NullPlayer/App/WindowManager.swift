@@ -188,7 +188,7 @@ class WindowManager {
                                                            currentHeight: winFrame.height,
                                                            titleBarDelta: titleDelta,
                                                            preservePlaylistContentHeight: true)
-                winFrame.size.width = frame.width
+                if kind != .waveform { winFrame.size.width = frame.width }
                 winFrame.size.height = targetHeight
                 winFrame.origin.x = frame.minX
                 winFrame.origin.y = nextTop - targetHeight
@@ -1881,27 +1881,30 @@ class WindowManager {
                 ? expectedMainHeightForCurrentHT(mainWindowController?.window)
                 : baseMinSize.height * scale
 
-            let targetWidth = mainFrame.width
-            waveformWindow.minSize = NSSize(width: targetWidth, height: minHeight)
-            waveformWindow.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
+            let skinMinWidth: CGFloat = runningModernMode
+                ? ModernSkinElements.waveformMinSize.width
+                : baseMinSize.width * scale
+            waveformWindow.minSize = NSSize(width: skinMinWidth, height: minHeight)
+            waveformWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             let currentFrame = waveformWindow.frame
             let heightScaleMultiplier: CGFloat = runningModernMode
                 ? (isDoubleSize ? 2.0 : 0.5)
                 : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
             let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
+            let currentWidth = currentFrame.width
 
             if waveformWindow.isVisible {
                 let waveformFrame = NSRect(
                     x: mainFrame.minX,
                     y: nextY - newHeight,
-                    width: targetWidth,
+                    width: currentWidth,
                     height: newHeight
                 )
                 waveformWindow.setFrame(waveformFrame, display: true, animate: false)
                 nextY = waveformFrame.minY
             } else {
-                waveformWindow.setContentSize(NSSize(width: targetWidth, height: newHeight))
+                waveformWindow.setContentSize(NSSize(width: currentWidth, height: newHeight))
             }
         }
         
@@ -2052,9 +2055,12 @@ class WindowManager {
         case .equalizer, .spectrum:
             window.minSize = NSSize(width: targetWidth, height: targetHeight)
             window.maxSize = NSSize(width: targetWidth, height: targetHeight)
-        case .playlist, .waveform:
+        case .playlist:
             window.minSize = NSSize(width: targetWidth, height: targetHeight)
             window.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
+        case .waveform:
+            window.minSize = NSSize(width: ModernSkinElements.waveformMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         }
     }
 
@@ -2075,7 +2081,7 @@ class WindowManager {
     private func normalizedCenterStackRestoredFrame(_ frame: NSRect, kind: CenterStackWindowKind) -> NSRect {
         guard isRunningModernUI else { return frame }
         var normalized = frame
-        if let mainWindow = mainWindowController?.window {
+        if let mainWindow = mainWindowController?.window, kind != .waveform {
             normalized.origin.x = mainWindow.frame.minX
             normalized.size.width = mainWindow.frame.width
         }
