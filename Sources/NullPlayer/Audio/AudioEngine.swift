@@ -2850,13 +2850,11 @@ class AudioEngine {
             do {
                 let newAudioFile = try AVAudioFile(forReading: track.url)
                 let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
-                if openElapsed > 0.25 {
-                    NSLog(
-                        "loadLocalTrackForImmediatePlayback: Opened '%@' in %.2fs",
-                        track.url.lastPathComponent,
-                        openElapsed
-                    )
-                }
+                NSLog(
+                    "loadLocalTrackForImmediatePlayback: Opened '%@' in %.3fs",
+                    track.url.lastPathComponent,
+                    openElapsed
+                )
 
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
@@ -2896,9 +2894,7 @@ class AudioEngine {
             let openStart = CFAbsoluteTimeGetCurrent()
             let newAudioFile = try AVAudioFile(forReading: track.url)
             let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
-            if openElapsed > 0.25 {
-                NSLog("loadLocalTrack: Opened '%@' in %.2fs", track.url.lastPathComponent, openElapsed)
-            }
+            NSLog("loadLocalTrack: Opened '%@' in %.3fs", track.url.lastPathComponent, openElapsed)
 
             commitLoadedLocalTrack(newAudioFile, track: track, generation: currentGeneration)
             return true
@@ -3408,9 +3404,7 @@ class AudioEngine {
                 do {
                     let nextFile = try AVAudioFile(forReading: nextTrackURL)
                     let elapsed = CFAbsoluteTimeGetCurrent() - openStart
-                    if elapsed > 0.25 {
-                        NSLog("Gapless: Opened next track '%@' in %.2fs", nextTrackTitle, elapsed)
-                    }
+                    NSLog("Gapless: Opened next track '%@' in %.3fs", nextTrackTitle, elapsed)
                     DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
                         guard self.gaplessPreparationToken == token,
@@ -3883,15 +3877,16 @@ class AudioEngine {
 
         deferredIOQueue.async { [weak self] in
             guard let self else { return }
-            let openStart = CFAbsoluteTimeGetCurrent()
+            NSLog("Normalization: starting analysis for '%@'", analysisURL.lastPathComponent)
+            let analysisStart = CFAbsoluteTimeGetCurrent()
             do {
                 let analysisFile = try AVAudioFile(forReading: analysisURL)
-                let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
-                if openElapsed > 0.25 {
-                    NSLog("Normalization: opened '%@' in %.2fs", analysisURL.lastPathComponent, openElapsed)
-                }
+                let openElapsed = CFAbsoluteTimeGetCurrent() - analysisStart
+                NSLog("Normalization: opened '%@' in %.3fs", analysisURL.lastPathComponent, openElapsed)
 
                 let (peakDB, rmsDB) = self.analyzeAudioLevels(file: analysisFile)
+                let totalElapsed = CFAbsoluteTimeGetCurrent() - analysisStart
+                NSLog("Normalization: analysis for '%@' complete in %.3fs total (open=%.3fs)", analysisURL.lastPathComponent, totalElapsed, openElapsed)
                 let gain = self.calculateNormalizationGain(peakDB: peakDB, rmsDB: rmsDB)
 
                 DispatchQueue.main.async { [weak self] in
@@ -3956,7 +3951,12 @@ class AudioEngine {
         file.framePosition = 0
         
         do {
+            let readStart = CFAbsoluteTimeGetCurrent()
             try file.read(into: buffer)
+            let readElapsed = CFAbsoluteTimeGetCurrent() - readStart
+            NSLog("Normalization: read %d frames (%.1fs audio) from '%@' in %.3fs",
+                  frameCount, Double(frameCount) / format.sampleRate,
+                  file.url.lastPathComponent, readElapsed)
         } catch {
             file.framePosition = savedPosition
             return (0, -20)
