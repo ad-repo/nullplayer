@@ -107,10 +107,12 @@ class SpectrumView: NSView {
         let bottomBorder = Layout.bottomBorder
         
         // In macOS coordinates, y=0 is at the bottom
+        // Extra 2px left/right inset prevents visualization content from occluding window borders
+        let extraInset: CGFloat = 2
         return NSRect(
-            x: leftBorder,
+            x: leftBorder + extraInset,
             y: bottomBorder,
-            width: max(0, bounds.width - leftBorder - rightBorder),
+            width: max(0, bounds.width - leftBorder - rightBorder - extraInset * 2),
             height: max(0, bounds.height - titleHeight - bottomBorder)
         )
     }
