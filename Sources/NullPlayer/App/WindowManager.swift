@@ -2351,13 +2351,15 @@ class WindowManager {
         draggingWindow = window
         dragStartOrigin = window.frame.origin
         isTitleBarDrag = fromTitleBar
+        holdStartTime = CACurrentMediaTime()
+        dragMode = .pending
 
         // Find all windows that are docked to this window
         dockedWindowsToMove = findDockedWindows(to: window)
-        
-        // Store relative offsets from dragging window's origin
-        // This ensures we maintain exact relative positions during fast movement
+
+        // Store relative offsets from dragging window's origin (prevents drift during fast movement)
         dockedWindowOffsets.removeAll()
+        dockedWindowOriginalOrigins.removeAll()
         let dragOrigin = window.frame.origin
         for dockedWindow in dockedWindowsToMove {
             let offset = NSPoint(
@@ -2365,12 +2367,13 @@ class WindowManager {
                 y: dockedWindow.frame.origin.y - dragOrigin.y
             )
             dockedWindowOffsets[ObjectIdentifier(dockedWindow)] = offset
+            dockedWindowOriginalOrigins[ObjectIdentifier(dockedWindow)] = dockedWindow.frame.origin
         }
 
-        // Also store absolute origins so we can restore positions if the window undocks
-        dockedWindowOriginalOrigins.removeAll()
-        for dockedWindow in dockedWindowsToMove {
-            dockedWindowOriginalOrigins[ObjectIdentifier(dockedWindow)] = dockedWindow.frame.origin
+        // Highlight connected peers so user can see which windows would move together
+        if !dockedWindowsToMove.isEmpty {
+            postConnectedWindowHighlight(Set(dockedWindowsToMove))
+            highlightWasPosted = true
         }
     }
     
@@ -2380,6 +2383,12 @@ class WindowManager {
         dockedWindowsToMove.removeAll()
         dockedWindowOffsets.removeAll()
         dockedWindowOriginalOrigins.removeAll()
+        holdStartTime = nil
+        dragMode = .pending
+        if highlightWasPosted {
+            postConnectedWindowHighlight([])
+            highlightWasPosted = false
+        }
         _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
@@ -2416,16 +2425,19 @@ class WindowManager {
         // If this is a new drag, find docked windows
         if draggingWindow !== window {
             windowWillStartDragging(window)
+            dragMode = .group  // mid-flight detection: hold measurement unavailable, default to group
         }
-        
-        // Check if we should undock (break free from the group)
-        // Only non-main windows can undock when dragged by title bar
-        // Main window ALWAYS moves the entire docked group - it never detaches
-        let isMainWindow = window === mainWindowController?.window
-        if !isMainWindow && isTitleBarDrag && !dockedWindowsToMove.isEmpty {
-            let dragDistance = hypot(newOrigin.x - dragStartOrigin.x, newOrigin.y - dragStartOrigin.y)
-            if dragDistance > undockThreshold {
-                // Restore co-moved windows to their original positions before breaking the dock
+
+        // NEW — determine mode on first drag movement
+        if dragMode == .pending {
+            let mode = WindowManager.determineDragMode(
+                holdStart: holdStartTime,
+                currentTime: CACurrentMediaTime(),
+                threshold: holdThreshold
+            )
+            dragMode = mode
+            if mode == .separate {
+                // Restore peers to their pre-drag positions before breaking the dock
                 isMovingDockedWindows = true
                 for dockedWindow in dockedWindowsToMove {
                     if let origin = dockedWindowOriginalOrigins[ObjectIdentifier(dockedWindow)] {
@@ -2436,6 +2448,10 @@ class WindowManager {
                 dockedWindowsToMove.removeAll()
                 dockedWindowOffsets.removeAll()
                 dockedWindowOriginalOrigins.removeAll()
+                if highlightWasPosted {
+                    postConnectedWindowHighlight([])
+                    highlightWasPosted = false
+                }
             }
         }
         
@@ -2804,6 +2820,16 @@ class WindowManager {
         edgeOcclusionSegmentsCache.removeAll(keepingCapacity: true)
         sharpCornersCache.removeAll(keepingCapacity: true)
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+    }
+
+    /// Post a connectedWindowHighlightDidChange notification.
+    /// - Parameter windows: The windows to highlight. Pass an empty set to clear all highlights.
+    private func postConnectedWindowHighlight(_ windows: Set<NSWindow>) {
+        NotificationCenter.default.post(
+            name: .connectedWindowHighlightDidChange,
+            object: nil,
+            userInfo: ["highlightedWindows": windows]
+        )
     }
 
     /// Compute joined edge intervals in window-local coordinates for modern seamless border rendering.

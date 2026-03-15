@@ -24,10 +24,10 @@ final class WindowManagerDragModeTests: XCTestCase {
     }
 
     func testExactThresholdReturnsGroup() {
-        // Elapsed == threshold → group
+        // Elapsed == threshold → group (use small base to avoid floating-point precision loss)
         let mode = WindowManager.determineDragMode(
-            holdStart: 1000.0,
-            currentTime: 1000.4,
+            holdStart: 0.0,
+            currentTime: 0.4,
             threshold: 0.4
         )
         XCTAssertEqual(mode, .group)
