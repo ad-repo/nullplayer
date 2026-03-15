@@ -674,7 +674,7 @@ class ModernLibraryBrowserView: NSView {
         cancelPendingArtSingleClickAction()
         localLibraryReloadWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
-        stopLoadingAnimation()
+        stopLoadingAnimation(force: true)
         stopServerNameScroll()
         stopVisualizerTimer()
     }
@@ -6016,7 +6016,9 @@ class ModernLibraryBrowserView: NSView {
         guard case .local = currentSource, browseMode != .radio else { return }
         localLibraryReloadWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self, self.browseMode != .radio else { return }
+            guard let self = self,
+                  case .local = self.currentSource,
+                  self.browseMode != .radio else { return }
             self.loadLocalData()
             self.needsDisplay = true
         }
@@ -6196,8 +6198,8 @@ class ModernLibraryBrowserView: NSView {
         RunLoop.main.add(timer, forMode: .common); loadingAnimationTimer = timer
     }
 
-    private func stopLoadingAnimation() {
-        guard !isLibraryScanning else { return }
+    private func stopLoadingAnimation(force: Bool = false) {
+        guard force || !isLibraryScanning else { return }
         loadingAnimationTimer?.invalidate(); loadingAnimationTimer = nil; loadingAnimationFrame = 0
     }
 
@@ -9908,7 +9910,13 @@ extension ModernDisplayItem {
         case .jellyfinArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
         case .embyArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
         case .localArtist(let a):
-            if column.id == "albums" { return String(a.albums.count) }
+            if column.id == "albums" {
+                if !a.albums.isEmpty { return String(a.albums.count) }
+                if let info,
+                   let first = info.split(separator: " ").first,
+                   let count = Int(first) { return String(count) }
+                return ""
+            }
             if column.id == "rating" {
                 guard let r = MediaLibrary.shared.artistRating(for: a.id), r > 0 else { return "" }
                 let stars = r / 2; return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)

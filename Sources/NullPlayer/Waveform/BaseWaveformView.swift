@@ -300,9 +300,14 @@ class BaseWaveformView: NSView {
 
         let expectedTrackID = track.id
         cueLoadTask = Task { [weak self] in
-            let points = await Task.detached(priority: .utility) {
+            let parseTask = Task.detached(priority: .utility) {
                 WaveformCueSheetParser.parse(for: track)
-            }.value
+            }
+            let points = await withTaskCancellationHandler {
+                await parseTask.value
+            } onCancel: {
+                parseTask.cancel()
+            }
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self,

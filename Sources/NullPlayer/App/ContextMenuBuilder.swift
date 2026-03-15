@@ -1321,9 +1321,10 @@ class ContextMenuBuilder {
         let libraryMenu = NSMenu()
         libraryMenu.autoenablesItems = false
         
-        let trackCount = MediaLibrary.shared.tracksSnapshot.count
-        let movieCount = MediaLibrary.shared.moviesSnapshot.count
-        let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+        let store = MediaLibraryStore.shared
+        let trackCount = store.trackCount()
+        let movieCount = store.movieCount()
+        let episodeCount = store.episodeCount()
         let totalLocalItems = trackCount + movieCount + episodeCount
         
         // Library info header

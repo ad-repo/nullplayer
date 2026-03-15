@@ -764,26 +764,30 @@ class MediaLibrary {
     /// Update a movie's metadata in the library (in-app only, no file write-back)
     func updateMovie(_ movie: LocalVideo) {
         var sig: FileScanSignature?
+        var didUpdate = false
         dataQueue.sync {
             guard let index = movies.firstIndex(where: { $0.id == movie.id }) else { return }
             movies[index] = movie; moviesByPath[movie.url.path] = movie
             sig = signatureFromFileSystem(url: movie.url, fallbackFileSize: movie.fileSize)
             if let s = sig { scanSignaturesByPath[movie.url.path] = s }
+            didUpdate = true
         }
-        store.upsertMovie(movie, sig: sig); notifyChange()
+        if didUpdate { store.upsertMovie(movie, sig: sig); notifyChange() }
     }
 
     /// Update an episode's metadata in the library (in-app only, no file write-back)
     func updateEpisode(_ episode: LocalEpisode) {
         var sig: FileScanSignature?
+        var didUpdate = false
         dataQueue.sync {
             guard let index = episodes.firstIndex(where: { $0.id == episode.id }) else { return }
             episodesByPath.removeValue(forKey: episodes[index].url.path)
             episodes[index] = episode; episodesByPath[episode.url.path] = episode
             sig = signatureFromFileSystem(url: episode.url, fallbackFileSize: episode.fileSize)
             if let s = sig { scanSignaturesByPath[episode.url.path] = s }
+            didUpdate = true
         }
-        store.upsertEpisode(episode, sig: sig); notifyChange()
+        if didUpdate { store.upsertEpisode(episode, sig: sig); notifyChange() }
     }
 
     /// Remove a movie from the library (file is not deleted)
@@ -1234,13 +1238,13 @@ class MediaLibrary {
                 progressCounterQueue.sync {
                     processedCount += delta
                     if isLibraryScan {
-                        self.emitScanProgress(processed: processedCount, total: totalDiscovered, force: false)
+                        self.emitScanProgress(generation: generation, processed: processedCount, total: totalDiscovered, force: false)
                     }
                 }
             }
 
             if isLibraryScan {
-                self.emitScanProgress(processed: processedCount, total: totalDiscovered, force: true)
+                self.emitScanProgress(generation: generation, processed: processedCount, total: totalDiscovered, force: true)
             }
 
             var didVideoMutate = false
@@ -1341,7 +1345,7 @@ class MediaLibrary {
             if isLibraryScan {
                 let totalTracks = self.dataQueue.sync { self.tracks.count }
                 NSLog("MediaLibrary: Scan complete — %d total tracks in library (skipped %d unchanged)", totalTracks, skippedCount)
-                self.emitScanProgress(processed: totalDiscovered, total: totalDiscovered, force: true)
+                self.emitScanProgress(generation: generation, processed: totalDiscovered, total: totalDiscovered, force: true)
                 DispatchQueue.main.async {
                     guard self.scanGeneration == generation else { return }
                     self.isScanning = false
@@ -1780,6 +1784,8 @@ class MediaLibrary {
             throw LibraryError.noLibraryFile
         }
 
+        // Checkpoint WAL into main DB file so the backup contains all committed data.
+        store.checkpoint()
         try fileManager.copyItem(at: libraryURL, to: backupURL)
         NSLog("MediaLibrary: Library backed up to: %@", backupURL.path)
 
@@ -1834,7 +1840,7 @@ class MediaLibrary {
         do {
             let contents = try fileManager.contentsOfDirectory(at: backupsDirectory, includingPropertiesForKeys: [.creationDateKey])
             return contents
-                .filter { $0.pathExtension == "db" || $0.pathExtension == "json" }
+                .filter { $0.pathExtension == "db" }
                 .sorted { url1, url2 in
                     let date1 = (try? url1.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
                     let date2 = (try? url2.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
@@ -1875,8 +1881,8 @@ class MediaLibrary {
         }
     }
 
-    private func emitScanProgress(processed: Int, total: Int, force: Bool) {
-        guard total > 0 else { return }
+    private func emitScanProgress(generation: Int, processed: Int, total: Int, force: Bool) {
+        guard scanGeneration == generation, total > 0 else { return }
         let normalized = min(1.0, max(0.0, Double(processed) / Double(total)))
         let now = CFAbsoluteTimeGetCurrent()
 

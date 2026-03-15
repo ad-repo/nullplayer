@@ -1485,9 +1485,9 @@ class PlaylistView: NSView {
         panel.allowsMultipleSelection = false
         
         if panel.runModal() == .OK, let url = panel.url {
-            LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: false) { [weak self] audioURLs in
-                guard !audioURLs.isEmpty else { return }
-                WindowManager.shared.audioEngine.loadFiles(audioURLs)
+            LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: true) { [weak self] mediaURLs in
+                guard !mediaURLs.isEmpty else { return }
+                WindowManager.shared.audioEngine.loadFiles(mediaURLs)
                 self?.needsDisplay = true
             }
         }

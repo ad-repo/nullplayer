@@ -91,6 +91,16 @@ final class MediaLibraryStore {
         db = nil
     }
 
+    /// Checkpoint the WAL file into the main database file, ensuring a file copy captures all committed data.
+    func checkpoint() {
+        guard let db = db else { return }
+        do {
+            try db.run("PRAGMA wal_checkpoint(FULL)")
+        } catch {
+            NSLog("MediaLibraryStore: WAL checkpoint failed: %@", error.localizedDescription)
+        }
+    }
+
     // MARK: - Schema
 
     private func setupSchema(_ connection: Connection) throws {
@@ -877,7 +887,7 @@ final class MediaLibraryStore {
         guard let db = db else { return }
         let urlString = URL(fileURLWithPath: path).absoluteString
         do {
-            try db.run(tracksTable.filter(colURL == urlString).delete())
+            try db.run(tracksTable.filter(colURL == urlString || colURL == path).delete())
         } catch {
             NSLog("MediaLibraryStore: deleteTrackByPath failed: %@", error.localizedDescription)
         }
@@ -887,7 +897,7 @@ final class MediaLibraryStore {
         guard let db = db else { return }
         let urlString = URL(fileURLWithPath: path).absoluteString
         do {
-            try db.run(moviesTable.filter(colURL == urlString).delete())
+            try db.run(moviesTable.filter(colURL == urlString || colURL == path).delete())
         } catch {
             NSLog("MediaLibraryStore: deleteMovieByPath failed: %@", error.localizedDescription)
         }
@@ -897,7 +907,7 @@ final class MediaLibraryStore {
         guard let db = db else { return }
         let urlString = URL(fileURLWithPath: path).absoluteString
         do {
-            try db.run(episodesTable.filter(colURL == urlString).delete())
+            try db.run(episodesTable.filter(colURL == urlString || colURL == path).delete())
         } catch {
             NSLog("MediaLibraryStore: deleteEpisodeByPath failed: %@", error.localizedDescription)
         }
