@@ -2327,7 +2327,22 @@ class WindowManager {
     }
     
     // MARK: - Window Snapping & Docking
-    
+
+    /// Pure timing function: determines drag mode from hold duration.
+    /// - Parameters:
+    ///   - holdStart: The CACurrentMediaTime() value captured at mouseDown, or nil if unavailable.
+    ///   - currentTime: The current CACurrentMediaTime() value.
+    ///   - threshold: The hold duration threshold in seconds.
+    /// - Returns: `.separate` if elapsed time is below threshold; `.group` otherwise.
+    static func determineDragMode(
+        holdStart: CFTimeInterval?,
+        currentTime: CFTimeInterval,
+        threshold: TimeInterval
+    ) -> DragMode {
+        guard let start = holdStart else { return .group }
+        return (currentTime - start) < threshold ? .separate : .group
+    }
+
     /// Called when a window drag begins
     /// - Parameters:
     ///   - window: The window being dragged

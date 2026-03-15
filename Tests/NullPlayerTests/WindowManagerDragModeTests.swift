@@ -1,0 +1,55 @@
+import XCTest
+@testable import NullPlayer
+
+final class WindowManagerDragModeTests: XCTestCase {
+
+    func testShortHoldReturnsSeparate() {
+        // Elapsed 0.1s < 0.4s threshold → separate
+        let mode = WindowManager.determineDragMode(
+            holdStart: 1000.0,
+            currentTime: 1000.1,
+            threshold: 0.4
+        )
+        XCTAssertEqual(mode, .separate)
+    }
+
+    func testLongHoldReturnsGroup() {
+        // Elapsed 0.5s >= 0.4s threshold → group
+        let mode = WindowManager.determineDragMode(
+            holdStart: 1000.0,
+            currentTime: 1000.5,
+            threshold: 0.4
+        )
+        XCTAssertEqual(mode, .group)
+    }
+
+    func testExactThresholdReturnsGroup() {
+        // Elapsed == threshold → group
+        let mode = WindowManager.determineDragMode(
+            holdStart: 1000.0,
+            currentTime: 1000.4,
+            threshold: 0.4
+        )
+        XCTAssertEqual(mode, .group)
+    }
+
+    func testNilHoldStartReturnsGroup() {
+        // nil holdStart (mid-flight detection fallback) → group
+        let mode = WindowManager.determineDragMode(
+            holdStart: nil,
+            currentTime: 1000.0,
+            threshold: 0.4
+        )
+        XCTAssertEqual(mode, .group)
+    }
+
+    func testZeroElapsedReturnsSeparate() {
+        // Elapsed 0s → separate
+        let mode = WindowManager.determineDragMode(
+            holdStart: 1000.0,
+            currentTime: 1000.0,
+            threshold: 0.4
+        )
+        XCTAssertEqual(mode, .separate)
+    }
+}
