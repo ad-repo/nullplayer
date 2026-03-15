@@ -335,7 +335,7 @@ final class MediaLibraryStore {
             var result: [URL] = []
             for row in try db.prepare(watchFoldersTable) {
                 let urlString = row[colURL]
-                if let url = URL(string: urlString) {
+                if let url = Self.urlFromStoredString(urlString) {
                     result.append(url)
                 }
             }
@@ -381,7 +381,7 @@ final class MediaLibraryStore {
 
             for row in try db.prepare(tracksTable.select(colURL, colScanFileSize, colScanModDate)) {
                 let urlString = row[colURL]
-                if let url = URL(string: urlString) {
+                if let url = Self.urlFromStoredString(urlString) {
                     let sig = FileScanSignature(
                         fileSize: row[colScanFileSize] ?? 0,
                         contentModificationDate: row[colScanModDate].map { Date(timeIntervalSince1970: $0) }
@@ -391,7 +391,7 @@ final class MediaLibraryStore {
             }
             for row in try db.prepare(moviesTable.select(colURL, colScanFileSize, colScanModDate)) {
                 let urlString = row[colURL]
-                if let url = URL(string: urlString) {
+                if let url = Self.urlFromStoredString(urlString) {
                     let sig = FileScanSignature(
                         fileSize: row[colScanFileSize] ?? 0,
                         contentModificationDate: row[colScanModDate].map { Date(timeIntervalSince1970: $0) }
@@ -401,7 +401,7 @@ final class MediaLibraryStore {
             }
             for row in try db.prepare(episodesTable.select(colURL, colScanFileSize, colScanModDate)) {
                 let urlString = row[colURL]
-                if let url = URL(string: urlString) {
+                if let url = Self.urlFromStoredString(urlString) {
                     let sig = FileScanSignature(
                         fileSize: row[colScanFileSize] ?? 0,
                         contentModificationDate: row[colScanModDate].map { Date(timeIntervalSince1970: $0) }
@@ -738,6 +738,28 @@ final class MediaLibraryStore {
             return count
         } catch {
             NSLog("MediaLibraryStore: trackCount failed: %@", error.localizedDescription)
+            return 0
+        }
+    }
+
+    func movieCount() -> Int {
+        guard let db = db else { return 0 }
+        do {
+            let count = try db.scalar(moviesTable.count)
+            return count
+        } catch {
+            NSLog("MediaLibraryStore: movieCount failed: %@", error.localizedDescription)
+            return 0
+        }
+    }
+
+    func episodeCount() -> Int {
+        guard let db = db else { return 0 }
+        do {
+            let count = try db.scalar(episodesTable.count)
+            return count
+        } catch {
+            NSLog("MediaLibraryStore: episodeCount failed: %@", error.localizedDescription)
             return 0
         }
     }
@@ -1119,11 +1141,27 @@ final class MediaLibraryStore {
         ))
     }
 
+    // MARK: - URL parsing helper
+
+    /// Parse a URL stored in the database, with a fallback for plain absolute paths
+    /// that were stored without the file:// scheme (e.g. from older library formats).
+    /// `URL(string:)` rejects paths containing unencoded spaces or special characters,
+    /// so plain paths like "/Music/My Track.mp3" must be reconstructed via fileURLWithPath.
+    private static func urlFromStoredString(_ urlString: String) -> URL? {
+        if let url = URL(string: urlString) { return url }
+        if urlString.hasPrefix("/") {
+            NSLog("MediaLibraryStore: repairing plain-path URL: %@", urlString)
+            return URL(fileURLWithPath: urlString)
+        }
+        NSLog("MediaLibraryStore: skipping unparseable URL: %@", urlString)
+        return nil
+    }
+
     // MARK: - Row -> Model conversions (typed Table queries)
 
     private func trackFromRow(_ row: Row) -> LibraryTrack? {
         guard let id = UUID(uuidString: row[colID]),
-              let url = URL(string: row[colURL]) else { return nil }
+              let url = Self.urlFromStoredString(row[colURL]) else { return nil }
         return LibraryTrack(
             id: id,
             url: url,
@@ -1149,7 +1187,7 @@ final class MediaLibraryStore {
 
     private func movieFromRow(_ row: Row) -> LocalVideo? {
         guard let id = UUID(uuidString: row[colID]),
-              let url = URL(string: row[colURL]) else { return nil }
+              let url = Self.urlFromStoredString(row[colURL]) else { return nil }
         var movie = LocalVideo(url: url)
         // Override generated UUID with stored one
         return LocalVideo(
@@ -1165,7 +1203,7 @@ final class MediaLibraryStore {
 
     private func episodeFromRow(_ row: Row) -> LocalEpisode? {
         guard let id = UUID(uuidString: row[colID]),
-              let url = URL(string: row[colURL]) else { return nil }
+              let url = Self.urlFromStoredString(row[colURL]) else { return nil }
         return LocalEpisode(
             id: id,
             url: url,
@@ -1189,7 +1227,7 @@ final class MediaLibraryStore {
         guard let idStr = row[0] as? String,
               let id = UUID(uuidString: idStr),
               let urlStr = row[1] as? String,
-              let url = URL(string: urlStr),
+              let url = Self.urlFromStoredString(urlStr),
               let title = row[2] as? String else { return nil }
 
         let artist = row[3] as? String

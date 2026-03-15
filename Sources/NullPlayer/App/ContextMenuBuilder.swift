@@ -4515,9 +4515,10 @@ class MenuActions: NSObject {
     }
 
     private func performLocalLibraryClear(_ scope: LocalLibraryClearScope) {
-        let trackCount = MediaLibrary.shared.tracksSnapshot.count
-        let movieCount = MediaLibrary.shared.moviesSnapshot.count
-        let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+        let store = MediaLibraryStore.shared
+        let trackCount = store.trackCount()
+        let movieCount = store.movieCount()
+        let episodeCount = store.episodeCount()
         let totalCount = trackCount + movieCount + episodeCount
 
         let targetCount: Int

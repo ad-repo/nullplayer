@@ -7385,9 +7385,10 @@ class PlexBrowserView: NSView {
         menu.addItem(radioItem)
 
         if case .local = currentSource {
-            let trackCount = MediaLibrary.shared.tracksSnapshot.count
-            let movieCount = MediaLibrary.shared.moviesSnapshot.count
-            let episodeCount = MediaLibrary.shared.episodesSnapshot.count
+            let store = MediaLibraryStore.shared
+            let trackCount = store.trackCount()
+            let movieCount = store.movieCount()
+            let episodeCount = store.episodeCount()
             let totalLocalItems = trackCount + movieCount + episodeCount
             menu.addItem(NSMenuItem.separator())
             let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
