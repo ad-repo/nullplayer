@@ -1359,8 +1359,10 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .waveform), display: true)
             } else {
-                if isNewWindow {
+                if isModernUIEnabled {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .waveform)
+                } else {
+                    (waveformWindowController as? WaveformWindowController)?.resetToDefaultFrame()
                 }
                 positionSubWindow(window)
             }
@@ -3081,9 +3083,6 @@ class WindowManager {
         if let frame = spectrumWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: "SpectrumWindowFrame")
         }
-        if let frame = waveformWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "WaveformWindowFrame")
-        }
     }
     
     func restoreWindowPositions() {
@@ -3121,11 +3120,6 @@ class WindowManager {
         }
         if let frameString = defaults.string(forKey: "SpectrumWindowFrame"),
            let window = spectrumWindowController?.window {
-            let frame = NSRectFromString(frameString)
-            window.setFrame(frame, display: true)
-        }
-        if let frameString = defaults.string(forKey: "WaveformWindowFrame"),
-           let window = waveformWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }

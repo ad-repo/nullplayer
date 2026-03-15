@@ -492,7 +492,7 @@ class AppStateManager {
             // Don't save frame when fullscreen (it would be screen bounds)
             projectMWindowFrame: wm.isProjectMVisible && !wm.isProjectMFullscreen ? wm.projectMWindowFrame.map { NSStringFromRect($0) } : nil,
             spectrumWindowFrame: wm.spectrumWindowFrame.map { NSStringFromRect($0) },
-            waveformWindowFrame: wm.waveformWindowFrame.map { NSStringFromRect($0) },
+            waveformWindowFrame: nil,
             isProjectMFullscreen: wm.isProjectMFullscreen,
             
             // Audio settings

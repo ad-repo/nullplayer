@@ -79,6 +79,17 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
     func stopLoadingForHide() {
         waveformView.stopLoadingForHide()
     }
+
+    func resetToDefaultFrame() {
+        guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
+        let mainFrame = mainWindow.frame
+        let scale = mainFrame.width / Skin.mainWindowSize.width
+        let waveformHeight = SkinElements.WaveformWindow.minSize.height * scale
+        window.minSize = NSSize(width: SkinElements.WaveformWindow.minSize.width, height: waveformHeight)
+        let newFrame = NSRect(x: mainFrame.minX, y: mainFrame.minY - waveformHeight,
+                              width: mainFrame.width, height: waveformHeight)
+        window.setFrame(newFrame, display: false)
+    }
 }
 
 extension WaveformWindowController: NSWindowDelegate {
