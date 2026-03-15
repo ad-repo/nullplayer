@@ -1139,10 +1139,26 @@ class MediaLibrary {
             let cleanFolderPathSet = Set(cleanMissingFolderPaths)
             let cleanFolderPaths = Array(cleanFolderPathSet)
 
+            // Safety guard: if discovery found nothing at all but folders previously had content,
+            // the volume is likely unreachable (NAS offline, SMB mount stale, etc.). Skip cleanup
+            // to avoid wiping the entire library on a transient network failure.
+            let existingCountInFolders: Int = self.dataQueue.sync {
+                guard !cleanFolderPaths.isEmpty else { return 0 }
+                let trackCount = self.tracks.filter { Self.isPath(Self.normalizedPath(for: $0.url), insideAnyFolderPaths: cleanFolderPaths) }.count
+                let movieCount = self.movies.filter { Self.isPath(Self.normalizedPath(for: $0.url), insideAnyFolderPaths: cleanFolderPaths) }.count
+                let episodeCount = self.episodes.filter { Self.isPath(Self.normalizedPath(for: $0.url), insideAnyFolderPaths: cleanFolderPaths) }.count
+                return trackCount + movieCount + episodeCount
+            }
+            if discoveredPaths.isEmpty && existingCountInFolders > 0 {
+                NSLog("MediaLibrary: Scan returned 0 files but folders had %d existing entries — skipping cleanup (volume may be unreachable)", existingCountInFolders)
+                // Still need to finish scan bookkeeping below, just without removing anything.
+            }
+            let skipCleanup = discoveredPaths.isEmpty && existingCountInFolders > 0
+
             // Cleanup pass: remove stale files from watched folders (runs after full discovery
             // so discoveredPaths is complete). New tracks already visible from streaming above.
             self.dataQueue.sync {
-                if !cleanFolderPathSet.isEmpty {
+                if !cleanFolderPathSet.isEmpty && !skipCleanup {
                     self.tracks.removeAll { track in
                         let normalizedTrackPath = Self.normalizedPath(for: track.url)
                         guard Self.isPath(normalizedTrackPath, insideAnyFolderPaths: cleanFolderPaths),
