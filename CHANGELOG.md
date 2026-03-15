@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.18.0
+## 0.17.1
 
 ### Local Library
 
@@ -24,6 +24,7 @@
 
 - **vis_classic crash fix** — resolved a data race between the CVDisplayLink callback thread and the main thread accessing the C++ vis_classic core.
 - **Spectrum/waveform border fix** — the classic spectrum and waveform visualizations no longer occlude the left and right window borders.
+- **Double Size crash fix** — toggling Double Size no longer crashes with a stack overflow; the animated window repositioning triggered infinite recursion in the docked-window movement loop.
 
 ## 0.17.0
 

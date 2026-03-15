@@ -1775,12 +1775,17 @@ class WindowManager {
         // Update minSize
         mainWindow.minSize = mainAdjustedSize
         
+        // Suppress windowDidMove → windowWillMove feedback during programmatic layout.
+        // Animated setFrame fires windowDidMove on every display-link tick, which triggers
+        // the docked-window movement loop and causes infinite recursion (stack overflow).
+        isSnappingWindow = true
+
         // Resize main window (anchor top-left)
         var mainFrame = mainWindow.frame
         let mainTopY = mainFrame.maxY  // Keep top edge fixed
         mainFrame.size = mainAdjustedSize
         mainFrame.origin.y = mainTopY - mainAdjustedSize.height
-        mainWindow.setFrame(mainFrame, display: true, animate: true)
+        mainWindow.setFrame(mainFrame, display: true, animate: false)
         
         // Track the bottom edge for stacking windows below main
         var nextY = mainFrame.minY
@@ -1804,7 +1809,7 @@ class WindowManager {
                     width: eqAdjustedSize.width,
                     height: eqAdjustedSize.height
                 )
-                eqWindow.setFrame(eqFrame, display: true, animate: true)
+                eqWindow.setFrame(eqFrame, display: true, animate: false)
                 nextY = eqFrame.minY
             } else {
                 eqWindow.setContentSize(eqAdjustedSize)
@@ -1836,7 +1841,7 @@ class WindowManager {
                     width: targetWidth,
                     height: newHeight
                 )
-                playlistWindow.setFrame(playlistFrame, display: true, animate: true)
+                playlistWindow.setFrame(playlistFrame, display: true, animate: false)
                 nextY = playlistFrame.minY
             } else {
                 playlistWindow.setContentSize(NSSize(width: targetWidth, height: newHeight))
@@ -1862,7 +1867,7 @@ class WindowManager {
                     width: spectrumAdjustedSize.width,
                     height: spectrumAdjustedSize.height
                 )
-                spectrumWindow.setFrame(spectrumFrame, display: true, animate: true)
+                spectrumWindow.setFrame(spectrumFrame, display: true, animate: false)
                 nextY = spectrumFrame.minY
             } else {
                 spectrumWindow.setContentSize(spectrumAdjustedSize)
@@ -1893,7 +1898,7 @@ class WindowManager {
                     width: targetWidth,
                     height: newHeight
                 )
-                waveformWindow.setFrame(waveformFrame, display: true, animate: true)
+                waveformWindow.setFrame(waveformFrame, display: true, animate: false)
                 nextY = waveformFrame.minY
             } else {
                 waveformWindow.setContentSize(NSSize(width: targetWidth, height: newHeight))
@@ -1915,9 +1920,9 @@ class WindowManager {
                 width: newWidth,
                 height: stackHeight
             )
-            plexWindow.setFrame(plexFrame, display: true, animate: true)
+            plexWindow.setFrame(plexFrame, display: true, animate: false)
         }
-        
+
         if let projectMWindow = projectMWindowController?.window, projectMWindow.isVisible {
             let widthScaleMultiplier: CGFloat = runningModernMode
                 ? (isDoubleSize ? 2.0 : 0.5)
@@ -1929,8 +1934,10 @@ class WindowManager {
                 width: newWidth,
                 height: stackHeight
             )
-            projectMWindow.setFrame(projectMFrame, display: true, animate: true)
+            projectMWindow.setFrame(projectMFrame, display: true, animate: false)
         }
+
+        isSnappingWindow = false
     }
     
     private func applyAlwaysOnTop() {
