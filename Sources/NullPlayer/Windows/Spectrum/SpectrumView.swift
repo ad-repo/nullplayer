@@ -29,6 +29,7 @@ class SpectrumView: NSView {
     /// Window dragging state
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
+    private var isHighlighted = false
     
     /// Observer for spectrum data notifications
     private var spectrumObserver: NSObjectProtocol?
@@ -70,6 +71,8 @@ class SpectrumView: NSView {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
                                                name: .visClassicProfileCommand, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
         WindowManager.shared.audioEngine.addSpectrumConsumer("spectrumView")
     }
     
@@ -184,6 +187,11 @@ class SpectrumView: NSView {
            spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() == true {
             context.clear(calculateContentArea())
         }
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
     }
     
     // MARK: - Spectrum Data
@@ -201,6 +209,15 @@ class SpectrumView: NSView {
         
         // Forward spectrum data to Metal view
         spectrumAnalyzerView?.updateSpectrum(spectrum)
+    }
+
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
     }
 
     @objc private func handleVisClassicProfileCommand(_ notification: Notification) {

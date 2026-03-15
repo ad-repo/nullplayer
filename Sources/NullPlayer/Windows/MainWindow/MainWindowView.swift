@@ -239,7 +239,9 @@ class MainWindowView: NSView {
         // immediately update main-window skin drawing behind the Metal overlay.
         NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
                                                name: .visClassicProfileCommand, object: nil)
-        
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
+
     }
     
     // MARK: - Accessibility
@@ -754,6 +756,15 @@ class MainWindowView: NSView {
         needsDisplay = true
     }
 
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     @objc private func handleVisClassicProfileCommand(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
               let command = userInfo["command"] as? String,
@@ -950,6 +961,11 @@ class MainWindowView: NSView {
         // Draw loading overlay if casting local file
         if isCastingLocalFile {
             drawLoadingOverlay(in: context)
+        }
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
         }
     }
     
@@ -1310,6 +1326,7 @@ class MainWindowView: NSView {
     
     /// Track if we're dragging the window
     private var isDraggingWindow = false
+    private var isHighlighted = false
     private var windowDragStartPoint: NSPoint = .zero
     
     /// Allow clicking even when window is not active
