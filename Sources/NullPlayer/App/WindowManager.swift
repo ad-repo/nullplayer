@@ -378,6 +378,14 @@ class WindowManager {
         
         // Load default skin
         loadDefaultSkin()
+
+        // Clean up drag state if a window closes mid-drag
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
     }
     
     /// Register default preference values
@@ -2373,6 +2381,12 @@ class WindowManager {
         }
     }
     
+    @objc private func handleWindowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === draggingWindow else { return }
+        windowDidFinishDragging(closingWindow)
+    }
+
     /// Called when a window drag ends
     func windowDidFinishDragging(_ window: NSWindow) {
         draggingWindow = nil
