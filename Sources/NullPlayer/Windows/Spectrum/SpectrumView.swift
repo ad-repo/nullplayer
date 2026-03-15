@@ -181,16 +181,18 @@ class SpectrumView: NSView {
         
         context.restoreGState()
 
-        // In standalone vis_classic transparent mode, clear the analyzer content area
-        // so transparent pixels reveal what's behind the window instead of painted chrome.
-        if spectrumAnalyzerView?.qualityMode == .visClassicExact,
-           spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() == true {
-            context.clear(calculateContentArea())
-        }
-
         if isHighlighted {
             NSColor.white.withAlphaComponent(0.15).setFill()
             bounds.fill()
+        }
+
+        // In standalone vis_classic transparent mode, clear the analyzer content area
+        // so transparent pixels reveal what's behind the window instead of painted chrome.
+        // This runs after the highlight overlay so the clear punches through it in the
+        // content area, leaving the overlay only on the surrounding window chrome.
+        if spectrumAnalyzerView?.qualityMode == .visClassicExact,
+           spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() == true {
+            context.clear(calculateContentArea())
         }
     }
     
