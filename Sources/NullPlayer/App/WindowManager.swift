@@ -333,10 +333,7 @@ class WindowManager {
     /// Track which window is currently being dragged
     private var draggingWindow: NSWindow?
     
-    /// Track original position at drag start for undock detection
-    private var dragStartOrigin: NSPoint = .zero
-    
-    /// Track if current drag is from title bar (only title bar drags can undock)
+    /// Track if current drag is from title bar (retained for context; does not gate separation logic)
     private var isTitleBarDrag = false
     
     /// Track the last drag delta for grouped movement
@@ -349,7 +346,7 @@ class WindowManager {
     /// This prevents drift during fast movement by maintaining exact relative positions
     private var dockedWindowOffsets: [ObjectIdentifier: NSPoint] = [:]
 
-    /// Store absolute origins of docked windows at drag start, for position restoration on undock
+    /// Store absolute origins of docked windows at drag start, for position restoration on separation
     private var dockedWindowOriginalOrigins: [ObjectIdentifier: NSPoint] = [:]
     
     /// Flag to prevent feedback loop when moving docked windows programmatically
@@ -2346,10 +2343,9 @@ class WindowManager {
     /// Called when a window drag begins
     /// - Parameters:
     ///   - window: The window being dragged
-    ///   - fromTitleBar: If true, this drag can undock the window from its group
+    ///   - fromTitleBar: Whether the drag originated from the title bar (recorded for reference)
     func windowWillStartDragging(_ window: NSWindow, fromTitleBar: Bool = false) {
         draggingWindow = window
-        dragStartOrigin = window.frame.origin
         isTitleBarDrag = fromTitleBar
         holdStartTime = CACurrentMediaTime()
         dragMode = .pending
