@@ -1110,7 +1110,7 @@ class MediaLibrary {
                             self.tracksByPath[file.path] = track
                             self.scanSignaturesByPath[file.path] = signature
                             audioMetadataTasks.append(file)
-                            batchAdded.append((track: track, sig: signature))
+                            batchAdded.append((track: track, sig: nil))
                         } else if self.scanSignaturesByPath[file.path] == signature {
                             skippedCount += 1
                         } else {
