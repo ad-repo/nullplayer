@@ -43,9 +43,13 @@ Global controls are also available from the macOS top menu bar:
 Windows automatically snap together when dragged near each other:
 - Edge-to-edge snapping
 - Screen edge snapping
-- Group movement (docked windows move together)
 - Group minimize (attached windows minimize together)
 - **Snap to Default** (context menu) resets all windows
+
+**Drag behaviour:**
+- **Quick drag** (release mouse within ~400 ms of clicking): the dragged window detaches from its group and moves alone; other connected windows stay put
+- **Hold then drag** (hold ≥ 400 ms before moving): all connected windows move together as a group
+- Connected peers show a brief highlight overlay at mouseDown to preview which windows will move together
 
 ### Main Window Elements
 

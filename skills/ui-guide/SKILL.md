@@ -552,6 +552,25 @@ Complex snapping logic in `WindowManager`:
 - Coordinated minimize: uses `addChildWindow`/`removeChildWindow` in `windowWillMiniaturize`/`windowDidDeminiaturize` to temporarily make docked windows children of the main window so they animate into the dock together. Child relationships are removed on restore.
 - **Center stack collapse**: `slideUpWindowsBelow(closingFrame:)` in `WindowManager` slides docked windows up when a stack window is hidden. Called from `toggleEqualizer/Playlist/Spectrum/Waveform` — capture the frame BEFORE `orderOut`, then call it. Uses BFS over `dockThreshold`-adjacent windows (by vertical gap + horizontal overlap). Must set `isSnappingWindow = true` during moves to prevent the docking feedback loop.
 
+### Hold-Duration Drag Model
+
+Dragging a docked window uses a time-based mode determined at the first `mouseDragged` event:
+
+| Hold duration | Drag mode | Behaviour |
+|---|---|---|
+| < 400 ms (`holdThreshold`) | `.separate` | Dragged window detaches; peers stay connected to each other |
+| ≥ 400 ms | `.group` | All connected windows move together |
+
+Implementation details:
+- `DragMode` enum: `.pending` (not yet decided) / `.separate` / `.group`
+- `holdStartTime` captured at `mouseDown` via `windowWillStartDragging`; mode resolved at first `windowWillMove` call via `determineDragMode(holdStart:currentTime:threshold:)` (pure static, unit-tested)
+- Separate mode: peers are restored to their pre-drag origins before the dock is broken
+- Group mode: connected windows move using stored offsets from drag start to prevent drift; child windows of the dragging window are skipped (AppKit moves them automatically); group top is clamped so no window goes off-screen
+- Mid-drag window close: `NSWindow.willCloseNotification` observer cleans up hold state and clears highlights
+- Mid-flight drag (AppKit-initiated, no prior `mouseDown`): always `.group` mode (override)
+- **Connected window highlight**: at `mouseDown`, all peer windows receive a `white @ 15% opacity` overlay via `connectedWindowHighlightDidChange` notification. Cleared when drag ends or `.separate` mode is resolved. All 10 dockable views (5 classic + 5 modern) observe this notification.
+- `isMovingDockedWindows` flag prevents re-entrant `windowWillMove` calls while peers are being repositioned
+
 ## Related Documentation
 
 - **non-retina-fixes skill** - Fixes for rendering artifacts on 1x displays (blue lines, tile seams, text shimmering)

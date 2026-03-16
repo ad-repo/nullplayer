@@ -192,6 +192,7 @@ Place `.milk` files in this folder and use "Reload Presets" from context menu.
 - **Frame Rate**: 60 FPS via CVDisplayLink
 - **Audio Input**: PCM waveform data from AudioEngine
 - **Beat Detection**: Built-in projectM beat sensitivity (adjustable)
+- **Drag suspend**: ProjectM rendering is suspended for the duration of any window drag (`.windowDragDidBegin` / `.windowDragDidEnd` notifications from `WindowManager`). This prevents WindowServer stalls on Apple Silicon caused by simultaneous OpenGL compositing and window repositioning. If adding new window-movement code that runs outside a drag, do not rely on ProjectM being suspended — the suspend is drag-scoped only.
 
 ### Audio Sensitivity (PCM Gain)
 
