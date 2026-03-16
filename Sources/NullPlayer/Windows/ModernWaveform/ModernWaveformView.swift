@@ -14,6 +14,9 @@ class ModernWaveformView: BaseWaveformView {
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
     private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
 
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
+
     private var titleBarHeight: CGFloat {
         WindowManager.shared.effectiveHideTitleBars(for: window) ? borderWidth : ModernSkinElements.waveformTitleBarHeight
     }
@@ -101,6 +104,8 @@ class ModernWaveformView: BaseWaveformView {
                                                name: .doubleSizeDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(windowLayoutDidChange),
                                                name: .windowLayoutDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
 
         setAccessibilityIdentifier("modernWaveformView")
         setAccessibilityRole(.group)
@@ -142,6 +147,15 @@ class ModernWaveformView: BaseWaveformView {
         }
     }
 
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }
@@ -175,6 +189,11 @@ class ModernWaveformView: BaseWaveformView {
         }
 
         drawWaveform(in: context)
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
     }
 
     override func mouseDown(with event: NSEvent) {

@@ -83,6 +83,9 @@ class ModernMainWindowView: NSView {
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
     private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
 
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -143,7 +146,9 @@ class ModernMainWindowView: NSView {
                                                 name: NSNotification.Name("MainWindowVisChanged"), object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
                                                 name: .visClassicProfileCommand, object: nil)
-        
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                                name: .connectedWindowHighlightDidChange, object: nil)
+
         // Set accessibility
         setAccessibilityIdentifier("ModernMainWindowView")
         setAccessibilityRole(.group)
@@ -300,6 +305,10 @@ class ModernMainWindowView: NSView {
         
         if isShadeMode {
             drawShadeMode(in: windowBounds, context: context)
+            if isHighlighted {
+                NSColor.white.withAlphaComponent(0.15).setFill()
+                bounds.fill()
+            }
             return
         }
         
@@ -459,6 +468,11 @@ class ModernMainWindowView: NSView {
                     drawVolumeSlider(context: context)
                 }
             }
+        }
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
         }
     }
     
@@ -1075,6 +1089,15 @@ class ModernMainWindowView: NSView {
         }
     }
     
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     @objc private func mainVisSettingsChanged() {
         if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
            let mode = MainWindowVisMode(rawValue: savedMode) {

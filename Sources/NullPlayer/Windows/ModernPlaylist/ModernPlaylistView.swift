@@ -78,7 +78,10 @@ class ModernPlaylistView: NSView {
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
     private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
-    
+
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -141,7 +144,9 @@ class ModernPlaylistView: NSView {
                                                name: .audioPlaybackStateChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleTrackDidChange),
                                                name: .audioTrackDidChange, object: nil)
-        
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
+
         // Set accessibility
         setAccessibilityIdentifier("modernPlaylistView")
         setAccessibilityRole(.group)
@@ -289,6 +294,15 @@ class ModernPlaylistView: NSView {
         }
     }
 
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     @objc private func playbackStateDidChange(_ note: Notification) {
         let isPlaying = WindowManager.shared.audioEngine.state == .playing
         // Pause marquee scrolling when not playing (save CPU)
@@ -350,13 +364,22 @@ class ModernPlaylistView: NSView {
         }
         
         if isShadeMode {
+            if isHighlighted {
+                NSColor.white.withAlphaComponent(0.15).setFill()
+                bounds.fill()
+            }
             return
         }
-        
+
         // Draw track list
         drawTrackList(in: context)
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
     }
-    
+
     /// Base rects in the 275x116 coordinate space (renderer scales them)
     private var titleBarBaseRect: NSRect {
         let scale = ModernSkinElements.scaleFactor

@@ -37,6 +37,7 @@ class EQView: NSView {
     
     /// Button being pressed
     private var pressedButton: ButtonType?
+    private var isHighlighted = false
     
     /// Region manager for hit testing
     private let regionManager = RegionManager.shared
@@ -112,9 +113,20 @@ class EQView: NSView {
             name: .audioTrackDidChange,
             object: nil
         )
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
     }
     
     /// Handle track change for Auto EQ
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     @objc private func handleTrackChange(_ notification: Notification) {
         applyAutoEQForCurrentTrack()
     }
@@ -367,8 +379,13 @@ class EQView: NSView {
         }
         
         context.restoreGState()
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
     }
-    
+
     /// Draw normal (non-shade) mode
     private func drawNormalMode(renderer: SkinRenderer, context: CGContext, isActive: Bool, drawBounds: NSRect) {
         // Draw EQ background

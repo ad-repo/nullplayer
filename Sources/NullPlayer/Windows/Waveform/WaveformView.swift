@@ -5,6 +5,7 @@ class WaveformView: BaseWaveformView {
     private var pressedClose = false
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
+    private var isHighlighted = false
 
     private var windowScale: CGFloat {
         bounds.width / max(SkinElements.WaveformWindow.windowSize.width, 1)
@@ -49,6 +50,8 @@ class WaveformView: BaseWaveformView {
         setAccessibilityIdentifier("waveformView")
         setAccessibilityRole(.group)
         setAccessibilityLabel("NullPlayer Waveform")
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -58,11 +61,14 @@ class WaveformView: BaseWaveformView {
         setAccessibilityIdentifier("waveformView")
         setAccessibilityRole(.group)
         setAccessibilityLabel("NullPlayer Waveform")
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
     }
 
     deinit {
         stopAppearanceObservation()
         stopLoadingForHide()
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -102,6 +108,20 @@ class WaveformView: BaseWaveformView {
         context.restoreGState()
 
         drawWaveform(in: context)
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
+    }
+
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
     }
 
     override func mouseDown(with event: NSEvent) {

@@ -40,6 +40,7 @@ class PlaylistView: NSView {
     /// Window dragging state
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
+    private var isHighlighted = false
     
     /// Scrollbar dragging state
     private var isDraggingScrollbar = false
@@ -118,6 +119,8 @@ class PlaylistView: NSView {
         // Observe track changes to update selection highlight
         NotificationCenter.default.addObserver(self, selector: #selector(handleTrackDidChange),
                                                name: .audioTrackDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
     }
     
     override func viewDidMoveToWindow() {
@@ -145,6 +148,15 @@ class PlaylistView: NSView {
     }
     
     /// Update selection to follow the currently playing track
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     @objc private func handleTrackDidChange(_ notification: Notification) {
         let engine = WindowManager.shared.audioEngine
         let currentIndex = engine.currentIndex
@@ -386,8 +398,13 @@ class PlaylistView: NSView {
         }
         
         context.restoreGState()
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
     }
-    
+
     /// Map PlaylistButtonType to ButtonType for shade mode
     private func mapToButtonType(_ plButton: SkinRenderer.PlaylistButtonType?) -> ButtonType? {
         guard let btn = plButton else { return nil }

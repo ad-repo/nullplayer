@@ -66,6 +66,18 @@ class VisualizationGLView: NSOpenGLView {
     /// Idle beat sensitivity (used when audio is not playing for calmer visualization)
     private let idleBeatSensitivity: Float = 0.2
     
+    /// Pending NSOpenGLView surface update (window moved/resized).
+    /// Set on main thread by AppKit via update(); cleared on render thread after openGLContext?.update().
+    /// nonisolated(unsafe): Bool write/read is word-aligned; worst case is a one-frame-late update.
+    private nonisolated(unsafe) var needsSurfaceUpdate = false
+
+    /// Suppresses rendering during window drag to eliminate WindowServer contention.
+    /// Moving an NSOpenGLView window while actively flushing OpenGL frames forces WindowServer
+    /// to synchronize the surface position, stalling the main thread's setFrameOrigin calls.
+    /// Pausing frame production eliminates this contention without stopping the CVDisplayLink.
+    /// nonisolated(unsafe): main thread writes, render thread reads; worst case is one extra frame.
+    private nonisolated(unsafe) var isDragSuspended = false
+
     /// Local copy of PCM data for thread-safe access
     /// Using nonisolated(unsafe) because we manually manage thread safety via dataLock
     private nonisolated(unsafe) var localPCM: [Float] = Array(repeating: 0, count: 512)
@@ -344,11 +356,27 @@ class VisualizationGLView: NSOpenGLView {
         }
         
         CVDisplayLinkSetOutputCallback(displayLink, callback, retainedContext.toOpaque())
-        
+
         // Set the display link to the display of the OpenGL context
         if let cglContext = openGLContext?.cglContextObj,
            let cglPixelFormat = pixelFormat?.cglPixelFormatObj {
             CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext(displayLink, cglContext, cglPixelFormat)
+        }
+
+        // Suspend rendering during window drags to prevent WindowServer stalls.
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDragDidBegin),
+                                               name: .windowDragDidBegin, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDragDidEnd),
+                                               name: .windowDragDidEnd, object: nil)
+    }
+
+    @objc private func handleWindowDragDidBegin() { isDragSuspended = true }
+    @objc private func handleWindowDragDidEnd() {
+        isDragSuspended = false
+        // Apply any deferred surface update now that drag is over.
+        if needsSurfaceUpdate {
+            needsSurfaceUpdate = false
+            openGLContext?.update()
         }
     }
     
@@ -478,6 +506,11 @@ class VisualizationGLView: NSOpenGLView {
     // MARK: - Frame Rendering
     
     private func renderFrame() {
+        // Suspend rendering while a window drag is in progress. Moving an NSOpenGLView
+        // window while the GPU is flushing forces WindowServer to stall on surface
+        // position synchronization, which backs up the main thread's setFrameOrigin calls.
+        guard !isDragSuspended else { return }
+
         // Frame skipping in low power mode: render every other frame (30fps instead of 60fps)
         // This halves CPU usage while still providing smooth visualization
         if isLowPowerMode {
@@ -494,9 +527,8 @@ class VisualizationGLView: NSOpenGLView {
         // Make context current on this thread
         context.makeCurrentContext()
 
-        // Lock focus
-        CGLLockContext(context.cglContextObj!)
-        defer { CGLUnlockContext(context.cglContextObj!) }
+        let cglCtx = context.cglContextObj!
+        CGLLockContext(cglCtx)
 
         // Initialize engine on first render (ensures correct GL context)
         if engineNeedsSetup {
@@ -523,6 +555,20 @@ class VisualizationGLView: NSOpenGLView {
 
         // Swap buffers
         context.flushBuffer()
+
+        // Release CGL lock before the surface update dispatch so main thread never
+        // contends for it inside openGLContext?.update().
+        CGLUnlockContext(cglCtx)
+
+        // Apply pending surface update (window moved/resized) on the main thread.
+        // Must run after releasing CGLLockContext — openGLContext.update() acquires
+        // it internally, and calling it while we hold the lock would deadlock.
+        if needsSurfaceUpdate {
+            needsSurfaceUpdate = false
+            DispatchQueue.main.async { [weak self] in
+                self?.openGLContext?.update()
+            }
+        }
     }
 
     /// Render a frame using the current visualization engine
@@ -623,6 +669,15 @@ class VisualizationGLView: NSOpenGLView {
         // Making GL calls from the main thread while CVDisplayLink is rendering
         // can corrupt OpenGL state and cause projectM crashes (null texture pointer
         // in libprojectM::Renderer::Texture::Empty()).
+    }
+
+    override func update() {
+        // AppKit calls update() on the main thread whenever the window moves or resizes.
+        // The default super.update() acquires CGLLockContext, which the CVDisplayLink
+        // render thread holds during each frame — causing the main thread to stall until
+        // the current frame completes (and vice versa). Instead, just flag the need;
+        // renderFrame() applies the surface update while already holding CGLLockContext.
+        needsSurfaceUpdate = true
     }
     
     // MARK: - Hit Testing

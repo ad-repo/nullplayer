@@ -29,6 +29,7 @@ class SpectrumView: NSView {
     /// Window dragging state
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
+    private var isHighlighted = false
     
     /// Observer for spectrum data notifications
     private var spectrumObserver: NSObjectProtocol?
@@ -70,6 +71,8 @@ class SpectrumView: NSView {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(handleVisClassicProfileCommand(_:)),
                                                name: .visClassicProfileCommand, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
         WindowManager.shared.audioEngine.addSpectrumConsumer("spectrumView")
     }
     
@@ -178,8 +181,17 @@ class SpectrumView: NSView {
         
         context.restoreGState()
 
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
+
         // In standalone vis_classic transparent mode, clear the analyzer content area
         // so transparent pixels reveal what's behind the window instead of painted chrome.
+        // This runs after the highlight overlay so the clear punches through it in the
+        // content area, leaving the overlay only on the surrounding window chrome.
+        // Known limitation: the group-drag highlight is invisible over the content area
+        // in this mode; it appears only on the surrounding chrome border.
         if spectrumAnalyzerView?.qualityMode == .visClassicExact,
            spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() == true {
             context.clear(calculateContentArea())
@@ -201,6 +213,15 @@ class SpectrumView: NSView {
         
         // Forward spectrum data to Metal view
         spectrumAnalyzerView?.updateSpectrum(spectrum)
+    }
+
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
     }
 
     @objc private func handleVisClassicProfileCommand(_ notification: Notification) {

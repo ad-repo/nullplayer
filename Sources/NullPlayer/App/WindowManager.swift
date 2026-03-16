@@ -6,6 +6,9 @@ extension Notification.Name {
     static let timeDisplayModeDidChange = Notification.Name("timeDisplayModeDidChange")
     static let doubleSizeDidChange = Notification.Name("doubleSizeDidChange")
     static let windowLayoutDidChange = Notification.Name("windowLayoutDidChange")
+    static let connectedWindowHighlightDidChange = Notification.Name("connectedWindowHighlightDidChange")
+    static let windowDragDidBegin = Notification.Name("windowDragDidBegin")
+    static let windowDragDidEnd = Notification.Name("windowDragDidEnd")
 }
 
 // MARK: - Time Display Mode
@@ -13,6 +16,13 @@ extension Notification.Name {
 enum TimeDisplayMode: String {
     case elapsed
     case remaining
+}
+
+/// Determines how a window drag affects its connected group.
+enum DragMode {
+    case pending   // mouseDown received, drag not yet started
+    case separate  // drag started before holdThreshold — window moves alone
+    case group     // holdThreshold elapsed before drag — connected windows move together
 }
 
 /// Joined edge intervals for seamless modern window border suppression.
@@ -310,16 +320,22 @@ class WindowManager {
     /// Should be small (≤2) so only truly touching windows are grouped
     private let dockThreshold: CGFloat = 2
     
-    /// Undock threshold - how far you need to drag a window to break it free from the group
-    private let undockThreshold: CGFloat = 10
+    /// Hold threshold - how long (seconds) before a drag moves the connected group
+    private let holdThreshold: TimeInterval = 0.4
+
+    /// Time when current drag's mouseDown was received
+    private var holdStartTime: CFTimeInterval?
+
+    /// Current drag mode, determined on first windowWillMove call
+    private var dragMode: DragMode = .pending
+
+    /// Whether a connectedWindowHighlightDidChange notification was posted for this drag
+    private var highlightWasPosted = false
     
     /// Track which window is currently being dragged
     private var draggingWindow: NSWindow?
     
-    /// Track original position at drag start for undock detection
-    private var dragStartOrigin: NSPoint = .zero
-    
-    /// Track if current drag is from title bar (only title bar drags can undock)
+    /// Track if current drag is from title bar (retained for context; does not gate separation logic)
     private var isTitleBarDrag = false
     
     /// Track the last drag delta for grouped movement
@@ -332,7 +348,7 @@ class WindowManager {
     /// This prevents drift during fast movement by maintaining exact relative positions
     private var dockedWindowOffsets: [ObjectIdentifier: NSPoint] = [:]
 
-    /// Store absolute origins of docked windows at drag start, for position restoration on undock
+    /// Store absolute origins of docked windows at drag start, for position restoration on separation
     private var dockedWindowOriginalOrigins: [ObjectIdentifier: NSPoint] = [:]
     
     /// Flag to prevent feedback loop when moving docked windows programmatically
@@ -364,6 +380,14 @@ class WindowManager {
         
         // Load default skin
         loadDefaultSkin()
+
+        // Clean up drag state if a window closes mid-drag
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
     }
     
     /// Register default preference values
@@ -2310,22 +2334,38 @@ class WindowManager {
     }
     
     // MARK: - Window Snapping & Docking
-    
+
+    /// Pure timing function: determines drag mode from hold duration.
+    /// - Parameters:
+    ///   - holdStart: The CACurrentMediaTime() value captured at mouseDown, or nil if unavailable.
+    ///   - currentTime: The current CACurrentMediaTime() value.
+    ///   - threshold: The hold duration threshold in seconds.
+    /// - Returns: `.separate` if elapsed time is below threshold; `.group` otherwise.
+    static func determineDragMode(
+        holdStart: CFTimeInterval?,
+        currentTime: CFTimeInterval,
+        threshold: TimeInterval
+    ) -> DragMode {
+        guard let start = holdStart else { return .group }
+        return (currentTime - start) < threshold ? .separate : .group
+    }
+
     /// Called when a window drag begins
     /// - Parameters:
     ///   - window: The window being dragged
-    ///   - fromTitleBar: If true, this drag can undock the window from its group
+    ///   - fromTitleBar: Whether the drag originated from the title bar (recorded for reference)
     func windowWillStartDragging(_ window: NSWindow, fromTitleBar: Bool = false) {
         draggingWindow = window
-        dragStartOrigin = window.frame.origin
         isTitleBarDrag = fromTitleBar
+        holdStartTime = CACurrentMediaTime()
+        dragMode = .pending
 
         // Find all windows that are docked to this window
         dockedWindowsToMove = findDockedWindows(to: window)
-        
-        // Store relative offsets from dragging window's origin
-        // This ensures we maintain exact relative positions during fast movement
+
+        // Store relative offsets from dragging window's origin (prevents drift during fast movement)
         dockedWindowOffsets.removeAll()
+        dockedWindowOriginalOrigins.removeAll()
         let dragOrigin = window.frame.origin
         for dockedWindow in dockedWindowsToMove {
             let offset = NSPoint(
@@ -2333,21 +2373,36 @@ class WindowManager {
                 y: dockedWindow.frame.origin.y - dragOrigin.y
             )
             dockedWindowOffsets[ObjectIdentifier(dockedWindow)] = offset
-        }
-
-        // Also store absolute origins so we can restore positions if the window undocks
-        dockedWindowOriginalOrigins.removeAll()
-        for dockedWindow in dockedWindowsToMove {
             dockedWindowOriginalOrigins[ObjectIdentifier(dockedWindow)] = dockedWindow.frame.origin
         }
+
+        // Highlight connected peers so user can see which windows would move together
+        if !dockedWindowsToMove.isEmpty {
+            postConnectedWindowHighlight(Set(dockedWindowsToMove))
+            highlightWasPosted = true
+        }
+        NotificationCenter.default.post(name: .windowDragDidBegin, object: nil)
     }
     
+    @objc private func handleWindowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === draggingWindow else { return }
+        windowDidFinishDragging(closingWindow)
+    }
+
     /// Called when a window drag ends
     func windowDidFinishDragging(_ window: NSWindow) {
         draggingWindow = nil
         dockedWindowsToMove.removeAll()
         dockedWindowOffsets.removeAll()
         dockedWindowOriginalOrigins.removeAll()
+        holdStartTime = nil
+        dragMode = .pending
+        if highlightWasPosted {
+            postConnectedWindowHighlight([])
+            highlightWasPosted = false
+        }
+        NotificationCenter.default.post(name: .windowDragDidEnd, object: nil)
         _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
@@ -2368,8 +2423,10 @@ class WindowManager {
             return newOrigin
         }
         
-        // Ignore if this is a docked window being moved programmatically
-        if isMovingDockedWindows && dockedWindowsToMove.contains(where: { $0 === window }) {
+        // Ignore all window movement while we're programmatically repositioning docked windows.
+        // This covers both the docked windows themselves and windows AppKit moves automatically
+        // as child windows of a docked window (e.g. the dragging window is a child of main).
+        if isMovingDockedWindows {
             return newOrigin
         }
 
@@ -2384,16 +2441,21 @@ class WindowManager {
         // If this is a new drag, find docked windows
         if draggingWindow !== window {
             windowWillStartDragging(window)
+            // windowWillStartDragging sets holdStartTime to now, so determineDragMode would see
+            // elapsed ≈ 0 → .separate. Override to .group: mid-flight drag is always group move.
+            dragMode = .group
         }
-        
-        // Check if we should undock (break free from the group)
-        // Only non-main windows can undock when dragged by title bar
-        // Main window ALWAYS moves the entire docked group - it never detaches
-        let isMainWindow = window === mainWindowController?.window
-        if !isMainWindow && isTitleBarDrag && !dockedWindowsToMove.isEmpty {
-            let dragDistance = hypot(newOrigin.x - dragStartOrigin.x, newOrigin.y - dragStartOrigin.y)
-            if dragDistance > undockThreshold {
-                // Restore co-moved windows to their original positions before breaking the dock
+
+        // NEW — determine mode on first drag movement
+        if dragMode == .pending {
+            let mode = WindowManager.determineDragMode(
+                holdStart: holdStartTime,
+                currentTime: CACurrentMediaTime(),
+                threshold: holdThreshold
+            )
+            dragMode = mode
+            if mode == .separate {
+                // Restore peers to their pre-drag positions before breaking the dock
                 isMovingDockedWindows = true
                 for dockedWindow in dockedWindowsToMove {
                     if let origin = dockedWindowOriginalOrigins[ObjectIdentifier(dockedWindow)] {
@@ -2404,6 +2466,10 @@ class WindowManager {
                 dockedWindowsToMove.removeAll()
                 dockedWindowOffsets.removeAll()
                 dockedWindowOriginalOrigins.removeAll()
+                if highlightWasPosted {
+                    postConnectedWindowHighlight([])
+                    highlightWasPosted = false
+                }
             }
         }
         
@@ -2708,7 +2774,24 @@ class WindowManager {
         if let vSnap = bestVerticalSnap {
             snappedY = round(vSnap.value)
         }
-        
+
+        // Hard-clamp to screen top: macOS enforces this on setFrameOrigin to keep the
+        // title bar visible. If we don't clamp first, the main window ends up at a
+        // different Y than the docked windows we already repositioned → they detach.
+        // Also clamp so that docked windows above the dragging window don't go off-screen:
+        // when a lower window is dragged upward, its docked peers above (positive Y offset)
+        // get placed at snappedY + offset.y and can exceed the screen top.
+        if let screen = window.screen ?? NSScreen.main {
+            var maxAllowedY = screen.visibleFrame.maxY - frame.height
+            for dockedWindow in dockedWindowsToMove {
+                if let offset = dockedWindowOffsets[ObjectIdentifier(dockedWindow)], offset.y > 0 {
+                    let clampForDocked = screen.visibleFrame.maxY - offset.y - dockedWindow.frame.height
+                    maxAllowedY = min(maxAllowedY, clampForDocked)
+                }
+            }
+            snappedY = min(snappedY, maxAllowedY)
+        }
+
         return NSPoint(x: snappedX, y: snappedY)
     }
     
@@ -2772,6 +2855,16 @@ class WindowManager {
         edgeOcclusionSegmentsCache.removeAll(keepingCapacity: true)
         sharpCornersCache.removeAll(keepingCapacity: true)
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+    }
+
+    /// Post a connectedWindowHighlightDidChange notification.
+    /// - Parameter windows: The windows to highlight. Pass an empty set to clear all highlights.
+    private func postConnectedWindowHighlight(_ windows: Set<NSWindow>) {
+        NotificationCenter.default.post(
+            name: .connectedWindowHighlightDidChange,
+            object: nil,
+            userInfo: ["highlightedWindows": windows]
+        )
     }
 
     /// Compute joined edge intervals in window-local coordinates for modern seamless border rendering.
