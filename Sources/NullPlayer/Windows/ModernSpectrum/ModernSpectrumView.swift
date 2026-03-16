@@ -199,16 +199,6 @@ class ModernSpectrumView: NSView {
                                              in: ModernSkinElements.spectrumBtnClose.defaultRect, context: context)
         }
         
-        // Draw shade mode title bar content if in shade mode
-        if isShadeMode {
-            // Just the title bar - no content area
-            if isHighlighted {
-                NSColor.white.withAlphaComponent(0.15).setFill()
-                bounds.fill()
-            }
-            return
-        }
-
         if isHighlighted {
             NSColor.white.withAlphaComponent(0.15).setFill()
             bounds.fill()
