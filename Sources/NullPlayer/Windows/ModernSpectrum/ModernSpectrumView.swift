@@ -60,6 +60,9 @@ class ModernSpectrumView: NSView {
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
     private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
 
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
+
     // MARK: - Initialization
     
     override init(frame frameRect: NSRect) {
@@ -104,7 +107,9 @@ class ModernSpectrumView: NSView {
         // Observe window layout changes for seamless docked borders
         NotificationCenter.default.addObserver(self, selector: #selector(windowLayoutDidChange),
                                                 name: .windowLayoutDidChange, object: nil)
-        
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
+
         // Set accessibility
         setAccessibilityIdentifier("modernSpectrumView")
         setAccessibilityRole(.group)
@@ -197,7 +202,16 @@ class ModernSpectrumView: NSView {
         // Draw shade mode title bar content if in shade mode
         if isShadeMode {
             // Just the title bar - no content area
+            if isHighlighted {
+                NSColor.white.withAlphaComponent(0.15).setFill()
+                bounds.fill()
+            }
             return
+        }
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
         }
     }
     
@@ -239,7 +253,16 @@ class ModernSpectrumView: NSView {
             needsLayout = true
         }
     }
-    
+
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     // MARK: - Spectrum Data
     
     private func handleSpectrumUpdate(_ notification: Notification) {

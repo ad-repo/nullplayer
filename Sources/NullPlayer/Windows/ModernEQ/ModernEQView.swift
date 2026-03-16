@@ -63,6 +63,9 @@ class ModernEQView: NSView {
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
     private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
 
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
+
     // MARK: - Layout Constants
     
     private var titleBarHeight: CGFloat {
@@ -173,7 +176,9 @@ class ModernEQView: NSView {
         // Observe track changes for Auto EQ
         NotificationCenter.default.addObserver(self, selector: #selector(handleTrackChange(_:)),
                                                 name: .audioTrackDidChange, object: nil)
-        
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                                name: .connectedWindowHighlightDidChange, object: nil)
+
         // Set accessibility
         setAccessibilityIdentifier("modernEqualizerView")
         setAccessibilityRole(.group)
@@ -228,8 +233,17 @@ class ModernEQView: NSView {
         needsDisplay = true
     }
     
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     // MARK: - Auto EQ
-    
+
     @objc private func handleTrackChange(_ notification: Notification) {
         applyAutoEQForCurrentTrack()
     }
@@ -397,24 +411,29 @@ class ModernEQView: NSView {
         withContextAlpha(mainOpacity.content, context: context) {
             if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
                 renderer.drawTitleBar(in: titleBarBaseRect, title: "NULLPLAYER EQUALIZER", prefix: "eq_", context: context)
-                
+
                 // Draw close button
                 let closeState = (pressedButton == "eq_btn_close") ? "pressed" : "normal"
                 renderer.drawWindowControlButton("eq_btn_close", state: closeState,
                                                  in: closeBtnBaseRect, context: context)
-                
+
                 // Draw shade button
                 let shadeState = (pressedButton == "eq_btn_shade") ? "pressed" : "normal"
                 renderer.drawWindowControlButton("eq_btn_shade", state: shadeState,
                                                  in: shadeBtnBaseRect, context: context)
             }
-            
+
             if isShadeMode {
                 return
             }
-            
+
             // Draw EQ content
             drawEQContent(in: context)
+        }
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
         }
     }
     
