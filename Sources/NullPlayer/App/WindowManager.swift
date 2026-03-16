@@ -7,6 +7,8 @@ extension Notification.Name {
     static let doubleSizeDidChange = Notification.Name("doubleSizeDidChange")
     static let windowLayoutDidChange = Notification.Name("windowLayoutDidChange")
     static let connectedWindowHighlightDidChange = Notification.Name("connectedWindowHighlightDidChange")
+    static let windowDragDidBegin = Notification.Name("windowDragDidBegin")
+    static let windowDragDidEnd = Notification.Name("windowDragDidEnd")
 }
 
 // MARK: - Time Display Mode
@@ -2379,6 +2381,7 @@ class WindowManager {
             postConnectedWindowHighlight(Set(dockedWindowsToMove))
             highlightWasPosted = true
         }
+        NotificationCenter.default.post(name: .windowDragDidBegin, object: nil)
     }
     
     @objc private func handleWindowWillClose(_ notification: Notification) {
@@ -2399,6 +2402,7 @@ class WindowManager {
             postConnectedWindowHighlight([])
             highlightWasPosted = false
         }
+        NotificationCenter.default.post(name: .windowDragDidEnd, object: nil)
         _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
