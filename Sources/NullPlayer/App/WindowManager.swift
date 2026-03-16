@@ -2435,7 +2435,9 @@ class WindowManager {
         // If this is a new drag, find docked windows
         if draggingWindow !== window {
             windowWillStartDragging(window)
-            dragMode = .group  // mid-flight detection: hold measurement unavailable, default to group
+            // windowWillStartDragging sets holdStartTime to now, so determineDragMode would see
+            // elapsed ≈ 0 → .separate. Override to .group: mid-flight drag is always group move.
+            dragMode = .group
         }
 
         // NEW — determine mode on first drag movement

@@ -190,6 +190,8 @@ class SpectrumView: NSView {
         // so transparent pixels reveal what's behind the window instead of painted chrome.
         // This runs after the highlight overlay so the clear punches through it in the
         // content area, leaving the overlay only on the surrounding window chrome.
+        // Known limitation: the group-drag highlight is invisible over the content area
+        // in this mode; it appears only on the surrounding chrome border.
         if spectrumAnalyzerView?.qualityMode == .visClassicExact,
            spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() == true {
             context.clear(calculateContentArea())

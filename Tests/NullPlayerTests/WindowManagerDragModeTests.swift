@@ -34,7 +34,9 @@ final class WindowManagerDragModeTests: XCTestCase {
     }
 
     func testNilHoldStartReturnsGroup() {
-        // nil holdStart (mid-flight detection fallback) → group
+        // nil holdStart → group (defensive guard inside determineDragMode; the actual mid-flight
+        // path in windowWillMove calls windowWillStartDragging first which sets holdStartTime,
+        // so nil is never passed there — this tests the function's own defensive fallback)
         let mode = WindowManager.determineDragMode(
             holdStart: nil,
             currentTime: 1000.0,
