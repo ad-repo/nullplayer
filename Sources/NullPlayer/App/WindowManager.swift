@@ -2419,8 +2419,10 @@ class WindowManager {
             return newOrigin
         }
         
-        // Ignore if this is a docked window being moved programmatically
-        if isMovingDockedWindows && dockedWindowsToMove.contains(where: { $0 === window }) {
+        // Ignore all window movement while we're programmatically repositioning docked windows.
+        // This covers both the docked windows themselves and windows AppKit moves automatically
+        // as child windows of a docked window (e.g. the dragging window is a child of main).
+        if isMovingDockedWindows {
             return newOrigin
         }
 
@@ -2768,7 +2770,24 @@ class WindowManager {
         if let vSnap = bestVerticalSnap {
             snappedY = round(vSnap.value)
         }
-        
+
+        // Hard-clamp to screen top: macOS enforces this on setFrameOrigin to keep the
+        // title bar visible. If we don't clamp first, the main window ends up at a
+        // different Y than the docked windows we already repositioned → they detach.
+        // Also clamp so that docked windows above the dragging window don't go off-screen:
+        // when a lower window is dragged upward, its docked peers above (positive Y offset)
+        // get placed at snappedY + offset.y and can exceed the screen top.
+        if let screen = window.screen ?? NSScreen.main {
+            var maxAllowedY = screen.visibleFrame.maxY - frame.height
+            for dockedWindow in dockedWindowsToMove {
+                if let offset = dockedWindowOffsets[ObjectIdentifier(dockedWindow)], offset.y > 0 {
+                    let clampForDocked = screen.visibleFrame.maxY - offset.y - dockedWindow.frame.height
+                    maxAllowedY = min(maxAllowedY, clampForDocked)
+                }
+            }
+            snappedY = min(snappedY, maxAllowedY)
+        }
+
         return NSPoint(x: snappedX, y: snappedY)
     }
     
