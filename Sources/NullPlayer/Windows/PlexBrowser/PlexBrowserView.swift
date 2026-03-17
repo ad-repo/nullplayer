@@ -867,6 +867,13 @@ class PlexBrowserView: NSView {
         case scanlines = "Scanlines"
         case datamosh = "Datamosh"
         case blocky = "Blocky"
+        static let groups: [(title: String, effects: [VisEffect])] = [
+            ("Rotation & Scaling", [.psychedelic, .kaleidoscope, .vortex, .spin, .fractal, .tunnel]),
+            ("Distortion",         [.melt, .wave, .glitch, .rgbSplit, .twist, .fisheye, .shatter, .stretch]),
+            ("Motion",             [.zoom, .shake, .bounce, .feedback, .strobe, .jitter]),
+            ("Copies & Mirrors",   [.mirror, .tile, .prism, .doubleVision, .flipbook, .mosaic]),
+            ("Pixel Effects",      [.pixelate, .scanlines, .datamosh, .blocky]),
+        ]
     }
     
     /// Visualization mode
@@ -1050,9 +1057,10 @@ class PlexBrowserView: NSView {
         // Art-only mode always starts disabled (don't persist across sessions)
         isArtOnlyMode = false
         
-        // Load saved visualizer preferences
-        if let savedEffect = UserDefaults.standard.string(forKey: "browserVisEffect"),
-           let effect = VisEffect(rawValue: savedEffect) {
+        // Load saved visualizer preferences — default effect takes priority over last-used
+        let defaultEffectKey = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        let lastUsedKey = UserDefaults.standard.string(forKey: "browserVisEffect")
+        if let raw = defaultEffectKey ?? lastUsedKey, let effect = VisEffect(rawValue: raw) {
             currentVisEffect = effect
         }
         if UserDefaults.standard.object(forKey: "browserVisIntensity") != nil {
@@ -6769,17 +6777,16 @@ class PlexBrowserView: NSView {
         menu.addItem(intervalMenuItem)
         
         menu.addItem(NSMenuItem.separator())
-        
-        // Effects submenu (organized by category)
-        let effectsItem = NSMenuItem(title: "All Effects", action: nil, keyEquivalent: "")
-        let effectsMenu = NSMenu()
-        
-        for effect in VisEffect.allCases {
-            addEffectItem(effect, to: effectsMenu)
-        }
-        
-        effectsItem.submenu = effectsMenu
-        menu.addItem(effectsItem)
+
+        buildVisEffectGroupSubmenus(into: menu)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let defaultItem = NSMenuItem(title: "Set Current as Default",
+                                     action: #selector(menuSetDefaultEffect),
+                                     keyEquivalent: "")
+        defaultItem.target = self
+        menu.addItem(defaultItem)
         
         // Intensity submenu
         let intensityItem = NSMenuItem(title: "Intensity", action: nil, keyEquivalent: "")
@@ -6829,19 +6836,32 @@ class PlexBrowserView: NSView {
     /// Show context menu for art-only mode (when visualization is off)
     private func showArtContextMenu(at event: NSEvent) {
         let menu = NSMenu(title: "Art")
-        
+
         // Enable visualization
         let visItem = NSMenuItem(title: "Enable Visualization", action: #selector(enableArtVisualization), keyEquivalent: "")
         visItem.target = self
         menu.addItem(visItem)
-        
+
+        // Visualization submenu — effect picker + set default
+        let visMenuContainer = NSMenuItem(title: "Visualization", action: nil, keyEquivalent: "")
+        let visSub = NSMenu(title: "Visualization")
+        buildVisEffectGroupSubmenus(into: visSub)
+        visSub.addItem(NSMenuItem.separator())
+        let defaultItem = NSMenuItem(title: "Set Current as Default",
+                                     action: #selector(menuSetDefaultEffect),
+                                     keyEquivalent: "")
+        defaultItem.target = self
+        visSub.addItem(defaultItem)
+        visMenuContainer.submenu = visSub
+        menu.addItem(visMenuContainer)
+
         menu.addItem(NSMenuItem.separator())
-        
+
         // Exit art view
         let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
         exitItem.target = self
         menu.addItem(exitItem)
-        
+
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
@@ -6853,6 +6873,10 @@ class PlexBrowserView: NSView {
         isArtOnlyMode = false
     }
     
+    @objc private func menuSetDefaultEffect() {
+        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: "browserVisDefaultEffect")
+    }
+
     @objc private func menuNextEffect() {
         nextVisEffect()
     }
@@ -6879,6 +6903,31 @@ class PlexBrowserView: NSView {
         window?.toggleFullScreen(nil)
     }
     
+    /// Appends grouped effect submenus to `menu`. Each item is checked when it
+    /// matches `currentVisEffect`; bullet-marked when it matches the saved default.
+    private func buildVisEffectGroupSubmenus(into menu: NSMenu) {
+        let savedDefault = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        for group in VisEffect.groups {
+            let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
+            let sub = NSMenu(title: group.title)
+            for effect in group.effects {
+                let item = NSMenuItem(title: effect.rawValue,
+                                      action: #selector(selectVisEffect(_:)),
+                                      keyEquivalent: "")
+                item.target = self
+                item.representedObject = effect
+                if effect == currentVisEffect {
+                    item.state = .on
+                } else if effect.rawValue == savedDefault {
+                    item.state = .mixed
+                }
+                sub.addItem(item)
+            }
+            groupItem.submenu = sub
+            menu.addItem(groupItem)
+        }
+    }
+
     private func addEffectItem(_ effect: VisEffect, to menu: NSMenu) {
         let item = NSMenuItem(title: effect.rawValue, action: #selector(selectVisEffect(_:)), keyEquivalent: "")
         item.target = self
