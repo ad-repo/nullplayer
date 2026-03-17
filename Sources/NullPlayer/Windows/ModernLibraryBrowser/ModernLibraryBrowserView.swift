@@ -3916,12 +3916,42 @@ class ModernLibraryBrowserView: NSView {
         return submenu
     }
     
+    /// Appends grouped effect submenus to `menu`. Each item is checked when it
+    /// matches `currentVisEffect`; bullet-marked when it matches the saved default.
+    private func buildVisEffectGroupSubmenus(into menu: NSMenu) {
+        let savedDefault = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        for group in VisEffect.groups {
+            let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
+            let sub = NSMenu(title: group.title)
+            for effect in group.effects {
+                let item = NSMenuItem(title: effect.rawValue,
+                                      action: #selector(menuSelectEffect(_:)),
+                                      keyEquivalent: "")
+                item.target = self
+                item.representedObject = effect.rawValue
+                if effect == currentVisEffect {
+                    item.state = .on
+                } else if effect.rawValue == savedDefault {
+                    item.state = .mixed
+                }
+                sub.addItem(item)
+            }
+            groupItem.submenu = sub
+            menu.addItem(groupItem)
+        }
+    }
+
     private func showVisualizerMenu(at event: NSEvent) {
         let menu = NSMenu(title: "Visualizer")
         let currentItem = NSMenuItem(title: "▶ \(currentVisEffect.rawValue)", action: nil, keyEquivalent: "")
         currentItem.isEnabled = false; menu.addItem(currentItem)
-        let nextItem = NSMenuItem(title: "Next Effect →", action: #selector(menuNextEffect), keyEquivalent: "")
-        nextItem.target = self; menu.addItem(nextItem)
+        menu.addItem(NSMenuItem.separator())
+        buildVisEffectGroupSubmenus(into: menu)
+        menu.addItem(NSMenuItem.separator())
+        let defaultItem = NSMenuItem(title: "Set Current as Default",
+                                     action: #selector(menuSetDefaultEffect),
+                                     keyEquivalent: "")
+        defaultItem.target = self; menu.addItem(defaultItem)
         menu.addItem(NSMenuItem.separator())
         let offItem = NSMenuItem(title: "Turn Off", action: #selector(turnOffVisualization), keyEquivalent: "")
         offItem.target = self; menu.addItem(offItem)
@@ -3932,7 +3962,19 @@ class ModernLibraryBrowserView: NSView {
         let menu = NSMenu(title: "Art")
         let visItem = NSMenuItem(title: "Enable Visualization", action: #selector(enableArtVisualization), keyEquivalent: "")
         visItem.target = self; menu.addItem(visItem)
-        
+
+        // Visualization submenu — effect picker + set default
+        let visMenuContainer = NSMenuItem(title: "Visualization", action: nil, keyEquivalent: "")
+        let visSub = NSMenu(title: "Visualization")
+        buildVisEffectGroupSubmenus(into: visSub)
+        visSub.addItem(NSMenuItem.separator())
+        let defaultItem = NSMenuItem(title: "Set Current as Default",
+                                     action: #selector(menuSetDefaultEffect),
+                                     keyEquivalent: "")
+        defaultItem.target = self; visSub.addItem(defaultItem)
+        visMenuContainer.submenu = visSub
+        menu.addItem(visMenuContainer)
+
         // Rate submenu (when a rateable track is playing)
         if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
            currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
@@ -3942,7 +3984,7 @@ class ModernLibraryBrowserView: NSView {
             rateItem.submenu = rateMenu
             menu.addItem(rateItem)
         }
-        
+
         menu.addItem(NSMenuItem.separator())
         let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
         exitItem.target = self; menu.addItem(exitItem)
