@@ -69,6 +69,7 @@ class CLIPlayer: AudioEngineDelegate {
     }
 
     private var currentPlaylist: [Track] = []
+    private var hasStartedPlaying = false
 
     func play(tracks: [Track]) {
         currentPlaylist = tracks
@@ -264,9 +265,12 @@ class CLIPlayer: AudioEngineDelegate {
             audioEngine.play()
             return
         }
+        if state == .playing {
+            hasStartedPlaying = true
+        }
         display.printState(state)
         // Exit when playback finishes naturally and there is nothing left to play
-        if state == .stopped && !options.repeatAll {
+        if state == .stopped && hasStartedPlaying && !options.repeatAll {
             metadataTimer?.invalidate()
             CLIKeyboard.restoreTerminal()
             exit(0)
