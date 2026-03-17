@@ -424,6 +424,13 @@ class ModernLibraryBrowserView: NSView {
         case mirror = "Infinite Mirror", tile = "Tile Grid", prism = "Prism Split", doubleVision = "Double Vision"
         case flipbook = "Flipbook", mosaic = "Mosaic", pixelate = "Pixelate", scanlines = "Scanlines"
         case datamosh = "Datamosh", blocky = "Blocky"
+        static var groups: [(title: String, effects: [VisEffect])] {[
+            ("Rotation & Scaling", [.psychedelic, .kaleidoscope, .vortex, .spin, .fractal, .tunnel]),
+            ("Distortion",         [.melt, .wave, .glitch, .rgbSplit, .twist, .fisheye, .shatter, .stretch]),
+            ("Motion",             [.zoom, .shake, .bounce, .feedback, .strobe, .jitter]),
+            ("Copies & Mirrors",   [.mirror, .tile, .prism, .doubleVision, .flipbook, .mosaic]),
+            ("Pixel Effects",      [.pixelate, .scanlines, .datamosh, .blocky]),
+        ]}
     }
     enum VisMode { case single, random, cycle }
     private var currentVisEffect: VisEffect = .psychedelic
@@ -590,9 +597,10 @@ class ModernLibraryBrowserView: NSView {
         // Art-only mode always starts disabled
         isArtOnlyMode = false
         
-        // Load saved visualizer preferences
-        if let savedEffect = UserDefaults.standard.string(forKey: "browserVisEffect"),
-           let effect = VisEffect(rawValue: savedEffect) {
+        // Load saved visualizer preferences — default effect takes priority over last-used
+        let defaultEffectKey = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        let lastUsedKey = UserDefaults.standard.string(forKey: "browserVisEffect")
+        if let raw = defaultEffectKey ?? lastUsedKey, let effect = VisEffect(rawValue: raw) {
             currentVisEffect = effect
         }
         if UserDefaults.standard.object(forKey: "browserVisIntensity") != nil {
@@ -4605,6 +4613,17 @@ class ModernLibraryBrowserView: NSView {
         if alert.runModal() == .alertFirstButtonReturn { RadioManager.shared.resetToDefaults(); if case .radio = currentSource { reloadInternetRadioForCurrentMode() } }
     }
     @objc private func menuNextEffect() { nextVisEffect() }
+
+    @objc private func menuSelectEffect(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let effect = VisEffect(rawValue: raw) else { return }
+        currentVisEffect = effect
+        UserDefaults.standard.set(effect.rawValue, forKey: "browserVisEffect")
+    }
+
+    @objc private func menuSetDefaultEffect() {
+        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: "browserVisDefaultEffect")
+    }
     @objc private func enableArtVisualization() { isVisualizingArt = true }
     @objc private func exitArtView() { isArtOnlyMode = false }
     @objc private func turnOffVisualization() { isVisualizingArt = false }
