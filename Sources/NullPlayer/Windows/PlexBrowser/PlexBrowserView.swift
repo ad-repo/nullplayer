@@ -16269,7 +16269,7 @@ class RatingOverlayView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let clickedStar = starAtPoint(point)
-        
+
         if clickedStar > 0 {
             selectedRating = clickedStar
             needsDisplay = true
@@ -16280,7 +16280,12 @@ class RatingOverlayView: NSView {
             onDismiss?()
         }
     }
-    
+
+    override func mouseDragged(with event: NSEvent) {
+        // Consume drag events to prevent them from propagating to the parent view,
+        // which would otherwise interpret the drag as a window move (when Hide Title Bars is on).
+    }
+
     private func starAtPoint(_ point: NSPoint) -> Int {
         let totalWidth = CGFloat(starCount) * starSize + CGFloat(starCount - 1) * starSpacing
         let containerWidth = totalWidth + 40
