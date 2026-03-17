@@ -3,6 +3,15 @@ import AppKit
 
 /// Singleton managing internet radio station connections and state
 class RadioManager {
+    static weak var cliAudioEngine: AudioEngine?
+
+    private var resolvedAudioEngine: AudioEngine {
+        if AudioEngine.isHeadless, let cliEngine = RadioManager.cliAudioEngine {
+            return cliEngine
+        }
+        return WindowManager.shared.audioEngine
+    }
+
     private struct SomaChannelsResponse: Decodable {
         let channels: [SomaChannel]
     }
@@ -57,6 +66,9 @@ class RadioManager {
             }
         }
     }
+
+    /// The current stream metadata title (song name / show info); ICY metadata first, then SomaFM fallback.
+    var currentMetadataTitle: String? { currentStreamTitle ?? currentSomaLastPlaying }
 
     /// Fallback title from SomaFM channels API (`lastPlaying`) when ICY metadata is missing.
     private(set) var currentSomaLastPlaying: String? {
@@ -1418,12 +1430,12 @@ class RadioManager {
                     // (loadTracks compares track.url with currentStation.url to detect radio content)
                     self.currentStation = resolvedStation
                     let track = resolvedStation.toTrack()
-                    WindowManager.shared.audioEngine.loadTracks([track])
+                    self.resolvedAudioEngine.loadTracks([track])
                     // Only call play() for local playback - casting is handled by loadTracks
                     // Check casting state fresh here, not captured before async resolution,
                     // since user may have started casting during the network request
                     if !CastManager.shared.isCasting {
-                        WindowManager.shared.audioEngine.play()
+                        self.resolvedAudioEngine.play()
                     }
                 } else {
                     NSLog("RadioManager: Failed to resolve playlist URL")
@@ -1433,10 +1445,10 @@ class RadioManager {
         } else {
             // Direct stream URL - play immediately
             let track = station.toTrack()
-            WindowManager.shared.audioEngine.loadTracks([track])
+            resolvedAudioEngine.loadTracks([track])
             // Only call play() for local playback - casting is handled by loadTracks
             if !CastManager.shared.isCasting {
-                WindowManager.shared.audioEngine.play()
+                resolvedAudioEngine.play()
             }
         }
     }

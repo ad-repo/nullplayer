@@ -4,9 +4,18 @@ import AppKit
 /// Unified manager for all casting functionality
 /// Coordinates Chromecast, Sonos, and DLNA device discovery and playback
 class CastManager {
-    
+
+    static weak var cliAudioEngine: AudioEngine?
+
+    private var resolvedAudioEngine: AudioEngine {
+        if AudioEngine.isHeadless, let cliEngine = CastManager.cliAudioEngine {
+            return cliEngine
+        }
+        return WindowManager.shared.audioEngine
+    }
+
     // MARK: - Singleton
-    
+
     static let shared = CastManager()
     
     // MARK: - Notifications
@@ -403,7 +412,7 @@ class CastManager {
                 }
             } else if self.isCasting {
                 // Audio casting - forward position sync to AudioEngine
-                WindowManager.shared.audioEngine.updateCastPosition(
+                self.resolvedAudioEngine.updateCastPosition(
                     currentTime: status.currentTime,
                     isPlaying: isPlaying,
                     isBuffering: isBuffering
@@ -617,10 +626,10 @@ class CastManager {
                 if device.type == .chromecast {
                     // Chromecast provides status updates - wait for PLAYING status to start timer
                     // This prevents clock sync issues when buffering on slow networks
-                    WindowManager.shared.audioEngine.initializeCastPlayback(from: trackingPosition)
+                    resolvedAudioEngine.initializeCastPlayback(from: trackingPosition)
                 } else {
                     // Sonos/DLNA don't provide status updates - start timer immediately
-                    WindowManager.shared.audioEngine.startCastPlayback(from: trackingPosition)
+                    resolvedAudioEngine.startCastPlayback(from: trackingPosition)
                 }
                 
                 // For Sonos, start status polling and topology refresh (Fix 1 & 9)
@@ -638,7 +647,7 @@ class CastManager {
     /// Must fully stop (not just pause) streaming playback to release the connection
     /// This is especially important for Subsonic/Navidrome which limits concurrent streams per user
     private func pauseLocalPlayback() {
-        let engine = WindowManager.shared.audioEngine
+        let engine = resolvedAudioEngine
         if engine.state == .playing && !engine.isCastingActive {
             // Stop local playback completely to release any streaming connections
             // This prevents conflicts with Subsonic/Navidrome which limits concurrent streams
@@ -648,7 +657,7 @@ class CastManager {
     
     /// Cast the currently playing track to a device
     func castCurrentTrack(to device: CastDevice) async throws {
-        let engine = WindowManager.shared.audioEngine
+        let engine = resolvedAudioEngine
         guard let track = engine.currentTrack else {
             throw CastError.noTrackPlaying
         }
@@ -1010,10 +1019,10 @@ class CastManager {
             
             if session.device.type == .chromecast {
                 // Chromecast provides status updates - wait for PLAYING status to start timer
-                WindowManager.shared.audioEngine.initializeCastPlayback(from: 0)
+                resolvedAudioEngine.initializeCastPlayback(from: 0)
             } else {
                 // Sonos/DLNA don't provide status updates - start timer immediately
-                WindowManager.shared.audioEngine.startCastPlayback(from: 0)
+                resolvedAudioEngine.startCastPlayback(from: 0)
             }
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
         }
