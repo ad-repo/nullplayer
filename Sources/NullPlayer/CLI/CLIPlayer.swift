@@ -265,6 +265,12 @@ class CLIPlayer: AudioEngineDelegate {
             return
         }
         display.printState(state)
+        // Exit when playback finishes naturally and there is nothing left to play
+        if state == .stopped && !options.repeatAll {
+            metadataTimer?.invalidate()
+            CLIKeyboard.restoreTerminal()
+            exit(0)
+        }
     }
 
     func audioEngineDidUpdateTime(current: TimeInterval, duration: TimeInterval) {
