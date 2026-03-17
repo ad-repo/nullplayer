@@ -106,13 +106,13 @@ open Package.swift
 
 ## Media Library
 
-Library data is stored as JSON at `~/Library/Application Support/NullPlayer/library.json`.
+Library data is stored as a SQLite database at `~/Library/Application Support/NullPlayer/library.db`.
 
 **Backup & Restore API** (`MediaLibrary.swift`):
 
 | Function | Description |
 |----------|-------------|
-| `backupLibrary(customName:)` | Creates timestamped JSON backup, returns URL |
+| `backupLibrary(customName:)` | Creates timestamped `.db` backup, returns URL |
 | `restoreLibrary(from:)` | Restores from backup (auto-backs up current first) |
 | `listBackups()` | Returns backup URLs sorted newest first |
 | `deleteBackup(at:)` | Deletes a backup file |
