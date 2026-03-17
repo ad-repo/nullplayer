@@ -277,6 +277,64 @@ Available `LibrarySortOption` cases: `.title`, `.artist`, `.album`, `.dateAdded`
 
 ---
 
+## Testing
+
+### Test Files
+
+| File | Type | Tests |
+|------|------|-------|
+| `Tests/NullPlayerTests/CLIOptionsTests.swift` | Unit | 3 — argument parsing |
+| `Tests/NullPlayerTests/CLIDisplayTests.swift` | Unit | 2 — output formatting |
+| `Tests/NullPlayerTests/CLIProcessTests.swift` | Integration | 8 — real binary, all sources |
+
+Run all CLI tests:
+```bash
+swift test --filter CLI
+```
+
+### CLIOptionsTests (3 tests)
+
+Uses `@testable import NullPlayer` and calls `CLIOptions.parse([String])` directly. Index 0 of the array is the executable path (skipped by the parser).
+
+| Test | What it covers |
+|------|---------------|
+| `testFlagParsing` | All boolean flags: `--json`, `--shuffle`, `--repeat-all`, `--repeat-one`, `--no-art`, all 11 `--list-*` flags, `--cli` silently ignored |
+| `testValueParsing` | All string flags (source, artist, album, track, genre, playlist, search, radio, station, library, folder, channel, region, cast, cast-type, sonos-rooms, eq, output) and integer flags (`--volume 75`, `--decade 1990`) |
+| `testQueryModeDetection` | `isQueryMode` true for each `--list-*` flag; `isSearchQuery` true for `--search` alone, false when combined with `--artist`, `--album`, `--playlist`, `--radio`, or `--station` |
+
+### CLIDisplayTests (2 tests)
+
+Tests `CLIDisplay` static methods. Captures stdout via `dup`/`dup2`/`Pipe()` redirect.
+
+| Test | What it covers |
+|------|---------------|
+| `testPrintTableFormatting` | With data: header line, separator dashes, data rows, `N result(s)` footer. With empty rows: `"No results found."` |
+| `testPrintJSONEncoding` | Encodes a `Codable` struct; output is valid JSON with sorted keys and pretty-print indentation |
+
+### CLIProcessTests (8 tests)
+
+Spawns the real NullPlayer binary via `Process()`. Binary discovery looks next to the test runner:
+
+```swift
+let testBinary = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
+let binary = testBinary.deletingLastPathComponent().appendingPathComponent("NullPlayer")
+```
+
+All 8 tests skip via `XCTSkip` when the binary is absent (i.e., when running `swift test` without a prior app build). They run automatically after building the app with Xcode or `./scripts/kill_build_run.sh`.
+
+| Test | Args | Assertions |
+|------|------|------------|
+| `testHelp` | `--cli --help` | exit 0; stdout contains `"USAGE:"`, `"PLAYBACK:"`, `"KEYBOARD CONTROLS"` |
+| `testVersion` | `--cli --version` | exit 0; stdout matches `NullPlayer \d+\.\d+` |
+| `testListEQAndOutputs` | `--cli --list-eq` and `--cli --list-outputs` | both exit 0; each contains `"---"` separator and at least one data row |
+| `testListSources` | `--cli --list-sources` | exit 0; output contains `"---"` |
+| `testListStations` | table, `--json`, and `--folder genre` variants | all exit 0; JSON parses; filtered count ≤ total count |
+| `testErrorCases` | `--repeat-all --repeat-one` and `--unknown-flag` | both exit 1; stderr contains `"Error:"` |
+| `testLocalSourceQueries` | `--source local` + `--list-artists/albums/genres/tracks/playlists`, `--search "a"` | all exit 0; `XCTSkip` if local library is empty |
+| `testRemoteSourceQueries` | `--source <name> --list-artists` for plex, subsonic, jellyfin, emby | exit 0 → assert tabular output; exit 1 with `"not configured"` / `"not connected"` → skip; other non-zero → `XCTFail` |
+
+---
+
 ## `fetchPlaylistSongs` on Subsonic/Jellyfin/Emby
 
 Added to each manager to avoid exposing `serverClient` to CLI code:
