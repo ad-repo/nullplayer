@@ -40,6 +40,7 @@
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
 - macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
 - [Discord Music Presence](https://github.com/ungive/discord-music-presence) support
+- Headless CLI mode for terminal-based browsing and playback (no GUI, no Dock icon)
 
 ## Installation
 
