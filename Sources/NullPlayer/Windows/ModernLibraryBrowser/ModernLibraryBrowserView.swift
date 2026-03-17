@@ -424,13 +424,13 @@ class ModernLibraryBrowserView: NSView {
         case mirror = "Infinite Mirror", tile = "Tile Grid", prism = "Prism Split", doubleVision = "Double Vision"
         case flipbook = "Flipbook", mosaic = "Mosaic", pixelate = "Pixelate", scanlines = "Scanlines"
         case datamosh = "Datamosh", blocky = "Blocky"
-        static var groups: [(title: String, effects: [VisEffect])] {[
+        static let groups: [(title: String, effects: [VisEffect])] = [
             ("Rotation & Scaling", [.psychedelic, .kaleidoscope, .vortex, .spin, .fractal, .tunnel]),
             ("Distortion",         [.melt, .wave, .glitch, .rgbSplit, .twist, .fisheye, .shatter, .stretch]),
             ("Motion",             [.zoom, .shake, .bounce, .feedback, .strobe, .jitter]),
             ("Copies & Mirrors",   [.mirror, .tile, .prism, .doubleVision, .flipbook, .mosaic]),
             ("Pixel Effects",      [.pixelate, .scanlines, .datamosh, .blocky]),
-        ]}
+        ]
     }
     enum VisMode { case single, random, cycle }
     private var currentVisEffect: VisEffect = .psychedelic
@@ -4617,6 +4617,7 @@ class ModernLibraryBrowserView: NSView {
     @objc private func menuSelectEffect(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let effect = VisEffect(rawValue: raw) else { return }
+        visMode = .single
         currentVisEffect = effect
         UserDefaults.standard.set(effect.rawValue, forKey: "browserVisEffect")
     }
