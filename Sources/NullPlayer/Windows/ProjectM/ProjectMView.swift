@@ -21,9 +21,12 @@ class ProjectMView: NSView {
     
     /// Shade mode state
     private(set) var isShadeMode = false
-    
+
     /// Fullscreen mode state (hides window chrome)
     private(set) var isFullscreen = false
+
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
     
     /// Button being pressed (for visual feedback)
     private var pressedButton: SkinRenderer.ProjectMButtonType?
@@ -115,6 +118,10 @@ class ProjectMView: NSView {
         
         // Set initial audio active state
         updateAudioActiveState()
+
+        // Observe connected-window highlight changes for drag-mode visual feedback
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
     }
     
     private func setupVisualizationView() {
@@ -222,8 +229,22 @@ class ProjectMView: NSView {
                                     pressedButton: pressedButton, isShadeMode: isShadeMode)
         
         context.restoreGState()
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
     }
-    
+
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     // MARK: - Visualization Data
     
     /// Handle PCM data notification from audio tap (called on audio thread for low latency)

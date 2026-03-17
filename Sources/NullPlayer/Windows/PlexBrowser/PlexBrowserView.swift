@@ -773,6 +773,9 @@ class PlexBrowserView: NSView {
     
     /// Shade mode state
     private(set) var isShadeMode = false
+
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
     
     /// Art-only mode - hides tabs and list, shows just album art (session only, not persisted)
     private var isArtOnlyMode: Bool = false {
@@ -1146,6 +1149,8 @@ class PlexBrowserView: NSView {
                                                name: NSWindow.didChangeOcclusionStateNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(libraryScanProgressChanged),
                                                name: MediaLibrary.scanProgressNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
     }
     
     // MARK: - Accessibility
@@ -1771,8 +1776,13 @@ class PlexBrowserView: NSView {
         }
         
         context.restoreGState()
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
     }
-    
+
     /// Calculate scroll position as 0-1 value
     private func calculateScrollPosition() -> CGFloat {
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
@@ -5015,6 +5025,15 @@ class PlexBrowserView: NSView {
         loadingAnimationTimer?.invalidate()
         loadingAnimationTimer = nil
         loadingAnimationFrame = 0
+    }
+
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
     }
 
     @objc private func libraryScanProgressChanged() {

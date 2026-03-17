@@ -375,6 +375,9 @@ class ModernLibraryBrowserView: NSView {
     
     // Shade mode
     private(set) var isShadeMode = false
+
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
     
     // Art-only mode
     private var isArtOnlyMode: Bool = false {
@@ -648,6 +651,8 @@ class ModernLibraryBrowserView: NSView {
                                                name: NSWindow.didChangeOcclusionStateNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(libraryScanProgressChanged),
                                                name: MediaLibrary.scanProgressNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
 
         // Register for drag and drop
         registerForDraggedTypes([.fileURL])
@@ -751,6 +756,10 @@ class ModernLibraryBrowserView: NSView {
             renderer.drawWindowControlButton("library_btn_close", state: closeState, in: closeBtnRect, context: context)
             renderer.drawWindowControlButton("library_btn_shade", state: shadeState, in: shadeBtnRect, context: context)
             context.restoreGState()
+            if isHighlighted {
+                NSColor.white.withAlphaComponent(0.15).setFill()
+                bounds.fill()
+            }
             return
         }
 
@@ -848,8 +857,13 @@ class ModernLibraryBrowserView: NSView {
         // Status bar text
         drawStatusBarText(in: context, skin: skin)
         context.restoreGState()
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
     }
-    
+
     // MARK: - Tab Bar Drawing (Modern Boxed Toggle Style)
     
     private func drawTabBar(in context: CGContext, tabBarY: CGFloat, skin: ModernSkin) {
@@ -5911,8 +5925,17 @@ class ModernLibraryBrowserView: NSView {
         }
     }
 
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     func skinDidChange() { modernSkinDidChange() }
-    
+
     func setShadeMode(_ enabled: Bool) { isShadeMode = enabled; needsDisplay = true }
     
     private func toggleShadeMode() { isShadeMode.toggle(); controller?.setShadeMode(isShadeMode) }

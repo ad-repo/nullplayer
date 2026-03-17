@@ -76,6 +76,9 @@ class ModernProjectMView: NSView {
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
     private var sharpCorners: CACornerMask = [] { didSet { updateCornerMask() } }
     private var edgeOcclusionSegments: EdgeOcclusionSegments = .empty
+
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
     
     // MARK: - Initialization
     
@@ -142,6 +145,10 @@ class ModernProjectMView: NSView {
         // Observe window layout changes for seamless docked borders
         NotificationCenter.default.addObserver(self, selector: #selector(windowLayoutDidChange),
                                                 name: .windowLayoutDidChange, object: nil)
+
+        // Observe connected-window highlight changes for drag-mode visual feedback
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                                name: .connectedWindowHighlightDidChange, object: nil)
         
         // Set initial audio active state
         updateAudioActiveState()
@@ -243,7 +250,16 @@ class ModernProjectMView: NSView {
         
         // In shade mode, just draw title bar - no content area
         if isShadeMode {
+            if isHighlighted {
+                NSColor.white.withAlphaComponent(0.15).setFill()
+                bounds.fill()
+            }
             return
+        }
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
         }
     }
     
@@ -279,6 +295,15 @@ class ModernProjectMView: NSView {
             adjacentEdges = newEdges
             sharpCorners = newSharp
             edgeOcclusionSegments = newSegments
+            needsDisplay = true
+        }
+    }
+
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
             needsDisplay = true
         }
     }
