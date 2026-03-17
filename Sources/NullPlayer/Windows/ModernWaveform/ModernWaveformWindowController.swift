@@ -78,7 +78,7 @@ extension ModernWaveformWindowController: NSWindowDelegate {
 
     func windowDidResize(_ notification: Notification) {
         waveformView.needsDisplay = true
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        WindowManager.shared.postWindowLayoutDidChange()
     }
 
     func windowWillClose(_ notification: Notification) {

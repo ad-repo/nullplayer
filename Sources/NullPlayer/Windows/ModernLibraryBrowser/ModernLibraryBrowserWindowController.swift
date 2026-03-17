@@ -170,9 +170,15 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
 extension ModernLibraryBrowserWindowController: NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         browserView.needsDisplay = true
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        WindowManager.shared.postWindowLayoutDidChange()
     }
-    
+
+    func windowDidMove(_ notification: Notification) {
+        guard let window = window else { return }
+        let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
+        WindowManager.shared.applySnappedPosition(window, to: newOrigin)
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
         browserView.needsDisplay = true
         WindowManager.shared.bringAllWindowsToFront()

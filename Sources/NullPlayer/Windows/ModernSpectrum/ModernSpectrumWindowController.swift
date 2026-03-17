@@ -178,7 +178,7 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
         NSCursor.setHiddenUntilMouseMoves(true)
         NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
         
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        WindowManager.shared.postWindowLayoutDidChange()
     }
     
     private func exitCustomFullscreen() {
@@ -196,7 +196,7 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
         
         preFullscreenFrame = nil
         
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        WindowManager.shared.postWindowLayoutDidChange()
     }
     
     /// Whether the window is in custom fullscreen mode.
@@ -218,7 +218,7 @@ extension ModernSpectrumWindowController: NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         spectrumView.needsDisplay = true
         spectrumView.updateSpectrumFrame()
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        WindowManager.shared.postWindowLayoutDidChange()
     }
 
     func windowWillClose(_ notification: Notification) {
