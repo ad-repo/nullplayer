@@ -570,9 +570,9 @@ final class MediaLibraryStore {
         let sql = """
             SELECT
                 coalesce(album, 'Unknown Album') as album_name,
-                coalesce(album_artist, artist) as artist_name
+                album_artist
             FROM library_tracks
-            GROUP BY coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album')
+            GROUP BY coalesce(album_artist, '') || '|' || coalesce(album, 'Unknown Album')
             \(orderClause)
             """
         do {
@@ -697,7 +697,7 @@ final class MediaLibraryStore {
         guard let db = db else { return 0 }
         do {
             let count = try db.scalar(
-                "SELECT COUNT(DISTINCT coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album')) FROM library_tracks"
+                "SELECT COUNT(DISTINCT coalesce(album_artist, '') || '|' || coalesce(album, 'Unknown Album')) FROM library_tracks"
             ) as? Int64 ?? 0
             return Int(count)
         } catch {
@@ -726,9 +726,9 @@ final class MediaLibraryStore {
 
         let sql = """
             SELECT
-                coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album') as album_id,
+                coalesce(album_artist, '') || '|' || coalesce(album, 'Unknown Album') as album_id,
                 coalesce(album, 'Unknown Album') as album_name,
-                coalesce(album_artist, artist) as artist_name,
+                album_artist,
                 min(year) as yr,
                 count(*) as cnt
             FROM library_tracks
@@ -757,9 +757,9 @@ final class MediaLibraryStore {
         guard let db = db else { return [] }
         let sql = """
             SELECT
-                coalesce(t.album_artist, t.artist, 'Unknown Artist') || '|' || coalesce(t.album, 'Unknown Album') as album_id,
+                coalesce(t.album_artist, '') || '|' || coalesce(t.album, 'Unknown Album') as album_id,
                 coalesce(t.album, 'Unknown Album') as album_name,
-                coalesce(t.album_artist, t.artist) as artist_name_val,
+                t.album_artist,
                 min(t.year) as yr,
                 count(*) as cnt
             FROM library_tracks t
@@ -793,9 +793,9 @@ final class MediaLibraryStore {
         let sql = """
             SELECT
                 ta.artist_name as artist_key,
-                coalesce(t.album_artist, t.artist, 'Unknown Artist') || '|' || coalesce(t.album, 'Unknown Album') as album_id,
+                coalesce(t.album_artist, '') || '|' || coalesce(t.album, 'Unknown Album') as album_id,
                 coalesce(t.album, 'Unknown Album') as album_name,
-                coalesce(t.album_artist, t.artist) as artist_name_val,
+                t.album_artist,
                 min(t.year) as yr,
                 count(*) as cnt
             FROM library_tracks t
@@ -854,9 +854,9 @@ final class MediaLibraryStore {
 
     func tracksForAlbum(_ albumId: String) -> [LibraryTrack] {
         guard let db = db else { return [] }
-        // albumId = "artistName|albumName" — split on first | only
+        // albumId = "albumArtist|albumName" — split on first | only; albumArtist may be empty
         let pipeIdx = albumId.firstIndex(of: "|") ?? albumId.endIndex
-        let artistName = String(albumId[albumId.startIndex..<pipeIdx])
+        let albumArtist = String(albumId[albumId.startIndex..<pipeIdx])
         let albumName: String
         if pipeIdx < albumId.endIndex {
             albumName = String(albumId[albumId.index(after: pipeIdx)...])
@@ -864,15 +864,28 @@ final class MediaLibraryStore {
             albumName = albumId
         }
 
-        let sql = """
-            SELECT * FROM library_tracks
-            WHERE coalesce(album_artist, artist, 'Unknown Artist') = ?
-            AND coalesce(album, 'Unknown Album') = ?
-            ORDER BY disc_number ASC NULLS LAST, track_number ASC NULLS LAST, title ASC
-            """
+        let sql: String
+        let bindings: [Binding?]
+        if albumArtist.isEmpty {
+            sql = """
+                SELECT * FROM library_tracks
+                WHERE (album_artist IS NULL OR album_artist = '')
+                AND coalesce(album, 'Unknown Album') = ?
+                ORDER BY disc_number ASC NULLS LAST, track_number ASC NULLS LAST, title ASC
+                """
+            bindings = [albumName]
+        } else {
+            sql = """
+                SELECT * FROM library_tracks
+                WHERE album_artist = ?
+                AND coalesce(album, 'Unknown Album') = ?
+                ORDER BY disc_number ASC NULLS LAST, track_number ASC NULLS LAST, title ASC
+                """
+            bindings = [albumArtist, albumName]
+        }
         do {
             var result: [LibraryTrack] = []
-            for row in try db.prepare(sql, artistName, albumName) {
+            for row in try db.prepare(sql, bindings) {
                 if let track = trackFromStatement(row) {
                     result.append(track)
                 }
@@ -967,13 +980,13 @@ final class MediaLibraryStore {
         guard let db = db else { return [] }
         let sql = """
             SELECT
-                coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album') as album_id,
+                coalesce(album_artist, '') || '|' || coalesce(album, 'Unknown Album') as album_id,
                 coalesce(album, 'Unknown Album') as album_name,
-                coalesce(album_artist, artist) as artist_name,
+                album_artist,
                 min(year) as yr,
                 count(*) as cnt
             FROM library_tracks
-            WHERE album_name LIKE ? OR artist_name LIKE ?
+            WHERE album_name LIKE ? OR album_artist LIKE ?
             GROUP BY album_id
             ORDER BY album_name ASC
             LIMIT 100
