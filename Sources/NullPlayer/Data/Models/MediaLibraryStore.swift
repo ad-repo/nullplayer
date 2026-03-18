@@ -476,27 +476,61 @@ final class MediaLibraryStore {
     /// Returns a map of sort-letter → first DB offset for that letter, across all artists.
     func artistLetterOffsets(sort: ModernBrowserSortOption) -> [String: Int] {
         guard let db = db else { return [:] }
-        let orderClause: String
+        // IMPORTANT: query structure must be identical to artistNames (without LIMIT/OFFSET)
+        // so offsets align exactly with artistNames page row positions.
+        let sql: String
         switch sort {
         case .nameAsc:
-            orderClause = "ORDER BY coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT DISTINCT ta.artist_name
+                FROM track_artists ta
+                WHERE ta.role = 'album_artist'
+                ORDER BY ta.artist_name ASC
+                """
         case .nameDesc:
-            orderClause = "ORDER BY coalesce(album_artist, artist, 'Unknown Artist') DESC"
+            sql = """
+                SELECT DISTINCT ta.artist_name
+                FROM track_artists ta
+                WHERE ta.role = 'album_artist'
+                ORDER BY ta.artist_name DESC
+                """
         case .dateAddedDesc:
-            orderClause = "ORDER BY max(date_added) DESC, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY max(t.date_added) DESC, ta.artist_name ASC
+                """
         case .dateAddedAsc:
-            orderClause = "ORDER BY min(date_added) ASC, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY min(t.date_added) ASC, ta.artist_name ASC
+                """
         case .yearDesc:
-            orderClause = "ORDER BY max(year) DESC NULLS LAST, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY max(t.year) DESC NULLS LAST, ta.artist_name ASC
+                """
         case .yearAsc:
-            orderClause = "ORDER BY min(year) ASC NULLS LAST, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY min(t.year) ASC NULLS LAST, ta.artist_name ASC
+                """
         }
-        let sql = """
-            SELECT coalesce(album_artist, artist, 'Unknown Artist') as artist_name
-            FROM library_tracks
-            GROUP BY artist_name
-            \(orderClause)
-            """
         do {
             var result: [String: Int] = [:]
             var offset = 0
@@ -576,7 +610,7 @@ final class MediaLibraryStore {
         guard let db = db else { return 0 }
         do {
             let count = try db.scalar(
-                "SELECT COUNT(DISTINCT coalesce(album_artist, artist, 'Unknown Artist')) FROM library_tracks"
+                "SELECT COUNT(DISTINCT artist_name) FROM track_artists WHERE role = 'album_artist'"
             ) as? Int64 ?? 0
             return Int(count)
         } catch {
@@ -587,35 +621,69 @@ final class MediaLibraryStore {
 
     func artistNames(limit: Int, offset: Int, sort: ModernBrowserSortOption) -> [String] {
         guard let db = db else { return [] }
-        let orderClause: String
+        let sql: String
         switch sort {
         case .nameAsc:
-            orderClause = "ORDER BY coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT DISTINCT ta.artist_name
+                FROM track_artists ta
+                WHERE ta.role = 'album_artist'
+                ORDER BY ta.artist_name ASC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         case .nameDesc:
-            orderClause = "ORDER BY coalesce(album_artist, artist, 'Unknown Artist') DESC"
+            sql = """
+                SELECT DISTINCT ta.artist_name
+                FROM track_artists ta
+                WHERE ta.role = 'album_artist'
+                ORDER BY ta.artist_name DESC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         case .dateAddedDesc:
-            orderClause = "ORDER BY max(date_added) DESC, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY max(t.date_added) DESC, ta.artist_name ASC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         case .dateAddedAsc:
-            orderClause = "ORDER BY min(date_added) ASC, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY min(t.date_added) ASC, ta.artist_name ASC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         case .yearDesc:
-            orderClause = "ORDER BY max(year) DESC NULLS LAST, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY max(t.year) DESC NULLS LAST, ta.artist_name ASC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         case .yearAsc:
-            orderClause = "ORDER BY min(year) ASC NULLS LAST, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY min(t.year) ASC NULLS LAST, ta.artist_name ASC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         }
-
-        let sql = """
-            SELECT coalesce(album_artist, artist, 'Unknown Artist') as artist_name
-            FROM library_tracks
-            GROUP BY artist_name
-            \(orderClause)
-            LIMIT \(limit) OFFSET \(offset)
-            """
         do {
             var result: [String] = []
             for row in try db.prepare(sql) {
-                if let name = row[0] as? String {
-                    result.append(name)
-                }
+                if let name = row[0] as? String { result.append(name) }
             }
             return result
         } catch {
@@ -688,15 +756,16 @@ final class MediaLibraryStore {
         guard let db = db else { return [] }
         let sql = """
             SELECT
-                coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album') as album_id,
-                coalesce(album, 'Unknown Album') as album_name,
-                coalesce(album_artist, artist) as artist_name,
-                min(year) as yr,
+                coalesce(t.album_artist, t.artist, 'Unknown Artist') || '|' || coalesce(t.album, 'Unknown Album') as album_id,
+                coalesce(t.album, 'Unknown Album') as album_name,
+                coalesce(t.album_artist, t.artist) as artist_name_val,
+                min(t.year) as yr,
                 count(*) as cnt
-            FROM library_tracks
-            WHERE coalesce(album_artist, artist, 'Unknown Artist') = ?
+            FROM library_tracks t
+            JOIN track_artists ta ON ta.track_url = t.url
+            WHERE ta.artist_name = ? AND ta.role = 'album_artist'
             GROUP BY album_id
-            ORDER BY min(year) ASC, coalesce(album, 'Unknown Album') ASC
+            ORDER BY min(t.year) ASC NULLS LAST, coalesce(t.album, 'Unknown Album') ASC
             """
         do {
             var result: [AlbumSummary] = []
@@ -715,23 +784,24 @@ final class MediaLibraryStore {
         }
     }
 
-    /// Fetch album summaries for a page of artists in a single query instead of one per artist.
-    /// Returns a dict keyed by artist name (same key as artistNames() returns).
+    /// Fetch album summaries for a page of artists in a single query.
+    /// Returns a dict keyed by artist_name (the split name, same as artistNames() returns).
     func albumsForArtistsBatch(_ names: [String]) -> [String: [AlbumSummary]] {
         guard let db = db, !names.isEmpty else { return [:] }
         let placeholders = names.map { _ in "?" }.joined(separator: ", ")
         let sql = """
             SELECT
-                coalesce(album_artist, artist, 'Unknown Artist') as artist_key,
-                coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album') as album_id,
-                coalesce(album, 'Unknown Album') as album_name,
-                coalesce(album_artist, artist) as artist_name_val,
-                min(year) as yr,
+                ta.artist_name as artist_key,
+                coalesce(t.album_artist, t.artist, 'Unknown Artist') || '|' || coalesce(t.album, 'Unknown Album') as album_id,
+                coalesce(t.album, 'Unknown Album') as album_name,
+                coalesce(t.album_artist, t.artist) as artist_name_val,
+                min(t.year) as yr,
                 count(*) as cnt
-            FROM library_tracks
-            WHERE coalesce(album_artist, artist, 'Unknown Artist') IN (\(placeholders))
-            GROUP BY album_id
-            ORDER BY artist_key, min(year) ASC, coalesce(album, 'Unknown Album') ASC
+            FROM library_tracks t
+            JOIN track_artists ta ON ta.track_url = t.url
+            WHERE ta.artist_name IN (\(placeholders)) AND ta.role = 'album_artist'
+            GROUP BY ta.artist_name, album_id
+            ORDER BY ta.artist_name, min(t.year) ASC NULLS LAST, coalesce(t.album, 'Unknown Album') ASC
             """
         do {
             var result: [String: [AlbumSummary]] = [:]
@@ -872,19 +942,18 @@ final class MediaLibraryStore {
     func searchArtistNames(query: String) -> [String] {
         guard let db = db else { return [] }
         let sql = """
-            SELECT DISTINCT coalesce(album_artist, artist, 'Unknown Artist') as artist_name
-            FROM library_tracks
-            WHERE artist_name LIKE ?
-            ORDER BY artist_name ASC
+            SELECT DISTINCT ta.artist_name
+            FROM track_artists ta
+            WHERE ta.role = 'album_artist'
+            AND ta.artist_name LIKE ?
+            ORDER BY ta.artist_name ASC
             LIMIT 100
             """
         let pattern = "%\(query)%"
         do {
             var result: [String] = []
             for row in try db.prepare(sql, pattern) {
-                if let name = row[0] as? String {
-                    result.append(name)
-                }
+                if let name = row[0] as? String { result.append(name) }
             }
             return result
         } catch {
