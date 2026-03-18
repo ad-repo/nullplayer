@@ -1742,6 +1742,21 @@ class MediaLibrary {
                 track.bitrate = Int(Double(track.fileSize * 8) / track.duration / 1000)
             }
         }
+
+        // Populate track.artists from the parsed artist and albumArtist fields.
+        // Primary/featured roles from the artist tag:
+        track.artists = ArtistSplitter.split(track.artist ?? "", isAlbumArtist: false)
+
+        // album_artist role rows — mirrors coalesce(albumArtist, artist, 'Unknown Artist') fallback:
+        let albumArtistRows: [(name: String, role: ArtistRole)]
+        if let albumArtist = track.albumArtist, !albumArtist.isEmpty {
+            albumArtistRows = ArtistSplitter.split(albumArtist, isAlbumArtist: true)
+        } else if let artist = track.artist, !artist.isEmpty {
+            albumArtistRows = ArtistSplitter.split(artist, isAlbumArtist: true)
+        } else {
+            albumArtistRows = [(name: "Unknown Artist", role: .albumArtist)]
+        }
+        track.artists.append(contentsOf: albumArtistRows)
     }
     
     // MARK: - Persistence (SQLite-backed — individual mutations are persisted immediately via store)
