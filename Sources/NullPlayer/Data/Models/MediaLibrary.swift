@@ -24,7 +24,17 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
     var lastPlayed: Date?
     var playCount: Int
     var rating: Int?             // User rating on 0-10 scale (matching Plex), nil if unrated
-    
+
+    /// Transient — populated from `track_artists` table, not persisted via Codable.
+    var artists: [(name: String, role: ArtistRole)] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case id, url, title, artist, album, albumArtist, genre, year
+        case trackNumber, discNumber, duration, bitrate, sampleRate, channels
+        case fileSize, dateAdded, lastPlayed, playCount, rating
+        // `artists` is intentionally omitted — transient, re-populated from track_artists
+    }
+
     init(url: URL) {
         self.id = UUID()
         self.url = url
@@ -112,9 +122,84 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
             genre: genre
         )
     }
-    
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+    }
+
+    // MARK: - Codable conformance (custom to exclude `artists`)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        url = try container.decode(URL.self, forKey: .url)
+        title = try container.decode(String.self, forKey: .title)
+        artist = try container.decodeIfPresent(String.self, forKey: .artist)
+        album = try container.decodeIfPresent(String.self, forKey: .album)
+        albumArtist = try container.decodeIfPresent(String.self, forKey: .albumArtist)
+        genre = try container.decodeIfPresent(String.self, forKey: .genre)
+        year = try container.decodeIfPresent(Int.self, forKey: .year)
+        trackNumber = try container.decodeIfPresent(Int.self, forKey: .trackNumber)
+        discNumber = try container.decodeIfPresent(Int.self, forKey: .discNumber)
+        duration = try container.decode(TimeInterval.self, forKey: .duration)
+        bitrate = try container.decodeIfPresent(Int.self, forKey: .bitrate)
+        sampleRate = try container.decodeIfPresent(Int.self, forKey: .sampleRate)
+        channels = try container.decodeIfPresent(Int.self, forKey: .channels)
+        fileSize = try container.decode(Int64.self, forKey: .fileSize)
+        dateAdded = try container.decode(Date.self, forKey: .dateAdded)
+        lastPlayed = try container.decodeIfPresent(Date.self, forKey: .lastPlayed)
+        playCount = try container.decode(Int.self, forKey: .playCount)
+        rating = try container.decodeIfPresent(Int.self, forKey: .rating)
+        artists = []  // Transient field, always empty after decode
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(url, forKey: .url)
+        try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(artist, forKey: .artist)
+        try container.encodeIfPresent(album, forKey: .album)
+        try container.encodeIfPresent(albumArtist, forKey: .albumArtist)
+        try container.encodeIfPresent(genre, forKey: .genre)
+        try container.encodeIfPresent(year, forKey: .year)
+        try container.encodeIfPresent(trackNumber, forKey: .trackNumber)
+        try container.encodeIfPresent(discNumber, forKey: .discNumber)
+        try container.encode(duration, forKey: .duration)
+        try container.encodeIfPresent(bitrate, forKey: .bitrate)
+        try container.encodeIfPresent(sampleRate, forKey: .sampleRate)
+        try container.encodeIfPresent(channels, forKey: .channels)
+        try container.encode(fileSize, forKey: .fileSize)
+        try container.encode(dateAdded, forKey: .dateAdded)
+        try container.encodeIfPresent(lastPlayed, forKey: .lastPlayed)
+        try container.encode(playCount, forKey: .playCount)
+        try container.encodeIfPresent(rating, forKey: .rating)
+        // `artists` is not encoded — it's transient
+    }
+
+    // MARK: - Equatable conformance (custom to exclude `artists`)
+
+    static func == (lhs: LibraryTrack, rhs: LibraryTrack) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.url == rhs.url &&
+        lhs.title == rhs.title &&
+        lhs.artist == rhs.artist &&
+        lhs.album == rhs.album &&
+        lhs.albumArtist == rhs.albumArtist &&
+        lhs.genre == rhs.genre &&
+        lhs.year == rhs.year &&
+        lhs.trackNumber == rhs.trackNumber &&
+        lhs.discNumber == rhs.discNumber &&
+        lhs.duration == rhs.duration &&
+        lhs.bitrate == rhs.bitrate &&
+        lhs.sampleRate == rhs.sampleRate &&
+        lhs.channels == rhs.channels &&
+        lhs.fileSize == rhs.fileSize &&
+        lhs.dateAdded == rhs.dateAdded &&
+        lhs.lastPlayed == rhs.lastPlayed &&
+        lhs.playCount == rhs.playCount &&
+        lhs.rating == rhs.rating
+        // `artists` is not compared — it's transient
     }
 }
 

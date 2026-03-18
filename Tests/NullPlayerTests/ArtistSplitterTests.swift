@@ -219,3 +219,56 @@ final class ArtistSplitterTests: XCTestCase {
         XCTAssertEqual(result[1].role, .featured)
     }
 }
+
+final class LibraryTrackCodableTests: XCTestCase {
+
+    func testArtistsFieldExcludedFromCodable() throws {
+        var track = LibraryTrack(
+            url: URL(fileURLWithPath: "/tmp/test.mp3"),
+            title: "Test",
+            artist: "Drake feat. Future"
+        )
+        track.artists = [(name: "Drake", role: .primary), (name: "Future", role: .featured)]
+
+        let data = try JSONEncoder().encode(track)
+        let decoded = try JSONDecoder().decode(LibraryTrack.self, from: data)
+
+        // artists must be empty after decode — it is transient
+        XCTAssertTrue(decoded.artists.isEmpty)
+        // All other fields must survive the round-trip
+        XCTAssertEqual(decoded.title, "Test")
+        XCTAssertEqual(decoded.artist, "Drake feat. Future")
+    }
+
+    func testAllStoredFieldsRoundTrip() throws {
+        let original = LibraryTrack(
+            id: UUID(),
+            url: URL(fileURLWithPath: "/tmp/song.flac"),
+            title: "Song",
+            artist: "Artist",
+            album: "Album",
+            albumArtist: "Album Artist",
+            genre: "Rock",
+            year: 2024,
+            trackNumber: 3,
+            discNumber: 1,
+            duration: 240.5,
+            bitrate: 320,
+            sampleRate: 44100,
+            channels: 2,
+            fileSize: 12345678,
+            dateAdded: Date(timeIntervalSince1970: 1000),
+            lastPlayed: Date(timeIntervalSince1970: 2000),
+            playCount: 7,
+            rating: 8
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(LibraryTrack.self, from: data)
+        XCTAssertEqual(decoded.id, original.id)
+        XCTAssertEqual(decoded.title, original.title)
+        XCTAssertEqual(decoded.artist, original.artist)
+        XCTAssertEqual(decoded.albumArtist, original.albumArtist)
+        XCTAssertEqual(decoded.rating, original.rating)
+        XCTAssertEqual(decoded.playCount, original.playCount)
+    }
+}
