@@ -61,6 +61,10 @@ final class MediaLibraryStore {
 
     private init() {}
 
+    #if DEBUG
+    static func makeForTesting() -> MediaLibraryStore { MediaLibraryStore() }
+    #endif
+
     // MARK: - Lifecycle
 
     func open() {
@@ -84,6 +88,17 @@ final class MediaLibraryStore {
             migrateFromJSONIfNeeded(jsonURL: jsonURL)
         } catch {
             NSLog("MediaLibraryStore: Failed to open database: %@", error.localizedDescription)
+        }
+    }
+
+    /// Opens the database at a custom path (for testing). Skips JSON migration.
+    func open(at url: URL) {
+        do {
+            let connection = try Connection(url.path)
+            try setupSchema(connection)
+            db = connection
+        } catch {
+            NSLog("MediaLibraryStore: Failed to open at %@: %@", url.path, error.localizedDescription)
         }
     }
 
@@ -112,11 +127,14 @@ final class MediaLibraryStore {
         try connection.run("PRAGMA synchronous=NORMAL")
         // 5-second busy timeout so background/main thread contention doesn't hard-fail.
         connection.busyTimeout = 5
+        // Enable FK enforcement so ON DELETE CASCADE fires on track_artists.
+        // Must be set on every connection open — SQLite resets it per connection.
+        try connection.run("PRAGMA foreign_keys = ON")
 
         let currentVersion = try connection.scalar("PRAGMA user_version") as? Int64 ?? 0
         if currentVersion == 0 {
             try createTablesIfNeeded(connection)
-            try connection.run("PRAGMA user_version = 2")
+            try connection.run("PRAGMA user_version = 3")
         }
         if currentVersion == 1 {
             // Add expression index so artistNames GROUP BY and albumsForArtist WHERE queries
@@ -125,6 +143,20 @@ final class MediaLibraryStore {
             // UI freezes on large libraries (60k+ tracks).
             try connection.run("CREATE INDEX IF NOT EXISTS idx_tracks_artist_expr ON library_tracks (coalesce(album_artist, artist, 'Unknown Artist'))")
             try connection.run("PRAGMA user_version = 2")
+        }
+        if currentVersion == 2 {
+            try connection.run("""
+                CREATE TABLE IF NOT EXISTS track_artists (
+                    track_url   TEXT NOT NULL REFERENCES library_tracks(url) ON DELETE CASCADE,
+                    artist_name TEXT NOT NULL,
+                    role        TEXT NOT NULL CHECK(role IN ('primary', 'featured', 'album_artist')),
+                    PRIMARY KEY (track_url, artist_name, role)
+                )
+                """)
+            try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_name ON track_artists(artist_name)")
+            try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_url ON track_artists(track_url)")
+            try connection.run("PRAGMA user_version = 3")
+            UserDefaults.standard.set(false, forKey: "trackArtistsBackfillComplete")
         }
     }
 
@@ -207,6 +239,19 @@ final class MediaLibraryStore {
             t.column(colArtistID, primaryKey: true)
             t.column(colRatingVal)
         })
+
+        // track_artists: join table linking tracks to individual artist names.
+        // FK references url (UNIQUE) not id (PK) — url is the natural key in all queries.
+        try connection.run("""
+            CREATE TABLE IF NOT EXISTS track_artists (
+                track_url   TEXT NOT NULL REFERENCES library_tracks(url) ON DELETE CASCADE,
+                artist_name TEXT NOT NULL,
+                role        TEXT NOT NULL CHECK(role IN ('primary', 'featured', 'album_artist')),
+                PRIMARY KEY (track_url, artist_name, role)
+            )
+            """)
+        try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_name ON track_artists(artist_name)")
+        try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_url ON track_artists(track_url)")
     }
 
     // MARK: - JSON Migration
