@@ -49,12 +49,18 @@ enum ArtistSplitter {
          .filter { !$0.isEmpty }
     }
 
+    // NOTE: splitOnFeat matches only the FIRST feat./ft. token.
+    // Input like "A feat. B feat. C" produces [("A", primary), ("B feat. C", featured)].
+    // This is intentional — multiple nested feat. in a single segment is an unusual tag
+    // and the second occurrence is preserved verbatim in the featured name.
+    private static let featRegex: NSRegularExpression? =
+        try? NSRegularExpression(pattern: #"(?i)(?<=[ (])(feat\.|feat|ft\.|ft)(?=[ ]|$)"#)
+
     /// Detect `feat.`, `feat`, `ft.`, `ft` preceded by space or `(`.
     /// Returns (before, after) trimmed, or nil if no match.
     private static func splitOnFeat(_ s: String) -> (String, String)? {
         // Pattern: (space or open-paren) followed by feat./feat/ft./ft (case-insensitive)
-        let pattern = #"(?i)(?<=[ (])(feat\.|feat|ft\.|ft)(?=[ ]|$)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        guard let regex = featRegex else { return nil }
         let nsRange = NSRange(s.startIndex..., in: s)
         guard let match = regex.firstMatch(in: s, range: nsRange),
               let matchRange = Range(match.range, in: s) else { return nil }

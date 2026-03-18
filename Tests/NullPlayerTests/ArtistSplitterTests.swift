@@ -89,15 +89,13 @@ final class ArtistSplitterTests: XCTestCase {
     }
 
     func testNoFalsePositiveOnOften() {
+        // "Often feat-like": the pattern looks for "feat" preceded by space or "(" and followed by
+        // space or end-of-string. Since "-like" follows "feat", the lookhead (?=[ ]|$) fails.
+        // Therefore, no split occurs and the entire string is treated as a single primary artist.
         let result = ArtistSplitter.split("Often feat-like", isAlbumArtist: false)
-        // "feat-like" has feat at word boundary preceded by space — does split
-        // This test documents that feat-like WILL split; document behavior:
-        // "Often" + "like" (featured)
-        // Actually "feat-like" — the pattern matches "feat" preceded by space.
-        // After splitting: part before "feat" = "Often ", part after = "-like"
-        // "-like" trimmed = "-like" — non-empty so included
-        // This is acceptable; document it in the test
-        XCTAssertTrue(result.count >= 1)
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].name, "Often feat-like")
+        XCTAssertEqual(result[0].role, .primary)
     }
 
     func testNoFalsePositiveDefeatWordBoundary() {
@@ -207,5 +205,17 @@ final class ArtistSplitterTests: XCTestCase {
         XCTAssertEqual(result.count, 2)
         XCTAssertEqual(result[0].name, "Foo")
         XCTAssertEqual(result[1].name, "Bar")
+    }
+
+    // MARK: - Multiple feat limitation
+
+    func testMultipleFeatOnlyFirstSplit() {
+        // Only the first feat. token is split; the second remains verbatim in the featured name.
+        // This is a documented limitation — see NOTE in splitOnFeat.
+        let result = ArtistSplitter.split("A feat. B feat. C", isAlbumArtist: false)
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result[0].name, "A")
+        XCTAssertEqual(result[1].name, "B feat. C")
+        XCTAssertEqual(result[1].role, .featured)
     }
 }
