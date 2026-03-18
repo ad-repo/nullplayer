@@ -113,4 +113,37 @@ final class TrackArtistsSchemaTests: XCTestCase {
         XCTAssertTrue(result[t1.url.absoluteString]?.contains { $0.name == "ArtistA" } ?? false)
         XCTAssertTrue(result[t2.url.absoluteString]?.contains { $0.name == "ArtistB" } ?? false)
     }
+
+    func testBackfillPopulatesTrackArtistsFromRawColumns() {
+        // Insert a track with raw artist/albumArtist columns but NO track_artists rows
+        // (simulates a pre-v3 library row)
+        guard let db = store.testDB else {
+            XCTFail("testDB not accessible"); return
+        }
+        let url = "file:///tmp/backfill_test.mp3"
+        try? db.run("""
+            INSERT INTO library_tracks (id, url, title, artist, album_artist, duration, file_size, date_added, play_count)
+            VALUES (?, ?, 'BackfillTrack', 'Drake feat. Future', 'Drake feat. Future', 180.0, 0, 0.0, 0)
+            """, UUID().uuidString, url)
+
+        // Confirm no track_artists rows exist yet
+        let before = try? db.scalar("SELECT COUNT(*) FROM track_artists WHERE track_url = ?", url) as? Int64 ?? 0
+        XCTAssertEqual(before, 0)
+
+        // Run backfill
+        let expectation = expectation(description: "backfill")
+        store.backfillTrackArtistsIfNeeded {
+            expectation.fulfill()
+        }
+        waitForExpectations(timeout: 5)
+
+        // Verify track_artists rows exist
+        let after = (try? db.scalar("SELECT COUNT(*) FROM track_artists WHERE track_url = ?", url) as? Int64) ?? 0
+        XCTAssertGreaterThan(after, 0, "Backfill must have created track_artists rows")
+        let drakeRows = (try? db.scalar(
+            "SELECT COUNT(*) FROM track_artists WHERE track_url = ? AND artist_name = 'Drake' AND role = 'album_artist'",
+            url
+        ) as? Int64) ?? 0
+        XCTAssertEqual(drakeRows, 1)
+    }
 }

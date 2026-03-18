@@ -63,6 +63,7 @@ final class MediaLibraryStore {
 
     #if DEBUG
     static func makeForTesting() -> MediaLibraryStore { MediaLibraryStore() }
+    var testDB: Connection? { db }
     #endif
 
     // MARK: - Lifecycle
@@ -1227,6 +1228,81 @@ final class MediaLibraryStore {
             }
         } catch {
             NSLog("MediaLibraryStore: deleteAllMedia failed: %@", error.localizedDescription)
+        }
+    }
+
+    // MARK: - Track Artists Backfill (v2 → v3 migration)
+
+    /// Backfills `track_artists` from existing `artist`/`albumArtist` columns.
+    /// Safe to call multiple times — uses INSERT OR IGNORE.
+    /// Calls `completion` on the main thread when done.
+    func backfillTrackArtistsIfNeeded(completion: @escaping () -> Void = {}) {
+        guard let db = db else { completion(); return }
+        // Use DispatchQueue (not Task.detached) — SQLite.Connection is not Sendable.
+        // This matches how other background DB work is done in MediaLibraryStore.
+        DispatchQueue.global(qos: .utility).async {
+            // Crash-recovery: delete any partial rows from a previously interrupted backfill.
+            // Safe to delete all track_artists here because the batch loop re-inserts for every
+            // library_tracks row (including tracks upserted after migration).
+            do {
+                try db.run("DELETE FROM track_artists")
+            } catch {
+                NSLog("MediaLibraryStore: backfill pre-clear failed: %@", error.localizedDescription)
+            }
+            let batchSize = 500
+            var offset = 0
+            while true {
+                var rows: [(url: String, artist: String?, albumArtist: String?)] = []
+                do {
+                    for row in try db.prepare(
+                        "SELECT url, artist, album_artist FROM library_tracks LIMIT \(batchSize) OFFSET \(offset)"
+                    ) {
+                        let url = row[0] as? String ?? ""
+                        let artist = row[1] as? String
+                        let albumArtist = row[2] as? String
+                        rows.append((url, artist, albumArtist))
+                    }
+                } catch {
+                    NSLog("MediaLibraryStore: backfill read failed: %@", error.localizedDescription)
+                    break
+                }
+                if rows.isEmpty { break }
+
+                do {
+                    try db.transaction {
+                        for (url, artist, albumArtist) in rows {
+                            // primary/featured from artist tag
+                            let primaryEntries = ArtistSplitter.split(artist ?? "", isAlbumArtist: false)
+                            for entry in primaryEntries {
+                                try db.run(
+                                    "INSERT OR IGNORE INTO track_artists (track_url, artist_name, role) VALUES (?, ?, ?)",
+                                    url, entry.name, entry.role.rawValue
+                                )
+                            }
+                            // album_artist rows — mirrors coalesce(albumArtist, artist, 'Unknown Artist')
+                            let albumArtistEntries: [(name: String, role: ArtistRole)]
+                            if let aa = albumArtist, !aa.isEmpty {
+                                albumArtistEntries = ArtistSplitter.split(aa, isAlbumArtist: true)
+                            } else if let a = artist, !a.isEmpty {
+                                albumArtistEntries = ArtistSplitter.split(a, isAlbumArtist: true)
+                            } else {
+                                albumArtistEntries = [(name: "Unknown Artist", role: .albumArtist)]
+                            }
+                            for entry in albumArtistEntries {
+                                try db.run(
+                                    "INSERT OR IGNORE INTO track_artists (track_url, artist_name, role) VALUES (?, ?, ?)",
+                                    url, entry.name, entry.role.rawValue
+                                )
+                            }
+                        }
+                    }
+                } catch {
+                    NSLog("MediaLibraryStore: backfill write batch failed: %@", error.localizedDescription)
+                }
+                offset += batchSize
+            }
+            UserDefaults.standard.set(true, forKey: "trackArtistsBackfillComplete")
+            DispatchQueue.main.async { completion() }
         }
     }
 
