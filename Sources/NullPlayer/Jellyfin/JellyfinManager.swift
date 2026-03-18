@@ -92,7 +92,10 @@ class JellyfinManager {
             NotificationCenter.default.post(name: Self.connectionStateDidChangeNotification, object: self)
         }
     }
-    
+
+    /// Task for the initial background server connect — awaitable by CLI mode
+    private(set) var serverConnectTask: Task<Void, Never>?
+
     // MARK: - Cached Library Content
     
     /// Cached artists
@@ -141,7 +144,7 @@ class JellyfinManager {
         // Restore previous server selection
         if let savedServerID = UserDefaults.standard.string(forKey: "JellyfinCurrentServerID"),
            let savedServer = servers.first(where: { $0.id == savedServerID }) {
-            Task {
+            serverConnectTask = Task {
                 await connectInBackground(to: savedServer)
             }
         }
@@ -509,11 +512,17 @@ class JellyfinManager {
         if isContentPreloaded && !cachedPlaylists.isEmpty {
             return cachedPlaylists
         }
-        
+
         guard let client = serverClient else { return [] }
         return try await client.fetchPlaylists()
     }
-    
+
+    func fetchPlaylistSongs(id: String) async throws -> [JellyfinSong] {
+        guard let client = serverClient else { throw JellyfinClientError.unauthorized }
+        let result = try await client.fetchPlaylist(id: id)
+        return result.songs
+    }
+
     /// Fetch albums for an artist
     func fetchAlbums(forArtist artist: JellyfinArtist) async throws -> [JellyfinAlbum] {
         guard let client = serverClient else { return [] }

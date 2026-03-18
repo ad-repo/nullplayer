@@ -76,6 +76,9 @@ class PlexManager {
     
     /// All available libraries on the current server (music, movies, shows)
     private(set) var availableLibraries: [PlexLibrary] = []
+
+    /// Task for the initial background server refresh — awaitable by CLI mode
+    private(set) var serverRefreshTask: Task<Void, Never>?
     
     // MARK: - Cached Library Content
     
@@ -145,7 +148,7 @@ class PlexManager {
         self.account = savedAccount
         
         // Restore servers and selection in background
-        Task {
+        serverRefreshTask = Task {
             await refreshServersInBackground()
         }
     }

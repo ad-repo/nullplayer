@@ -56,9 +56,11 @@ protocol AudioEngineDelegate: AnyObject {
 
 /// Core audio engine using AVAudioEngine for playback and DSP
 class AudioEngine {
-    
+
+    static var isHeadless = false
+
     // MARK: - Properties
-    
+
     weak var delegate: AudioEngineDelegate?
     
     /// The AVAudioEngine instance
@@ -158,7 +160,9 @@ class AudioEngine {
             streamingPlayer?.volume = volume
             
             // Apply volume to video player
-            WindowManager.shared.setVideoVolume(volume)
+            if !AudioEngine.isHeadless {
+                WindowManager.shared.setVideoVolume(volume)
+            }
             
             // Send volume to cast device if any casting is active (audio or video)
             if isAnyCastingActive {
@@ -461,7 +465,8 @@ class AudioEngine {
     
     /// Whether video casting is active (from video player)
     var isVideoCastingActive: Bool {
-        WindowManager.shared.isVideoCastingActive
+        if AudioEngine.isHeadless { return false }
+        return WindowManager.shared.isVideoCastingActive
     }
     
     /// Whether any casting (audio or video) is active
@@ -1080,13 +1085,14 @@ class AudioEngine {
     func play() {
         // If video casting is active, forward to video player
         if isVideoCastingActive {
+            guard !AudioEngine.isHeadless else { return }
             WindowManager.shared.toggleVideoCastPlayPause()
             return
         }
-        
+
         // If local video playback is active, don't start audio playback
         // (video has its own playback controls via the video player window)
-        if WindowManager.shared.isVideoActivePlayback {
+        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback {
             NSLog("play(): Local video is active - ignoring audio play request")
             return
         }
@@ -1244,10 +1250,11 @@ class AudioEngine {
         
         // If video casting is active, forward to video player
         if isVideoCastingActive {
+            guard !AudioEngine.isHeadless else { return }
             WindowManager.shared.toggleVideoCastPlayPause()
             return
         }
-        
+
         // If audio casting is active, forward command to CastManager
         if isCastingActive {
             NSLog("AudioEngine.pause() - forwarding to CastManager")
@@ -2786,15 +2793,16 @@ class AudioEngine {
             isStreamingPlayback = false  // Reset to neutral state for video playback
             
             // Route to video player via WindowManager
+            guard !AudioEngine.isHeadless else { return }
             DispatchQueue.main.async {
                 WindowManager.shared.playVideoTrack(track)
             }
             return
         }
-        
+
         // Stop video playback before loading audio track
         // This ensures the user's intent to play audio takes precedence
-        if WindowManager.shared.isVideoActivePlayback {
+        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback {
             NSLog("loadTrack: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
         }
@@ -2830,7 +2838,7 @@ class AudioEngine {
         let currentGeneration = playbackGeneration
 
         // Stop video playback before loading audio track.
-        if WindowManager.shared.isVideoActivePlayback {
+        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback {
             NSLog("loadLocalTrackForImmediatePlayback: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
         }

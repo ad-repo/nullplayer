@@ -773,6 +773,9 @@ class PlexBrowserView: NSView {
     
     /// Shade mode state
     private(set) var isShadeMode = false
+
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
     
     /// Art-only mode - hides tabs and list, shows just album art (session only, not persisted)
     private var isArtOnlyMode: Bool = false {
@@ -864,6 +867,13 @@ class PlexBrowserView: NSView {
         case scanlines = "Scanlines"
         case datamosh = "Datamosh"
         case blocky = "Blocky"
+        static let groups: [(title: String, effects: [VisEffect])] = [
+            ("Rotation & Scaling", [.psychedelic, .kaleidoscope, .vortex, .spin, .fractal, .tunnel]),
+            ("Distortion",         [.melt, .wave, .glitch, .rgbSplit, .twist, .fisheye, .shatter, .stretch]),
+            ("Motion",             [.zoom, .shake, .bounce, .feedback, .strobe, .jitter]),
+            ("Copies & Mirrors",   [.mirror, .tile, .prism, .doubleVision, .flipbook, .mosaic]),
+            ("Pixel Effects",      [.pixelate, .scanlines, .datamosh, .blocky]),
+        ]
     }
     
     /// Visualization mode
@@ -1047,9 +1057,10 @@ class PlexBrowserView: NSView {
         // Art-only mode always starts disabled (don't persist across sessions)
         isArtOnlyMode = false
         
-        // Load saved visualizer preferences
-        if let savedEffect = UserDefaults.standard.string(forKey: "browserVisEffect"),
-           let effect = VisEffect(rawValue: savedEffect) {
+        // Load saved visualizer preferences — default effect takes priority over last-used
+        let defaultEffectKey = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        let lastUsedKey = UserDefaults.standard.string(forKey: "browserVisEffect")
+        if let raw = defaultEffectKey ?? lastUsedKey, let effect = VisEffect(rawValue: raw) {
             currentVisEffect = effect
         }
         if UserDefaults.standard.object(forKey: "browserVisIntensity") != nil {
@@ -1146,6 +1157,8 @@ class PlexBrowserView: NSView {
                                                name: NSWindow.didChangeOcclusionStateNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(libraryScanProgressChanged),
                                                name: MediaLibrary.scanProgressNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
     }
     
     // MARK: - Accessibility
@@ -1771,8 +1784,13 @@ class PlexBrowserView: NSView {
         }
         
         context.restoreGState()
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
     }
-    
+
     /// Calculate scroll position as 0-1 value
     private func calculateScrollPosition() -> CGFloat {
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
@@ -5017,6 +5035,15 @@ class PlexBrowserView: NSView {
         loadingAnimationFrame = 0
     }
 
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     @objc private func libraryScanProgressChanged() {
         let scanning = MediaLibrary.shared.isScanning
         guard scanning != isLibraryScanning else { return }
@@ -6750,17 +6777,16 @@ class PlexBrowserView: NSView {
         menu.addItem(intervalMenuItem)
         
         menu.addItem(NSMenuItem.separator())
-        
-        // Effects submenu (organized by category)
-        let effectsItem = NSMenuItem(title: "All Effects", action: nil, keyEquivalent: "")
-        let effectsMenu = NSMenu()
-        
-        for effect in VisEffect.allCases {
-            addEffectItem(effect, to: effectsMenu)
-        }
-        
-        effectsItem.submenu = effectsMenu
-        menu.addItem(effectsItem)
+
+        buildVisEffectGroupSubmenus(into: menu)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let defaultItem = NSMenuItem(title: "Set Current as Default",
+                                     action: #selector(menuSetDefaultEffect),
+                                     keyEquivalent: "")
+        defaultItem.target = self
+        menu.addItem(defaultItem)
         
         // Intensity submenu
         let intensityItem = NSMenuItem(title: "Intensity", action: nil, keyEquivalent: "")
@@ -6810,19 +6836,32 @@ class PlexBrowserView: NSView {
     /// Show context menu for art-only mode (when visualization is off)
     private func showArtContextMenu(at event: NSEvent) {
         let menu = NSMenu(title: "Art")
-        
+
         // Enable visualization
         let visItem = NSMenuItem(title: "Enable Visualization", action: #selector(enableArtVisualization), keyEquivalent: "")
         visItem.target = self
         menu.addItem(visItem)
-        
+
+        // Visualization submenu — effect picker + set default
+        let visMenuContainer = NSMenuItem(title: "Visualization", action: nil, keyEquivalent: "")
+        let visSub = NSMenu(title: "Visualization")
+        buildVisEffectGroupSubmenus(into: visSub)
+        visSub.addItem(NSMenuItem.separator())
+        let defaultItem = NSMenuItem(title: "Set Current as Default",
+                                     action: #selector(menuSetDefaultEffect),
+                                     keyEquivalent: "")
+        defaultItem.target = self
+        visSub.addItem(defaultItem)
+        visMenuContainer.submenu = visSub
+        menu.addItem(visMenuContainer)
+
         menu.addItem(NSMenuItem.separator())
-        
+
         // Exit art view
         let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
         exitItem.target = self
         menu.addItem(exitItem)
-        
+
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
@@ -6834,6 +6873,10 @@ class PlexBrowserView: NSView {
         isArtOnlyMode = false
     }
     
+    @objc private func menuSetDefaultEffect() {
+        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: "browserVisDefaultEffect")
+    }
+
     @objc private func menuNextEffect() {
         nextVisEffect()
     }
@@ -6860,6 +6903,31 @@ class PlexBrowserView: NSView {
         window?.toggleFullScreen(nil)
     }
     
+    /// Appends grouped effect submenus to `menu`. Each item is checked when it
+    /// matches `currentVisEffect`; bullet-marked when it matches the saved default.
+    private func buildVisEffectGroupSubmenus(into menu: NSMenu) {
+        let savedDefault = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        for group in VisEffect.groups {
+            let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
+            let sub = NSMenu(title: group.title)
+            for effect in group.effects {
+                let item = NSMenuItem(title: effect.rawValue,
+                                      action: #selector(selectVisEffect(_:)),
+                                      keyEquivalent: "")
+                item.target = self
+                item.representedObject = effect
+                if effect == currentVisEffect {
+                    item.state = .on
+                } else if effect.rawValue == savedDefault {
+                    item.state = .mixed
+                }
+                sub.addItem(item)
+            }
+            groupItem.submenu = sub
+            menu.addItem(groupItem)
+        }
+    }
+
     private func addEffectItem(_ effect: VisEffect, to menu: NSMenu) {
         let item = NSMenuItem(title: effect.rawValue, action: #selector(selectVisEffect(_:)), keyEquivalent: "")
         item.target = self
@@ -16201,7 +16269,7 @@ class RatingOverlayView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let clickedStar = starAtPoint(point)
-        
+
         if clickedStar > 0 {
             selectedRating = clickedStar
             needsDisplay = true
@@ -16212,7 +16280,12 @@ class RatingOverlayView: NSView {
             onDismiss?()
         }
     }
-    
+
+    override func mouseDragged(with event: NSEvent) {
+        // Consume drag events to prevent them from propagating to the parent view,
+        // which would otherwise interpret the drag as a window move (when Hide Title Bars is on).
+    }
+
     private func starAtPoint(_ point: NSPoint) -> Int {
         let totalWidth = CGFloat(starCount) * starSize + CGFloat(starCount - 1) * starSpacing
         let containerWidth = totalWidth + 40

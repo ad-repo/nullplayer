@@ -79,7 +79,8 @@ class NowPlayingManager {
         var nowPlayingInfo: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPNowPlayingInfoPropertyPlaybackRate: NSNumber(value: 1.0),
-            MPNowPlayingInfoPropertyDefaultPlaybackRate: NSNumber(value: 1.0)
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: NSNumber(value: 1.0),
+            MPNowPlayingInfoPropertyMediaType: NSNumber(value: MPNowPlayingInfoMediaType.audio.rawValue)
         ]
         
         // Artist (optional)

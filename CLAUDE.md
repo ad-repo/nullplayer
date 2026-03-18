@@ -26,6 +26,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **testing**: UI testing workflows
 - **non-retina-fixes**: Display artifact fixes
 - **local-library**: SQLite schema, scan pipeline, NAS responsiveness, display-layer query patterns
+- **cli**: Headless CLI mode — flags, keyboard controls, source resolution, LibraryFilter/ConnectionState gotchas
 
 ## Architecture
 

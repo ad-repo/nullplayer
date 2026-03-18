@@ -2849,6 +2849,13 @@ class WindowManager {
         return touchingHorizontally || touchingVertically
     }
     
+    /// Public entry point for window controllers to post a layout change notification.
+    /// Always clears per-cycle caches first so all observers receive fresh occlusion data.
+    /// Use this instead of posting windowLayoutDidChange directly.
+    func postWindowLayoutDidChange() {
+        postLayoutChangeNotification()
+    }
+
     /// Post a windowLayoutDidChange notification, clearing per-cycle caches first.
     private func postLayoutChangeNotification() {
         adjacencyCache.removeAll(keepingCapacity: true)

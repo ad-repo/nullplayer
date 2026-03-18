@@ -375,6 +375,9 @@ class ModernLibraryBrowserView: NSView {
     
     // Shade mode
     private(set) var isShadeMode = false
+
+    /// Highlight state for drag-mode visual feedback
+    private var isHighlighted = false
     
     // Art-only mode
     private var isArtOnlyMode: Bool = false {
@@ -421,6 +424,13 @@ class ModernLibraryBrowserView: NSView {
         case mirror = "Infinite Mirror", tile = "Tile Grid", prism = "Prism Split", doubleVision = "Double Vision"
         case flipbook = "Flipbook", mosaic = "Mosaic", pixelate = "Pixelate", scanlines = "Scanlines"
         case datamosh = "Datamosh", blocky = "Blocky"
+        static let groups: [(title: String, effects: [VisEffect])] = [
+            ("Rotation & Scaling", [.psychedelic, .kaleidoscope, .vortex, .spin, .fractal, .tunnel]),
+            ("Distortion",         [.melt, .wave, .glitch, .rgbSplit, .twist, .fisheye, .shatter, .stretch]),
+            ("Motion",             [.zoom, .shake, .bounce, .feedback, .strobe, .jitter]),
+            ("Copies & Mirrors",   [.mirror, .tile, .prism, .doubleVision, .flipbook, .mosaic]),
+            ("Pixel Effects",      [.pixelate, .scanlines, .datamosh, .blocky]),
+        ]
     }
     enum VisMode { case single, random, cycle }
     private var currentVisEffect: VisEffect = .psychedelic
@@ -587,9 +597,10 @@ class ModernLibraryBrowserView: NSView {
         // Art-only mode always starts disabled
         isArtOnlyMode = false
         
-        // Load saved visualizer preferences
-        if let savedEffect = UserDefaults.standard.string(forKey: "browserVisEffect"),
-           let effect = VisEffect(rawValue: savedEffect) {
+        // Load saved visualizer preferences — default effect takes priority over last-used
+        let defaultEffectKey = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        let lastUsedKey = UserDefaults.standard.string(forKey: "browserVisEffect")
+        if let raw = defaultEffectKey ?? lastUsedKey, let effect = VisEffect(rawValue: raw) {
             currentVisEffect = effect
         }
         if UserDefaults.standard.object(forKey: "browserVisIntensity") != nil {
@@ -648,6 +659,8 @@ class ModernLibraryBrowserView: NSView {
                                                name: NSWindow.didChangeOcclusionStateNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(libraryScanProgressChanged),
                                                name: MediaLibrary.scanProgressNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
+                                               name: .connectedWindowHighlightDidChange, object: nil)
 
         // Register for drag and drop
         registerForDraggedTypes([.fileURL])
@@ -751,6 +764,10 @@ class ModernLibraryBrowserView: NSView {
             renderer.drawWindowControlButton("library_btn_close", state: closeState, in: closeBtnRect, context: context)
             renderer.drawWindowControlButton("library_btn_shade", state: shadeState, in: shadeBtnRect, context: context)
             context.restoreGState()
+            if isHighlighted {
+                NSColor.white.withAlphaComponent(0.15).setFill()
+                bounds.fill()
+            }
             return
         }
 
@@ -848,8 +865,13 @@ class ModernLibraryBrowserView: NSView {
         // Status bar text
         drawStatusBarText(in: context, skin: skin)
         context.restoreGState()
+
+        if isHighlighted {
+            NSColor.white.withAlphaComponent(0.15).setFill()
+            bounds.fill()
+        }
     }
-    
+
     // MARK: - Tab Bar Drawing (Modern Boxed Toggle Style)
     
     private func drawTabBar(in context: CGContext, tabBarY: CGFloat, skin: ModernSkin) {
@@ -3894,12 +3916,42 @@ class ModernLibraryBrowserView: NSView {
         return submenu
     }
     
+    /// Appends grouped effect submenus to `menu`. Each item is checked when it
+    /// matches `currentVisEffect`; bullet-marked when it matches the saved default.
+    private func buildVisEffectGroupSubmenus(into menu: NSMenu) {
+        let savedDefault = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        for group in VisEffect.groups {
+            let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
+            let sub = NSMenu(title: group.title)
+            for effect in group.effects {
+                let item = NSMenuItem(title: effect.rawValue,
+                                      action: #selector(menuSelectEffect(_:)),
+                                      keyEquivalent: "")
+                item.target = self
+                item.representedObject = effect.rawValue
+                if effect == currentVisEffect {
+                    item.state = .on
+                } else if effect.rawValue == savedDefault {
+                    item.state = .mixed
+                }
+                sub.addItem(item)
+            }
+            groupItem.submenu = sub
+            menu.addItem(groupItem)
+        }
+    }
+
     private func showVisualizerMenu(at event: NSEvent) {
         let menu = NSMenu(title: "Visualizer")
         let currentItem = NSMenuItem(title: "▶ \(currentVisEffect.rawValue)", action: nil, keyEquivalent: "")
         currentItem.isEnabled = false; menu.addItem(currentItem)
-        let nextItem = NSMenuItem(title: "Next Effect →", action: #selector(menuNextEffect), keyEquivalent: "")
-        nextItem.target = self; menu.addItem(nextItem)
+        menu.addItem(NSMenuItem.separator())
+        buildVisEffectGroupSubmenus(into: menu)
+        menu.addItem(NSMenuItem.separator())
+        let defaultItem = NSMenuItem(title: "Set Current as Default",
+                                     action: #selector(menuSetDefaultEffect),
+                                     keyEquivalent: "")
+        defaultItem.target = self; menu.addItem(defaultItem)
         menu.addItem(NSMenuItem.separator())
         let offItem = NSMenuItem(title: "Turn Off", action: #selector(turnOffVisualization), keyEquivalent: "")
         offItem.target = self; menu.addItem(offItem)
@@ -3910,7 +3962,19 @@ class ModernLibraryBrowserView: NSView {
         let menu = NSMenu(title: "Art")
         let visItem = NSMenuItem(title: "Enable Visualization", action: #selector(enableArtVisualization), keyEquivalent: "")
         visItem.target = self; menu.addItem(visItem)
-        
+
+        // Visualization submenu — effect picker + set default
+        let visMenuContainer = NSMenuItem(title: "Visualization", action: nil, keyEquivalent: "")
+        let visSub = NSMenu(title: "Visualization")
+        buildVisEffectGroupSubmenus(into: visSub)
+        visSub.addItem(NSMenuItem.separator())
+        let defaultItem = NSMenuItem(title: "Set Current as Default",
+                                     action: #selector(menuSetDefaultEffect),
+                                     keyEquivalent: "")
+        defaultItem.target = self; visSub.addItem(defaultItem)
+        visMenuContainer.submenu = visSub
+        menu.addItem(visMenuContainer)
+
         // Rate submenu (when a rateable track is playing)
         if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
            currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
@@ -3920,7 +3984,7 @@ class ModernLibraryBrowserView: NSView {
             rateItem.submenu = rateMenu
             menu.addItem(rateItem)
         }
-        
+
         menu.addItem(NSMenuItem.separator())
         let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
         exitItem.target = self; menu.addItem(exitItem)
@@ -4591,6 +4655,18 @@ class ModernLibraryBrowserView: NSView {
         if alert.runModal() == .alertFirstButtonReturn { RadioManager.shared.resetToDefaults(); if case .radio = currentSource { reloadInternetRadioForCurrentMode() } }
     }
     @objc private func menuNextEffect() { nextVisEffect() }
+
+    @objc private func menuSelectEffect(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let effect = VisEffect(rawValue: raw) else { return }
+        visMode = .single
+        currentVisEffect = effect
+        UserDefaults.standard.set(effect.rawValue, forKey: "browserVisEffect")
+    }
+
+    @objc private func menuSetDefaultEffect() {
+        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: "browserVisDefaultEffect")
+    }
     @objc private func enableArtVisualization() { isVisualizingArt = true }
     @objc private func exitArtView() { isArtOnlyMode = false }
     @objc private func turnOffVisualization() { isVisualizingArt = false }
@@ -5911,8 +5987,17 @@ class ModernLibraryBrowserView: NSView {
         }
     }
 
+    @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
+        let highlighted = notification.userInfo?["highlightedWindows"] as? Set<NSWindow> ?? []
+        let newValue = highlighted.contains { $0 === window }
+        if isHighlighted != newValue {
+            isHighlighted = newValue
+            needsDisplay = true
+        }
+    }
+
     func skinDidChange() { modernSkinDidChange() }
-    
+
     func setShadeMode(_ enabled: Bool) { isShadeMode = enabled; needsDisplay = true }
     
     private func toggleShadeMode() { isShadeMode.toggle(); controller?.setShadeMode(isShadeMode) }

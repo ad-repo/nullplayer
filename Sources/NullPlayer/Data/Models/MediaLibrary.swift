@@ -24,7 +24,17 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
     var lastPlayed: Date?
     var playCount: Int
     var rating: Int?             // User rating on 0-10 scale (matching Plex), nil if unrated
-    
+
+    /// Transient — populated from `track_artists` table, not persisted via Codable.
+    var artists: [(name: String, role: ArtistRole)] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case id, url, title, artist, album, albumArtist, genre, year
+        case trackNumber, discNumber, duration, bitrate, sampleRate, channels
+        case fileSize, dateAdded, lastPlayed, playCount, rating
+        // `artists` is intentionally omitted — transient, re-populated from track_artists
+    }
+
     init(url: URL) {
         self.id = UUID()
         self.url = url
@@ -112,10 +122,36 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
             genre: genre
         )
     }
-    
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
+
+    // MARK: - Equatable conformance (custom to exclude `artists`)
+
+    static func == (lhs: LibraryTrack, rhs: LibraryTrack) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.url == rhs.url &&
+        lhs.title == rhs.title &&
+        lhs.artist == rhs.artist &&
+        lhs.album == rhs.album &&
+        lhs.albumArtist == rhs.albumArtist &&
+        lhs.genre == rhs.genre &&
+        lhs.year == rhs.year &&
+        lhs.trackNumber == rhs.trackNumber &&
+        lhs.discNumber == rhs.discNumber &&
+        lhs.duration == rhs.duration &&
+        lhs.bitrate == rhs.bitrate &&
+        lhs.sampleRate == rhs.sampleRate &&
+        lhs.channels == rhs.channels &&
+        lhs.fileSize == rhs.fileSize &&
+        lhs.dateAdded == rhs.dateAdded &&
+        lhs.lastPlayed == rhs.lastPlayed &&
+        lhs.playCount == rhs.playCount &&
+        lhs.rating == rhs.rating
+        // `artists` is not compared — it's transient
+    }
+
 }
 
 /// Represents an album in the library
@@ -400,6 +436,14 @@ class MediaLibrary {
 
         store.open()
         loadLibrary()
+
+        // Trigger backfill if v2→v3 migration ran and track_artists are not yet populated
+        if !UserDefaults.standard.bool(forKey: "trackArtistsBackfillComplete") {
+            store.backfillTrackArtistsIfNeeded {
+                self.loadLibrary()
+                NotificationCenter.default.post(name: MediaLibrary.libraryDidChangeNotification, object: nil)
+            }
+        }
     }
 
     // MARK: - Thread-Safe Accessors
@@ -1362,10 +1406,17 @@ class MediaLibrary {
     func allArtists() -> [Artist] {
         var artistDict: [String: [LibraryTrack]] = [:]
         for track in tracksSnapshot {
-            let artistName = track.albumArtist ?? track.artist ?? "Unknown Artist"
-            artistDict[artistName, default: []].append(track)
+            let albumArtistNames = track.artists
+                .filter { $0.role == .albumArtist }
+                .map { $0.name }
+            // Fallback to raw albumArtist/artist if artists not yet populated (e.g. quick-add pass)
+            let effectiveNames = albumArtistNames.isEmpty
+                ? [track.albumArtist ?? track.artist ?? "Unknown Artist"]
+                : albumArtistNames
+            for name in effectiveNames {
+                artistDict[name, default: []].append(track)
+            }
         }
-        
         return artistDict.map { name, tracks in
             let albums = albumsForTracks(tracks)
             return Artist(id: name, name: name, albums: albums)
@@ -1436,9 +1487,13 @@ class MediaLibrary {
         // Apply artist filter
         if !filter.artists.isEmpty {
             result = result.filter { track in
-                let artistName = track.albumArtist ?? track.artist
-                guard let artistName else { return false }
-                return filter.artists.contains(artistName)
+                let albumArtistNames = track.artists.filter { $0.role == .albumArtist }.map { $0.name }
+                if albumArtistNames.isEmpty {
+                    // Fallback for tracks loaded before backfill completes
+                    guard let name = track.albumArtist ?? track.artist else { return false }
+                    return filter.artists.contains(name)
+                }
+                return albumArtistNames.contains { filter.artists.contains($0) }
             }
         }
         
@@ -1706,12 +1761,34 @@ class MediaLibrary {
                 track.bitrate = Int(Double(track.fileSize * 8) / track.duration / 1000)
             }
         }
+
+        // Populate track.artists from the parsed artist and albumArtist fields.
+        // Primary/featured roles from the artist tag:
+        track.artists = ArtistSplitter.split(track.artist ?? "", isAlbumArtist: false)
+
+        // album_artist role rows — mirrors coalesce(albumArtist, artist, 'Unknown Artist') fallback:
+        let albumArtistRows: [(name: String, role: ArtistRole)]
+        if let albumArtist = track.albumArtist, !albumArtist.isEmpty {
+            albumArtistRows = ArtistSplitter.split(albumArtist, isAlbumArtist: true)
+        } else if let artist = track.artist, !artist.isEmpty {
+            albumArtistRows = ArtistSplitter.split(artist, isAlbumArtist: true)
+        } else {
+            albumArtistRows = [(name: "Unknown Artist", role: .albumArtist)]
+        }
+        track.artists.append(contentsOf: albumArtistRows)
     }
     
     // MARK: - Persistence (SQLite-backed — individual mutations are persisted immediately via store)
 
     private func loadLibrary() {
-        let loadedTracks = store.allTracks()
+        let rawTracks = store.allTracks()
+        let trackURLStrings = rawTracks.map { $0.url.absoluteString }
+        let artistsByURL = store.artistsForURLs(trackURLStrings)
+        let loadedTracks = rawTracks.map { track -> LibraryTrack in
+            var t = track
+            t.artists = artistsByURL[t.url.absoluteString] ?? []
+            return t
+        }
         let loadedMovies = store.allMovies()
         let loadedEpisodes = store.allEpisodes()
         let loadedWatchFolders = store.allWatchFolders()
@@ -1978,7 +2055,14 @@ class MediaLibrary {
 
     func createLocalArtistRadio(artist: String, limit: Int = 100) -> [Track] {
         let pool = tracksSnapshot
-            .filter { ($0.albumArtist ?? $0.artist ?? "").localizedCaseInsensitiveCompare(artist) == .orderedSame }
+            .filter { track in
+                // Match via track.artists (populated) or fall back to raw field for pre-backfill tracks
+                let albumArtistNames = track.artists.filter { $0.role == .albumArtist }.map { $0.name }
+                if albumArtistNames.isEmpty {
+                    return (track.albumArtist ?? track.artist ?? "").localizedCaseInsensitiveCompare(artist) == .orderedSame
+                }
+                return albumArtistNames.contains { $0.localizedCaseInsensitiveCompare(artist) == .orderedSame }
+            }
             .shuffled()
         let tracks = pool.map { $0.toTrack() }
         let filtered = LocalRadioHistory.shared.filterOutHistoryTracks(tracks)

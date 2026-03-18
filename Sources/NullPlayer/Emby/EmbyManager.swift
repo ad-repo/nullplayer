@@ -93,6 +93,9 @@ class EmbyManager {
         }
     }
 
+    /// Task for the initial background server connect — awaitable by CLI mode
+    private(set) var serverConnectTask: Task<Void, Never>?
+
     // MARK: - Cached Library Content
 
     /// Cached artists
@@ -141,7 +144,7 @@ class EmbyManager {
         // Restore previous server selection
         if let savedServerID = UserDefaults.standard.string(forKey: "EmbyCurrentServerID"),
            let savedServer = servers.first(where: { $0.id == savedServerID }) {
-            Task {
+            serverConnectTask = Task {
                 await connectInBackground(to: savedServer)
             }
         }
@@ -528,6 +531,12 @@ class EmbyManager {
 
         guard let client = serverClient else { return [] }
         return try await client.fetchPlaylists()
+    }
+
+    func fetchPlaylistSongs(id: String) async throws -> [EmbySong] {
+        guard let client = serverClient else { throw EmbyClientError.unauthorized }
+        let result = try await client.fetchPlaylist(id: id)
+        return result.songs
     }
 
     /// Fetch albums for an artist

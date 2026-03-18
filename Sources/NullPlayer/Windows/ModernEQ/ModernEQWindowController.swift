@@ -137,7 +137,7 @@ extension ModernEQWindowController: NSWindowDelegate {
 
     func windowDidResize(_ notification: Notification) {
         eqView.needsDisplay = true
-        NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        WindowManager.shared.postWindowLayoutDidChange()
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

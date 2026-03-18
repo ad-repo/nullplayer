@@ -70,7 +70,10 @@ class SubsonicManager {
             NotificationCenter.default.post(name: Self.connectionStateDidChangeNotification, object: self)
         }
     }
-    
+
+    /// Task for the initial background server connect — awaitable by CLI mode
+    private(set) var serverConnectTask: Task<Void, Never>?
+
     // MARK: - Cached Library Content
     
     /// Cached artists
@@ -112,7 +115,7 @@ class SubsonicManager {
         // Restore previous server selection
         if let savedServerID = UserDefaults.standard.string(forKey: "SubsonicCurrentServerID"),
            let savedServer = servers.first(where: { $0.id == savedServerID }) {
-            Task {
+            serverConnectTask = Task {
                 await connectInBackground(to: savedServer)
             }
         }
@@ -427,11 +430,17 @@ class SubsonicManager {
         if isContentPreloaded && !cachedPlaylists.isEmpty {
             return cachedPlaylists
         }
-        
+
         guard let client = serverClient else { return [] }
         return try await client.fetchPlaylists()
     }
-    
+
+    func fetchPlaylistSongs(id: String) async throws -> [SubsonicSong] {
+        guard let client = serverClient else { throw SubsonicClientError.unauthorized }
+        let result = try await client.fetchPlaylist(id: id)
+        return result.songs
+    }
+
     /// Fetch albums for an artist
     func fetchAlbums(forArtist artist: SubsonicArtist) async throws -> [SubsonicAlbum] {
         guard let client = serverClient else { return [] }

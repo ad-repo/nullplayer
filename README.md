@@ -40,6 +40,7 @@
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
 - macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
 - [Discord Music Presence](https://github.com/ungive/discord-music-presence) support
+- Headless CLI mode for terminal-based browsing and playback (no GUI, no Dock icon)
 
 ## Installation
 
@@ -106,18 +107,69 @@ open Package.swift
 
 ## Media Library
 
-Library data is stored as JSON at `~/Library/Application Support/NullPlayer/library.json`.
+Library data is stored as a SQLite database at `~/Library/Application Support/NullPlayer/library.db`.
 
 **Backup & Restore API** (`MediaLibrary.swift`):
 
 | Function | Description |
 |----------|-------------|
-| `backupLibrary(customName:)` | Creates timestamped JSON backup, returns URL |
+| `backupLibrary(customName:)` | Creates timestamped `.db` backup, returns URL |
 | `restoreLibrary(from:)` | Restores from backup (auto-backs up current first) |
 | `listBackups()` | Returns backup URLs sorted newest first |
 | `deleteBackup(at:)` | Deletes a backup file |
 
 Backups are stored in `~/Library/Application Support/NullPlayer/Backups/`.
+
+## CLI Mode
+
+NullPlayer includes a headless CLI mode for browsing and playing music entirely from the terminal — no GUI, no Dock icon.
+
+```bash
+NullPlayer --cli [OPTIONS]
+```
+
+### Query commands (print results and exit)
+
+```bash
+NullPlayer --cli --list-sources                          # show configured sources
+NullPlayer --cli --list-artists --source plex            # list artists
+NullPlayer --cli --list-albums  --source local           # list albums
+NullPlayer --cli --list-tracks  --source subsonic        # list tracks
+NullPlayer --cli --list-genres  --source local           # list genres
+NullPlayer --cli --list-playlists --source jellyfin      # list playlists
+NullPlayer --cli --list-stations                         # list internet radio stations
+NullPlayer --cli --list-eq                               # list EQ presets
+NullPlayer --cli --list-outputs                          # list audio output devices
+NullPlayer --cli --search "radiohead" --source local     # search library
+NullPlayer --cli --list-artists --source plex --json     # JSON output
+```
+
+### Playback
+
+```bash
+NullPlayer --cli --source local --artist "Pink Floyd"
+NullPlayer --cli --source plex --album "OK Computer" --shuffle
+NullPlayer --cli --source local --genre "Jazz" --repeat-all
+NullPlayer --cli --station "KEXP" --source radio
+NullPlayer --cli --source local --radio artist --artist "Björk"
+NullPlayer --cli --source local --volume 80 --eq "Rock"
+```
+
+### Keyboard controls (during playback)
+
+| Key | Action |
+|-----|--------|
+| `Space` | Pause/Resume |
+| `q` | Quit |
+| `>` / `<` | Next / Previous track |
+| `→` / `←` | Seek forward / backward 10s |
+| `↑` / `↓` | Volume up / down |
+| `s` | Toggle shuffle |
+| `r` | Cycle repeat (off → all → one) |
+| `m` | Toggle mute |
+| `i` | Show track info |
+
+See `--help` for the full flag reference.
 
 ## Development
 

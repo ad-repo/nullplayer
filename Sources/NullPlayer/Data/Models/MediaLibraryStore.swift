@@ -61,6 +61,11 @@ final class MediaLibraryStore {
 
     private init() {}
 
+    #if DEBUG
+    static func makeForTesting() -> MediaLibraryStore { MediaLibraryStore() }
+    var testDB: Connection? { db }
+    #endif
+
     // MARK: - Lifecycle
 
     func open() {
@@ -84,6 +89,17 @@ final class MediaLibraryStore {
             migrateFromJSONIfNeeded(jsonURL: jsonURL)
         } catch {
             NSLog("MediaLibraryStore: Failed to open database: %@", error.localizedDescription)
+        }
+    }
+
+    /// Opens the database at a custom path (for testing). Skips JSON migration.
+    func open(at url: URL) {
+        do {
+            let connection = try Connection(url.path)
+            try setupSchema(connection)
+            db = connection
+        } catch {
+            NSLog("MediaLibraryStore: Failed to open at %@: %@", url.path, error.localizedDescription)
         }
     }
 
@@ -112,11 +128,14 @@ final class MediaLibraryStore {
         try connection.run("PRAGMA synchronous=NORMAL")
         // 5-second busy timeout so background/main thread contention doesn't hard-fail.
         connection.busyTimeout = 5
+        // Enable FK enforcement so ON DELETE CASCADE fires on track_artists.
+        // Must be set on every connection open — SQLite resets it per connection.
+        try connection.run("PRAGMA foreign_keys = ON")
 
         let currentVersion = try connection.scalar("PRAGMA user_version") as? Int64 ?? 0
         if currentVersion == 0 {
             try createTablesIfNeeded(connection)
-            try connection.run("PRAGMA user_version = 2")
+            try connection.run("PRAGMA user_version = 3")
         }
         if currentVersion == 1 {
             // Add expression index so artistNames GROUP BY and albumsForArtist WHERE queries
@@ -125,6 +144,20 @@ final class MediaLibraryStore {
             // UI freezes on large libraries (60k+ tracks).
             try connection.run("CREATE INDEX IF NOT EXISTS idx_tracks_artist_expr ON library_tracks (coalesce(album_artist, artist, 'Unknown Artist'))")
             try connection.run("PRAGMA user_version = 2")
+        }
+        if currentVersion == 2 {
+            try connection.run("""
+                CREATE TABLE IF NOT EXISTS track_artists (
+                    track_url   TEXT NOT NULL REFERENCES library_tracks(url) ON DELETE CASCADE,
+                    artist_name TEXT NOT NULL,
+                    role        TEXT NOT NULL CHECK(role IN ('primary', 'featured', 'album_artist')),
+                    PRIMARY KEY (track_url, artist_name, role)
+                )
+                """)
+            try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_name ON track_artists(artist_name)")
+            try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_url ON track_artists(track_url)")
+            try connection.run("PRAGMA user_version = 3")
+            UserDefaults.standard.set(false, forKey: "trackArtistsBackfillComplete")
         }
     }
 
@@ -207,6 +240,19 @@ final class MediaLibraryStore {
             t.column(colArtistID, primaryKey: true)
             t.column(colRatingVal)
         })
+
+        // track_artists: join table linking tracks to individual artist names.
+        // FK references url (UNIQUE) not id (PK) — url is the natural key in all queries.
+        try connection.run("""
+            CREATE TABLE IF NOT EXISTS track_artists (
+                track_url   TEXT NOT NULL REFERENCES library_tracks(url) ON DELETE CASCADE,
+                artist_name TEXT NOT NULL,
+                role        TEXT NOT NULL CHECK(role IN ('primary', 'featured', 'album_artist')),
+                PRIMARY KEY (track_url, artist_name, role)
+            )
+            """)
+        try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_name ON track_artists(artist_name)")
+        try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_url ON track_artists(track_url)")
     }
 
     // MARK: - JSON Migration
@@ -431,27 +477,61 @@ final class MediaLibraryStore {
     /// Returns a map of sort-letter → first DB offset for that letter, across all artists.
     func artistLetterOffsets(sort: ModernBrowserSortOption) -> [String: Int] {
         guard let db = db else { return [:] }
-        let orderClause: String
+        // IMPORTANT: query structure must be identical to artistNames (without LIMIT/OFFSET)
+        // so offsets align exactly with artistNames page row positions.
+        let sql: String
         switch sort {
         case .nameAsc:
-            orderClause = "ORDER BY coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT DISTINCT ta.artist_name
+                FROM track_artists ta
+                WHERE ta.role = 'album_artist'
+                ORDER BY ta.artist_name ASC
+                """
         case .nameDesc:
-            orderClause = "ORDER BY coalesce(album_artist, artist, 'Unknown Artist') DESC"
+            sql = """
+                SELECT DISTINCT ta.artist_name
+                FROM track_artists ta
+                WHERE ta.role = 'album_artist'
+                ORDER BY ta.artist_name DESC
+                """
         case .dateAddedDesc:
-            orderClause = "ORDER BY max(date_added) DESC, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY max(t.date_added) DESC, ta.artist_name ASC
+                """
         case .dateAddedAsc:
-            orderClause = "ORDER BY min(date_added) ASC, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY min(t.date_added) ASC, ta.artist_name ASC
+                """
         case .yearDesc:
-            orderClause = "ORDER BY max(year) DESC NULLS LAST, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY max(t.year) DESC NULLS LAST, ta.artist_name ASC
+                """
         case .yearAsc:
-            orderClause = "ORDER BY min(year) ASC NULLS LAST, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY min(t.year) ASC NULLS LAST, ta.artist_name ASC
+                """
         }
-        let sql = """
-            SELECT coalesce(album_artist, artist, 'Unknown Artist') as artist_name
-            FROM library_tracks
-            GROUP BY artist_name
-            \(orderClause)
-            """
         do {
             var result: [String: Int] = [:]
             var offset = 0
@@ -490,9 +570,9 @@ final class MediaLibraryStore {
         let sql = """
             SELECT
                 coalesce(album, 'Unknown Album') as album_name,
-                coalesce(album_artist, artist) as artist_name
+                album_artist
             FROM library_tracks
-            GROUP BY coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album')
+            GROUP BY coalesce(album_artist, '') || '|' || coalesce(album, 'Unknown Album')
             \(orderClause)
             """
         do {
@@ -531,7 +611,7 @@ final class MediaLibraryStore {
         guard let db = db else { return 0 }
         do {
             let count = try db.scalar(
-                "SELECT COUNT(DISTINCT coalesce(album_artist, artist, 'Unknown Artist')) FROM library_tracks"
+                "SELECT COUNT(DISTINCT artist_name) FROM track_artists WHERE role = 'album_artist'"
             ) as? Int64 ?? 0
             return Int(count)
         } catch {
@@ -542,35 +622,69 @@ final class MediaLibraryStore {
 
     func artistNames(limit: Int, offset: Int, sort: ModernBrowserSortOption) -> [String] {
         guard let db = db else { return [] }
-        let orderClause: String
+        let sql: String
         switch sort {
         case .nameAsc:
-            orderClause = "ORDER BY coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT DISTINCT ta.artist_name
+                FROM track_artists ta
+                WHERE ta.role = 'album_artist'
+                ORDER BY ta.artist_name ASC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         case .nameDesc:
-            orderClause = "ORDER BY coalesce(album_artist, artist, 'Unknown Artist') DESC"
+            sql = """
+                SELECT DISTINCT ta.artist_name
+                FROM track_artists ta
+                WHERE ta.role = 'album_artist'
+                ORDER BY ta.artist_name DESC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         case .dateAddedDesc:
-            orderClause = "ORDER BY max(date_added) DESC, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY max(t.date_added) DESC, ta.artist_name ASC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         case .dateAddedAsc:
-            orderClause = "ORDER BY min(date_added) ASC, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY min(t.date_added) ASC, ta.artist_name ASC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         case .yearDesc:
-            orderClause = "ORDER BY max(year) DESC NULLS LAST, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY max(t.year) DESC NULLS LAST, ta.artist_name ASC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         case .yearAsc:
-            orderClause = "ORDER BY min(year) ASC NULLS LAST, coalesce(album_artist, artist, 'Unknown Artist') ASC"
+            sql = """
+                SELECT ta.artist_name
+                FROM track_artists ta
+                JOIN library_tracks t ON t.url = ta.track_url
+                WHERE ta.role = 'album_artist'
+                GROUP BY ta.artist_name
+                ORDER BY min(t.year) ASC NULLS LAST, ta.artist_name ASC
+                LIMIT \(limit) OFFSET \(offset)
+                """
         }
-
-        let sql = """
-            SELECT coalesce(album_artist, artist, 'Unknown Artist') as artist_name
-            FROM library_tracks
-            GROUP BY artist_name
-            \(orderClause)
-            LIMIT \(limit) OFFSET \(offset)
-            """
         do {
             var result: [String] = []
             for row in try db.prepare(sql) {
-                if let name = row[0] as? String {
-                    result.append(name)
-                }
+                if let name = row[0] as? String { result.append(name) }
             }
             return result
         } catch {
@@ -583,7 +697,7 @@ final class MediaLibraryStore {
         guard let db = db else { return 0 }
         do {
             let count = try db.scalar(
-                "SELECT COUNT(DISTINCT coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album')) FROM library_tracks"
+                "SELECT COUNT(DISTINCT coalesce(album_artist, '') || '|' || coalesce(album, 'Unknown Album')) FROM library_tracks"
             ) as? Int64 ?? 0
             return Int(count)
         } catch {
@@ -612,9 +726,9 @@ final class MediaLibraryStore {
 
         let sql = """
             SELECT
-                coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album') as album_id,
+                coalesce(album_artist, '') || '|' || coalesce(album, 'Unknown Album') as album_id,
                 coalesce(album, 'Unknown Album') as album_name,
-                coalesce(album_artist, artist) as artist_name,
+                album_artist,
                 min(year) as yr,
                 count(*) as cnt
             FROM library_tracks
@@ -643,15 +757,16 @@ final class MediaLibraryStore {
         guard let db = db else { return [] }
         let sql = """
             SELECT
-                coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album') as album_id,
-                coalesce(album, 'Unknown Album') as album_name,
-                coalesce(album_artist, artist) as artist_name,
-                min(year) as yr,
+                coalesce(t.album_artist, '') || '|' || coalesce(t.album, 'Unknown Album') as album_id,
+                coalesce(t.album, 'Unknown Album') as album_name,
+                t.album_artist,
+                min(t.year) as yr,
                 count(*) as cnt
-            FROM library_tracks
-            WHERE coalesce(album_artist, artist, 'Unknown Artist') = ?
+            FROM library_tracks t
+            JOIN track_artists ta ON ta.track_url = t.url
+            WHERE ta.artist_name = ? AND ta.role = 'album_artist'
             GROUP BY album_id
-            ORDER BY min(year) ASC, coalesce(album, 'Unknown Album') ASC
+            ORDER BY min(t.year) ASC NULLS LAST, coalesce(t.album, 'Unknown Album') ASC
             """
         do {
             var result: [AlbumSummary] = []
@@ -670,23 +785,24 @@ final class MediaLibraryStore {
         }
     }
 
-    /// Fetch album summaries for a page of artists in a single query instead of one per artist.
-    /// Returns a dict keyed by artist name (same key as artistNames() returns).
+    /// Fetch album summaries for a page of artists in a single query.
+    /// Returns a dict keyed by artist_name (the split name, same as artistNames() returns).
     func albumsForArtistsBatch(_ names: [String]) -> [String: [AlbumSummary]] {
         guard let db = db, !names.isEmpty else { return [:] }
         let placeholders = names.map { _ in "?" }.joined(separator: ", ")
         let sql = """
             SELECT
-                coalesce(album_artist, artist, 'Unknown Artist') as artist_key,
-                coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album') as album_id,
-                coalesce(album, 'Unknown Album') as album_name,
-                coalesce(album_artist, artist) as artist_name_val,
-                min(year) as yr,
+                ta.artist_name as artist_key,
+                coalesce(t.album_artist, '') || '|' || coalesce(t.album, 'Unknown Album') as album_id,
+                coalesce(t.album, 'Unknown Album') as album_name,
+                t.album_artist,
+                min(t.year) as yr,
                 count(*) as cnt
-            FROM library_tracks
-            WHERE coalesce(album_artist, artist, 'Unknown Artist') IN (\(placeholders))
-            GROUP BY album_id
-            ORDER BY artist_key, min(year) ASC, coalesce(album, 'Unknown Album') ASC
+            FROM library_tracks t
+            JOIN track_artists ta ON ta.track_url = t.url
+            WHERE ta.artist_name IN (\(placeholders)) AND ta.role = 'album_artist'
+            GROUP BY ta.artist_name, album_id
+            ORDER BY ta.artist_name, min(t.year) ASC NULLS LAST, coalesce(t.album, 'Unknown Album') ASC
             """
         do {
             var result: [String: [AlbumSummary]] = [:]
@@ -709,11 +825,38 @@ final class MediaLibraryStore {
         }
     }
 
+    /// Fetch all track_artists rows for the given track URLs.
+    /// Returns a dict keyed by track URL absolute string.
+    func artistsForURLs(_ urls: [String]) -> [String: [(name: String, role: ArtistRole)]] {
+        guard let db = db, !urls.isEmpty else { return [:] }
+        var result: [String: [(name: String, role: ArtistRole)]] = [:]
+        // Chunk into 500 to avoid SQLite IN clause limits
+        let chunkSize = 500
+        for chunkStart in stride(from: 0, to: urls.count, by: chunkSize) {
+            let chunk = Array(urls[chunkStart..<min(chunkStart + chunkSize, urls.count)])
+            let placeholders = chunk.map { _ in "?" }.joined(separator: ", ")
+            let sql = "SELECT track_url, artist_name, role FROM track_artists WHERE track_url IN (\(placeholders))"
+            let bindings = chunk.map { $0 as Binding? }
+            do {
+                for row in try db.prepare(sql, bindings) {
+                    guard let trackUrl = row[0] as? String,
+                          let artistName = row[1] as? String,
+                          let roleStr = row[2] as? String,
+                          let role = ArtistRole(rawValue: roleStr) else { continue }
+                    result[trackUrl, default: []].append((name: artistName, role: role))
+                }
+            } catch {
+                NSLog("MediaLibraryStore: artistsForURLs failed: %@", error.localizedDescription)
+            }
+        }
+        return result
+    }
+
     func tracksForAlbum(_ albumId: String) -> [LibraryTrack] {
         guard let db = db else { return [] }
-        // albumId = "artistName|albumName" — split on first | only
+        // albumId = "albumArtist|albumName" — split on first | only; albumArtist may be empty
         let pipeIdx = albumId.firstIndex(of: "|") ?? albumId.endIndex
-        let artistName = String(albumId[albumId.startIndex..<pipeIdx])
+        let albumArtist = String(albumId[albumId.startIndex..<pipeIdx])
         let albumName: String
         if pipeIdx < albumId.endIndex {
             albumName = String(albumId[albumId.index(after: pipeIdx)...])
@@ -721,15 +864,28 @@ final class MediaLibraryStore {
             albumName = albumId
         }
 
-        let sql = """
-            SELECT * FROM library_tracks
-            WHERE coalesce(album_artist, artist, 'Unknown Artist') = ?
-            AND coalesce(album, 'Unknown Album') = ?
-            ORDER BY disc_number ASC NULLS LAST, track_number ASC NULLS LAST, title ASC
-            """
+        let sql: String
+        let bindings: [Binding?]
+        if albumArtist.isEmpty {
+            sql = """
+                SELECT * FROM library_tracks
+                WHERE (album_artist IS NULL OR album_artist = '')
+                AND coalesce(album, 'Unknown Album') = ?
+                ORDER BY disc_number ASC NULLS LAST, track_number ASC NULLS LAST, title ASC
+                """
+            bindings = [albumName]
+        } else {
+            sql = """
+                SELECT * FROM library_tracks
+                WHERE album_artist = ?
+                AND coalesce(album, 'Unknown Album') = ?
+                ORDER BY disc_number ASC NULLS LAST, track_number ASC NULLS LAST, title ASC
+                """
+            bindings = [albumArtist, albumName]
+        }
         do {
             var result: [LibraryTrack] = []
-            for row in try db.prepare(sql, artistName, albumName) {
+            for row in try db.prepare(sql, bindings) {
                 if let track = trackFromStatement(row) {
                     result.append(track)
                 }
@@ -800,19 +956,18 @@ final class MediaLibraryStore {
     func searchArtistNames(query: String) -> [String] {
         guard let db = db else { return [] }
         let sql = """
-            SELECT DISTINCT coalesce(album_artist, artist, 'Unknown Artist') as artist_name
-            FROM library_tracks
-            WHERE artist_name LIKE ?
-            ORDER BY artist_name ASC
+            SELECT DISTINCT ta.artist_name
+            FROM track_artists ta
+            WHERE ta.role = 'album_artist'
+            AND ta.artist_name LIKE ?
+            ORDER BY ta.artist_name ASC
             LIMIT 100
             """
         let pattern = "%\(query)%"
         do {
             var result: [String] = []
             for row in try db.prepare(sql, pattern) {
-                if let name = row[0] as? String {
-                    result.append(name)
-                }
+                if let name = row[0] as? String { result.append(name) }
             }
             return result
         } catch {
@@ -825,13 +980,13 @@ final class MediaLibraryStore {
         guard let db = db else { return [] }
         let sql = """
             SELECT
-                coalesce(album_artist, artist, 'Unknown Artist') || '|' || coalesce(album, 'Unknown Album') as album_id,
+                coalesce(album_artist, '') || '|' || coalesce(album, 'Unknown Album') as album_id,
                 coalesce(album, 'Unknown Album') as album_name,
-                coalesce(album_artist, artist) as artist_name,
+                album_artist,
                 min(year) as yr,
                 count(*) as cnt
             FROM library_tracks
-            WHERE album_name LIKE ? OR artist_name LIKE ?
+            WHERE album_name LIKE ? OR album_artist LIKE ?
             GROUP BY album_id
             ORDER BY album_name ASC
             LIMIT 100
@@ -859,7 +1014,9 @@ final class MediaLibraryStore {
     func upsertTrack(_ track: LibraryTrack, sig: FileScanSignature?) {
         guard let db = db else { return }
         do {
-            try upsertTrackInternal(track, sig: sig, connection: db)
+            try db.transaction {
+                try self.upsertTrackInternal(track, sig: sig, connection: db)
+            }
         } catch {
             NSLog("MediaLibraryStore: upsertTrack failed: %@", error.localizedDescription)
         }
@@ -1087,11 +1244,86 @@ final class MediaLibraryStore {
         }
     }
 
+    // MARK: - Track Artists Backfill (v2 → v3 migration)
+
+    /// Backfills `track_artists` from existing `artist`/`albumArtist` columns.
+    /// Safe to call multiple times — uses INSERT OR IGNORE.
+    /// Calls `completion` on the main thread when done.
+    func backfillTrackArtistsIfNeeded(completion: @escaping () -> Void = {}) {
+        guard let db = db else { completion(); return }
+        // Use DispatchQueue (not Task.detached) — SQLite.Connection is not Sendable.
+        // This matches how other background DB work is done in MediaLibraryStore.
+        DispatchQueue.global(qos: .utility).async {
+            // Crash-recovery: delete any partial rows from a previously interrupted backfill.
+            // Safe to delete all track_artists here because the batch loop re-inserts for every
+            // library_tracks row (including tracks upserted after migration).
+            do {
+                try db.run("DELETE FROM track_artists")
+            } catch {
+                NSLog("MediaLibraryStore: backfill pre-clear failed: %@", error.localizedDescription)
+            }
+            let batchSize = 500
+            var offset = 0
+            while true {
+                var rows: [(url: String, artist: String?, albumArtist: String?)] = []
+                do {
+                    for row in try db.prepare(
+                        "SELECT url, artist, album_artist FROM library_tracks LIMIT \(batchSize) OFFSET \(offset)"
+                    ) {
+                        let url = row[0] as? String ?? ""
+                        let artist = row[1] as? String
+                        let albumArtist = row[2] as? String
+                        rows.append((url, artist, albumArtist))
+                    }
+                } catch {
+                    NSLog("MediaLibraryStore: backfill read failed: %@", error.localizedDescription)
+                    break
+                }
+                if rows.isEmpty { break }
+
+                do {
+                    try db.transaction {
+                        for (url, artist, albumArtist) in rows {
+                            // primary/featured from artist tag
+                            let primaryEntries = ArtistSplitter.split(artist ?? "", isAlbumArtist: false)
+                            for entry in primaryEntries {
+                                try db.run(
+                                    "INSERT OR IGNORE INTO track_artists (track_url, artist_name, role) VALUES (?, ?, ?)",
+                                    url, entry.name, entry.role.rawValue
+                                )
+                            }
+                            // album_artist rows — mirrors coalesce(albumArtist, artist, 'Unknown Artist')
+                            let albumArtistEntries: [(name: String, role: ArtistRole)]
+                            if let aa = albumArtist, !aa.isEmpty {
+                                albumArtistEntries = ArtistSplitter.split(aa, isAlbumArtist: true)
+                            } else if let a = artist, !a.isEmpty {
+                                albumArtistEntries = ArtistSplitter.split(a, isAlbumArtist: true)
+                            } else {
+                                albumArtistEntries = [(name: "Unknown Artist", role: .albumArtist)]
+                            }
+                            for entry in albumArtistEntries {
+                                try db.run(
+                                    "INSERT OR IGNORE INTO track_artists (track_url, artist_name, role) VALUES (?, ?, ?)",
+                                    url, entry.name, entry.role.rawValue
+                                )
+                            }
+                        }
+                    }
+                } catch {
+                    NSLog("MediaLibraryStore: backfill write batch failed: %@", error.localizedDescription)
+                }
+                offset += batchSize
+            }
+            UserDefaults.standard.set(true, forKey: "trackArtistsBackfillComplete")
+            DispatchQueue.main.async { completion() }
+        }
+    }
+
     // MARK: - Internal helpers
 
     @discardableResult
     private func upsertTrackInternal(_ track: LibraryTrack, sig: FileScanSignature?, connection: Connection) throws -> Int64 {
-        try connection.run(tracksTable.insert(
+        let rowid = try connection.run(tracksTable.insert(
             or: .replace,
             colID <- track.id.uuidString,
             colURL <- track.url.absoluteString,
@@ -1115,6 +1347,16 @@ final class MediaLibraryStore {
             colScanFileSize <- sig?.fileSize,
             colScanModDate <- sig?.contentModificationDate.map { $0.timeIntervalSince1970 }
         ))
+        // INSERT OR REPLACE on library_tracks cascades DELETE on track_artists (FK + PRAGMA foreign_keys = ON),
+        // so old rows are already gone. Use INSERT OR IGNORE to avoid duplicate-key errors on edge cases.
+        let urlStr = track.url.absoluteString
+        for entry in track.artists {
+            try connection.run("""
+                INSERT OR IGNORE INTO track_artists (track_url, artist_name, role)
+                VALUES (?, ?, ?)
+                """, urlStr, entry.name, entry.role.rawValue)
+        }
+        return rowid
     }
 
     @discardableResult
