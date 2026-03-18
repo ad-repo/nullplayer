@@ -65,4 +65,52 @@ final class TrackArtistsSchemaTests: XCTestCase {
         let remaining = store.artistsForURLs([track.url.absoluteString])
         XCTAssertTrue(remaining.isEmpty || remaining[track.url.absoluteString]?.isEmpty == true)
     }
+
+    func testUpsertTrackWritesTrackArtistsRows() {
+        var track = LibraryTrack(url: URL(fileURLWithPath: "/tmp/upsert_test.mp3"), title: "Test")
+        track.artists = [
+            (name: "Drake", role: .primary),
+            (name: "Future", role: .featured),
+            (name: "Drake", role: .albumArtist)
+        ]
+        store.upsertTrack(track, sig: nil)
+
+        let result = store.artistsForURLs([track.url.absoluteString])
+        let artists = result[track.url.absoluteString] ?? []
+        XCTAssertEqual(artists.count, 3)
+        XCTAssertTrue(artists.contains { $0.name == "Drake" && $0.role == .primary })
+        XCTAssertTrue(artists.contains { $0.name == "Future" && $0.role == .featured })
+        XCTAssertTrue(artists.contains { $0.name == "Drake" && $0.role == .albumArtist })
+    }
+
+    func testUpsertTrackReplacesTrackArtistsOnRescan() {
+        var track = LibraryTrack(url: URL(fileURLWithPath: "/tmp/replace_test.mp3"), title: "Test")
+        track.artists = [(name: "OldArtist", role: .albumArtist)]
+        store.upsertTrack(track, sig: nil)
+
+        // Re-upsert same URL with different artists
+        var track2 = LibraryTrack(url: URL(fileURLWithPath: "/tmp/replace_test.mp3"), title: "Test")
+        track2.artists = [(name: "NewArtist", role: .albumArtist)]
+        store.upsertTrack(track2, sig: nil)
+
+        let result = store.artistsForURLs([track.url.absoluteString])
+        let artists = result[track.url.absoluteString] ?? []
+        // Old artist must be gone, new artist present
+        XCTAssertFalse(artists.contains { $0.name == "OldArtist" })
+        XCTAssertTrue(artists.contains { $0.name == "NewArtist" })
+    }
+
+    func testUpsertTracksWritesArtistRowsForBatch() {
+        var t1 = LibraryTrack(url: URL(fileURLWithPath: "/tmp/batch1.mp3"), title: "Batch1")
+        t1.artists = [(name: "ArtistA", role: .albumArtist)]
+        var t2 = LibraryTrack(url: URL(fileURLWithPath: "/tmp/batch2.mp3"), title: "Batch2")
+        t2.artists = [(name: "ArtistB", role: .albumArtist)]
+
+        store.upsertTracks([(t1, nil), (t2, nil)])
+
+        let urls = [t1.url.absoluteString, t2.url.absoluteString]
+        let result = store.artistsForURLs(urls)
+        XCTAssertTrue(result[t1.url.absoluteString]?.contains { $0.name == "ArtistA" } ?? false)
+        XCTAssertTrue(result[t2.url.absoluteString]?.contains { $0.name == "ArtistB" } ?? false)
+    }
 }

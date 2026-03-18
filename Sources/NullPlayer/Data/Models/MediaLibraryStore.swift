@@ -754,6 +754,33 @@ final class MediaLibraryStore {
         }
     }
 
+    /// Fetch all track_artists rows for the given track URLs.
+    /// Returns a dict keyed by track URL absolute string.
+    func artistsForURLs(_ urls: [String]) -> [String: [(name: String, role: ArtistRole)]] {
+        guard let db = db, !urls.isEmpty else { return [:] }
+        var result: [String: [(name: String, role: ArtistRole)]] = [:]
+        // Chunk into 500 to avoid SQLite IN clause limits
+        let chunkSize = 500
+        for chunkStart in stride(from: 0, to: urls.count, by: chunkSize) {
+            let chunk = Array(urls[chunkStart..<min(chunkStart + chunkSize, urls.count)])
+            let placeholders = chunk.map { _ in "?" }.joined(separator: ", ")
+            let sql = "SELECT track_url, artist_name, role FROM track_artists WHERE track_url IN (\(placeholders))"
+            let bindings = chunk.map { $0 as Binding? }
+            do {
+                for row in try db.prepare(sql, bindings) {
+                    guard let trackUrl = row[0] as? String,
+                          let artistName = row[1] as? String,
+                          let roleStr = row[2] as? String,
+                          let role = ArtistRole(rawValue: roleStr) else { continue }
+                    result[trackUrl, default: []].append((name: artistName, role: role))
+                }
+            } catch {
+                NSLog("MediaLibraryStore: artistsForURLs failed: %@", error.localizedDescription)
+            }
+        }
+        return result
+    }
+
     func tracksForAlbum(_ albumId: String) -> [LibraryTrack] {
         guard let db = db else { return [] }
         // albumId = "artistName|albumName" — split on first | only
@@ -904,7 +931,9 @@ final class MediaLibraryStore {
     func upsertTrack(_ track: LibraryTrack, sig: FileScanSignature?) {
         guard let db = db else { return }
         do {
-            try upsertTrackInternal(track, sig: sig, connection: db)
+            try db.transaction {
+                try self.upsertTrackInternal(track, sig: sig, connection: db)
+            }
         } catch {
             NSLog("MediaLibraryStore: upsertTrack failed: %@", error.localizedDescription)
         }
@@ -1136,7 +1165,7 @@ final class MediaLibraryStore {
 
     @discardableResult
     private func upsertTrackInternal(_ track: LibraryTrack, sig: FileScanSignature?, connection: Connection) throws -> Int64 {
-        try connection.run(tracksTable.insert(
+        let rowid = try connection.run(tracksTable.insert(
             or: .replace,
             colID <- track.id.uuidString,
             colURL <- track.url.absoluteString,
@@ -1160,6 +1189,16 @@ final class MediaLibraryStore {
             colScanFileSize <- sig?.fileSize,
             colScanModDate <- sig?.contentModificationDate.map { $0.timeIntervalSince1970 }
         ))
+        // INSERT OR REPLACE on library_tracks cascades DELETE on track_artists (FK + PRAGMA foreign_keys = ON),
+        // so old rows are already gone. Use INSERT OR IGNORE to avoid duplicate-key errors on edge cases.
+        let urlStr = track.url.absoluteString
+        for entry in track.artists {
+            try connection.run("""
+                INSERT OR IGNORE INTO track_artists (track_url, artist_name, role)
+                VALUES (?, ?, ?)
+                """, urlStr, entry.name, entry.role.rawValue)
+        }
+        return rowid
     }
 
     @discardableResult
