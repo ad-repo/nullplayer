@@ -1,7 +1,7 @@
 import Foundation
 
 /// Roles an artist can have relative to a track.
-enum ArtistRole: String {
+enum ArtistRole: String, Equatable, Hashable {
     case primary     = "primary"
     case featured    = "featured"
     case albumArtist = "album_artist"
@@ -21,7 +21,7 @@ enum ArtistSplitter {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return [] }
 
-        // Step 1: Split on ; and / — unambiguous list separators.
+        // Step 1: Split on ; — unambiguous list separator.
         let segments = splitOnListSeparators(trimmed)
 
         // Step 2: Within each segment, detect feat./ft. and split further.
@@ -42,9 +42,9 @@ enum ArtistSplitter {
 
     // MARK: - Private helpers
 
-    /// Split on `;` and `/`, trimming whitespace, discarding empty segments.
+    /// Split on `;`, trimming whitespace, discarding empty segments.
     private static func splitOnListSeparators(_ s: String) -> [String] {
-        s.components(separatedBy: CharacterSet(charactersIn: ";/"))
+        s.components(separatedBy: CharacterSet(charactersIn: ";"))
          .map { $0.trimmingCharacters(in: .whitespaces) }
          .filter { !$0.isEmpty }
     }
