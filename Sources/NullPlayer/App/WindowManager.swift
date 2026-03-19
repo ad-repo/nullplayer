@@ -2502,6 +2502,13 @@ class WindowManager {
             return newOrigin
         }
 
+        // If this move callback is for a peer in the active drag group, ignore it.
+        // Peers can report late/asynchronous move notifications during fast group drags.
+        if let dragging = draggingWindow, dragging !== window,
+           dockedWindowsToMove.contains(where: { $0 === window }) {
+            return newOrigin
+        }
+
         // If this is a new drag, find docked windows
         if draggingWindow !== window {
             let hadPrimedHold = (primedDragWindow === window && holdStartTime != nil)
@@ -2549,10 +2556,18 @@ class WindowManager {
         // synchronously when the parent's setFrameOrigin is called, which keeps them
         // in the same display frame as the parent and prevents visual tearing.
         if !dockedWindowsToMove.isEmpty {
-            let childWindowIds = Set(window.childWindows?.map { ObjectIdentifier($0) } ?? [])
+            var autoMovedChildWindowIds = Set(window.childWindows?.map { ObjectIdentifier($0) } ?? [])
+            // Any parent window moved in this tick will bring its child windows along automatically.
+            // Skip explicit repositioning for those children to avoid duplicate moves and transient gaps.
+            for parent in dockedWindowsToMove {
+                for child in parent.childWindows ?? [] {
+                    autoMovedChildWindowIds.insert(ObjectIdentifier(child))
+                }
+            }
+
             isMovingDockedWindows = true
             for dockedWindow in dockedWindowsToMove {
-                guard !childWindowIds.contains(ObjectIdentifier(dockedWindow)) else { continue }
+                guard !autoMovedChildWindowIds.contains(ObjectIdentifier(dockedWindow)) else { continue }
                 if let offset = dockedWindowOffsets[ObjectIdentifier(dockedWindow)] {
                     // Use stored offset from drag start to maintain exact relative position
                     let newDockedOrigin = NSPoint(
