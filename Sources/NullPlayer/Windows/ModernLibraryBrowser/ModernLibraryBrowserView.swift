@@ -365,6 +365,7 @@ class ModernLibraryBrowserView: NSView {
     /// Cached server bar font and attribute dictionaries — invalidated when skin changes
     private var cachedServerBarFont: NSFont?
     private var cachedServerBarFontSkinName: String?
+    private var cachedServerBarFontScale: CGFloat?
     private var cachedPrefixAttrs: [NSAttributedString.Key: Any]?
     private var cachedDataAttrs: [NSAttributedString.Key: Any]?
     private var cachedActiveAttrs: [NSAttributedString.Key: Any]?
@@ -967,10 +968,14 @@ class ModernLibraryBrowserView: NSView {
         let accentColor = skin.accentColor
 
         let skinName = ModernSkinEngine.shared.currentSkinName ?? "default"
-        if cachedServerBarFont == nil || cachedServerBarFontSkinName != skinName {
+        let currentScale = ModernSkinElements.sizeMultiplier
+        if cachedServerBarFont == nil ||
+            cachedServerBarFontSkinName != skinName ||
+            cachedServerBarFontScale != currentScale {
             let font = skin.sideWindowFont(size: 11)
             cachedServerBarFont = font
             cachedServerBarFontSkinName = skinName
+            cachedServerBarFontScale = currentScale
             cachedPrefixAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dimColor)]
             cachedDataAttrs   = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dataColor)]
             cachedActiveAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: accentColor)]
@@ -5967,9 +5972,19 @@ class ModernLibraryBrowserView: NSView {
 
     // MARK: - Notification Handlers
     
+    private func invalidateServerBarFontCache() {
+        cachedServerBarFont = nil
+        cachedServerBarFontSkinName = nil
+        cachedServerBarFontScale = nil
+        cachedPrefixAttrs = nil
+        cachedDataAttrs = nil
+        cachedActiveAttrs = nil
+    }
+
     @objc private func modernSkinDidChange() {
         let skin = currentSkin()
         renderer = ModernSkinRenderer(skin: skin)
+        invalidateServerBarFontCache()
         updateCornerMask()
         needsDisplay = true
     }

@@ -228,7 +228,7 @@ class ContextMenuBuilder {
 
     private static func buildWindowLockMenuItem() -> NSMenuItem {
         let isLocked = WindowManager.shared.isWindowLayoutLocked
-        let title = isLocked ? "Unlock" : "Lock"
+        let title = isLocked ? "Unlock Connected Windows" : "Lock Connected Windows"
         let item = NSMenuItem(title: title, action: #selector(MenuActions.toggleWindowLayoutLock), keyEquivalent: "")
         item.target = MenuActions.shared
         return item

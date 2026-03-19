@@ -19,17 +19,22 @@ class ModernSkinRenderer {
     /// The active skin to render with
     var skin: ModernSkin
     
-    /// Scale factor for rendering
-    let scaleFactor: CGFloat
+    /// Optional fixed scale for tests/snapshots.
+    /// When nil, renderer always uses the current global modern scale.
+    private let fixedScaleFactor: CGFloat?
+
+    /// Scale factor for rendering.
+    /// Uses live `ModernSkinElements.scaleFactor` unless a fixed override was provided.
+    var scaleFactor: CGFloat { fixedScaleFactor ?? ModernSkinElements.scaleFactor }
     
     /// Glow multiplier for element-level blur effects
     let glowMultiplier: CGFloat
     
     // MARK: - Initialization
     
-    init(skin: ModernSkin, scaleFactor: CGFloat = ModernSkinElements.scaleFactor) {
+    init(skin: ModernSkin, scaleFactor: CGFloat? = nil) {
         self.skin = skin
-        self.scaleFactor = scaleFactor
+        self.fixedScaleFactor = scaleFactor
         self.glowMultiplier = skin.elementGlowMultiplier
     }
 
