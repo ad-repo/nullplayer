@@ -1858,9 +1858,7 @@ class WindowManager {
 
             // Scale height proportionally
             let currentFrame = playlistWindow.frame
-            let heightScaleMultiplier: CGFloat = runningModernMode
-                ? (isDoubleSize ? 2.0 : 0.5)
-                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
 
             if playlistWindow.isVisible {
@@ -1917,23 +1915,25 @@ class WindowManager {
             waveformWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             let currentFrame = waveformWindow.frame
-            let heightScaleMultiplier: CGFloat = runningModernMode
-                ? (isDoubleSize ? 2.0 : 0.5)
-                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
-            let currentWidth = currentFrame.width
+            // Classic waveform should transition with Large UI; modern waveform keeps user width.
+            let widthScaleMultiplier: CGFloat = runningModernMode
+                ? 1.0
+                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let newWidth = max(skinMinWidth, currentFrame.width * widthScaleMultiplier)
 
             if waveformWindow.isVisible {
                 let waveformFrame = NSRect(
                     x: mainFrame.minX,
                     y: nextY - newHeight,
-                    width: currentWidth,
+                    width: newWidth,
                     height: newHeight
                 )
                 waveformWindow.setFrame(waveformFrame, display: true, animate: false)
                 nextY = waveformFrame.minY
             } else {
-                waveformWindow.setContentSize(NSSize(width: currentWidth, height: newHeight))
+                waveformWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
             }
         }
         
@@ -1942,9 +1942,7 @@ class WindowManager {
         let stackHeight = stackTopY - nextY
         
         if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
-            let widthScaleMultiplier: CGFloat = runningModernMode
-                ? (isDoubleSize ? 2.0 : 0.5)
-                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newWidth = plexWindow.frame.width * widthScaleMultiplier
             let plexFrame = NSRect(
                 x: mainFrame.maxX,
@@ -1956,9 +1954,7 @@ class WindowManager {
         }
 
         if let projectMWindow = projectMWindowController?.window, projectMWindow.isVisible {
-            let widthScaleMultiplier: CGFloat = runningModernMode
-                ? (isDoubleSize ? 2.0 : 0.5)
-                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newWidth = projectMWindow.frame.width * widthScaleMultiplier
             let projectMFrame = NSRect(
                 x: mainFrame.minX - (projectMWindow.frame.width * widthScaleMultiplier),

@@ -709,7 +709,7 @@ class AppStateManager {
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             // Restore double size BEFORE showing sub-windows so applyDoubleSize
-            // doesn't re-scale frames that are already at their saved 2x sizes.
+            // doesn't re-scale frames that are already at their saved 1.5x sizes.
             // At this point only the main window is visible, so applyDoubleSize
             // correctly updates its minSize/frame without touching sub-window heights.
             if savedDoubleSize {
