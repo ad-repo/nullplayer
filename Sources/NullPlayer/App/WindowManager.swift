@@ -317,8 +317,8 @@ class WindowManager {
     private let snapThreshold: CGFloat = 15
     
     /// Docking threshold - windows closer than this are considered docked
-    /// Should be small (≤2) so only truly touching windows are grouped
-    private let dockThreshold: CGFloat = 2
+    /// Should be small so only truly touching windows are grouped
+    private let dockThreshold: CGFloat = 3
     
     /// Hold threshold - how long (seconds) before a drag moves the connected group
     private let holdThreshold: TimeInterval = 0.4
@@ -2012,8 +2012,34 @@ class WindowManager {
         }
     }
     
-    /// Calculate the bounding box of the vertical window stack (main + EQ + playlist + spectrum + waveform)
-    /// Returns the combined bounds of all visible windows in the vertical stack
+    /// Find visible center-stack windows that are docked below the main window
+    /// (directly or transitively), using the current dock threshold.
+    private func dockedCenterStackWindowsBelowMain(mainFrame: NSRect) -> [NSWindow] {
+        let subWindows = [equalizerWindowController?.window,
+                          playlistWindowController?.window,
+                          spectrumWindowController?.window,
+                          waveformWindowController?.window].compactMap { $0 }
+        var docked: [NSWindow] = []
+        var frontier: [NSRect] = [mainFrame]
+
+        while !frontier.isEmpty {
+            let referenceFrame = frontier.removeFirst()
+            for win in subWindows {
+                guard win.isVisible, !docked.contains(win) else { continue }
+                let vertGap = abs(win.frame.maxY - referenceFrame.minY)
+                let horizOverlap = win.frame.minX < referenceFrame.maxX && win.frame.maxX > referenceFrame.minX
+                if vertGap <= dockThreshold && horizOverlap {
+                    docked.append(win)
+                    frontier.append(win.frame)
+                }
+            }
+        }
+
+        return docked
+    }
+
+    /// Calculate the bounding box of the docked vertical center stack
+    /// (main + only windows docked below main).
     private func verticalStackBounds() -> NSRect {
         guard let mainFrame = mainWindowController?.window?.frame else { return .zero }
         
@@ -2022,18 +2048,9 @@ class WindowManager {
         let x = mainFrame.minX
         let width = mainFrame.width
         
-        // Check each window in the stack and expand bounds
-        if let eqWindow = equalizerWindowController?.window, eqWindow.isVisible {
-            bottomY = min(bottomY, eqWindow.frame.minY)
-        }
-        if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible {
-            bottomY = min(bottomY, playlistWindow.frame.minY)
-        }
-        if let spectrumWindow = spectrumWindowController?.window, spectrumWindow.isVisible {
-            bottomY = min(bottomY, spectrumWindow.frame.minY)
-        }
-        if let waveformWindow = waveformWindowController?.window, waveformWindow.isVisible {
-            bottomY = min(bottomY, waveformWindow.frame.minY)
+        // Only include center windows that are currently docked below main.
+        for dockedWindow in dockedCenterStackWindowsBelowMain(mainFrame: mainFrame) {
+            bottomY = min(bottomY, dockedWindow.frame.minY)
         }
         
         return NSRect(x: x, y: round(bottomY), width: width, height: round(topY) - round(bottomY))
@@ -2376,9 +2393,11 @@ class WindowManager {
             dockedWindowOriginalOrigins[ObjectIdentifier(dockedWindow)] = dockedWindow.frame.origin
         }
 
-        // Highlight connected peers so user can see which windows would move together
+        // Highlight connected peers and dragged window so user can see full moving set
         if !dockedWindowsToMove.isEmpty {
-            postConnectedWindowHighlight(Set(dockedWindowsToMove))
+            var highlightSet = Set(dockedWindowsToMove)
+            highlightSet.insert(window)
+            postConnectedWindowHighlight(highlightSet)
             highlightWasPosted = true
         }
         NotificationCenter.default.post(name: .windowDragDidBegin, object: nil)
@@ -2675,9 +2694,8 @@ class WindowManager {
             }
         }
         
-        // All windows can snap to dockable windows (main, playlist, EQ)
-        // But non-dockable windows don't participate in docking (moving together)
-        let windowsToSnapTo = dockableWindows()
+        // All windows can snap to dockable windows plus the Library browser.
+        let windowsToSnapTo = snapTargetWindows()
         for otherWindow in windowsToSnapTo {
             guard otherWindow != window else { continue }
             // Skip docked windows as they're moving with us
@@ -2796,31 +2814,26 @@ class WindowManager {
     }
     
     /// Find all windows that are docked (touching) the given window
-    /// When dragging a dockable window (main, playlist, EQ), all touching windows move together
-    /// When dragging a non-dockable window (Plex browser), it moves alone
+    /// Any connected group of 2+ eligible windows moves together, regardless of main-window membership.
     func findDockedWindows(to window: NSWindow) -> [NSWindow] {
-        // Non-dockable windows don't drag other windows with them
-        guard isDockableWindow(window) else { return [] }
+        let candidateWindows = groupMovableWindows()
+        guard candidateWindows.contains(where: { $0 === window }) else { return [] }
         
         var dockedWindows: [NSWindow] = []
         var windowsToCheck: [NSWindow] = [window]
         var checkedWindows: Set<ObjectIdentifier> = [ObjectIdentifier(window)]
         
-        // Use BFS to find all transitively docked windows
-        // Include all visible windows so Plex browser moves with the group
+        // Use BFS to find all transitively docked windows among group-movable candidates.
         while !windowsToCheck.isEmpty {
             let currentWindow = windowsToCheck.removeFirst()
             
-            for otherWindow in allWindows() {
+            for otherWindow in candidateWindows {
                 let otherId = ObjectIdentifier(otherWindow)
                 if checkedWindows.contains(otherId) { continue }
                 
                 if areWindowsDocked(currentWindow, otherWindow) {
                     dockedWindows.append(otherWindow)
-                    // Only continue BFS through dockable windows (don't chain through Plex browser)
-                    if isDockableWindow(otherWindow) {
-                        windowsToCheck.append(otherWindow)
-                    }
+                    windowsToCheck.append(otherWindow)
                     checkedWindows.insert(otherId)
                 }
             }
@@ -3091,6 +3104,21 @@ class WindowManager {
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
+    }
+
+    /// Get windows that can be used as snapping targets.
+    /// Includes Library browser and ProjectM for side-docking.
+    private func snapTargetWindows() -> [NSWindow] {
+        var windows = dockableWindows()
+        if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = projectMWindowController?.window, w.isVisible { windows.append(w) }
+        return windows
+    }
+
+    /// Get windows that can participate in connected group dragging.
+    /// Grouping is connection-based and does not depend on the main window being part of the group.
+    private func groupMovableWindows() -> [NSWindow] {
+        snapTargetWindows()
     }
     
     /// Check if a window participates in docking
