@@ -46,6 +46,8 @@ class ContextMenuBuilder {
         doubleSize.target = MenuActions.shared
         doubleSize.state = wm.isDoubleSize ? .on : .off
         menu.addItem(doubleSize)
+
+        menu.addItem(buildWindowLockMenuItem())
         menu.addItem(NSMenuItem.separator())
 
         // Exit
@@ -90,6 +92,8 @@ class ContextMenuBuilder {
         doubleSize.target = MenuActions.shared
         doubleSize.state = wm.isDoubleSize ? .on : .off
         menu.addItem(doubleSize)
+
+        menu.addItem(buildWindowLockMenuItem())
 
         let snapToDefault = NSMenuItem(title: "Snap To Default", action: #selector(MenuActions.snapToDefault), keyEquivalent: "")
         snapToDefault.target = MenuActions.shared
@@ -219,6 +223,14 @@ class ContextMenuBuilder {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = MenuActions.shared
         item.state = visible ? .on : .off
+        return item
+    }
+
+    private static func buildWindowLockMenuItem() -> NSMenuItem {
+        let isLocked = WindowManager.shared.isWindowLayoutLocked
+        let title = isLocked ? "Unlock" : "Lock"
+        let item = NSMenuItem(title: title, action: #selector(MenuActions.toggleWindowLayoutLock), keyEquivalent: "")
+        item.target = MenuActions.shared
         return item
     }
 
@@ -3636,6 +3648,10 @@ class MenuActions: NSObject {
                 relaunchApp()
             }
         }
+    }
+
+    @objc func toggleWindowLayoutLock() {
+        WindowManager.shared.toggleWindowLayoutLock()
     }
     
     @objc func snapToDefault() {

@@ -54,4 +54,15 @@ final class WindowManagerDragModeTests: XCTestCase {
         )
         XCTAssertEqual(mode, .separate)
     }
+
+    func testWindowLayoutLockForcesGroup() {
+        // Lock mode forces grouped dragging regardless of hold duration.
+        let mode = WindowManager.determineDragMode(
+            holdStart: 1000.0,
+            currentTime: 1000.1,
+            threshold: 0.4,
+            isWindowLayoutLocked: true
+        )
+        XCTAssertEqual(mode, .group)
+    }
 }

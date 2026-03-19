@@ -86,6 +86,14 @@ class WindowManager {
             applyAlwaysOnTop()
         }
     }
+
+    /// Lock connected windows so dragging keeps connected groups together.
+    var isWindowLayoutLocked: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isWindowLayoutLocked, forKey: "isWindowLayoutLocked")
+            NSLog("WindowManager: isWindowLayoutLocked changed to %d", isWindowLayoutLocked ? 1 : 0)
+        }
+    }
     
     /// Main player window controller (classic or modern, accessed via protocol)
     private(set) var mainWindowController: MainWindowProviding?
@@ -398,6 +406,7 @@ class WindowManager {
         UserDefaults.standard.register(defaults: [
             "timeDisplayMode": TimeDisplayMode.elapsed.rawValue,
             "isAlwaysOnTop": false,
+            "isWindowLayoutLocked": false,
             "hideTitleBars": true,
             "waveformShowCuePoints": false,
             "waveformHideTooltip": false
@@ -415,6 +424,13 @@ class WindowManager {
         let savedAlwaysOnTop = UserDefaults.standard.bool(forKey: "isAlwaysOnTop")
         isAlwaysOnTop = savedAlwaysOnTop
         NSLog("WindowManager: Loaded isAlwaysOnTop = %d from UserDefaults", savedAlwaysOnTop ? 1 : 0)
+        let savedWindowLayoutLocked = UserDefaults.standard.bool(forKey: "isWindowLayoutLocked")
+        isWindowLayoutLocked = savedWindowLayoutLocked
+        NSLog("WindowManager: Loaded isWindowLayoutLocked = %d from UserDefaults", savedWindowLayoutLocked ? 1 : 0)
+    }
+
+    func toggleWindowLayoutLock() {
+        isWindowLayoutLocked.toggle()
     }
     
     // MARK: - Window Management
@@ -2366,8 +2382,10 @@ class WindowManager {
     static func determineDragMode(
         holdStart: CFTimeInterval?,
         currentTime: CFTimeInterval,
-        threshold: TimeInterval
+        threshold: TimeInterval,
+        isWindowLayoutLocked: Bool = false
     ) -> DragMode {
+        if isWindowLayoutLocked { return .group }
         guard let start = holdStart else { return .group }
         return (currentTime - start) < threshold ? .separate : .group
     }
@@ -2500,7 +2518,8 @@ class WindowManager {
             let mode = WindowManager.determineDragMode(
                 holdStart: holdStartTime,
                 currentTime: CACurrentMediaTime(),
-                threshold: holdThreshold
+                threshold: holdThreshold,
+                isWindowLayoutLocked: isWindowLayoutLocked
             )
             dragMode = mode
             if mode == .separate {
