@@ -187,6 +187,6 @@ extension MainWindowController: NSWindowDelegate {
     
     func windowDidBecomeKey(_ notification: Notification) {
         // Bring all app windows to front when main window gets focus
-        WindowManager.shared.bringAllWindowsToFront()
+        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
 }

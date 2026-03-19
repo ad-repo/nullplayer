@@ -142,7 +142,7 @@ extension ModernEQWindowController: NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         eqView.needsDisplay = true
-        WindowManager.shared.bringAllWindowsToFront()
+        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
     
     func windowDidResignKey(_ notification: Notification) {

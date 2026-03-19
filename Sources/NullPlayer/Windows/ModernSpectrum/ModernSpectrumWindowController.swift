@@ -235,7 +235,7 @@ extension ModernSpectrumWindowController: NSWindowDelegate {
         spectrumView.needsDisplay = true
         // Don't bring other windows above fullscreen visualization.
         if !isCustomFullscreen {
-            WindowManager.shared.bringAllWindowsToFront()
+            WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
         }
     }
     

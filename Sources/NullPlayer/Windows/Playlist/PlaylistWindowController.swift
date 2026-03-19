@@ -170,7 +170,7 @@ extension PlaylistWindowController: NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
         playlistView.needsDisplay = true
         // Bring all app windows to front when this window gets focus
-        WindowManager.shared.bringAllWindowsToFront()
+        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
 
     func windowWillClose(_ notification: Notification) {

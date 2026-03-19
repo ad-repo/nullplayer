@@ -1992,11 +1992,11 @@ class WindowManager {
         window.level = isAlwaysOnTop ? .floating : .normal
     }
     
-    /// Bring all visible app windows to front (called when any app window gets focus)
-    func bringAllWindowsToFront() {
-        // Order all visible windows to front without making them key
-        // Center-stack windows first, side/overlay windows last so they end up on top
-        // when overlapping the center stack (library browser and projectM can be dragged to overlay)
+    /// Bring all visible app windows to front (called when any app window gets focus).
+    /// If possible, keep the active window on top so detached-window overlap feels consistent.
+    func bringAllWindowsToFront(keepingWindowOnTop preferredTopWindow: NSWindow? = nil) {
+        // Order all visible windows to front without making them key.
+        // Keep a predictable base order, then re-raise the active window at the end.
         let windows: [NSWindow?] = [
             mainWindowController?.window,
             equalizerWindowController?.window,
@@ -2007,11 +2007,17 @@ class WindowManager {
             projectMWindowController?.window,
             plexBrowserWindowController?.window
         ]
-        
+
+        let topWindow = preferredTopWindow ?? NSApp.keyWindow
+
         for window in windows {
-            if let window = window, window.isVisible {
+            if let window = window, window.isVisible, window !== topWindow {
                 window.orderFront(nil)
             }
+        }
+
+        if let topWindow = topWindow, topWindow.isVisible {
+            topWindow.orderFront(nil)
         }
     }
     
