@@ -4501,13 +4501,17 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                 sampleRate: track.sampleRate ?? sampleRate,
                 channels: track.channels ?? channels,
                 plexRatingKey: track.plexRatingKey,
+                plexServerId: track.plexServerId,
                 subsonicId: track.subsonicId,
                 subsonicServerId: track.subsonicServerId,
                 jellyfinId: track.jellyfinId,
                 jellyfinServerId: track.jellyfinServerId,
+                embyId: track.embyId,
+                embyServerId: track.embyServerId,
                 artworkThumb: track.artworkThumb,
                 mediaType: track.mediaType,
-                genre: track.genre
+                genre: track.genre,
+                contentType: track.contentType
             )
             
             currentTrack = updatedTrack

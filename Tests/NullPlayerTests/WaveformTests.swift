@@ -99,6 +99,30 @@ final class WaveformTests: XCTestCase {
         XCTAssertNotEqual(key1, key3)
     }
 
+    func testServiceCacheKeyChangesWithIdentityAndDuration() {
+        let key1 = WaveformCacheService.serviceCacheKey(
+            serviceIdentity: "jellyfin:server:songA",
+            duration: 215.5,
+            bitrate: 320,
+            sampleRate: 44_100
+        )
+        let key2 = WaveformCacheService.serviceCacheKey(
+            serviceIdentity: "jellyfin:server:songB",
+            duration: 215.5,
+            bitrate: 320,
+            sampleRate: 44_100
+        )
+        let key3 = WaveformCacheService.serviceCacheKey(
+            serviceIdentity: "jellyfin:server:songA",
+            duration: 230.0,
+            bitrate: 320,
+            sampleRate: 44_100
+        )
+
+        XCTAssertNotEqual(key1, key2)
+        XCTAssertNotEqual(key1, key3)
+    }
+
     func testStreamingAccumulatorBuildsSeekableSnapshotForTimedStreams() {
         let accumulator = StreamingWaveformAccumulator(duration: 120)
         let left = Array(repeating: UInt8(255), count: 576)
