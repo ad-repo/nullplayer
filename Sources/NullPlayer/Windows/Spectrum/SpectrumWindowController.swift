@@ -90,6 +90,28 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
     func skinDidChange() {
         spectrumView.skinDidChange()
     }
+
+    func resetToDefaultFrame() {
+        guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
+        let mainFrame = mainWindow.frame
+        let scale = mainFrame.width / Skin.mainWindowSize.width
+        let defaultHeight = SkinElements.SpectrumWindow.windowSize.height * scale
+        let defaultWidth = mainFrame.width
+
+        window.minSize = NSSize(
+            width: SkinElements.SpectrumWindow.minSize.width,
+            height: SkinElements.SpectrumWindow.minSize.height * scale
+        )
+        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+        let newFrame = NSRect(
+            x: mainFrame.minX,
+            y: mainFrame.minY - defaultHeight,
+            width: defaultWidth,
+            height: defaultHeight
+        )
+        window.setFrame(newFrame, display: false)
+    }
     
     // MARK: - Shade Mode
     

@@ -33,6 +33,8 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
             backing: .buffered,
             defer: false
         )
+        window.allowedResizeEdges = [.bottom, .left, .right]
+        window.titleBarHeight = ModernSkinElements.spectrumTitleBarHeight
         
         // Enable fullscreen support
         window.collectionBehavior = [.fullScreenPrimary, .managed]

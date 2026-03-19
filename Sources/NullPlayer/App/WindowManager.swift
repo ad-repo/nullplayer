@@ -206,7 +206,7 @@ class WindowManager {
                                                            currentHeight: winFrame.height,
                                                            titleBarDelta: titleDelta,
                                                            preservePlaylistContentHeight: true)
-                if kind != .waveform { winFrame.size.width = frame.width }
+                if kind == .equalizer || kind == .playlist { winFrame.size.width = frame.width }
                 winFrame.size.height = targetHeight
                 winFrame.origin.x = frame.minX
                 winFrame.origin.y = nextTop - targetHeight
@@ -1342,8 +1342,10 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .spectrum), display: true)
             } else {
-                if isNewWindow {
+                if isModernUIEnabled {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .spectrum)
+                } else {
+                    (spectrumWindowController as? SpectrumWindowController)?.resetToDefaultFrame()
                 }
                 positionSubWindow(window)
             }
@@ -1893,27 +1895,32 @@ class WindowManager {
         
         // Spectrum window - position below playlist (or previous window)
         if let spectrumWindow = spectrumWindowController?.window {
-            let spectrumTargetSize: NSSize
-            if runningModernMode {
-                spectrumTargetSize = NSSize(width: mainFrame.width, height: expectedMainHeightForCurrentHT(mainWindowController?.window))
-            } else {
-                spectrumTargetSize = NSSize(width: Skin.mainWindowSize.width * scale,
-                                            height: Skin.mainWindowSize.height * scale)
-            }
-            let spectrumAdjustedSize = spectrumTargetSize
-            spectrumWindow.minSize = spectrumAdjustedSize
-            spectrumWindow.maxSize = spectrumAdjustedSize
+            let baseMinSize: NSSize = runningModernMode ? ModernSkinElements.spectrumMinSize : SkinElements.SpectrumWindow.minSize
+            let minHeight = runningModernMode
+                ? expectedMainHeightForCurrentHT(mainWindowController?.window)
+                : baseMinSize.height * scale
+            let minWidth = runningModernMode
+                ? ModernSkinElements.spectrumMinSize.width
+                : baseMinSize.width * scale
+            spectrumWindow.minSize = NSSize(width: minWidth, height: minHeight)
+            spectrumWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+            let currentFrame = spectrumWindow.frame
+            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
+            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
             if spectrumWindow.isVisible {
                 let spectrumFrame = NSRect(
                     x: mainFrame.minX,
-                    y: nextY - spectrumAdjustedSize.height,
-                    width: spectrumAdjustedSize.width,
-                    height: spectrumAdjustedSize.height
+                    y: nextY - newHeight,
+                    width: newWidth,
+                    height: newHeight
                 )
                 spectrumWindow.setFrame(spectrumFrame, display: true, animate: false)
                 nextY = spectrumFrame.minY
             } else {
-                spectrumWindow.setContentSize(spectrumAdjustedSize)
+                spectrumWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
             }
         }
 
@@ -2115,9 +2122,12 @@ class WindowManager {
         let targetWidth = mainWindow.frame.width
         let targetHeight = expectedMainHeightForCurrentHT(mainWindow)
         switch kind {
-        case .equalizer, .spectrum:
+        case .equalizer:
             window.minSize = NSSize(width: targetWidth, height: targetHeight)
             window.maxSize = NSSize(width: targetWidth, height: targetHeight)
+        case .spectrum:
+            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         case .playlist:
             window.minSize = NSSize(width: targetWidth, height: targetHeight)
             window.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
