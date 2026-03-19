@@ -479,6 +479,8 @@ class ModernLibraryBrowserView: NSView {
     private struct RadioFolderDeleteAction { let folderID: UUID }
     private struct RadioFolderStationAction { let station: RadioStation }
     private var isDraggingWindow = false
+    /// True when hide-title-bars mode primed drag hold timing on mouseDown.
+    private var didPrimeWindowDragHold = false
     private var windowDragStartPoint: NSPoint = .zero
     private var isDraggingScrollbar = false
     private var scrollbarDragStartY: CGFloat = 0
@@ -2751,6 +2753,10 @@ class ModernLibraryBrowserView: NSView {
         // from anywhere (title bar is hidden so there's no dedicated drag handle)
         if WindowManager.shared.hideTitleBars && !isShadeMode {
             windowDragStartPoint = event.locationInWindow
+            if let window = window {
+                WindowManager.shared.windowWillPrimeDragging(window)
+                didPrimeWindowDragHold = true
+            }
         }
 
         // Double-click title bar for shade (only when titlebar is visible)
@@ -2879,6 +2885,10 @@ class ModernLibraryBrowserView: NSView {
         if isDraggingWindow {
             isDraggingWindow = false
             if let window = window { WindowManager.shared.windowDidFinishDragging(window) }
+            didPrimeWindowDragHold = false
+        } else if didPrimeWindowDragHold {
+            if let window = window { WindowManager.shared.windowDidCancelDragPrime(window) }
+            didPrimeWindowDragHold = false
         }
         isDraggingScrollbar = false
         

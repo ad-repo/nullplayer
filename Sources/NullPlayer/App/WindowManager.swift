@@ -326,6 +326,9 @@ class WindowManager {
     /// Time when current drag's mouseDown was received
     private var holdStartTime: CFTimeInterval?
 
+    /// Window that primed hold timing on mouseDown before drag motion started.
+    private weak var primedDragWindow: NSWindow?
+
     /// Current drag mode, determined on first windowWillMove call
     private var dragMode: DragMode = .pending
 
@@ -2372,9 +2375,13 @@ class WindowManager {
     ///   - window: The window being dragged
     ///   - fromTitleBar: Whether the drag originated from the title bar (recorded for reference)
     func windowWillStartDragging(_ window: NSWindow, fromTitleBar: Bool = false) {
+        let usingPrimedHold = (primedDragWindow === window && holdStartTime != nil)
         draggingWindow = window
         isTitleBarDrag = fromTitleBar
-        holdStartTime = CACurrentMediaTime()
+        if !usingPrimedHold {
+            holdStartTime = CACurrentMediaTime()
+        }
+        primedDragWindow = nil
         dragMode = .pending
 
         // Find all windows that are docked to this window
@@ -2402,6 +2409,23 @@ class WindowManager {
         }
         NotificationCenter.default.post(name: .windowDragDidBegin, object: nil)
     }
+
+    /// Prime hold timing at mouseDown without starting drag movement yet.
+    /// Used by views that begin movement on first mouseDragged (e.g. HT on in library view).
+    func windowWillPrimeDragging(_ window: NSWindow) {
+        guard draggingWindow == nil else { return }
+        primedDragWindow = window
+        holdStartTime = CACurrentMediaTime()
+        dragMode = .pending
+    }
+
+    /// Cancel a primed hold when mouseUp occurs without an actual window drag.
+    func windowDidCancelDragPrime(_ window: NSWindow) {
+        guard draggingWindow == nil, primedDragWindow === window else { return }
+        primedDragWindow = nil
+        holdStartTime = nil
+        dragMode = .pending
+    }
     
     @objc private func handleWindowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow,
@@ -2412,6 +2436,7 @@ class WindowManager {
     /// Called when a window drag ends
     func windowDidFinishDragging(_ window: NSWindow) {
         draggingWindow = nil
+        primedDragWindow = nil
         dockedWindowsToMove.removeAll()
         dockedWindowOffsets.removeAll()
         dockedWindowOriginalOrigins.removeAll()
@@ -2459,10 +2484,13 @@ class WindowManager {
 
         // If this is a new drag, find docked windows
         if draggingWindow !== window {
+            let hadPrimedHold = (primedDragWindow === window && holdStartTime != nil)
             windowWillStartDragging(window)
             // windowWillStartDragging sets holdStartTime to now, so determineDragMode would see
             // elapsed ≈ 0 → .separate. Override to .group: mid-flight drag is always group move.
-            dragMode = .group
+            if !hadPrimedHold {
+                dragMode = .group
+            }
         }
 
         // NEW — determine mode on first drag movement
