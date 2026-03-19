@@ -1933,10 +1933,9 @@ class WindowManager {
             let currentFrame = waveformWindow.frame
             let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
-            // Classic waveform should transition with Large UI; modern waveform keeps user width.
-            let widthScaleMultiplier: CGFloat = runningModernMode
-                ? 1.0
-                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            // Waveform width should transition with Large UI in both modes so toggling off
+            // reliably returns to the prior 1x geometry.
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newWidth = max(skinMinWidth, currentFrame.width * widthScaleMultiplier)
 
             if waveformWindow.isVisible {
