@@ -6890,7 +6890,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func loadArtwork(for track: Track?) {
         artworkLoadTask?.cancel(); artworkLoadTask = nil
-        guard let track = track else { artworkTrackId = nil; return }
+        guard let track = track else { currentArtwork = nil; artworkTrackId = nil; needsDisplay = true; return }
         guard track.id != artworkTrackId else { return }
         artworkLoadTask = Task { [weak self] in
             guard let self = self else { return }
@@ -7046,7 +7046,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func loadAllArtworkForCurrentTrack() {
         artworkCyclingTask?.cancel(); artworkCyclingTask = nil
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { artworkImages = []; artworkIndex = 0; return }
+        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { artworkImages = []; artworkIndex = 0; currentArtwork = nil; needsDisplay = true; return }
         artworkImages = []; artworkIndex = 0
         artworkCyclingTask = Task { [weak self] in
             guard let self = self else { return }
@@ -7069,7 +7069,8 @@ class ModernLibraryBrowserView: NSView {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 self.artworkImages = images; self.artworkIndex = 0
-                if let first = images.first { self.currentArtwork = first; self.needsDisplay = true }
+                self.currentArtwork = images.first
+                self.needsDisplay = true
             }
         }
     }

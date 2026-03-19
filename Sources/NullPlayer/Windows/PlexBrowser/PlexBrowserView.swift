@@ -5978,6 +5978,8 @@ class PlexBrowserView: NSView {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
             artworkImages = []
             artworkIndex = 0
+            currentArtwork = nil
+            needsDisplay = true
             return
         }
         
@@ -6026,10 +6028,8 @@ class PlexBrowserView: NSView {
             await MainActor.run {
                 self.artworkImages = images
                 self.artworkIndex = 0
-                if let first = images.first {
-                    self.currentArtwork = first
-                    self.needsDisplay = true
-                }
+                self.currentArtwork = images.first
+                self.needsDisplay = true
             }
         }
     }
