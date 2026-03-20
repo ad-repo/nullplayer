@@ -1649,7 +1649,7 @@ class ModernMainWindowView: NSView {
     // MARK: - Context Menu
     
     override func menu(for event: NSEvent) -> NSMenu? {
-        return ContextMenuBuilder.buildMenu(includeOutputDevices: false)
+        return ContextMenuBuilder.buildMenu(includeOutputDevices: false, includeRepeatShuffle: false)
     }
     
     // MARK: - Drag and Drop

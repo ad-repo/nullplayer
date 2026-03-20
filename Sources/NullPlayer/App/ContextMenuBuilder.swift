@@ -6,7 +6,7 @@ class ContextMenuBuilder {
     
     // MARK: - Main Menu Builder
     
-    static func buildMenu(includeOutputDevices: Bool = true) -> NSMenu {
+    static func buildMenu(includeOutputDevices: Bool = true, includeRepeatShuffle: Bool = true) -> NSMenu {
         let menu = NSMenu()
         let wm = WindowManager.shared
 
@@ -19,17 +19,19 @@ class ContextMenuBuilder {
         menu.addItem(aboutPlaying)
         menu.addItem(NSMenuItem.separator())
 
-        // Repeat & Shuffle (promoted from Options submenu to flat items)
-        let repeatItem = NSMenuItem(title: "Repeat", action: #selector(MenuActions.toggleRepeat), keyEquivalent: "")
-        repeatItem.target = MenuActions.shared
-        repeatItem.state = wm.audioEngine.repeatEnabled ? .on : .off
-        menu.addItem(repeatItem)
+        if includeRepeatShuffle {
+            // Repeat & Shuffle (promoted from Options submenu to flat items)
+            let repeatItem = NSMenuItem(title: "Repeat", action: #selector(MenuActions.toggleRepeat), keyEquivalent: "")
+            repeatItem.target = MenuActions.shared
+            repeatItem.state = wm.audioEngine.repeatEnabled ? .on : .off
+            menu.addItem(repeatItem)
 
-        let shuffleItem = NSMenuItem(title: "Shuffle", action: #selector(MenuActions.toggleShuffle), keyEquivalent: "")
-        shuffleItem.target = MenuActions.shared
-        shuffleItem.state = wm.audioEngine.shuffleEnabled ? .on : .off
-        menu.addItem(shuffleItem)
-        menu.addItem(NSMenuItem.separator())
+            let shuffleItem = NSMenuItem(title: "Shuffle", action: #selector(MenuActions.toggleShuffle), keyEquivalent: "")
+            shuffleItem.target = MenuActions.shared
+            shuffleItem.state = wm.audioEngine.shuffleEnabled ? .on : .off
+            menu.addItem(shuffleItem)
+            menu.addItem(NSMenuItem.separator())
+        }
 
         // Output Devices submenu
         if includeOutputDevices {
@@ -50,6 +52,16 @@ class ContextMenuBuilder {
         menu.addItem(doubleSize)
 
         menu.addItem(buildWindowLockMenuItem())
+
+        let rememberState = NSMenuItem(title: "Remember State On Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
+        rememberState.target = MenuActions.shared
+        rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
+        menu.addItem(rememberState)
+
+        let snapToDefault = NSMenuItem(title: "Snap To Default", action: #selector(MenuActions.snapToDefault), keyEquivalent: "")
+        snapToDefault.target = MenuActions.shared
+        menu.addItem(snapToDefault)
+
         menu.addItem(NSMenuItem.separator())
 
         // Exit
