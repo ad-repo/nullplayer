@@ -460,10 +460,11 @@ class ProjectMWrapper: VisualizationEngine {
         
         NSLog("ProjectMWrapper: Loaded %d presets total", presetFiles.count)
         
-        // Load the first preset if available
+        // Load preferred startup preset if configured; otherwise fall back to first preset.
         if !presetFiles.isEmpty {
-            _currentPresetIndex = 0
-            loadPreset(at: 0, smoothTransition: false)
+            let startupIndex = preferredDefaultPresetIndex() ?? 0
+            _currentPresetIndex = startupIndex
+            loadPreset(at: startupIndex, smoothTransition: false)
         }
     }
     
@@ -475,6 +476,36 @@ class ProjectMWrapper: VisualizationEngine {
         
         let url = URL(fileURLWithPath: presetFiles[index])
         return url.deletingPathExtension().lastPathComponent
+    }
+    
+    /// Persists the current preset as the startup default.
+    func setCurrentPresetAsDefault() {
+        guard _currentPresetIndex >= 0 && _currentPresetIndex < presetFiles.count else { return }
+        
+        let path = presetFiles[_currentPresetIndex]
+        let name = presetName(at: _currentPresetIndex)
+        Self.defaultPresetPath = path
+        Self.defaultPresetName = name
+        NSLog("ProjectMWrapper: Set default preset to %@", name)
+    }
+    
+    /// Returns preferred preset index for startup if a saved default can be resolved.
+    private func preferredDefaultPresetIndex() -> Int? {
+        if let defaultPath = Self.defaultPresetPath,
+           let index = presetFiles.firstIndex(of: defaultPath) {
+            return index
+        }
+        
+        if let defaultName = Self.defaultPresetName,
+           !defaultName.isEmpty,
+           let index = presetFiles.firstIndex(where: { filePath in
+               let name = URL(fileURLWithPath: filePath).deletingPathExtension().lastPathComponent
+               return name.caseInsensitiveCompare(defaultName) == .orderedSame
+           }) {
+            return index
+        }
+        
+        return nil
     }
     
     /// Queues a preset to load by index.
@@ -596,6 +627,12 @@ extension ProjectMWrapper {
     /// UserDefaults key for custom presets folder
     private static let customPresetsFolderKey = "customPresetsFolder"
     
+    /// UserDefaults key for default preset path selected by the user.
+    fileprivate static let defaultPresetPathKey = "projectMDefaultPresetPath"
+    
+    /// UserDefaults key for default preset display name as fallback when path changes.
+    fileprivate static let defaultPresetNameKey = "projectMDefaultPresetName"
+    
     /// Gets or sets the custom presets folder path
     static var customPresetsFolder: String? {
         get {
@@ -606,6 +643,35 @@ extension ProjectMWrapper {
                 UserDefaults.standard.set(path, forKey: customPresetsFolderKey)
             } else {
                 UserDefaults.standard.removeObject(forKey: customPresetsFolderKey)
+            }
+        }
+    }
+    
+    /// Full path of the user-selected startup default preset.
+    static var defaultPresetPath: String? {
+        get {
+            return UserDefaults.standard.string(forKey: defaultPresetPathKey)
+        }
+        set {
+            if let path = newValue, !path.isEmpty {
+                UserDefaults.standard.set(path, forKey: defaultPresetPathKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: defaultPresetPathKey)
+            }
+        }
+    }
+    
+    /// Display name of the user-selected startup default preset.
+    /// Used when the absolute preset path changes between launches.
+    static var defaultPresetName: String? {
+        get {
+            return UserDefaults.standard.string(forKey: defaultPresetNameKey)
+        }
+        set {
+            if let name = newValue, !name.isEmpty {
+                UserDefaults.standard.set(name, forKey: defaultPresetNameKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: defaultPresetNameKey)
             }
         }
     }

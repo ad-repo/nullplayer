@@ -754,6 +754,12 @@ class VisualizationGLView: NSOpenGLView {
         guard let pm = engine as? ProjectMWrapper else { return "" }
         return pm.presetName(at: index)
     }
+    
+    /// Persist the currently active ProjectM preset as startup default.
+    func setCurrentPresetAsDefault() {
+        guard let pm = engine as? ProjectMWrapper else { return }
+        pm.setCurrentPresetAsDefault()
+    }
 
     // MARK: - ProjectM Settings (Backward Compatibility)
 

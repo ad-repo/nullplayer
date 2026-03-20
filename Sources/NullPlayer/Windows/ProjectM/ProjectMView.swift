@@ -571,12 +571,6 @@ class ProjectMView: NSView {
                 visualizationGLView?.randomPreset(hardCut: false)
             }
             
-        case 37: // L key - toggle preset lock
-            if let vis = visualizationGLView {
-                vis.isPresetLocked = !vis.isPresetLocked
-                NSLog("ProjectMView: Preset lock %@", vis.isPresetLocked ? "enabled" : "disabled")
-            }
-            
         case 8: // C key - toggle cycle mode
             switch presetCycleMode {
             case .off:
@@ -631,10 +625,10 @@ class ProjectMView: NSView {
             
             menu.addItem(NSMenuItem.separator())
             
-            let lockPresetItem = NSMenuItem(title: "Lock Preset", action: #selector(togglePresetLock(_:)), keyEquivalent: "l")
-            lockPresetItem.target = self
-            lockPresetItem.state = (visualizationGLView?.isPresetLocked ?? false) ? .on : .off
-            menu.addItem(lockPresetItem)
+            let setDefaultItem = NSMenuItem(title: "Set Current to Default", action: #selector(setCurrentPresetAsDefault(_:)), keyEquivalent: "")
+            setDefaultItem.target = self
+            setDefaultItem.isEnabled = presetCount > 0
+            menu.addItem(setDefaultItem)
             
             menu.addItem(NSMenuItem.separator())
             
@@ -781,10 +775,8 @@ class ProjectMView: NSView {
         visualizationGLView?.randomPreset()
     }
     
-    @objc private func togglePresetLock(_ sender: Any?) {
-        if let vis = visualizationGLView {
-            vis.isPresetLocked = !vis.isPresetLocked
-        }
+    @objc private func setCurrentPresetAsDefault(_ sender: Any?) {
+        visualizationGLView?.setCurrentPresetAsDefault()
     }
     
     @objc private func selectPresetFromMenu(_ sender: NSMenuItem) {
