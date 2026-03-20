@@ -140,6 +140,7 @@ class PlaylistView: NSView {
     /// Restart timer when playback starts or track changes
     @objc private func playbackStateDidChange(_ notification: Notification) {
         if WindowManager.shared.audioEngine.state == .playing {
+            refreshTextBitmapCacheIfNeeded()
             startDisplayTimer()
             marqueeOffset = 0
             updateCurrentTrackTextWidth()
@@ -166,6 +167,7 @@ class PlaylistView: NSView {
         
         selectedIndices = [currentIndex]
         selectionAnchor = currentIndex
+        refreshTextBitmapCacheIfNeeded()
         
         // Scroll to keep the current track visible
         scrollToSelection()
@@ -238,6 +240,7 @@ class PlaylistView: NSView {
     /// Restart display timer when window is restored from minimized state
     @objc private func windowDidDeminiaturize(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
+        refreshTextBitmapCacheIfNeeded()
         startDisplayTimer()
     }
     
@@ -245,6 +248,7 @@ class PlaylistView: NSView {
     @objc private func windowDidChangeOcclusionState(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
         if window?.occlusionState.contains(.visible) == true {
+            refreshTextBitmapCacheIfNeeded()
             startDisplayTimer()
         } else {
             stopDisplayTimer()
@@ -303,12 +307,7 @@ class PlaylistView: NSView {
     /// Calculate render scale from classic UI mode (normal/large), not playlist width.
     /// This keeps playlist text/chrome size stable while allowing horizontal stretch.
     private var scaleFactor: CGFloat {
-        if let mainWidth = WindowManager.shared.mainWindowController?.window?.frame.width,
-           mainWidth > 0 {
-            return mainWidth / Skin.baseMainSize.width
-        }
-        let largeUIMultiplier: CGFloat = WindowManager.shared.isDoubleSize ? 1.5 : 1.0
-        return Skin.scaleFactor * largeUIMultiplier
+        Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier
     }
     
     /// Get the original window size (unscaled base size)
@@ -575,16 +574,34 @@ class PlaylistView: NSView {
     /// Pre-cache the CGImage for TEXT.BMP when skin changes
     /// MUST be called outside of draw cycle to avoid graphics state interference
     private func cacheTextBitmapCGImage() {
-        cachedTextBitmapCGImage = nil
-        
         guard let skin = WindowManager.shared.currentSkin,
-              let textImage = skin.text else { return }
-        
-        // Get CGImage from NSImage - this is safe to call outside of draw cycle
-        guard let sourceImage = textImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-        
-        // Cache it
-        cachedTextBitmapCGImage = sourceImage
+              let textImage = skin.text else {
+            cachedTextBitmapCGImage = nil
+            return
+        }
+
+        if let resolved = resolveTextBitmapCGImage(from: textImage) {
+            cachedTextBitmapCGImage = resolved
+        } else {
+            // Keep existing cache if resolution fails to avoid transient blank text states.
+            NSLog("PlaylistView: Failed to resolve TEXT.BMP CGImage; keeping existing cache")
+        }
+    }
+
+    /// Resolve a stable CGImage outside draw() with TIFF fallback for resilience.
+    private func resolveTextBitmapCGImage(from image: NSImage) -> CGImage? {
+        if let direct = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return direct
+        }
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.cgImage
+    }
+
+    /// Opportunistically rebuild bitmap-font cache when it is missing.
+    private func refreshTextBitmapCacheIfNeeded() {
+        guard cachedTextBitmapCGImage == nil else { return }
+        cacheTextBitmapCGImage()
     }
     
     private func drawBitmapText(_ text: String, at position: NSPoint, in context: CGContext, skin: Skin?, isSelected: Bool = false) {
@@ -909,6 +926,7 @@ class PlaylistView: NSView {
         // Pre-cache the TEXT.BMP CGImage for the new skin
         // This MUST happen outside of the draw cycle
         cacheTextBitmapCGImage()
+        updateCurrentTrackTextWidth()
         needsDisplay = true
     }
     

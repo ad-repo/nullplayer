@@ -52,8 +52,8 @@ class ModernPlaylistView: NSView {
     
     // MARK: - Artwork Background State
     
-    /// Current artwork image for background display
-    private var currentArtwork: NSImage?
+    /// Cached artwork CGImage to avoid NSImage->CGImage conversion during draw()
+    private var currentArtworkCGImage: CGImage?
     
     /// Track ID for the currently displayed artwork (to avoid reloading)
     private var artworkTrackId: UUID?
@@ -185,12 +185,14 @@ class ModernPlaylistView: NSView {
         // Hide if no current track or in shade mode
         guard currentIndex >= 0, currentIndex < tracks.count, !isShadeMode else {
             marquee.isHidden = true
+            marquee.text = ""
             return
         }
 
         let listRect = calculateListArea()
         guard listRect.width > 0, listRect.height > 0 else {
             marquee.isHidden = true
+            marquee.text = ""
             return
         }
 
@@ -200,6 +202,7 @@ class ModernPlaylistView: NSView {
         // Hide if row is off-screen
         if y + itemHeight < listRect.minY || y > listRect.maxY {
             marquee.isHidden = true
+            marquee.text = ""
             return
         }
 
@@ -245,7 +248,20 @@ class ModernPlaylistView: NSView {
         } else {
             // Text fits — no marquee needed, draw statically in drawTrackList
             marquee.isHidden = true
+            marquee.text = ""
         }
+    }
+
+    /// Only suppress in-context title drawing when the marquee is truly active for this row.
+    private func isTrackMarqueeActive(for index: Int, fullText: String, titleRect: NSRect) -> Bool {
+        guard let marquee = trackMarqueeLayer else { return false }
+        guard !marquee.isHidden else { return false }
+
+        let currentIndex = WindowManager.shared.audioEngine.currentIndex
+        guard index == currentIndex else { return false }
+        guard marquee.text == fullText else { return false }
+        guard marquee.frame.intersects(titleRect) else { return false }
+        return true
     }
 
     // MARK: - Notification Handlers
@@ -275,6 +291,7 @@ class ModernPlaylistView: NSView {
             edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
+        updateMarqueeLayerPosition()
     }
 
     @objc private func windowDidMiniaturize(_ note: Notification) {
@@ -283,12 +300,14 @@ class ModernPlaylistView: NSView {
 
     @objc private func windowDidDeminiaturize(_ note: Notification) {
         trackMarqueeLayer?.resumeScrolling()
+        updateMarqueeLayerPosition()
     }
 
     @objc private func windowDidChangeOcclusionState(_ note: Notification) {
         guard let window = window else { return }
         if window.occlusionState.contains(.visible) {
             trackMarqueeLayer?.resumeScrolling()
+            updateMarqueeLayerPosition()
         } else {
             trackMarqueeLayer?.pauseScrolling()
         }
@@ -311,6 +330,7 @@ class ModernPlaylistView: NSView {
         } else {
             trackMarqueeLayer?.pauseScrolling()
         }
+        updateMarqueeLayerPosition()
         needsDisplay = true
     }
 
@@ -420,7 +440,6 @@ class ModernPlaylistView: NSView {
         let currentIndex = engine.currentIndex
         let skin = renderer.skin
         
-        let scale = ModernSkinElements.scaleFactor
         let font = skin.playlistFont()
         
         guard !tracks.isEmpty else {
@@ -501,9 +520,8 @@ class ModernPlaylistView: NSView {
             let fullAttr = NSMutableAttributedString()
             fullAttr.append(NSAttributedString(string: numberText, attributes: numberAttrs))
             fullAttr.append(NSAttributedString(string: titleText, attributes: titleAttrs))
-            let fullSize = fullAttr.size()
-            
-            if isCurrent && trackMarqueeLayer?.isHidden == false {
+            let titleRect = NSRect(x: titleX, y: itemRect.minY, width: titleMaxWidth, height: itemRect.height)
+            if isCurrent && isTrackMarqueeActive(for: index, fullText: fullText, titleRect: titleRect) {
                 // Marquee layer handles the scrolling text — don't draw title here
                 // (layer composites above this CGContext content)
             } else {
@@ -573,8 +591,7 @@ class ModernPlaylistView: NSView {
     
     /// Draw the current artwork behind the track list at low opacity
     private func drawArtworkBackground(in listRect: NSRect, context: CGContext) {
-        guard let artworkImage = currentArtwork,
-              let cgImage = artworkImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        guard let cgImage = currentArtworkCGImage else { return }
         
         context.saveGState()
         context.clip(to: listRect)
@@ -617,6 +634,17 @@ class ModernPlaylistView: NSView {
         
         return NSRect(x: x, y: y, width: width, height: height)
     }
+
+    /// Resolve a stable CGImage outside draw() to avoid render-state side effects.
+    private func resolveArtworkCGImage(from image: NSImage?) -> CGImage? {
+        guard let image else { return nil }
+        if let direct = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return direct
+        }
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.cgImage
+    }
     
     /// Load artwork for a track (local embedded, Plex, or Subsonic)
     private func loadArtwork(for track: Track?) {
@@ -624,14 +652,14 @@ class ModernPlaylistView: NSView {
         artworkLoadTask = nil
         
         guard let track = track else {
-            currentArtwork = nil
+            currentArtworkCGImage = nil
             artworkTrackId = nil
             needsDisplay = true
             return
         }
         
-        // Skip if same track
-        guard track.id != artworkTrackId else { return }
+        // Skip if same track and artwork image is already resolved.
+        guard track.id != artworkTrackId || currentArtworkCGImage == nil else { return }
         
         artworkLoadTask = Task { [weak self] in
             guard let self = self else { return }
@@ -654,7 +682,7 @@ class ModernPlaylistView: NSView {
             guard !Task.isCancelled else { return }
             
             await MainActor.run {
-                self.currentArtwork = image
+                self.currentArtworkCGImage = self.resolveArtworkCGImage(from: image)
                 self.artworkTrackId = track.id
                 self.needsDisplay = true
             }
@@ -806,6 +834,7 @@ class ModernPlaylistView: NSView {
             let maxScroll = max(0, totalContentHeight - listRect.height)
             scrollOffset = max(0, min(maxScroll, scrollOffset))
         }
+        updateMarqueeLayerPosition()
         needsDisplay = true
     }
     
@@ -1182,6 +1211,7 @@ class ModernPlaylistView: NSView {
         let totalContentHeight = CGFloat(tracks.count) * itemHeight
         let maxScroll = max(0, totalContentHeight - listRect.height)
         scrollOffset = max(0, min(maxScroll, scrollOffset))
+        updateMarqueeLayerPosition()
     }
     
     // MARK: - Button Popup Menus
@@ -1608,12 +1638,14 @@ class ModernPlaylistView: NSView {
     override func layout() {
         super.layout()
         updateCornerMask()
+        updateMarqueeLayerPosition()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         layer?.isOpaque = false
         updateCornerMask()
+        updateMarqueeLayerPosition()
     }
 
     private func updateCornerMask() {
