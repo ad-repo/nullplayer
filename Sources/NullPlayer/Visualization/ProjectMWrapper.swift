@@ -477,6 +477,14 @@ class ProjectMWrapper: VisualizationEngine {
         let url = URL(fileURLWithPath: presetFiles[index])
         return url.deletingPathExtension().lastPathComponent
     }
+
+    /// Gets the full file path of a preset at the given index.
+    /// - Parameter index: Preset index
+    /// - Returns: Full preset path, or empty string if invalid
+    func presetPath(at index: Int) -> String {
+        guard index >= 0 && index < presetFiles.count else { return "" }
+        return presetFiles[index]
+    }
     
     /// Persists the current preset as the startup default.
     func setCurrentPresetAsDefault() {

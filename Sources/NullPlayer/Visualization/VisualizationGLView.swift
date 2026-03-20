@@ -754,6 +754,12 @@ class VisualizationGLView: NSOpenGLView {
         guard let pm = engine as? ProjectMWrapper else { return "" }
         return pm.presetName(at: index)
     }
+
+    /// Get preset full file path at index (ProjectM only)
+    func presetPath(at index: Int) -> String {
+        guard let pm = engine as? ProjectMWrapper else { return "" }
+        return pm.presetPath(at: index)
+    }
     
     /// Persist the currently active ProjectM preset as startup default.
     func setCurrentPresetAsDefault() {
