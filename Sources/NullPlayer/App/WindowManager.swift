@@ -77,6 +77,12 @@ class WindowManager {
             NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
         }
     }
+
+    /// Classic UI size multiplier driven by the Large UI mode toggle.
+    /// Stays discrete (1x / 1.5x) so free window stretching does not alter skin scale.
+    var classicScaleMultiplier: CGFloat {
+        isDoubleSize ? 1.5 : 1.0
+    }
     
     /// Always on top mode (floating window level)
     var isAlwaysOnTop: Bool = false {
@@ -345,6 +351,9 @@ class WindowManager {
     
     /// Track which window is currently being dragged
     private var draggingWindow: NSWindow?
+
+    /// Local monitor used to guarantee drag teardown even when a view misses mouseUp.
+    private var dragMouseUpMonitor: Any?
     
     /// Track if current drag is from title bar (retained for context; does not gate separation logic)
     private var isTitleBarDrag = false
@@ -2436,6 +2445,7 @@ class WindowManager {
         let usingPrimedHold = (primedDragWindow === window && holdStartTime != nil)
         draggingWindow = window
         isTitleBarDrag = fromTitleBar
+        installDragMouseUpMonitorIfNeeded()
         if !usingPrimedHold {
             holdStartTime = CACurrentMediaTime()
         }
@@ -2493,7 +2503,9 @@ class WindowManager {
 
     /// Called when a window drag ends
     func windowDidFinishDragging(_ window: NSWindow) {
+        guard draggingWindow === window else { return }
         draggingWindow = nil
+        removeDragMouseUpMonitor()
         primedDragWindow = nil
         dockedWindowsToMove.removeAll()
         dockedWindowOffsets.removeAll()
@@ -2508,6 +2520,23 @@ class WindowManager {
         _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
+    }
+
+    private func installDragMouseUpMonitorIfNeeded() {
+        guard dragMouseUpMonitor == nil else { return }
+        dragMouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
+            guard let self else { return event }
+            if let dragging = self.draggingWindow {
+                self.windowDidFinishDragging(dragging)
+            }
+            return event
+        }
+    }
+
+    private func removeDragMouseUpMonitor() {
+        guard let monitor = dragMouseUpMonitor else { return }
+        NSEvent.removeMonitor(monitor)
+        dragMouseUpMonitor = nil
     }
     
     /// Safely apply snapped position to a window without triggering feedback loop
