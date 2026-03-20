@@ -300,11 +300,15 @@ class PlaylistView: NSView {
     
     // MARK: - Scaling Support
     
-    /// Calculate scale factor based on WIDTH only (to match main window)
-    /// This allows vertical expansion to show more tracks
+    /// Calculate render scale from classic UI mode (normal/large), not playlist width.
+    /// This keeps playlist text/chrome size stable while allowing horizontal stretch.
     private var scaleFactor: CGFloat {
-        let originalSize = originalWindowSize
-        return bounds.width / originalSize.width
+        if let mainWidth = WindowManager.shared.mainWindowController?.window?.frame.width,
+           mainWidth > 0 {
+            return mainWidth / Skin.baseMainSize.width
+        }
+        let largeUIMultiplier: CGFloat = WindowManager.shared.isDoubleSize ? 1.5 : 1.0
+        return Skin.scaleFactor * largeUIMultiplier
     }
     
     /// Get the original window size (unscaled base size)
@@ -316,14 +320,14 @@ class PlaylistView: NSView {
         }
     }
     
-    /// Get the effective window size for drawing (allows vertical expansion)
-    /// Width matches original, height can be taller to show more tracks
+    /// Get the effective window size in unscaled skin coordinates.
+    /// Width/height can expand to fill stretched window dimensions.
     private var effectiveWindowSize: NSSize {
         let scale = scaleFactor
         let originalSize = originalWindowSize
-        // Height in "original" coordinates based on actual window height
+        let effectiveWidth = bounds.width / scale
         let effectiveHeight = bounds.height / scale
-        return NSSize(width: originalSize.width, height: max(originalSize.height, effectiveHeight))
+        return NSSize(width: effectiveWidth, height: max(originalSize.height, effectiveHeight))
     }
     
     /// Convert a point from view coordinates to original (unscaled) skin coordinates
@@ -331,7 +335,7 @@ class PlaylistView: NSView {
         let scale = scaleFactor
         let effectiveSize = effectiveWindowSize
         
-        // No horizontal centering needed (width-based scale)
+        // No centering needed: draw bounds already track the stretched window dimensions.
         // Transform point back to original coordinates
         let x = point.x / scale
         // Convert from macOS coords (origin bottom-left) to skin coords (origin top-left)
