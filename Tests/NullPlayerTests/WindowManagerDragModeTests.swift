@@ -65,4 +65,31 @@ final class WindowManagerDragModeTests: XCTestCase {
         )
         XCTAssertEqual(mode, .group)
     }
+
+    func testShouldTreatMoveAsDragReturnsFalseForProgrammaticMove() {
+        let isDrag = WindowManager.shouldTreatMoveAsDrag(
+            holdPrimed: false,
+            pressedMouseButtons: 0,
+            currentEventType: nil
+        )
+        XCTAssertFalse(isDrag)
+    }
+
+    func testShouldTreatMoveAsDragReturnsTrueWhenHoldPrimed() {
+        let isDrag = WindowManager.shouldTreatMoveAsDrag(
+            holdPrimed: true,
+            pressedMouseButtons: 0,
+            currentEventType: nil
+        )
+        XCTAssertTrue(isDrag)
+    }
+
+    func testShouldTreatMoveAsDragReturnsTrueWhenLeftButtonPressed() {
+        let isDrag = WindowManager.shouldTreatMoveAsDrag(
+            holdPrimed: false,
+            pressedMouseButtons: 0x1,
+            currentEventType: nil
+        )
+        XCTAssertTrue(isDrag)
+    }
 }

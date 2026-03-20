@@ -2404,6 +2404,23 @@ class WindowManager {
         return (currentTime - start) < threshold ? .separate : .group
     }
 
+    /// Decide whether a move callback should be treated as an active user drag.
+    /// Programmatic moves (startup restore, snapping, frame repair) must not arm drag state.
+    static func shouldTreatMoveAsDrag(
+        holdPrimed: Bool,
+        pressedMouseButtons: Int,
+        currentEventType: NSEvent.EventType?
+    ) -> Bool {
+        if holdPrimed { return true }
+        if (pressedMouseButtons & 0x1) != 0 { return true } // Left mouse button.
+        switch currentEventType {
+        case .leftMouseDown, .leftMouseDragged:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Called when a window drag begins
     /// - Parameters:
     ///   - window: The window being dragged
@@ -2496,6 +2513,32 @@ class WindowManager {
     
     /// Called when a window is being dragged - handle snapping and move docked windows
     func windowWillMove(_ window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
+        let holdPrimedForWindow = (primedDragWindow === window && holdStartTime != nil)
+        let treatAsDrag = WindowManager.shouldTreatMoveAsDrag(
+            holdPrimed: holdPrimedForWindow,
+            pressedMouseButtons: Int(NSEvent.pressedMouseButtons),
+            currentEventType: NSApp.currentEvent?.type
+        )
+
+        // Ignore non-drag moves for drag-state purposes (e.g. startup/applyFrame).
+        // Also clear stale primed/highlight state if a no-button move arrives.
+        if !treatAsDrag {
+            if draggingWindow === window {
+                windowDidFinishDragging(window)
+            } else {
+                if holdPrimedForWindow {
+                    primedDragWindow = nil
+                    holdStartTime = nil
+                    dragMode = .pending
+                }
+                if highlightWasPosted {
+                    postConnectedWindowHighlight([])
+                    highlightWasPosted = false
+                }
+            }
+            return applySnapping(for: window, to: newOrigin)
+        }
+
         // Ignore if we're already in the middle of snapping (prevents feedback loop)
         if isSnappingWindow {
             return newOrigin
