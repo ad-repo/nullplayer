@@ -165,6 +165,18 @@ class MainWindowController: NSWindowController, MainWindowProviding {
 // MARK: - NSWindowDelegate
 
 extension MainWindowController: NSWindowDelegate {
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        let wm = WindowManager.shared
+        guard !wm.isRunningModernUI else { return frameSize }
+        guard sender === window else { return frameSize }
+        let hasAttachedChildren = !(sender.childWindows?.isEmpty ?? true)
+        // Classic mode: while connected/docked, main window cannot be edge-resized.
+        if hasAttachedChildren || wm.isWindowDocked(sender) {
+            return sender.frame.size
+        }
+        return frameSize
+    }
+
     func windowWillMove(_ notification: Notification) {
         // Handle window snapping via WindowManager
     }

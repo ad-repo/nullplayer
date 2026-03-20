@@ -115,6 +115,16 @@ class ResizableWindow: NSWindow {
         
         return edges
     }
+
+    /// Classic main window: block edge-resize while docked to any connected window.
+    private func shouldBlockEdgeResize(_ edges: ResizeEdges) -> Bool {
+        guard edges != .none else { return false }
+        let wm = WindowManager.shared
+        guard !wm.isRunningModernUI else { return false }
+        guard self === wm.mainWindowController?.window else { return false }
+        let hasAttachedChildren = !(self.childWindows?.isEmpty ?? true)
+        return hasAttachedChildren || wm.isWindowDocked(self)
+    }
     
     // MARK: - Event Handling
     
@@ -155,6 +165,9 @@ class ResizableWindow: NSWindow {
     private func handleResizeMouseDown(_ event: NSEvent) -> Bool {
         let windowPoint = event.locationInWindow
         let edges = detectEdges(at: windowPoint)
+        if shouldBlockEdgeResize(edges) {
+            return false
+        }
         
         // Double-click on edge restores to default/minimum size
         if event.clickCount == 2 && edges != .none {
@@ -193,6 +206,11 @@ class ResizableWindow: NSWindow {
     private func updateResizeCursor(_ event: NSEvent) {
         let windowPoint = event.locationInWindow
         let edges = detectEdges(at: windowPoint)
+
+        if shouldBlockEdgeResize(edges) {
+            NSCursor.arrow.set()
+            return
+        }
         
         if edges != .none {
             // Show appropriate resize cursor
