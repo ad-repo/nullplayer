@@ -16228,7 +16228,8 @@ class RatingOverlayView: NSView {
         let path = NSBezierPath()
         for i in 0..<10 {
             let radius = i % 2 == 0 ? outerRadius : innerRadius
-            let angle = CGFloat(i) * .pi / 5 - .pi / 2
+            // Start at the top point so stars render upright in AppKit coordinates.
+            let angle = CGFloat(i) * .pi / 5 + .pi / 2
             let point = NSPoint(
                 x: center.x + radius * cos(angle),
                 y: center.y + radius * sin(angle)
@@ -16243,17 +16244,22 @@ class RatingOverlayView: NSView {
         
         // Glass effect colors
         if filled {
-            // Filled star: white with subtle transparency
-            NSColor(white: 1.0, alpha: hovered ? 0.95 : 0.85).setFill()
-            path.fill()
+            // Filled star: warm gold (slightly brighter on hover).
+            (hovered
+                ? NSColor(calibratedRed: 1.00, green: 0.86, blue: 0.28, alpha: 0.98)
+                : NSColor(calibratedRed: 0.98, green: 0.78, blue: 0.20, alpha: 0.92)
+            ).setFill()
         } else {
-            // Empty star: outline only with glass effect
-            NSColor(white: 1.0, alpha: 0.3).setFill()
-            path.fill()
+            // Empty star: dim gold glass fill.
+            NSColor(calibratedRed: 0.75, green: 0.63, blue: 0.30, alpha: 0.22).setFill()
         }
+        path.fill()
         
-        // Subtle outline
-        NSColor(white: 1.0, alpha: 0.5).setStroke()
+        // Gold-tinted outline for both filled and empty states.
+        (filled
+            ? NSColor(calibratedRed: 1.00, green: 0.90, blue: 0.45, alpha: 0.85)
+            : NSColor(calibratedRed: 0.86, green: 0.72, blue: 0.35, alpha: 0.45)
+        ).setStroke()
         path.lineWidth = 1.5
         path.stroke()
     }
