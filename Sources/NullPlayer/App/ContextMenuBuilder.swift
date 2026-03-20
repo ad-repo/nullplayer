@@ -6,7 +6,7 @@ class ContextMenuBuilder {
     
     // MARK: - Main Menu Builder
     
-    static func buildMenu() -> NSMenu {
+    static func buildMenu(includeOutputDevices: Bool = true) -> NSMenu {
         let menu = NSMenu()
         let wm = WindowManager.shared
 
@@ -32,8 +32,10 @@ class ContextMenuBuilder {
         menu.addItem(NSMenuItem.separator())
 
         // Output Devices submenu
-        menu.addItem(buildOutputDevicesMenuItem())
-        menu.addItem(NSMenuItem.separator())
+        if includeOutputDevices {
+            menu.addItem(buildOutputDevicesMenuItem())
+            menu.addItem(NSMenuItem.separator())
+        }
 
         // Always On Top
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
