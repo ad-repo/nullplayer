@@ -2505,14 +2505,23 @@ class WindowManager {
     
     /// Safely apply snapped position to a window without triggering feedback loop
     func applySnappedPosition(_ window: NSWindow, to position: NSPoint) {
+        // Re-entrant move callbacks can arrive synchronously while setFrameOrigin is in flight.
+        // Ignore them so we don't recursively set the same frame until the stack overflows.
+        guard !isSnappingWindow else { return }
         guard position != window.frame.origin else { return }
+        let previousSnappingState = isSnappingWindow
         isSnappingWindow = true
+        defer { isSnappingWindow = previousSnappingState }
         window.setFrameOrigin(position)
-        isSnappingWindow = false
     }
     
     /// Called when a window is being dragged - handle snapping and move docked windows
     func windowWillMove(_ window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
+        // Programmatic frame changes should never re-enter snap logic.
+        if isSnappingWindow {
+            return newOrigin
+        }
+
         let holdPrimedForWindow = (primedDragWindow === window && holdStartTime != nil)
         let treatAsDrag = WindowManager.shouldTreatMoveAsDrag(
             holdPrimed: holdPrimedForWindow,
@@ -2537,11 +2546,6 @@ class WindowManager {
                 }
             }
             return applySnapping(for: window, to: newOrigin)
-        }
-
-        // Ignore if we're already in the middle of snapping (prevents feedback loop)
-        if isSnappingWindow {
-            return newOrigin
         }
         
         // Ignore all window movement while we're programmatically repositioning docked windows.
