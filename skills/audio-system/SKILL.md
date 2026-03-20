@@ -251,11 +251,16 @@ The waveform window shares the audio engine but intentionally does not share the
 
 ### Streams
 
-- `AudioEngine` and `StreamingAudioPlayer` emit `.audioWaveform576DataUpdated`
-- `BaseWaveformView` listens only for non-file audio tracks
-- `StreamingWaveformAccumulator` builds:
-  - progressive seekable waveforms for timed streams
-  - rolling non-seekable waveforms for live/radio streams
+- Live path:
+  - `AudioEngine` and `StreamingAudioPlayer` emit `.audioWaveform576DataUpdated`
+  - `BaseWaveformView` listens only for non-file audio tracks
+  - `StreamingWaveformAccumulator` builds progressive seekable waveforms for timed streams, and rolling non-seekable waveforms for live/radio streams
+- Prerender path (service-backed tracks with stable identity + known duration):
+  - `WaveformCacheService` can prerender remote waveforms and persist them as seekable snapshots
+  - Service cache key: `WaveformCacheService.serviceCacheKey(serviceIdentity:duration:bitrate:sampleRate:)`
+  - Live placeholders or unknown-duration streams skip prerender and stay on live accumulation
+  - Generation tries `AVAssetReader` first, then falls back to URL download + local decode
+  - Once a seekable service prerender is ready, `BaseWaveformView` freezes on that snapshot and ignores subsequent live 576-sample chunks for the same track
 
 ### Consumer Gating
 

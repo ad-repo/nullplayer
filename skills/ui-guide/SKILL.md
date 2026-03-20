@@ -68,30 +68,35 @@ override func draw(_ dirtyRect: NSRect) {
 }
 ```
 
-### Vertical Expansion Mode (Playlist)
+### Stretch Expansion Mode (Playlist, Spectrum, Waveform)
 
-The playlist window uses **vertical expansion with width-based scaling** - width is locked to match the main window, only height can change:
-- Width matches main window (fixed, no horizontal resizing)
-- Height expands to show more tracks (drag bottom edge)
-- Title bar (20px), bottom bar (38px), and side borders stay fixed size
-- SkinRenderer tiles sprites vertically to fill the space
-- Scale factor is based on WIDTH only (not min of width/height like other windows)
+Center-stack secondary windows now support horizontal and vertical stretching:
+- Playlist, Spectrum, and Waveform use skin minimum sizes and `maxSize = .greatestFiniteMagnitude`
+- Default open width still aligns to main window width
+- Reopen without a saved frame resets to default docked frame below main
+- Restored classic frames preserve width for windows that support stretch (playlist + waveform)
 
-The width lock is enforced via `minSize.width == maxSize.width`:
+For classic playlist rendering, UI scale is derived from main-window Large UI mode, not the stretched playlist width. This keeps bitmap text and chrome stable while allowing wider windows:
 
 ```swift
-// Lock width (only vertical resizing allowed)
-window.minSize = NSSize(width: mainFrame.width, height: Skin.playlistMinSize.height)
-window.maxSize = NSSize(width: mainFrame.width, height: CGFloat.greatestFiniteMagnitude)
+private var scaleFactor: CGFloat {
+    if let mainWidth = WindowManager.shared.mainWindowController?.window?.frame.width,
+       mainWidth > 0 {
+        return mainWidth / Skin.baseMainSize.width
+    }
+    let largeUIMultiplier: CGFloat = WindowManager.shared.isDoubleSize ? 1.5 : 1.0
+    return Skin.scaleFactor * largeUIMultiplier
+}
 ```
 
-The `effectiveWindowSize` allows the height to expand beyond the minimum:
+`effectiveWindowSize` expands in both dimensions in skin space:
 
 ```swift
 private var effectiveWindowSize: NSSize {
-    let scale = scaleFactor  // width-based only
+    let scale = scaleFactor
+    let effectiveWidth = bounds.width / scale
     let effectiveHeight = bounds.height / scale
-    return NSSize(width: originalWindowSize.width, height: max(originalWindowSize.height, effectiveHeight))
+    return NSSize(width: effectiveWidth, height: max(originalWindowSize.height, effectiveHeight))
 }
 ```
 
@@ -500,7 +505,8 @@ Controls how quickly spectrum bars fall after peaks:
 
 ### Window Specifications
 
-- **Size**: 275x116 (same as main window for docking)
+- **Default size**: 275x116 (same as main window at 1x)
+- **Stretching**: Width and height can expand; minimum width stays skin-defined
 - **Bar count**: 55 bars (vs 19 in main window)
 - **Refresh**: 60Hz via CVDisplayLink
 - **Skin colors**: Uses skin's `viscolor.txt` (24 colors)
@@ -534,13 +540,14 @@ Key implementation details:
 - ProjectM shade mode is always drawn (uses `isShadeMode || !effectiveHideTitleBars` condition) so HT + shade never produces a blank window
 - Library Browser uses lazy drag: `mouseDown` records `windowDragStartPoint`; `mouseDragged` starts the drag on first movement when HT is on
 
-## Double Size Mode (Both UI Modes)
+## Large UI Mode (1.5x, Both UI Modes)
 
-Toggle via the 2X button in classic UI, or via context menu in either UI.
+UI label is **Large UI**. Internal state key remains `isDoubleSize`.
 
-- **Modern UI**: live toggle — `ModernSkinElements.scaleFactor` is a computed property (`baseScaleFactor * sizeMultiplier`). Do NOT cache `scaleFactor` in a `let` property — use a computed `var` or reference it inline. Views must observe `.doubleSizeDidChange` and recreate their renderer. Side windows (Library Browser, ProjectM) scale width by `sizeMultiplier`; their layout constants and hardcoded pixel padding must also multiply by `sizeMultiplier`.
-- **Classic UI**: requires restart. `MenuActions.toggleDoubleSize()` shows a "Restart Required" dialog, toggles `isDoubleSize`, and calls `relaunchApp()` if confirmed. `applyDoubleSize()` is not guarded by `isModernUIEnabled` — it runs for both modes.
-- **Startup restoration**: `isDoubleSize` is restored in `AppStateManager.restoreSettingsState()` BEFORE sub-windows are shown (at the top of the `+0.1s` dispatch block). This ensures `applyDoubleSize` runs while sub-windows are not yet visible, so it only updates the main window's frame — it does NOT re-scale sub-window frames that are already at their saved 2x sizes.
+- **Scale amount**: 1.5x (not 2x)
+- **Modern UI**: live toggle — `ModernSkinElements.scaleFactor` is computed (`baseScaleFactor * sizeMultiplier`). Do NOT cache `scaleFactor` in a `let` property. Views should refresh renderers on `.doubleSizeDidChange`.
+- **Classic UI**: requires restart. `MenuActions.toggleDoubleSize()` shows a "Restart Required" dialog and relaunches if confirmed.
+- **Startup restoration**: `isDoubleSize` is restored in `AppStateManager.restoreSettingsState()` before sub-windows are shown, so saved 1.5x geometry is not double-applied during restore.
 - When title bars are hidden, all window drags pass `fromTitleBar: true` to allow undocking
 - Classic windows use drawing transform offset (`translateBy`) to shift the skin image up; modern windows use conditional `titleBarHeight`
 
@@ -563,11 +570,14 @@ Dragging a docked window uses a time-based mode determined at the first `mouseDr
 
 Implementation details:
 - `DragMode` enum: `.pending` (not yet decided) / `.separate` / `.group`
-- `holdStartTime` captured at `mouseDown` via `windowWillStartDragging`; mode resolved at first `windowWillMove` call via `determineDragMode(holdStart:currentTime:threshold:)` (pure static, unit-tested)
+- Hold timing can be primed at `mouseDown` (`windowWillPrimeDragging`) before actual drag start for lazy-drag views (for example HT-on library browser)
+- Mode resolves on first `windowWillMove` via `determineDragMode(holdStart:currentTime:threshold:isWindowLayoutLocked:)` (pure static, unit-tested)
+- If `isWindowLayoutLocked == true`, drag mode is forced to `.group` regardless of hold duration
 - Separate mode: peers are restored to their pre-drag origins before the dock is broken
 - Group mode: connected windows move using stored offsets from drag start to prevent drift; child windows of the dragging window are skipped (AppKit moves them automatically); group top is clamped so no window goes off-screen
 - Mid-drag window close: `NSWindow.willCloseNotification` observer cleans up hold state and clears highlights
 - Mid-flight drag (AppKit-initiated, no prior `mouseDown`): always `.group` mode (override)
+- Programmatic moves are filtered by `shouldTreatMoveAsDrag(...)` so startup restore/snapping does not arm drag state or post false highlights
 - **Connected window highlight**: at `mouseDown`, all peer windows receive a `white @ 15% opacity` overlay via `connectedWindowHighlightDidChange` notification. Cleared when drag ends or `.separate` mode is resolved. All 10 dockable views (5 classic + 5 modern) observe this notification.
 - `isMovingDockedWindows` flag prevents re-entrant `windowWillMove` calls while peers are being repositioned
 

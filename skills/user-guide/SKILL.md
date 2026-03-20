@@ -44,11 +44,13 @@ Windows automatically snap together when dragged near each other:
 - Edge-to-edge snapping
 - Screen edge snapping
 - Group minimize (attached windows minimize together)
+- **Lock Connected Windows / Unlock Connected Windows** toggle (context menu) controls whether connected windows always move as a group
 - **Snap to Default** (context menu) resets all windows
 
 **Drag behaviour:**
 - **Quick drag** (release mouse within ~400 ms of clicking): the dragged window detaches from its group and moves alone; other connected windows stay put
 - **Hold then drag** (hold ≥ 400 ms before moving): all connected windows move together as a group
+- **When connected windows are locked**: hold timing is bypassed and drags always move the whole connected group
 - Connected peers show a brief highlight overlay at mouseDown to preview which windows will move together
 
 ### Main Window Elements
@@ -217,10 +219,10 @@ Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (dou
 - Portable modern skin bundles use `.nsz` (ZIP) and can be imported via **UI > Modern > Load Skin...**
 - Bundled modern skins: NeonWave (default), Skulls
 
-### Double Size Mode
-- **Modern UI**: toggle via context menu → **Double Size**
-- **Classic UI**: toggle via **2X button** or context menu → **Double Size**
-- Scales all windows by 2x
+### Large UI Mode
+- **Modern UI**: toggle via context menu → **Large UI**
+- **Classic UI**: toggle via **2X button** or context menu → **Large UI**
+- Scales all windows by 1.5x
 - Persists across restarts
 - **Modern UI**: toggles live instantly
 - **Classic UI**: requires a restart (dialog appears before any UI change)
@@ -295,4 +297,4 @@ For comprehensive documentation, see:
 - **Shift+Click** for multi-select in playlist/browser
 - **Cmd+J** to jump to currently playing track
 - Windows **dock automatically** when dragged near each other
-- **Double Size** (2X) is available in both modern and classic UI; classic requires restart
+- **Large UI** (1.5x) is available in both modern and classic UI; classic requires restart

@@ -268,4 +268,4 @@ All windows share palette colors, glow, grid, and font settings. Customize indiv
 
 For detailed information, see:
 - [element-reference.md](element-reference.md) - Complete element catalog with all IDs, positions, states
-- [advanced-features.md](advanced-features.md) - Title text system, animations, Double Size mode, sub-window creation checklist
+- [advanced-features.md](advanced-features.md) - Title text system, animations, Large UI mode, sub-window creation checklist

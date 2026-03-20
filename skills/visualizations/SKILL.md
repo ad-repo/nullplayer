@@ -230,7 +230,7 @@ A dedicated Metal-based spectrum analyzer providing larger, more detailed view t
 
 - **Bar Count**: 55 bars (vs 19 in main window)
 - **Rendering**: Metal GPU shaders at 60Hz
-- **Window Size**: 275x116 pixels (matches main window)
+- **Window Geometry**: default 275x116 at 1x; supports horizontal + vertical stretching with skin minimum size constraints
 - **Color Source**: Skin's `viscolor.txt` (24-color palette)
 
 ### Docking
