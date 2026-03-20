@@ -3,6 +3,8 @@ import AppKit
 /// Controller for the standalone waveform window (classic skin).
 class WaveformWindowController: NSWindowController, WaveformWindowProviding {
     private var waveformView: WaveformView!
+    /// Close + reopen should restore the default frame once. `orderOut` hides should not.
+    private var shouldResetFrameOnNextShow = true
 
     private(set) var isShadeMode = false
 
@@ -90,6 +92,19 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
                               width: mainFrame.width, height: waveformHeight)
         window.setFrame(newFrame, display: false)
     }
+
+    /// Returns whether the next show should reset to the default frame.
+    /// Consumes the pending flag so only the first subsequent show resets.
+    func consumeShouldResetFrameOnNextShow() -> Bool {
+        let shouldReset = shouldResetFrameOnNextShow
+        shouldResetFrameOnNextShow = false
+        return shouldReset
+    }
+
+    /// Clears a pending one-shot reset (used by explicit restored-frame paths).
+    func clearPendingFrameReset() {
+        shouldResetFrameOnNextShow = false
+    }
 }
 
 extension WaveformWindowController: NSWindowDelegate {
@@ -105,6 +120,7 @@ extension WaveformWindowController: NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        shouldResetFrameOnNextShow = true
         stopLoadingForHide()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }

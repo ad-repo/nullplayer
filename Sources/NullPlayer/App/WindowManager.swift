@@ -1402,14 +1402,21 @@ class WindowManager {
         }
 
         if let window = waveformWindowController?.window {
+            let classicController = waveformWindowController as? WaveformWindowController
             applyCenterStackSizingConstraints(window, kind: .waveform)
             if let frame = restoredFrame, frame != .zero {
+                classicController?.clearPendingFrameReset()
                 window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .waveform), display: true)
             } else {
                 if isModernUIEnabled {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .waveform)
                 } else {
-                    (waveformWindowController as? WaveformWindowController)?.resetToDefaultFrame()
+                    // Classic waveform should only reset after explicit close + reopen.
+                    // orderOut/show cycles and unrelated layout changes must preserve user size.
+                    let shouldResetClassicFrame = classicController?.consumeShouldResetFrameOnNextShow() ?? isNewWindow
+                    if shouldResetClassicFrame {
+                        classicController?.resetToDefaultFrame()
+                    }
                 }
                 positionSubWindow(window)
             }
