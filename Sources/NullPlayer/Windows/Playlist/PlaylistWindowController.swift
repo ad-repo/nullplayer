@@ -51,9 +51,9 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
             // Use same width as main window to match scaling
             let playlistHeight = Skin.playlistMinSize.height * scale
             
-            // Lock width to match main window (only vertical resizing allowed)
-            window.minSize = NSSize(width: mainFrame.width, height: playlistHeight)
-            window.maxSize = NSSize(width: mainFrame.width, height: CGFloat.greatestFiniteMagnitude)
+            // Keep default width aligned to main, but allow horizontal stretching.
+            window.minSize = NSSize(width: Skin.playlistMinSize.width, height: playlistHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             
             // Check if EQ window is visible and position below it
             var positionY = mainFrame.minY - playlistHeight
@@ -71,6 +71,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
             window.setFrame(newFrame, display: true)
         } else {
             window.minSize = Skin.playlistMinSize
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             window.center()
         }
         
@@ -96,6 +97,22 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
     
     func reloadPlaylist() {
         playlistView.reloadData()
+    }
+
+    func resetToDefaultFrame() {
+        guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
+        let mainFrame = mainWindow.frame
+        let scale = mainFrame.width / Skin.mainWindowSize.width
+        let playlistHeight = Skin.playlistMinSize.height * scale
+        window.minSize = NSSize(width: Skin.playlistMinSize.width, height: playlistHeight)
+        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        let newFrame = NSRect(
+            x: mainFrame.minX,
+            y: mainFrame.minY - playlistHeight,
+            width: mainFrame.width,
+            height: playlistHeight
+        )
+        window.setFrame(newFrame, display: false)
     }
     
     // MARK: - Shade Mode

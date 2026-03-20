@@ -758,8 +758,7 @@ class AppStateManager {
                 }
             }
 
-            // One-time self-heal for classic sessions affected by cross-mode frame contamination:
-            // if EQ/playlist are still docked below main but widths differ, normalize to main width.
+            // One-time self-heal for classic sessions affected by cross-mode frame contamination.
             self.repairClassicDockedStackWidthsIfNeeded()
         }
         
@@ -1007,8 +1006,8 @@ class AppStateManager {
 
     /// Pure geometry helper for restoring classic center-stack windows
     /// (Main/EQ/Playlist/Spectrum/Waveform).
-    /// Repairs near-docked gaps, normalizes width/X to main, and snaps repaired windows flush below
-    /// the current anchor in stack order.
+    /// Repairs near-docked gaps and snaps repaired windows flush below the current anchor
+    /// in stack order. Width is preserved for windows that support horizontal stretching.
     static func repairClassicCenterStackFrames(
         mainFrame: NSRect,
         equalizerFrame: NSRect?,
@@ -1067,7 +1066,7 @@ class AppStateManager {
         }
 
         let adjustedEQ = repairCandidate(equalizerFrame)
-        let adjustedPlaylist = repairCandidate(playlistFrame)
+        let adjustedPlaylist = repairCandidate(playlistFrame, preserveWidth: true)
         let adjustedSpectrum = repairCandidate(spectrumFrame)
         let adjustedWaveform = repairCandidate(waveformFrame, preserveWidth: true)
 

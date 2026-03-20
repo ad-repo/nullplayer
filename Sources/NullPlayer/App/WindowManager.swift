@@ -206,7 +206,7 @@ class WindowManager {
                                                            currentHeight: winFrame.height,
                                                            titleBarDelta: titleDelta,
                                                            preservePlaylistContentHeight: true)
-                if kind == .equalizer || kind == .playlist { winFrame.size.width = frame.width }
+                if kind == .equalizer { winFrame.size.width = frame.width }
                 winFrame.size.height = targetHeight
                 winFrame.origin.x = frame.minX
                 winFrame.origin.y = nextTop - targetHeight
@@ -477,8 +477,10 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 playlistWindow.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .playlist), display: true)
             } else {
-                if isNewWindow {
+                if isModernUIEnabled {
                     applyDefaultCenterStackFrameForCurrentHT(playlistWindow, kind: .playlist)
+                } else {
+                    (playlistWindowController as? PlaylistWindowController)?.resetToDefaultFrame()
                 }
                 positionSubWindow(playlistWindow)
             }
@@ -1869,27 +1871,30 @@ class WindowManager {
             let minHeight = runningModernMode
                 ? expectedMainHeightForCurrentHT(mainWindowController?.window)
                 : baseMinSize.height * scale
-
-            let targetWidth = mainFrame.width
-            playlistWindow.minSize = NSSize(width: targetWidth, height: minHeight)
-            playlistWindow.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
+            let minWidth = runningModernMode
+                ? ModernSkinElements.playlistMinSize.width
+                : baseMinSize.width * scale
+            playlistWindow.minSize = NSSize(width: minWidth, height: minHeight)
+            playlistWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             // Scale height proportionally
             let currentFrame = playlistWindow.frame
             let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
 
             if playlistWindow.isVisible {
                 let playlistFrame = NSRect(
                     x: mainFrame.minX,
                     y: nextY - newHeight,
-                    width: targetWidth,
+                    width: newWidth,
                     height: newHeight
                 )
                 playlistWindow.setFrame(playlistFrame, display: true, animate: false)
                 nextY = playlistFrame.minY
             } else {
-                playlistWindow.setContentSize(NSSize(width: targetWidth, height: newHeight))
+                playlistWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
             }
         }
         
@@ -2129,8 +2134,8 @@ class WindowManager {
             window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         case .playlist:
-            window.minSize = NSSize(width: targetWidth, height: targetHeight)
-            window.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
+            window.minSize = NSSize(width: ModernSkinElements.playlistMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         case .waveform:
             window.minSize = NSSize(width: ModernSkinElements.waveformMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)

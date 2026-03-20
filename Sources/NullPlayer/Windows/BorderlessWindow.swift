@@ -7,7 +7,7 @@ import AppKit
 /// Optionally supports edge resize for windows that need it.
 /// Configure via `allowedResizeEdges`:
 /// - Empty (default) = no resize allowed (ModernEQ, ModernMainWindow)
-/// - `[.bottom]` = vertical-only expansion (ModernPlaylist)
+/// - `[.bottom, .left, .right]` = vertical + horizontal expansion (ModernPlaylist)
 /// - `[.left, .right, .top, .bottom]` = full multi-edge resize (ModernLibraryBrowser)
 class BorderlessWindow: NSWindow {
     
