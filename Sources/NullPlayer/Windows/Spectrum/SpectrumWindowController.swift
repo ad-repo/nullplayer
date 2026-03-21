@@ -94,13 +94,13 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
     func resetToDefaultFrame() {
         guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
         let mainFrame = mainWindow.frame
-        let scale = mainFrame.width / Skin.mainWindowSize.width
-        let defaultHeight = SkinElements.SpectrumWindow.windowSize.height * scale
+        let scaleMultiplier = WindowManager.shared.classicScaleMultiplier
+        let defaultHeight = SkinElements.SpectrumWindow.windowSize.height * scaleMultiplier
         let defaultWidth = mainFrame.width
 
         window.minSize = NSSize(
             width: SkinElements.SpectrumWindow.minSize.width,
-            height: SkinElements.SpectrumWindow.minSize.height * scale
+            height: SkinElements.SpectrumWindow.minSize.height * scaleMultiplier
         )
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 

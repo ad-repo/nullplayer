@@ -380,6 +380,20 @@ class ProjectMView: NSView {
         guard !path.isEmpty else { return nil }
         return (index, name, path)
     }
+    
+    private func presetIndex(forPath path: String) -> Int? {
+        guard let visView = visualizationGLView else { return nil }
+        let normalizedTarget = (path as NSString).standardizingPath
+        guard !normalizedTarget.isEmpty else { return nil }
+        
+        for index in 0..<visView.presetCount {
+            let candidate = (visView.presetPath(at: index) as NSString).standardizingPath
+            if candidate == normalizedTarget {
+                return index
+            }
+        }
+        return nil
+    }
 
     private func showPresetRatingOverlay() {
         guard let preset = currentPresetIdentity() else { return }
@@ -734,6 +748,44 @@ class ProjectMView: NSView {
             let rateCurrentMenuItem = NSMenuItem(title: "Rate Current Preset", action: nil, keyEquivalent: "")
             rateCurrentMenuItem.submenu = rateCurrentMenu
             menu.addItem(rateCurrentMenuItem)
+
+            let favoritesMenu = NSMenu()
+            let isCurrentPresetFavorite = presetRatingsStore.isFavorite(forPresetPath: currentPresetPath)
+            let toggleFavoriteTitle = isCurrentPresetFavorite
+                ? "Remove Current Preset from Favorites"
+                : "Add Current Preset to Favorites"
+            let toggleFavoriteItem = NSMenuItem(
+                title: toggleFavoriteTitle,
+                action: #selector(toggleCurrentPresetFavorite(_:)),
+                keyEquivalent: ""
+            )
+            toggleFavoriteItem.target = self
+            toggleFavoriteItem.isEnabled = presetCount > 0
+            favoritesMenu.addItem(toggleFavoriteItem)
+
+            let presetPaths = (0..<presetCount).map { visualizationGLView?.presetPath(at: $0) ?? "" }
+            let ratingsByPath = presetRatingsStore.ratings(forPresetPaths: presetPaths)
+            let favoritePaths = presetRatingsStore.favoritePresetPaths(forPresetPaths: presetPaths)
+
+            if !favoritePaths.isEmpty {
+                favoritesMenu.addItem(NSMenuItem.separator())
+                for i in 0..<presetCount {
+                    let name = visualizationGLView?.presetName(at: i) ?? "Preset \(i + 1)"
+                    let path = (presetPaths[i] as NSString).standardizingPath
+                    guard favoritePaths.contains(path) else { continue }
+                    let rating = ratingsByPath[path] ?? 0
+                    let title = "\(name) [\(starString(for: rating))]"
+                    let item = NSMenuItem(title: title, action: #selector(selectFavoritePresetFromMenu(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = path
+                    item.state = (i == currentPresetIndex) ? .on : .off
+                    favoritesMenu.addItem(item)
+                }
+            }
+
+            let favoritesMenuItem = NSMenuItem(title: "Favorites", action: nil, keyEquivalent: "")
+            favoritesMenuItem.submenu = favoritesMenu
+            menu.addItem(favoritesMenuItem)
             
             menu.addItem(NSMenuItem.separator())
             
@@ -771,8 +823,6 @@ class ProjectMView: NSView {
             // Presets submenu - list all available presets
             if presetCount > 0 {
                 let presetsMenu = NSMenu()
-                let presetPaths = (0..<presetCount).map { visualizationGLView?.presetPath(at: $0) ?? "" }
-                let ratingsByPath = presetRatingsStore.ratings(forPresetPaths: presetPaths)
 
                 for i in 0..<presetCount {
                     let name = visualizationGLView?.presetName(at: i) ?? "Preset \(i + 1)"
@@ -896,6 +946,19 @@ class ProjectMView: NSView {
         guard let preset = currentPresetIdentity() else { return }
         let rating = min(5, max(0, sender.tag))
         presetRatingsStore.setRating(rating, forPresetPath: preset.path, presetName: preset.name)
+    }
+    
+    @objc private func toggleCurrentPresetFavorite(_ sender: Any?) {
+        guard let preset = currentPresetIdentity() else { return }
+        let isFavorite = presetRatingsStore.isFavorite(forPresetPath: preset.path)
+        presetRatingsStore.setFavorite(!isFavorite, forPresetPath: preset.path, presetName: preset.name)
+    }
+    
+    @objc private func selectFavoritePresetFromMenu(_ sender: NSMenuItem) {
+        guard let path = sender.representedObject as? String,
+              let index = presetIndex(forPath: path) else { return }
+        hidePresetRatingOverlay()
+        visualizationGLView?.selectPreset(at: index, hardCut: false)
     }
     
     @objc private func selectPresetFromMenu(_ sender: NSMenuItem) {

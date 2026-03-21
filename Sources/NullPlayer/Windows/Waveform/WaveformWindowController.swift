@@ -30,8 +30,7 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
         window.isReleasedWhenClosed = false
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
             let mainFrame = mainWindow.frame
-            let scale = mainFrame.width / Skin.mainWindowSize.width
-            let waveformHeight = SkinElements.WaveformWindow.minSize.height * scale
+            let waveformHeight = SkinElements.WaveformWindow.minSize.height * WindowManager.shared.classicScaleMultiplier
             window.minSize = NSSize(width: SkinElements.WaveformWindow.minSize.width, height: waveformHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             let newFrame = NSRect(
@@ -85,8 +84,7 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
     func resetToDefaultFrame() {
         guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
         let mainFrame = mainWindow.frame
-        let scale = mainFrame.width / Skin.mainWindowSize.width
-        let waveformHeight = SkinElements.WaveformWindow.minSize.height * scale
+        let waveformHeight = SkinElements.WaveformWindow.minSize.height * WindowManager.shared.classicScaleMultiplier
         window.minSize = NSSize(width: SkinElements.WaveformWindow.minSize.width, height: waveformHeight)
         let newFrame = NSRect(x: mainFrame.minX, y: mainFrame.minY - waveformHeight,
                               width: mainFrame.width, height: waveformHeight)

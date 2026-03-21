@@ -14,6 +14,11 @@ final class ProjectMPresetRatingsStore {
     private let colPresetName = Expression<String>("preset_name")
     private let colRating = Expression<Int>("rating")
     private let colUpdatedAt = Expression<Double>("updated_at")
+    
+    private let favoritesTable = Table("projectm_preset_favorites")
+    private let colFavoritePresetPath = Expression<String>("preset_path")
+    private let colFavoritePresetName = Expression<String>("preset_name")
+    private let colFavoriteUpdatedAt = Expression<Double>("updated_at")
 
     private init() {
         setupDatabase()
@@ -50,8 +55,16 @@ final class ProjectMPresetRatingsStore {
             t.column(colRating)
             t.column(colUpdatedAt)
         })
+        try connection.run(favoritesTable.create(ifNotExists: true) { t in
+            t.column(colFavoritePresetPath, primaryKey: true)
+            t.column(colFavoritePresetName)
+            t.column(colFavoriteUpdatedAt)
+        })
         try connection.run(
             "CREATE INDEX IF NOT EXISTS idx_projectm_preset_ratings_updated_at ON projectm_preset_ratings (updated_at)"
+        )
+        try connection.run(
+            "CREATE INDEX IF NOT EXISTS idx_projectm_preset_favorites_updated_at ON projectm_preset_favorites (updated_at)"
         )
     }
 
@@ -122,6 +135,81 @@ final class ProjectMPresetRatingsStore {
                 ))
             } catch {
                 NSLog("ProjectMPresetRatingsStore: Failed to set rating for %@: %@", normalized, error.localizedDescription)
+            }
+        }
+    }
+    
+    func isFavorite(forPresetPath path: String) -> Bool {
+        let normalized = normalizedPath(path)
+        guard !normalized.isEmpty else { return false }
+        
+        return queue.sync {
+            guard let db = db else { return false }
+            do {
+                let query = favoritesTable.select(colFavoritePresetPath)
+                    .filter(colFavoritePresetPath == normalized)
+                return try db.pluck(query) != nil
+            } catch {
+                NSLog("ProjectMPresetRatingsStore: Failed to fetch favorite state for %@: %@", normalized, error.localizedDescription)
+                return false
+            }
+        }
+    }
+    
+    func setFavorite(_ favorite: Bool, forPresetPath path: String, presetName: String) {
+        let normalized = normalizedPath(path)
+        guard !normalized.isEmpty else { return }
+        
+        queue.sync {
+            guard let db = db else { return }
+            do {
+                if favorite {
+                    try db.run(favoritesTable.insert(
+                        or: .replace,
+                        colFavoritePresetPath <- normalized,
+                        colFavoritePresetName <- presetName,
+                        colFavoriteUpdatedAt <- Date().timeIntervalSince1970
+                    ))
+                } else {
+                    try db.run(favoritesTable.filter(colFavoritePresetPath == normalized).delete())
+                }
+            } catch {
+                NSLog("ProjectMPresetRatingsStore: Failed to set favorite state for %@: %@", normalized, error.localizedDescription)
+            }
+        }
+    }
+    
+    func favoritePresetPaths(forPresetPaths presetPaths: [String]) -> Set<String> {
+        let normalizedPaths = Set(presetPaths.map(normalizedPath).filter { !$0.isEmpty })
+        guard !normalizedPaths.isEmpty else { return [] }
+        
+        return queue.sync {
+            guard let db = db else { return [] }
+            do {
+                var result = Set<String>()
+                for row in try db.prepare(favoritesTable.select(colFavoritePresetPath)) {
+                    let path = row[colFavoritePresetPath]
+                    if normalizedPaths.contains(path) {
+                        result.insert(path)
+                    }
+                }
+                return result
+            } catch {
+                NSLog("ProjectMPresetRatingsStore: Failed to fetch favorite preset paths: %@", error.localizedDescription)
+                return []
+            }
+        }
+    }
+    
+    func hasFavorites() -> Bool {
+        return queue.sync {
+            guard let db = db else { return false }
+            do {
+                let query = favoritesTable.select(colFavoritePresetPath).limit(1)
+                return try db.pluck(query) != nil
+            } catch {
+                NSLog("ProjectMPresetRatingsStore: Failed to check favorites existence: %@", error.localizedDescription)
+                return false
             }
         }
     }
