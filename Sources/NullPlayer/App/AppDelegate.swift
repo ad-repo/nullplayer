@@ -52,11 +52,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
         
-        // Classic mode: spectrum and waveform transparent backgrounds always start off.
-        // These keys are shared between modes, so a value set in modern mode would bleed
-        // into classic mode on restart without this reset.
+        // Classic mode: spectrum transparent backgrounds always start off.
+        // Waveform transparency is guarded by isRunningModernUI in WaveformAppearancePreferences,
+        // so no reset is needed there.
         if !windowManager.isModernUIEnabled {
-            WaveformAppearancePreferences.setTransparentBackgroundEnabled(false)
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)
         }
