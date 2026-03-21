@@ -9,11 +9,33 @@
 - **Auto-exit on queue end** — the process exits automatically when the queue finishes playing; guarded by a `hasStartedPlaying` flag to prevent premature exit during async startup.
 - **Source resolution** — CLI mode resolves the same library sources (local files, Plex, Subsonic, Jellyfin, Emby) as the UI.
 
+### Window System
+
+- **Window layout lock** — a new lock mode prevents all windows from being moved or resized until unlocked, useful for fixed desktop setups.
+- **Large UI improvements** — Large UI is now 1.5× scale with corrected text scaling and waveform scaling.
+- **Minimize All Windows** — a "Minimize All Windows" item is now available in the Windows menu.
+- **Stretch + session restore for spectrum and playlist** — the spectrum and playlist windows can now be freely resized horizontally, and their last-set size is restored on reopen.
+- **Active window stays on top during bring-to-front** — the currently active window is no longer pushed behind peers when bringing a group to the front.
+- **Library window group drag** — the library window now correctly activates and participates in connected-window group drags.
+
+### ProjectM
+
+- **Preset star ratings** — ProjectM presets can be rated 1–5 stars directly from the visualization overlay. Ratings persist across sessions.
+- **Rating overlay** — a five-star overlay appears on mouse hover in ProjectM; Delete/Backspace clears the rating for the current preset.
+- **Persistent default preset** — a preset can be set as the default and will be loaded on every launch.
+- **Presets menu renamed** — the ProjectM presets menu is renamed for clarity, and preset list entries now show gold stars for rated presets.
+
 ### Visualizations
 
 - **Art mode effect picker** — a grouped effect picker is now available in both the modern and classic art mode context menus, with a "Set as Default" option to persist the preferred effect across sessions.
 - **Library and ProjectM window highlights** — the Library Browser and ProjectM windows now show a connected-window highlight when docked, matching the behavior of other windows.
 - **Media controls type fix** — `MPNowPlayingInfoPropertyMediaType` is now correctly set to audio, fixing incorrect type metadata in the system media controls overlay.
+
+### Library Browser
+
+- **Rating column** — a rating column with gold stars is now shown in the library track list and in art-only mode, for all connected sources (local, Plex, Subsonic, Jellyfin, Emby). The column appears as the first column in the artist view.
+- **Live rating updates** — ratings changed via the context menu now immediately update in the library list without requiring a refresh.
+- **Horizontal scroll** — the library browser now supports horizontal scrolling when columns overflow the visible width.
 
 ### Local Library
 
@@ -22,6 +44,25 @@
 - **Album grouping** — album queries now group exclusively by `album_artist`, removing a fallback to the `artist` tag that caused incorrect album grouping.
 - **Art window rating fix** — rating a track in art mode no longer moves the art window.
 - **Occlusion cache on resize** — the window occlusion cache is now cleared on resize, fixing stale border segments after window size changes.
+
+### Bug Fixes
+
+- Fixed waveform squashing on horizontal resize in the classic skin
+- Fixed waveform returning to 1× from Large UI
+- Fixed waveform frame resetting on show/hide (now only resets on full close/reopen)
+- Fixed waveform transparency not restoring after switching between classic and modern UI modes
+- Fixed waveform pre-rendering for streaming service tracks
+- Fixed classic main-window accepting edge resize gestures while docked
+- Fixed window snapping re-entrancy recursion crash
+- Fixed drag-mode group highlight activating incorrectly on startup
+- Fixed classic ProjectM drag-detach leaving visualization paused
+- Fixed intermittent playlist text disappearance in classic and modern views
+- Fixed classic playlist titlebar tiling at stretched widths
+- Fixed modern HT main-window stretching incorrectly when the display panel expands
+- Honored `marqueeSize` from skin definition on skin reload; bumped modern UI marquee size
+- Cleared stale cover art when switching to a track with no embedded artwork
+- Removed output device selection from main window context menu
+- Updated app icon
 
 ## 0.17.3
 
