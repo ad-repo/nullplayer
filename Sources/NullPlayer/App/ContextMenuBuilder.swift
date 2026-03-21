@@ -117,6 +117,10 @@ class ContextMenuBuilder {
         snapToDefault.target = MenuActions.shared
         menu.addItem(snapToDefault)
 
+        let minimizeAll = NSMenuItem(title: "Minimize All Windows", action: #selector(MenuActions.minimizeAllWindows), keyEquivalent: "")
+        minimizeAll.target = MenuActions.shared
+        menu.addItem(minimizeAll)
+
         menu.autoenablesItems = false
         return menu
     }
