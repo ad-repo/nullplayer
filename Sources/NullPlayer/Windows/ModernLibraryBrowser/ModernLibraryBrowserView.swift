@@ -1043,14 +1043,14 @@ class ModernLibraryBrowserView: NSView {
             let rating = currentTrackRating ?? 0
             let filledCount = rating / 2
             
-            let filledColor = dataColor
+            let filledColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
             let emptyColor = dimColor.withAlphaComponent(0.3)
             
             for i in 0..<totalStars {
                 let x = starsX + CGFloat(i) * (starSize + starSpacing)
                 let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
                 let isFilled = i < filledCount
-                drawPixelStar(in: starRect, color: isFilled ? filledColor : emptyColor, context: context)
+                drawPixelStar(in: starRect, color: isFilled ? filledColor : emptyColor)
             }
             
             // Store hit rect for click detection
@@ -1383,7 +1383,7 @@ class ModernLibraryBrowserView: NSView {
 
     /// Draw a low-res pixel-art star for server bar rating display
     /// Pattern is top-down but macOS Y goes up, so we draw rows from maxY downward
-    private func drawPixelStar(in rect: NSRect, color: NSColor, context: CGContext) {
+    private func drawPixelStar(in rect: NSRect, color: NSColor) {
         let pattern: [[Int]] = [
             [0, 0, 0, 0, 1, 0, 0, 0, 0],
             [0, 0, 0, 1, 1, 1, 0, 0, 0],
@@ -1400,15 +1400,15 @@ class ModernLibraryBrowserView: NSView {
         let pixelW = rect.width / CGFloat(patternSize)
         let pixelH = rect.height / CGFloat(patternSize)
         
-        context.setFillColor(color.cgColor)
-        
+        color.setFill()
+
         for row in 0..<patternSize {
             for col in 0..<patternSize {
                 if pattern[row][col] == 1 {
                     let x = rect.minX + CGFloat(col) * pixelW
                     // Flip Y: row 0 (top of star) draws at maxY, row 8 at minY
                     let y = rect.maxY - CGFloat(row + 1) * pixelH
-                    context.fill(CGRect(x: x, y: y, width: ceil(pixelW), height: ceil(pixelH)))
+                    NSBezierPath.fill(NSRect(x: x, y: y, width: ceil(pixelW), height: ceil(pixelH)))
                 }
             }
         }
@@ -1669,7 +1669,7 @@ class ModernLibraryBrowserView: NSView {
             
             let color = column.id == "title" ? textColor : dimColor
             let useFont = column.id == "title" ? font : smallFont
-            
+
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: useFont,
                 .foregroundColor: skin.applyTextOpacity(to: color)
@@ -1678,15 +1678,29 @@ class ModernLibraryBrowserView: NSView {
             let textY = rect.minY + (rect.height - textSize.height) / 2
             let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4)
             let maxTextWidth = width - 8
-            
+
             let drawRect = NSRect(x: textX, y: textY, width: maxTextWidth, height: textSize.height)
-            drawText(
-                value,
-                in: drawRect,
-                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                withAttributes: attrs,
-                context: context
-            )
+            if column.id == "rating" && !isSelected && value.contains("★") {
+                let goldColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+                let emptyColor = skin.applyTextOpacity(to: dimColor).withAlphaComponent(0.4)
+                let astr = NSMutableAttributedString(string: value, attributes: attrs)
+                for (i, ch) in value.enumerated() {
+                    let range = NSRange(location: i, length: 1)
+                    astr.addAttribute(.foregroundColor, value: ch == "★" ? goldColor : emptyColor, range: range)
+                }
+                context.saveGState()
+                context.setAlpha(1.0)
+                astr.draw(with: drawRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+                context.restoreGState()
+            } else {
+                drawText(
+                    value,
+                    in: drawRect,
+                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                    withAttributes: attrs,
+                    context: context
+                )
+            }
             
             x += width
         }
