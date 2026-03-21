@@ -185,7 +185,7 @@ class ModernMainWindowView: NSView {
         marquee.configure(with: skin)
         
         // Position marquee in the upper portion of the marquee background panel
-        let marqueeRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+        let marqueeRect = scaledRect(effectiveMarqueePanelRect)
         let inset: CGFloat = 4 * scale
         marquee.frame = NSRect(x: marqueeRect.minX + inset,
                                 y: marqueeRect.minY + marqueeRect.height * 0.35,
@@ -295,25 +295,47 @@ class ModernMainWindowView: NSView {
         !isShadeMode && WindowManager.shared.effectiveHideTitleBars(for: self.window)
     }
 
-    /// Vertical remap factor for HT mode: scale 98-base-unit content to full 116-base-unit frame.
-    private var contentLayoutScaleY: CGFloat {
-        guard isTitleBarHiddenForLayout else { return 1.0 }
-        let fullHeight = ModernSkinElements.baseMainSize.height
-        let contentHeight = fullHeight - ModernSkinElements.titleBarBaseHeight
-        guard contentHeight > 0 else { return 1.0 }
-        return fullHeight / contentHeight
+    /// Reclaimed base units when title bars are hidden.
+    private var reclaimedTitleBarHeight: CGFloat {
+        guard isTitleBarHiddenForLayout else { return 0 }
+        return ModernSkinElements.titleBarBaseHeight
     }
 
-    /// Apply HT-only content reflow so controls fill reclaimed titlebar space while frame size stays constant.
+    /// Expand top display panels into reclaimed titlebar space without stretching text or controls.
+    private func expandedTopDisplayRect(_ rect: NSRect) -> NSRect {
+        guard reclaimedTitleBarHeight > 0 else { return rect }
+        return NSRect(x: rect.origin.x, y: rect.origin.y, width: rect.width, height: rect.height + reclaimedTitleBarHeight)
+    }
+
+    /// Time panel chrome (status + digits container).
+    private var timePanelRect: NSRect {
+        expandedTopDisplayRect(NSRect(x: 6, y: 60, width: 84, height: 34))
+    }
+
+    /// Time digit content area.
+    private var effectiveTimeDisplayRect: NSRect {
+        expandedTopDisplayRect(ModernSkinElements.timeDisplay.defaultRect)
+    }
+
+    /// Status icon rect, vertically centered in the effective time display area.
+    private var effectiveStatusRect: NSRect {
+        let base = ModernSkinElements.statusPlay.defaultRect
+        return NSRect(
+            x: base.origin.x,
+            y: effectiveTimeDisplayRect.midY - (base.height / 2),
+            width: base.width,
+            height: base.height
+        )
+    }
+
+    /// Marquee/info panel chrome rect.
+    private var effectiveMarqueePanelRect: NSRect {
+        expandedTopDisplayRect(ModernSkinElements.marqueeBackground.defaultRect)
+    }
+
+    /// Wrapper retained for call-site consistency; HT no longer applies a global transform.
     private func withMainContentLayoutTransform(context: CGContext, draw: () -> Void) {
-        guard isTitleBarHiddenForLayout else {
-            draw()
-            return
-        }
-        context.saveGState()
-        context.scaleBy(x: 1.0, y: contentLayoutScaleY)
         draw()
-        context.restoreGState()
     }
     
     // MARK: - Drawing
@@ -374,13 +396,14 @@ class ModernMainWindowView: NSView {
                 }
 
                 // 3. Time display + status indicator
-                let timeScaled = scaledRect(ModernSkinElements.timeDisplay.defaultRect)
-                let statusScaled = scaledRect(ModernSkinElements.statusPlay.defaultRect)
-                let timeStatusRegion = timeScaled.union(statusScaled)
+                let timePanelScaled = scaledRect(timePanelRect)
+                let timeScaled = scaledRect(effectiveTimeDisplayRect)
+                let statusScaled = scaledRect(effectiveStatusRect)
+                let timeStatusRegion = timePanelScaled.union(timeScaled).union(statusScaled)
                 if dirtyRect.intersects(timeStatusRegion) {
                     // `window.areaOpacity.timeDisplay` controls panel fill/border/content.
                     renderer.drawInsetPanel(
-                        in: NSRect(x: 6, y: 60, width: 84, height: 34),
+                        in: timePanelRect,
                         backgroundOpacity: timeOpacity.background,
                         borderOpacity: timeOpacity.border,
                         context: context
@@ -388,23 +411,23 @@ class ModernMainWindowView: NSView {
                     withContextAlpha(timeOpacity.content, context: context) {
                         drawTimeDisplay(context: context)
                         let state = effectivePlaybackState()
-                        renderer.drawStatusIndicator(state, in: ModernSkinElements.statusPlay.defaultRect, context: context)
+                        renderer.drawStatusIndicator(state, in: effectiveStatusRect, context: context)
                     }
                 }
 
                 // 4. Info panel (marquee background + info labels)
-                let infoPanelScaled = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+                let infoPanelScaled = scaledRect(effectiveMarqueePanelRect)
                 if dirtyRect.intersects(infoPanelScaled) {
                     // `window.areaOpacity.trackDisplay` controls this panel region.
                     if renderer.skin.image(for: "marquee_bg") != nil {
                         renderer.drawElement(
                             "marquee_bg",
-                            in: ModernSkinElements.marqueeBackground.defaultRect,
+                            in: effectiveMarqueePanelRect,
                             contentOpacity: trackOpacity.background,
                             context: context
                         )
                         if trackOpacity.border > 0 {
-                            let panelRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+                            let panelRect = scaledRect(effectiveMarqueePanelRect)
                             context.saveGState()
                             context.setStrokeColor(renderer.skin.borderColor.withAlphaComponent(trackOpacity.border).cgColor)
                             context.setLineWidth(max(0.5, 0.5 * scale))
@@ -420,7 +443,7 @@ class ModernMainWindowView: NSView {
                         }
                     } else {
                         renderer.drawInsetPanel(
-                            in: ModernSkinElements.marqueeBackground.defaultRect,
+                            in: effectiveMarqueePanelRect,
                             backgroundOpacity: trackOpacity.background,
                             borderOpacity: trackOpacity.border,
                             context: context
@@ -575,7 +598,7 @@ class ModernMainWindowView: NSView {
     }
     
     private func drawTimeDisplay(context: CGContext) {
-        let timeDisplayRect = ModernSkinElements.timeDisplay.defaultRect
+        let timeDisplayRect = effectiveTimeDisplayRect
         let digitWidth = ModernSkinElements.timeDigitSize.width
         let colonWidth = ModernSkinElements.timeColonSize.width
         let digitHeight = ModernSkinElements.timeDigitSize.height
@@ -785,7 +808,7 @@ class ModernMainWindowView: NSView {
         guard oldSeconds != newSeconds || durationChanged else { return }
         
         // Invalidate only the time display and seek bar regions (not the entire window)
-        let timeRect = scaledRect(ModernSkinElements.timeDisplay.defaultRect)
+        let timeRect = scaledRect(effectiveTimeDisplayRect)
         setNeedsDisplay(timeRect.insetBy(dx: -2, dy: -2))
         
         let seekRect = scaledRect(ModernSkinElements.seekTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
@@ -891,7 +914,7 @@ class ModernMainWindowView: NSView {
             metalOverlay?.isHidden = true
         } else {
             // Normal mode marquee positioning
-            let marqueeRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+            let marqueeRect = scaledRect(effectiveMarqueePanelRect)
             let inset: CGFloat = 4 * scale
             marqueeLayer.frame = NSRect(x: marqueeRect.minX + inset,
                                         y: marqueeRect.minY + marqueeRect.height * 0.35,
@@ -967,7 +990,7 @@ class ModernMainWindowView: NSView {
         guard newBPM != currentBPM else { return }
         currentBPM = newBPM
         // Only invalidate the info panel area where BPM is displayed
-        let infoRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+        let infoRect = scaledRect(effectiveMarqueePanelRect)
         setNeedsDisplay(infoRect)
     }
     
@@ -1185,15 +1208,17 @@ class ModernMainWindowView: NSView {
     
     /// Scale and convert a point from view coordinates to base coordinates
     private func basePoint(from viewPoint: NSPoint) -> NSPoint {
-        let yScale = scale * contentLayoutScaleY
-        return NSPoint(x: viewPoint.x / scale, y: viewPoint.y / yScale)
+        NSPoint(x: viewPoint.x / scale, y: viewPoint.y / scale)
     }
     
     /// Scale a rect from base to view coordinates
     private func scaledRect(_ rect: NSRect) -> NSRect {
-        let yScale = contentLayoutScaleY
-        return NSRect(x: rect.origin.x * scale, y: rect.origin.y * scale * yScale,
-                      width: rect.size.width * scale, height: rect.size.height * scale * yScale)
+        NSRect(
+            x: rect.origin.x * scale,
+            y: rect.origin.y * scale,
+            width: rect.size.width * scale,
+            height: rect.size.height * scale
+        )
     }
 
     private func isMainVisClassicTransparentEnabled() -> Bool {
@@ -1230,9 +1255,9 @@ class ModernMainWindowView: NSView {
         case "volume_track":
             rect = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
         case "time_display":
-            rect = scaledRect(ModernSkinElements.timeDisplay.defaultRect).insetBy(dx: -2, dy: -2)
+            rect = scaledRect(effectiveTimeDisplayRect).insetBy(dx: -2, dy: -2)
         case "info_bpm":
-            rect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+            rect = scaledRect(effectiveMarqueePanelRect)
         case "spectrum_area":
             rect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
         case "btn_prev", "btn_play", "btn_pause", "btn_stop", "btn_next", "btn_eject":
@@ -1304,7 +1329,7 @@ class ModernMainWindowView: NSView {
             // BPM display (double-click to cycle multiplier)
             ("info_bpm", ModernSkinElements.infoBPM.defaultRect),
             // Time display (click to toggle elapsed/remaining)
-            ("time_display", ModernSkinElements.timeDisplay.defaultRect),
+            ("time_display", effectiveTimeDisplayRect),
             // Spectrum area (click to toggle spectrum window, double-click to cycle vis mode)
             ("spectrum_area", ModernSkinElements.spectrumArea.defaultRect),
         ])
@@ -1356,7 +1381,7 @@ class ModernMainWindowView: NSView {
                 if event.clickCount == 2 {
                     // Cycle: normal → 2x → 0.5x → normal
                     bpmMultiplierState = (bpmMultiplierState + 1) % 3
-                    let infoRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+                    let infoRect = scaledRect(effectiveMarqueePanelRect)
                     setNeedsDisplay(infoRect)
                 }
             } else if element == "spectrum_area" {
@@ -1399,7 +1424,7 @@ class ModernMainWindowView: NSView {
             // Invalidate seek bar + time display only
             let seekRect = scaledRect(ModernSkinElements.seekTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
             setNeedsDisplay(seekRect)
-            let timeRect = scaledRect(ModernSkinElements.timeDisplay.defaultRect).insetBy(dx: -2, dy: -2)
+            let timeRect = scaledRect(effectiveTimeDisplayRect).insetBy(dx: -2, dy: -2)
             setNeedsDisplay(timeRect)
         } else if isDraggingVolume {
             let point = convert(event.locationInWindow, from: nil)
