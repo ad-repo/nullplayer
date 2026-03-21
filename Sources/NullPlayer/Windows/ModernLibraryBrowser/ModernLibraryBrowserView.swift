@@ -10110,18 +10110,18 @@ private struct ModernBrowserColumn {
         .dateAdded, .lastPlayed, .filePath
     ]
     static let allAlbumColumns: [ModernBrowserColumn] = [.title, .year, .genre, .duration, .rating]
-    static let allArtistColumns: [ModernBrowserColumn] = [.title, .albums, .genre, .rating]
+    static let allArtistColumns: [ModernBrowserColumn] = [.title, .rating, .albums, .genre]
     
     // Default visible column IDs (backwards-compatible with the original set)
     static let defaultTrackColumnIds: [String] = ["trackNum", "title", "artist", "album", "rating", "year", "genre", "duration", "bitrate", "size", "plays"]
     static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
-    static let defaultArtistColumnIds: [String] = ["title", "albums", "genre", "rating"]
+    static let defaultArtistColumnIds: [String] = ["title", "rating", "albums", "genre"]
     static let internetRadioColumns: [ModernBrowserColumn] = [.title, .genre, .rating]
     
     // Legacy arrays kept for backwards compatibility with sort lookup
     static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount]
     static let albumColumns: [ModernBrowserColumn] = [.title, .year, .genre, .duration, .rating]
-    static let artistColumns: [ModernBrowserColumn] = [.title, .albums, .genre, .rating]
+    static let artistColumns: [ModernBrowserColumn] = [.title, .rating, .albums, .genre]
     
     static func findColumn(id: String) -> ModernBrowserColumn? {
         if let c = allTrackColumns.first(where: { $0.id == id }) { return c }
