@@ -16486,7 +16486,7 @@ private struct BrowserColumn {
     
     /// Columns shown for track lists
     static let trackColumns: [BrowserColumn] = [
-        .trackNumber, .title, .artist, .album, .year, .genre, .duration, .bitrate, .size, .rating, .playCount, .dateAdded, .lastPlayed
+        .trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount, .dateAdded, .lastPlayed
     ]
     
     /// Columns shown for album lists  

@@ -10100,13 +10100,13 @@ private struct ModernBrowserColumn {
     static let allArtistColumns: [ModernBrowserColumn] = [.title, .albums, .genre]
     
     // Default visible column IDs (backwards-compatible with the original set)
-    static let defaultTrackColumnIds: [String] = ["trackNum", "title", "artist", "album", "year", "genre", "duration", "bitrate", "size", "rating", "plays"]
+    static let defaultTrackColumnIds: [String] = ["trackNum", "title", "artist", "album", "rating", "year", "genre", "duration", "bitrate", "size", "plays"]
     static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
     static let defaultArtistColumnIds: [String] = ["title", "albums", "genre"]
     static let internetRadioColumns: [ModernBrowserColumn] = [.title, .genre, .rating]
     
     // Legacy arrays kept for backwards compatibility with sort lookup
-    static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .year, .genre, .duration, .bitrate, .size, .rating, .playCount]
+    static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount]
     static let albumColumns: [ModernBrowserColumn] = [.title, .year, .genre, .duration, .rating]
     static let artistColumns: [ModernBrowserColumn] = [.title, .albums, .genre]
     
