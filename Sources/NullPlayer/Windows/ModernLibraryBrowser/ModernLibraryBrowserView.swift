@@ -3032,10 +3032,17 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Keyboard Events
     
     override func keyDown(with event: NSEvent) {
-        // Rating overlay: ESC to dismiss, 1-5 to set stars
+        // Rating overlay shortcuts:
+        // - Escape dismisses
+        // - Delete/Backspace clears rating
+        // - Number keys 1-5 set stars
         if isRatingOverlayVisible {
             if event.keyCode == 53 { hideRatingOverlay(); return }
-            // Keys 1-5 (keycodes 18-22)
+            if event.keyCode == 51 || event.keyCode == 117 {
+                ratingOverlay.setRating(0)
+                submitRating(0)
+                return
+            }
             if event.keyCode >= 18 && event.keyCode <= 22 {
                 let starRating = Int(event.keyCode - 17)  // 1-5
                 ratingOverlay.setRating(starRating * 2)
@@ -6552,7 +6559,8 @@ class ModernLibraryBrowserView: NSView {
     
     private func submitRating(_ rating: Int) {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { return }
-        currentTrackRating = rating; needsDisplay = true; ratingSubmitTask?.cancel()
+        let normalizedRating = rating > 0 ? min(10, rating) : 0
+        currentTrackRating = normalizedRating; needsDisplay = true; ratingSubmitTask?.cancel()
         ratingSubmitTask = Task {
             do {
                 try await Task.sleep(nanoseconds: 500_000_000)
@@ -6560,19 +6568,25 @@ class ModernLibraryBrowserView: NSView {
                 
                 if let ratingKey = currentTrack.plexRatingKey {
                     // Plex: rating is already 0-10 scale
-                    try await PlexManager.shared.serverClient?.rateItem(ratingKey: ratingKey, rating: rating)
+                    try await PlexManager.shared.serverClient?.rateItem(
+                        ratingKey: ratingKey,
+                        rating: normalizedRating > 0 ? normalizedRating : nil
+                    )
                 } else if let subsonicId = currentTrack.subsonicId {
                     // Subsonic: convert 0-10 to 0-5
-                    let subsonicRating = rating / 2
+                    let subsonicRating = normalizedRating / 2
                     try await SubsonicManager.shared.setRating(songId: subsonicId, rating: subsonicRating)
                 } else if let jellyfinId = currentTrack.jellyfinId {
                     // Jellyfin: convert 0-10 to 0-100
-                    let jellyfinRating = rating * 10
+                    let jellyfinRating = normalizedRating * 10
                     try await JellyfinManager.shared.setRating(itemId: jellyfinId, rating: jellyfinRating)
                 } else if currentTrack.url.isFileURL {
                     // Local file: store 0-10 scale
                     if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
-                        MediaLibrary.shared.setRating(for: libraryTrack.id, rating: rating > 0 ? rating : nil)
+                        MediaLibrary.shared.setRating(
+                            for: libraryTrack.id,
+                            rating: normalizedRating > 0 ? normalizedRating : nil
+                        )
                     }
                 }
                 

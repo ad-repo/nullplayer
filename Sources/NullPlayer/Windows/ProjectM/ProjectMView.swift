@@ -628,6 +628,30 @@ class ProjectMView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
+        // Preset rating overlay shortcuts:
+        // - Escape dismisses
+        // - Delete/Backspace clears rating
+        // - Number keys 1-5 set stars
+        if isPresetRatingOverlayVisible {
+            switch event.keyCode {
+            case 53: // Escape
+                hidePresetRatingOverlay()
+                return
+            case 51, 117: // Delete/Backspace or Forward Delete
+                presetRatingOverlay.setRating(0)
+                submitCurrentPresetRating(0)
+                return
+            case 18...22: // 1-5 keys
+                let starRating = Int(event.keyCode - 17)
+                let ratingOnTenScale = starRating * 2
+                presetRatingOverlay.setRating(ratingOnTenScale)
+                submitCurrentPresetRating(ratingOnTenScale)
+                return
+            default:
+                break
+            }
+        }
+
         // Check for modifier keys
         let hasShift = event.modifierFlags.contains(.shift)
         

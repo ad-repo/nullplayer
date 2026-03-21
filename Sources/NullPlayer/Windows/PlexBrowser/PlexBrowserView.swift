@@ -1363,9 +1363,10 @@ class PlexBrowserView: NSView {
     /// Supports Plex, Subsonic, Jellyfin, Emby, and local file ratings
     private func submitRating(_ rating: Int) {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { return }
+        let normalizedRating = rating > 0 ? min(10, rating) : 0
         
         // Update UI immediately for responsiveness
-        currentTrackRating = rating
+        currentTrackRating = normalizedRating
         needsDisplay = true
         
         // Cancel any pending submission
@@ -1379,29 +1380,35 @@ class PlexBrowserView: NSView {
                 
                 if let ratingKey = currentTrack.plexRatingKey {
                     // Plex: 0-10 scale
-                    try await PlexManager.shared.serverClient?.rateItem(ratingKey: ratingKey, rating: rating)
-                    NSLog("PlexBrowser: Rated track %@ with %d stars", ratingKey, rating / 2)
+                    try await PlexManager.shared.serverClient?.rateItem(
+                        ratingKey: ratingKey,
+                        rating: normalizedRating > 0 ? normalizedRating : nil
+                    )
+                    NSLog("PlexBrowser: Rated track %@ with %d stars", ratingKey, normalizedRating / 2)
                 } else if let subsonicId = currentTrack.subsonicId {
                     // Subsonic: 0-5 scale
-                    let subsonicRating = rating / 2
+                    let subsonicRating = normalizedRating / 2
                     try await SubsonicManager.shared.setRating(songId: subsonicId, rating: subsonicRating)
                     NSLog("PlexBrowser: Rated Subsonic track %@ with %d stars", subsonicId, subsonicRating)
                 } else if let jellyfinId = currentTrack.jellyfinId {
                     // Jellyfin: convert 0-10 to 0-100
-                    let jellyfinRating = rating * 10
+                    let jellyfinRating = normalizedRating * 10
                     try await JellyfinManager.shared.setRating(itemId: jellyfinId, rating: jellyfinRating)
-                    NSLog("PlexBrowser: Rated Jellyfin track %@ with %d stars", jellyfinId, rating / 2)
+                    NSLog("PlexBrowser: Rated Jellyfin track %@ with %d stars", jellyfinId, normalizedRating / 2)
                 } else if let embyId = currentTrack.embyId {
                     // Emby: convert 0-10 to 0-100
-                    let embyRating = rating * 10
+                    let embyRating = normalizedRating * 10
                     try await EmbyManager.shared.setRating(itemId: embyId, rating: embyRating)
-                    NSLog("PlexBrowser: Rated Emby track %@ with %d stars", embyId, rating / 2)
+                    NSLog("PlexBrowser: Rated Emby track %@ with %d stars", embyId, normalizedRating / 2)
                 } else if currentTrack.url.isFileURL {
                     // Local file: 0-10 scale in MediaLibrary
                     await MainActor.run {
                         if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
-                            MediaLibrary.shared.setRating(for: libraryTrack.id, rating: rating > 0 ? rating : nil)
-                            NSLog("PlexBrowser: Rated local track with %d stars", rating / 2)
+                            MediaLibrary.shared.setRating(
+                                for: libraryTrack.id,
+                                rating: normalizedRating > 0 ? normalizedRating : nil
+                            )
+                            NSLog("PlexBrowser: Rated local track with %d stars", normalizedRating / 2)
                         }
                     }
                 }
@@ -11812,21 +11819,26 @@ class PlexBrowserView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
-        // ESC key dismisses rating overlay
-        if isRatingOverlayVisible && event.keyCode == 53 {
-            hideRatingOverlay()
-            return
-        }
-        
-        // Number keys 1-5 set rating when overlay is visible
+        // Rating overlay shortcuts:
+        // - Escape dismisses
+        // - Delete/Backspace clears rating
+        // - Number keys 1-5 set stars
         if isRatingOverlayVisible {
-            let keyCode = event.keyCode
-            // 1-5 keys are keycodes 18-23 (1, 2, 3, 4, 5)
-            if keyCode >= 18 && keyCode <= 22 {
-                let starRating = Int(keyCode - 17)  // 1-5
+            switch event.keyCode {
+            case 53: // Escape
+                hideRatingOverlay()
+                return
+            case 51, 117: // Delete/Backspace or Forward Delete
+                ratingOverlay.setRating(0)
+                submitRating(0)
+                return
+            case 18...22: // 1-5 keys
+                let starRating = Int(event.keyCode - 17)
                 ratingOverlay.setRating(starRating * 2)
                 submitRating(starRating * 2)
                 return
+            default:
+                break
             }
         }
         
