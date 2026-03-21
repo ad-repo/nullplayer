@@ -2986,6 +2986,19 @@ class ModernLibraryBrowserView: NSView {
             let listRect = NSRect(x: 0, y: Layout.statusBarHeight, width: bounds.width, height: listHeight)
             setNeedsDisplay(listRect)
         }
+
+        if abs(event.deltaX) > 0 {
+            let columns = currentVisibleColumns()
+            let availableWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
+            let totalWidth = columns.reduce(CGFloat(8)) { $0 + (columnWidths[$1.id] ?? $1.minWidth) }
+            let maxOffset = max(0, totalWidth - availableWidth)
+            if maxOffset > 0 {
+                horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - event.deltaX * 3))
+                let listRect = NSRect(x: 0, y: Layout.statusBarHeight, width: bounds.width, height: listHeight)
+                setNeedsDisplay(listRect)
+            }
+        }
+
         // Trigger next-page load when scrolled near the bottom of a local paginated list
         if case .local = currentSource { loadNextLocalPageIfNeeded(listHeight: listHeight) }
     }
