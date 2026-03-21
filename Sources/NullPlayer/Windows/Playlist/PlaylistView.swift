@@ -304,10 +304,15 @@ class PlaylistView: NSView {
     
     // MARK: - Scaling Support
     
-    /// Calculate render scale from classic UI mode (normal/large), not playlist width.
-    /// This keeps playlist text/chrome size stable while allowing horizontal stretch.
+    /// Derive render scale from the main window width so point rounding does not
+    /// introduce fractional skin-space tile boundaries in playlist chrome.
     private var scaleFactor: CGFloat {
-        Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier
+        if let mainWidth = WindowManager.shared.mainWindowController?.window?.frame.width,
+           mainWidth > 0 {
+            return mainWidth / Skin.baseMainSize.width
+        }
+        let largeUIMultiplier: CGFloat = WindowManager.shared.isDoubleSize ? 1.5 : 1.0
+        return Skin.scaleFactor * largeUIMultiplier
     }
     
     /// Get the original window size (unscaled base size)
@@ -751,7 +756,6 @@ class PlaylistView: NSView {
         let skin = WindowManager.shared.currentSkin
         
         let charWidth = SkinElements.TextFont.charWidth
-        let charHeight = SkinElements.TextFont.charHeight
         
         // Position just above the bottom bar, in the track list area
         let infoY = drawBounds.height - Layout.bottomBarHeight - 14

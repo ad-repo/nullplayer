@@ -89,6 +89,14 @@ private var scaleFactor: CGFloat {
 }
 ```
 
+Anti-pattern (regression source):
+- Letting classic playlist width stretch freely while deriving scale from a different source can create fractional skin-space widths.
+- With `PLEDIT` tiled title bars, fractional widths produce visible section seams/line artifacts in the top decorative bar.
+
+Safe pattern:
+- Derive classic playlist render scale from current main-window width.
+- Snap classic playlist width in skin space to `width = (N * 25) + 50` before applying frame updates.
+
 `effectiveWindowSize` expands in both dimensions in skin space:
 
 ```swift
