@@ -274,6 +274,7 @@ class ModernMarqueeLayer: CALayer {
     
     func resumeScrolling() {
         isPaused = false
+        setNeedsDisplay()
     }
     
     // MARK: - Configuration from Skin

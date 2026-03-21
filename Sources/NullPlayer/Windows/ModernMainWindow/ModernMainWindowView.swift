@@ -228,6 +228,7 @@ class ModernMainWindowView: NSView {
         if window?.occlusionState.contains(.visible) == true {
             ModernSkinEngine.shared.animationEngine.resumeFromOcclusion()
             marqueeLayer.resumeScrolling()
+            needsDisplay = true
         } else {
             ModernSkinEngine.shared.animationEngine.pauseForOcclusion()
             marqueeLayer.pauseScrolling()
