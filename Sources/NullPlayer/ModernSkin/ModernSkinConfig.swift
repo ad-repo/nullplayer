@@ -166,7 +166,7 @@ struct FontConfig: Codable {
     let infoSize: CGFloat?       // Info labels: bitrate, samplerate, BPM (default 6.5)
     let eqLabelSize: CGFloat?    // EQ frequency labels (default 7)
     let eqValueSize: CGFloat?    // EQ dB value text (default 6)
-    let marqueeSize: CGFloat?    // Marquee/scrolling title text (default 11.7)
+    let marqueeSize: CGFloat?    // Marquee/scrolling title text (default 12.7)
     let playlistSize: CGFloat?   // Playlist track list text (default 8)
 }
 

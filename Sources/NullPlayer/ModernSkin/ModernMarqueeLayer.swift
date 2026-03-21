@@ -294,9 +294,7 @@ class ModernMarqueeLayer: CALayer {
         scrollSpeed = skin.config.marquee?.scrollSpeed ?? 30.0
         scrollGap = skin.config.marquee?.scrollGap ?? 50.0
         
-        if let font = skin.primaryFont {
-            let bodySize = skin.config.fonts.bodySize ?? 9
-            textFont = font.withSize(bodySize * ModernSkinElements.scaleFactor)
-        }
+        // Use marquee-specific font sizing so `fonts.marqueeSize` is always honored.
+        textFont = skin.marqueeFont()
     }
 }

@@ -277,8 +277,8 @@ class ModernSkin {
     /// EQ dB value text font (default base size 6)
     func eqValueFont() -> NSFont { scaledFont(size: config.fonts.eqValueSize ?? 6) }
     
-    /// Marquee/scrolling title text font (default base size 11.7)
-    func marqueeFont() -> NSFont { scaledFont(size: config.fonts.marqueeSize ?? 11.7) }
+    /// Marquee/scrolling title text font (default base size 12.7)
+    func marqueeFont() -> NSFont { scaledFont(size: config.fonts.marqueeSize ?? 12.7) }
     
     /// Playlist track list text font (default base size 8)
     func playlistFont() -> NSFont { scaledFont(size: config.fonts.playlistSize ?? 8) }

@@ -104,7 +104,7 @@ MyPaletteSkin/
         "infoSize": 6.5,
         "eqLabelSize": 7,
         "eqValueSize": 6,
-        "marqueeSize": 11.7,
+        "marqueeSize": 12.7,
         "playlistSize": 8
     },
     "background": {
@@ -183,7 +183,7 @@ NullPlayer bundles **Departure Mono**, a retro pixel-style monospace font. You c
     "infoSize": 6.5,
     "eqLabelSize": 7,
     "eqValueSize": 6,
-    "marqueeSize": 11.7,
+    "marqueeSize": 12.7,
     "playlistSize": 8
 }
 ```
@@ -201,7 +201,7 @@ All sizes are **unscaled base values** -- the engine multiplies them by the UI s
 | `infoSize` | Info labels (bitrate, sample rate, BPM) | 6.5 |
 | `eqLabelSize` | EQ frequency labels | 7 |
 | `eqValueSize` | EQ dB value text | 6 |
-| `marqueeSize` | Scrolling title/marquee text | 11.7 |
+| `marqueeSize` | Scrolling title/marquee text | 12.7 |
 | `playlistSize` | Playlist track list text | 8 |
 
 **Using a custom font**: Include a `.ttf` or `.otf` file in a `fonts/` directory inside your skin folder, then reference it by its PostScript name.
