@@ -369,7 +369,7 @@ class ProjectMView: NSView {
 
     private func starString(for rating: Int) -> String {
         let clamped = min(5, max(0, rating))
-        return String(repeating: "★", count: clamped) + String(repeating: "☆", count: 5 - clamped)
+        return String(repeating: "⭐", count: clamped) + String(repeating: "☆", count: 5 - clamped)
     }
 
     private func currentPresetIdentity() -> (index: Int, name: String, path: String)? {
@@ -738,7 +738,7 @@ class ProjectMView: NSView {
             for rating in 0...5 {
                 let title = rating == 0
                     ? "Clear Rating (\(starString(for: 0)))"
-                    : "\(rating) Star\(rating == 1 ? "" : "s") (\(starString(for: rating)))"
+                    : "\(rating) Gold (\(starString(for: rating)))"
                 let item = NSMenuItem(title: title, action: #selector(setCurrentPresetRatingFromMenu(_:)), keyEquivalent: "")
                 item.target = self
                 item.tag = rating
@@ -836,7 +836,7 @@ class ProjectMView: NSView {
                     presetsMenu.addItem(presetItem)
                 }
                 
-                let presetsMenuItem = NSMenuItem(title: "Presets + Ratings (\(presetCount))", action: nil, keyEquivalent: "")
+                let presetsMenuItem = NSMenuItem(title: "Presets", action: nil, keyEquivalent: "")
                 presetsMenuItem.submenu = presetsMenu
                 menu.addItem(presetsMenuItem)
                 
