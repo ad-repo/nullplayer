@@ -16643,7 +16643,7 @@ extension PlexDisplayItem {
             return Self.formatFileSize(song.size)
         case "rating":
             // Subsonic uses starred (date) as favorite indicator
-            return song.starred != nil ? "★★★★★" : ""
+            return song.starred != nil ? "★★★★★" : Self.formatRating(nil)
         case "plays":
             return song.playCount.map { String($0) } ?? ""
         case "dateAdded":
@@ -16679,7 +16679,7 @@ extension PlexDisplayItem {
         case "size":
             return Self.formatFileSize(track.fileSize)
         case "rating":
-            return ""  // Local files don't have ratings yet
+            return Self.formatRating(nil)
         case "plays":
             return track.playCount > 0 ? String(track.playCount) : ""
         case "dateAdded":
@@ -16889,10 +16889,8 @@ extension PlexDisplayItem {
     }
     
     private static func formatRating(_ rating: Double?) -> String {
-        guard let rating = rating, rating > 0 else { return "" }
-        let stars = Int(rating / 2.0)  // Plex uses 0-10 scale, convert to 0-5 stars
-        let empty = 5 - stars
-        return String(repeating: "★", count: stars) + String(repeating: "☆", count: empty)
+        let stars = rating.map { max(0, Int($0 / 2.0)) } ?? 0
+        return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
     }
 
     private static func formatStarRating(_ rating: Int) -> String {

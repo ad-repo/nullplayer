@@ -6804,6 +6804,7 @@ class ModernLibraryBrowserView: NSView {
                        currentTrack.plexRatingKey == ratingKey {
                         currentTrackRating = rating > 0 ? rating : nil; needsDisplay = true
                     }
+                    updateCachedPlexRating(ratingKey: ratingKey, rating: rating)
                 }
             } catch { NSLog("Plex rating failed: %@", error.localizedDescription) }
         }
@@ -6840,6 +6841,7 @@ class ModernLibraryBrowserView: NSView {
                        currentTrack.jellyfinId == itemId {
                         currentTrackRating = rating > 0 ? rating / 10 : nil; needsDisplay = true
                     }
+                    updateCachedJellyfinRating(itemId: itemId, rating: rating)
                 }
             } catch { NSLog("Jellyfin rating failed: %@", error.localizedDescription) }
         }
@@ -6857,6 +6859,7 @@ class ModernLibraryBrowserView: NSView {
                        currentTrack.embyId == itemId {
                         currentTrackRating = rating > 0 ? rating / 10 : nil; needsDisplay = true
                     }
+                    updateCachedEmbyRating(itemId: itemId, rating: rating)
                 }
             } catch { NSLog("Emby rating failed: %@", error.localizedDescription) }
         }
@@ -6872,6 +6875,7 @@ class ModernLibraryBrowserView: NSView {
            libraryTrack.id == trackId {
             currentTrackRating = rating >= 0 ? rating : nil; needsDisplay = true
         }
+        updateCachedLocalTrackRating(trackId: trackId, rating: rating)
         needsDisplay = true
     }
 
@@ -6909,6 +6913,93 @@ class ModernLibraryBrowserView: NSView {
                     id: item.id, title: item.title, info: item.info,
                     indentLevel: item.indentLevel, hasChildren: item.hasChildren,
                     type: .subsonicTrack(updatedSong)
+                )
+                break
+            }
+        }
+    }
+
+    private func updateCachedPlexRating(ratingKey: String, rating: Int) {
+        for (index, item) in displayItems.enumerated() {
+            if case .track(let track) = item.type, track.id == ratingKey {
+                let updatedTrack = PlexTrack(
+                    id: track.id, key: track.key, title: track.title,
+                    parentTitle: track.parentTitle, grandparentTitle: track.grandparentTitle,
+                    parentKey: track.parentKey, grandparentKey: track.grandparentKey,
+                    summary: track.summary, duration: track.duration,
+                    index: track.index, parentIndex: track.parentIndex,
+                    thumb: track.thumb, media: track.media,
+                    addedAt: track.addedAt, updatedAt: track.updatedAt,
+                    genre: track.genre, parentYear: track.parentYear,
+                    ratingCount: track.ratingCount,
+                    userRating: rating > 0 ? Double(rating) : nil
+                )
+                displayItems[index] = ModernDisplayItem(
+                    id: item.id, title: item.title, info: item.info,
+                    indentLevel: item.indentLevel, hasChildren: item.hasChildren,
+                    type: .track(updatedTrack)
+                )
+                break
+            }
+        }
+    }
+
+    private func updateCachedJellyfinRating(itemId: String, rating: Int) {
+        for (index, item) in displayItems.enumerated() {
+            if case .jellyfinTrack(let song) = item.type, song.id == itemId {
+                let updatedSong = JellyfinSong(
+                    id: song.id, title: song.title, album: song.album,
+                    artist: song.artist, albumId: song.albumId, artistId: song.artistId,
+                    track: song.track, year: song.year, genre: song.genre,
+                    imageTag: song.imageTag, size: song.size, contentType: song.contentType,
+                    duration: song.duration, bitRate: song.bitRate,
+                    sampleRate: song.sampleRate, channels: song.channels,
+                    path: song.path, discNumber: song.discNumber, created: song.created,
+                    isFavorite: song.isFavorite, playCount: song.playCount,
+                    userRating: rating > 0 ? rating : nil
+                )
+                displayItems[index] = ModernDisplayItem(
+                    id: item.id, title: item.title, info: item.info,
+                    indentLevel: item.indentLevel, hasChildren: item.hasChildren,
+                    type: .jellyfinTrack(updatedSong)
+                )
+                break
+            }
+        }
+    }
+
+    private func updateCachedEmbyRating(itemId: String, rating: Int) {
+        for (index, item) in displayItems.enumerated() {
+            if case .embyTrack(let song) = item.type, song.id == itemId {
+                let updatedSong = EmbySong(
+                    id: song.id, title: song.title, album: song.album,
+                    artist: song.artist, albumId: song.albumId, artistId: song.artistId,
+                    track: song.track, year: song.year, genre: song.genre,
+                    imageTag: song.imageTag, size: song.size, contentType: song.contentType,
+                    duration: song.duration, bitRate: song.bitRate,
+                    sampleRate: song.sampleRate, channels: song.channels,
+                    path: song.path, discNumber: song.discNumber, created: song.created,
+                    isFavorite: song.isFavorite, playCount: song.playCount,
+                    userRating: rating > 0 ? rating : nil
+                )
+                displayItems[index] = ModernDisplayItem(
+                    id: item.id, title: item.title, info: item.info,
+                    indentLevel: item.indentLevel, hasChildren: item.hasChildren,
+                    type: .embyTrack(updatedSong)
+                )
+                break
+            }
+        }
+    }
+
+    private func updateCachedLocalTrackRating(trackId: UUID, rating: Int) {
+        for (index, item) in displayItems.enumerated() {
+            if case .localTrack(var track) = item.type, track.id == trackId {
+                track.rating = rating >= 0 ? rating : nil
+                displayItems[index] = ModernDisplayItem(
+                    id: item.id, title: item.title, info: item.info,
+                    indentLevel: item.indentLevel, hasChildren: item.hasChildren,
+                    type: .localTrack(track)
                 )
                 break
             }
@@ -10104,7 +10195,7 @@ extension ModernDisplayItem {
             if let userRating = song.userRating, userRating > 0 {
                 return Self.formatRating(Double(userRating) * 2.0)
             }
-            return song.starred != nil ? "★" : ""
+            return song.starred != nil ? "★★★★★" : Self.formatRating(nil)
         case "plays": return song.playCount.map { String($0) } ?? ""
         case "discNum": return song.discNumber.map { String($0) } ?? ""
         case "dateAdded": return song.created.map { Self.formatDate($0) } ?? ""
@@ -10267,9 +10358,8 @@ extension ModernDisplayItem {
     }
     
     private static func formatRating(_ rating: Double?) -> String {
-        guard let rating = rating, rating > 0 else { return "" }
-        let stars = Int(rating / 2.0); let empty = 5 - stars
-        return String(repeating: "★", count: stars) + String(repeating: "☆", count: empty)
+        let stars = rating.map { max(0, Int($0 / 2.0)) } ?? 0
+        return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
     }
 
     private static func formatStarRating(_ rating: Int) -> String {
