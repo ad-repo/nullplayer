@@ -2206,17 +2206,17 @@ class ModernLibraryBrowserView: NSView {
             return ModernBrowserColumn.internetRadioColumns
         }
         if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
+            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack: return true; default: return false }
         }) {
             return ModernBrowserColumn.trackColumns
         }
         if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
+            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum: return true; default: return false }
         }) {
             return ModernBrowserColumn.albumColumns
         }
         if displayItems.contains(where: {
-            switch $0.type { case .artist, .subsonicArtist, .localArtist, .jellyfinArtist: return true; default: return false }
+            switch $0.type { case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist: return true; default: return false }
         }) {
             return ModernBrowserColumn.artistColumns
         }
@@ -2225,17 +2225,17 @@ class ModernLibraryBrowserView: NSView {
     
     private func columnsForItem(_ item: ModernDisplayItem) -> [ModernBrowserColumn]? {
         switch item.type {
-        case .track, .subsonicTrack, .localTrack, .jellyfinTrack:
+        case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack:
             let visible = visibleTrackColumnIds
             return ModernBrowserColumn.allTrackColumns
                 .filter { visible.contains($0.id) }
                 .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
-        case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum:
+        case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum:
             let visible = visibleAlbumColumnIds
             return ModernBrowserColumn.allAlbumColumns
                 .filter { visible.contains($0.id) }
                 .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
-        case .artist, .subsonicArtist, .localArtist, .jellyfinArtist:
+        case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist:
             if item.indentLevel == 0 {
                 let visible = visibleArtistColumnIds
                 return ModernBrowserColumn.allArtistColumns
@@ -10110,18 +10110,18 @@ private struct ModernBrowserColumn {
         .dateAdded, .lastPlayed, .filePath
     ]
     static let allAlbumColumns: [ModernBrowserColumn] = [.title, .year, .genre, .duration, .rating]
-    static let allArtistColumns: [ModernBrowserColumn] = [.title, .albums, .genre]
+    static let allArtistColumns: [ModernBrowserColumn] = [.title, .albums, .genre, .rating]
     
     // Default visible column IDs (backwards-compatible with the original set)
     static let defaultTrackColumnIds: [String] = ["trackNum", "title", "artist", "album", "rating", "year", "genre", "duration", "bitrate", "size", "plays"]
     static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
-    static let defaultArtistColumnIds: [String] = ["title", "albums", "genre"]
+    static let defaultArtistColumnIds: [String] = ["title", "albums", "genre", "rating"]
     static let internetRadioColumns: [ModernBrowserColumn] = [.title, .genre, .rating]
     
     // Legacy arrays kept for backwards compatibility with sort lookup
     static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount]
     static let albumColumns: [ModernBrowserColumn] = [.title, .year, .genre, .duration, .rating]
-    static let artistColumns: [ModernBrowserColumn] = [.title, .albums, .genre]
+    static let artistColumns: [ModernBrowserColumn] = [.title, .albums, .genre, .rating]
     
     static func findColumn(id: String) -> ModernBrowserColumn? {
         if let c = allTrackColumns.first(where: { $0.id == id }) { return c }
@@ -10149,9 +10149,18 @@ extension ModernDisplayItem {
         case .embyAlbum(let a): return embyAlbumValue(a, for: column)
         case .localAlbum(let a): return localAlbumValue(a, for: column)
         case .artist(let a): return plexArtistValue(a, for: column)
-        case .subsonicArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
-        case .jellyfinArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
-        case .embyArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
+        case .subsonicArtist(let a):
+            if column.id == "albums" { return String(a.albumCount) }
+            if column.id == "rating" { return a.starred != nil ? "★★★★★" : "" }
+            return ""
+        case .jellyfinArtist(let a):
+            if column.id == "albums" { return String(a.albumCount) }
+            if column.id == "rating" { return a.isFavorite ? "★★★★★" : "" }
+            return ""
+        case .embyArtist(let a):
+            if column.id == "albums" { return String(a.albumCount) }
+            if column.id == "rating" { return a.isFavorite ? "★★★★★" : "" }
+            return ""
         case .localArtist(let a):
             if column.id == "albums" {
                 if !a.albums.isEmpty { return String(a.albums.count) }
