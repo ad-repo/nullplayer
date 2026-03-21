@@ -539,11 +539,13 @@ Settings are persisted across app restarts.
 Two-tier behavior controlled by `effectiveHideTitleBars(for:)` in `WindowManager`:
 
 - **HT Off (default baseline)**: EQ/Playlist/Spectrum/Waveform always hide titlebars when docked, regardless of the HT setting. Main, ProjectM, and Library Browser show titlebars.
-- **HT On**: ALL 6 windows hide titlebars unconditionally (docked or not). Main window shrinks by `titleBarBaseHeight` (base 275×116 → 275×98) so content fills the frame — no gap at top.
+- **HT On**: ALL 6 windows hide titlebars unconditionally (docked or not). Main window frame size remains unchanged; the main view internally remaps/scales content to fill the reclaimed titlebar area with no top gap.
 
 Key implementation details:
-- `toggleHideTitleBars()` resizes the main window (anchor top-left, update `minSize` BEFORE `setFrame`) then refreshes all 6 window views
-- **Startup**: `showMainWindow()` corrects `minSize` immediately after window creation if `hideTitleBars` is already `true` in UserDefaults, so the saved (smaller) frame isn't clamped
+- `toggleHideTitleBars()` keeps the modern main window at full-height geometry and refreshes all managed window views (`needsDisplay` + `needsLayout`)
+- **Startup**: `showMainWindow()` normalizes legacy compact HT frames back to full-height geometry via `normalizeModernMainWindowForHTIfNeeded()`
+- `ModernMainWindowView` applies HT-only internal reflow in draw with a Y-axis context transform (`withMainContentLayoutTransform`, `contentLayoutScaleY`)
+- HT internal reflow is mirrored in interaction math (`basePoint`/`scaledRect`) so hit testing, dirty-rect invalidation, marquee frame, and Metal mini-spectrum overlay geometry stay aligned with rendered controls
 - Each view's `titleBarHeight` computed property returns `borderWidth` (not 0) when hidden, preserving the top border line
 - ProjectM shade mode is always drawn (uses `isShadeMode || !effectiveHideTitleBars` condition) so HT + shade never produces a blank window
 - Library Browser uses lazy drag: `mouseDown` records `windowDragStartPoint`; `mouseDragged` starts the drag on first movement when HT is on

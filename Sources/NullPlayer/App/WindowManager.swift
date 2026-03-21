@@ -126,14 +126,14 @@ class WindowManager {
         set { UserDefaults.standard.set(newValue, forKey: "hideTitleBars") }
     }
 
-    /// Ensure modern main window uses compact HT height when HT is enabled.
-    /// Keeps the top edge fixed so startup/restore does not leave an empty titlebar gap.
+    /// Ensure modern main window keeps full-height geometry in HT mode at startup/restore.
+    /// Keeps the top edge fixed so legacy compact HT frames are expanded.
     @discardableResult
     func normalizeModernMainWindowForHTIfNeeded(_ explicitWindow: NSWindow? = nil) -> CGFloat {
         guard isRunningModernUI, hideTitleBars else { return 0 }
         guard let mainWindow = explicitWindow ?? mainWindowController?.window else { return 0 }
 
-        let targetHeight = (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
+        let targetHeight = fullMainHeightForCurrentScale()
         mainWindow.minSize = NSSize(width: mainWindow.minSize.width, height: targetHeight)
 
         var frame = mainWindow.frame
@@ -153,13 +153,9 @@ class WindowManager {
         guard isRunningModernUI else { return }
         hideTitleBars = !hideTitleBars
 
-        // Resize main window: when HT is on, main window shrinks by titleBarBaseHeight (base 275x116 → 275x98)
-        // anchor top-left so stacked windows below shift up naturally.
+        // Keep main window size unchanged across HT toggles (internal reflow is view-level).
         if let mainWindow = mainWindowController?.window {
-            let baseHeight: CGFloat = hideTitleBars
-                ? (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
-                : ModernSkinElements.baseMainSize.height * ModernSkinElements.scaleFactor
-            let newSize = NSSize(width: mainWindow.frame.width, height: baseHeight)
+            let newSize = NSSize(width: mainWindow.frame.width, height: fullMainHeightForCurrentScale())
             mainWindow.minSize = newSize
             var frame = mainWindow.frame
             let topY = frame.maxY
@@ -200,20 +196,16 @@ class WindowManager {
             for win in windowsBelow {
                 win.setFrameOrigin(NSPoint(x: win.frame.origin.x, y: win.frame.origin.y + dy))
             }
-            // Ensure center-stack windows follow HT compact/full sizing rules and remain flush.
+            // Keep connected center-stack window sizes unchanged across HT toggles.
+            // These windows already hide titlebars while docked, so changing HT should
+            // not change their frame heights; only their stacked position should move.
             let orderedBelow = windowsBelow.sorted { $0.frame.maxY > $1.frame.maxY }
             var nextTop = frame.minY
-            let titleDelta = ModernSkinElements.titleBarBaseHeight * ModernSkinElements.scaleFactor
             for win in orderedBelow {
                 guard let kind = centerStackWindowKind(for: win) else { continue }
-                applyCenterStackSizingConstraints(win, kind: kind)
                 var winFrame = win.frame
-                let targetHeight = targetCenterStackHeight(for: kind,
-                                                           currentHeight: winFrame.height,
-                                                           titleBarDelta: titleDelta,
-                                                           preservePlaylistContentHeight: true)
                 if kind == .equalizer { winFrame.size.width = frame.width }
-                winFrame.size.height = targetHeight
+                let targetHeight = winFrame.height
                 winFrame.origin.x = frame.minX
                 winFrame.origin.y = nextTop - targetHeight
                 win.setFrame(winFrame, display: true, animate: false)
@@ -1841,10 +1833,8 @@ class WindowManager {
         // For classic UI, sizes are base sizes that need explicit * scale.
         let mainTargetSize: NSSize
         if runningModernMode {
-            let fullHeight = ModernSkinElements.baseMainSize.height * ModernSkinElements.scaleFactor
-            let compactHeight = (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
-            let targetHeight = hideTitleBars ? compactHeight : fullHeight
-            mainTargetSize = NSSize(width: ModernSkinElements.mainWindowSize.width, height: targetHeight)
+            mainTargetSize = NSSize(width: ModernSkinElements.mainWindowSize.width,
+                                    height: fullMainHeightForCurrentScale())
         } else {
             mainTargetSize = NSSize(width: Skin.mainWindowSize.width * scale,
                                     height: Skin.mainWindowSize.height * scale)
@@ -2138,10 +2128,6 @@ class WindowManager {
         ModernSkinElements.baseMainSize.height * ModernSkinElements.scaleFactor
     }
 
-    private func compactMainHeightForCurrentScale() -> CGFloat {
-        (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
-    }
-
     private func targetCenterStackHeight(for kind: CenterStackWindowKind,
                                          currentHeight: CGFloat,
                                          titleBarDelta: CGFloat,
@@ -2201,32 +2187,21 @@ class WindowManager {
         case .equalizer, .spectrum:
             normalized.size.height = target
         case .playlist, .waveform:
-            let full = fullMainHeightForCurrentScale()
-            let compact = compactMainHeightForCurrentScale()
-            let tol: CGFloat = 1
-            if hideTitleBars && abs(normalized.height - full) <= tol {
-                normalized.size.height = compact
-            } else if !hideTitleBars && abs(normalized.height - compact) <= tol {
-                normalized.size.height = full
-            } else {
-                normalized.size.height = max(target, normalized.height)
-            }
+            // Accept legacy compact saved frames but normalize to current full-height minimum.
+            normalized.size.height = max(target, normalized.height)
         }
         normalized.origin.y = topY - normalized.size.height
         return normalized
     }
 
-    /// Expected main-window frame height for the current HT setting.
-    /// For modern UI this is schema-driven and not inferred from potentially stale frame geometry.
+    /// Baseline center-stack height in modern UI.
     private func expectedMainHeightForCurrentHT(_ mainWindow: NSWindow?) -> CGFloat {
         guard isRunningModernUI else { return mainWindow?.frame.height ?? 0 }
-        let full = fullMainHeightForCurrentScale()
-        let compact = compactMainHeightForCurrentScale()
-        return hideTitleBars ? compact : full
+        return fullMainHeightForCurrentScale()
     }
 
     /// Default side-window height when only the main window is visible.
-    /// Must track HT compact/full main height in modern UI.
+    /// Uses the center-stack baseline height in modern UI.
     private func defaultSideWindowHeight(mainFrame: NSRect) -> CGFloat {
         guard isRunningModernUI else { return mainFrame.height * 4 }
         return expectedMainHeightForCurrentHT(mainWindowController?.window) * 4
