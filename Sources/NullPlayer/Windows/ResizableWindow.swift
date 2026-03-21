@@ -44,6 +44,12 @@ class ResizableWindow: NSWindow {
     
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+
+        // Borderless classic windows still need explicit miniaturizable behavior for
+        // custom toolbar/menu minimize actions.
+        if !styleMask.contains(.miniaturizable) {
+            styleMask.insert(.miniaturizable)
+        }
         
         // Enable mouse moved events for cursor updates
         acceptsMouseMovedEvents = true

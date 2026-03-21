@@ -390,6 +390,9 @@ class WindowManager {
 
     /// Windows that were attached as children for coordinated minimize (for restore)
     private var coordinatedMiniaturizedWindows: [NSWindow] = []
+
+    /// Windows currently in miniaturize animation; suppress drag/group movement for these.
+    private var miniaturizingWindowIds = Set<ObjectIdentifier>()
     
     // MARK: - Initialization
     
@@ -406,6 +409,18 @@ class WindowManager {
             self,
             selector: #selector(handleWindowWillClose(_:)),
             name: NSWindow.willCloseNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowWillMiniaturize(_:)),
+            name: NSWindow.willMiniaturizeNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowDidMiniaturize(_:)),
+            name: NSWindow.didMiniaturizeNotification,
             object: nil
         )
     }
@@ -2501,6 +2516,29 @@ class WindowManager {
         windowDidFinishDragging(closingWindow)
     }
 
+    @objc private func handleWindowWillMiniaturize(_ notification: Notification) {
+        guard let miniaturizingWindow = notification.object as? NSWindow else { return }
+        miniaturizingWindowIds.insert(ObjectIdentifier(miniaturizingWindow))
+
+        // Minimize should never leave drag/group state armed.
+        if draggingWindow === miniaturizingWindow {
+            windowDidFinishDragging(miniaturizingWindow)
+        } else if primedDragWindow === miniaturizingWindow {
+            primedDragWindow = nil
+            holdStartTime = nil
+            dragMode = .pending
+            if highlightWasPosted {
+                postConnectedWindowHighlight([])
+                highlightWasPosted = false
+            }
+        }
+    }
+
+    @objc private func handleWindowDidMiniaturize(_ notification: Notification) {
+        guard let miniaturizedWindow = notification.object as? NSWindow else { return }
+        miniaturizingWindowIds.remove(ObjectIdentifier(miniaturizedWindow))
+    }
+
     /// Called when a window drag ends
     func windowDidFinishDragging(_ window: NSWindow) {
         guard draggingWindow === window else { return }
@@ -2555,6 +2593,11 @@ class WindowManager {
     func windowWillMove(_ window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
         // Programmatic frame changes should never re-enter snap logic.
         if isSnappingWindow {
+            return newOrigin
+        }
+
+        // Intercept minimize button/animation movement from drag-group logic.
+        if miniaturizingWindowIds.contains(ObjectIdentifier(window)) {
             return newOrigin
         }
 
@@ -3294,6 +3337,23 @@ class WindowManager {
     /// Get all visible windows
     func visibleWindows() -> [NSWindow] {
         return allWindows()
+    }
+
+    /// Miniaturize all visible, managed player windows.
+    /// Main window is miniaturized first so existing docked-window miniaturize
+    /// coordination remains intact, then any remaining visible windows follow.
+    func miniaturizeAllManagedWindows() {
+        let windowsToMiniaturize = visibleWindows().filter { !$0.isMiniaturized }
+        guard !windowsToMiniaturize.isEmpty else { return }
+
+        let mainWindow = mainWindowController?.window
+        if let mainWindow, windowsToMiniaturize.contains(where: { $0 === mainWindow }) {
+            mainWindow.miniaturize(nil)
+        }
+
+        for window in windowsToMiniaturize where window !== mainWindow {
+            window.miniaturize(nil)
+        }
     }
     
     // MARK: - Coordinated Miniaturize

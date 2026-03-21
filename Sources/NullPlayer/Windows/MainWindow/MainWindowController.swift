@@ -123,8 +123,8 @@ class MainWindowController: NSWindowController, MainWindowProviding {
             // Store current frame for restoration
             normalModeFrame = window.frame
             
-            // Calculate new shade mode frame (same origin, shorter height)
-            let shadeSize = SkinElements.MainShade.windowSize
+            // Calculate new shade mode frame (preserve current width, shorten height)
+            let shadeSize = NSSize(width: window.frame.width, height: SkinElements.MainShade.windowSize.height)
             let newFrame = NSRect(
                 x: window.frame.origin.x,
                 y: window.frame.origin.y + window.frame.height - shadeSize.height,
@@ -143,11 +143,11 @@ class MainWindowController: NSWindowController, MainWindowProviding {
             if let storedFrame = normalModeFrame {
                 newFrame = storedFrame
             } else {
-                // Calculate frame from current position
+                // Calculate frame from current position, preserving current width
                 newFrame = NSRect(
                     x: window.frame.origin.x,
                     y: window.frame.origin.y + window.frame.height - normalSize.height,
-                    width: normalSize.width,
+                    width: window.frame.width,
                     height: normalSize.height
                 )
             }

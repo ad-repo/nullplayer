@@ -1384,14 +1384,7 @@ class MainWindowView: NSView {
             return
         }
         
-        // Check for double-click actions
-        if event.clickCount == 2 {
-            // Double-click on title bar to toggle shade mode
-            if isShadeMode || regionManager.shouldToggleShade(at: point, windowType: .main, windowSize: hitTestSize) {
-                toggleShadeMode()
-                return
-            }
-        }
+        // Classic main window shade toggle is disabled; title-bar double-click has no action.
         
         if isShadeMode {
             // Shade mode mouse handling
@@ -1762,10 +1755,8 @@ class MainWindowView: NSView {
             WindowManager.shared.togglePlaylist()
         case .close:
             NSApplication.shared.terminate(nil)
-        case .minimize:
-            window?.miniaturize(nil)
-        case .shade, .unshade:
-            toggleShadeMode()
+        case .minimize, .shade, .unshade:
+            WindowManager.shared.miniaturizeAllManagedWindows()
         case .logo:
             WindowManager.shared.togglePlexBrowser()
         case .menu:

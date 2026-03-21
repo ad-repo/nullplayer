@@ -134,9 +134,10 @@ struct SkinElements {
         // Close extends to right edge and top; shade/minimize get full title bar height
         struct HitPositions {
             static let menuButton = NSRect(x: 0, y: 0, width: 15, height: 14)
-            static let minimizeButton = NSRect(x: 237, y: 0, width: 9, height: 14)
-            static let shadeButton = NSRect(x: 248, y: 0, width: 9, height: 14)
-            static let closeButton = NSRect(x: 257, y: 0, width: 18, height: 14)
+            // Keep contiguous hit zones so clicks cannot fall through to drag-start.
+            static let minimizeButton = NSRect(x: 242, y: 0, width: 11, height: 14)
+            static let shadeButton = NSRect(x: 253, y: 0, width: 11, height: 14)
+            static let closeButton = NSRect(x: 264, y: 0, width: 11, height: 14)
         }
         
         // Positions on main window (shade mode) - used for DRAWING sprites
@@ -150,9 +151,9 @@ struct SkinElements {
         // Enlarged hit-test areas for main window (shade mode)
         struct ShadeHitPositions {
             static let menuButton = NSRect(x: 0, y: 0, width: 15, height: 14)
-            static let minimizeButton = NSRect(x: 237, y: 0, width: 9, height: 14)
-            static let unshadeButton = NSRect(x: 248, y: 0, width: 9, height: 14)
-            static let closeButton = NSRect(x: 257, y: 0, width: 18, height: 14)
+            static let minimizeButton = NSRect(x: 242, y: 0, width: 11, height: 14)
+            static let unshadeButton = NSRect(x: 253, y: 0, width: 11, height: 14)
+            static let closeButton = NSRect(x: 264, y: 0, width: 11, height: 14)
         }
     }
     

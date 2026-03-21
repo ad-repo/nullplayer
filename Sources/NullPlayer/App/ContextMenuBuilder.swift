@@ -62,6 +62,10 @@ class ContextMenuBuilder {
         snapToDefault.target = MenuActions.shared
         menu.addItem(snapToDefault)
 
+        let minimizeAll = NSMenuItem(title: "Minimize All Windows", action: #selector(MenuActions.minimizeAllWindows), keyEquivalent: "")
+        minimizeAll.target = MenuActions.shared
+        menu.addItem(minimizeAll)
+
         menu.addItem(NSMenuItem.separator())
 
         // Exit
@@ -3670,6 +3674,10 @@ class MenuActions: NSObject {
     
     @objc func snapToDefault() {
         WindowManager.shared.snapToDefaultPositions()
+    }
+
+    @objc func minimizeAllWindows() {
+        WindowManager.shared.miniaturizeAllManagedWindows()
     }
     
     // MARK: - Playback Controls
