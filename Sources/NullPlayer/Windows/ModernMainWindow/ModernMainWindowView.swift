@@ -714,8 +714,8 @@ class ModernMainWindowView: NSView {
             position = 0
         }
         
-        // Seek bar fill color: use element override if set, otherwise accent color
-        let seekColor = renderer.skin.elementColor(for: "seek_fill")
+        // Seek bar fill color: use element override if set, otherwise primary color
+        let seekColor = renderer.skin.elementColor(for: "seek_fill", fallback: renderer.skin.primaryColor)
         renderer.drawSlider(trackId: "seek_track", fillId: "seek_fill", thumbId: "seek_thumb",
                             trackRect: trackRect, fillFraction: position,
                             thumbState: isDraggingSeek ? "pressed" : "normal",
@@ -727,8 +727,9 @@ class ModernMainWindowView: NSView {
         let trackRect = ModernSkinElements.volumeTrack.defaultRect
         let volume = CGFloat(WindowManager.shared.audioEngine.volume)
         
-        // Use same color as seek bar fill for visual consistency
-        let volColor = renderer.skin.elementColor(for: "seek_fill")
+        // Volume fill color: use element override if set, otherwise fall back to seek_fill then primary
+        let seekFillFallback = renderer.skin.elementColor(for: "seek_fill", fallback: renderer.skin.primaryColor)
+        let volColor = renderer.skin.elementColor(for: "volume_fill", fallback: seekFillFallback)
         renderer.drawSlider(trackId: "volume_track", fillId: "volume_fill", thumbId: "volume_thumb",
                             trackRect: trackRect, fillFraction: volume,
                             thumbState: isDraggingVolume ? "pressed" : "normal",

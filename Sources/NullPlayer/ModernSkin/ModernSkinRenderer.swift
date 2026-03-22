@@ -773,7 +773,8 @@ class ModernSkinRenderer {
         
         // Programmatic fallback: thin outlined icon (finer lines like reference)
         let isPressed = state == "pressed"
-        let color = isPressed ? skin.primaryColor.withAlphaComponent(0.7) : skin.primaryColor
+        let baseColor = skin.elementColor(for: id, fallback: skin.elementColor(for: "play_controls", fallback: skin.primaryColor))
+        let color = isPressed ? baseColor.withAlphaComponent(0.7) : baseColor
         
         context.saveGState()
         context.setStrokeColor(color.cgColor)
@@ -888,8 +889,8 @@ class ModernSkinRenderer {
             return
         }
         
-        // Fallback: text label with accent (magenta) for ON state, dim for OFF
-        let onColor = skin.accentColor
+        // Fallback: text label with minicontrol_buttons color for ON state, dim for OFF
+        let onColor = skin.elementColor(for: "minicontrol_buttons", fallback: skin.accentColor)
         let offColor = skin.textDimColor
         let textColor = isOn ? onColor : offColor
         let font = skin.smallLabelFont()

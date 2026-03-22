@@ -472,14 +472,14 @@ class ModernPlaylistView: NSView {
             let isCurrent = index == currentIndex
             let isSelected = selectedIndices.contains(index)
             
-            // Text color -- current track uses accent (magenta), selected uses primary text
+            // Text color -- current track uses accent, selected uses primary text, normal uses playlist_text
             let titleColor: NSColor
             if isCurrent {
                 titleColor = skin.accentColor
             } else if isSelected {
                 titleColor = skin.textColor
             } else {
-                titleColor = skin.textDimColor
+                titleColor = skin.elementColor(for: "playlist_text", fallback: skin.textDimColor)
             }
             
             // Track number uses dataColor (yellow glow)

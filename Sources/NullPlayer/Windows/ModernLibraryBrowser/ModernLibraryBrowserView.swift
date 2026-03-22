@@ -917,22 +917,24 @@ class ModernLibraryBrowserView: NSView {
     /// Draw a modern boxed toggle button
     private func drawToggleTab(label: String, isActive: Bool, rect: NSRect,
                                font: NSFont, skin: ModernSkin, context: CGContext) {
-        let color = isActive ? skin.accentColor : skin.textDimColor
-        
+        let outlineColor = skin.elementColor(for: "tab_outline", fallback: skin.accentColor)
+        let activeTextColor = skin.elementColor(for: "tab_text", fallback: skin.accentColor)
+        let color = isActive ? activeTextColor : skin.textDimColor
+
         context.saveGState()
-        
+
         if isActive {
-            context.setFillColor(skin.accentColor.withAlphaComponent(0.12).cgColor)
+            context.setFillColor(outlineColor.withAlphaComponent(0.12).cgColor)
             context.fill(rect)
-            
-            context.setShadow(offset: .zero, blur: 6, color: skin.accentColor.withAlphaComponent(0.6).cgColor)
-            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.8).cgColor)
+
+            context.setShadow(offset: .zero, blur: 6, color: outlineColor.withAlphaComponent(0.6).cgColor)
+            context.setStrokeColor(outlineColor.withAlphaComponent(0.8).cgColor)
             context.setLineWidth(1.0)
             context.stroke(rect)
             context.restoreGState()
-            
+
             context.saveGState()
-            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.6).cgColor)
+            context.setStrokeColor(outlineColor.withAlphaComponent(0.6).cgColor)
             context.setLineWidth(1.0)
             context.stroke(rect)
         } else {
@@ -940,7 +942,7 @@ class ModernLibraryBrowserView: NSView {
             context.setLineWidth(0.5)
             context.stroke(rect)
         }
-        
+
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: skin.applyTextOpacity(to: color)

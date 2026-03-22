@@ -147,6 +147,14 @@ class ModernSkin {
         return textColor
     }
 
+    /// Get the resolved color for an element with a custom fallback color
+    func elementColor(for elementId: String, fallback: NSColor) -> NSColor {
+        if let colorHex = config.elements?[elementId]?.color {
+            return NSColor.from(hex: colorHex)
+        }
+        return fallback
+    }
+
     // MARK: - Opacity Resolution
 
     /// Resolve area-specific opacity channels from `window.areaOpacity`,
