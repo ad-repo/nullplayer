@@ -381,6 +381,9 @@ class SpectrumAnalyzerView: NSView {
                 let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
                 let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
                 visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+                if VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope) {
+                    _ = visClassicBridge?.setTransparentBackground(true)
+                }
             }
 
             // Heavy fullscreen shader modes can stall at Retina-scale pixel counts.
