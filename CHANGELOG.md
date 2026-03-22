@@ -24,6 +24,7 @@
 - **Rating overlay** — a five-star overlay appears on mouse hover in ProjectM; Delete/Backspace clears the rating for the current preset.
 - **Persistent default preset** — a preset can be set as the default and will be loaded on every launch.
 - **Presets menu renamed** — the ProjectM presets menu is renamed for clarity, and preset list entries now show gold stars for rated presets.
+- **Proportional drag and ratings zones** — the top quarter of the ProjectM window is the drag handle; the bottom three quarters show the ratings overlay on click.
 
 ### Visualizations
 
@@ -70,6 +71,12 @@
 - Cleared stale cover art when switching to a track with no embedded artwork
 - Removed output device selection from main window context menu
 - Updated app icon
+- Fixed SSDP socket crash on UPnP scan teardown (closed fd immediately after async cancel, triggering a kevent-vanished SIGSEGV in libdispatch; now closed inside the cancel handler)
+- Fixed ProjectM 1–5 star keycode mapping (key "5" was silently dropped; key "6" was accepted as 5 stars)
+- Fixed side windows (ProjectM, Library Browser) opening at the edge of only the vertical stack instead of the full cluster of docked windows
+- Fixed glass/modern skin appearing fully transparent on app reopen when a partial-dirty draw fired before the first full draw
+- Fixed spectrum transparent-background preference not persisting across launches in vis_classic mode
+- Fixed spectrum window width not being preserved during classic window-stack repair
 
 ## 0.17.3
 
