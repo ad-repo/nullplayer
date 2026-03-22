@@ -77,6 +77,7 @@
 - Fixed glass/modern skin appearing fully transparent on app reopen when a partial-dirty draw fired before the first full draw
 - Fixed spectrum transparent-background preference not restoring on launch in vis_classic exact mode (bridge created in render path skipped preference restore when mode was already active at init)
 - Fixed spectrum window width not being preserved during classic window-stack repair
+- Fixed play clock stuck at 00:00 after app restart when a previous track was restored (seek-while-paused during state restore never notified the UI)
 
 ## 0.17.3
 
