@@ -431,6 +431,11 @@ class ProjectMView: NSView {
     
     // MARK: - Hit Testing
     
+    /// Top 1/4 of the window is the drag zone
+    private func hitTestTopZone(at point: NSPoint) -> Bool {
+        return point.y >= bounds.height * 0.75
+    }
+
     /// Check if point hits title bar (for dragging)
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
         if WindowManager.shared.hideTitleBars {
@@ -438,7 +443,7 @@ class ProjectMView: NSView {
             return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
         }
         // Title bar is at the top, leave room for close button on the right
-        return skinPoint.y < Layout.titleBarHeight && 
+        return skinPoint.y < Layout.titleBarHeight &&
                skinPoint.x < bounds.width - 25  // Leave room for close button area
     }
     
@@ -481,32 +486,33 @@ class ProjectMView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
         
-        // Check for double-click on title bar to toggle shade mode
-        if event.clickCount == 2 && hitTestTitleBar(at: skinPoint) {
+        // Check for double-click in top zone to toggle shade mode
+        if event.clickCount == 2 && hitTestTopZone(at: point) &&
+           !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             toggleShadeMode()
             return
         }
-        
+
         if isShadeMode {
             handleShadeMouseDown(at: skinPoint, event: event)
             return
         }
-        
+
         // Check window control buttons
         if hitTestCloseButton(at: skinPoint) {
             pressedButton = .close
             needsDisplay = true
             return
         }
-        
+
         if hitTestShadeButton(at: skinPoint) {
             pressedButton = .shade
             needsDisplay = true
             return
         }
-        
-        // Title bar - start window drag (can undock)
-        if hitTestTitleBar(at: skinPoint) {
+
+        // Top 1/4 of window: drag zone
+        if hitTestTopZone(at: point) {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
             if let window = window {
@@ -515,18 +521,8 @@ class ProjectMView: NSView {
             return
         }
 
-        // Content area single-click opens preset rating overlay (same UX as art mode).
-        if let visFrame = visualizationGLView?.frame, visFrame.contains(point) {
-            showPresetRatingOverlay()
-            return
-        }
-
-        // Non-visualization content still supports dragging.
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: WindowManager.shared.hideTitleBars)
-        }
+        // Bottom 3/4: show ratings overlay on click
+        showPresetRatingOverlay()
     }
     
     /// Handle mouse down in shade mode

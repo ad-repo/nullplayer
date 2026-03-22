@@ -24,7 +24,7 @@
 - **Rating overlay** — a five-star overlay appears on mouse hover in ProjectM; Delete/Backspace clears the rating for the current preset.
 - **Persistent default preset** — a preset can be set as the default and will be loaded on every launch.
 - **Presets menu renamed** — the ProjectM presets menu is renamed for clarity, and preset list entries now show gold stars for rated presets.
-- **Proportional drag and ratings zones** — the top quarter of the ProjectM window is the drag handle; the bottom three quarters show the ratings overlay on click.
+- **Proportional drag and ratings zones** — the top quarter of the ProjectM window is the drag handle; the bottom three quarters show the ratings overlay on click. Applies to both classic and modern UI.
 
 ### Visualizations
 
