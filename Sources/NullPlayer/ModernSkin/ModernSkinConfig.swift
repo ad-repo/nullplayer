@@ -166,7 +166,7 @@ struct FontConfig: Codable {
     let infoSize: CGFloat?       // Info labels: bitrate, samplerate, BPM (default 6.5)
     let eqLabelSize: CGFloat?    // EQ frequency labels (default 7)
     let eqValueSize: CGFloat?    // EQ dB value text (default 6)
-    let marqueeSize: CGFloat?    // Marquee/scrolling title text (default 11.7)
+    let marqueeSize: CGFloat?    // Marquee/scrolling title text (default 12.7)
     let playlistSize: CGFloat?   // Playlist track list text (default 8)
 }
 
@@ -202,12 +202,15 @@ struct WindowConfig: Codable {
     let scale: CGFloat?        // UI scale factor (defaults to 1.25)
     let opacity: CGFloat       // Window background opacity 0.0-1.0 (defaults to 1.0 for old skins)
     let textOpacity: CGFloat?  // Global text opacity multiplier 0.0-1.0 (defaults to 1.0)
-    let mainSpectrumOpacity: CGFloat?  // Main-window spectrum opacity override 0.0-1.0 (optional)
+    let mainSpectrumOpacity: CGFloat?          // Main-window spectrum opacity override 0.0-1.0 (optional)
+    let spectrumTransparentBackground: Bool?   // Spectrum window: true = vis_classic transparent background (optional)
+    let waveformWindowOpacity: CGFloat?        // Waveform window background opacity override 0.0-1.0 (optional)
     let seamlessDocking: CGFloat?  // 0.0 (full borders) to 1.0 (fully hidden on docked edges). Default 0.
     let areaOpacity: AreaOpacityConfig? // Optional per-area opacity overrides
 
     init(borderWidth: CGFloat?, borderColor: String?, cornerRadius: CGFloat?, scale: CGFloat?,
          opacity: CGFloat, textOpacity: CGFloat?, mainSpectrumOpacity: CGFloat?,
+         spectrumTransparentBackground: Bool?, waveformWindowOpacity: CGFloat?,
          seamlessDocking: CGFloat?, areaOpacity: AreaOpacityConfig?) {
         self.borderWidth = borderWidth
         self.borderColor = borderColor
@@ -216,21 +219,25 @@ struct WindowConfig: Codable {
         self.opacity = opacity
         self.textOpacity = textOpacity
         self.mainSpectrumOpacity = mainSpectrumOpacity
+        self.spectrumTransparentBackground = spectrumTransparentBackground
+        self.waveformWindowOpacity = waveformWindowOpacity
         self.seamlessDocking = seamlessDocking
         self.areaOpacity = areaOpacity
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        borderWidth         = try c.decodeIfPresent(CGFloat.self, forKey: .borderWidth)
-        borderColor         = try c.decodeIfPresent(String.self,  forKey: .borderColor)
-        cornerRadius        = try c.decodeIfPresent(CGFloat.self, forKey: .cornerRadius)
-        scale               = try c.decodeIfPresent(CGFloat.self, forKey: .scale)
-        opacity             = try c.decodeIfPresent(CGFloat.self, forKey: .opacity) ?? 1.0
-        textOpacity         = try c.decodeIfPresent(CGFloat.self, forKey: .textOpacity)
-        mainSpectrumOpacity = try c.decodeIfPresent(CGFloat.self, forKey: .mainSpectrumOpacity)
-        seamlessDocking     = try c.decodeIfPresent(CGFloat.self, forKey: .seamlessDocking)
-        areaOpacity         = try c.decodeIfPresent(AreaOpacityConfig.self, forKey: .areaOpacity)
+        borderWidth                    = try c.decodeIfPresent(CGFloat.self, forKey: .borderWidth)
+        borderColor                    = try c.decodeIfPresent(String.self,  forKey: .borderColor)
+        cornerRadius                   = try c.decodeIfPresent(CGFloat.self, forKey: .cornerRadius)
+        scale                          = try c.decodeIfPresent(CGFloat.self, forKey: .scale)
+        opacity                        = try c.decodeIfPresent(CGFloat.self, forKey: .opacity) ?? 1.0
+        textOpacity                    = try c.decodeIfPresent(CGFloat.self, forKey: .textOpacity)
+        mainSpectrumOpacity            = try c.decodeIfPresent(CGFloat.self, forKey: .mainSpectrumOpacity)
+        spectrumTransparentBackground  = try c.decodeIfPresent(Bool.self,    forKey: .spectrumTransparentBackground)
+        waveformWindowOpacity          = try c.decodeIfPresent(CGFloat.self, forKey: .waveformWindowOpacity)
+        seamlessDocking                = try c.decodeIfPresent(CGFloat.self, forKey: .seamlessDocking)
+        areaOpacity                    = try c.decodeIfPresent(AreaOpacityConfig.self, forKey: .areaOpacity)
     }
 }
 

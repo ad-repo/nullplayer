@@ -147,6 +147,14 @@ class ModernSkin {
         return textColor
     }
 
+    /// Get the resolved color for an element with a custom fallback color
+    func elementColor(for elementId: String, fallback: NSColor) -> NSColor {
+        if let colorHex = config.elements?[elementId]?.color {
+            return NSColor.from(hex: colorHex)
+        }
+        return fallback
+    }
+
     // MARK: - Opacity Resolution
 
     /// Resolve area-specific opacity channels from `window.areaOpacity`,
@@ -217,6 +225,19 @@ class ModernSkin {
         mainSpectrumOpacityOverride ?? clampedOpacity(opacity)
     }
 
+    /// Background opacity for the standalone spectrum window.
+    /// Uses `window.opacity` — transparency is handled by the vis_classic transparent background
+    /// mechanism, not the window fill. See `window.spectrumTransparentBackground`.
+    var spectrumWindowBackgroundOpacity: CGFloat {
+        clampedOpacity(config.window.opacity)
+    }
+
+    /// Background opacity for the waveform window.
+    /// Falls back to `window.opacity` when `window.waveformWindowOpacity` is omitted.
+    var waveformWindowBackgroundOpacity: CGFloat {
+        clampedOpacity(config.window.waveformWindowOpacity ?? config.window.opacity)
+    }
+
     var waveformTransparentBackgroundStyle: WaveformTransparentBackgroundStyle {
         config.waveform?.transparentBackgroundStyle ?? .glass
     }
@@ -277,8 +298,8 @@ class ModernSkin {
     /// EQ dB value text font (default base size 6)
     func eqValueFont() -> NSFont { scaledFont(size: config.fonts.eqValueSize ?? 6) }
     
-    /// Marquee/scrolling title text font (default base size 11.7)
-    func marqueeFont() -> NSFont { scaledFont(size: config.fonts.marqueeSize ?? 11.7) }
+    /// Marquee/scrolling title text font (default base size 12.7)
+    func marqueeFont() -> NSFont { scaledFont(size: config.fonts.marqueeSize ?? 12.7) }
     
     /// Playlist track list text font (default base size 8)
     func playlistFont() -> NSFont { scaledFont(size: config.fonts.playlistSize ?? 8) }

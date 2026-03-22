@@ -6,90 +6,73 @@ class ContextMenuBuilder {
     
     // MARK: - Main Menu Builder
     
-    static func buildMenu() -> NSMenu {
+    static func buildMenu(includeOutputDevices: Bool = true, includeRepeatShuffle: Bool = true) -> NSMenu {
         let menu = NSMenu()
         let wm = WindowManager.shared
-        
+
         // About Playing (shows current track/video info)
         let aboutPlaying = NSMenuItem(title: "About Playing", action: #selector(MenuActions.showAboutPlaying), keyEquivalent: "")
         aboutPlaying.target = MenuActions.shared
-        // Disable if nothing is playing
         let hasAudioContent = wm.audioEngine.currentTrack != nil
         let hasVideoContent = wm.currentVideoTitle != nil
         aboutPlaying.isEnabled = hasAudioContent || hasVideoContent
         menu.addItem(aboutPlaying)
         menu.addItem(NSMenuItem.separator())
-        
-        // Window toggles
-        menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
-        menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
-        menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
-        menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
-        menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
-        menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
-        menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // UI submenu (unified Modern/Classic with skin selection)
-        menu.addItem(buildUIMenuItem())
-        
-        // Visualizations submenu
-        menu.addItem(buildVisualizationsMenuItem())
-        
-        // Spectrum Analyzer submenu (top-level with window toggle + settings)
-        menu.addItem(buildSpectrumAnalyzerMenuItem())
-        
-        // Options submenu
-        menu.addItem(buildOptionsMenuItem())
-        
-        // Libraries submenu (Local, Plex, Subsonic, Jellyfin, Emby)
-        menu.addItem(buildLibrariesMenuItem())
 
-        // Output Devices submenu (includes local, AirPlay, and casting)
-        menu.addItem(buildOutputDevicesMenuItem())
-        
-        menu.addItem(NSMenuItem.separator())
-        
+        if includeRepeatShuffle {
+            // Repeat & Shuffle (promoted from Options submenu to flat items)
+            let repeatItem = NSMenuItem(title: "Repeat", action: #selector(MenuActions.toggleRepeat), keyEquivalent: "")
+            repeatItem.target = MenuActions.shared
+            repeatItem.state = wm.audioEngine.repeatEnabled ? .on : .off
+            menu.addItem(repeatItem)
+
+            let shuffleItem = NSMenuItem(title: "Shuffle", action: #selector(MenuActions.toggleShuffle), keyEquivalent: "")
+            shuffleItem.target = MenuActions.shared
+            shuffleItem.state = wm.audioEngine.shuffleEnabled ? .on : .off
+            menu.addItem(shuffleItem)
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        // Output Devices submenu
+        if includeOutputDevices {
+            menu.addItem(buildOutputDevicesMenuItem())
+            menu.addItem(NSMenuItem.separator())
+        }
+
         // Always On Top
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
         alwaysOnTop.target = MenuActions.shared
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
-        
-        // Hide Title Bars (modern UI only)
-        if wm.isModernUIEnabled {
-            let hideTitleBars = NSMenuItem(title: "Hide Title Bars", action: #selector(MenuActions.toggleHideTitleBars), keyEquivalent: "")
-            hideTitleBars.target = MenuActions.shared
-            hideTitleBars.state = wm.hideTitleBars ? .on : .off
-            menu.addItem(hideTitleBars)
-        }
-        
-        // Large UI in classic mode, Double Size in modern mode
-        let sizeToggleTitle = wm.isRunningModernUI ? "Double Size" : "Large UI"
-        let doubleSize = NSMenuItem(title: sizeToggleTitle, action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
+
+        // Large UI size toggle
+        let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
         doubleSize.state = wm.isDoubleSize ? .on : .off
         menu.addItem(doubleSize)
-        
-        // Remember State On Quit
+
+        menu.addItem(buildWindowLockMenuItem())
+
         let rememberState = NSMenuItem(title: "Remember State On Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
         rememberState.target = MenuActions.shared
         rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
         menu.addItem(rememberState)
-        
-        // Snap To Default
+
         let snapToDefault = NSMenuItem(title: "Snap To Default", action: #selector(MenuActions.snapToDefault), keyEquivalent: "")
         snapToDefault.target = MenuActions.shared
         menu.addItem(snapToDefault)
-        
+
+        let minimizeAll = NSMenuItem(title: "Minimize All Windows", action: #selector(MenuActions.minimizeAllWindows), keyEquivalent: "")
+        minimizeAll.target = MenuActions.shared
+        menu.addItem(minimizeAll)
+
         menu.addItem(NSMenuItem.separator())
-        
+
         // Exit
         let exit = NSMenuItem(title: "Exit", action: #selector(MenuActions.exit), keyEquivalent: "")
         exit.target = MenuActions.shared
         menu.addItem(exit)
-        
+
         menu.autoenablesItems = false
         return menu
     }
@@ -123,15 +106,27 @@ class ContextMenuBuilder {
             menu.addItem(hideTitleBars)
         }
 
-        let sizeToggleTitle = wm.isRunningModernUI ? "Double Size" : "Large UI"
-        let doubleSize = NSMenuItem(title: sizeToggleTitle, action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
+        let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
         doubleSize.state = wm.isDoubleSize ? .on : .off
         menu.addItem(doubleSize)
 
+        menu.addItem(buildWindowLockMenuItem())
+
         let snapToDefault = NSMenuItem(title: "Snap To Default", action: #selector(MenuActions.snapToDefault), keyEquivalent: "")
         snapToDefault.target = MenuActions.shared
         menu.addItem(snapToDefault)
+
+        let minimizeAll = NSMenuItem(title: "Minimize All Windows", action: #selector(MenuActions.minimizeAllWindows), keyEquivalent: "")
+        minimizeAll.target = MenuActions.shared
+        menu.addItem(minimizeAll)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let rememberState = NSMenuItem(title: "Save State on Exit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
+        rememberState.target = MenuActions.shared
+        rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
+        menu.addItem(rememberState)
 
         menu.autoenablesItems = false
         return menu
@@ -260,6 +255,14 @@ class ContextMenuBuilder {
         return item
     }
 
+    private static func buildWindowLockMenuItem() -> NSMenuItem {
+        let isLocked = WindowManager.shared.isWindowLayoutLocked
+        let title = isLocked ? "Unlock Connected Windows" : "Lock Connected Windows"
+        let item = NSMenuItem(title: title, action: #selector(MenuActions.toggleWindowLayoutLock), keyEquivalent: "")
+        item.target = MenuActions.shared
+        return item
+    }
+
     private static func moveMenuItems(from source: NSMenu, to destination: NSMenu) {
         while let item = source.items.first {
             source.removeItem(item)
@@ -269,14 +272,6 @@ class ContextMenuBuilder {
 
     // MARK: - UI Submenu (unified Modern/Classic with skin selection)
     
-    private static func buildUIMenuItem() -> NSMenuItem {
-        let uiItem = NSMenuItem(title: "UI", action: nil, keyEquivalent: "")
-        let uiMenu = buildUIMenu()
-        uiMenu.autoenablesItems = false
-        uiItem.submenu = uiMenu
-        return uiItem
-    }
-
     private static func buildUIMenu() -> NSMenu {
         let uiMenu = NSMenu()
         uiMenu.autoenablesItems = false
@@ -478,12 +473,6 @@ class ContextMenuBuilder {
     
     // MARK: - Options Submenu
     
-    private static func buildOptionsMenuItem() -> NSMenuItem {
-        let optionsItem = NSMenuItem(title: "Playback Options", action: nil, keyEquivalent: "")
-        optionsItem.submenu = buildOptionsMenu()
-        return optionsItem
-    }
-
     private static func buildOptionsMenu() -> NSMenu {
         let optionsMenu = NSMenu()
         optionsMenu.autoenablesItems = false
@@ -1297,12 +1286,6 @@ class ContextMenuBuilder {
     }
     
     // MARK: - Libraries Submenu
-
-    private static func buildLibrariesMenuItem() -> NSMenuItem {
-        let librariesItem = NSMenuItem(title: "Libraries", action: nil, keyEquivalent: "")
-        librariesItem.submenu = buildLibrariesMenu()
-        return librariesItem
-    }
 
     private static func buildLibrariesMenu() -> NSMenu {
         let librariesMenu = NSMenu()
@@ -3695,9 +3678,17 @@ class MenuActions: NSObject {
             }
         }
     }
+
+    @objc func toggleWindowLayoutLock() {
+        WindowManager.shared.toggleWindowLayoutLock()
+    }
     
     @objc func snapToDefault() {
         WindowManager.shared.snapToDefaultPositions()
+    }
+
+    @objc func minimizeAllWindows() {
+        WindowManager.shared.miniaturizeAllManagedWindows()
     }
     
     // MARK: - Playback Controls

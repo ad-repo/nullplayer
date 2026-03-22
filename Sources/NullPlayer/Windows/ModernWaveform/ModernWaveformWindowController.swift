@@ -88,7 +88,7 @@ extension ModernWaveformWindowController: NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         waveformView.needsDisplay = true
-        WindowManager.shared.bringAllWindowsToFront()
+        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
 
     func windowDidResignKey(_ notification: Notification) {

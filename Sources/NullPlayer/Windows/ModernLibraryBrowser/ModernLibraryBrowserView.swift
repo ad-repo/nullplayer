@@ -365,6 +365,7 @@ class ModernLibraryBrowserView: NSView {
     /// Cached server bar font and attribute dictionaries — invalidated when skin changes
     private var cachedServerBarFont: NSFont?
     private var cachedServerBarFontSkinName: String?
+    private var cachedServerBarFontScale: CGFloat?
     private var cachedPrefixAttrs: [NSAttributedString.Key: Any]?
     private var cachedDataAttrs: [NSAttributedString.Key: Any]?
     private var cachedActiveAttrs: [NSAttributedString.Key: Any]?
@@ -479,6 +480,8 @@ class ModernLibraryBrowserView: NSView {
     private struct RadioFolderDeleteAction { let folderID: UUID }
     private struct RadioFolderStationAction { let station: RadioStation }
     private var isDraggingWindow = false
+    /// True when hide-title-bars mode primed drag hold timing on mouseDown.
+    private var didPrimeWindowDragHold = false
     private var windowDragStartPoint: NSPoint = .zero
     private var isDraggingScrollbar = false
     private var scrollbarDragStartY: CGFloat = 0
@@ -771,10 +774,19 @@ class ModernLibraryBrowserView: NSView {
             return
         }
 
-        // Fast path: scroll timer marks only server bar dirty — skip full window redraw
+        // Fast path: scroll timer marks only server bar dirty — skip full window redraw.
+        // Always fill the full background first (copy blend mode) so the layer is never
+        // left partially transparent from accumulated alpha on repeated scroll-tick draws.
         let serverBarY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
         let sbRect = NSRect(x: 0, y: serverBarY, width: bounds.width, height: Layout.serverBarHeight)
         if sbRect.contains(dirtyRect) {
+            renderer.drawWindowBackground(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                backgroundOpacity: mainOpacity.background
+            )
             context.saveGState()
             context.setAlpha(mainOpacity.content)
             drawServerBar(in: context, serverBarY: serverBarY, skin: skin)
@@ -914,22 +926,24 @@ class ModernLibraryBrowserView: NSView {
     /// Draw a modern boxed toggle button
     private func drawToggleTab(label: String, isActive: Bool, rect: NSRect,
                                font: NSFont, skin: ModernSkin, context: CGContext) {
-        let color = isActive ? skin.accentColor : skin.textDimColor
-        
+        let outlineColor = skin.elementColor(for: "tab_outline", fallback: skin.accentColor)
+        let activeTextColor = skin.elementColor(for: "tab_text", fallback: skin.accentColor)
+        let color = isActive ? activeTextColor : skin.textDimColor
+
         context.saveGState()
-        
+
         if isActive {
-            context.setFillColor(skin.accentColor.withAlphaComponent(0.12).cgColor)
+            context.setFillColor(outlineColor.withAlphaComponent(0.12).cgColor)
             context.fill(rect)
-            
-            context.setShadow(offset: .zero, blur: 6, color: skin.accentColor.withAlphaComponent(0.6).cgColor)
-            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.8).cgColor)
+
+            context.setShadow(offset: .zero, blur: 6, color: outlineColor.withAlphaComponent(0.6).cgColor)
+            context.setStrokeColor(outlineColor.withAlphaComponent(0.8).cgColor)
             context.setLineWidth(1.0)
             context.stroke(rect)
             context.restoreGState()
-            
+
             context.saveGState()
-            context.setStrokeColor(skin.accentColor.withAlphaComponent(0.6).cgColor)
+            context.setStrokeColor(outlineColor.withAlphaComponent(0.6).cgColor)
             context.setLineWidth(1.0)
             context.stroke(rect)
         } else {
@@ -937,7 +951,7 @@ class ModernLibraryBrowserView: NSView {
             context.setLineWidth(0.5)
             context.stroke(rect)
         }
-        
+
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: skin.applyTextOpacity(to: color)
@@ -965,10 +979,14 @@ class ModernLibraryBrowserView: NSView {
         let accentColor = skin.accentColor
 
         let skinName = ModernSkinEngine.shared.currentSkinName ?? "default"
-        if cachedServerBarFont == nil || cachedServerBarFontSkinName != skinName {
+        let currentScale = ModernSkinElements.sizeMultiplier
+        if cachedServerBarFont == nil ||
+            cachedServerBarFontSkinName != skinName ||
+            cachedServerBarFontScale != currentScale {
             let font = skin.sideWindowFont(size: 11)
             cachedServerBarFont = font
             cachedServerBarFontSkinName = skinName
+            cachedServerBarFontScale = currentScale
             cachedPrefixAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dimColor)]
             cachedDataAttrs   = [.font: font, .foregroundColor: skin.applyTextOpacity(to: dataColor)]
             cachedActiveAttrs = [.font: font, .foregroundColor: skin.applyTextOpacity(to: accentColor)]
@@ -1036,14 +1054,14 @@ class ModernLibraryBrowserView: NSView {
             let rating = currentTrackRating ?? 0
             let filledCount = rating / 2
             
-            let filledColor = dataColor
+            let filledColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
             let emptyColor = dimColor.withAlphaComponent(0.3)
             
             for i in 0..<totalStars {
                 let x = starsX + CGFloat(i) * (starSize + starSpacing)
                 let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
                 let isFilled = i < filledCount
-                drawPixelStar(in: starRect, color: isFilled ? filledColor : emptyColor, context: context)
+                drawPixelStar(in: starRect, color: isFilled ? filledColor : emptyColor)
             }
             
             // Store hit rect for click detection
@@ -1376,7 +1394,7 @@ class ModernLibraryBrowserView: NSView {
 
     /// Draw a low-res pixel-art star for server bar rating display
     /// Pattern is top-down but macOS Y goes up, so we draw rows from maxY downward
-    private func drawPixelStar(in rect: NSRect, color: NSColor, context: CGContext) {
+    private func drawPixelStar(in rect: NSRect, color: NSColor) {
         let pattern: [[Int]] = [
             [0, 0, 0, 0, 1, 0, 0, 0, 0],
             [0, 0, 0, 1, 1, 1, 0, 0, 0],
@@ -1393,15 +1411,15 @@ class ModernLibraryBrowserView: NSView {
         let pixelW = rect.width / CGFloat(patternSize)
         let pixelH = rect.height / CGFloat(patternSize)
         
-        context.setFillColor(color.cgColor)
-        
+        color.setFill()
+
         for row in 0..<patternSize {
             for col in 0..<patternSize {
                 if pattern[row][col] == 1 {
                     let x = rect.minX + CGFloat(col) * pixelW
                     // Flip Y: row 0 (top of star) draws at maxY, row 8 at minY
                     let y = rect.maxY - CGFloat(row + 1) * pixelH
-                    context.fill(CGRect(x: x, y: y, width: ceil(pixelW), height: ceil(pixelH)))
+                    NSBezierPath.fill(NSRect(x: x, y: y, width: ceil(pixelW), height: ceil(pixelH)))
                 }
             }
         }
@@ -1588,9 +1606,9 @@ class ModernLibraryBrowserView: NSView {
         context.saveGState()
         context.clip(to: rect)
         
-        skin.surfaceColor.withAlphaComponent(0.9).setFill()
+        skin.surfaceColor.withAlphaComponent(0.4).setFill()
         context.fill(rect)
-        
+
         let headerFont = skin.scaledSystemFont(size: 7.2, weight: .medium)
         let headerColor = skin.textDimColor.withAlphaComponent(0.7)
         let sortedHeaderColor = skin.textColor.withAlphaComponent(0.9)
@@ -1662,7 +1680,7 @@ class ModernLibraryBrowserView: NSView {
             
             let color = column.id == "title" ? textColor : dimColor
             let useFont = column.id == "title" ? font : smallFont
-            
+
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: useFont,
                 .foregroundColor: skin.applyTextOpacity(to: color)
@@ -1671,15 +1689,29 @@ class ModernLibraryBrowserView: NSView {
             let textY = rect.minY + (rect.height - textSize.height) / 2
             let textX = isCenteredRadioColumn ? (x + (width - textSize.width) / 2) : (x + 4)
             let maxTextWidth = width - 8
-            
+
             let drawRect = NSRect(x: textX, y: textY, width: maxTextWidth, height: textSize.height)
-            drawText(
-                value,
-                in: drawRect,
-                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                withAttributes: attrs,
-                context: context
-            )
+            if column.id == "rating" && !isSelected && value.contains("★") {
+                let goldColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+                let emptyColor = skin.applyTextOpacity(to: dimColor).withAlphaComponent(0.4)
+                let astr = NSMutableAttributedString(string: value, attributes: attrs)
+                for (i, ch) in value.enumerated() {
+                    let range = NSRange(location: i, length: 1)
+                    astr.addAttribute(.foregroundColor, value: ch == "★" ? goldColor : emptyColor, range: range)
+                }
+                context.saveGState()
+                context.setAlpha(1.0)
+                astr.draw(with: drawRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+                context.restoreGState()
+            } else {
+                drawText(
+                    value,
+                    in: drawRect,
+                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                    withAttributes: attrs,
+                    context: context
+                )
+            }
             
             x += width
         }
@@ -2185,17 +2217,17 @@ class ModernLibraryBrowserView: NSView {
             return ModernBrowserColumn.internetRadioColumns
         }
         if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack: return true; default: return false }
+            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack: return true; default: return false }
         }) {
             return ModernBrowserColumn.trackColumns
         }
         if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum: return true; default: return false }
+            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum: return true; default: return false }
         }) {
             return ModernBrowserColumn.albumColumns
         }
         if displayItems.contains(where: {
-            switch $0.type { case .artist, .subsonicArtist, .localArtist, .jellyfinArtist: return true; default: return false }
+            switch $0.type { case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist: return true; default: return false }
         }) {
             return ModernBrowserColumn.artistColumns
         }
@@ -2204,17 +2236,17 @@ class ModernLibraryBrowserView: NSView {
     
     private func columnsForItem(_ item: ModernDisplayItem) -> [ModernBrowserColumn]? {
         switch item.type {
-        case .track, .subsonicTrack, .localTrack, .jellyfinTrack:
+        case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack:
             let visible = visibleTrackColumnIds
             return ModernBrowserColumn.allTrackColumns
                 .filter { visible.contains($0.id) }
                 .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
-        case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum:
+        case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum:
             let visible = visibleAlbumColumnIds
             return ModernBrowserColumn.allAlbumColumns
                 .filter { visible.contains($0.id) }
                 .sorted { visible.firstIndex(of: $0.id)! < visible.firstIndex(of: $1.id)! }
-        case .artist, .subsonicArtist, .localArtist, .jellyfinArtist:
+        case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist:
             if item.indentLevel == 0 {
                 let visible = visibleArtistColumnIds
                 return ModernBrowserColumn.allArtistColumns
@@ -2751,6 +2783,10 @@ class ModernLibraryBrowserView: NSView {
         // from anywhere (title bar is hidden so there's no dedicated drag handle)
         if WindowManager.shared.hideTitleBars && !isShadeMode {
             windowDragStartPoint = event.locationInWindow
+            if let window = window {
+                WindowManager.shared.windowWillPrimeDragging(window)
+                didPrimeWindowDragHold = true
+            }
         }
 
         // Double-click title bar for shade (only when titlebar is visible)
@@ -2879,6 +2915,10 @@ class ModernLibraryBrowserView: NSView {
         if isDraggingWindow {
             isDraggingWindow = false
             if let window = window { WindowManager.shared.windowDidFinishDragging(window) }
+            didPrimeWindowDragHold = false
+        } else if didPrimeWindowDragHold {
+            if let window = window { WindowManager.shared.windowDidCancelDragPrime(window) }
+            didPrimeWindowDragHold = false
         }
         isDraggingScrollbar = false
         
@@ -2957,6 +2997,19 @@ class ModernLibraryBrowserView: NSView {
             let listRect = NSRect(x: 0, y: Layout.statusBarHeight, width: bounds.width, height: listHeight)
             setNeedsDisplay(listRect)
         }
+
+        if abs(event.deltaX) > 0 {
+            let columns = currentVisibleColumns()
+            let availableWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
+            let totalWidth = columns.reduce(CGFloat(8)) { $0 + (columnWidths[$1.id] ?? $1.minWidth) }
+            let maxOffset = max(0, totalWidth - availableWidth)
+            if maxOffset > 0 {
+                horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - event.deltaX * 3))
+                let listRect = NSRect(x: 0, y: Layout.statusBarHeight, width: bounds.width, height: listHeight)
+                setNeedsDisplay(listRect)
+            }
+        }
+
         // Trigger next-page load when scrolled near the bottom of a local paginated list
         if case .local = currentSource { loadNextLocalPageIfNeeded(listHeight: listHeight) }
     }
@@ -3017,10 +3070,17 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Keyboard Events
     
     override func keyDown(with event: NSEvent) {
-        // Rating overlay: ESC to dismiss, 1-5 to set stars
+        // Rating overlay shortcuts:
+        // - Escape dismisses
+        // - Delete/Backspace clears rating
+        // - Number keys 1-5 set stars
         if isRatingOverlayVisible {
             if event.keyCode == 53 { hideRatingOverlay(); return }
-            // Keys 1-5 (keycodes 18-22)
+            if event.keyCode == 51 || event.keyCode == 117 {
+                ratingOverlay.setRating(0)
+                submitRating(0)
+                return
+            }
             if event.keyCode >= 18 && event.keyCode <= 22 {
                 let starRating = Int(event.keyCode - 17)  // 1-5
                 ratingOverlay.setRating(starRating * 2)
@@ -5957,9 +6017,19 @@ class ModernLibraryBrowserView: NSView {
 
     // MARK: - Notification Handlers
     
+    private func invalidateServerBarFontCache() {
+        cachedServerBarFont = nil
+        cachedServerBarFontSkinName = nil
+        cachedServerBarFontScale = nil
+        cachedPrefixAttrs = nil
+        cachedDataAttrs = nil
+        cachedActiveAttrs = nil
+    }
+
     @objc private func modernSkinDidChange() {
         let skin = currentSkin()
         renderer = ModernSkinRenderer(skin: skin)
+        invalidateServerBarFontCache()
         updateCornerMask()
         needsDisplay = true
     }
@@ -6527,7 +6597,8 @@ class ModernLibraryBrowserView: NSView {
     
     private func submitRating(_ rating: Int) {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { return }
-        currentTrackRating = rating; needsDisplay = true; ratingSubmitTask?.cancel()
+        let normalizedRating = rating > 0 ? min(10, rating) : 0
+        currentTrackRating = normalizedRating; needsDisplay = true; ratingSubmitTask?.cancel()
         ratingSubmitTask = Task {
             do {
                 try await Task.sleep(nanoseconds: 500_000_000)
@@ -6535,19 +6606,25 @@ class ModernLibraryBrowserView: NSView {
                 
                 if let ratingKey = currentTrack.plexRatingKey {
                     // Plex: rating is already 0-10 scale
-                    try await PlexManager.shared.serverClient?.rateItem(ratingKey: ratingKey, rating: rating)
+                    try await PlexManager.shared.serverClient?.rateItem(
+                        ratingKey: ratingKey,
+                        rating: normalizedRating > 0 ? normalizedRating : nil
+                    )
                 } else if let subsonicId = currentTrack.subsonicId {
                     // Subsonic: convert 0-10 to 0-5
-                    let subsonicRating = rating / 2
+                    let subsonicRating = normalizedRating / 2
                     try await SubsonicManager.shared.setRating(songId: subsonicId, rating: subsonicRating)
                 } else if let jellyfinId = currentTrack.jellyfinId {
                     // Jellyfin: convert 0-10 to 0-100
-                    let jellyfinRating = rating * 10
+                    let jellyfinRating = normalizedRating * 10
                     try await JellyfinManager.shared.setRating(itemId: jellyfinId, rating: jellyfinRating)
                 } else if currentTrack.url.isFileURL {
                     // Local file: store 0-10 scale
                     if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
-                        MediaLibrary.shared.setRating(for: libraryTrack.id, rating: rating > 0 ? rating : nil)
+                        MediaLibrary.shared.setRating(
+                            for: libraryTrack.id,
+                            rating: normalizedRating > 0 ? normalizedRating : nil
+                        )
                     }
                 }
                 
@@ -6765,6 +6842,7 @@ class ModernLibraryBrowserView: NSView {
                        currentTrack.plexRatingKey == ratingKey {
                         currentTrackRating = rating > 0 ? rating : nil; needsDisplay = true
                     }
+                    updateCachedPlexRating(ratingKey: ratingKey, rating: rating)
                 }
             } catch { NSLog("Plex rating failed: %@", error.localizedDescription) }
         }
@@ -6801,6 +6879,7 @@ class ModernLibraryBrowserView: NSView {
                        currentTrack.jellyfinId == itemId {
                         currentTrackRating = rating > 0 ? rating / 10 : nil; needsDisplay = true
                     }
+                    updateCachedJellyfinRating(itemId: itemId, rating: rating)
                 }
             } catch { NSLog("Jellyfin rating failed: %@", error.localizedDescription) }
         }
@@ -6818,6 +6897,7 @@ class ModernLibraryBrowserView: NSView {
                        currentTrack.embyId == itemId {
                         currentTrackRating = rating > 0 ? rating / 10 : nil; needsDisplay = true
                     }
+                    updateCachedEmbyRating(itemId: itemId, rating: rating)
                 }
             } catch { NSLog("Emby rating failed: %@", error.localizedDescription) }
         }
@@ -6833,6 +6913,7 @@ class ModernLibraryBrowserView: NSView {
            libraryTrack.id == trackId {
             currentTrackRating = rating >= 0 ? rating : nil; needsDisplay = true
         }
+        updateCachedLocalTrackRating(trackId: trackId, rating: rating)
         needsDisplay = true
     }
 
@@ -6875,12 +6956,99 @@ class ModernLibraryBrowserView: NSView {
             }
         }
     }
+
+    private func updateCachedPlexRating(ratingKey: String, rating: Int) {
+        for (index, item) in displayItems.enumerated() {
+            if case .track(let track) = item.type, track.id == ratingKey {
+                let updatedTrack = PlexTrack(
+                    id: track.id, key: track.key, title: track.title,
+                    parentTitle: track.parentTitle, grandparentTitle: track.grandparentTitle,
+                    parentKey: track.parentKey, grandparentKey: track.grandparentKey,
+                    summary: track.summary, duration: track.duration,
+                    index: track.index, parentIndex: track.parentIndex,
+                    thumb: track.thumb, media: track.media,
+                    addedAt: track.addedAt, updatedAt: track.updatedAt,
+                    genre: track.genre, parentYear: track.parentYear,
+                    ratingCount: track.ratingCount,
+                    userRating: rating > 0 ? Double(rating) : nil
+                )
+                displayItems[index] = ModernDisplayItem(
+                    id: item.id, title: item.title, info: item.info,
+                    indentLevel: item.indentLevel, hasChildren: item.hasChildren,
+                    type: .track(updatedTrack)
+                )
+                break
+            }
+        }
+    }
+
+    private func updateCachedJellyfinRating(itemId: String, rating: Int) {
+        for (index, item) in displayItems.enumerated() {
+            if case .jellyfinTrack(let song) = item.type, song.id == itemId {
+                let updatedSong = JellyfinSong(
+                    id: song.id, title: song.title, album: song.album,
+                    artist: song.artist, albumId: song.albumId, artistId: song.artistId,
+                    track: song.track, year: song.year, genre: song.genre,
+                    imageTag: song.imageTag, size: song.size, contentType: song.contentType,
+                    duration: song.duration, bitRate: song.bitRate,
+                    sampleRate: song.sampleRate, channels: song.channels,
+                    path: song.path, discNumber: song.discNumber, created: song.created,
+                    isFavorite: song.isFavorite, playCount: song.playCount,
+                    userRating: rating > 0 ? rating : nil
+                )
+                displayItems[index] = ModernDisplayItem(
+                    id: item.id, title: item.title, info: item.info,
+                    indentLevel: item.indentLevel, hasChildren: item.hasChildren,
+                    type: .jellyfinTrack(updatedSong)
+                )
+                break
+            }
+        }
+    }
+
+    private func updateCachedEmbyRating(itemId: String, rating: Int) {
+        for (index, item) in displayItems.enumerated() {
+            if case .embyTrack(let song) = item.type, song.id == itemId {
+                let updatedSong = EmbySong(
+                    id: song.id, title: song.title, album: song.album,
+                    artist: song.artist, albumId: song.albumId, artistId: song.artistId,
+                    track: song.track, year: song.year, genre: song.genre,
+                    imageTag: song.imageTag, size: song.size, contentType: song.contentType,
+                    duration: song.duration, bitRate: song.bitRate,
+                    sampleRate: song.sampleRate, channels: song.channels,
+                    path: song.path, discNumber: song.discNumber, created: song.created,
+                    isFavorite: song.isFavorite, playCount: song.playCount,
+                    userRating: rating > 0 ? rating : nil
+                )
+                displayItems[index] = ModernDisplayItem(
+                    id: item.id, title: item.title, info: item.info,
+                    indentLevel: item.indentLevel, hasChildren: item.hasChildren,
+                    type: .embyTrack(updatedSong)
+                )
+                break
+            }
+        }
+    }
+
+    private func updateCachedLocalTrackRating(trackId: UUID, rating: Int) {
+        for (index, item) in displayItems.enumerated() {
+            if case .localTrack(var track) = item.type, track.id == trackId {
+                track.rating = rating >= 0 ? rating : nil
+                displayItems[index] = ModernDisplayItem(
+                    id: item.id, title: item.title, info: item.info,
+                    indentLevel: item.indentLevel, hasChildren: item.hasChildren,
+                    type: .localTrack(track)
+                )
+                break
+            }
+        }
+    }
     
     // MARK: - Artwork Loading
     
     private func loadArtwork(for track: Track?) {
         artworkLoadTask?.cancel(); artworkLoadTask = nil
-        guard let track = track else { artworkTrackId = nil; return }
+        guard let track = track else { currentArtwork = nil; artworkTrackId = nil; needsDisplay = true; return }
         guard track.id != artworkTrackId else { return }
         artworkLoadTask = Task { [weak self] in
             guard let self = self else { return }
@@ -7036,7 +7204,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func loadAllArtworkForCurrentTrack() {
         artworkCyclingTask?.cancel(); artworkCyclingTask = nil
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { artworkImages = []; artworkIndex = 0; return }
+        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { artworkImages = []; artworkIndex = 0; currentArtwork = nil; needsDisplay = true; return }
         artworkImages = []; artworkIndex = 0
         artworkCyclingTask = Task { [weak self] in
             guard let self = self else { return }
@@ -7059,7 +7227,8 @@ class ModernLibraryBrowserView: NSView {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 self.artworkImages = images; self.artworkIndex = 0
-                if let first = images.first { self.currentArtwork = first; self.needsDisplay = true }
+                self.currentArtwork = images.first
+                self.needsDisplay = true
             }
         }
     }
@@ -9952,18 +10121,18 @@ private struct ModernBrowserColumn {
         .dateAdded, .lastPlayed, .filePath
     ]
     static let allAlbumColumns: [ModernBrowserColumn] = [.title, .year, .genre, .duration, .rating]
-    static let allArtistColumns: [ModernBrowserColumn] = [.title, .albums, .genre]
+    static let allArtistColumns: [ModernBrowserColumn] = [.title, .rating, .albums, .genre]
     
     // Default visible column IDs (backwards-compatible with the original set)
-    static let defaultTrackColumnIds: [String] = ["trackNum", "title", "artist", "album", "year", "genre", "duration", "bitrate", "size", "rating", "plays"]
+    static let defaultTrackColumnIds: [String] = ["trackNum", "title", "artist", "album", "rating", "year", "genre", "duration", "bitrate", "size", "plays"]
     static let defaultAlbumColumnIds: [String] = ["title", "year", "genre", "duration", "rating"]
-    static let defaultArtistColumnIds: [String] = ["title", "albums", "genre"]
+    static let defaultArtistColumnIds: [String] = ["title", "rating", "albums", "genre"]
     static let internetRadioColumns: [ModernBrowserColumn] = [.title, .genre, .rating]
     
     // Legacy arrays kept for backwards compatibility with sort lookup
-    static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .year, .genre, .duration, .bitrate, .size, .rating, .playCount]
+    static let trackColumns: [ModernBrowserColumn] = [.trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount]
     static let albumColumns: [ModernBrowserColumn] = [.title, .year, .genre, .duration, .rating]
-    static let artistColumns: [ModernBrowserColumn] = [.title, .albums, .genre]
+    static let artistColumns: [ModernBrowserColumn] = [.title, .rating, .albums, .genre]
     
     static func findColumn(id: String) -> ModernBrowserColumn? {
         if let c = allTrackColumns.first(where: { $0.id == id }) { return c }
@@ -9991,9 +10160,18 @@ extension ModernDisplayItem {
         case .embyAlbum(let a): return embyAlbumValue(a, for: column)
         case .localAlbum(let a): return localAlbumValue(a, for: column)
         case .artist(let a): return plexArtistValue(a, for: column)
-        case .subsonicArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
-        case .jellyfinArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
-        case .embyArtist(let a): return column.id == "albums" ? String(a.albumCount) : ""
+        case .subsonicArtist(let a):
+            if column.id == "albums" { return String(a.albumCount) }
+            if column.id == "rating" { return a.starred != nil ? "★★★★★" : "" }
+            return ""
+        case .jellyfinArtist(let a):
+            if column.id == "albums" { return String(a.albumCount) }
+            if column.id == "rating" { return a.isFavorite ? "★★★★★" : "" }
+            return ""
+        case .embyArtist(let a):
+            if column.id == "albums" { return String(a.albumCount) }
+            if column.id == "rating" { return a.isFavorite ? "★★★★★" : "" }
+            return ""
         case .localArtist(let a):
             if column.id == "albums" {
                 if !a.albums.isEmpty { return String(a.albums.count) }
@@ -10064,7 +10242,7 @@ extension ModernDisplayItem {
             if let userRating = song.userRating, userRating > 0 {
                 return Self.formatRating(Double(userRating) * 2.0)
             }
-            return song.starred != nil ? "★" : ""
+            return song.starred != nil ? "★★★★★" : Self.formatRating(nil)
         case "plays": return song.playCount.map { String($0) } ?? ""
         case "discNum": return song.discNumber.map { String($0) } ?? ""
         case "dateAdded": return song.created.map { Self.formatDate($0) } ?? ""
@@ -10227,9 +10405,8 @@ extension ModernDisplayItem {
     }
     
     private static func formatRating(_ rating: Double?) -> String {
-        guard let rating = rating, rating > 0 else { return "" }
-        let stars = Int(rating / 2.0); let empty = 5 - stars
-        return String(repeating: "★", count: stars) + String(repeating: "☆", count: empty)
+        let stars = rating.map { max(0, Int($0 / 2.0)) } ?? 0
+        return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
     }
 
     private static func formatStarRating(_ rating: Int) -> String {

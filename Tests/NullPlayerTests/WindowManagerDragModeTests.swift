@@ -54,4 +54,42 @@ final class WindowManagerDragModeTests: XCTestCase {
         )
         XCTAssertEqual(mode, .separate)
     }
+
+    func testWindowLayoutLockForcesGroup() {
+        // Lock mode forces grouped dragging regardless of hold duration.
+        let mode = WindowManager.determineDragMode(
+            holdStart: 1000.0,
+            currentTime: 1000.1,
+            threshold: 0.4,
+            isWindowLayoutLocked: true
+        )
+        XCTAssertEqual(mode, .group)
+    }
+
+    func testShouldTreatMoveAsDragReturnsFalseForProgrammaticMove() {
+        let isDrag = WindowManager.shouldTreatMoveAsDrag(
+            holdPrimed: false,
+            pressedMouseButtons: 0,
+            currentEventType: nil
+        )
+        XCTAssertFalse(isDrag)
+    }
+
+    func testShouldTreatMoveAsDragReturnsTrueWhenHoldPrimed() {
+        let isDrag = WindowManager.shouldTreatMoveAsDrag(
+            holdPrimed: true,
+            pressedMouseButtons: 0,
+            currentEventType: nil
+        )
+        XCTAssertTrue(isDrag)
+    }
+
+    func testShouldTreatMoveAsDragReturnsTrueWhenLeftButtonPressed() {
+        let isDrag = WindowManager.shouldTreatMoveAsDrag(
+            holdPrimed: false,
+            pressedMouseButtons: 0x1,
+            currentEventType: nil
+        )
+        XCTAssertTrue(isDrag)
+    }
 }

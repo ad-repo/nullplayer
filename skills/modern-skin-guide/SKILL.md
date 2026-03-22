@@ -100,6 +100,8 @@ MySkin/
         "opacity": 0.9,
         "textOpacity": 1.0,
         "mainSpectrumOpacity": 1.0,
+        "spectrumTransparentBackground": false,
+        "waveformWindowOpacity": 0.85,
         "seamlessDocking": 1.0
     },
     "marquee": {
@@ -114,6 +116,13 @@ MySkin/
         "tintColor": "#d4cfc0"
     },
     "elements": {
+        "play_controls":       { "color": "#00ffcc" },
+        "seek_fill":           { "color": "#00ffcc" },
+        "volume_fill":         { "color": "#00ffcc" },
+        "minicontrol_buttons": { "color": "#00ffcc" },
+        "playlist_text":       { "color": "#009977" },
+        "tab_outline":         { "color": "#00ffcc" },
+        "tab_text":            { "color": "#00ffcc" },
         "btn_play": {
             "color": "#00ff00",
             "x": 33, "y": 8, "width": 23, "height": 20
@@ -148,6 +157,21 @@ MySkin/
 | `marqueeColor` | Scrolling title text |
 | `dataColor` | Track numbers, info fields |
 | `eqLow`, `eqMid`, `eqHigh` | EQ gradient colors |
+
+### Element-Level Color Overrides
+
+Some UI sections have dedicated `elements` color keys that override the palette:
+
+| Element key | Controls | Fallback chain |
+|-------------|----------|----------------|
+| `play_controls` | All transport button icon colors | `palette.primary` |
+| `btn_prev` … `btn_eject` | Individual transport button (overrides `play_controls`) | `play_controls` → `palette.primary` |
+| `seek_fill` | Seek bar fill + thumb | `palette.primary` |
+| `volume_fill` | Volume bar fill + thumb | `seek_fill.color` → `palette.primary` |
+| `playlist_text` | Normal (non-current, non-selected) track text in playlist | `palette.textDim` |
+| `tab_outline` | Active tab border + glow color in library browser tab bar | `palette.accent` |
+| `tab_text` | Active tab label text color in library browser tab bar | `palette.accent` |
+| `minicontrol_buttons` | ON state color for main window toggle buttons (EQ, PL, SP, etc.) | `palette.accent` |
 
 ## Image Naming Convention
 
@@ -268,4 +292,4 @@ All windows share palette colors, glow, grid, and font settings. Customize indiv
 
 For detailed information, see:
 - [element-reference.md](element-reference.md) - Complete element catalog with all IDs, positions, states
-- [advanced-features.md](advanced-features.md) - Title text system, animations, Double Size mode, sub-window creation checklist
+- [advanced-features.md](advanced-features.md) - Title text system, animations, Large UI mode, sub-window creation checklist

@@ -51,8 +51,7 @@ class EQWindowController: NSWindowController, EQWindowProviding {
         // Match main window's width and position below it
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
             let mainFrame = mainWindow.frame
-            // Use same width as main window to match scaling
-            let eqHeight = Skin.eqWindowSize.height * (mainFrame.width / Skin.mainWindowSize.width)
+            let eqHeight = Skin.eqWindowSize.height * WindowManager.shared.classicScaleMultiplier
             let newFrame = NSRect(
                 x: mainFrame.minX,
                 y: mainFrame.minY - eqHeight,
@@ -151,7 +150,7 @@ extension EQWindowController: NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
         eqView.needsDisplay = true
         // Bring all app windows to front when this window gets focus
-        WindowManager.shared.bringAllWindowsToFront()
+        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
     
     func windowDidResignKey(_ notification: Notification) {

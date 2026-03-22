@@ -13,6 +13,9 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
     /// Stored normal mode frame for restoration
     private var normalModeFrame: NSRect?
     
+    /// Guard to prevent recursive resize callbacks while applying width snapping.
+    private var isApplyingWidthSnap = false
+    
     // MARK: - Initialization
     
     convenience init() {
@@ -47,13 +50,12 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
         // Playlist can be expanded vertically to show more tracks
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
             let mainFrame = mainWindow.frame
-            let scale = mainFrame.width / Skin.mainWindowSize.width
-            // Use same width as main window to match scaling
-            let playlistHeight = Skin.playlistMinSize.height * scale
+            let playlistHeight = Skin.playlistMinSize.height * WindowManager.shared.classicScaleMultiplier
+            let playlistWidth = snappedPlaylistWidth(mainFrame.width)
             
-            // Lock width to match main window (only vertical resizing allowed)
-            window.minSize = NSSize(width: mainFrame.width, height: playlistHeight)
-            window.maxSize = NSSize(width: mainFrame.width, height: CGFloat.greatestFiniteMagnitude)
+            // Keep default width aligned to main, but allow horizontal stretching.
+            window.minSize = NSSize(width: Skin.playlistMinSize.width, height: playlistHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             
             // Check if EQ window is visible and position below it
             var positionY = mainFrame.minY - playlistHeight
@@ -65,12 +67,13 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
             let newFrame = NSRect(
                 x: mainFrame.minX,
                 y: positionY,
-                width: mainFrame.width,
+                width: playlistWidth,
                 height: playlistHeight
             )
             window.setFrame(newFrame, display: true)
         } else {
             window.minSize = Skin.playlistMinSize
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             window.center()
         }
         
@@ -96,6 +99,34 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
     
     func reloadPlaylist() {
         playlistView.reloadData()
+    }
+
+    func resetToDefaultFrame() {
+        guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
+        let mainFrame = mainWindow.frame
+        let playlistHeight = Skin.playlistMinSize.height * WindowManager.shared.classicScaleMultiplier
+        let playlistWidth = snappedPlaylistWidth(mainFrame.width)
+        window.minSize = NSSize(width: Skin.playlistMinSize.width, height: playlistHeight)
+        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        let newFrame = NSRect(
+            x: mainFrame.minX,
+            y: mainFrame.minY - playlistHeight,
+            width: playlistWidth,
+            height: playlistHeight
+        )
+        window.setFrame(newFrame, display: false)
+    }
+    
+    /// Snap playlist width so PLEDIT title bar tiles align cleanly.
+    /// In skin coordinates this enforces: width = (N * 25) + 50.
+    private func snappedPlaylistWidth(_ width: CGFloat) -> CGFloat {
+        let scaleFromMain = (WindowManager.shared.mainWindowController?.window?.frame.width ?? 0) / Skin.baseMainSize.width
+        let scale = max(0.0001, scaleFromMain > 0 ? scaleFromMain : (Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier))
+        let minSkinWidth = SkinElements.Playlist.minSize.width
+        let skinWidth = max(minSkinWidth, width / scale)
+        let snappedTiles = round((skinWidth - 50.0) / 25.0)
+        let snappedSkinWidth = max(minSkinWidth, 50.0 + snappedTiles * 25.0)
+        return snappedSkinWidth * scale
     }
     
     // MARK: - Shade Mode
@@ -164,13 +195,26 @@ extension PlaylistWindowController: NSWindowDelegate {
     }
     
     func windowDidResize(_ notification: Notification) {
+        guard let window = window else { return }
+        
+        if !isShadeMode && !isApplyingWidthSnap {
+            let snappedWidth = snappedPlaylistWidth(window.frame.width)
+            if abs(snappedWidth - window.frame.width) > 0.25 {
+                isApplyingWidthSnap = true
+                var snappedFrame = window.frame
+                snappedFrame.size.width = snappedWidth
+                window.setFrame(snappedFrame, display: true, animate: false)
+                isApplyingWidthSnap = false
+            }
+        }
+        
         playlistView.needsDisplay = true
     }
     
     func windowDidBecomeKey(_ notification: Notification) {
         playlistView.needsDisplay = true
         // Bring all app windows to front when this window gets focus
-        WindowManager.shared.bringAllWindowsToFront()
+        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
 
     func windowWillClose(_ notification: Notification) {

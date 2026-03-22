@@ -888,7 +888,40 @@ class MainWindowView: NSView {
     private var originalWindowSize: NSSize {
         return isShadeMode ? SkinElements.MainShade.windowSize : Skin.baseMainSize
     }
-    
+
+    /// Convert a skin-coordinate rect (top-left origin) to view coordinates (bottom-left origin),
+    /// accounting for scale factor and centering/title bar offset.
+    private func skinRectToViewRect(_ skinRect: NSRect) -> NSRect {
+        let originalSize = Skin.baseMainSize
+        let scale = scaleFactor
+        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
+
+        // Flip Y: skin uses top-left origin, view uses bottom-left
+        let flippedY = originalSize.height - skinRect.maxY
+
+        // Apply scale
+        var viewRect = NSRect(
+            x: skinRect.origin.x * scale,
+            y: flippedY * scale,
+            width: skinRect.width * scale,
+            height: skinRect.height * scale
+        )
+
+        // Apply centering offset
+        let scaledWidth = originalSize.width * scale
+        let scaledHeight = originalSize.height * scale
+        viewRect.origin.x += (bounds.width - scaledWidth) / 2
+
+        if hidingTitleBar {
+            viewRect.origin.y += SkinElements.titleBarHeight * scale
+        } else {
+            viewRect.origin.y += (bounds.height - scaledHeight) / 2
+        }
+
+        // Expand slightly to avoid sub-pixel clipping artifacts
+        return viewRect.insetBy(dx: -1, dy: -1)
+    }
+
     override func layout() {
         super.layout()
         updateMarqueeLayerFrame()
@@ -953,7 +986,7 @@ class MainWindowView: NSView {
             )
         } else {
             // Draw normal mode with original bounds
-            drawNormalModeScaled(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds)
+            drawNormalModeScaled(renderer: renderer, context: context, isActive: isActive, drawBounds: drawBounds, dirtyRect: dirtyRect)
         }
         
         context.restoreGState()
@@ -1022,17 +1055,49 @@ class MainWindowView: NSView {
         context.restoreGState()
     }
     
+    /// Convert a view-coordinate rect to skin coordinates (top-left origin, unscaled)
+    private func viewRectToSkinRect(_ viewRect: NSRect) -> NSRect {
+        let originalSize = Skin.baseMainSize
+        let scale = scaleFactor
+        let hidingTitleBar = WindowManager.shared.hideTitleBars && !isShadeMode
+
+        let scaledWidth = originalSize.width * scale
+        let scaledHeight = originalSize.height * scale
+        let offsetX = (bounds.width - scaledWidth) / 2
+        let offsetY: CGFloat
+        if hidingTitleBar {
+            offsetY = SkinElements.titleBarHeight * scale
+        } else {
+            offsetY = (bounds.height - scaledHeight) / 2
+        }
+
+        // Remove centering offset, unscale, then flip Y
+        let skinX = (viewRect.origin.x - offsetX) / scale
+        let skinY = (viewRect.origin.y - offsetY) / scale
+        let skinW = viewRect.width / scale
+        let skinH = viewRect.height / scale
+        // Flip Y: view bottom-left → skin top-left
+        let flippedY = originalSize.height - skinY - skinH
+        return NSRect(x: skinX, y: flippedY, width: skinW, height: skinH)
+    }
+
     /// Draw the normal (non-shade) mode with scaling support
-    private func drawNormalModeScaled(renderer: SkinRenderer, context: CGContext, isActive: Bool, drawBounds: NSRect) {
+    private func drawNormalModeScaled(renderer: SkinRenderer, context: CGContext, isActive: Bool, drawBounds: NSRect, dirtyRect: NSRect) {
+        // Convert dirty rect to skin coordinates for partial redraw optimization
+        let dirtySkin = viewRectToSkinRect(dirtyRect)
+        let isFullRedraw = dirtyRect.width >= bounds.width && dirtyRect.height >= bounds.height
+
         // Draw main window background
-        renderer.drawMainWindowBackground(in: context, bounds: drawBounds, isActive: isActive)
+        if isFullRedraw || dirtySkin.intersects(drawBounds) {
+            renderer.drawMainWindowBackground(in: context, bounds: drawBounds, isActive: isActive)
+        }
 
         if mainVisMode == .visClassicExact {
             if isMainVisClassicTransparentEnabled() {
                 context.clear(SkinElements.Visualization.displayArea.insetBy(dx: 1, dy: 1))
             }
         }
-        
+
         // Draw time display - support elapsed/remaining modes
         let displayTime: TimeInterval
         if WindowManager.shared.timeDisplayMode == .remaining && duration > 0 {
@@ -1040,16 +1105,16 @@ class MainWindowView: NSView {
         } else {
             displayTime = currentTime
         }
-        
+
         let isNegative = displayTime < 0
         let absTime = abs(displayTime)
         let minutes = Int(absTime) / 60
         let seconds = Int(absTime) % 60
         renderer.drawTimeDisplay(minutes: minutes, seconds: seconds, isNegative: isNegative, in: context)
-        
+
         // Note: Song title marquee is rendered by MarqueeLayer (GPU-accelerated)
         // for better performance. The layer is positioned over the marquee area.
-        
+
         // Draw playback status indicator - show video state if video is active
         let playbackState: PlaybackState
         if WindowManager.shared.isVideoActivePlayback {
@@ -1058,25 +1123,28 @@ class MainWindowView: NSView {
             playbackState = WindowManager.shared.audioEngine.state
         }
         renderer.drawPlaybackStatus(playbackState, in: context)
-        
+
         // Draw stereo and cast indicators
         let isStereo = (currentTrack?.channels ?? 2) >= 2
         let isCasting = CastManager.shared.isCasting
         renderer.drawStereoAndCast(isStereo: isStereo, isCasting: isCasting, in: context)
-        
+
         // Draw bitrate display (e.g., "128" kbps) - scrolls if > 3 digits
         renderer.drawBitrate(currentTrack?.bitrate, scrollOffset: bitrateScrollOffset, in: context)
-        
+
         // Draw sample rate display (e.g., "44" kHz)
         renderer.drawSampleRate(currentTrack?.sampleRate, in: context)
-        
+
         // Draw spectrum analyzer (only in spectrum mode; other modes use Metal overlay)
         if mainVisMode == .spectrum {
-            renderer.drawSpectrumAnalyzer(levels: spectrumLevels, in: context)
+            let visArea = SkinElements.Visualization.displayArea
+            if isFullRedraw || dirtySkin.intersects(visArea) {
+                renderer.drawSpectrumAnalyzer(levels: spectrumLevels, in: context)
+            }
         }
         // Note: In non-spectrum modes, the Metal overlay renders on top of this area
-        
-        // Draw position slider (seek bar)
+
+        // Draw position slider (seek bar) — always draw (changes during time updates)
         let positionValue: CGFloat
         if let dragValue = dragPositionValue {
             positionValue = dragValue
@@ -1085,33 +1153,48 @@ class MainWindowView: NSView {
         }
         let positionPressed = draggingSlider == .position
         renderer.drawPositionSlider(value: positionValue, isPressed: positionPressed, in: context)
-        
+
         // Draw volume slider
-        let volumeValue = CGFloat(WindowManager.shared.audioEngine.volume)
-        let volumePressed = draggingSlider == .volume
-        renderer.drawVolumeSlider(value: volumeValue, isPressed: volumePressed, in: context)
-        
+        let volumeSliderRect = NSRect(x: 107, y: 57, width: 68, height: 13)
+        if isFullRedraw || dirtySkin.intersects(volumeSliderRect) {
+            let volumeValue = CGFloat(WindowManager.shared.audioEngine.volume)
+            let volumePressed = draggingSlider == .volume
+            renderer.drawVolumeSlider(value: volumeValue, isPressed: volumePressed, in: context)
+        }
+
         // Draw balance slider
-        let balanceValue = CGFloat(WindowManager.shared.audioEngine.balance)
-        let balancePressed = draggingSlider == .balance
-        renderer.drawBalanceSlider(value: balanceValue, isPressed: balancePressed, in: context)
-        
+        let balanceSliderRect = NSRect(x: 177, y: 57, width: 38, height: 13)
+        if isFullRedraw || dirtySkin.intersects(balanceSliderRect) {
+            let balanceValue = CGFloat(WindowManager.shared.audioEngine.balance)
+            let balancePressed = draggingSlider == .balance
+            renderer.drawBalanceSlider(value: balanceValue, isPressed: balancePressed, in: context)
+        }
+
         // Draw transport buttons
-        renderer.drawTransportButtons(in: context, pressedButton: pressedButton, playbackState: playbackState)
-        
+        let transportRect = NSRect(x: 16, y: 88, width: 114, height: 18)
+        if isFullRedraw || dirtySkin.intersects(transportRect) {
+            renderer.drawTransportButtons(in: context, pressedButton: pressedButton, playbackState: playbackState)
+        }
+
         // Draw toggle buttons (shuffle, repeat, EQ, playlist)
-        renderer.drawToggleButtons(
-            in: context,
-            shuffleOn: shuffleEnabled,
-            repeatOn: repeatEnabled,
-            eqVisible: WindowManager.shared.isEqualizerVisible,
-            playlistVisible: WindowManager.shared.isPlaylistVisible,
-            pressedButton: pressedButton
-        )
-        
+        let toggleRect = NSRect(x: 164, y: 89, width: 110, height: 15)
+        if isFullRedraw || dirtySkin.intersects(toggleRect) {
+            renderer.drawToggleButtons(
+                in: context,
+                shuffleOn: shuffleEnabled,
+                repeatOn: repeatEnabled,
+                eqVisible: WindowManager.shared.isEqualizerVisible,
+                playlistVisible: WindowManager.shared.isPlaylistVisible,
+                pressedButton: pressedButton
+            )
+        }
+
         // Draw window controls (minimize, shade, close) - skip when title bars are hidden
         if !WindowManager.shared.hideTitleBars {
-            renderer.drawWindowControls(in: context, bounds: drawBounds, pressedButton: pressedButton)
+            let controlsRect = NSRect(x: 0, y: 0, width: 275, height: 14)
+            if isFullRedraw || dirtySkin.intersects(controlsRect) {
+                renderer.drawWindowControls(in: context, bounds: drawBounds, pressedButton: pressedButton)
+            }
         }
     }
     
@@ -1133,7 +1216,15 @@ class MainWindowView: NSView {
         
         self.currentTime = current
         self.duration = duration
-        needsDisplay = true
+        if isShadeMode {
+            needsDisplay = true
+        } else {
+            // Only invalidate the time display and position slider areas
+            let timeRect = NSRect(x: 36, y: 26, width: 63, height: 13)
+            let posRect = NSRect(x: 16, y: 72, width: 248, height: 10)
+            setNeedsDisplay(skinRectToViewRect(timeRect))
+            setNeedsDisplay(skinRectToViewRect(posRect))
+        }
     }
     
     func updateTrackInfo(_ track: Track?) {
@@ -1384,14 +1475,7 @@ class MainWindowView: NSView {
             return
         }
         
-        // Check for double-click actions
-        if event.clickCount == 2 {
-            // Double-click on title bar to toggle shade mode
-            if isShadeMode || regionManager.shouldToggleShade(at: point, windowType: .main, windowSize: hitTestSize) {
-                toggleShadeMode()
-                return
-            }
-        }
+        // Classic main window shade toggle is disabled; title-bar double-click has no action.
         
         if isShadeMode {
             // Shade mode mouse handling
@@ -1683,7 +1767,7 @@ class MainWindowView: NSView {
     // MARK: - Context Menu
     
     override func menu(for event: NSEvent) -> NSMenu? {
-        return ContextMenuBuilder.buildMenu()
+        return ContextMenuBuilder.buildMenu(includeOutputDevices: false, includeRepeatShuffle: false)
     }
     
     
@@ -1762,10 +1846,8 @@ class MainWindowView: NSView {
             WindowManager.shared.togglePlaylist()
         case .close:
             NSApplication.shared.terminate(nil)
-        case .minimize:
-            window?.miniaturize(nil)
-        case .shade, .unshade:
-            toggleShadeMode()
+        case .minimize, .shade, .unshade:
+            WindowManager.shared.miniaturizeAllManagedWindows()
         case .logo:
             WindowManager.shared.togglePlexBrowser()
         case .menu:

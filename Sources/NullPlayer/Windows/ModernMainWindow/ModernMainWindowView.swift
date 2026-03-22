@@ -185,7 +185,7 @@ class ModernMainWindowView: NSView {
         marquee.configure(with: skin)
         
         // Position marquee in the upper portion of the marquee background panel
-        let marqueeRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+        let marqueeRect = scaledRect(effectiveMarqueePanelRect)
         let inset: CGFloat = 4 * scale
         marquee.frame = NSRect(x: marqueeRect.minX + inset,
                                 y: marqueeRect.minY + marqueeRect.height * 0.35,
@@ -206,6 +206,8 @@ class ModernMainWindowView: NSView {
     override func layout() {
         super.layout()
         gridLayer?.frame = bounds
+        updateMarqueeForMode()
+        updateMainSpectrumOverlayGeometryAndStyle()
         updateCornerMask()
     }
 
@@ -226,6 +228,7 @@ class ModernMainWindowView: NSView {
         if window?.occlusionState.contains(.visible) == true {
             ModernSkinEngine.shared.animationEngine.resumeFromOcclusion()
             marqueeLayer.resumeScrolling()
+            needsDisplay = true
         } else {
             ModernSkinEngine.shared.animationEngine.pauseForOcclusion()
             marqueeLayer.pauseScrolling()
@@ -275,7 +278,7 @@ class ModernMainWindowView: NSView {
         } else {
             // Title bar area → open hand for dragging
             let base = basePoint(from: point)
-            if ModernSkinElements.titleBar.defaultRect.contains(base) {
+            if WindowManager.shared.effectiveHideTitleBars(for: self.window) || ModernSkinElements.titleBar.defaultRect.contains(base) {
                 NSCursor.openHand.set()
             } else {
                 NSCursor.arrow.set()
@@ -285,6 +288,54 @@ class ModernMainWindowView: NSView {
     
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
+    }
+
+    /// True when main-window content should be remapped to reclaim hidden titlebar space.
+    private var isTitleBarHiddenForLayout: Bool {
+        !isShadeMode && WindowManager.shared.effectiveHideTitleBars(for: self.window)
+    }
+
+    /// Reclaimed base units when title bars are hidden.
+    private var reclaimedTitleBarHeight: CGFloat {
+        guard isTitleBarHiddenForLayout else { return 0 }
+        return ModernSkinElements.titleBarBaseHeight
+    }
+
+    /// Expand top display panels into reclaimed titlebar space without stretching text or controls.
+    private func expandedTopDisplayRect(_ rect: NSRect) -> NSRect {
+        guard reclaimedTitleBarHeight > 0 else { return rect }
+        return NSRect(x: rect.origin.x, y: rect.origin.y, width: rect.width, height: rect.height + reclaimedTitleBarHeight)
+    }
+
+    /// Time panel chrome (status + digits container).
+    private var timePanelRect: NSRect {
+        expandedTopDisplayRect(NSRect(x: 6, y: 60, width: 84, height: 34))
+    }
+
+    /// Time digit content area.
+    private var effectiveTimeDisplayRect: NSRect {
+        expandedTopDisplayRect(ModernSkinElements.timeDisplay.defaultRect)
+    }
+
+    /// Status icon rect, vertically centered in the effective time display area.
+    private var effectiveStatusRect: NSRect {
+        let base = ModernSkinElements.statusPlay.defaultRect
+        return NSRect(
+            x: base.origin.x,
+            y: effectiveTimeDisplayRect.midY - (base.height / 2),
+            width: base.width,
+            height: base.height
+        )
+    }
+
+    /// Marquee/info panel chrome rect.
+    private var effectiveMarqueePanelRect: NSRect {
+        expandedTopDisplayRect(ModernSkinElements.marqueeBackground.defaultRect)
+    }
+
+    /// Wrapper retained for call-site consistency; HT no longer applies a global transform.
+    private func withMainContentLayoutTransform(context: CGContext, draw: () -> Void) {
+        draw()
     }
     
     // MARK: - Drawing
@@ -312,9 +363,11 @@ class ModernMainWindowView: NSView {
             return
         }
         
-        // 1. Window background + border -- clip to dirtyRect to avoid full-bounds fill
-        context.saveGState()
-        context.clip(to: dirtyRect)
+        // 1. Window background + border -- always fill full bounds so the layer is
+        //    never left partially transparent on the first partial-dirty draw (e.g. on
+        //    app reopen).  drawWindowBackground uses .copy blend mode, so repeated
+        //    full-bounds fills do not accumulate alpha.  The per-element dirtyRect
+        //    intersection checks below provide the real partial-redraw performance gain.
         renderer.drawWindowBackground(
             in: windowBounds,
             context: context,
@@ -330,142 +383,144 @@ class ModernMainWindowView: NSView {
             occlusionSegments: edgeOcclusionSegments,
             borderOpacity: mainOpacity.border
         )
-        context.restoreGState()
 
         // 2..9. Foreground content under the main window content opacity channel.
         withContextAlpha(mainOpacity.content, context: context) {
-            // 2. Title bar -- only if not hidden and dirty rect overlaps
-            if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
-                let titleScaled = scaledRect(ModernSkinElements.titleBar.defaultRect)
-                if dirtyRect.intersects(titleScaled) {
-                    renderer.drawTitleBar(in: ModernSkinElements.titleBar.defaultRect, title: "NULLPLAYER", context: context)
-                    drawWindowControls(context: context)
-                }
-            }
-
-            // 3. Time display + status indicator
-            let timeScaled = scaledRect(ModernSkinElements.timeDisplay.defaultRect)
-            let statusScaled = scaledRect(ModernSkinElements.statusPlay.defaultRect)
-            let timeStatusRegion = timeScaled.union(statusScaled)
-            if dirtyRect.intersects(timeStatusRegion) {
-                // `window.areaOpacity.timeDisplay` controls panel fill/border/content.
-                renderer.drawInsetPanel(
-                    in: NSRect(x: 6, y: 60, width: 84, height: 34),
-                    backgroundOpacity: timeOpacity.background,
-                    borderOpacity: timeOpacity.border,
-                    context: context
-                )
-                withContextAlpha(timeOpacity.content, context: context) {
-                    drawTimeDisplay(context: context)
-                    let state = effectivePlaybackState()
-                    renderer.drawStatusIndicator(state, in: ModernSkinElements.statusPlay.defaultRect, context: context)
-                }
-            }
-
-            // 4. Info panel (marquee background + info labels)
-            let infoPanelScaled = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
-            if dirtyRect.intersects(infoPanelScaled) {
-                // `window.areaOpacity.trackDisplay` controls this panel region.
-                if renderer.skin.image(for: "marquee_bg") != nil {
-                    renderer.drawElement(
-                        "marquee_bg",
-                        in: ModernSkinElements.marqueeBackground.defaultRect,
-                        contentOpacity: trackOpacity.background,
-                        context: context
-                    )
-                    if trackOpacity.border > 0 {
-                        let panelRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
-                        context.saveGState()
-                        context.setStrokeColor(renderer.skin.borderColor.withAlphaComponent(trackOpacity.border).cgColor)
-                        context.setLineWidth(max(0.5, 0.5 * scale))
-                        let path = CGPath(
-                            roundedRect: panelRect,
-                            cornerWidth: 4 * scale,
-                            cornerHeight: 4 * scale,
-                            transform: nil
-                        )
-                        context.addPath(path)
-                        context.strokePath()
-                        context.restoreGState()
+            withMainContentLayoutTransform(context: context) {
+                // 2. Title bar -- only if not hidden and dirty rect overlaps
+                if !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
+                    let titleScaled = scaledRect(ModernSkinElements.titleBar.defaultRect)
+                    if dirtyRect.intersects(titleScaled) {
+                        renderer.drawTitleBar(in: ModernSkinElements.titleBar.defaultRect, title: "NULLPLAYER", context: context)
+                        drawWindowControls(context: context)
                     }
-                } else {
+                }
+
+                // 3. Time display + status indicator
+                let timePanelScaled = scaledRect(timePanelRect)
+                let timeScaled = scaledRect(effectiveTimeDisplayRect)
+                let statusScaled = scaledRect(effectiveStatusRect)
+                let timeStatusRegion = timePanelScaled.union(timeScaled).union(statusScaled)
+                if dirtyRect.intersects(timeStatusRegion) {
+                    // `window.areaOpacity.timeDisplay` controls panel fill/border/content.
                     renderer.drawInsetPanel(
-                        in: ModernSkinElements.marqueeBackground.defaultRect,
-                        backgroundOpacity: trackOpacity.background,
-                        borderOpacity: trackOpacity.border,
+                        in: timePanelRect,
+                        backgroundOpacity: timeOpacity.background,
+                        borderOpacity: timeOpacity.border,
                         context: context
                     )
+                    withContextAlpha(timeOpacity.content, context: context) {
+                        drawTimeDisplay(context: context)
+                        let state = effectivePlaybackState()
+                        renderer.drawStatusIndicator(state, in: effectiveStatusRect, context: context)
+                    }
                 }
-                withContextAlpha(trackOpacity.content, context: context) {
-                    drawInfoLabels(context: context)
-                }
-            }
 
-            // 5. Spectrum area panel + content
-            let specScaled = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
-            if dirtyRect.intersects(specScaled) {
-                let drawSpectrumArea = { [self] in
-                    if self.mainVisMode == .spectrum {
-                        // `window.areaOpacity.spectrumArea` controls panel + bars.
-                        // `window.mainSpectrumOpacity` (if set) overrides the resolved spectrum alpha.
-                        self.renderer.drawMiniSpectrum(
-                            self.spectrumLevels,
-                            in: ModernSkinElements.spectrumArea.defaultRect,
-                            panelBackgroundOpacity: spectrumBackgroundOpacity,
-                            panelBorderOpacity: spectrumBorderOpacity,
-                            contentOpacity: spectrumContentOpacity,
+                // 4. Info panel (marquee background + info labels)
+                let infoPanelScaled = scaledRect(effectiveMarqueePanelRect)
+                if dirtyRect.intersects(infoPanelScaled) {
+                    // `window.areaOpacity.trackDisplay` controls this panel region.
+                    if renderer.skin.image(for: "marquee_bg") != nil {
+                        renderer.drawElement(
+                            "marquee_bg",
+                            in: effectiveMarqueePanelRect,
+                            contentOpacity: trackOpacity.background,
                             context: context
                         )
-                    } else {
-                        // For Metal modes, vis_classic transparent background keeps border
-                        // from skin opacity but clears panel fill behind the analyzer.
-                        let panelBgOpacity: CGFloat
-                        if self.mainVisMode == .visClassicExact && self.isMainVisClassicTransparentEnabled() {
-                            panelBgOpacity = 0
-                        } else {
-                            panelBgOpacity = spectrumBackgroundOpacity
+                        if trackOpacity.border > 0 {
+                            let panelRect = scaledRect(effectiveMarqueePanelRect)
+                            context.saveGState()
+                            context.setStrokeColor(renderer.skin.borderColor.withAlphaComponent(trackOpacity.border).cgColor)
+                            context.setLineWidth(max(0.5, 0.5 * scale))
+                            let path = CGPath(
+                                roundedRect: panelRect,
+                                cornerWidth: 4 * scale,
+                                cornerHeight: 4 * scale,
+                                transform: nil
+                            )
+                            context.addPath(path)
+                            context.strokePath()
+                            context.restoreGState()
                         }
-                        self.renderer.drawInsetPanel(
-                            in: ModernSkinElements.spectrumArea.defaultRect,
-                            backgroundOpacity: panelBgOpacity,
-                            borderOpacity: spectrumBorderOpacity,
+                    } else {
+                        renderer.drawInsetPanel(
+                            in: effectiveMarqueePanelRect,
+                            backgroundOpacity: trackOpacity.background,
+                            borderOpacity: trackOpacity.border,
                             context: context
                         )
                     }
+                    withContextAlpha(trackOpacity.content, context: context) {
+                        drawInfoLabels(context: context)
+                    }
                 }
-                drawSpectrumArea()
-            }
 
-            // 6. EQ & Playlist toggle buttons (above seek bar)
-            let toggleRegion = scaledRect(NSRect(x: 93, y: 42, width: 176, height: 14))
-            if dirtyRect.intersects(toggleRegion) {
-                drawEQPlaylistButtons(context: context)
-            }
+                // 5. Spectrum area panel + content
+                let specScaled = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
+                if dirtyRect.intersects(specScaled) {
+                    let drawSpectrumArea = { [self] in
+                        if self.mainVisMode == .spectrum {
+                            // `window.areaOpacity.spectrumArea` controls panel + bars.
+                            // `window.mainSpectrumOpacity` (if set) overrides the resolved spectrum alpha.
+                            self.renderer.drawMiniSpectrum(
+                                self.spectrumLevels,
+                                in: ModernSkinElements.spectrumArea.defaultRect,
+                                panelBackgroundOpacity: spectrumBackgroundOpacity,
+                                panelBorderOpacity: spectrumBorderOpacity,
+                                contentOpacity: spectrumContentOpacity,
+                                context: context
+                            )
+                        } else {
+                            // For Metal modes, vis_classic transparent background keeps border
+                            // from skin opacity but clears panel fill behind the analyzer.
+                            let panelBgOpacity: CGFloat
+                            if self.mainVisMode == .visClassicExact && self.isMainVisClassicTransparentEnabled() {
+                                panelBgOpacity = 0
+                            } else {
+                                panelBgOpacity = spectrumBackgroundOpacity
+                            }
+                            self.renderer.drawInsetPanel(
+                                in: ModernSkinElements.spectrumArea.defaultRect,
+                                backgroundOpacity: panelBgOpacity,
+                                borderOpacity: spectrumBorderOpacity,
+                                context: context
+                            )
+                        }
+                    }
+                    drawSpectrumArea()
+                }
 
-            // 7. Seek bar (track + thumb padding)
-            let seekScaled = scaledRect(ModernSkinElements.seekTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
-            if dirtyRect.intersects(seekScaled) {
-                drawSeekBar(context: context)
-            }
+                // 6. EQ & Playlist toggle buttons (above seek bar)
+                let toggleRegion = scaledRect(NSRect(x: 93, y: 42, width: 176, height: 14))
+                if dirtyRect.intersects(toggleRegion) {
+                    drawEQPlaylistButtons(context: context)
+                }
 
-            // 8. Transport buttons
-            let transportRegion = scaledRect(NSRect(x: 6, y: 3, width: 168, height: 24))
-            if dirtyRect.intersects(transportRegion) {
-                drawTransportButtons(context: context)
-            }
+                // 7. Seek bar (track + thumb padding)
+                let seekScaled = scaledRect(ModernSkinElements.seekTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
+                if dirtyRect.intersects(seekScaled) {
+                    drawSeekBar(context: context)
+                }
 
-            // 9. Volume slider (track + thumb padding)
-            let volumeScaled = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
-            if dirtyRect.intersects(volumeScaled) {
-                // `window.areaOpacity.volumeArea` controls panel + slider content.
-                renderer.drawInsetPanel(
-                    in: NSRect(x: 177, y: 6, width: 92, height: 17),
-                    backgroundOpacity: volumeOpacity.background,
-                    borderOpacity: volumeOpacity.border,
-                    context: context
-                )
-                withContextAlpha(volumeOpacity.content, context: context) {
-                    drawVolumeSlider(context: context)
+                // 8. Transport buttons
+                let transportRegion = scaledRect(NSRect(x: 6, y: 3, width: 168, height: 24))
+                if dirtyRect.intersects(transportRegion) {
+                    drawTransportButtons(context: context)
+                }
+
+                // 9. Volume slider (track + thumb padding)
+                let volumeScaled = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
+                if dirtyRect.intersects(volumeScaled) {
+                    // `window.areaOpacity.volumeArea` controls panel + slider content.
+                    renderer.drawInsetPanel(
+                        in: NSRect(x: 177, y: 6, width: 92, height: 17),
+                        backgroundOpacity: volumeOpacity.background,
+                        borderOpacity: volumeOpacity.border,
+                        context: context
+                    )
+                    withContextAlpha(volumeOpacity.content, context: context) {
+                        drawVolumeSlider(context: context)
+                    }
                 }
             }
         }
@@ -544,7 +599,7 @@ class ModernMainWindowView: NSView {
     }
     
     private func drawTimeDisplay(context: CGContext) {
-        let timeDisplayRect = ModernSkinElements.timeDisplay.defaultRect
+        let timeDisplayRect = effectiveTimeDisplayRect
         let digitWidth = ModernSkinElements.timeDigitSize.width
         let colonWidth = ModernSkinElements.timeColonSize.width
         let digitHeight = ModernSkinElements.timeDigitSize.height
@@ -660,8 +715,8 @@ class ModernMainWindowView: NSView {
             position = 0
         }
         
-        // Seek bar fill color: use element override if set, otherwise accent color
-        let seekColor = renderer.skin.elementColor(for: "seek_fill")
+        // Seek bar fill color: use element override if set, otherwise primary color
+        let seekColor = renderer.skin.elementColor(for: "seek_fill", fallback: renderer.skin.primaryColor)
         renderer.drawSlider(trackId: "seek_track", fillId: "seek_fill", thumbId: "seek_thumb",
                             trackRect: trackRect, fillFraction: position,
                             thumbState: isDraggingSeek ? "pressed" : "normal",
@@ -673,8 +728,9 @@ class ModernMainWindowView: NSView {
         let trackRect = ModernSkinElements.volumeTrack.defaultRect
         let volume = CGFloat(WindowManager.shared.audioEngine.volume)
         
-        // Use same color as seek bar fill for visual consistency
-        let volColor = renderer.skin.elementColor(for: "seek_fill")
+        // Volume fill color: use element override if set, otherwise fall back to seek_fill then primary
+        let seekFillFallback = renderer.skin.elementColor(for: "seek_fill", fallback: renderer.skin.primaryColor)
+        let volColor = renderer.skin.elementColor(for: "volume_fill", fallback: seekFillFallback)
         renderer.drawSlider(trackId: "volume_track", fillId: "volume_fill", thumbId: "volume_thumb",
                             trackRect: trackRect, fillFraction: volume,
                             thumbState: isDraggingVolume ? "pressed" : "normal",
@@ -754,7 +810,7 @@ class ModernMainWindowView: NSView {
         guard oldSeconds != newSeconds || durationChanged else { return }
         
         // Invalidate only the time display and seek bar regions (not the entire window)
-        let timeRect = scaledRect(ModernSkinElements.timeDisplay.defaultRect)
+        let timeRect = scaledRect(effectiveTimeDisplayRect)
         setNeedsDisplay(timeRect.insetBy(dx: -2, dy: -2))
         
         let seekRect = scaledRect(ModernSkinElements.seekTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
@@ -860,7 +916,7 @@ class ModernMainWindowView: NSView {
             metalOverlay?.isHidden = true
         } else {
             // Normal mode marquee positioning
-            let marqueeRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+            let marqueeRect = scaledRect(effectiveMarqueePanelRect)
             let inset: CGFloat = 4 * scale
             marqueeLayer.frame = NSRect(x: marqueeRect.minX + inset,
                                         y: marqueeRect.minY + marqueeRect.height * 0.35,
@@ -936,7 +992,7 @@ class ModernMainWindowView: NSView {
         guard newBPM != currentBPM else { return }
         currentBPM = newBPM
         // Only invalidate the info panel area where BPM is displayed
-        let infoRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+        let infoRect = scaledRect(effectiveMarqueePanelRect)
         setNeedsDisplay(infoRect)
     }
     
@@ -1159,8 +1215,12 @@ class ModernMainWindowView: NSView {
     
     /// Scale a rect from base to view coordinates
     private func scaledRect(_ rect: NSRect) -> NSRect {
-        NSRect(x: rect.origin.x * scale, y: rect.origin.y * scale,
-               width: rect.size.width * scale, height: rect.size.height * scale)
+        NSRect(
+            x: rect.origin.x * scale,
+            y: rect.origin.y * scale,
+            width: rect.size.width * scale,
+            height: rect.size.height * scale
+        )
     }
 
     private func isMainVisClassicTransparentEnabled() -> Bool {
@@ -1197,9 +1257,9 @@ class ModernMainWindowView: NSView {
         case "volume_track":
             rect = scaledRect(ModernSkinElements.volumeTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
         case "time_display":
-            rect = scaledRect(ModernSkinElements.timeDisplay.defaultRect).insetBy(dx: -2, dy: -2)
+            rect = scaledRect(effectiveTimeDisplayRect).insetBy(dx: -2, dy: -2)
         case "info_bpm":
-            rect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+            rect = scaledRect(effectiveMarqueePanelRect)
         case "spectrum_area":
             rect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
         case "btn_prev", "btn_play", "btn_pause", "btn_stop", "btn_next", "btn_eject":
@@ -1271,7 +1331,7 @@ class ModernMainWindowView: NSView {
             // BPM display (double-click to cycle multiplier)
             ("info_bpm", ModernSkinElements.infoBPM.defaultRect),
             // Time display (click to toggle elapsed/remaining)
-            ("time_display", ModernSkinElements.timeDisplay.defaultRect),
+            ("time_display", effectiveTimeDisplayRect),
             // Spectrum area (click to toggle spectrum window, double-click to cycle vis mode)
             ("spectrum_area", ModernSkinElements.spectrumArea.defaultRect),
         ])
@@ -1323,7 +1383,7 @@ class ModernMainWindowView: NSView {
                 if event.clickCount == 2 {
                     // Cycle: normal → 2x → 0.5x → normal
                     bpmMultiplierState = (bpmMultiplierState + 1) % 3
-                    let infoRect = scaledRect(ModernSkinElements.marqueeBackground.defaultRect)
+                    let infoRect = scaledRect(effectiveMarqueePanelRect)
                     setNeedsDisplay(infoRect)
                 }
             } else if element == "spectrum_area" {
@@ -1366,7 +1426,7 @@ class ModernMainWindowView: NSView {
             // Invalidate seek bar + time display only
             let seekRect = scaledRect(ModernSkinElements.seekTrack.defaultRect).insetBy(dx: 0, dy: -6 * scale)
             setNeedsDisplay(seekRect)
-            let timeRect = scaledRect(ModernSkinElements.timeDisplay.defaultRect).insetBy(dx: -2, dy: -2)
+            let timeRect = scaledRect(effectiveTimeDisplayRect).insetBy(dx: -2, dy: -2)
             setNeedsDisplay(timeRect)
         } else if isDraggingVolume {
             let point = convert(event.locationInWindow, from: nil)
@@ -1649,7 +1709,7 @@ class ModernMainWindowView: NSView {
     // MARK: - Context Menu
     
     override func menu(for event: NSEvent) -> NSMenu? {
-        return ContextMenuBuilder.buildMenu()
+        return ContextMenuBuilder.buildMenu(includeOutputDevices: false, includeRepeatShuffle: false)
     }
     
     // MARK: - Drag and Drop

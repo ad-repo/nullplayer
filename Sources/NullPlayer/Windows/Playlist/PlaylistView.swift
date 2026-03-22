@@ -140,6 +140,7 @@ class PlaylistView: NSView {
     /// Restart timer when playback starts or track changes
     @objc private func playbackStateDidChange(_ notification: Notification) {
         if WindowManager.shared.audioEngine.state == .playing {
+            refreshTextBitmapCacheIfNeeded()
             startDisplayTimer()
             marqueeOffset = 0
             updateCurrentTrackTextWidth()
@@ -166,6 +167,7 @@ class PlaylistView: NSView {
         
         selectedIndices = [currentIndex]
         selectionAnchor = currentIndex
+        refreshTextBitmapCacheIfNeeded()
         
         // Scroll to keep the current track visible
         scrollToSelection()
@@ -238,6 +240,7 @@ class PlaylistView: NSView {
     /// Restart display timer when window is restored from minimized state
     @objc private func windowDidDeminiaturize(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
+        refreshTextBitmapCacheIfNeeded()
         startDisplayTimer()
     }
     
@@ -245,6 +248,7 @@ class PlaylistView: NSView {
     @objc private func windowDidChangeOcclusionState(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
         if window?.occlusionState.contains(.visible) == true {
+            refreshTextBitmapCacheIfNeeded()
             startDisplayTimer()
         } else {
             stopDisplayTimer()
@@ -300,11 +304,15 @@ class PlaylistView: NSView {
     
     // MARK: - Scaling Support
     
-    /// Calculate scale factor based on WIDTH only (to match main window)
-    /// This allows vertical expansion to show more tracks
+    /// Derive render scale from the main window width so point rounding does not
+    /// introduce fractional skin-space tile boundaries in playlist chrome.
     private var scaleFactor: CGFloat {
-        let originalSize = originalWindowSize
-        return bounds.width / originalSize.width
+        if let mainWidth = WindowManager.shared.mainWindowController?.window?.frame.width,
+           mainWidth > 0 {
+            return mainWidth / Skin.baseMainSize.width
+        }
+        let largeUIMultiplier: CGFloat = WindowManager.shared.isDoubleSize ? 1.5 : 1.0
+        return Skin.scaleFactor * largeUIMultiplier
     }
     
     /// Get the original window size (unscaled base size)
@@ -316,14 +324,14 @@ class PlaylistView: NSView {
         }
     }
     
-    /// Get the effective window size for drawing (allows vertical expansion)
-    /// Width matches original, height can be taller to show more tracks
+    /// Get the effective window size in unscaled skin coordinates.
+    /// Width/height can expand to fill stretched window dimensions.
     private var effectiveWindowSize: NSSize {
         let scale = scaleFactor
         let originalSize = originalWindowSize
-        // Height in "original" coordinates based on actual window height
+        let effectiveWidth = bounds.width / scale
         let effectiveHeight = bounds.height / scale
-        return NSSize(width: originalSize.width, height: max(originalSize.height, effectiveHeight))
+        return NSSize(width: effectiveWidth, height: max(originalSize.height, effectiveHeight))
     }
     
     /// Convert a point from view coordinates to original (unscaled) skin coordinates
@@ -331,7 +339,7 @@ class PlaylistView: NSView {
         let scale = scaleFactor
         let effectiveSize = effectiveWindowSize
         
-        // No horizontal centering needed (width-based scale)
+        // No centering needed: draw bounds already track the stretched window dimensions.
         // Transform point back to original coordinates
         let x = point.x / scale
         // Convert from macOS coords (origin bottom-left) to skin coords (origin top-left)
@@ -571,16 +579,34 @@ class PlaylistView: NSView {
     /// Pre-cache the CGImage for TEXT.BMP when skin changes
     /// MUST be called outside of draw cycle to avoid graphics state interference
     private func cacheTextBitmapCGImage() {
-        cachedTextBitmapCGImage = nil
-        
         guard let skin = WindowManager.shared.currentSkin,
-              let textImage = skin.text else { return }
-        
-        // Get CGImage from NSImage - this is safe to call outside of draw cycle
-        guard let sourceImage = textImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-        
-        // Cache it
-        cachedTextBitmapCGImage = sourceImage
+              let textImage = skin.text else {
+            cachedTextBitmapCGImage = nil
+            return
+        }
+
+        if let resolved = resolveTextBitmapCGImage(from: textImage) {
+            cachedTextBitmapCGImage = resolved
+        } else {
+            // Keep existing cache if resolution fails to avoid transient blank text states.
+            NSLog("PlaylistView: Failed to resolve TEXT.BMP CGImage; keeping existing cache")
+        }
+    }
+
+    /// Resolve a stable CGImage outside draw() with TIFF fallback for resilience.
+    private func resolveTextBitmapCGImage(from image: NSImage) -> CGImage? {
+        if let direct = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return direct
+        }
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.cgImage
+    }
+
+    /// Opportunistically rebuild bitmap-font cache when it is missing.
+    private func refreshTextBitmapCacheIfNeeded() {
+        guard cachedTextBitmapCGImage == nil else { return }
+        cacheTextBitmapCGImage()
     }
     
     private func drawBitmapText(_ text: String, at position: NSPoint, in context: CGContext, skin: Skin?, isSelected: Bool = false) {
@@ -730,7 +756,6 @@ class PlaylistView: NSView {
         let skin = WindowManager.shared.currentSkin
         
         let charWidth = SkinElements.TextFont.charWidth
-        let charHeight = SkinElements.TextFont.charHeight
         
         // Position just above the bottom bar, in the track list area
         let infoY = drawBounds.height - Layout.bottomBarHeight - 14
@@ -905,6 +930,7 @@ class PlaylistView: NSView {
         // Pre-cache the TEXT.BMP CGImage for the new skin
         // This MUST happen outside of the draw cycle
         cacheTextBitmapCGImage()
+        updateCurrentTrackTextWidth()
         needsDisplay = true
     }
     

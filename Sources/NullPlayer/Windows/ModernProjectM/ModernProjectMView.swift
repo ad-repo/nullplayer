@@ -60,6 +60,15 @@ class ModernProjectMView: NSView {
     
     /// Cycle interval in seconds
     private var presetCycleInterval: TimeInterval = 30.0
+
+    /// Store for persisted projectM preset ratings.
+    private let presetRatingsStore = ProjectMPresetRatingsStore.shared
+
+    /// Dismiss task for the preset rating overlay.
+    private var presetRatingDismissTask: Task<Void, Never>?
+
+    /// Whether the preset rating overlay is currently visible.
+    private var isPresetRatingOverlayVisible = false
     
     /// Scale factor for hit testing (computed to track double-size changes)
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
@@ -156,6 +165,7 @@ class ModernProjectMView: NSView {
     }
     
     deinit {
+        presetRatingDismissTask?.cancel()
         if let observer = pcmObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -194,6 +204,21 @@ class ModernProjectMView: NSView {
             addSubview(visView)
         }
     }
+
+    /// Lazy star rating overlay reused from art mode.
+    private lazy var presetRatingOverlay: RatingOverlayView = {
+        let overlay = RatingOverlayView(frame: bounds)
+        overlay.autoresizingMask = [.width, .height]
+        overlay.isHidden = true
+        overlay.onRatingSelected = { [weak self] ratingOnTenScale in
+            self?.submitCurrentPresetRating(ratingOnTenScale)
+        }
+        overlay.onDismiss = { [weak self] in
+            self?.hidePresetRatingOverlay()
+        }
+        addSubview(overlay)
+        return overlay
+    }()
     
     private func calculateVisualizationArea() -> NSRect {
         // In fullscreen mode, visualization takes the entire bounds
@@ -349,6 +374,9 @@ class ModernProjectMView: NSView {
     /// Set shade mode externally (e.g., from controller)
     func setShadeMode(_ enabled: Bool) {
         isShadeMode = enabled
+        if enabled || isPresetRatingOverlayVisible {
+            hidePresetRatingOverlay()
+        }
         
         // Show/hide visualization view
         visualizationGLView?.isHidden = enabled
@@ -388,6 +416,70 @@ class ModernProjectMView: NSView {
             visualizationGLView?.startRendering()
         }
     }
+
+    // MARK: - Preset Ratings
+
+    private func starString(for rating: Int) -> String {
+        let clamped = min(5, max(0, rating))
+        return String(repeating: "⭐", count: clamped) + String(repeating: "☆", count: 5 - clamped)
+    }
+
+    private func currentPresetIdentity() -> (index: Int, name: String, path: String)? {
+        guard let visView = visualizationGLView, visView.isProjectMAvailable else { return nil }
+        let index = visView.currentPresetIndex
+        let name = visView.currentPresetName
+        let path = visView.presetPath(at: index)
+        guard !path.isEmpty else { return nil }
+        return (index, name, path)
+    }
+    
+    private func presetIndex(forPath path: String) -> Int? {
+        guard let visView = visualizationGLView else { return nil }
+        let normalizedTarget = (path as NSString).standardizingPath
+        guard !normalizedTarget.isEmpty else { return nil }
+        
+        for index in 0..<visView.presetCount {
+            let candidate = (visView.presetPath(at: index) as NSString).standardizingPath
+            if candidate == normalizedTarget {
+                return index
+            }
+        }
+        return nil
+    }
+
+    private func showPresetRatingOverlay() {
+        guard let preset = currentPresetIdentity() else { return }
+        let currentRating = presetRatingsStore.rating(forPresetPath: preset.path)
+        presetRatingDismissTask?.cancel()
+        presetRatingDismissTask = nil
+        presetRatingOverlay.frame = bounds
+        presetRatingOverlay.setRating(currentRating * 2)
+        presetRatingOverlay.isHidden = false
+        isPresetRatingOverlayVisible = true
+        needsDisplay = true
+    }
+
+    private func hidePresetRatingOverlay() {
+        presetRatingDismissTask?.cancel()
+        presetRatingDismissTask = nil
+        presetRatingOverlay.isHidden = true
+        isPresetRatingOverlayVisible = false
+        needsDisplay = true
+    }
+
+    private func submitCurrentPresetRating(_ ratingOnTenScale: Int) {
+        guard let preset = currentPresetIdentity() else { return }
+        let rating = min(5, max(0, ratingOnTenScale / 2))
+        presetRatingsStore.setRating(rating, forPresetPath: preset.path, presetName: preset.name)
+
+        presetRatingDismissTask?.cancel()
+        presetRatingDismissTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            await MainActor.run {
+                self?.hidePresetRatingOverlay()
+            }
+        }
+    }
     
     /// Toggle shade mode
     private func toggleShadeMode() {
@@ -401,7 +493,12 @@ class ModernProjectMView: NSView {
         return point.y >= bounds.height - titleBarHeight &&
                point.x < bounds.width - 30
     }
-    
+
+    /// Top 1/4 of the window is the drag zone
+    private func hitTestTopZone(at point: NSPoint) -> Bool {
+        return point.y >= bounds.height * 0.75
+    }
+
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
         let closeRect = NSRect(x: bounds.width - 20, y: bounds.height - titleBarHeight,
                                width: 20, height: titleBarHeight)
@@ -417,8 +514,8 @@ class ModernProjectMView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         
-        // Check for double-click on title bar to toggle shade mode
-        if event.clickCount == 2 && hitTestTitleBar(at: point) &&
+        // Check for double-click in top zone to toggle shade mode
+        if event.clickCount == 2 && hitTestTopZone(at: point) &&
            !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             toggleShadeMode()
             return
@@ -437,8 +534,8 @@ class ModernProjectMView: NSView {
             return
         }
         
-        // Title bar - start window drag (can undock)
-        if hitTestTitleBar(at: point) {
+        // Top 1/4 of window: drag zone
+        if hitTestTopZone(at: point) {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
             if let window = window {
@@ -446,15 +543,9 @@ class ModernProjectMView: NSView {
             }
             return
         }
-        
-        // Content area - window dragging
-        // When titlebar is hidden, pass fromTitleBar: true so drags can undock
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            let hideTitleBar = WindowManager.shared.effectiveHideTitleBars(for: self.window)
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: hideTitleBar)
-        }
+
+        // Bottom 3/4: show ratings overlay on click
+        showPresetRatingOverlay()
     }
     
     private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
@@ -530,6 +621,30 @@ class ModernProjectMView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
+        // Preset rating overlay shortcuts:
+        // - Escape dismisses
+        // - Delete/Backspace clears rating
+        // - Number keys 1-5 set stars
+        if isPresetRatingOverlayVisible {
+            switch event.keyCode {
+            case 53: // Escape
+                hidePresetRatingOverlay()
+                return
+            case 51, 117: // Delete/Backspace or Forward Delete
+                presetRatingOverlay.setRating(0)
+                submitCurrentPresetRating(0)
+                return
+            case 18...22: // 1-5 keys
+                let starRating = Int(event.keyCode - 17)
+                let ratingOnTenScale = starRating * 2
+                presetRatingOverlay.setRating(ratingOnTenScale)
+                submitCurrentPresetRating(ratingOnTenScale)
+                return
+            default:
+                break
+            }
+        }
+
         // Check for modifier keys
         let hasShift = event.modifierFlags.contains(.shift)
         
@@ -569,12 +684,6 @@ class ModernProjectMView: NSView {
                 visualizationGLView?.randomPreset(hardCut: false)
             }
             
-        case 37: // L key - toggle preset lock
-            if let vis = visualizationGLView {
-                vis.isPresetLocked = !vis.isPresetLocked
-                NSLog("ModernProjectMView: Preset lock %@", vis.isPresetLocked ? "enabled" : "disabled")
-            }
-            
         case 8: // C key - toggle cycle mode
             switch presetCycleMode {
             case .off:
@@ -606,10 +715,17 @@ class ModernProjectMView: NSView {
         // Preset navigation (only when projectM is available)
         if isProjectMAvailable {
             let presetName = visualizationGLView?.currentPresetName ?? "Unknown"
-            let presetIndex = (visualizationGLView?.currentPresetIndex ?? 0) + 1
+            let currentPresetIndex = visualizationGLView?.currentPresetIndex ?? 0
+            let presetIndex = currentPresetIndex + 1
             let presetCount = visualizationGLView?.presetCount ?? 0
-            
-            let currentPresetItem = NSMenuItem(title: "Preset: \(presetName) (\(presetIndex)/\(presetCount))", action: nil, keyEquivalent: "")
+            let currentPresetPath = visualizationGLView?.presetPath(at: currentPresetIndex) ?? ""
+            let currentRating = presetRatingsStore.rating(forPresetPath: currentPresetPath)
+
+            let currentPresetItem = NSMenuItem(
+                title: "Preset: \(presetName) [\(starString(for: currentRating))] (\(presetIndex)/\(presetCount))",
+                action: nil,
+                keyEquivalent: ""
+            )
             currentPresetItem.isEnabled = false
             menu.addItem(currentPresetItem)
             
@@ -629,10 +745,63 @@ class ModernProjectMView: NSView {
             
             menu.addItem(NSMenuItem.separator())
             
-            let lockPresetItem = NSMenuItem(title: "Lock Preset", action: #selector(togglePresetLock(_:)), keyEquivalent: "l")
-            lockPresetItem.target = self
-            lockPresetItem.state = (visualizationGLView?.isPresetLocked ?? false) ? .on : .off
-            menu.addItem(lockPresetItem)
+            let setDefaultItem = NSMenuItem(title: "Set Current to Default", action: #selector(setCurrentPresetAsDefault(_:)), keyEquivalent: "")
+            setDefaultItem.target = self
+            setDefaultItem.isEnabled = presetCount > 0
+            menu.addItem(setDefaultItem)
+
+            let rateCurrentMenu = NSMenu()
+            for rating in 0...5 {
+                let title = rating == 0
+                    ? "Clear Rating (\(starString(for: 0)))"
+                    : "\(rating) Gold (\(starString(for: rating)))"
+                let item = NSMenuItem(title: title, action: #selector(setCurrentPresetRatingFromMenu(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = rating
+                item.state = currentRating == rating ? .on : .off
+                rateCurrentMenu.addItem(item)
+            }
+            let rateCurrentMenuItem = NSMenuItem(title: "Rate Current Preset", action: nil, keyEquivalent: "")
+            rateCurrentMenuItem.submenu = rateCurrentMenu
+            menu.addItem(rateCurrentMenuItem)
+
+            let favoritesMenu = NSMenu()
+            let isCurrentPresetFavorite = presetRatingsStore.isFavorite(forPresetPath: currentPresetPath)
+            let toggleFavoriteTitle = isCurrentPresetFavorite
+                ? "Remove Current Preset from Favorites"
+                : "Add Current Preset to Favorites"
+            let toggleFavoriteItem = NSMenuItem(
+                title: toggleFavoriteTitle,
+                action: #selector(toggleCurrentPresetFavorite(_:)),
+                keyEquivalent: ""
+            )
+            toggleFavoriteItem.target = self
+            toggleFavoriteItem.isEnabled = presetCount > 0
+            favoritesMenu.addItem(toggleFavoriteItem)
+
+            let presetPaths = (0..<presetCount).map { visualizationGLView?.presetPath(at: $0) ?? "" }
+            let ratingsByPath = presetRatingsStore.ratings(forPresetPaths: presetPaths)
+            let favoritePaths = presetRatingsStore.favoritePresetPaths(forPresetPaths: presetPaths)
+
+            if !favoritePaths.isEmpty {
+                favoritesMenu.addItem(NSMenuItem.separator())
+                for i in 0..<presetCount {
+                    let name = visualizationGLView?.presetName(at: i) ?? "Preset \(i + 1)"
+                    let path = (presetPaths[i] as NSString).standardizingPath
+                    guard favoritePaths.contains(path) else { continue }
+                    let rating = ratingsByPath[path] ?? 0
+                    let title = "\(name) [\(starString(for: rating))]"
+                    let item = NSMenuItem(title: title, action: #selector(selectFavoritePresetFromMenu(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = path
+                    item.state = (i == currentPresetIndex) ? .on : .off
+                    favoritesMenu.addItem(item)
+                }
+            }
+
+            let favoritesMenuItem = NSMenuItem(title: "Favorites", action: nil, keyEquivalent: "")
+            favoritesMenuItem.submenu = favoritesMenu
+            menu.addItem(favoritesMenuItem)
             
             menu.addItem(NSMenuItem.separator())
             
@@ -670,17 +839,20 @@ class ModernProjectMView: NSView {
             // Presets submenu - list all available presets
             if presetCount > 0 {
                 let presetsMenu = NSMenu()
-                
+
                 for i in 0..<presetCount {
                     let name = visualizationGLView?.presetName(at: i) ?? "Preset \(i + 1)"
-                    let presetItem = NSMenuItem(title: name, action: #selector(selectPresetFromMenu(_:)), keyEquivalent: "")
+                    let path = presetPaths[i]
+                    let rating = ratingsByPath[path] ?? 0
+                    let title = "\(name) [\(starString(for: rating))]"
+                    let presetItem = NSMenuItem(title: title, action: #selector(selectPresetFromMenu(_:)), keyEquivalent: "")
                     presetItem.target = self
                     presetItem.tag = i
                     presetItem.state = (i == (visualizationGLView?.currentPresetIndex ?? -1)) ? .on : .off
                     presetsMenu.addItem(presetItem)
                 }
                 
-                let presetsMenuItem = NSMenuItem(title: "Presets (\(presetCount))", action: nil, keyEquivalent: "")
+                let presetsMenuItem = NSMenuItem(title: "Presets", action: nil, keyEquivalent: "")
                 presetsMenuItem.submenu = presetsMenu
                 menu.addItem(presetsMenuItem)
                 
@@ -770,25 +942,46 @@ class ModernProjectMView: NSView {
     // MARK: - Menu Actions
     
     @objc private func nextPresetAction(_ sender: Any?) {
+        hidePresetRatingOverlay()
         visualizationGLView?.nextPreset()
     }
     
     @objc private func previousPresetAction(_ sender: Any?) {
+        hidePresetRatingOverlay()
         visualizationGLView?.previousPreset()
     }
     
     @objc private func randomPresetAction(_ sender: Any?) {
+        hidePresetRatingOverlay()
         visualizationGLView?.randomPreset()
     }
     
-    @objc private func togglePresetLock(_ sender: Any?) {
-        if let vis = visualizationGLView {
-            vis.isPresetLocked = !vis.isPresetLocked
-        }
+    @objc private func setCurrentPresetAsDefault(_ sender: Any?) {
+        visualizationGLView?.setCurrentPresetAsDefault()
+    }
+
+    @objc private func setCurrentPresetRatingFromMenu(_ sender: NSMenuItem) {
+        guard let preset = currentPresetIdentity() else { return }
+        let rating = min(5, max(0, sender.tag))
+        presetRatingsStore.setRating(rating, forPresetPath: preset.path, presetName: preset.name)
+    }
+    
+    @objc private func toggleCurrentPresetFavorite(_ sender: Any?) {
+        guard let preset = currentPresetIdentity() else { return }
+        let isFavorite = presetRatingsStore.isFavorite(forPresetPath: preset.path)
+        presetRatingsStore.setFavorite(!isFavorite, forPresetPath: preset.path, presetName: preset.name)
+    }
+    
+    @objc private func selectFavoritePresetFromMenu(_ sender: NSMenuItem) {
+        guard let path = sender.representedObject as? String,
+              let index = presetIndex(forPath: path) else { return }
+        hidePresetRatingOverlay()
+        visualizationGLView?.selectPreset(at: index, hardCut: false)
     }
     
     @objc private func selectPresetFromMenu(_ sender: NSMenuItem) {
         let index = sender.tag
+        hidePresetRatingOverlay()
         visualizationGLView?.selectPreset(at: index, hardCut: false)
     }
     

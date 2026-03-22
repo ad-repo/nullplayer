@@ -1657,7 +1657,8 @@ class AudioEngine {
             
             // Update UI immediately for responsiveness
             lastReportedTime = seekTime
-            
+            delegate?.audioEngineDidUpdateTime(current: seekTime, duration: currentDuration)
+
             // If already seeking, just update the target and return
             // The debounced work item will use the latest value
             if isSeekingStreaming {
@@ -1728,6 +1729,10 @@ class AudioEngine {
                 playbackStartDate = Date()  // Start tracking from seek position
                 playerNode.play()
                 startTimeUpdates()  // Ensure timer is running for UI updates
+            } else {
+                // Notify delegate of new position so UI updates while paused
+                // (e.g. after seek-on-restore: playTrack→pause→seek, timer is stopped so no periodic update fires)
+                delegate?.audioEngineDidUpdateTime(current: seekTime, duration: currentDuration)
             }
         }
     }
@@ -4501,13 +4506,17 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                 sampleRate: track.sampleRate ?? sampleRate,
                 channels: track.channels ?? channels,
                 plexRatingKey: track.plexRatingKey,
+                plexServerId: track.plexServerId,
                 subsonicId: track.subsonicId,
                 subsonicServerId: track.subsonicServerId,
                 jellyfinId: track.jellyfinId,
                 jellyfinServerId: track.jellyfinServerId,
+                embyId: track.embyId,
+                embyServerId: track.embyServerId,
                 artworkThumb: track.artworkThumb,
                 mediaType: track.mediaType,
-                genre: track.genre
+                genre: track.genre,
+                contentType: track.contentType
             )
             
             currentTrack = updatedTrack

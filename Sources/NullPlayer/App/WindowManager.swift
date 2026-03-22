@@ -77,6 +77,12 @@ class WindowManager {
             NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
         }
     }
+
+    /// Classic UI size multiplier driven by the Large UI mode toggle.
+    /// Stays discrete (1x / 1.5x) so free window stretching does not alter skin scale.
+    var classicScaleMultiplier: CGFloat {
+        isDoubleSize ? 1.5 : 1.0
+    }
     
     /// Always on top mode (floating window level)
     var isAlwaysOnTop: Bool = false {
@@ -84,6 +90,14 @@ class WindowManager {
             UserDefaults.standard.set(isAlwaysOnTop, forKey: "isAlwaysOnTop")
             NSLog("WindowManager: isAlwaysOnTop changed to %d, applying to windows", isAlwaysOnTop ? 1 : 0)
             applyAlwaysOnTop()
+        }
+    }
+
+    /// Lock connected windows so dragging keeps connected groups together.
+    var isWindowLayoutLocked: Bool = false {
+        didSet {
+            UserDefaults.standard.set(isWindowLayoutLocked, forKey: "isWindowLayoutLocked")
+            NSLog("WindowManager: isWindowLayoutLocked changed to %d", isWindowLayoutLocked ? 1 : 0)
         }
     }
     
@@ -112,14 +126,14 @@ class WindowManager {
         set { UserDefaults.standard.set(newValue, forKey: "hideTitleBars") }
     }
 
-    /// Ensure modern main window uses compact HT height when HT is enabled.
-    /// Keeps the top edge fixed so startup/restore does not leave an empty titlebar gap.
+    /// Ensure modern main window keeps full-height geometry in HT mode at startup/restore.
+    /// Keeps the top edge fixed so legacy compact HT frames are expanded.
     @discardableResult
     func normalizeModernMainWindowForHTIfNeeded(_ explicitWindow: NSWindow? = nil) -> CGFloat {
         guard isRunningModernUI, hideTitleBars else { return 0 }
         guard let mainWindow = explicitWindow ?? mainWindowController?.window else { return 0 }
 
-        let targetHeight = (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
+        let targetHeight = fullMainHeightForCurrentScale()
         mainWindow.minSize = NSSize(width: mainWindow.minSize.width, height: targetHeight)
 
         var frame = mainWindow.frame
@@ -139,13 +153,9 @@ class WindowManager {
         guard isRunningModernUI else { return }
         hideTitleBars = !hideTitleBars
 
-        // Resize main window: when HT is on, main window shrinks by titleBarBaseHeight (base 275x116 → 275x98)
-        // anchor top-left so stacked windows below shift up naturally.
+        // Keep main window size unchanged across HT toggles (internal reflow is view-level).
         if let mainWindow = mainWindowController?.window {
-            let baseHeight: CGFloat = hideTitleBars
-                ? (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
-                : ModernSkinElements.baseMainSize.height * ModernSkinElements.scaleFactor
-            let newSize = NSSize(width: mainWindow.frame.width, height: baseHeight)
+            let newSize = NSSize(width: mainWindow.frame.width, height: fullMainHeightForCurrentScale())
             mainWindow.minSize = newSize
             var frame = mainWindow.frame
             let topY = frame.maxY
@@ -186,20 +196,16 @@ class WindowManager {
             for win in windowsBelow {
                 win.setFrameOrigin(NSPoint(x: win.frame.origin.x, y: win.frame.origin.y + dy))
             }
-            // Ensure center-stack windows follow HT compact/full sizing rules and remain flush.
+            // Keep connected center-stack window sizes unchanged across HT toggles.
+            // These windows already hide titlebars while docked, so changing HT should
+            // not change their frame heights; only their stacked position should move.
             let orderedBelow = windowsBelow.sorted { $0.frame.maxY > $1.frame.maxY }
             var nextTop = frame.minY
-            let titleDelta = ModernSkinElements.titleBarBaseHeight * ModernSkinElements.scaleFactor
             for win in orderedBelow {
                 guard let kind = centerStackWindowKind(for: win) else { continue }
-                applyCenterStackSizingConstraints(win, kind: kind)
                 var winFrame = win.frame
-                let targetHeight = targetCenterStackHeight(for: kind,
-                                                           currentHeight: winFrame.height,
-                                                           titleBarDelta: titleDelta,
-                                                           preservePlaylistContentHeight: true)
-                if kind != .waveform { winFrame.size.width = frame.width }
-                winFrame.size.height = targetHeight
+                if kind == .equalizer { winFrame.size.width = frame.width }
+                let targetHeight = winFrame.height
                 winFrame.origin.x = frame.minX
                 winFrame.origin.y = nextTop - targetHeight
                 win.setFrame(winFrame, display: true, animate: false)
@@ -317,14 +323,17 @@ class WindowManager {
     private let snapThreshold: CGFloat = 15
     
     /// Docking threshold - windows closer than this are considered docked
-    /// Should be small (≤2) so only truly touching windows are grouped
-    private let dockThreshold: CGFloat = 2
+    /// Should be small so only truly touching windows are grouped
+    private let dockThreshold: CGFloat = 3
     
     /// Hold threshold - how long (seconds) before a drag moves the connected group
     private let holdThreshold: TimeInterval = 0.4
 
     /// Time when current drag's mouseDown was received
     private var holdStartTime: CFTimeInterval?
+
+    /// Window that primed hold timing on mouseDown before drag motion started.
+    private weak var primedDragWindow: NSWindow?
 
     /// Current drag mode, determined on first windowWillMove call
     private var dragMode: DragMode = .pending
@@ -334,6 +343,9 @@ class WindowManager {
     
     /// Track which window is currently being dragged
     private var draggingWindow: NSWindow?
+
+    /// Local monitor used to guarantee drag teardown even when a view misses mouseUp.
+    private var dragMouseUpMonitor: Any?
     
     /// Track if current drag is from title bar (retained for context; does not gate separation logic)
     private var isTitleBarDrag = false
@@ -370,6 +382,9 @@ class WindowManager {
 
     /// Windows that were attached as children for coordinated minimize (for restore)
     private var coordinatedMiniaturizedWindows: [NSWindow] = []
+
+    /// Windows currently in miniaturize animation; suppress drag/group movement for these.
+    private var miniaturizingWindowIds = Set<ObjectIdentifier>()
     
     // MARK: - Initialization
     
@@ -388,6 +403,18 @@ class WindowManager {
             name: NSWindow.willCloseNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowWillMiniaturize(_:)),
+            name: NSWindow.willMiniaturizeNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowDidMiniaturize(_:)),
+            name: NSWindow.didMiniaturizeNotification,
+            object: nil
+        )
     }
     
     /// Register default preference values
@@ -395,6 +422,7 @@ class WindowManager {
         UserDefaults.standard.register(defaults: [
             "timeDisplayMode": TimeDisplayMode.elapsed.rawValue,
             "isAlwaysOnTop": false,
+            "isWindowLayoutLocked": false,
             "hideTitleBars": true,
             "waveformShowCuePoints": false,
             "waveformHideTooltip": false
@@ -412,6 +440,13 @@ class WindowManager {
         let savedAlwaysOnTop = UserDefaults.standard.bool(forKey: "isAlwaysOnTop")
         isAlwaysOnTop = savedAlwaysOnTop
         NSLog("WindowManager: Loaded isAlwaysOnTop = %d from UserDefaults", savedAlwaysOnTop ? 1 : 0)
+        let savedWindowLayoutLocked = UserDefaults.standard.bool(forKey: "isWindowLayoutLocked")
+        isWindowLayoutLocked = savedWindowLayoutLocked
+        NSLog("WindowManager: Loaded isWindowLayoutLocked = %d from UserDefaults", savedWindowLayoutLocked ? 1 : 0)
+    }
+
+    func toggleWindowLayoutLock() {
+        isWindowLayoutLocked.toggle()
     }
     
     // MARK: - Window Management
@@ -458,8 +493,14 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 playlistWindow.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .playlist), display: true)
             } else {
-                if isNewWindow {
+                // By design: always reset to default when showing without a saved frame.
+                // This keeps the window snapped below main whenever the user opens it fresh,
+                // even if it was previously resized. Stretch state is intentionally not persisted
+                // across hide/show toggles.
+                if isModernUIEnabled {
                     applyDefaultCenterStackFrameForCurrentHT(playlistWindow, kind: .playlist)
+                } else {
+                    (playlistWindowController as? PlaylistWindowController)?.resetToDefaultFrame()
                 }
                 positionSubWindow(playlistWindow)
             }
@@ -683,12 +724,15 @@ class WindowManager {
                 let stackHasMultipleWindows = stackBounds.height > mainActualHeight + 1
                 // Scale width for double-size mode
                 let sideWidth = window.frame.width * (isModernUIEnabled ? ModernSkinElements.sizeMultiplier : 1.0)
-                
+                // Use full cluster bounds for X so we don't open on top of side-docked windows
+                let clusterBounds = windowClusterBounds(excluding: window)
+                let rightEdgeX = clusterBounds != .zero ? clusterBounds.maxX : (mainWindow?.frame.maxX ?? 0)
+
                 if stackBounds != .zero && stackHasMultipleWindows {
                     // Match stack height when multiple windows are stacked
                     // No adjustWindowForHiddenTitleBars needed - stack height already accounts for it
                     let newFrame = NSRect(
-                        x: stackBounds.maxX,
+                        x: rightEdgeX,
                         y: stackBounds.minY,
                         width: sideWidth,
                         height: stackBounds.height
@@ -699,7 +743,7 @@ class WindowManager {
                     let mainFrame = mainWindow.frame
                     let defaultHeight = defaultSideWindowHeight(mainFrame: mainFrame)
                     let newFrame = NSRect(
-                        x: mainFrame.maxX,
+                        x: rightEdgeX,
                         y: mainFrame.maxY - defaultHeight,
                         width: sideWidth,
                         height: defaultHeight
@@ -1247,11 +1291,15 @@ class WindowManager {
                 let mainWindow = mainWindowController?.window
                 let mainActualHeight = mainWindow?.frame.height ?? 0
                 let stackHasMultipleWindows = stackBounds.height > mainActualHeight + 1
+                // Use full cluster bounds for X so we don't open on top of side-docked windows
+                let clusterBounds = windowClusterBounds(excluding: window)
+                let leftEdgeX = clusterBounds != .zero ? clusterBounds.minX : (mainWindow?.frame.minX ?? 0)
+
                 if stackBounds != .zero && stackHasMultipleWindows {
                     // Match stack height when multiple windows are stacked
                     // No adjustWindowForHiddenTitleBars needed - stack height already accounts for it
                     let newFrame = NSRect(
-                        x: stackBounds.minX - window.frame.width,
+                        x: leftEdgeX - window.frame.width,
                         y: stackBounds.minY,
                         width: window.frame.width,
                         height: stackBounds.height
@@ -1262,7 +1310,7 @@ class WindowManager {
                     let mainFrame = mainWindow.frame
                     let defaultHeight = defaultSideWindowHeight(mainFrame: mainFrame)
                     let newFrame = NSRect(
-                        x: mainFrame.minX - window.frame.width,
+                        x: leftEdgeX - window.frame.width,
                         y: mainFrame.maxY - defaultHeight,
                         width: window.frame.width,
                         height: defaultHeight
@@ -1323,8 +1371,12 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .spectrum), display: true)
             } else {
-                if isNewWindow {
+                // By design: always reset to default when showing without a saved frame.
+                // Same rationale as showPlaylist — stretch state is not persisted across toggles.
+                if isModernUIEnabled {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .spectrum)
+                } else {
+                    (spectrumWindowController as? SpectrumWindowController)?.resetToDefaultFrame()
                 }
                 positionSubWindow(window)
             }
@@ -1379,14 +1431,21 @@ class WindowManager {
         }
 
         if let window = waveformWindowController?.window {
+            let classicController = waveformWindowController as? WaveformWindowController
             applyCenterStackSizingConstraints(window, kind: .waveform)
             if let frame = restoredFrame, frame != .zero {
+                classicController?.clearPendingFrameReset()
                 window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .waveform), display: true)
             } else {
                 if isModernUIEnabled {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .waveform)
                 } else {
-                    (waveformWindowController as? WaveformWindowController)?.resetToDefaultFrame()
+                    // Classic waveform should only reset after explicit close + reopen.
+                    // orderOut/show cycles and unrelated layout changes must preserve user size.
+                    let shouldResetClassicFrame = classicController?.consumeShouldResetFrameOnNextShow() ?? isNewWindow
+                    if shouldResetClassicFrame {
+                        classicController?.resetToDefaultFrame()
+                    }
                 }
                 positionSubWindow(window)
             }
@@ -1787,10 +1846,8 @@ class WindowManager {
         // For classic UI, sizes are base sizes that need explicit * scale.
         let mainTargetSize: NSSize
         if runningModernMode {
-            let fullHeight = ModernSkinElements.baseMainSize.height * ModernSkinElements.scaleFactor
-            let compactHeight = (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
-            let targetHeight = hideTitleBars ? compactHeight : fullHeight
-            mainTargetSize = NSSize(width: ModernSkinElements.mainWindowSize.width, height: targetHeight)
+            mainTargetSize = NSSize(width: ModernSkinElements.mainWindowSize.width,
+                                    height: fullMainHeightForCurrentScale())
         } else {
             mainTargetSize = NSSize(width: Skin.mainWindowSize.width * scale,
                                     height: Skin.mainWindowSize.height * scale)
@@ -1848,55 +1905,61 @@ class WindowManager {
             let minHeight = runningModernMode
                 ? expectedMainHeightForCurrentHT(mainWindowController?.window)
                 : baseMinSize.height * scale
-
-            let targetWidth = mainFrame.width
-            playlistWindow.minSize = NSSize(width: targetWidth, height: minHeight)
-            playlistWindow.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
+            let minWidth = runningModernMode
+                ? ModernSkinElements.playlistMinSize.width
+                : baseMinSize.width * scale
+            playlistWindow.minSize = NSSize(width: minWidth, height: minHeight)
+            playlistWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             // Scale height proportionally
             let currentFrame = playlistWindow.frame
-            let heightScaleMultiplier: CGFloat = runningModernMode
-                ? (isDoubleSize ? 2.0 : 0.5)
-                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
 
             if playlistWindow.isVisible {
                 let playlistFrame = NSRect(
                     x: mainFrame.minX,
                     y: nextY - newHeight,
-                    width: targetWidth,
+                    width: newWidth,
                     height: newHeight
                 )
                 playlistWindow.setFrame(playlistFrame, display: true, animate: false)
                 nextY = playlistFrame.minY
             } else {
-                playlistWindow.setContentSize(NSSize(width: targetWidth, height: newHeight))
+                playlistWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
             }
         }
         
         // Spectrum window - position below playlist (or previous window)
         if let spectrumWindow = spectrumWindowController?.window {
-            let spectrumTargetSize: NSSize
-            if runningModernMode {
-                spectrumTargetSize = NSSize(width: mainFrame.width, height: expectedMainHeightForCurrentHT(mainWindowController?.window))
-            } else {
-                spectrumTargetSize = NSSize(width: Skin.mainWindowSize.width * scale,
-                                            height: Skin.mainWindowSize.height * scale)
-            }
-            let spectrumAdjustedSize = spectrumTargetSize
-            spectrumWindow.minSize = spectrumAdjustedSize
-            spectrumWindow.maxSize = spectrumAdjustedSize
+            let baseMinSize: NSSize = runningModernMode ? ModernSkinElements.spectrumMinSize : SkinElements.SpectrumWindow.minSize
+            let minHeight = runningModernMode
+                ? expectedMainHeightForCurrentHT(mainWindowController?.window)
+                : baseMinSize.height * scale
+            let minWidth = runningModernMode
+                ? ModernSkinElements.spectrumMinSize.width
+                : baseMinSize.width * scale
+            spectrumWindow.minSize = NSSize(width: minWidth, height: minHeight)
+            spectrumWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+            let currentFrame = spectrumWindow.frame
+            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
+            let newWidth = max(minWidth, currentFrame.width * widthScaleMultiplier)
             if spectrumWindow.isVisible {
                 let spectrumFrame = NSRect(
                     x: mainFrame.minX,
-                    y: nextY - spectrumAdjustedSize.height,
-                    width: spectrumAdjustedSize.width,
-                    height: spectrumAdjustedSize.height
+                    y: nextY - newHeight,
+                    width: newWidth,
+                    height: newHeight
                 )
                 spectrumWindow.setFrame(spectrumFrame, display: true, animate: false)
                 nextY = spectrumFrame.minY
             } else {
-                spectrumWindow.setContentSize(spectrumAdjustedSize)
+                spectrumWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
             }
         }
 
@@ -1914,23 +1977,24 @@ class WindowManager {
             waveformWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
             let currentFrame = waveformWindow.frame
-            let heightScaleMultiplier: CGFloat = runningModernMode
-                ? (isDoubleSize ? 2.0 : 0.5)
-                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let heightScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newHeight = max(minHeight, currentFrame.height * heightScaleMultiplier)
-            let currentWidth = currentFrame.width
+            // Waveform width should transition with Large UI in both modes so toggling off
+            // reliably returns to the prior 1x geometry.
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
+            let newWidth = max(skinMinWidth, currentFrame.width * widthScaleMultiplier)
 
             if waveformWindow.isVisible {
                 let waveformFrame = NSRect(
                     x: mainFrame.minX,
                     y: nextY - newHeight,
-                    width: currentWidth,
+                    width: newWidth,
                     height: newHeight
                 )
                 waveformWindow.setFrame(waveformFrame, display: true, animate: false)
                 nextY = waveformFrame.minY
             } else {
-                waveformWindow.setContentSize(NSSize(width: currentWidth, height: newHeight))
+                waveformWindow.setContentSize(NSSize(width: newWidth, height: newHeight))
             }
         }
         
@@ -1939,9 +2003,7 @@ class WindowManager {
         let stackHeight = stackTopY - nextY
         
         if let plexWindow = plexBrowserWindowController?.window, plexWindow.isVisible {
-            let widthScaleMultiplier: CGFloat = runningModernMode
-                ? (isDoubleSize ? 2.0 : 0.5)
-                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newWidth = plexWindow.frame.width * widthScaleMultiplier
             let plexFrame = NSRect(
                 x: mainFrame.maxX,
@@ -1953,9 +2015,7 @@ class WindowManager {
         }
 
         if let projectMWindow = projectMWindowController?.window, projectMWindow.isVisible {
-            let widthScaleMultiplier: CGFloat = runningModernMode
-                ? (isDoubleSize ? 2.0 : 0.5)
-                : (isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier)
+            let widthScaleMultiplier: CGFloat = isDoubleSize ? classicScaleMultiplier : classicInverseScaleMultiplier
             let newWidth = projectMWindow.frame.width * widthScaleMultiplier
             let projectMFrame = NSRect(
                 x: mainFrame.minX - (projectMWindow.frame.width * widthScaleMultiplier),
@@ -1989,11 +2049,11 @@ class WindowManager {
         window.level = isAlwaysOnTop ? .floating : .normal
     }
     
-    /// Bring all visible app windows to front (called when any app window gets focus)
-    func bringAllWindowsToFront() {
-        // Order all visible windows to front without making them key
-        // Center-stack windows first, side/overlay windows last so they end up on top
-        // when overlapping the center stack (library browser and projectM can be dragged to overlay)
+    /// Bring all visible app windows to front (called when any app window gets focus).
+    /// If possible, keep the active window on top so detached-window overlap feels consistent.
+    func bringAllWindowsToFront(keepingWindowOnTop preferredTopWindow: NSWindow? = nil) {
+        // Order all visible windows to front without making them key.
+        // Keep a predictable base order, then re-raise the active window at the end.
         let windows: [NSWindow?] = [
             mainWindowController?.window,
             equalizerWindowController?.window,
@@ -2004,39 +2064,74 @@ class WindowManager {
             projectMWindowController?.window,
             plexBrowserWindowController?.window
         ]
-        
+
+        let topWindow = preferredTopWindow ?? NSApp.keyWindow
+
         for window in windows {
-            if let window = window, window.isVisible {
+            if let window = window, window.isVisible, window !== topWindow {
                 window.orderFront(nil)
             }
         }
+
+        if let topWindow = topWindow, topWindow.isVisible {
+            topWindow.orderFront(nil)
+        }
     }
     
-    /// Calculate the bounding box of the vertical window stack (main + EQ + playlist + spectrum + waveform)
-    /// Returns the combined bounds of all visible windows in the vertical stack
+    /// Find visible center-stack windows that are docked below the main window
+    /// (directly or transitively), using the current dock threshold.
+    private func dockedCenterStackWindowsBelowMain(mainFrame: NSRect) -> [NSWindow] {
+        let subWindows = [equalizerWindowController?.window,
+                          playlistWindowController?.window,
+                          spectrumWindowController?.window,
+                          waveformWindowController?.window].compactMap { $0 }
+        var docked: [NSWindow] = []
+        var frontier: [NSRect] = [mainFrame]
+
+        while !frontier.isEmpty {
+            let referenceFrame = frontier.removeFirst()
+            for win in subWindows {
+                guard win.isVisible, !docked.contains(win) else { continue }
+                let vertGap = abs(win.frame.maxY - referenceFrame.minY)
+                let horizOverlap = win.frame.minX < referenceFrame.maxX && win.frame.maxX > referenceFrame.minX
+                if vertGap <= dockThreshold && horizOverlap {
+                    docked.append(win)
+                    frontier.append(win.frame)
+                }
+            }
+        }
+
+        return docked
+    }
+
+    /// Calculate the bounding box of the docked vertical center stack
+    /// (main + only windows docked below main).
     private func verticalStackBounds() -> NSRect {
         guard let mainFrame = mainWindowController?.window?.frame else { return .zero }
-        
+
         let topY = mainFrame.maxY
         var bottomY = mainFrame.minY
         let x = mainFrame.minX
         let width = mainFrame.width
-        
-        // Check each window in the stack and expand bounds
-        if let eqWindow = equalizerWindowController?.window, eqWindow.isVisible {
-            bottomY = min(bottomY, eqWindow.frame.minY)
+
+        // Only include center windows that are currently docked below main.
+        for dockedWindow in dockedCenterStackWindowsBelowMain(mainFrame: mainFrame) {
+            bottomY = min(bottomY, dockedWindow.frame.minY)
         }
-        if let playlistWindow = playlistWindowController?.window, playlistWindow.isVisible {
-            bottomY = min(bottomY, playlistWindow.frame.minY)
-        }
-        if let spectrumWindow = spectrumWindowController?.window, spectrumWindow.isVisible {
-            bottomY = min(bottomY, spectrumWindow.frame.minY)
-        }
-        if let waveformWindow = waveformWindowController?.window, waveformWindow.isVisible {
-            bottomY = min(bottomY, waveformWindow.frame.minY)
-        }
-        
+
         return NSRect(x: x, y: round(bottomY), width: width, height: round(topY) - round(bottomY))
+    }
+
+    /// Calculate the bounding box of the full cluster of windows docked to main
+    /// (all directions), optionally excluding the window being positioned.
+    private func windowClusterBounds(excluding excludedWindow: NSWindow? = nil) -> NSRect {
+        guard let mainWindow = mainWindowController?.window else { return .zero }
+        var bounds = mainWindow.frame
+        for win in findDockedWindows(to: mainWindow) {
+            guard win !== excludedWindow else { continue }
+            bounds = bounds.union(win.frame)
+        }
+        return bounds
     }
 
     private enum CenterStackWindowKind {
@@ -2058,10 +2153,6 @@ class WindowManager {
         ModernSkinElements.baseMainSize.height * ModernSkinElements.scaleFactor
     }
 
-    private func compactMainHeightForCurrentScale() -> CGFloat {
-        (ModernSkinElements.baseMainSize.height - ModernSkinElements.titleBarBaseHeight) * ModernSkinElements.scaleFactor
-    }
-
     private func targetCenterStackHeight(for kind: CenterStackWindowKind,
                                          currentHeight: CGFloat,
                                          titleBarDelta: CGFloat,
@@ -2078,12 +2169,15 @@ class WindowManager {
         let targetWidth = mainWindow.frame.width
         let targetHeight = expectedMainHeightForCurrentHT(mainWindow)
         switch kind {
-        case .equalizer, .spectrum:
+        case .equalizer:
             window.minSize = NSSize(width: targetWidth, height: targetHeight)
             window.maxSize = NSSize(width: targetWidth, height: targetHeight)
+        case .spectrum:
+            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         case .playlist:
-            window.minSize = NSSize(width: targetWidth, height: targetHeight)
-            window.maxSize = NSSize(width: targetWidth, height: CGFloat.greatestFiniteMagnitude)
+            window.minSize = NSSize(width: ModernSkinElements.playlistMinSize.width, height: targetHeight)
+            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         case .waveform:
             window.minSize = NSSize(width: ModernSkinElements.waveformMinSize.width, height: targetHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -2118,32 +2212,21 @@ class WindowManager {
         case .equalizer, .spectrum:
             normalized.size.height = target
         case .playlist, .waveform:
-            let full = fullMainHeightForCurrentScale()
-            let compact = compactMainHeightForCurrentScale()
-            let tol: CGFloat = 1
-            if hideTitleBars && abs(normalized.height - full) <= tol {
-                normalized.size.height = compact
-            } else if !hideTitleBars && abs(normalized.height - compact) <= tol {
-                normalized.size.height = full
-            } else {
-                normalized.size.height = max(target, normalized.height)
-            }
+            // Accept legacy compact saved frames but normalize to current full-height minimum.
+            normalized.size.height = max(target, normalized.height)
         }
         normalized.origin.y = topY - normalized.size.height
         return normalized
     }
 
-    /// Expected main-window frame height for the current HT setting.
-    /// For modern UI this is schema-driven and not inferred from potentially stale frame geometry.
+    /// Baseline center-stack height in modern UI.
     private func expectedMainHeightForCurrentHT(_ mainWindow: NSWindow?) -> CGFloat {
         guard isRunningModernUI else { return mainWindow?.frame.height ?? 0 }
-        let full = fullMainHeightForCurrentScale()
-        let compact = compactMainHeightForCurrentScale()
-        return hideTitleBars ? compact : full
+        return fullMainHeightForCurrentScale()
     }
 
     /// Default side-window height when only the main window is visible.
-    /// Must track HT compact/full main height in modern UI.
+    /// Uses the center-stack baseline height in modern UI.
     private func defaultSideWindowHeight(mainFrame: NSRect) -> CGFloat {
         guard isRunningModernUI else { return mainFrame.height * 4 }
         return expectedMainHeightForCurrentHT(mainWindowController?.window) * 4
@@ -2344,10 +2427,29 @@ class WindowManager {
     static func determineDragMode(
         holdStart: CFTimeInterval?,
         currentTime: CFTimeInterval,
-        threshold: TimeInterval
+        threshold: TimeInterval,
+        isWindowLayoutLocked: Bool = false
     ) -> DragMode {
+        if isWindowLayoutLocked { return .group }
         guard let start = holdStart else { return .group }
         return (currentTime - start) < threshold ? .separate : .group
+    }
+
+    /// Decide whether a move callback should be treated as an active user drag.
+    /// Programmatic moves (startup restore, snapping, frame repair) must not arm drag state.
+    static func shouldTreatMoveAsDrag(
+        holdPrimed: Bool,
+        pressedMouseButtons: Int,
+        currentEventType: NSEvent.EventType?
+    ) -> Bool {
+        if holdPrimed { return true }
+        if (pressedMouseButtons & 0x1) != 0 { return true } // Left mouse button.
+        switch currentEventType {
+        case .leftMouseDown, .leftMouseDragged:
+            return true
+        default:
+            return false
+        }
     }
 
     /// Called when a window drag begins
@@ -2355,9 +2457,14 @@ class WindowManager {
     ///   - window: The window being dragged
     ///   - fromTitleBar: Whether the drag originated from the title bar (recorded for reference)
     func windowWillStartDragging(_ window: NSWindow, fromTitleBar: Bool = false) {
+        let usingPrimedHold = (primedDragWindow === window && holdStartTime != nil)
         draggingWindow = window
         isTitleBarDrag = fromTitleBar
-        holdStartTime = CACurrentMediaTime()
+        installDragMouseUpMonitorIfNeeded()
+        if !usingPrimedHold {
+            holdStartTime = CACurrentMediaTime()
+        }
+        primedDragWindow = nil
         dragMode = .pending
 
         // Find all windows that are docked to this window
@@ -2376,12 +2483,33 @@ class WindowManager {
             dockedWindowOriginalOrigins[ObjectIdentifier(dockedWindow)] = dockedWindow.frame.origin
         }
 
-        // Highlight connected peers so user can see which windows would move together
+        // Highlight connected peers and dragged window so user can see full moving set
         if !dockedWindowsToMove.isEmpty {
-            postConnectedWindowHighlight(Set(dockedWindowsToMove))
+            var highlightSet = Set(dockedWindowsToMove)
+            highlightSet.insert(window)
+            postConnectedWindowHighlight(highlightSet)
             highlightWasPosted = true
         }
         NotificationCenter.default.post(name: .windowDragDidBegin, object: nil)
+    }
+
+    /// Prime hold timing at mouseDown without starting drag movement yet.
+    /// Used by views that begin movement on first mouseDragged (e.g. HT on in library view).
+    func windowWillPrimeDragging(_ window: NSWindow) {
+        guard draggingWindow == nil else { return }
+        installDragMouseUpMonitorIfNeeded()
+        primedDragWindow = window
+        holdStartTime = CACurrentMediaTime()
+        dragMode = .pending
+    }
+
+    /// Cancel a primed hold when mouseUp occurs without an actual window drag.
+    func windowDidCancelDragPrime(_ window: NSWindow) {
+        guard draggingWindow == nil, primedDragWindow === window else { return }
+        primedDragWindow = nil
+        holdStartTime = nil
+        dragMode = .pending
+        removeDragMouseUpMonitor()
     }
     
     @objc private func handleWindowWillClose(_ notification: Notification) {
@@ -2390,9 +2518,35 @@ class WindowManager {
         windowDidFinishDragging(closingWindow)
     }
 
+    @objc private func handleWindowWillMiniaturize(_ notification: Notification) {
+        guard let miniaturizingWindow = notification.object as? NSWindow else { return }
+        miniaturizingWindowIds.insert(ObjectIdentifier(miniaturizingWindow))
+
+        // Minimize should never leave drag/group state armed.
+        if draggingWindow === miniaturizingWindow {
+            windowDidFinishDragging(miniaturizingWindow)
+        } else if primedDragWindow === miniaturizingWindow {
+            primedDragWindow = nil
+            holdStartTime = nil
+            dragMode = .pending
+            if highlightWasPosted {
+                postConnectedWindowHighlight([])
+                highlightWasPosted = false
+            }
+        }
+    }
+
+    @objc private func handleWindowDidMiniaturize(_ notification: Notification) {
+        guard let miniaturizedWindow = notification.object as? NSWindow else { return }
+        miniaturizingWindowIds.remove(ObjectIdentifier(miniaturizedWindow))
+    }
+
     /// Called when a window drag ends
     func windowDidFinishDragging(_ window: NSWindow) {
+        guard draggingWindow === window else { return }
         draggingWindow = nil
+        removeDragMouseUpMonitor()
+        primedDragWindow = nil
         dockedWindowsToMove.removeAll()
         dockedWindowOffsets.removeAll()
         dockedWindowOriginalOrigins.removeAll()
@@ -2407,20 +2561,74 @@ class WindowManager {
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }
+
+    private func installDragMouseUpMonitorIfNeeded() {
+        guard dragMouseUpMonitor == nil else { return }
+        dragMouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
+            guard let self else { return event }
+            if let dragging = self.draggingWindow {
+                self.windowDidFinishDragging(dragging)
+            } else if let primed = self.primedDragWindow {
+                self.windowDidCancelDragPrime(primed)
+            }
+            return event
+        }
+    }
+
+    private func removeDragMouseUpMonitor() {
+        guard let monitor = dragMouseUpMonitor else { return }
+        NSEvent.removeMonitor(monitor)
+        dragMouseUpMonitor = nil
+    }
     
     /// Safely apply snapped position to a window without triggering feedback loop
     func applySnappedPosition(_ window: NSWindow, to position: NSPoint) {
+        // Re-entrant move callbacks can arrive synchronously while setFrameOrigin is in flight.
+        // Ignore them so we don't recursively set the same frame until the stack overflows.
+        guard !isSnappingWindow else { return }
         guard position != window.frame.origin else { return }
+        let previousSnappingState = isSnappingWindow
         isSnappingWindow = true
+        defer { isSnappingWindow = previousSnappingState }
         window.setFrameOrigin(position)
-        isSnappingWindow = false
     }
     
     /// Called when a window is being dragged - handle snapping and move docked windows
     func windowWillMove(_ window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
-        // Ignore if we're already in the middle of snapping (prevents feedback loop)
+        // Programmatic frame changes should never re-enter snap logic.
         if isSnappingWindow {
             return newOrigin
+        }
+
+        // Intercept minimize button/animation movement from drag-group logic.
+        if miniaturizingWindowIds.contains(ObjectIdentifier(window)) {
+            return newOrigin
+        }
+
+        let holdPrimedForWindow = (primedDragWindow === window && holdStartTime != nil)
+        let treatAsDrag = WindowManager.shouldTreatMoveAsDrag(
+            holdPrimed: holdPrimedForWindow,
+            pressedMouseButtons: Int(NSEvent.pressedMouseButtons),
+            currentEventType: NSApp.currentEvent?.type
+        )
+
+        // Ignore non-drag moves for drag-state purposes (e.g. startup/applyFrame).
+        // Also clear stale primed/highlight state if a no-button move arrives.
+        if !treatAsDrag {
+            if draggingWindow === window {
+                windowDidFinishDragging(window)
+            } else {
+                if holdPrimedForWindow {
+                    primedDragWindow = nil
+                    holdStartTime = nil
+                    dragMode = .pending
+                }
+                if highlightWasPosted {
+                    postConnectedWindowHighlight([])
+                    highlightWasPosted = false
+                }
+            }
+            return applySnapping(for: window, to: newOrigin)
         }
         
         // Ignore all window movement while we're programmatically repositioning docked windows.
@@ -2438,12 +2646,22 @@ class WindowManager {
             return newOrigin
         }
 
+        // If this move callback is for a peer in the active drag group, ignore it.
+        // Peers can report late/asynchronous move notifications during fast group drags.
+        if let dragging = draggingWindow, dragging !== window,
+           dockedWindowsToMove.contains(where: { $0 === window }) {
+            return newOrigin
+        }
+
         // If this is a new drag, find docked windows
         if draggingWindow !== window {
+            let hadPrimedHold = (primedDragWindow === window && holdStartTime != nil)
             windowWillStartDragging(window)
             // windowWillStartDragging sets holdStartTime to now, so determineDragMode would see
             // elapsed ≈ 0 → .separate. Override to .group: mid-flight drag is always group move.
-            dragMode = .group
+            if !hadPrimedHold {
+                dragMode = .group
+            }
         }
 
         // NEW — determine mode on first drag movement
@@ -2451,7 +2669,8 @@ class WindowManager {
             let mode = WindowManager.determineDragMode(
                 holdStart: holdStartTime,
                 currentTime: CACurrentMediaTime(),
-                threshold: holdThreshold
+                threshold: holdThreshold,
+                isWindowLayoutLocked: isWindowLayoutLocked
             )
             dragMode = mode
             if mode == .separate {
@@ -2481,10 +2700,18 @@ class WindowManager {
         // synchronously when the parent's setFrameOrigin is called, which keeps them
         // in the same display frame as the parent and prevents visual tearing.
         if !dockedWindowsToMove.isEmpty {
-            let childWindowIds = Set(window.childWindows?.map { ObjectIdentifier($0) } ?? [])
+            var autoMovedChildWindowIds = Set(window.childWindows?.map { ObjectIdentifier($0) } ?? [])
+            // Any parent window moved in this tick will bring its child windows along automatically.
+            // Skip explicit repositioning for those children to avoid duplicate moves and transient gaps.
+            for parent in dockedWindowsToMove {
+                for child in parent.childWindows ?? [] {
+                    autoMovedChildWindowIds.insert(ObjectIdentifier(child))
+                }
+            }
+
             isMovingDockedWindows = true
             for dockedWindow in dockedWindowsToMove {
-                guard !childWindowIds.contains(ObjectIdentifier(dockedWindow)) else { continue }
+                guard !autoMovedChildWindowIds.contains(ObjectIdentifier(dockedWindow)) else { continue }
                 if let offset = dockedWindowOffsets[ObjectIdentifier(dockedWindow)] {
                     // Use stored offset from drag start to maintain exact relative position
                     let newDockedOrigin = NSPoint(
@@ -2675,9 +2902,8 @@ class WindowManager {
             }
         }
         
-        // All windows can snap to dockable windows (main, playlist, EQ)
-        // But non-dockable windows don't participate in docking (moving together)
-        let windowsToSnapTo = dockableWindows()
+        // All windows can snap to dockable windows plus the Library browser.
+        let windowsToSnapTo = snapTargetWindows()
         for otherWindow in windowsToSnapTo {
             guard otherWindow != window else { continue }
             // Skip docked windows as they're moving with us
@@ -2796,31 +3022,26 @@ class WindowManager {
     }
     
     /// Find all windows that are docked (touching) the given window
-    /// When dragging a dockable window (main, playlist, EQ), all touching windows move together
-    /// When dragging a non-dockable window (Plex browser), it moves alone
+    /// Any connected group of 2+ eligible windows moves together, regardless of main-window membership.
     func findDockedWindows(to window: NSWindow) -> [NSWindow] {
-        // Non-dockable windows don't drag other windows with them
-        guard isDockableWindow(window) else { return [] }
+        let candidateWindows = groupMovableWindows()
+        guard candidateWindows.contains(where: { $0 === window }) else { return [] }
         
         var dockedWindows: [NSWindow] = []
         var windowsToCheck: [NSWindow] = [window]
         var checkedWindows: Set<ObjectIdentifier> = [ObjectIdentifier(window)]
         
-        // Use BFS to find all transitively docked windows
-        // Include all visible windows so Plex browser moves with the group
+        // Use BFS to find all transitively docked windows among group-movable candidates.
         while !windowsToCheck.isEmpty {
             let currentWindow = windowsToCheck.removeFirst()
             
-            for otherWindow in allWindows() {
+            for otherWindow in candidateWindows {
                 let otherId = ObjectIdentifier(otherWindow)
                 if checkedWindows.contains(otherId) { continue }
                 
                 if areWindowsDocked(currentWindow, otherWindow) {
                     dockedWindows.append(otherWindow)
-                    // Only continue BFS through dockable windows (don't chain through Plex browser)
-                    if isDockableWindow(otherWindow) {
-                        windowsToCheck.append(otherWindow)
-                    }
+                    windowsToCheck.append(otherWindow)
                     checkedWindows.insert(otherId)
                 }
             }
@@ -3092,6 +3313,21 @@ class WindowManager {
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
+
+    /// Get windows that can be used as snapping targets.
+    /// Includes Library browser and ProjectM for side-docking.
+    private func snapTargetWindows() -> [NSWindow] {
+        var windows = dockableWindows()
+        if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = projectMWindowController?.window, w.isVisible { windows.append(w) }
+        return windows
+    }
+
+    /// Get windows that can participate in connected group dragging.
+    /// Grouping is connection-based and does not depend on the main window being part of the group.
+    private func groupMovableWindows() -> [NSWindow] {
+        snapTargetWindows()
+    }
     
     /// Check if a window participates in docking
     private func isDockableWindow(_ window: NSWindow) -> Bool {
@@ -3105,6 +3341,23 @@ class WindowManager {
     /// Get all visible windows
     func visibleWindows() -> [NSWindow] {
         return allWindows()
+    }
+
+    /// Miniaturize all visible, managed player windows.
+    /// Main window is miniaturized first so existing docked-window miniaturize
+    /// coordination remains intact, then any remaining visible windows follow.
+    func miniaturizeAllManagedWindows() {
+        let windowsToMiniaturize = visibleWindows().filter { !$0.isMiniaturized }
+        guard !windowsToMiniaturize.isEmpty else { return }
+
+        let mainWindow = mainWindowController?.window
+        if let mainWindow, windowsToMiniaturize.contains(where: { $0 === mainWindow }) {
+            mainWindow.miniaturize(nil)
+        }
+
+        for window in windowsToMiniaturize where window !== mainWindow {
+            window.miniaturize(nil)
+        }
     }
     
     // MARK: - Coordinated Miniaturize

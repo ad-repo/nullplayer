@@ -44,6 +44,12 @@ class ResizableWindow: NSWindow {
     
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+
+        // Borderless classic windows still need explicit miniaturizable behavior for
+        // custom toolbar/menu minimize actions.
+        if !styleMask.contains(.miniaturizable) {
+            styleMask.insert(.miniaturizable)
+        }
         
         // Enable mouse moved events for cursor updates
         acceptsMouseMovedEvents = true
@@ -115,6 +121,16 @@ class ResizableWindow: NSWindow {
         
         return edges
     }
+
+    /// Classic main window: block edge-resize while docked to any connected window.
+    private func shouldBlockEdgeResize(_ edges: ResizeEdges) -> Bool {
+        guard edges != .none else { return false }
+        let wm = WindowManager.shared
+        guard !wm.isRunningModernUI else { return false }
+        guard self === wm.mainWindowController?.window else { return false }
+        let hasAttachedChildren = !(self.childWindows?.isEmpty ?? true)
+        return hasAttachedChildren || wm.isWindowDocked(self)
+    }
     
     // MARK: - Event Handling
     
@@ -155,6 +171,9 @@ class ResizableWindow: NSWindow {
     private func handleResizeMouseDown(_ event: NSEvent) -> Bool {
         let windowPoint = event.locationInWindow
         let edges = detectEdges(at: windowPoint)
+        if shouldBlockEdgeResize(edges) {
+            return false
+        }
         
         // Double-click on edge restores to default/minimum size
         if event.clickCount == 2 && edges != .none {
@@ -193,6 +212,11 @@ class ResizableWindow: NSWindow {
     private func updateResizeCursor(_ event: NSEvent) {
         let windowPoint = event.locationInWindow
         let edges = detectEdges(at: windowPoint)
+
+        if shouldBlockEdgeResize(edges) {
+            NSCursor.arrow.set()
+            return
+        }
         
         if edges != .none {
             // Show appropriate resize cursor

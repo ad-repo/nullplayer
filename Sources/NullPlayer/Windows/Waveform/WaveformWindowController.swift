@@ -3,6 +3,8 @@ import AppKit
 /// Controller for the standalone waveform window (classic skin).
 class WaveformWindowController: NSWindowController, WaveformWindowProviding {
     private var waveformView: WaveformView!
+    /// Close + reopen should restore the default frame once. `orderOut` hides should not.
+    private var shouldResetFrameOnNextShow = true
 
     private(set) var isShadeMode = false
 
@@ -28,8 +30,7 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
         window.isReleasedWhenClosed = false
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
             let mainFrame = mainWindow.frame
-            let scale = mainFrame.width / Skin.mainWindowSize.width
-            let waveformHeight = SkinElements.WaveformWindow.minSize.height * scale
+            let waveformHeight = SkinElements.WaveformWindow.minSize.height * WindowManager.shared.classicScaleMultiplier
             window.minSize = NSSize(width: SkinElements.WaveformWindow.minSize.width, height: waveformHeight)
             window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
             let newFrame = NSRect(
@@ -83,12 +84,24 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
     func resetToDefaultFrame() {
         guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
         let mainFrame = mainWindow.frame
-        let scale = mainFrame.width / Skin.mainWindowSize.width
-        let waveformHeight = SkinElements.WaveformWindow.minSize.height * scale
+        let waveformHeight = SkinElements.WaveformWindow.minSize.height * WindowManager.shared.classicScaleMultiplier
         window.minSize = NSSize(width: SkinElements.WaveformWindow.minSize.width, height: waveformHeight)
         let newFrame = NSRect(x: mainFrame.minX, y: mainFrame.minY - waveformHeight,
                               width: mainFrame.width, height: waveformHeight)
         window.setFrame(newFrame, display: false)
+    }
+
+    /// Returns whether the next show should reset to the default frame.
+    /// Consumes the pending flag so only the first subsequent show resets.
+    func consumeShouldResetFrameOnNextShow() -> Bool {
+        let shouldReset = shouldResetFrameOnNextShow
+        shouldResetFrameOnNextShow = false
+        return shouldReset
+    }
+
+    /// Clears a pending one-shot reset (used by explicit restored-frame paths).
+    func clearPendingFrameReset() {
+        shouldResetFrameOnNextShow = false
     }
 }
 
@@ -105,13 +118,14 @@ extension WaveformWindowController: NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        shouldResetFrameOnNextShow = true
         stopLoadingForHide()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
         waveformView.needsDisplay = true
-        WindowManager.shared.bringAllWindowsToFront()
+        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
 
     func windowDidResignKey(_ notification: Notification) {

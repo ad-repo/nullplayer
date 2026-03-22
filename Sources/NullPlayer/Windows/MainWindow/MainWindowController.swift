@@ -123,8 +123,8 @@ class MainWindowController: NSWindowController, MainWindowProviding {
             // Store current frame for restoration
             normalModeFrame = window.frame
             
-            // Calculate new shade mode frame (same origin, shorter height)
-            let shadeSize = SkinElements.MainShade.windowSize
+            // Calculate new shade mode frame (preserve current width, shorten height)
+            let shadeSize = NSSize(width: window.frame.width, height: SkinElements.MainShade.windowSize.height)
             let newFrame = NSRect(
                 x: window.frame.origin.x,
                 y: window.frame.origin.y + window.frame.height - shadeSize.height,
@@ -143,11 +143,11 @@ class MainWindowController: NSWindowController, MainWindowProviding {
             if let storedFrame = normalModeFrame {
                 newFrame = storedFrame
             } else {
-                // Calculate frame from current position
+                // Calculate frame from current position, preserving current width
                 newFrame = NSRect(
                     x: window.frame.origin.x,
                     y: window.frame.origin.y + window.frame.height - normalSize.height,
-                    width: normalSize.width,
+                    width: window.frame.width,
                     height: normalSize.height
                 )
             }
@@ -165,6 +165,18 @@ class MainWindowController: NSWindowController, MainWindowProviding {
 // MARK: - NSWindowDelegate
 
 extension MainWindowController: NSWindowDelegate {
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        let wm = WindowManager.shared
+        guard !wm.isRunningModernUI else { return frameSize }
+        guard sender === window else { return frameSize }
+        let hasAttachedChildren = !(sender.childWindows?.isEmpty ?? true)
+        // Classic mode: while connected/docked, main window cannot be edge-resized.
+        if hasAttachedChildren || wm.isWindowDocked(sender) {
+            return sender.frame.size
+        }
+        return frameSize
+    }
+
     func windowWillMove(_ notification: Notification) {
         // Handle window snapping via WindowManager
     }
@@ -187,6 +199,6 @@ extension MainWindowController: NSWindowDelegate {
     
     func windowDidBecomeKey(_ notification: Notification) {
         // Bring all app windows to front when main window gets focus
-        WindowManager.shared.bringAllWindowsToFront()
+        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
 }

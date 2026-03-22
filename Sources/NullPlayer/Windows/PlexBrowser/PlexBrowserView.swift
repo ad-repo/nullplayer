@@ -1363,9 +1363,10 @@ class PlexBrowserView: NSView {
     /// Supports Plex, Subsonic, Jellyfin, Emby, and local file ratings
     private func submitRating(_ rating: Int) {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { return }
+        let normalizedRating = rating > 0 ? min(10, rating) : 0
         
         // Update UI immediately for responsiveness
-        currentTrackRating = rating
+        currentTrackRating = normalizedRating
         needsDisplay = true
         
         // Cancel any pending submission
@@ -1379,29 +1380,35 @@ class PlexBrowserView: NSView {
                 
                 if let ratingKey = currentTrack.plexRatingKey {
                     // Plex: 0-10 scale
-                    try await PlexManager.shared.serverClient?.rateItem(ratingKey: ratingKey, rating: rating)
-                    NSLog("PlexBrowser: Rated track %@ with %d stars", ratingKey, rating / 2)
+                    try await PlexManager.shared.serverClient?.rateItem(
+                        ratingKey: ratingKey,
+                        rating: normalizedRating > 0 ? normalizedRating : nil
+                    )
+                    NSLog("PlexBrowser: Rated track %@ with %d stars", ratingKey, normalizedRating / 2)
                 } else if let subsonicId = currentTrack.subsonicId {
                     // Subsonic: 0-5 scale
-                    let subsonicRating = rating / 2
+                    let subsonicRating = normalizedRating / 2
                     try await SubsonicManager.shared.setRating(songId: subsonicId, rating: subsonicRating)
                     NSLog("PlexBrowser: Rated Subsonic track %@ with %d stars", subsonicId, subsonicRating)
                 } else if let jellyfinId = currentTrack.jellyfinId {
                     // Jellyfin: convert 0-10 to 0-100
-                    let jellyfinRating = rating * 10
+                    let jellyfinRating = normalizedRating * 10
                     try await JellyfinManager.shared.setRating(itemId: jellyfinId, rating: jellyfinRating)
-                    NSLog("PlexBrowser: Rated Jellyfin track %@ with %d stars", jellyfinId, rating / 2)
+                    NSLog("PlexBrowser: Rated Jellyfin track %@ with %d stars", jellyfinId, normalizedRating / 2)
                 } else if let embyId = currentTrack.embyId {
                     // Emby: convert 0-10 to 0-100
-                    let embyRating = rating * 10
+                    let embyRating = normalizedRating * 10
                     try await EmbyManager.shared.setRating(itemId: embyId, rating: embyRating)
-                    NSLog("PlexBrowser: Rated Emby track %@ with %d stars", embyId, rating / 2)
+                    NSLog("PlexBrowser: Rated Emby track %@ with %d stars", embyId, normalizedRating / 2)
                 } else if currentTrack.url.isFileURL {
                     // Local file: 0-10 scale in MediaLibrary
                     await MainActor.run {
                         if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
-                            MediaLibrary.shared.setRating(for: libraryTrack.id, rating: rating > 0 ? rating : nil)
-                            NSLog("PlexBrowser: Rated local track with %d stars", rating / 2)
+                            MediaLibrary.shared.setRating(
+                                for: libraryTrack.id,
+                                rating: normalizedRating > 0 ? normalizedRating : nil
+                            )
+                            NSLog("PlexBrowser: Rated local track with %d stars", normalizedRating / 2)
                         }
                     }
                 }
@@ -5978,6 +5985,8 @@ class PlexBrowserView: NSView {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
             artworkImages = []
             artworkIndex = 0
+            currentArtwork = nil
+            needsDisplay = true
             return
         }
         
@@ -6026,10 +6035,8 @@ class PlexBrowserView: NSView {
             await MainActor.run {
                 self.artworkImages = images
                 self.artworkIndex = 0
-                if let first = images.first {
-                    self.currentArtwork = first
-                    self.needsDisplay = true
-                }
+                self.currentArtwork = images.first
+                self.needsDisplay = true
             }
         }
     }
@@ -11812,21 +11819,26 @@ class PlexBrowserView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
-        // ESC key dismisses rating overlay
-        if isRatingOverlayVisible && event.keyCode == 53 {
-            hideRatingOverlay()
-            return
-        }
-        
-        // Number keys 1-5 set rating when overlay is visible
+        // Rating overlay shortcuts:
+        // - Escape dismisses
+        // - Delete/Backspace clears rating
+        // - Number keys 1-5 set stars
         if isRatingOverlayVisible {
-            let keyCode = event.keyCode
-            // 1-5 keys are keycodes 18-23 (1, 2, 3, 4, 5)
-            if keyCode >= 18 && keyCode <= 22 {
-                let starRating = Int(keyCode - 17)  // 1-5
+            switch event.keyCode {
+            case 53: // Escape
+                hideRatingOverlay()
+                return
+            case 51, 117: // Delete/Backspace or Forward Delete
+                ratingOverlay.setRating(0)
+                submitRating(0)
+                return
+            case 18...22: // 1-5 keys
+                let starRating = Int(event.keyCode - 17)
                 ratingOverlay.setRating(starRating * 2)
                 submitRating(starRating * 2)
                 return
+            default:
+                break
             }
         }
         
@@ -16228,7 +16240,8 @@ class RatingOverlayView: NSView {
         let path = NSBezierPath()
         for i in 0..<10 {
             let radius = i % 2 == 0 ? outerRadius : innerRadius
-            let angle = CGFloat(i) * .pi / 5 - .pi / 2
+            // Start at the top point so stars render upright in AppKit coordinates.
+            let angle = CGFloat(i) * .pi / 5 + .pi / 2
             let point = NSPoint(
                 x: center.x + radius * cos(angle),
                 y: center.y + radius * sin(angle)
@@ -16243,17 +16256,22 @@ class RatingOverlayView: NSView {
         
         // Glass effect colors
         if filled {
-            // Filled star: white with subtle transparency
-            NSColor(white: 1.0, alpha: hovered ? 0.95 : 0.85).setFill()
-            path.fill()
+            // Filled star: warm gold (slightly brighter on hover).
+            (hovered
+                ? NSColor(calibratedRed: 1.00, green: 0.86, blue: 0.28, alpha: 0.98)
+                : NSColor(calibratedRed: 0.98, green: 0.78, blue: 0.20, alpha: 0.92)
+            ).setFill()
         } else {
-            // Empty star: outline only with glass effect
-            NSColor(white: 1.0, alpha: 0.3).setFill()
-            path.fill()
+            // Empty star: dim gold glass fill.
+            NSColor(calibratedRed: 0.75, green: 0.63, blue: 0.30, alpha: 0.22).setFill()
         }
+        path.fill()
         
-        // Subtle outline
-        NSColor(white: 1.0, alpha: 0.5).setStroke()
+        // Gold-tinted outline for both filled and empty states.
+        (filled
+            ? NSColor(calibratedRed: 1.00, green: 0.90, blue: 0.45, alpha: 0.85)
+            : NSColor(calibratedRed: 0.86, green: 0.72, blue: 0.35, alpha: 0.45)
+        ).setStroke()
         path.lineWidth = 1.5
         path.stroke()
     }
@@ -16468,7 +16486,7 @@ private struct BrowserColumn {
     
     /// Columns shown for track lists
     static let trackColumns: [BrowserColumn] = [
-        .trackNumber, .title, .artist, .album, .year, .genre, .duration, .bitrate, .size, .rating, .playCount, .dateAdded, .lastPlayed
+        .trackNumber, .title, .artist, .album, .rating, .year, .genre, .duration, .bitrate, .size, .playCount, .dateAdded, .lastPlayed
     ]
     
     /// Columns shown for album lists  
@@ -16624,8 +16642,7 @@ extension PlexDisplayItem {
         case "size":
             return Self.formatFileSize(song.size)
         case "rating":
-            // Subsonic uses starred (date) as favorite indicator
-            return song.starred != nil ? "★★★★★" : ""
+            return Self.formatRating(song.userRating.map { Double($0 * 2) })
         case "plays":
             return song.playCount.map { String($0) } ?? ""
         case "dateAdded":
@@ -16661,7 +16678,7 @@ extension PlexDisplayItem {
         case "size":
             return Self.formatFileSize(track.fileSize)
         case "rating":
-            return ""  // Local files don't have ratings yet
+            return Self.formatRating(track.rating.map { Double($0) })
         case "plays":
             return track.playCount > 0 ? String(track.playCount) : ""
         case "dateAdded":
@@ -16871,10 +16888,8 @@ extension PlexDisplayItem {
     }
     
     private static func formatRating(_ rating: Double?) -> String {
-        guard let rating = rating, rating > 0 else { return "" }
-        let stars = Int(rating / 2.0)  // Plex uses 0-10 scale, convert to 0-5 stars
-        let empty = 5 - stars
-        return String(repeating: "★", count: stars) + String(repeating: "☆", count: empty)
+        let stars = rating.map { min(5, max(0, Int($0 / 2.0))) } ?? 0
+        return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
     }
 
     private static func formatStarRating(_ rating: Int) -> String {

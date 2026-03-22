@@ -9,20 +9,20 @@
         "primary": "#fffb00",
         "secondary": "#ffd000",
         "accent": "#fff700",
-        "highlight": "#fffed0",
+        "highlight":"#e02256",
         "background": "#fff74d",
         "surface": "#ffe218",
-        "text": "#8a004f",
+        "text": "#e02256",
         "textDim": "#b86a44",
         "positive": "#d3ff2c",
         "negative": "#a74f00",
         "warning": "#ff9400",
-        "border": "#fffcc2",
-        "timeColor": "#b1006b",
+        "border": "#e02256",
+        "timeColor": "#e02256",
         "marqueeColor": "#e02256",
-        "dataColor": "#d12b71",
+        "dataColor": "#e02256",
         "eqLow": "#dcff30",
-        "eqMid": "#fff700",
+        "eqMid": "#e02256",
         "eqHigh": "#ffb300"
     },
     "fonts": {
@@ -35,7 +35,7 @@
         "infoSize": 6.5,
         "eqLabelSize": 7,
         "eqValueSize": 6,
-        "marqueeSize": 11.5,
+        "marqueeSize": 12.5,
         "playlistSize": 8
     },
     "background": {
@@ -61,6 +61,8 @@
         "cornerRadius": 12,
         "opacity": 0.8,
         "textOpacity": 0.9,
+        "spectrumTransparentBackground": false,
+        "waveformWindowOpacity": 0.8,
         "seamlessDocking": 1.0,
         "areaOpacity": {
             "mainWindow": {
@@ -84,7 +86,7 @@
                 "content": 0.95
             },
             "spectrumArea": {
-                "background": 0.9,
+                "background": 0.5,
                 "border": 0.93,
                 "content": 0.95
             },
@@ -129,8 +131,26 @@
         "spectrum_area": {
             "color": "#fff800"
         },
+        "playlist_text": {
+            "color": "#e02256"
+        },
+        "tab_outline": {
+            "color": "#e02256"
+        },
+        "tab_text": {
+            "color": "#e02256"
+        },
+        "minicontrol_buttons": {
+            "color": "#e02256"
+        },
+        "play_controls": {
+            "color": "#e02256"
+        },
         "seek_fill": {
-            "color": "#fff800"
+            "color": "#e02256"
+        },
+        "volume_fill": {
+            "color": "#e02256"
         },
         "info_cast": {
             "color": "#e02256"

@@ -33,6 +33,8 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
             backing: .buffered,
             defer: false
         )
+        window.allowedResizeEdges = [.bottom, .left, .right]
+        window.titleBarHeight = ModernSkinElements.spectrumTitleBarHeight
         
         // Enable fullscreen support
         window.collectionBehavior = [.fullScreenPrimary, .managed]
@@ -235,7 +237,7 @@ extension ModernSpectrumWindowController: NSWindowDelegate {
         spectrumView.needsDisplay = true
         // Don't bring other windows above fullscreen visualization.
         if !isCustomFullscreen {
-            WindowManager.shared.bringAllWindowsToFront()
+            WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
         }
     }
     

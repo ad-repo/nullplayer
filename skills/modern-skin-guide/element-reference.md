@@ -57,6 +57,14 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 | `seek_fill` | 10,36,*,6 | normal | Filled portion |
 | `seek_thumb` | *,34,10,10 | normal, pressed | Seek position thumb |
 
+**Color:** Set `seek_fill.color` in `elements` to control the fill and thumb color. Falls back to `palette.primary`.
+
+```json
+"elements": {
+    "seek_fill": { "color": "#00ffcc" }
+}
+```
+
 ## Transport Buttons
 
 | Element ID | Default Rect | States | Description |
@@ -68,6 +76,15 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 | `btn_next` | 102,8,23,20 | normal, pressed, disabled | Next track |
 | `btn_eject` | 125,8,23,20 | normal, pressed | Open file |
 
+**Color:** Use `play_controls` in `elements` to set one color for all transport button icons. Per-button entries (e.g. `btn_play`) take precedence over `play_controls`. Both fall back to `palette.primary`.
+
+```json
+"elements": {
+    "play_controls": { "color": "#00ffcc" },
+    "btn_eject":     { "color": "#ff00aa" }
+}
+```
+
 ## Toggle Buttons
 
 | Element ID | Default Rect | States | Description |
@@ -77,6 +94,14 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 | `btn_eq` | 154,8,23,12 | off, on, off_pressed, on_pressed | EQ window toggle |
 | `btn_playlist` | 178,8,23,12 | off, on, off_pressed, on_pressed | Playlist toggle |
 
+**Color:** Use `minicontrol_buttons` in `elements` to control the ON state color for all main window toggle buttons. Falls back to `palette.accent`.
+
+```json
+"elements": {
+    "minicontrol_buttons": { "color": "#ff00aa" }
+}
+```
+
 ## Volume
 
 | Element ID | Default Rect | States | Description |
@@ -84,6 +109,15 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 | `volume_track` | 240,8,28,6 | normal | Volume bar track |
 | `volume_fill` | 240,8,*,6 | normal | Filled portion |
 | `volume_thumb` | *,6,8,10 | normal, pressed | Volume thumb |
+
+**Color:** Set `volume_fill.color` in `elements` to control the fill and thumb color independently from the seek bar. Falls back to `seek_fill.color`, then `palette.primary`.
+
+```json
+"elements": {
+    "seek_fill":   { "color": "#00ffcc" },
+    "volume_fill": { "color": "#ff00aa" }
+}
+```
 
 ## Spectrum Window Chrome
 
@@ -103,6 +137,26 @@ Per-window chrome elements (fall back to shared elements if missing):
 | `playlist_btn_shade` | 249,104,10,10 | normal, pressed | Playlist shade button |
 
 The modern playlist has no bottom bar -- all operations via context menu and keyboard shortcuts. Currently playing track rendered in `accent` color.
+
+**Track text colors:**
+- Current track: `palette.accent`
+- Selected track: `palette.text`
+- Normal track: `playlist_text` element (fallback `palette.textDim`)
+
+```json
+"elements": {
+    "playlist_text": { "color": "#00ffcc" }
+}
+```
+
+**Library Browser Tabs:** Use `tab_text` (active label color, fallback `palette.accent`) and `tab_outline` (active border + glow color, fallback `palette.accent`) in `elements`.
+
+```json
+"elements": {
+    "tab_text":    { "color": "#00ffcc" },
+    "tab_outline": { "color": "#00ffcc" }
+}
+```
 
 ## EQ Window Chrome
 

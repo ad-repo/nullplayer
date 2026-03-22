@@ -95,8 +95,7 @@ class ModernWaveformView: BaseWaveformView {
         wantsLayer = true
         layer?.isOpaque = false
         startAppearanceObservation()
-        let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
-        renderer = ModernSkinRenderer(skin: skin)
+        refreshRenderer()
 
         NotificationCenter.default.addObserver(self, selector: #selector(modernSkinDidChange),
                                                name: ModernSkinEngine.skinDidChangeNotification, object: nil)
@@ -114,8 +113,7 @@ class ModernWaveformView: BaseWaveformView {
     }
 
     func skinDidChange() {
-        let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
-        renderer = ModernSkinRenderer(skin: skin)
+        refreshRenderer()
         updateCornerMask()
         needsDisplay = true
     }
@@ -125,6 +123,9 @@ class ModernWaveformView: BaseWaveformView {
     }
 
     @objc private func doubleSizeChanged() {
+        if let borderless = window as? BorderlessWindow {
+            borderless.titleBarHeight = ModernSkinElements.waveformTitleBarHeight
+        }
         skinDidChange()
     }
 
@@ -174,8 +175,10 @@ class ModernWaveformView: BaseWaveformView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        refreshRendererIfScaleChanged()
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners,
+                                      backgroundOpacity: renderer.skin.waveformWindowBackgroundOpacity)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
 
         if !WindowManager.shared.effectiveHideTitleBars(for: window) {
@@ -194,6 +197,16 @@ class ModernWaveformView: BaseWaveformView {
             NSColor.white.withAlphaComponent(0.15).setFill()
             bounds.fill()
         }
+    }
+
+    private func refreshRenderer() {
+        let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
+        renderer = ModernSkinRenderer(skin: skin)
+    }
+
+    private func refreshRendererIfScaleChanged() {
+        guard renderer.scaleFactor != ModernSkinElements.scaleFactor else { return }
+        refreshRenderer()
     }
 
     override func mouseDown(with event: NSEvent) {

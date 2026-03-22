@@ -29,8 +29,8 @@ class ModernPlaylistWindowController: NSWindowController, PlaylistWindowProvidin
             defer: false
         )
         
-        // Enable bottom-edge vertical resizing
-        window.allowedResizeEdges = [.bottom]
+        // Enable vertical + horizontal stretching.
+        window.allowedResizeEdges = [.bottom, .left, .right]
         
         self.init(window: window)
         
@@ -54,9 +54,8 @@ class ModernPlaylistWindowController: NSWindowController, PlaylistWindowProvidin
         // Prevent window from being released when closed - we reuse the same controller
         window.isReleasedWhenClosed = false
         
-        // Width locked, height expandable
         window.minSize = NSSize(width: windowSize.width, height: windowSize.height)
-        window.maxSize = NSSize(width: windowSize.width, height: CGFloat.greatestFiniteMagnitude)
+        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         
         // Initial center position - will be repositioned by WindowManager
         window.center()
@@ -153,7 +152,7 @@ extension ModernPlaylistWindowController: NSWindowDelegate {
     
     func windowDidBecomeKey(_ notification: Notification) {
         playlistView.needsDisplay = true
-        WindowManager.shared.bringAllWindowsToFront()
+        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
     
     func windowDidResignKey(_ notification: Notification) {

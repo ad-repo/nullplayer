@@ -1,6 +1,6 @@
 # Advanced Modern Skin Features
 
-This document covers advanced topics: title text system, animations, Double Size mode, and adding new sub-windows.
+This document covers advanced topics: title text system, animations, Large UI mode, and adding new sub-windows.
 
 ## Title Text System
 
@@ -382,9 +382,35 @@ Modern skins also support an independent opacity override for the main window's 
 }
 ```
 
-## Double Size (2x) Mode
+## Spectrum and Waveform Window Transparency
 
-Toggle via the **2X** button on the main window or right-click context menu → **Double Size** (available in both modern and classic UI). Doubles all window dimensions and rendering scale.
+### Spectrum Window (`window.spectrumTransparentBackground`)
+
+Boolean toggle — when `true`, the vis_classic visualization renders with a transparent background (matching the in-app Transparent Background toggle). The window chrome continues to use `window.opacity` as normal. When `false` or omitted, the visualization uses its default opaque background.
+
+`visualization.visClassic.spectrumWindowTransparentBackground` overrides this if both are set.
+
+```json
+"window": {
+    "opacity": 0.85,
+    "spectrumTransparentBackground": true
+}
+```
+
+### Waveform Window (`window.waveformWindowOpacity`)
+
+Float `0.0...1.0` opacity override for the waveform window background. Falls back to `window.opacity` when omitted.
+
+```json
+"window": {
+    "opacity": 0.85,
+    "waveformWindowOpacity": 0.5
+}
+```
+
+## Large UI (1.5x) Mode
+
+UI label is **Large UI**. Toggle via the **2X** button on the main window or right-click context menu. Available in both modern and classic UI modes.
 
 - **Modern UI**: live toggle — windows resize immediately, views recreate their renderers
 - **Classic UI**: requires restart — a "Restart Required" dialog is shown before any UI change; the flag is toggled then `relaunchApp()` is called so `saveState()` captures the new value on termination
@@ -394,10 +420,10 @@ Toggle via the **2X** button on the main window or right-click context menu → 
 `ModernSkinElements.scaleFactor` is a computed property: `baseScaleFactor * sizeMultiplier`.
 
 - `baseScaleFactor` -- set by skin.json `window.scale` (default 1.25)
-- `sizeMultiplier` -- set by double size mode (1.0 normal, 2.0 double)
+- `sizeMultiplier` -- set by Large UI mode (1.0 normal, 1.5 large)
 
-When double size is toggled:
-1. `WindowManager` sets `ModernSkinElements.sizeMultiplier` to 2.0 (or 1.0)
+When Large UI is toggled:
+1. `WindowManager` sets `ModernSkinElements.sizeMultiplier` to 1.5 (or 1.0)
 2. All computed sizes automatically update (window sizes, title bar heights, border widths, etc.)
 3. `WindowManager.applyDoubleSize()` resizes all windows
 4. `doubleSizeDidChange` notification triggers views to recreate their renderers
@@ -409,7 +435,7 @@ Side windows scale their width by `sizeMultiplier` and match the vertical stack 
 
 ### Interaction with Skin Scale
 
-A skin with `"window": { "scale": 1.5 }` sets `baseScaleFactor` to 1.5. In double size mode, the effective `scaleFactor` becomes 3.0 (1.5 x 2.0).
+A skin with `"window": { "scale": 1.5 }` sets `baseScaleFactor` to 1.5. In Large UI mode, effective `scaleFactor` becomes 2.25 (1.5 x 1.5).
 
 ## Adding a Modern Sub-Window (Developer Guide)
 

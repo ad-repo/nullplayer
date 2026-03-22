@@ -506,12 +506,21 @@ class UPnPManager {
         isDiscovering = false
         
         // Stop SSDP discovery
+        // The fd must be closed in the cancel handler, not immediately after cancel(),
+        // because DispatchSource cancellation is async — closing the fd early causes
+        // _dispatch_bug_kevent_vanished when libdispatch tries to process the pending kevent.
         if let source = readSource {
+            let fd = ssdpSocket
+            source.setCancelHandler {
+                if fd >= 0 {
+                    close(fd)
+                    NSLog("UPnPManager: SSDP socket closed")
+                }
+            }
             source.cancel()
             readSource = nil
-        }
-        
-        if ssdpSocket >= 0 {
+            ssdpSocket = -1
+        } else if ssdpSocket >= 0 {
             close(ssdpSocket)
             ssdpSocket = -1
             NSLog("UPnPManager: SSDP socket closed")

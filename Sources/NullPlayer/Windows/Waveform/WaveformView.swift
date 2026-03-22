@@ -7,15 +7,11 @@ class WaveformView: BaseWaveformView {
     private var windowDragStartPoint: NSPoint = .zero
     private var isHighlighted = false
 
-    private var windowScale: CGFloat {
-        bounds.width / max(SkinElements.WaveformWindow.windowSize.width, 1)
-    }
-
     override var waveformRect: NSRect {
-        let titleHeight = SkinElements.WaveformWindow.Layout.titleBarHeight * windowScale
-        let leftBorder = SkinElements.WaveformWindow.Layout.leftBorder * windowScale
-        let rightBorder = SkinElements.WaveformWindow.Layout.rightBorder * windowScale
-        let bottomBorder = SkinElements.WaveformWindow.Layout.bottomBorder * windowScale
+        let titleHeight = SkinElements.WaveformWindow.Layout.titleBarHeight
+        let leftBorder = SkinElements.WaveformWindow.Layout.leftBorder
+        let rightBorder = SkinElements.WaveformWindow.Layout.rightBorder
+        let bottomBorder = SkinElements.WaveformWindow.Layout.bottomBorder
 
         // Extra 2px left/right inset prevents visualization content from occluding window borders
         let extraInset: CGFloat = 2

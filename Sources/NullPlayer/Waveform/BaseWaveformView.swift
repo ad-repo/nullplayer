@@ -117,6 +117,16 @@ class BaseWaveformView: NSView {
 
     func updateTrack(_ track: Track?) {
         ensureStreamingObserver()
+
+        if shouldPreservePrerender(for: track) {
+            currentTrack = track
+            if let track {
+                duration = track.duration ?? duration
+            }
+            needsDisplay = true
+            return
+        }
+
         currentTrack = track
         currentTime = 0
         dragTimeOverride = nil
@@ -138,15 +148,31 @@ class BaseWaveformView: NSView {
             needsDisplay = true
             return
         }
-        if track.url.isFileURL {
-            reloadWaveform(force: false)
-            return
+        reloadWaveform(force: false)
+    }
+
+    private func shouldPreservePrerender(for nextTrack: Track?) -> Bool {
+        guard let currentTrack,
+              let nextTrack,
+              snapshot.state == .ready,
+              !snapshot.samples.isEmpty else {
+            return false
         }
 
-        streamingAccumulator = StreamingWaveformAccumulator(duration: track.duration)
-        setSnapshot(.loadingStream)
-        updateWaveformConsumerRegistration(enabled: window?.isVisible ?? true)
-        needsDisplay = true
+        if let currentIdentity = currentTrack.streamingServiceIdentity,
+           currentIdentity == nextTrack.streamingServiceIdentity,
+           snapshot.sourcePath?.hasPrefix("service:") == true {
+            return true
+        }
+
+        if currentTrack.url.isFileURL,
+           nextTrack.url.isFileURL,
+           currentTrack.url.resolvingSymlinksInPath().standardizedFileURL ==
+            nextTrack.url.resolvingSymlinksInPath().standardizedFileURL {
+            return true
+        }
+
+        return false
     }
 
     func updateTime(current: TimeInterval, duration: TimeInterval) {
@@ -156,6 +182,20 @@ class BaseWaveformView: NSView {
         var shouldRedraw = true
         if let track = currentTrack, !track.url.isFileURL {
             let effectiveDuration = duration > 0 ? duration : track.duration
+            let hasLockedServicePrerender = snapshot.state == .ready &&
+                snapshot.isStreaming &&
+                snapshot.allowsSeeking &&
+                snapshot.sourcePath?.hasPrefix("service:") == true &&
+                streamingAccumulator == nil
+
+            if hasLockedServicePrerender {
+                if let effectiveDuration, effectiveDuration > 0,
+                   abs(snapshot.duration - effectiveDuration) > 0.001 {
+                    var next = snapshot
+                    next.duration = effectiveDuration
+                    setSnapshot(next)
+                }
+            } else {
             let previousAllowsSeeking = snapshot.allowsSeeking
             let previousSnapshotDuration = snapshot.duration
 
@@ -166,6 +206,7 @@ class BaseWaveformView: NSView {
                     (nextAllowsSeeking && previousSnapshotDuration != (effectiveDuration ?? 0)) {
                     setSnapshot(streamingAccumulator?.snapshot(sourcePath: track.url.absoluteString, currentTime: current) ?? .loadingStream)
                 }
+            }
             }
 
             if snapshot.isStreaming && !snapshot.allowsSeeking && previousDuration == duration && !isDraggingWaveform {
@@ -185,11 +226,41 @@ class BaseWaveformView: NSView {
             return
         }
 
-        guard track.url.isFileURL else {
+        if !track.url.isFileURL {
             streamingAccumulator = StreamingWaveformAccumulator(duration: duration > 0 ? duration : track.duration)
             setSnapshot(.loadingStream)
             updateWaveformConsumerRegistration(enabled: window?.isVisible ?? true)
             needsDisplay = true
+
+            // Service-backed streams can prerender in the background; live updates remain active.
+            loadTask = Task { [weak self] in
+                let result = await WaveformCacheService.shared.loadSnapshot(for: track, forceRegeneration: force)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self, self.currentTrack == track else { return }
+                    guard result.state == .ready, !result.samples.isEmpty else {
+                        if result.state != .ready {
+                            NSLog(
+                                "BaseWaveformView: Stream prerender unavailable for '%@': %@",
+                                track.title,
+                                result.message ?? result.state.rawValue
+                            )
+                        }
+                        return
+                    }
+                    self.setSnapshot(result)
+                    if result.isStreaming && result.allowsSeeking {
+                        // Service prerender is ready; stop live chunk accumulation so the
+                        // prerendered full-track snapshot remains visible.
+                        self.streamingAccumulator = nil
+                        self.updateWaveformConsumerRegistration(enabled: false)
+                    }
+                    if self.duration <= 0 {
+                        self.duration = result.duration
+                    }
+                    self.needsDisplay = true
+                }
+            }
             return
         }
 
@@ -226,7 +297,6 @@ class BaseWaveformView: NSView {
             setSnapshot(.loadingStream)
             updateWaveformConsumerRegistration(enabled: window?.isVisible ?? true)
             needsDisplay = true
-            return
         }
         loadTask = Task { [weak self] in
             await WaveformCacheService.shared.clearCache(for: track)
@@ -348,6 +418,15 @@ class BaseWaveformView: NSView {
               let left = userInfo["left"] as? [UInt8],
               let right = userInfo["right"] as? [UInt8],
               let sampleRate = userInfo["sampleRate"] as? Double else {
+            return
+        }
+
+        // Once a service-backed prerender is ready, keep it stable and ignore live
+        // waveform chunks so the window remains fully preloaded.
+        if snapshot.state == .ready,
+           snapshot.allowsSeeking,
+           snapshot.isStreaming,
+           snapshot.sourcePath?.hasPrefix("service:") == true {
             return
         }
 

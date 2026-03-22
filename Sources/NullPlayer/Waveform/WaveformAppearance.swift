@@ -29,11 +29,13 @@ enum WaveformAppearancePreferences {
         isRunningModernUI: Bool,
         modernSkinName: String?
     ) -> Bool {
+        guard isRunningModernUI else { return false }
+
         if let override = defaults.object(forKey: transparentBackgroundKey) as? NSNumber {
             return override.boolValue
         }
 
-        guard isRunningModernUI, let modernSkinName else {
+        guard let modernSkinName else {
             return false
         }
 

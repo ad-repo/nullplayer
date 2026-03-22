@@ -839,6 +839,17 @@ class SpectrumAnalyzerView: NSView {
             qualityMode = .classic
         }
 
+        // Restore vis_classic transparent background visual state now that metalLayer exists.
+        // qualityMode.didSet creates the bridge (applying the C++ option), but metalLayer
+        // doesn't exist yet at that point. setupMetal() creates it with isOpaque=true, so we
+        // must apply the saved preference here after both are ready.
+        if qualityMode == .visClassicExact &&
+           VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope) {
+            metalLayer?.isOpaque = false
+            layer?.isOpaque = false
+            applyVisClassicOpacity()
+        }
+
         applyModeDrivenBarLayoutIfNeeded()
         
         // Load colors from current skin
@@ -2460,6 +2471,14 @@ class SpectrumAnalyzerView: NSView {
 
         if visClassicBridge == nil {
             visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            if VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope) {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.metalLayer?.isOpaque = false
+                    self.layer?.isOpaque = false
+                    self.applyVisClassicOpacity()
+                }
+            }
         }
         guard let bridge = visClassicBridge else {
             inFlightSemaphore.signal()

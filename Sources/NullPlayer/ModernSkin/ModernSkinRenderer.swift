@@ -19,17 +19,22 @@ class ModernSkinRenderer {
     /// The active skin to render with
     var skin: ModernSkin
     
-    /// Scale factor for rendering
-    let scaleFactor: CGFloat
+    /// Optional fixed scale for tests/snapshots.
+    /// When nil, renderer always uses the current global modern scale.
+    private let fixedScaleFactor: CGFloat?
+
+    /// Scale factor for rendering.
+    /// Uses live `ModernSkinElements.scaleFactor` unless a fixed override was provided.
+    var scaleFactor: CGFloat { fixedScaleFactor ?? ModernSkinElements.scaleFactor }
     
     /// Glow multiplier for element-level blur effects
     let glowMultiplier: CGFloat
     
     // MARK: - Initialization
     
-    init(skin: ModernSkin, scaleFactor: CGFloat = ModernSkinElements.scaleFactor) {
+    init(skin: ModernSkin, scaleFactor: CGFloat? = nil) {
         self.skin = skin
-        self.scaleFactor = scaleFactor
+        self.fixedScaleFactor = scaleFactor
         self.glowMultiplier = skin.elementGlowMultiplier
     }
 
@@ -768,7 +773,8 @@ class ModernSkinRenderer {
         
         // Programmatic fallback: thin outlined icon (finer lines like reference)
         let isPressed = state == "pressed"
-        let color = isPressed ? skin.primaryColor.withAlphaComponent(0.7) : skin.primaryColor
+        let baseColor = skin.elementColor(for: id, fallback: skin.elementColor(for: "play_controls", fallback: skin.primaryColor))
+        let color = isPressed ? baseColor.withAlphaComponent(0.7) : baseColor
         
         context.saveGState()
         context.setStrokeColor(color.cgColor)
@@ -883,8 +889,8 @@ class ModernSkinRenderer {
             return
         }
         
-        // Fallback: text label with accent (magenta) for ON state, dim for OFF
-        let onColor = skin.accentColor
+        // Fallback: text label with minicontrol_buttons color for ON state, dim for OFF
+        let onColor = skin.elementColor(for: "minicontrol_buttons", fallback: skin.accentColor)
         let offColor = skin.textDimColor
         let textColor = isOn ? onColor : offColor
         let font = skin.smallLabelFont()
