@@ -724,12 +724,15 @@ class WindowManager {
                 let stackHasMultipleWindows = stackBounds.height > mainActualHeight + 1
                 // Scale width for double-size mode
                 let sideWidth = window.frame.width * (isModernUIEnabled ? ModernSkinElements.sizeMultiplier : 1.0)
-                
+                // Use full cluster bounds for X so we don't open on top of side-docked windows
+                let clusterBounds = windowClusterBounds(excluding: window)
+                let rightEdgeX = clusterBounds != .zero ? clusterBounds.maxX : (mainWindow?.frame.maxX ?? 0)
+
                 if stackBounds != .zero && stackHasMultipleWindows {
                     // Match stack height when multiple windows are stacked
                     // No adjustWindowForHiddenTitleBars needed - stack height already accounts for it
                     let newFrame = NSRect(
-                        x: stackBounds.maxX,
+                        x: rightEdgeX,
                         y: stackBounds.minY,
                         width: sideWidth,
                         height: stackBounds.height
@@ -740,7 +743,7 @@ class WindowManager {
                     let mainFrame = mainWindow.frame
                     let defaultHeight = defaultSideWindowHeight(mainFrame: mainFrame)
                     let newFrame = NSRect(
-                        x: mainFrame.maxX,
+                        x: rightEdgeX,
                         y: mainFrame.maxY - defaultHeight,
                         width: sideWidth,
                         height: defaultHeight
@@ -1288,11 +1291,15 @@ class WindowManager {
                 let mainWindow = mainWindowController?.window
                 let mainActualHeight = mainWindow?.frame.height ?? 0
                 let stackHasMultipleWindows = stackBounds.height > mainActualHeight + 1
+                // Use full cluster bounds for X so we don't open on top of side-docked windows
+                let clusterBounds = windowClusterBounds(excluding: window)
+                let leftEdgeX = clusterBounds != .zero ? clusterBounds.minX : (mainWindow?.frame.minX ?? 0)
+
                 if stackBounds != .zero && stackHasMultipleWindows {
                     // Match stack height when multiple windows are stacked
                     // No adjustWindowForHiddenTitleBars needed - stack height already accounts for it
                     let newFrame = NSRect(
-                        x: stackBounds.minX - window.frame.width,
+                        x: leftEdgeX - window.frame.width,
                         y: stackBounds.minY,
                         width: window.frame.width,
                         height: stackBounds.height
@@ -1303,7 +1310,7 @@ class WindowManager {
                     let mainFrame = mainWindow.frame
                     let defaultHeight = defaultSideWindowHeight(mainFrame: mainFrame)
                     let newFrame = NSRect(
-                        x: mainFrame.minX - window.frame.width,
+                        x: leftEdgeX - window.frame.width,
                         y: mainFrame.maxY - defaultHeight,
                         width: window.frame.width,
                         height: defaultHeight
@@ -2101,18 +2108,30 @@ class WindowManager {
     /// (main + only windows docked below main).
     private func verticalStackBounds() -> NSRect {
         guard let mainFrame = mainWindowController?.window?.frame else { return .zero }
-        
+
         let topY = mainFrame.maxY
         var bottomY = mainFrame.minY
         let x = mainFrame.minX
         let width = mainFrame.width
-        
+
         // Only include center windows that are currently docked below main.
         for dockedWindow in dockedCenterStackWindowsBelowMain(mainFrame: mainFrame) {
             bottomY = min(bottomY, dockedWindow.frame.minY)
         }
-        
+
         return NSRect(x: x, y: round(bottomY), width: width, height: round(topY) - round(bottomY))
+    }
+
+    /// Calculate the bounding box of the full cluster of windows docked to main
+    /// (all directions), optionally excluding the window being positioned.
+    private func windowClusterBounds(excluding excludedWindow: NSWindow? = nil) -> NSRect {
+        guard let mainWindow = mainWindowController?.window else { return .zero }
+        var bounds = mainWindow.frame
+        for win in findDockedWindows(to: mainWindow) {
+            guard win !== excludedWindow else { continue }
+            bounds = bounds.union(win.frame)
+        }
+        return bounds
     }
 
     private enum CenterStackWindowKind {
