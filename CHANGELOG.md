@@ -75,7 +75,7 @@
 - Fixed ProjectM 1–5 star keycode mapping (key "5" was silently dropped; key "6" was accepted as 5 stars)
 - Fixed side windows (ProjectM, Library Browser) opening at the edge of only the vertical stack instead of the full cluster of docked windows
 - Fixed glass/modern skin appearing fully transparent on app reopen when a partial-dirty draw fired before the first full draw
-- Fixed spectrum transparent-background preference not persisting across launches in vis_classic mode
+- Fixed spectrum transparent-background preference not restoring on launch in vis_classic exact mode (bridge created in render path skipped preference restore when mode was already active at init)
 - Fixed spectrum window width not being preserved during classic window-stack repair
 
 ## 0.17.3

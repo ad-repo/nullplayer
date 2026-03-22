@@ -2463,6 +2463,9 @@ class SpectrumAnalyzerView: NSView {
 
         if visClassicBridge == nil {
             visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            if VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope) {
+                _ = visClassicBridge?.setTransparentBackground(true)
+            }
         }
         guard let bridge = visClassicBridge else {
             inFlightSemaphore.signal()
