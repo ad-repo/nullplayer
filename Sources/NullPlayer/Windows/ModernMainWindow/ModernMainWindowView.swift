@@ -363,9 +363,11 @@ class ModernMainWindowView: NSView {
             return
         }
         
-        // 1. Window background + border -- clip to dirtyRect to avoid full-bounds fill
-        context.saveGState()
-        context.clip(to: dirtyRect)
+        // 1. Window background + border -- always fill full bounds so the layer is
+        //    never left partially transparent on the first partial-dirty draw (e.g. on
+        //    app reopen).  drawWindowBackground uses .copy blend mode, so repeated
+        //    full-bounds fills do not accumulate alpha.  The per-element dirtyRect
+        //    intersection checks below provide the real partial-redraw performance gain.
         renderer.drawWindowBackground(
             in: windowBounds,
             context: context,
@@ -381,7 +383,6 @@ class ModernMainWindowView: NSView {
             occlusionSegments: edgeOcclusionSegments,
             borderOpacity: mainOpacity.border
         )
-        context.restoreGState()
 
         // 2..9. Foreground content under the main window content opacity channel.
         withContextAlpha(mainOpacity.content, context: context) {
