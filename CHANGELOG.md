@@ -45,6 +45,13 @@
 - **Art window rating fix** — rating a track in art mode no longer moves the art window.
 - **Occlusion cache on resize** — the window occlusion cache is now cleared on resize, fixing stale border segments after window size changes.
 
+### Modern Skins
+
+- **Element-level color overrides** — skin.json now supports per-element color keys in the `elements` block: `play_controls`, `seek_fill`, `volume_fill`, `minicontrol_buttons`, `playlist_text`, `tab_outline`, and `tab_text`, each with a typed fallback chain to palette colors.
+- **Spectrum transparent background** — `window.spectrumTransparentBackground` (bool) in skin.json sets the spectrum window transparent background, using the same mechanism as the in-app toggle.
+- **Waveform window opacity** — `window.waveformWindowOpacity` (float 0–1) in skin.json independently controls the waveform window background opacity, separate from the global `window.opacity`.
+- **Save State on Exit in Windows menu** — "Save State on Exit" is now available in the Windows menu bar menu for quick access to session state persistence.
+
 ### Bug Fixes
 
 - Fixed waveform squashing on horizontal resize in the classic skin

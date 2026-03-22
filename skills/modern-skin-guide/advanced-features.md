@@ -382,6 +382,32 @@ Modern skins also support an independent opacity override for the main window's 
 }
 ```
 
+## Spectrum and Waveform Window Transparency
+
+### Spectrum Window (`window.spectrumTransparentBackground`)
+
+Boolean toggle — when `true`, the vis_classic visualization renders with a transparent background (matching the in-app Transparent Background toggle). The window chrome continues to use `window.opacity` as normal. When `false` or omitted, the visualization uses its default opaque background.
+
+`visualization.visClassic.spectrumWindowTransparentBackground` overrides this if both are set.
+
+```json
+"window": {
+    "opacity": 0.85,
+    "spectrumTransparentBackground": true
+}
+```
+
+### Waveform Window (`window.waveformWindowOpacity`)
+
+Float `0.0...1.0` opacity override for the waveform window background. Falls back to `window.opacity` when omitted.
+
+```json
+"window": {
+    "opacity": 0.85,
+    "waveformWindowOpacity": 0.5
+}
+```
+
 ## Large UI (1.5x) Mode
 
 UI label is **Large UI**. Toggle via the **2X** button on the main window or right-click context menu. Available in both modern and classic UI modes.

@@ -121,6 +121,13 @@ class ContextMenuBuilder {
         minimizeAll.target = MenuActions.shared
         menu.addItem(minimizeAll)
 
+        menu.addItem(NSMenuItem.separator())
+
+        let rememberState = NSMenuItem(title: "Save State on Exit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
+        rememberState.target = MenuActions.shared
+        rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
+        menu.addItem(rememberState)
+
         menu.autoenablesItems = false
         return menu
     }

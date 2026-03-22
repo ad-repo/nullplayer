@@ -177,7 +177,8 @@ class ModernWaveformView: BaseWaveformView {
     override func draw(_ dirtyRect: NSRect) {
         refreshRendererIfScaleChanged()
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners,
+                                      backgroundOpacity: renderer.skin.waveformWindowBackgroundOpacity)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
 
         if !WindowManager.shared.effectiveHideTitleBars(for: window) {

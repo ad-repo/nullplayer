@@ -61,6 +61,8 @@
         "cornerRadius": 12,
         "opacity": 0.8,
         "textOpacity": 0.9,
+        "spectrumTransparentBackground": false,
+        "waveformWindowOpacity": 0.8,
         "seamlessDocking": 1.0,
         "areaOpacity": {
             "mainWindow": {

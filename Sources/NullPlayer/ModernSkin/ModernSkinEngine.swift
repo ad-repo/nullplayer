@@ -193,7 +193,10 @@ class ModernSkinEngine {
         ModernSkinElements.baseScaleFactor = skin.config.window.scale ?? 1.25
 
         // Apply per-skin visualization defaults (mode + mode-specific presets/profiles).
-        applyVisualizationDefaults(from: skin.config.visualization)
+        // window.spectrumTransparentBackground seeds the spectrum transparent state;
+        // visualization.visClassic.spectrumWindowTransparentBackground overrides it if both are set.
+        applyVisualizationDefaults(from: skin.config.visualization,
+                                   windowSpectrumTransparentBackground: skin.config.window.spectrumTransparentBackground)
         
         // Configure bloom processor
         bloomProcessor.configure(with: skin.config.glow)
@@ -207,8 +210,9 @@ class ModernSkinEngine {
         }
     }
 
-    private func applyVisualizationDefaults(from config: VisualizationConfig?) {
-        guard let config else { return }
+    private func applyVisualizationDefaults(from config: VisualizationConfig?,
+                                             windowSpectrumTransparentBackground: Bool? = nil) {
+        guard config != nil || windowSpectrumTransparentBackground != nil else { return }
 
         let defaults = UserDefaults.standard
         var mainVisChanged = false
@@ -218,11 +222,16 @@ class ModernSkinEngine {
         var visClassicMainFitToWidth: Bool?
         var visClassicSpectrumFitToWidth: Bool?
         var visClassicMainTransparentBackground: Bool?
-        var visClassicSpectrumTransparentBackground: Bool?
+        // Seed from window-level setting; visualization.visClassic overrides if also set
+        var visClassicSpectrumTransparentBackground: Bool? = windowSpectrumTransparentBackground
+        if let transparent = windowSpectrumTransparentBackground {
+            defaults.set(transparent, forKey: "visClassicTransparentBg.spectrumWindow")
+            spectrumSettingsChanged = true
+        }
         var visClassicMainOpacity: Double?
         var visClassicSpectrumOpacity: Double?
 
-        if let modeRaw = config.mainWindowMode {
+        if let modeRaw = config?.mainWindowMode {
             if let mode = MainWindowVisMode(rawValue: modeRaw) {
                 if let qualityMode = mode.spectrumQualityMode,
                    !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
@@ -237,7 +246,7 @@ class ModernSkinEngine {
             }
         }
 
-        if let modeRaw = config.spectrumWindowMode {
+        if let modeRaw = config?.spectrumWindowMode {
             if let mode = SpectrumQualityMode(rawValue: modeRaw) {
                 if SpectrumAnalyzerView.isShaderAvailable(for: mode) {
                     defaults.set(mode.rawValue, forKey: "spectrumQualityMode")
@@ -250,7 +259,7 @@ class ModernSkinEngine {
             }
         }
 
-        if let visClassic = config.visClassic {
+        if let visClassic = config?.visClassic {
             if let profile = visClassic.mainWindowProfile {
                 defaults.set(profile, forKey: "visClassicLastProfileName.mainWindow")
                 visClassicMainProfileToLoad = profile
@@ -295,7 +304,7 @@ class ModernSkinEngine {
             }
         }
 
-        if let fire = config.fire {
+        if let fire = config?.fire {
             if let styleRaw = fire.mainWindowStyle,
                let style = FlameStyle(rawValue: styleRaw) {
                 defaults.set(style.rawValue, forKey: "mainWindowFlameStyle")
@@ -329,7 +338,7 @@ class ModernSkinEngine {
             }
         }
 
-        if let lightning = config.lightning {
+        if let lightning = config?.lightning {
             if let styleRaw = lightning.mainWindowStyle,
                let style = LightningStyle(rawValue: styleRaw) {
                 defaults.set(style.rawValue, forKey: "mainWindowLightningStyle")
@@ -347,7 +356,7 @@ class ModernSkinEngine {
             }
         }
 
-        if let matrix = config.matrix {
+        if let matrix = config?.matrix {
             if let schemeRaw = matrix.mainWindowColorScheme,
                let scheme = MatrixColorScheme(rawValue: schemeRaw) {
                 defaults.set(scheme.rawValue, forKey: "mainWindowMatrixColorScheme")

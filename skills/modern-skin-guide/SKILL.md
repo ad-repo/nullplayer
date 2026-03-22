@@ -100,6 +100,8 @@ MySkin/
         "opacity": 0.9,
         "textOpacity": 1.0,
         "mainSpectrumOpacity": 1.0,
+        "spectrumTransparentBackground": false,
+        "waveformWindowOpacity": 0.85,
         "seamlessDocking": 1.0
     },
     "marquee": {
@@ -114,9 +116,13 @@ MySkin/
         "tintColor": "#d4cfc0"
     },
     "elements": {
-        "play_controls": { "color": "#00ffcc" },
-        "seek_fill":     { "color": "#00ffcc" },
-        "volume_fill":   { "color": "#00ffcc" },
+        "play_controls":       { "color": "#00ffcc" },
+        "seek_fill":           { "color": "#00ffcc" },
+        "volume_fill":         { "color": "#00ffcc" },
+        "minicontrol_buttons": { "color": "#00ffcc" },
+        "playlist_text":       { "color": "#009977" },
+        "tab_outline":         { "color": "#00ffcc" },
+        "tab_text":            { "color": "#00ffcc" },
         "btn_play": {
             "color": "#00ff00",
             "x": 33, "y": 8, "width": 23, "height": 20

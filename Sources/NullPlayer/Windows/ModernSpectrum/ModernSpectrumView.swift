@@ -183,7 +183,8 @@ class ModernSpectrumView: NSView {
         }
         
         // Draw window background
-        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners)
+        renderer.drawWindowBackground(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners,
+                                      backgroundOpacity: renderer.skin.spectrumWindowBackgroundOpacity)
 
         // Draw window border with glow (seamless docking suppresses adjacent edges)
         renderer.drawWindowBorder(in: bounds, context: context, adjacentEdges: adjacentEdges, sharpCorners: sharpCorners, occlusionSegments: edgeOcclusionSegments)
@@ -344,7 +345,7 @@ class ModernSpectrumView: NSView {
         if isWindowFullscreen {
             return super.hitTest(point)
         }
-        
+
         // When title bars are hidden, intercept clicks that would go to the spectrum
         // analyzer subview so ModernSpectrumView.mouseDown handles them for drag-to-undock
         if WindowManager.shared.effectiveHideTitleBars(for: self.window) && !isShadeMode {
@@ -352,6 +353,7 @@ class ModernSpectrumView: NSView {
                 return self
             }
         }
+
         return super.hitTest(point)
     }
     
