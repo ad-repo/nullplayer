@@ -774,10 +774,19 @@ class ModernLibraryBrowserView: NSView {
             return
         }
 
-        // Fast path: scroll timer marks only server bar dirty — skip full window redraw
+        // Fast path: scroll timer marks only server bar dirty — skip full window redraw.
+        // Always fill the full background first (copy blend mode) so the layer is never
+        // left partially transparent from accumulated alpha on repeated scroll-tick draws.
         let serverBarY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
         let sbRect = NSRect(x: 0, y: serverBarY, width: bounds.width, height: Layout.serverBarHeight)
         if sbRect.contains(dirtyRect) {
+            renderer.drawWindowBackground(
+                in: bounds,
+                context: context,
+                adjacentEdges: adjacentEdges,
+                sharpCorners: sharpCorners,
+                backgroundOpacity: mainOpacity.background
+            )
             context.saveGState()
             context.setAlpha(mainOpacity.content)
             drawServerBar(in: context, serverBarY: serverBarY, skin: skin)
@@ -1597,9 +1606,9 @@ class ModernLibraryBrowserView: NSView {
         context.saveGState()
         context.clip(to: rect)
         
-        skin.surfaceColor.withAlphaComponent(0.9).setFill()
+        skin.surfaceColor.withAlphaComponent(0.4).setFill()
         context.fill(rect)
-        
+
         let headerFont = skin.scaledSystemFont(size: 7.2, weight: .medium)
         let headerColor = skin.textDimColor.withAlphaComponent(0.7)
         let sortedHeaderColor = skin.textColor.withAlphaComponent(0.9)
