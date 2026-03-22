@@ -3088,10 +3088,14 @@ class AudioEngine {
         currentTrack = track
         _currentTime = 0
         lastReportedTime = 0
-        
+
+        // Re-activate RadioManager if the URL belongs to a known station but radio isn't active.
+        // This handles playlist replay and state-restore paths that bypass RadioManager.play(station:).
+        RadioManager.shared.reactivateIfNeeded(for: track.url)
+
         // Increment generation
         playbackGeneration += 1
-        
+
         // Start playback through the streaming player (routes through AVAudioEngine with EQ)
         streamingPlayer?.play(url: track.url)
         
