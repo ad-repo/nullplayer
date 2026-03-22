@@ -1599,6 +1599,20 @@ class RadioManager {
         return false
     }
 
+    /// Re-activate radio for a stream URL that is already playing (e.g. playlist replay or state restore).
+    /// Used when the audio engine starts playing a radio URL without going through `play(station:)`,
+    /// leaving `isActive = false` and causing ICY metadata to be silently dropped.
+    /// No-op if radio is already active or the URL does not match a known station.
+    func reactivateIfNeeded(for url: URL) {
+        guard currentStation == nil else { return }
+        guard let station = stations.first(where: { $0.url == url }) else { return }
+        NSLog("RadioManager: Re-activating for station '%@' (played without RadioManager)", station.name)
+        manualStopRequested = false
+        currentStation = station
+        connectionState = .connecting
+        // connectionState will update to .connected once streamDidConnect() fires
+    }
+
     /// Stop radio playback
     func stop() {
         manualStopRequested = true
