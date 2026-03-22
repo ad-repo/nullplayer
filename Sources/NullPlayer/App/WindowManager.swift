@@ -493,6 +493,10 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 playlistWindow.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .playlist), display: true)
             } else {
+                // By design: always reset to default when showing without a saved frame.
+                // This keeps the window snapped below main whenever the user opens it fresh,
+                // even if it was previously resized. Stretch state is intentionally not persisted
+                // across hide/show toggles.
                 if isModernUIEnabled {
                     applyDefaultCenterStackFrameForCurrentHT(playlistWindow, kind: .playlist)
                 } else {
@@ -1360,6 +1364,8 @@ class WindowManager {
             if let frame = restoredFrame, frame != .zero {
                 window.setFrame(normalizedCenterStackRestoredFrame(frame, kind: .spectrum), display: true)
             } else {
+                // By design: always reset to default when showing without a saved frame.
+                // Same rationale as showPlaylist — stretch state is not persisted across toggles.
                 if isModernUIEnabled {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .spectrum)
                 } else {
@@ -2472,6 +2478,7 @@ class WindowManager {
     /// Used by views that begin movement on first mouseDragged (e.g. HT on in library view).
     func windowWillPrimeDragging(_ window: NSWindow) {
         guard draggingWindow == nil else { return }
+        installDragMouseUpMonitorIfNeeded()
         primedDragWindow = window
         holdStartTime = CACurrentMediaTime()
         dragMode = .pending
@@ -2483,6 +2490,7 @@ class WindowManager {
         primedDragWindow = nil
         holdStartTime = nil
         dragMode = .pending
+        removeDragMouseUpMonitor()
     }
     
     @objc private func handleWindowWillClose(_ notification: Notification) {
@@ -2541,6 +2549,8 @@ class WindowManager {
             guard let self else { return event }
             if let dragging = self.draggingWindow {
                 self.windowDidFinishDragging(dragging)
+            } else if let primed = self.primedDragWindow {
+                self.windowDidCancelDragPrime(primed)
             }
             return event
         }

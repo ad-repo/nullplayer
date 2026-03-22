@@ -1067,7 +1067,7 @@ class AppStateManager {
 
         let adjustedEQ = repairCandidate(equalizerFrame)
         let adjustedPlaylist = repairCandidate(playlistFrame, preserveWidth: true)
-        let adjustedSpectrum = repairCandidate(spectrumFrame)
+        let adjustedSpectrum = repairCandidate(spectrumFrame, preserveWidth: true)
         let adjustedWaveform = repairCandidate(waveformFrame, preserveWidth: true)
 
         return ClassicCenterStackRepairResult(

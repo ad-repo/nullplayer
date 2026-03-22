@@ -641,11 +641,25 @@ class ProjectMView: NSView {
                 presetRatingOverlay.setRating(0)
                 submitCurrentPresetRating(0)
                 return
-            case 18...22: // 1-5 keys
-                let starRating = Int(event.keyCode - 17)
-                let ratingOnTenScale = starRating * 2
-                presetRatingOverlay.setRating(ratingOnTenScale)
-                submitCurrentPresetRating(ratingOnTenScale)
+            case 18: // 1 key (keycode 18)
+                presetRatingOverlay.setRating(2)
+                submitCurrentPresetRating(2)
+                return
+            case 19: // 2 key (keycode 19)
+                presetRatingOverlay.setRating(4)
+                submitCurrentPresetRating(4)
+                return
+            case 20: // 3 key (keycode 20)
+                presetRatingOverlay.setRating(6)
+                submitCurrentPresetRating(6)
+                return
+            case 21: // 4 key (keycode 21)
+                presetRatingOverlay.setRating(8)
+                submitCurrentPresetRating(8)
+                return
+            case 23: // 5 key (keycode 23, not 22)
+                presetRatingOverlay.setRating(10)
+                submitCurrentPresetRating(10)
                 return
             default:
                 break

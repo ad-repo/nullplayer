@@ -279,7 +279,7 @@ actor WaveformCacheService {
         } catch {
             NSLog(
                 "WaveformCacheService: Remote asset-reader prerender failed for %@: %@",
-                descriptor.sourceURL.absoluteString,
+                descriptor.sourcePath,
                 error.localizedDescription
             )
         }
