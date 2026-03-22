@@ -381,9 +381,6 @@ class SpectrumAnalyzerView: NSView {
                 let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
                 let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
                 visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
-                if VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope) {
-                    _ = visClassicBridge?.setTransparentBackground(true)
-                }
             }
 
             // Heavy fullscreen shader modes can stall at Retina-scale pixel counts.
@@ -840,6 +837,17 @@ class SpectrumAnalyzerView: NSView {
         if !isPipelineAvailable(for: qualityMode) {
             NSLog("SpectrumAnalyzerView: Pipeline not available for \(qualityMode.rawValue), falling back to Classic")
             qualityMode = .classic
+        }
+
+        // Restore vis_classic transparent background visual state now that metalLayer exists.
+        // qualityMode.didSet creates the bridge (applying the C++ option), but metalLayer
+        // doesn't exist yet at that point. setupMetal() creates it with isOpaque=true, so we
+        // must apply the saved preference here after both are ready.
+        if qualityMode == .visClassicExact &&
+           VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope) {
+            metalLayer?.isOpaque = false
+            layer?.isOpaque = false
+            applyVisClassicOpacity()
         }
 
         applyModeDrivenBarLayoutIfNeeded()
@@ -2464,7 +2472,12 @@ class SpectrumAnalyzerView: NSView {
         if visClassicBridge == nil {
             visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
             if VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope) {
-                _ = visClassicBridge?.setTransparentBackground(true)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.metalLayer?.isOpaque = false
+                    self.layer?.isOpaque = false
+                    self.applyVisClassicOpacity()
+                }
             }
         }
         guard let bridge = visClassicBridge else {
