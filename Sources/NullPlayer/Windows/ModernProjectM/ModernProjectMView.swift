@@ -493,7 +493,12 @@ class ModernProjectMView: NSView {
         return point.y >= bounds.height - titleBarHeight &&
                point.x < bounds.width - 30
     }
-    
+
+    /// Top 1/4 of the window is the drag zone
+    private func hitTestTopZone(at point: NSPoint) -> Bool {
+        return point.y >= bounds.height * 0.75
+    }
+
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
         let closeRect = NSRect(x: bounds.width - 20, y: bounds.height - titleBarHeight,
                                width: 20, height: titleBarHeight)
@@ -509,8 +514,8 @@ class ModernProjectMView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         
-        // Check for double-click on title bar to toggle shade mode
-        if event.clickCount == 2 && hitTestTitleBar(at: point) &&
+        // Check for double-click in top zone to toggle shade mode
+        if event.clickCount == 2 && hitTestTopZone(at: point) &&
            !WindowManager.shared.effectiveHideTitleBars(for: self.window) {
             toggleShadeMode()
             return
@@ -529,8 +534,8 @@ class ModernProjectMView: NSView {
             return
         }
         
-        // Title bar - start window drag (can undock)
-        if hitTestTitleBar(at: point) {
+        // Top 1/4 of window: drag zone
+        if hitTestTopZone(at: point) {
             isDraggingWindow = true
             windowDragStartPoint = event.locationInWindow
             if let window = window {
@@ -539,19 +544,8 @@ class ModernProjectMView: NSView {
             return
         }
 
-        // Content area single-click opens preset rating overlay (same UX as art mode).
-        if let visFrame = visualizationGLView?.frame, visFrame.contains(point) {
-            showPresetRatingOverlay()
-            return
-        }
-
-        // Non-visualization content still supports dragging.
-        isDraggingWindow = true
-        windowDragStartPoint = event.locationInWindow
-        if let window = window {
-            let hideTitleBar = WindowManager.shared.effectiveHideTitleBars(for: self.window)
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: hideTitleBar)
-        }
+        // Bottom 3/4: show ratings overlay on click
+        showPresetRatingOverlay()
     }
     
     private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
