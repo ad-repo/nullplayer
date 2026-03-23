@@ -1400,8 +1400,20 @@ class AudioEngine {
 
         // Fully stop ALL local playback paths (primary + crossfade, local + streaming).
         // This ensures no local audio leaks while cast playback is active.
+        //
+        // Set flag before stopping the streaming player. AudioStreaming fires an EOF callback
+        // when stop() is called (even for intentional stops), which would trigger
+        // RadioManager.streamDidDisconnect → scheduleReconnect. That reconnect can fire
+        // while the Sonos session is still connecting (isCastingActive is still false),
+        // causing loadTracks to restart local radio while Sonos also plays the stream.
+        isLoadingNewStreamingTrack = true
         streamingPlayer?.stop()
         playerNode.stop()
+
+        // Clear the flag after a brief delay (enough for the EOF callback to have fired)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.isLoadingNewStreamingTrack = false
+        }
         
         state = .stopped
         stopTimeUpdates()
