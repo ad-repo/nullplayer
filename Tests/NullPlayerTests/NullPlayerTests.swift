@@ -2847,6 +2847,65 @@ final class NullPlayerTests: XCTestCase {
         XCTAssertNil(decoded.customSkinPath)
     }
 
+    func testFreezeLocalPlaybackClockForSleepAccumulatesElapsedTime() {
+        let startDate = Date(timeIntervalSince1970: 1_000)
+        let now = Date(timeIntervalSince1970: 1_012.5)
+
+        let clockState = AudioEngine.freezeLocalPlaybackClockForSleep(
+            currentTime: 42,
+            playbackStartDate: startDate,
+            now: now
+        )
+
+        XCTAssertEqual(clockState.currentTime, 54.5, accuracy: 0.0001)
+        XCTAssertNil(clockState.playbackStartDate)
+        XCTAssertTrue(clockState.suspendedForSleep)
+    }
+
+    func testResumeLocalPlaybackClockAfterSleepReanchorsWithoutAddingSleepTime() {
+        let wakeDate = Date(timeIntervalSince1970: 2_000)
+
+        let clockState = AudioEngine.resumeLocalPlaybackClockAfterSleep(
+            currentTime: 54.5,
+            suspendedForSleep: true,
+            state: .playing,
+            now: wakeDate
+        )
+
+        XCTAssertEqual(clockState.currentTime, 54.5, accuracy: 0.0001)
+        XCTAssertEqual(clockState.playbackStartDate, wakeDate)
+        XCTAssertFalse(clockState.suspendedForSleep)
+    }
+
+    func testResumeLocalPlaybackClockAfterSleepIsNoOpWithoutPriorSuspension() {
+        let wakeDate = Date(timeIntervalSince1970: 2_000)
+
+        let clockState = AudioEngine.resumeLocalPlaybackClockAfterSleep(
+            currentTime: 54.5,
+            suspendedForSleep: false,
+            state: .playing,
+            now: wakeDate
+        )
+
+        XCTAssertEqual(clockState.currentTime, 54.5, accuracy: 0.0001)
+        XCTAssertNil(clockState.playbackStartDate)
+        XCTAssertFalse(clockState.suspendedForSleep)
+    }
+
+    func testPlaylistRestoreModeResumesWhenSavedStateWasPlaying() {
+        XCTAssertEqual(
+            AppStateManager.PlaylistRestoreMode.fromWasPlaying(true),
+            .resumePlaying
+        )
+    }
+
+    func testPlaylistRestoreModePausesWhenSavedStateWasNotPlaying() {
+        XCTAssertEqual(
+            AppStateManager.PlaylistRestoreMode.fromWasPlaying(false),
+            .pauseAfterRestore
+        )
+    }
+
     // MARK: - AudioEngine Radio Transition Tests
 
     func testShouldStopRadioForIncomingTrackWhenActiveAndSameURL() {

@@ -59,6 +59,45 @@ class AudioEngine {
 
     static var isHeadless = false
 
+    struct LocalPlaybackSleepClockState: Equatable {
+        let currentTime: TimeInterval
+        let playbackStartDate: Date?
+        let suspendedForSleep: Bool
+    }
+
+    static func freezeLocalPlaybackClockForSleep(
+        currentTime: TimeInterval,
+        playbackStartDate: Date,
+        now: Date
+    ) -> LocalPlaybackSleepClockState {
+        LocalPlaybackSleepClockState(
+            currentTime: currentTime + now.timeIntervalSince(playbackStartDate),
+            playbackStartDate: nil,
+            suspendedForSleep: true
+        )
+    }
+
+    static func resumeLocalPlaybackClockAfterSleep(
+        currentTime: TimeInterval,
+        suspendedForSleep: Bool,
+        state: PlaybackState,
+        now: Date
+    ) -> LocalPlaybackSleepClockState {
+        guard suspendedForSleep, state == .playing else {
+            return LocalPlaybackSleepClockState(
+                currentTime: currentTime,
+                playbackStartDate: nil,
+                suspendedForSleep: false
+            )
+        }
+
+        return LocalPlaybackSleepClockState(
+            currentTime: currentTime,
+            playbackStartDate: now,
+            suspendedForSleep: false
+        )
+    }
+
     // MARK: - Properties
 
     weak var delegate: AudioEngineDelegate?
@@ -111,6 +150,9 @@ class AudioEngine {
 
     /// Token used to invalidate stale deferred local track loads triggered by direct user selection.
     private var deferredLocalTrackLoadToken: UInt64 = 0
+
+    /// Tracks whether the local playback clock was intentionally frozen for a sleep cycle.
+    private var suspendedLocalPlaybackClockForSleep = false
 
     /// In-flight placeholder resolution tasks keyed by playlist index.
     private var placeholderResolutionTasks: [Int: Task<Void, Never>] = [:]
@@ -507,6 +549,19 @@ class AudioEngine {
             name: UserDefaults.didChangeNotification,
             object: nil
         )
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleSystemWillSleep),
+            name: NSWorkspace.willSleepNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleSystemDidWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
         
         setupAudioEngine()
         setupEqualizer()
@@ -518,6 +573,7 @@ class AudioEngine {
     
     deinit {
         NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         timeUpdateTimer?.invalidate()
         mixerNode.removeTap(onBus: 0)  // Changed from playerNode - tap is now on mixerNode
         engine.stop()
@@ -533,6 +589,46 @@ class AudioEngine {
         if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
            let mode = SpectrumNormalizationMode(rawValue: saved) {
             spectrumNormalizationMode = mode
+        }
+    }
+
+    @objc private func handleSystemWillSleep() {
+        guard state == .playing,
+              !isStreamingPlayback,
+              !isCastingActive,
+              let startDate = playbackStartDate else {
+            return
+        }
+
+        let clockState = Self.freezeLocalPlaybackClockForSleep(
+            currentTime: _currentTime,
+            playbackStartDate: startDate,
+            now: Date()
+        )
+        _currentTime = clockState.currentTime
+        lastReportedTime = clockState.currentTime
+        playbackStartDate = clockState.playbackStartDate
+        suspendedLocalPlaybackClockForSleep = clockState.suspendedForSleep
+        stopTimeUpdates()
+    }
+
+    @objc private func handleSystemDidWake() {
+        guard suspendedLocalPlaybackClockForSleep else { return }
+
+        let clockState = Self.resumeLocalPlaybackClockAfterSleep(
+            currentTime: _currentTime,
+            suspendedForSleep: suspendedLocalPlaybackClockForSleep,
+            state: state,
+            now: Date()
+        )
+        let shouldRestartTimeUpdates = state == .playing && clockState.playbackStartDate != nil
+        _currentTime = clockState.currentTime
+        lastReportedTime = clockState.currentTime
+        playbackStartDate = clockState.playbackStartDate
+        suspendedLocalPlaybackClockForSleep = clockState.suspendedForSleep
+
+        if shouldRestartTimeUpdates {
+            startTimeUpdates()
         }
     }
 
@@ -691,6 +787,7 @@ class AudioEngine {
                     }
                 playerNode.play()
                 playbackStartDate = Date()
+                suspendedLocalPlaybackClockForSleep = false
                 _currentTime = currentPosition
                 state = .playing
                 
@@ -1188,6 +1285,7 @@ class AudioEngine {
             
             streamingPlayer?.resume()
             playbackStartDate = Date()
+            suspendedLocalPlaybackClockForSleep = false
             state = .playing
             startTimeUpdates()
             
@@ -1223,6 +1321,7 @@ class AudioEngine {
                 
                 playerNode.play()
                 playbackStartDate = Date()  // Start tracking time
+                suspendedLocalPlaybackClockForSleep = false
                 state = .playing
                 startTimeUpdates()
                 
@@ -1280,6 +1379,7 @@ class AudioEngine {
             _currentTime += Date().timeIntervalSince(startDate)
         }
         playbackStartDate = nil
+        suspendedLocalPlaybackClockForSleep = false
         
         if isStreamingPlayback {
             streamingPlayer?.pause()
@@ -1345,6 +1445,7 @@ class AudioEngine {
         resetLocalCrossfadeStateForDirectPlayback()
         
         playbackStartDate = nil
+        suspendedLocalPlaybackClockForSleep = false
         _currentTime = 0  // Reset to beginning
         lastReportedTime = 0
         state = .stopped
@@ -1390,6 +1491,7 @@ class AudioEngine {
             _currentTime += Date().timeIntervalSince(startDate)
         }
         playbackStartDate = nil
+        suspendedLocalPlaybackClockForSleep = false
 
         // Invalidate pending completion handlers so stale callbacks can't restart local flow
         playbackGeneration += 1
@@ -1713,6 +1815,7 @@ class AudioEngine {
             _currentTime = seekTime
             lastReportedTime = seekTime  // Keep in sync
             playbackStartDate = nil  // Will be set when play resumes
+            suspendedLocalPlaybackClockForSleep = false
             
             // Increment generation to invalidate old completion handlers
             playbackGeneration += 1
@@ -1739,6 +1842,7 @@ class AudioEngine {
             // Resume if was playing
             if wasPlaying {
                 playbackStartDate = Date()  // Start tracking from seek position
+                suspendedLocalPlaybackClockForSleep = false
                 playerNode.play()
                 startTimeUpdates()  // Ensure timer is running for UI updates
             } else {
@@ -1843,6 +1947,7 @@ class AudioEngine {
         castHasReceivedStatus = true  // Immediate start means we skip waiting for status
         _currentTime = position
         lastReportedTime = position
+        suspendedLocalPlaybackClockForSleep = false
         
         // Update playback state and start UI updates
         state = .playing
@@ -1869,6 +1974,7 @@ class AudioEngine {
         castHasReceivedStatus = false
         _currentTime = position
         lastReportedTime = position
+        suspendedLocalPlaybackClockForSleep = false
         
         // Set state to playing so UI shows cast mode, but timer won't advance until we get PLAYING status
         state = .playing
@@ -1952,6 +2058,7 @@ class AudioEngine {
         // Update reported time for UI sync
         _currentTime = currentTime
         lastReportedTime = currentTime
+        suspendedLocalPlaybackClockForSleep = false
         
         // On first status, immediately update delegate with correct position
         if isFirstStatus {
@@ -2933,6 +3040,7 @@ class AudioEngine {
         // Stop any streaming playback.
         stopStreamingPlayer()
         isStreamingPlayback = false
+        suspendedLocalPlaybackClockForSleep = false
 
         // Reset crossfade state and force local primary node to audible unity gain.
         // Rapid source switches can otherwise leave playerNode.volume at 0.
@@ -3046,6 +3154,7 @@ class AudioEngine {
         _currentTime = 0
         lastReportedTime = 0
         state = .stopped
+        suspendedLocalPlaybackClockForSleep = false
         stopTimeUpdates()
     }
     
@@ -3114,6 +3223,7 @@ class AudioEngine {
         // Set state to playing immediately so play() doesn't try to reload
         state = .playing
         playbackStartDate = Date()
+        suspendedLocalPlaybackClockForSleep = false
         startTimeUpdates()
         
         // Clear the loading flag after a brief delay to ensure EOF callback has passed
@@ -3707,6 +3817,7 @@ class AudioEngine {
         _currentTime = 0
         lastReportedTime = 0
         playbackStartDate = Date()
+        suspendedLocalPlaybackClockForSleep = false
         
         // Reset crossfade state
         isCrossfading = false
@@ -3792,6 +3903,7 @@ class AudioEngine {
         _currentTime = 0
         lastReportedTime = 0
         playbackStartDate = Date()
+        suspendedLocalPlaybackClockForSleep = false
 
         // Reset crossfade state
         isCrossfading = false
@@ -4406,6 +4518,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         case .playing:
             self.state = .playing
             playbackStartDate = Date()
+            suspendedLocalPlaybackClockForSleep = false
             isSeekingStreaming = false  // Clear seeking flag on successful playback
             
             // Notify RadioManager that stream connected successfully
