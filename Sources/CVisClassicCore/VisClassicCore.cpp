@@ -226,6 +226,11 @@ public:
             transparentBg_ = value != 0;
             return 1;
         }
+        if (key == "referencewidth") {
+            referenceWidth_ = std::max(0, value);
+            recalcGeometry();
+            return 1;
+        }
         return 0;
     }
 
@@ -307,6 +312,10 @@ public:
         }
         if (key == "transparentbg" || key == "transparent_bg" || key == "transparent bg") {
             *valueOut = transparentBg_ ? 1 : 0;
+            return 1;
+        }
+        if (key == "referencewidth") {
+            *valueOut = referenceWidth_;
             return 1;
         }
         return 0;
@@ -428,6 +437,7 @@ private:
     int drawWidth_ = 1;
     int bands_ = 1;
     int bandWidth_ = 3;
+    int referenceWidth_ = 0;  // if > 0, use for band computation instead of drawWidth_
 
     int falloffRate_ = 12;
     int peakChangeRate_ = 80;
@@ -515,24 +525,23 @@ private:
 
     void recalcGeometry() {
         drawWidth_ = std::max(1, width_);
-        draw_height = std::max(1, height_);
-
         bandWidth_ = std::max(1, requestedBarWidth_);
-        bands_ = std::max(1, (drawWidth_ + xSpacing_) / std::max(1, bandWidth_ + xSpacing_));
-        bands_ = std::min(kMaxBars, bands_);
-
+        const int refW = (referenceWidth_ > 0) ? referenceWidth_ : drawWidth_;
+        int newBands = std::max(1, (refW + xSpacing_) / std::max(1, bandWidth_ + xSpacing_));
+        newBands = std::min(kMaxBars, newBands);
         if (!mono_) {
-            bands_ = std::max(2, (bands_ / 2) * 2);
+            newBands = std::max(2, (newBands / 2) * 2);
         }
-
-        level_.assign(static_cast<size_t>(bands_), 0);
-        peakLevel_.assign(static_cast<size_t>(bands_), 0);
-        peakTimer_.assign(static_cast<size_t>(bands_), 0);
-        levelDecayAccum_.assign(static_cast<size_t>(bands_), 0.0f);
-        peakTimerAccum_.assign(static_cast<size_t>(bands_), 0.0f);
-        peakDecayAccum_.assign(static_cast<size_t>(bands_), 0.0f);
-
-        rebuildBarTable_ = true;
+        if (newBands != bands_) {
+            bands_ = newBands;
+            level_.assign(static_cast<size_t>(bands_), 0);
+            peakLevel_.assign(static_cast<size_t>(bands_), 0);
+            peakTimer_.assign(static_cast<size_t>(bands_), 0);
+            levelDecayAccum_.assign(static_cast<size_t>(bands_), 0.0f);
+            peakTimerAccum_.assign(static_cast<size_t>(bands_), 0.0f);
+            peakDecayAccum_.assign(static_cast<size_t>(bands_), 0.0f);
+            rebuildBarTable_ = true;
+        }
     }
 
     void rebuildBarTableIfNeeded() {
@@ -618,6 +627,86 @@ private:
                 peakLevel_[i] = std::max(level_[i], peakLevel_[i] - intDescent);
             }
         }
+    }
+
+public:
+    void processFrameOnly() {
+        rebuildBarTableIfNeeded();
+
+        // Scale decay by elapsed time so different frame rates produce identical visuals.
+        double dtScale = 1.0;
+        auto now = Clock::now();
+        if (hasLastFrameTime_) {
+            double dtMs = std::chrono::duration<double, std::milli>(now - lastFrameTime_).count();
+            dtMs = std::min(dtMs, 200.0);  // clamp after window-hidden gaps
+            dtScale = dtMs / kRefIntervalMs;
+        }
+        lastFrameTime_ = now;
+        hasLastFrameTime_ = true;
+
+        if (!hasWaveform_) {
+            decayWhenIdle(dtScale);
+            return;
+        }
+
+        // Left
+        for (int i = 0; i < kWaveCount; ++i) {
+            floatWave_[i] = static_cast<float>(static_cast<int>(waveLeft_[i]) - 128);
+        }
+        fft_.time_to_frequency_domain(floatWave_.data(), fftSpectrum_.data());
+        for (int i = 0; i < fftFrequencies_; ++i) {
+            unsigned int h = static_cast<unsigned int>(fftSpectrum_[static_cast<size_t>(i)] / fftScale_);
+            spectrumLeft_[static_cast<size_t>(i)] = static_cast<uint8_t>((h > 255) ? 255 : h);
+        }
+
+        // Right
+        for (int i = 0; i < kWaveCount; ++i) {
+            floatWave_[i] = static_cast<float>(static_cast<int>(waveRight_[i]) - 128);
+        }
+        fft_.time_to_frequency_domain(floatWave_.data(), fftSpectrum_.data());
+        for (int i = 0; i < fftFrequencies_; ++i) {
+            unsigned int h = static_cast<unsigned int>(fftSpectrum_[static_cast<size_t>(i)] / fftScale_);
+            spectrumRight_[static_cast<size_t>(i)] = static_cast<uint8_t>((h > 255) ? 255 : h);
+        }
+
+        if (mono_) {
+            int low = 0;
+            int x = reverseRight_ ? bands_ - 1 : 0;
+            int dir = reverseRight_ ? -1 : 1;
+            for (int i = 0; i < bands_; ++i, x += dir) {
+                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
+                high = std::min(high, fftFrequencies_);
+                int newLevel = monoLevel(low, high);
+                low = high;
+                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
+            }
+        } else {
+            const int half = bands_ / 2;
+
+            int low = 0;
+            int x = reverseLeft_ ? half - 1 : 0;
+            int dir = reverseLeft_ ? -1 : 1;
+            for (int i = 0; i < half; ++i, x += dir) {
+                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
+                high = std::min(high, fftFrequencies_);
+                int newLevel = stereoLevel(spectrumLeft_, low, high);
+                low = high;
+                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
+            }
+
+            low = 0;
+            x = reverseRight_ ? bands_ - 1 : half;
+            dir = reverseRight_ ? -1 : 1;
+            for (int i = 0; i < half; ++i, x += dir) {
+                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
+                high = std::min(high, fftFrequencies_);
+                int newLevel = stereoLevel(spectrumRight_, low, high);
+                low = high;
+                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
+            }
+        }
+
+        hasWaveform_ = false;
     }
 
     void processFrame() {
@@ -741,8 +830,9 @@ private:
         return peakColors_[idx];
     }
 
-    void setPixel(uint8_t *dst, int x, int y, size_t stride, const RGB &c) const {
-        if (x < 0 || x >= width_ || y < 0 || y >= height_) return;
+
+    void setPixelBounded(uint8_t *dst, int x, int y, int w, int h, size_t stride, const RGB &c) const {
+        if (x < 0 || x >= w || y < 0 || y >= h) return;
         const size_t o = static_cast<size_t>(y) * stride + static_cast<size_t>(x) * 4;
         dst[o + 0] = c.b;
         dst[o + 1] = c.g;
@@ -750,19 +840,19 @@ private:
         dst[o + 3] = 255;
     }
 
-    void fillBackground(uint8_t *dst, size_t stride) const {
+    void fillBackgroundSized(uint8_t *dst, int w, int h, size_t stride) const {
         uint8_t base = 0;
         switch (backgroundDraw_) {
-        case 1: base = 18; break;   // flash-ish
-        case 2: base = 10; break;   // solid dark
-        case 3: base = 6; break;    // grid
-        case 4: base = 8; break;    // flash grid
+        case 1: base = 18; break;
+        case 2: base = 10; break;
+        case 3: base = 6; break;
+        case 4: base = 8; break;
         default: base = 0; break;
         }
 
-        for (int y = 0; y < height_; ++y) {
+        for (int y = 0; y < h; ++y) {
             uint8_t *row = dst + static_cast<size_t>(y) * stride;
-            for (int x = 0; x < width_; ++x) {
+            for (int x = 0; x < w; ++x) {
                 uint8_t v = base;
                 if ((backgroundDraw_ == 3 || backgroundDraw_ == 4) && ((x % 8 == 0) || (y % 8 == 0))) {
                     v = static_cast<uint8_t>(std::min(255, base + 20));
@@ -775,19 +865,18 @@ private:
         }
     }
 
-    void drawFrame(uint8_t *dst, int width, int height, size_t stride) const {
-        (void)width;
-        (void)height;
-        fillBackground(dst, stride);
+    void drawFrame(uint8_t *dst, int width, int height, size_t stride) {
+        draw_height = height;
+        fillBackgroundSized(dst, width, height, stride);
 
         const int effectiveHeight = std::max(1, draw_height);
         for (int bar = 0; bar < bands_; ++bar) {
             int xStart = 0;
             int xEnd = 0;
             if (fitToWidth_) {
-                xStart = (bar * width_) / bands_;
-                xEnd = ((bar + 1) * width_) / bands_;
-                if (xStart >= width_) break;
+                xStart = (bar * width) / bands_;
+                xEnd = ((bar + 1) * width) / bands_;
+                if (xStart >= width) break;
                 if (xEnd <= xStart) {
                     xEnd = xStart + 1;
                 }
@@ -799,26 +888,26 @@ private:
                 }
             } else {
                 xStart = bar * (bandWidth_ + xSpacing_);
-                if (xStart >= width_) break;
-                xEnd = std::min(width_, xStart + bandWidth_);
+                if (xStart >= width) break;
+                xEnd = std::min(width, xStart + bandWidth_);
             }
 
             const int level = clampInt(level_[static_cast<size_t>(bar)], 0, 255);
             const int peak = clampInt(peakLevel_[static_cast<size_t>(bar)], 0, 255);
 
             int barPx = (level * effectiveHeight) / 255;
-            int peakY = height_ - 1 - ((peak * effectiveHeight) / 255);
+            int peakY = height - 1 - ((peak * effectiveHeight) / 255);
 
-            barPx = std::max(0, std::min(height_, barPx));
-            peakY = clampInt(peakY, 0, height_ - 1);
+            barPx = std::max(0, std::min(height, barPx));
+            peakY = clampInt(peakY, 0, height - 1);
 
             for (int row = 0; row < barPx; ++row) {
-                const int y = height_ - 1 - row;
+                const int y = height - 1 - row;
                 int yScaled = (row * 255) / effectiveHeight;
                 RGB c = barColorForLevel(level, yScaled);
 
                 for (int x = xStart; x < xEnd; ++x) {
-                    setPixel(dst, x, y, stride, c);
+                    setPixelBounded(dst, x, y, width, height, stride, c);
                 }
 
                 // Approximate fade shadow effect when profile requests it.
@@ -828,21 +917,26 @@ private:
                     shadow.g = static_cast<uint8_t>(shadow.g / 4);
                     shadow.b = static_cast<uint8_t>(shadow.b / 4);
                     if (fitToWidth_) {
-                        setPixel(dst, xEnd, y, stride, shadow);
+                        setPixelBounded(dst, xEnd, y, width, height, stride, shadow);
                     } else {
-                        setPixel(dst, xStart + bandWidth_, y, stride, shadow);
+                        setPixelBounded(dst, xStart + bandWidth_, y, width, height, stride, shadow);
                     }
                 }
             }
 
             if (peakChangeRate_ > 0) {
-                const int yScaled = ((height_ - 1 - peakY) * 255) / effectiveHeight;
+                const int yScaled = ((height - 1 - peakY) * 255) / effectiveHeight;
                 RGB pc = peakColorForLevel(level, yScaled);
                 for (int x = xStart; x < xEnd; ++x) {
-                    setPixel(dst, x, peakY, stride, pc);
+                    setPixelBounded(dst, x, peakY, width, height, stride, pc);
                 }
             }
         }
+    }
+
+public:
+    void drawAtSize(unsigned char *outRGBA, int w, int h, int stride) {
+        drawFrame(outRGBA, w, h, static_cast<size_t>(stride));
     }
 
     static bool readProfile(const std::string &path, IniProfile &out) {
@@ -991,6 +1085,17 @@ int vc_save_profile_ini(VisClassicCore *core, const char *path_utf8) {
 const char *vc_get_last_error(VisClassicCore *core) {
     if (!core) return "";
     return core->lastError.c_str();
+}
+
+void vc_process_frame_only(VisClassicCore *core) {
+    if (!core) return;
+    core->impl.processFrameOnly();
+}
+
+int vc_draw_at_size(VisClassicCore *core, unsigned char *outRGBA, int width, int height, int stride) {
+    if (!core) return 0;
+    core->impl.drawAtSize(outRGBA, width, height, stride);
+    return 1;
 }
 
 }  // extern "C"

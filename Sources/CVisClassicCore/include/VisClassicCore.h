@@ -33,6 +33,9 @@ int vc_save_profile_ini(VisClassicCore *core, const char *path_utf8);
 
 const char *vc_get_last_error(VisClassicCore *core);
 
+void vc_process_frame_only(VisClassicCore *core);
+int  vc_draw_at_size(VisClassicCore *core, unsigned char *outRGBA, int width, int height, int stride);
+
 #ifdef __cplusplus
 }
 #endif

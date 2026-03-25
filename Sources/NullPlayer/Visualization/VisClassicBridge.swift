@@ -84,6 +84,39 @@ final class VisClassicBridge {
         }
     }
 
+    /// Set reference width for band computation — call once after creation.
+    @discardableResult
+    func setReferenceWidth(_ width: Int) -> Bool {
+        guard let core else { return false }
+        return coreLock.withLock { vc_set_option(core, "referencewidth", Int32(width)) == 1 }
+    }
+
+    /// Process waveform + run FFT — call once per audio chunk, not per render frame.
+    func processUpdate(leftData: [UInt8], rightData: [UInt8], sampleRate: Double) {
+        guard let core else { return }
+        coreLock.withLock {
+            leftData.withUnsafeBufferPointer { lp in
+                rightData.withUnsafeBufferPointer { rp in
+                    vc_set_waveform_u8(core, lp.baseAddress, rp.baseAddress,
+                                       leftData.count, sampleRate)
+                }
+            }
+            vc_process_frame_only(core)
+        }
+    }
+
+    /// Render current state at given canvas size — call per display frame, no FFT.
+    func drawAtSize(width: Int, height: Int, into buffer: inout [UInt8], stride: Int) {
+        guard let core else { return }
+        let needed = stride * height
+        if buffer.count < needed { buffer = [UInt8](repeating: 0, count: needed) }
+        coreLock.withLock {
+            buffer.withUnsafeMutableBufferPointer { bp in
+                _ = vc_draw_at_size(core, bp.baseAddress, Int32(width), Int32(height), Int32(stride))
+            }
+        }
+    }
+
     func updateWaveform(left: [UInt8], right: [UInt8], sampleRate: Double) {
         guard let core else { return }
         guard !left.isEmpty, !right.isEmpty else { return }
