@@ -40,10 +40,77 @@ final class TrackArtistsSchemaTests: XCTestCase {
         XCTAssertEqual(fkEnabled, 0, "New connections start with FK off by default")
     }
 
-    func testSchemaVersionIs3() throws {
+    func testSchemaVersionIs4() throws {
         let db = try Connection(tempURL.path)
         let version = try db.scalar("PRAGMA user_version") as? Int64 ?? 0
-        XCTAssertEqual(version, 3)
+        XCTAssertEqual(version, 4)
+    }
+
+    func testTrackMetadataColumnsExistInV4() throws {
+        let db = try Connection(tempURL.path)
+        var columnNames: Set<String> = []
+        for row in try db.prepare("PRAGMA table_info(library_tracks)") {
+            if let name = row[1] as? String {
+                columnNames.insert(name)
+            }
+        }
+        let expected: Set<String> = [
+            "composer", "comment", "grouping", "bpm", "musical_key", "isrc", "copyright",
+            "musicbrainz_recording_id", "musicbrainz_release_id",
+            "discogs_release_id", "discogs_master_id", "discogs_label",
+            "discogs_catalog_number", "artwork_url",
+        ]
+        XCTAssertTrue(expected.isSubset(of: columnNames))
+    }
+
+    func testMigrationFromV3AddsExtendedTrackColumns() throws {
+        let legacyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".sqlite")
+        defer { try? FileManager.default.removeItem(at: legacyURL) }
+
+        let legacyDB = try Connection(legacyURL.path)
+        try legacyDB.run("""
+            CREATE TABLE library_tracks (
+                id TEXT PRIMARY KEY,
+                url TEXT UNIQUE,
+                title TEXT,
+                artist TEXT,
+                album TEXT,
+                album_artist TEXT,
+                genre TEXT,
+                year INTEGER,
+                track_number INTEGER,
+                disc_number INTEGER,
+                duration REAL,
+                bitrate INTEGER,
+                sample_rate INTEGER,
+                channels INTEGER,
+                file_size INTEGER,
+                date_added REAL,
+                last_played REAL,
+                play_count INTEGER,
+                rating INTEGER,
+                scan_file_size INTEGER,
+                scan_mod_date REAL
+            )
+            """)
+        try legacyDB.run("PRAGMA user_version = 3")
+
+        let migratingStore = MediaLibraryStore.makeForTesting()
+        migratingStore.open(at: legacyURL)
+        defer { migratingStore.close() }
+
+        let migratedDB = try Connection(legacyURL.path)
+        let version = try migratedDB.scalar("PRAGMA user_version") as? Int64 ?? 0
+        XCTAssertEqual(version, 4)
+
+        var columnNames: Set<String> = []
+        for row in try migratedDB.prepare("PRAGMA table_info(library_tracks)") {
+            if let name = row[1] as? String { columnNames.insert(name) }
+        }
+        XCTAssertTrue(columnNames.contains("musicbrainz_release_id"))
+        XCTAssertTrue(columnNames.contains("discogs_release_id"))
+        XCTAssertTrue(columnNames.contains("artwork_url"))
     }
 
     func testCascadeDeleteOnTrackDelete() {

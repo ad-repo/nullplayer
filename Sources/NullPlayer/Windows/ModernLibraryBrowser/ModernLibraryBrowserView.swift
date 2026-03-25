@@ -4763,14 +4763,14 @@ class ModernLibraryBrowserView: NSView {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         activeEditTagsPanel?.close()
         let panel = EditTagsPanel(track: track)
-        panel.onSave = { [weak self] in self?.loadLocalData() }
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
         activeEditTagsPanel = panel; panel.show()
     }
     @objc private func contextMenuEditAlbumTags(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
         activeEditAlbumTagsPanel?.close()
         let panel = EditAlbumTagsPanel(album: album)
-        panel.onSave = { [weak self] in self?.loadLocalData() }
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
         activeEditAlbumTagsPanel = panel; panel.show()
     }
     @objc private func contextMenuEditVideoTags(_ sender: NSMenuItem) {
@@ -4780,7 +4780,7 @@ class ModernLibraryBrowserView: NSView {
         else { return }
         activeEditVideoTagsPanel?.close()
         let panel = EditVideoTagsPanel(item: videoItem)
-        panel.onSave = { [weak self] in self?.loadLocalData() }
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
         activeEditVideoTagsPanel = panel; panel.show()
     }
     @objc private func contextMenuRemoveLocalTrack(_ sender: NSMenuItem) {
@@ -6169,11 +6169,16 @@ class ModernLibraryBrowserView: NSView {
     
     @objc private func mediaLibraryDidChange() {
         guard case .local = currentSource, browseMode != .radio else { return }
+        NSLog("[MetadataDebug] browser-media-library-did-change browseMode=%d displayItems=%d scrollOffset=%.2f",
+              browseMode.rawValue,
+              displayItems.count,
+              scrollOffset)
         localLibraryReloadWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self,
                   case .local = self.currentSource,
                   self.browseMode != .radio else { return }
+            NSLog("[MetadataDebug] browser-media-library-reload-fire browseMode=%d", self.browseMode.rawValue)
             self.loadLocalData()
             self.needsDisplay = true
         }
@@ -7440,6 +7445,7 @@ class ModernLibraryBrowserView: NSView {
         isLoading = false; errorMessage = nil; stopLoadingAnimation()
         let library = MediaLibrary.shared
         let store = MediaLibraryStore.shared
+        NSLog("[MetadataDebug] browser-load-local-data browseMode=%d", browseMode.rawValue)
         switch browseMode {
         case .artists:
             localArtistPageOffset = 0
@@ -7460,7 +7466,27 @@ class ModernLibraryBrowserView: NSView {
             buildLocalShowItems()
         case .radio: loadLocalRadioStations()
         }
+        NSLog("[MetadataDebug] browser-load-local-data-finished browseMode=%d displayItems=%d", browseMode.rawValue, displayItems.count)
         needsDisplay = true
+    }
+
+    private func reloadLocalBrowserAfterMetadataEdit() {
+        guard case .local = currentSource else {
+            NSLog("[MetadataDebug] browser-reload-after-edit non-local-source")
+            loadLocalData()
+            return
+        }
+
+        NSLog("[MetadataDebug] browser-reload-after-edit-reset browseMode=%d oldDisplayItems=%d oldSelected=%d oldScrollOffset=%.2f",
+              browseMode.rawValue,
+              displayItems.count,
+              selectedIndices.count,
+              scrollOffset)
+        clearLocalCachedData()
+        displayItems.removeAll()
+        selectedIndices.removeAll()
+        scrollOffset = 0
+        loadLocalData()
     }
 
     // MARK: - Radio Data Loading

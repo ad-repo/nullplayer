@@ -44,6 +44,20 @@ final class MediaLibraryStore {
     private let colChannels     = Expression<Int?>("channels")
     private let colLastPlayed   = Expression<Double?>("last_played")
     private let colPlayCount    = Expression<Int>("play_count")
+    private let colComposer     = Expression<String?>("composer")
+    private let colComment      = Expression<String?>("comment")
+    private let colGrouping     = Expression<String?>("grouping")
+    private let colBPM          = Expression<Int?>("bpm")
+    private let colMusicalKey   = Expression<String?>("musical_key")
+    private let colISRC         = Expression<String?>("isrc")
+    private let colCopyright    = Expression<String?>("copyright")
+    private let colMBRecordingID = Expression<String?>("musicbrainz_recording_id")
+    private let colMBReleaseID   = Expression<String?>("musicbrainz_release_id")
+    private let colDiscogsReleaseID = Expression<Int?>("discogs_release_id")
+    private let colDiscogsMasterID  = Expression<Int?>("discogs_master_id")
+    private let colDiscogsLabel     = Expression<String?>("discogs_label")
+    private let colDiscogsCatalogNumber = Expression<String?>("discogs_catalog_number")
+    private let colArtworkURL       = Expression<String?>("artwork_url")
 
     // MARK: - Episode-specific columns
 
@@ -132,10 +146,11 @@ final class MediaLibraryStore {
         // Must be set on every connection open — SQLite resets it per connection.
         try connection.run("PRAGMA foreign_keys = ON")
 
-        let currentVersion = try connection.scalar("PRAGMA user_version") as? Int64 ?? 0
+        var currentVersion = try connection.scalar("PRAGMA user_version") as? Int64 ?? 0
         if currentVersion == 0 {
             try createTablesIfNeeded(connection)
-            try connection.run("PRAGMA user_version = 3")
+            try connection.run("PRAGMA user_version = 4")
+            currentVersion = 4
         }
         if currentVersion == 1 {
             // Add expression index so artistNames GROUP BY and albumsForArtist WHERE queries
@@ -144,6 +159,7 @@ final class MediaLibraryStore {
             // UI freezes on large libraries (60k+ tracks).
             try connection.run("CREATE INDEX IF NOT EXISTS idx_tracks_artist_expr ON library_tracks (coalesce(album_artist, artist, 'Unknown Artist'))")
             try connection.run("PRAGMA user_version = 2")
+            currentVersion = 2
         }
         if currentVersion == 2 {
             try connection.run("""
@@ -158,7 +174,39 @@ final class MediaLibraryStore {
             try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_url ON track_artists(track_url)")
             try connection.run("PRAGMA user_version = 3")
             UserDefaults.standard.set(false, forKey: "trackArtistsBackfillComplete")
+            currentVersion = 3
         }
+        if currentVersion == 3 {
+            try migrateTrackMetadataSchemaToV4(connection)
+            try connection.run("PRAGMA user_version = 4")
+        }
+    }
+
+    private func migrateTrackMetadataSchemaToV4(_ connection: Connection) throws {
+        try addTrackColumnIfMissing(connection, name: "composer", sqlType: "TEXT")
+        try addTrackColumnIfMissing(connection, name: "comment", sqlType: "TEXT")
+        try addTrackColumnIfMissing(connection, name: "grouping", sqlType: "TEXT")
+        try addTrackColumnIfMissing(connection, name: "bpm", sqlType: "INTEGER")
+        try addTrackColumnIfMissing(connection, name: "musical_key", sqlType: "TEXT")
+        try addTrackColumnIfMissing(connection, name: "isrc", sqlType: "TEXT")
+        try addTrackColumnIfMissing(connection, name: "copyright", sqlType: "TEXT")
+        try addTrackColumnIfMissing(connection, name: "musicbrainz_recording_id", sqlType: "TEXT")
+        try addTrackColumnIfMissing(connection, name: "musicbrainz_release_id", sqlType: "TEXT")
+        try addTrackColumnIfMissing(connection, name: "discogs_release_id", sqlType: "INTEGER")
+        try addTrackColumnIfMissing(connection, name: "discogs_master_id", sqlType: "INTEGER")
+        try addTrackColumnIfMissing(connection, name: "discogs_label", sqlType: "TEXT")
+        try addTrackColumnIfMissing(connection, name: "discogs_catalog_number", sqlType: "TEXT")
+        try addTrackColumnIfMissing(connection, name: "artwork_url", sqlType: "TEXT")
+    }
+
+    private func addTrackColumnIfMissing(_ connection: Connection, name: String, sqlType: String) throws {
+        let pragmaSQL = "PRAGMA table_info(library_tracks)"
+        for row in try connection.prepare(pragmaSQL) {
+            if let existingName = row[1] as? String, existingName == name {
+                return
+            }
+        }
+        try connection.run("ALTER TABLE library_tracks ADD COLUMN \(name) \(sqlType)")
     }
 
     private func createTablesIfNeeded(_ connection: Connection) throws {
@@ -185,6 +233,20 @@ final class MediaLibraryStore {
             t.column(colRating)
             t.column(colScanFileSize)
             t.column(colScanModDate)
+            t.column(colComposer)
+            t.column(colComment)
+            t.column(colGrouping)
+            t.column(colBPM)
+            t.column(colMusicalKey)
+            t.column(colISRC)
+            t.column(colCopyright)
+            t.column(colMBRecordingID)
+            t.column(colMBReleaseID)
+            t.column(colDiscogsReleaseID)
+            t.column(colDiscogsMasterID)
+            t.column(colDiscogsLabel)
+            t.column(colDiscogsCatalogNumber)
+            t.column(colArtworkURL)
         })
         try connection.run("CREATE INDEX IF NOT EXISTS idx_tracks_artist ON library_tracks (album_artist, artist)")
         // Expression index covering artistNames GROUP BY and albumsForArtist/albumsForArtistsBatch WHERE clauses.
@@ -1017,6 +1079,12 @@ final class MediaLibraryStore {
             try db.transaction {
                 try self.upsertTrackInternal(track, sig: sig, connection: db)
             }
+            NSLog("MediaLibraryStore: upsertTrack url=%@ title=%@ artist=%@ album=%@ albumArtist=%@",
+                  track.url.absoluteString,
+                  track.title,
+                  track.artist ?? "nil",
+                  track.album ?? "nil",
+                  track.albumArtist ?? "nil")
         } catch {
             NSLog("MediaLibraryStore: upsertTrack failed: %@", error.localizedDescription)
         }
@@ -1345,18 +1413,48 @@ final class MediaLibraryStore {
             colPlayCount <- track.playCount,
             colRating <- track.rating,
             colScanFileSize <- sig?.fileSize,
-            colScanModDate <- sig?.contentModificationDate.map { $0.timeIntervalSince1970 }
+            colScanModDate <- sig?.contentModificationDate.map { $0.timeIntervalSince1970 },
+            colComposer <- track.composer,
+            colComment <- track.comment,
+            colGrouping <- track.grouping,
+            colBPM <- track.bpm,
+            colMusicalKey <- track.musicalKey,
+            colISRC <- track.isrc,
+            colCopyright <- track.copyright,
+            colMBRecordingID <- track.musicBrainzRecordingID,
+            colMBReleaseID <- track.musicBrainzReleaseID,
+            colDiscogsReleaseID <- track.discogsReleaseID,
+            colDiscogsMasterID <- track.discogsMasterID,
+            colDiscogsLabel <- track.discogsLabel,
+            colDiscogsCatalogNumber <- track.discogsCatalogNumber,
+            colArtworkURL <- track.artworkURL
         ))
         // INSERT OR REPLACE on library_tracks cascades DELETE on track_artists (FK + PRAGMA foreign_keys = ON),
         // so old rows are already gone. Use INSERT OR IGNORE to avoid duplicate-key errors on edge cases.
         let urlStr = track.url.absoluteString
-        for entry in track.artists {
+        for entry in derivedArtistEntries(for: track) {
             try connection.run("""
                 INSERT OR IGNORE INTO track_artists (track_url, artist_name, role)
                 VALUES (?, ?, ?)
                 """, urlStr, entry.name, entry.role.rawValue)
         }
         return rowid
+    }
+
+    private func derivedArtistEntries(for track: LibraryTrack) -> [(name: String, role: ArtistRole)] {
+        var entries = ArtistSplitter.split(track.artist ?? "", isAlbumArtist: false)
+
+        let albumArtistEntries: [(name: String, role: ArtistRole)]
+        if let albumArtist = track.albumArtist, !albumArtist.isEmpty {
+            albumArtistEntries = ArtistSplitter.split(albumArtist, isAlbumArtist: true)
+        } else if let artist = track.artist, !artist.isEmpty {
+            albumArtistEntries = ArtistSplitter.split(artist, isAlbumArtist: true)
+        } else {
+            albumArtistEntries = [(name: "Unknown Artist", role: .albumArtist)]
+        }
+
+        entries.append(contentsOf: albumArtistEntries)
+        return entries
     }
 
     @discardableResult
@@ -1433,7 +1531,21 @@ final class MediaLibraryStore {
             dateAdded: Date(timeIntervalSince1970: row[colDateAdded]),
             lastPlayed: row[colLastPlayed].map { Date(timeIntervalSince1970: $0) },
             playCount: row[colPlayCount],
-            rating: row[colRating]
+            rating: row[colRating],
+            composer: row[colComposer],
+            comment: row[colComment],
+            grouping: row[colGrouping],
+            bpm: row[colBPM],
+            musicalKey: row[colMusicalKey],
+            isrc: row[colISRC],
+            copyright: row[colCopyright],
+            musicBrainzRecordingID: row[colMBRecordingID],
+            musicBrainzReleaseID: row[colMBReleaseID],
+            discogsReleaseID: row[colDiscogsReleaseID],
+            discogsMasterID: row[colDiscogsMasterID],
+            discogsLabel: row[colDiscogsLabel],
+            discogsCatalogNumber: row[colDiscogsCatalogNumber],
+            artworkURL: row[colArtworkURL]
         )
     }
 
@@ -1475,7 +1587,9 @@ final class MediaLibraryStore {
         // Columns in SELECT * from library_tracks order:
         // id, url, title, artist, album, album_artist, genre, year, track_number, disc_number,
         // duration, bitrate, sample_rate, channels, file_size, date_added, last_played, play_count, rating,
-        // scan_file_size, scan_mod_date
+        // scan_file_size, scan_mod_date, composer, comment, grouping, bpm, musical_key, isrc, copyright,
+        // musicbrainz_recording_id, musicbrainz_release_id, discogs_release_id, discogs_master_id,
+        // discogs_label, discogs_catalog_number, artwork_url
         guard let idStr = row[0] as? String,
               let id = UUID(uuidString: idStr),
               let urlStr = row[1] as? String,
@@ -1498,6 +1612,20 @@ final class MediaLibraryStore {
         let lastPlayedTs = row[16] as? Double
         let playCount = (row[17] as? Int64).map(Int.init) ?? 0
         let rating = (row[18] as? Int64).map(Int.init)
+        let composer = row[21] as? String
+        let comment = row[22] as? String
+        let grouping = row[23] as? String
+        let bpm = (row[24] as? Int64).map(Int.init)
+        let musicalKey = row[25] as? String
+        let isrc = row[26] as? String
+        let copyright = row[27] as? String
+        let musicBrainzRecordingID = row[28] as? String
+        let musicBrainzReleaseID = row[29] as? String
+        let discogsReleaseID = (row[30] as? Int64).map(Int.init)
+        let discogsMasterID = (row[31] as? Int64).map(Int.init)
+        let discogsLabel = row[32] as? String
+        let discogsCatalogNumber = row[33] as? String
+        let artworkURL = row[34] as? String
 
         return LibraryTrack(
             id: id,
@@ -1518,7 +1646,21 @@ final class MediaLibraryStore {
             dateAdded: dateAdded,
             lastPlayed: lastPlayedTs.map { Date(timeIntervalSince1970: $0) },
             playCount: playCount,
-            rating: rating
+            rating: rating,
+            composer: composer,
+            comment: comment,
+            grouping: grouping,
+            bpm: bpm,
+            musicalKey: musicalKey,
+            isrc: isrc,
+            copyright: copyright,
+            musicBrainzRecordingID: musicBrainzRecordingID,
+            musicBrainzReleaseID: musicBrainzReleaseID,
+            discogsReleaseID: discogsReleaseID,
+            discogsMasterID: discogsMasterID,
+            discogsLabel: discogsLabel,
+            discogsCatalogNumber: discogsCatalogNumber,
+            artworkURL: artworkURL
         )
     }
 }
