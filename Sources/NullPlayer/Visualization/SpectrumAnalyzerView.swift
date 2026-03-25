@@ -2979,7 +2979,6 @@ class SpectrumAnalyzerView: NSView {
     private func updateBuffers() {
         // Get render-safe values inside lock
         var localBarCount: Int = 0
-        var localBarWidth: CGFloat = 0
         var localColors: [SIMD4<Float>] = []
         var localSpectrum: [Float] = []
         var localPeakPositions: [Float] = []
@@ -2990,7 +2989,6 @@ class SpectrumAnalyzerView: NSView {
         
         dataLock.withLock {
             localBarCount = renderBarCount
-            localBarWidth = renderBarWidth
             localColors = renderColorPalette
             localSpectrum = displaySpectrum
             // Use appropriate peak positions based on mode
@@ -3105,10 +3103,13 @@ class SpectrumAnalyzerView: NSView {
             }
             
         case .classic, .punch:
-            // Calculate cell dimensions for Classic mode - use exact bar width
+            // Derive cell width from viewport so bars always fill the full width.
+            // Using the floor()'d host barWidth here can leave a large right-side gap
+            // at many window widths (e.g. only ~70-80% coverage).
             let cellSpacing: Float = 1.0 * Float(scale)
+            let totalSpacing = Float(max(0, localBarCount - 1)) * cellSpacing
             let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
-            let cellWidth = Float(localBarWidth * scale)
+            let cellWidth = max(1.0, (scaledWidth - totalSpacing) / Float(max(1, localBarCount)))
             
             // Update params buffer for Classic
             if let buffer = paramsBuffer {

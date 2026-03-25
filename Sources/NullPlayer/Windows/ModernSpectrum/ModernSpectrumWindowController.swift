@@ -83,6 +83,9 @@ class ModernSpectrumWindowController: NSWindowController, SpectrumWindowProvidin
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         // Note: Positioning is handled by WindowManager.positionSubWindow() before showWindow is called
+        // Ensure the inner analyzer view matches any pre-show frame adjustments
+        // before rendering starts.
+        spectrumView.updateSpectrumFrame()
         spectrumView.startRendering()
     }
     
