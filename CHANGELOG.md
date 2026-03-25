@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.18.1
+
+### Playback
+
+- **Sleep/wake timer freeze** — local playback time no longer accumulates while the Mac is asleep; the play clock resumes from the pre-sleep position on wake.
+- **Explicit restore intent** — saved-state restore now explicitly uses the persisted `wasPlaying` flag to decide whether launch should end in playing or paused state, while preserving the current user-visible startup behavior.
+
+### Documentation
+
+- **Playback follow-up report** — added `docs/playback-state-followups.md` to capture remaining architectural issues around playback clocks, restore semantics, and testability that are intentionally out of scope for the conservative fix.
+
 ## 0.18.0
 
 ### CLI Mode
