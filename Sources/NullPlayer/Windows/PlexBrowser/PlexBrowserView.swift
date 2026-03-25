@@ -924,6 +924,9 @@ class PlexBrowserView: NSView {
     
     /// Active tags panel (strong reference to prevent premature deallocation)
     private var activeTagsPanel: TagsPanel?
+    private var activeEditTagsPanel: EditTagsPanel?
+    private var activeEditAlbumTagsPanel: EditAlbumTagsPanel?
+    private var activeEditVideoTagsPanel: EditVideoTagsPanel?
     
     /// Window dragging state
     private var isDraggingWindow = false
@@ -1587,8 +1590,12 @@ class PlexBrowserView: NSView {
     private func clearLocalCachedData() {
         localArtistPageOffset = 0; localAlbumPageOffset = 0
         localArtistTotal = 0; localAlbumTotal = 0
+        localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
+        cachedLocalMovies = []; cachedLocalShows = []
         expandedLocalArtists = []
         expandedLocalAlbums = []
+        expandedLocalShows = []
+        expandedLocalSeasons = []
     }
     
     @objc private func mediaLibraryDidChange() {
@@ -9079,6 +9086,11 @@ class PlexBrowserView: NSView {
             
             menu.addItem(NSMenuItem.separator())
             
+            let editTagsItem = NSMenuItem(title: "Edit Tags", action: #selector(contextMenuEditTags(_:)), keyEquivalent: "")
+            editTagsItem.target = self
+            editTagsItem.representedObject = track
+            menu.addItem(editTagsItem)
+
             let tagsItem = NSMenuItem(title: "See Tags", action: #selector(contextMenuShowTags(_:)), keyEquivalent: "")
             tagsItem.target = self
             tagsItem.representedObject = track
@@ -9132,6 +9144,12 @@ class PlexBrowserView: NSView {
             let rateAlbumItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
             rateAlbumItem.submenu = buildRateSubmenuForLocalAlbum(albumId: album.id)
             menu.addItem(rateAlbumItem)
+
+            let editAlbumItem = NSMenuItem(title: "Edit Album Tags", action: #selector(contextMenuEditAlbumTags(_:)), keyEquivalent: "")
+            editAlbumItem.target = self
+            editAlbumItem.representedObject = album
+            menu.addItem(editAlbumItem)
+
             menu.addItem(NSMenuItem.separator())
             
             let removeItem = NSMenuItem(title: "Remove Album from Library", action: #selector(contextMenuRemoveLocalAlbum(_:)), keyEquivalent: "")
@@ -9531,6 +9549,11 @@ class PlexBrowserView: NSView {
             finderItem.target = self
             finderItem.representedObject = movie.url as NSURL
             menu.addItem(finderItem)
+            menu.addItem(NSMenuItem.separator())
+            let editMovieItem = NSMenuItem(title: "Edit Tags", action: #selector(contextMenuEditVideoTags(_:)), keyEquivalent: "")
+            editMovieItem.target = self
+            editMovieItem.representedObject = movie
+            menu.addItem(editMovieItem)
 
         case .localShow(let show):
             let expandItem = NSMenuItem(title: expandedLocalShows.contains(show.id) ? "Collapse" : "Expand",
@@ -9570,6 +9593,11 @@ class PlexBrowserView: NSView {
             finderItem.target = self
             finderItem.representedObject = episode.url as NSURL
             menu.addItem(finderItem)
+            menu.addItem(NSMenuItem.separator())
+            let editEpisodeItem = NSMenuItem(title: "Edit Tags", action: #selector(contextMenuEditVideoTags(_:)), keyEquivalent: "")
+            editEpisodeItem.target = self
+            editEpisodeItem.representedObject = episode
+            menu.addItem(editEpisodeItem)
 
         case .header:
             return
@@ -9648,6 +9676,44 @@ class PlexBrowserView: NSView {
         tagsPanel.delegate = self
         activeTagsPanel = tagsPanel
         tagsPanel.show()
+    }
+
+    @objc private func contextMenuEditTags(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        activeEditTagsPanel?.close()
+        let panel = EditTagsPanel(track: track)
+        panel.delegate = self
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
+        activeEditTagsPanel = panel
+        panel.show()
+    }
+
+    @objc private func contextMenuEditAlbumTags(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? Album else { return }
+        activeEditAlbumTagsPanel?.close()
+        let panel = EditAlbumTagsPanel(album: album)
+        panel.delegate = self
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
+        activeEditAlbumTagsPanel = panel
+        panel.show()
+    }
+
+    @objc private func contextMenuEditVideoTags(_ sender: NSMenuItem) {
+        let videoItem: EditVideoTagsPanel.VideoItem
+        if let movie = sender.representedObject as? LocalVideo {
+            videoItem = .movie(movie)
+        } else if let episode = sender.representedObject as? LocalEpisode {
+            videoItem = .episode(episode)
+        } else {
+            return
+        }
+
+        activeEditVideoTagsPanel?.close()
+        let panel = EditVideoTagsPanel(item: videoItem)
+        panel.delegate = self
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
+        activeEditVideoTagsPanel = panel
+        panel.show()
     }
     
     @objc private func contextMenuPlayLocalAlbum(_ sender: NSMenuItem) {
@@ -12752,6 +12818,19 @@ class PlexBrowserView: NSView {
         loadLocalBrowseArtwork()
 
         needsDisplay = true
+    }
+
+    private func reloadLocalBrowserAfterMetadataEdit() {
+        guard case .local = currentSource else {
+            loadLocalData()
+            return
+        }
+
+        clearLocalCachedData()
+        displayItems.removeAll()
+        selectedIndices.removeAll()
+        scrollOffset = 0
+        loadLocalData()
     }
     
     /// Load radio stations
@@ -16146,10 +16225,16 @@ class PlexBrowserView: NSView {
 
 extension PlexBrowserView: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
-        // Clear the tags panel reference when it closes
-        if let closingWindow = notification.object as? TagsPanel,
-           closingWindow === activeTagsPanel {
-            activeTagsPanel = nil
+        if let closingWindow = notification.object as? NSWindow {
+            if closingWindow === activeTagsPanel {
+                activeTagsPanel = nil
+            } else if closingWindow === activeEditTagsPanel {
+                activeEditTagsPanel = nil
+            } else if closingWindow === activeEditAlbumTagsPanel {
+                activeEditAlbumTagsPanel = nil
+            } else if closingWindow === activeEditVideoTagsPanel {
+                activeEditVideoTagsPanel = nil
+            }
         }
     }
 }
