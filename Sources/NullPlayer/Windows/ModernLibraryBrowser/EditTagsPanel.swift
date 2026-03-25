@@ -230,13 +230,16 @@ class EditTagsPanel: NSWindow {
 
     @objc private func saveClicked() {
         commitPendingEdits()
-        track = trackFromForm()
-        NSLog("[MetadataDebug] track-save url=%@ title=%@ artist=%@ album=%@ albumArtist=%@",
+        NSLog("[MetadataDebug] track-save-form url=%@ fields={%@}",
               track.url.absoluteString,
-              track.title,
-              track.artist ?? "nil",
-              track.album ?? "nil",
-              track.albumArtist ?? "nil")
+              debugFormSummary())
+        let before = MediaLibrary.shared.findTrack(byURL: track.url) ?? track
+        track = trackFromForm()
+        NSLog("[MetadataDebug] track-save-diff url=%@ artistChanged=%d before={%@} after={%@}",
+              track.url.absoluteString,
+              before.artist != track.artist ? 1 : 0,
+              debugTrackSummary(before),
+              debugTrackSummary(track))
         MediaLibrary.shared.updateTrack(track)
         onSave?()
         close()
@@ -289,6 +292,10 @@ class EditTagsPanel: NSWindow {
               selected.patch.artist ?? "nil",
               selected.patch.album ?? "nil",
               selected.patch.albumArtist ?? "nil")
+        NSLog("[MetadataDebug] track-apply-candidate-detail id=%@ artistChanged=%d patch={%@}",
+              selected.id,
+              selected.patch.artist != nil && selected.patch.artist != baseTrack.artist ? 1 : 0,
+              debugPatchSummary(selected.patch))
         applyPatchToForm(selected.patch)
     }
 
@@ -412,6 +419,9 @@ class EditTagsPanel: NSWindow {
         setField(.discogsLabel, patch.discogsLabel)
         setField(.discogsCatalogNumber, patch.discogsCatalogNumber)
         setField(.artworkURL, patch.artworkURL)
+        NSLog("[MetadataDebug] track-form-after-patch url=%@ fields={%@}",
+              track.url.absoluteString,
+              debugFormSummary())
     }
 
     private func setField(_ field: Field, _ value: String?) {
@@ -420,7 +430,13 @@ class EditTagsPanel: NSWindow {
     }
 
     private func trackFromForm() -> LibraryTrack {
-        var updated = MediaLibrary.shared.findTrack(byURL: track.url) ?? track
+        let foundTrack = MediaLibrary.shared.findTrack(byURL: track.url)
+        NSLog("[MetadataDebug] track-form-build-start url=%@ foundCurrent=%d base={%@} fields={%@}",
+              track.url.absoluteString,
+              foundTrack != nil ? 1 : 0,
+              debugTrackSummary(foundTrack ?? track),
+              debugFormSummary())
+        var updated = foundTrack ?? track
         updated.title = nonEmpty(.title) ?? track.title
         updated.artist = nonEmpty(.artist)
         updated.album = nonEmpty(.album)
@@ -443,6 +459,9 @@ class EditTagsPanel: NSWindow {
         updated.discogsLabel = nonEmpty(.discogsLabel)
         updated.discogsCatalogNumber = nonEmpty(.discogsCatalogNumber)
         updated.artworkURL = nonEmpty(.artworkURL)
+        NSLog("[MetadataDebug] track-form-build-end url=%@ result={%@}",
+              track.url.absoluteString,
+              debugTrackSummary(updated))
         return updated
     }
 
@@ -519,5 +538,77 @@ class EditTagsPanel: NSWindow {
         level = .modalPanel
         center()
         makeKeyAndOrderFront(nil)
+    }
+
+    private func debugTrackSummary(_ track: LibraryTrack) -> String {
+        [
+            "title=\(debugString(track.title))",
+            "artist=\(debugString(track.artist))",
+            "album=\(debugString(track.album))",
+            "albumArtist=\(debugString(track.albumArtist))",
+            "genre=\(debugString(track.genre))",
+            "year=\(debugInt(track.year))",
+            "trackNo=\(debugInt(track.trackNumber))",
+            "discNo=\(debugInt(track.discNumber))",
+            "composer=\(debugString(track.composer))",
+            "comment=\(debugString(track.comment))",
+            "grouping=\(debugString(track.grouping))",
+            "bpm=\(debugInt(track.bpm))",
+            "key=\(debugString(track.musicalKey))",
+            "isrc=\(debugString(track.isrc))",
+            "copyright=\(debugString(track.copyright))",
+            "mbRec=\(debugString(track.musicBrainzRecordingID))",
+            "mbRel=\(debugString(track.musicBrainzReleaseID))",
+            "discogsRel=\(debugInt(track.discogsReleaseID))",
+            "discogsMaster=\(debugInt(track.discogsMasterID))",
+            "discogsLabel=\(debugString(track.discogsLabel))",
+            "discogsCat=\(debugString(track.discogsCatalogNumber))",
+            "artURL=\(debugString(track.artworkURL))"
+        ].joined(separator: " ")
+    }
+
+    private func debugPatchSummary(_ patch: AutoTagTrackPatch) -> String {
+        [
+            "title=\(debugString(patch.title))",
+            "artist=\(debugString(patch.artist))",
+            "album=\(debugString(patch.album))",
+            "albumArtist=\(debugString(patch.albumArtist))",
+            "genre=\(debugString(patch.genre))",
+            "year=\(debugInt(patch.year))",
+            "trackNo=\(debugInt(patch.trackNumber))",
+            "discNo=\(debugInt(patch.discNumber))",
+            "composer=\(debugString(patch.composer))",
+            "comment=\(debugString(patch.comment))",
+            "grouping=\(debugString(patch.grouping))",
+            "bpm=\(debugInt(patch.bpm))",
+            "key=\(debugString(patch.musicalKey))",
+            "isrc=\(debugString(patch.isrc))",
+            "copyright=\(debugString(patch.copyright))",
+            "mbRec=\(debugString(patch.musicBrainzRecordingID))",
+            "mbRel=\(debugString(patch.musicBrainzReleaseID))",
+            "discogsRel=\(debugInt(patch.discogsReleaseID))",
+            "discogsMaster=\(debugInt(patch.discogsMasterID))",
+            "discogsLabel=\(debugString(patch.discogsLabel))",
+            "discogsCat=\(debugString(patch.discogsCatalogNumber))",
+            "artURL=\(debugString(patch.artworkURL))"
+        ].joined(separator: " ")
+    }
+
+    private func debugFormSummary() -> String {
+        Field.allCases.map { field in
+            let raw = fields[field]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            return "\(field.label)=\(debugString(raw))"
+        }.joined(separator: " ")
+    }
+
+    private func debugString(_ value: String?) -> String {
+        guard let value else { return "nil" }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "empty" }
+        return trimmed.replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    private func debugInt(_ value: Int?) -> String {
+        value.map(String.init) ?? "nil"
     }
 }

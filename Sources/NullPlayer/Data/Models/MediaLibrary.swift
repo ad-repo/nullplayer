@@ -899,6 +899,17 @@ class MediaLibrary {
               normalizedTrack.album ?? "nil",
               normalizedTrack.albumArtist ?? "nil")
         store.upsertTrack(normalizedTrack, sig: sig)
+        if let persisted = store.track(forURL: normalizedTrack.url) {
+            let artistRows = store.artistsForURLs([normalizedTrack.url.absoluteString])[normalizedTrack.url.absoluteString] ?? []
+            let artistRowSummary = artistRows.map { "\($0.name)|\($0.role.rawValue)" }.joined(separator: ",")
+            NSLog("[MetadataDebug] media-library-readback url=%@ persisted={%@} artistRows=[%@]",
+                  normalizedTrack.url.absoluteString,
+                  debugTrackSummary(persisted),
+                  artistRowSummary)
+        } else {
+            NSLog("[MetadataDebug] media-library-readback-missing url=%@",
+                  normalizedTrack.url.absoluteString)
+        }
         notifyChange()
     }
 
@@ -2112,6 +2123,44 @@ class MediaLibrary {
 
         let suggested = max(2, ProcessInfo.processInfo.activeProcessorCount / 2)
         return min(8, suggested)
+    }
+
+    private func debugTrackSummary(_ track: LibraryTrack) -> String {
+        [
+            "title=\(debugString(track.title))",
+            "artist=\(debugString(track.artist))",
+            "album=\(debugString(track.album))",
+            "albumArtist=\(debugString(track.albumArtist))",
+            "genre=\(debugString(track.genre))",
+            "year=\(debugInt(track.year))",
+            "trackNo=\(debugInt(track.trackNumber))",
+            "discNo=\(debugInt(track.discNumber))",
+            "composer=\(debugString(track.composer))",
+            "comment=\(debugString(track.comment))",
+            "grouping=\(debugString(track.grouping))",
+            "bpm=\(debugInt(track.bpm))",
+            "key=\(debugString(track.musicalKey))",
+            "isrc=\(debugString(track.isrc))",
+            "copyright=\(debugString(track.copyright))",
+            "mbRec=\(debugString(track.musicBrainzRecordingID))",
+            "mbRel=\(debugString(track.musicBrainzReleaseID))",
+            "discogsRel=\(debugInt(track.discogsReleaseID))",
+            "discogsMaster=\(debugInt(track.discogsMasterID))",
+            "discogsLabel=\(debugString(track.discogsLabel))",
+            "discogsCat=\(debugString(track.discogsCatalogNumber))",
+            "artURL=\(debugString(track.artworkURL))"
+        ].joined(separator: " ")
+    }
+
+    private func debugString(_ value: String?) -> String {
+        guard let value else { return "nil" }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "empty" }
+        return trimmed.replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    private func debugInt(_ value: Int?) -> String {
+        value.map(String.init) ?? "nil"
     }
     
     // MARK: - Helpers

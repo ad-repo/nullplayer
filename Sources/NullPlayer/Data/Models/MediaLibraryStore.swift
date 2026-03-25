@@ -1090,6 +1090,19 @@ final class MediaLibraryStore {
         }
     }
 
+    func track(forURL url: URL) -> LibraryTrack? {
+        guard let db = db else { return nil }
+        let urlString = url.absoluteString
+        do {
+            let query = tracksTable.filter(colURL == urlString || colURL == url.path)
+            guard let row = try db.pluck(query) else { return nil }
+            return trackFromRow(row)
+        } catch {
+            NSLog("MediaLibraryStore: track(forURL:) failed: %@", error.localizedDescription)
+            return nil
+        }
+    }
+
     func upsertMovie(_ movie: LocalVideo, sig: FileScanSignature?) {
         guard let db = db else { return }
         do {
