@@ -61,6 +61,7 @@ class EditTagsPanel: NSWindow {
     private var track: LibraryTrack
     private var fields: [Field: NSTextField] = [:]
     private var autoTagButton = NSButton(title: "Auto-Tag", target: nil, action: nil)
+    private var autoTagTask: Task<Void, Never>?
     private let artworkImageView = NSImageView()
     private let artworkPlaceholderLabel = NSTextField(labelWithString: "No Artwork")
 
@@ -246,6 +247,7 @@ class EditTagsPanel: NSWindow {
     }
 
     @objc private func cancelClicked() {
+        autoTagTask?.cancel()
         close()
     }
 
@@ -253,10 +255,12 @@ class EditTagsPanel: NSWindow {
         commitPendingEdits()
         let draft = trackFromForm()
         autoTagButton.isEnabled = false
-        Task { [weak self] in
+        autoTagTask?.cancel()
+        autoTagTask = Task { [weak self] in
             guard let self else { return }
             let candidates = await AutoTaggingService.shared.searchTrackCandidates(for: draft)
             await MainActor.run {
+                guard self.isVisible else { return }
                 self.autoTagButton.isEnabled = true
                 self.presentTrackAutoTag(candidates: candidates, baseTrack: draft)
             }

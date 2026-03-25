@@ -145,10 +145,10 @@ enum AutoTagCandidateMerger {
     static func mergeTrackCandidates(_ input: [AutoTagTrackCandidate], limit: Int = 5) -> [AutoTagTrackCandidate] {
         var byKey: [String: AutoTagTrackCandidate] = [:]
         for candidate in input {
-            if let existing = byKey[candidate.id], existing.confidence >= candidate.confidence {
+            if let existing = byKey[candidate.mergeKey], existing.confidence >= candidate.confidence {
                 continue
             }
-            byKey[candidate.id] = candidate
+            byKey[candidate.mergeKey] = candidate
         }
         return byKey.values
             .sorted { lhs, rhs in
@@ -164,10 +164,10 @@ enum AutoTagCandidateMerger {
     static func mergeAlbumCandidates(_ input: [AutoTagAlbumCandidate], limit: Int = 5) -> [AutoTagAlbumCandidate] {
         var byKey: [String: AutoTagAlbumCandidate] = [:]
         for candidate in input {
-            if let existing = byKey[candidate.id], existing.confidence >= candidate.confidence {
+            if let existing = byKey[candidate.mergeKey], existing.confidence >= candidate.confidence {
                 continue
             }
-            byKey[candidate.id] = candidate
+            byKey[candidate.mergeKey] = candidate
         }
         return byKey.values
             .sorted { lhs, rhs in
@@ -390,15 +390,15 @@ enum AutoTagTrackMapper {
         var mapped: [UUID: AutoTagReleaseTrackHint] = [:]
         var remainingReleaseIndices = Set(releaseTracks.indices)
         var remainingTrackIDs = Set(localTracks.map(\.id))
-        let localByDiscTrack: [String: LibraryTrack] = Dictionary(uniqueKeysWithValues: localTracks.compactMap { track in
+        let localByDiscTrack: [String: LibraryTrack] = Dictionary(localTracks.compactMap { track in
             guard let disc = track.discNumber, let trackNo = track.trackNumber else { return nil }
             return ("\(disc)-\(trackNo)", track)
-        })
+        }, uniquingKeysWith: { first, _ in first })
 
-        let localByISRC: [String: LibraryTrack] = Dictionary(uniqueKeysWithValues: localTracks.compactMap { track in
+        let localByISRC: [String: LibraryTrack] = Dictionary(localTracks.compactMap { track in
             guard let isrc = normalizedCode(track.isrc) else { return nil }
             return (isrc, track)
-        })
+        }, uniquingKeysWith: { first, _ in first })
 
         for (releaseIndex, hint) in releaseTracks.enumerated() {
             if let isrc = normalizedCode(hint.isrc),

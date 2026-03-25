@@ -1832,8 +1832,9 @@ class AudioEngine {
             guard remainingFrames > 0 else { return }
             
             // Schedule from the new position with a new completion handler
-            playerNode.scheduleSegment(file, startingFrame: framePosition, 
-                                       frameCount: AVAudioFrameCount(remainingFrames), at: nil) { [weak self] in
+            playerNode.scheduleSegment(file, startingFrame: framePosition,
+                                       frameCount: AVAudioFrameCount(remainingFrames), at: nil,
+                                       completionCallbackType: .dataPlayedBack) { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.handlePlaybackComplete(generation: currentGeneration)
                 }

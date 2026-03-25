@@ -50,6 +50,7 @@ class EditAlbumTagsPanel: NSWindow {
     private var pendingPerTrackPatches: [UUID: AutoTagTrackPatch] = [:]
     private var lastAppliedAutoTagCandidateID: String?
     private var autoTagButton = NSButton(title: "Auto-Tag", target: nil, action: nil)
+    private var autoTagTask: Task<Void, Never>?
     private let artworkImageView = NSImageView()
     private let artworkPlaceholderLabel = NSTextField(labelWithString: "No Artwork")
     var trackFinder: (URL) -> LibraryTrack? = { MediaLibrary.shared.findTrack(byURL: $0) }
@@ -269,14 +270,17 @@ class EditAlbumTagsPanel: NSWindow {
     }
 
     @objc private func cancelClicked() {
+        autoTagTask?.cancel()
         close()
     }
 
     @objc private func autoTagClicked() {
+        commitPendingEdits()
         let albumName = fields[.album]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? album.name
         let albumArtist = fields[.albumArtist]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         autoTagButton.isEnabled = false
-        Task { [weak self] in
+        autoTagTask?.cancel()
+        autoTagTask = Task { [weak self] in
             guard let self else { return }
             let candidates = await AutoTaggingService.shared.searchAlbumCandidates(
                 albumName: albumName,
@@ -284,6 +288,7 @@ class EditAlbumTagsPanel: NSWindow {
                 tracks: editingTracks
             )
             await MainActor.run {
+                guard self.isVisible else { return }
                 self.autoTagButton.isEnabled = true
                 self.presentAlbumAutoTag(candidates: candidates)
             }

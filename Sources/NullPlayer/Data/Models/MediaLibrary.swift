@@ -1828,8 +1828,10 @@ class MediaLibrary {
         for item in id3Metadata {
             if let key = item.key as? String {
                 switch key {
-                case "TCON", "TIT1":  // Genre
+                case "TCON":  // Genre
                     track.genre = item.stringValue
+                case "TIT1":  // Content group / grouping
+                    track.grouping = item.stringValue
                 case "TCOM":  // Composer
                     track.composer = item.stringValue
                 case "COMM":  // Comment

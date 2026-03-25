@@ -7473,7 +7473,6 @@ class ModernLibraryBrowserView: NSView {
     private func reloadLocalBrowserAfterMetadataEdit() {
         guard case .local = currentSource else {
             NSLog("[MetadataDebug] browser-reload-after-edit non-local-source")
-            loadLocalData()
             return
         }
 
