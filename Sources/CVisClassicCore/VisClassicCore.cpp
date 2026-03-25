@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -471,6 +472,15 @@ private:
     std::vector<int> peakLevel_;
     std::vector<int> peakTimer_;
 
+    // Time-based decay: scale decay by elapsed time so different frame rates produce identical visuals.
+    using Clock = std::chrono::steady_clock;
+    static constexpr double kRefIntervalMs = 33.333;  // 30fps baseline
+    Clock::time_point lastFrameTime_{};
+    bool hasLastFrameTime_ = false;
+    std::vector<float> levelDecayAccum_;
+    std::vector<float> peakTimerAccum_;
+    std::vector<float> peakDecayAccum_;
+
     std::array<int, kColorCount> volumeFunc_{};
     std::array<RGB, kColorCount> barColors_{};
     std::array<RGB, kColorCount> peakColors_{};
@@ -518,6 +528,9 @@ private:
         level_.assign(static_cast<size_t>(bands_), 0);
         peakLevel_.assign(static_cast<size_t>(bands_), 0);
         peakTimer_.assign(static_cast<size_t>(bands_), 0);
+        levelDecayAccum_.assign(static_cast<size_t>(bands_), 0.0f);
+        peakTimerAccum_.assign(static_cast<size_t>(bands_), 0.0f);
+        peakDecayAccum_.assign(static_cast<size_t>(bands_), 0.0f);
 
         rebuildBarTable_ = true;
     }
@@ -545,11 +558,17 @@ private:
         return AverageLevelCalcStereo(low, high, src.data());
     }
 
-    void updatePeaks(size_t idx, int barLevel) {
-        if (barLevel > (level_[idx] - falloffRate_)) {
+    void updatePeaks(size_t idx, int barLevel, double dtScale) {
+        float scaledFalloff = static_cast<float>(falloffRate_) * static_cast<float>(dtScale)
+                              + levelDecayAccum_[idx];
+        int intFalloff = static_cast<int>(scaledFalloff);
+        levelDecayAccum_[idx] = scaledFalloff - static_cast<float>(intFalloff);
+
+        if (barLevel > (level_[idx] - intFalloff)) {
             level_[idx] = barLevel;
+            levelDecayAccum_[idx] = 0.0f;
         } else {
-            level_[idx] = std::max(0, level_[idx] - falloffRate_);
+            level_[idx] = std::max(0, level_[idx] - intFalloff);
         }
 
         if (peakChangeRate_ <= 0) {
@@ -561,23 +580,42 @@ private:
         if (level_[idx] >= peakLevel_[idx]) {
             peakLevel_[idx] = level_[idx];
             peakTimer_[idx] = peakChangeRate_;
+            peakTimerAccum_[idx] = 0.0f;
+            peakDecayAccum_[idx] = 0.0f;
             return;
         }
 
         if (peakTimer_[idx] > 0) {
-            peakTimer_[idx] -= 1;
+            float scaledTick = static_cast<float>(dtScale) + peakTimerAccum_[idx];
+            int intTick = static_cast<int>(scaledTick);
+            peakTimerAccum_[idx] = scaledTick - static_cast<float>(intTick);
+            peakTimer_[idx] = std::max(0, peakTimer_[idx] - intTick);
         } else {
-            peakLevel_[idx] = std::max(level_[idx], peakLevel_[idx] - 1);
+            float scaledDescent = static_cast<float>(dtScale) + peakDecayAccum_[idx];
+            int intDescent = static_cast<int>(scaledDescent);
+            peakDecayAccum_[idx] = scaledDescent - static_cast<float>(intDescent);
+            peakLevel_[idx] = std::max(level_[idx], peakLevel_[idx] - intDescent);
         }
     }
 
-    void decayWhenIdle() {
+    void decayWhenIdle(double dtScale) {
         for (size_t i = 0; i < level_.size(); ++i) {
-            level_[i] = std::max(0, level_[i] - falloffRate_);
+            float scaledFalloff = static_cast<float>(falloffRate_) * static_cast<float>(dtScale)
+                                  + levelDecayAccum_[i];
+            int intFalloff = static_cast<int>(scaledFalloff);
+            levelDecayAccum_[i] = scaledFalloff - static_cast<float>(intFalloff);
+            level_[i] = std::max(0, level_[i] - intFalloff);
+
             if (peakTimer_[i] > 0) {
-                peakTimer_[i] -= 1;
+                float scaledTick = static_cast<float>(dtScale) + peakTimerAccum_[i];
+                int intTick = static_cast<int>(scaledTick);
+                peakTimerAccum_[i] = scaledTick - static_cast<float>(intTick);
+                peakTimer_[i] = std::max(0, peakTimer_[i] - intTick);
             } else {
-                peakLevel_[i] = std::max(level_[i], peakLevel_[i] - 1);
+                float scaledDescent = static_cast<float>(dtScale) + peakDecayAccum_[i];
+                int intDescent = static_cast<int>(scaledDescent);
+                peakDecayAccum_[i] = scaledDescent - static_cast<float>(intDescent);
+                peakLevel_[i] = std::max(level_[i], peakLevel_[i] - intDescent);
             }
         }
     }
@@ -587,8 +625,19 @@ private:
         draw_height = std::max(1, height_);
         rebuildBarTableIfNeeded();
 
+        // Scale decay by elapsed time so different frame rates produce identical visuals.
+        double dtScale = 1.0;
+        auto now = Clock::now();
+        if (hasLastFrameTime_) {
+            double dtMs = std::chrono::duration<double, std::milli>(now - lastFrameTime_).count();
+            dtMs = std::min(dtMs, 200.0);  // clamp after window-hidden gaps
+            dtScale = dtMs / kRefIntervalMs;
+        }
+        lastFrameTime_ = now;
+        hasLastFrameTime_ = true;
+
         if (!hasWaveform_) {
-            decayWhenIdle();
+            decayWhenIdle(dtScale);
             return;
         }
 
@@ -621,7 +670,7 @@ private:
                 high = std::min(high, fftFrequencies_);
                 int newLevel = monoLevel(low, high);
                 low = high;
-                updatePeaks(static_cast<size_t>(x), newLevel);
+                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
             }
         } else {
             const int half = bands_ / 2;
@@ -634,7 +683,7 @@ private:
                 high = std::min(high, fftFrequencies_);
                 int newLevel = stereoLevel(spectrumLeft_, low, high);
                 low = high;
-                updatePeaks(static_cast<size_t>(x), newLevel);
+                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
             }
 
             low = 0;
@@ -645,7 +694,7 @@ private:
                 high = std::min(high, fftFrequencies_);
                 int newLevel = stereoLevel(spectrumRight_, low, high);
                 low = high;
-                updatePeaks(static_cast<size_t>(x), newLevel);
+                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
             }
         }
 
