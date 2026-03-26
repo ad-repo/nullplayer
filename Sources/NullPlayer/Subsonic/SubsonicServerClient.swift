@@ -253,7 +253,7 @@ class SubsonicServerClient {
         return indexes.map { indexDTO in
             SubsonicIndex(
                 name: indexDTO.name,
-                artists: indexDTO.artist?.map { $0.toArtist() } ?? []
+                artists: indexDTO.artist?.map { $0.toArtist(indexLetter: indexDTO.name) } ?? []
             )
         }
     }

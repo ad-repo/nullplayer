@@ -1860,10 +1860,10 @@ class ModernLibraryBrowserView: NSView {
             availableLetters = Set(localAlbumLetterOffsets.keys)
         } else {
             for item in displayItems {
-                availableLetters.insert(sortLetter(for: item.title))
+                availableLetters.insert(effectiveSortLetter(for: item))
             }
         }
-        
+
         for (index, letter) in alphabetLetters.enumerated() {
             // Bottom-left origin: # at top, Z at bottom
             let y = rect.maxY - CGFloat(index + 1) * letterHeight
@@ -3216,10 +3216,28 @@ class ModernLibraryBrowserView: NSView {
         else if itemBottom > scrollOffset + effectiveHeight { scrollOffset = itemBottom - effectiveHeight }
     }
 
+    /// Returns true if title matches the typeahead query, checking both the display form
+    /// and the canonical form for "Surname, Article" style names (e.g. "Atlas Moth, The" → "The Atlas Moth").
+    private func titleMatchesTypeAhead(_ title: String, query: String) -> Bool {
+        if title.lowercased().hasPrefix(query) { return true }
+        // Check canonical form: "Name, The/An/A" → "The/An/A Name"
+        let lower = title.lowercased()
+        for suffix in [", the", ", an", ", a"] {
+            if lower.hasSuffix(suffix) {
+                let article = String(suffix.dropFirst(2)) // ", the" → "the"
+                let base = String(title.dropLast(suffix.count))
+                let canonical = (article + " " + base).lowercased()
+                if canonical.hasPrefix(query) { return true }
+                break
+            }
+        }
+        return false
+    }
+
     private func jumpToTypeAhead() {
         let query = typeAheadQuery.lowercased()
         guard !query.isEmpty else { return }
-        if let idx = displayItems.firstIndex(where: { $0.title.lowercased().hasPrefix(query) }) {
+        if let idx = displayItems.firstIndex(where: { titleMatchesTypeAhead($0.title, query: query) }) {
             selectedIndices = [idx]; ensureVisible(index: idx); loadArtworkForSelection(); needsDisplay = true
         }
         typeAheadTimer?.invalidate()
@@ -3478,7 +3496,15 @@ class ModernLibraryBrowserView: NSView {
         guard let firstChar = sortTitle.first else { return "#" }
         return firstChar.isLetter ? String(firstChar) : "#"
     }
-    
+
+    /// Returns the sort letter for a display item, using the server's index letter for Subsonic artists.
+    private func effectiveSortLetter(for item: ModernDisplayItem) -> String {
+        if case .subsonicArtist(let artist) = item.type, let letter = artist.indexLetter {
+            return letter
+        }
+        return sortLetter(for: item.title)
+    }
+
     private func scrollToLetter(_ letter: String) {
         if case .local = currentSource {
             switch browseMode {
@@ -3503,7 +3529,7 @@ class ModernLibraryBrowserView: NSView {
             }
         }
         for (index, item) in displayItems.enumerated() {
-            if sortLetter(for: item.title) == letter {
+            if effectiveSortLetter(for: item) == letter {
                 var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
                 if browseMode == .search { contentTopY -= Layout.searchBarHeight }
                 let listHeight = contentTopY - Layout.statusBarHeight
@@ -8947,8 +8973,19 @@ class ModernLibraryBrowserView: NSView {
         }
 
         switch currentSort {
-        case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
-        case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        case .nameAsc: return artists.sorted {
+            // Use the server's index letter to match Navidrome's grouping (e.g. "The Atlas Moth" → T)
+            let l0 = $0.indexLetter ?? sortLetter(for: $0.name)
+            let l1 = $1.indexLetter ?? sortLetter(for: $1.name)
+            if l0 != l1 { return l0 < l1 }
+            return compareNameStrings($0.name, $1.name, ascending: true)
+        }
+        case .nameDesc: return artists.sorted {
+            let l0 = $0.indexLetter ?? sortLetter(for: $0.name)
+            let l1 = $1.indexLetter ?? sortLetter(for: $1.name)
+            if l0 != l1 { return l0 > l1 }
+            return compareNameStrings($0.name, $1.name, ascending: false)
+        }
         case .dateAddedDesc:
             return artists.sorted {
                 let key0 = subsonicArtistKey(id: $0.id, name: $0.name)
