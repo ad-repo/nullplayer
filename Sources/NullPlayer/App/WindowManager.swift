@@ -288,6 +288,9 @@ class WindowManager {
     /// Spectrum analyzer window controller (classic or modern, accessed via protocol)
     private var spectrumWindowController: SpectrumWindowProviding?
 
+    /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
+    private(set) var sharedVisClassicBridge: VisClassicBridge?
+
     /// Waveform window controller (classic or modern, accessed via protocol)
     private var waveformWindowController: WaveformWindowProviding?
     
@@ -1711,6 +1714,14 @@ class WindowManager {
         UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
         applyClassicVisualizationDefaults(notify: true)
         notifySkinChanged()
+    }
+
+    func acquireSharedVisClassicBridge() -> VisClassicBridge {
+        if let b = sharedVisClassicBridge { return b }
+        let bridge = VisClassicBridge(width: 576, height: 128, scope: .spectrumWindow)!
+        bridge.setReferenceWidth(576)
+        sharedVisClassicBridge = bridge
+        return bridge
     }
 
     private func applyClassicVisualizationDefaults(notify: Bool) {

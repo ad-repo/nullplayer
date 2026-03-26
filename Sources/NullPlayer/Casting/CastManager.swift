@@ -440,7 +440,15 @@ class CastManager {
         // Start periodic refresh if not already running
         if discoveryRefreshTimer == nil {
             discoveryRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-                self?.refreshDevices()
+                guard let self = self else { return }
+                // Avoid discovery restart bursts during local playback, which can
+                // compete with high-throughput SMB/NAS reads on weaker WiFi links.
+                let engine = self.resolvedAudioEngine
+                if engine.state == .playing && !engine.isCastingActive {
+                    NSLog("CastManager: Skipping discovery refresh - local audio is playing")
+                    return
+                }
+                self.refreshDevices()
             }
         }
 

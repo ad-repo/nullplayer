@@ -3,49 +3,33 @@ import AppKit
 /// Panel for editing metadata of a local video file (movie or episode).
 /// In-app only — no file write-back.
 class EditVideoTagsPanel: NSWindow {
-
-    // MARK: - Video item type
+    private let labelColumnWidth: CGFloat = 180
 
     enum VideoItem {
         case movie(LocalVideo)
         case episode(LocalEpisode)
     }
 
-    // MARK: - Colors (matching TagsPanel)
-
-    private struct Colors {
-        static let background = NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0)
-        static let label = NSColor(calibratedRed: 0.0, green: 0.85, blue: 0.0, alpha: 1.0)
-        static let dimLabel = NSColor(calibratedRed: 0.0, green: 0.5, blue: 0.0, alpha: 1.0)
-        static let value = NSColor(calibratedRed: 0.9, green: 0.9, blue: 0.9, alpha: 1.0)
-        static let fieldBg = NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0)
-    }
-
-    // MARK: - State
-
     var onSave: (() -> Void)?
     private var item: VideoItem
-
-    // Movie fields
-    private var movieTitleField: NSTextField?
-    private var movieYearField: NSTextField?
-
-    // Episode fields
-    private var epTitleField: NSTextField?
-    private var epShowTitleField: NSTextField?
-    private var epSeasonField: NSTextField?
-    private var epEpisodeField: NSTextField?
-
-    // MARK: - Init
+    private var fields: [String: NSTextField] = [:]
 
     convenience init(item: VideoItem) {
-        let rect = NSRect(x: 0, y: 0, width: 440, height: 340)
-        self.init(contentRect: rect,
-                  styleMask: [.titled, .closable],
-                  backing: .buffered,
-                  defer: false)
+        self.init(
+            contentRect: NSRect(x: 0, y: 0, width: 700, height: 460),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
         self.item = item
-        setupWindow()
+        isReleasedWhenClosed = false
+        minSize = NSSize(width: 560, height: 360)
+        title = {
+            switch item {
+            case .movie(let m): return "Edit Movie: \(m.title)"
+            case .episode(let e): return "Edit Episode: \(e.title)"
+            }
+        }()
         buildUI()
     }
 
@@ -55,182 +39,155 @@ class EditVideoTagsPanel: NSWindow {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
     }
 
-    private func setupWindow() {
-        switch item {
-        case .movie(let m): title = "Edit Movie: \(m.title)"
-        case .episode(let e): title = "Edit Episode: \(e.title)"
-        }
-        backgroundColor = Colors.background
-        isReleasedWhenClosed = false
-        isMovableByWindowBackground = true
-        center()
-    }
-
-    // MARK: - UI
-
     private func buildUI() {
         guard let cv = contentView else { return }
-        cv.wantsLayer = true
-        cv.layer?.backgroundColor = Colors.background.cgColor
+
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.borderType = .bezelBorder
+        cv.addSubview(scrollView)
+
+        let formContainer = MetadataFormContainerView()
+        formContainer.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = formContainer
+
+        let grid = NSGridView()
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        grid.rowSpacing = 8
+        grid.columnSpacing = 12
+        formContainer.addSubview(grid)
+        NSLayoutConstraint.activate([
+            formContainer.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            formContainer.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+            formContainer.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            formContainer.bottomAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.bottomAnchor),
+            formContainer.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
+            formContainer.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.heightAnchor),
+            grid.leadingAnchor.constraint(equalTo: formContainer.leadingAnchor),
+            grid.trailingAnchor.constraint(equalTo: formContainer.trailingAnchor),
+            grid.topAnchor.constraint(equalTo: formContainer.topAnchor),
+            formContainer.bottomAnchor.constraint(greaterThanOrEqualTo: grid.bottomAnchor),
+        ])
 
         switch item {
-        case .movie(let movie):   buildMovieUI(in: cv, movie: movie)
-        case .episode(let ep):    buildEpisodeUI(in: cv, episode: ep)
-        }
-    }
+        case .movie(let movie):
+            addReadOnlyRow(grid: grid, label: "File", value: movie.url.lastPathComponent)
+            addReadOnlyRow(grid: grid, label: "Duration", value: movie.formattedDuration)
+            addReadOnlyRow(grid: grid, label: "Date Added", value: formatDate(movie.dateAdded))
+            addEditableRow(grid: grid, key: "title", label: "Title", value: movie.title)
+            addEditableRow(grid: grid, key: "year", label: "Year", value: movie.year.map(String.init) ?? "")
 
-    private func buildMovieUI(in cv: NSView, movie: LocalVideo) {
-        let readRows: [(String, String)] = [
-            ("File",       movie.url.lastPathComponent),
-            ("Duration",   movie.formattedDuration),
-            ("Date Added", formatDate(movie.dateAdded)),
-        ]
-        let editRows: [(String, String)] = [
-            ("Title", movie.title),
-            ("Year",  movie.year.map(String.init) ?? ""),
-        ]
-        layoutRows(in: cv, readRows: readRows, editRows: editRows) { [weak self] fields in
-            self?.movieTitleField = fields[0]
-            self?.movieYearField  = fields[1]
-        }
-    }
-
-    private func buildEpisodeUI(in cv: NSView, episode: LocalEpisode) {
-        let readRows: [(String, String)] = [
-            ("File",       episode.url.lastPathComponent),
-            ("Duration",   episode.formattedDuration),
-            ("Date Added", formatDate(episode.dateAdded)),
-        ]
-        let editRows: [(String, String)] = [
-            ("Title",      episode.title),
-            ("Show Title", episode.showTitle),
-            ("Season #",   String(episode.seasonNumber)),
-            ("Episode #",  episode.episodeNumber.map(String.init) ?? ""),
-        ]
-        layoutRows(in: cv, readRows: readRows, editRows: editRows) { [weak self] fields in
-            self?.epTitleField      = fields[0]
-            self?.epShowTitleField  = fields[1]
-            self?.epSeasonField     = fields[2]
-            self?.epEpisodeField    = fields[3]
-        }
-    }
-
-    private func layoutRows(in cv: NSView,
-                            readRows: [(String, String)],
-                            editRows: [(String, String)],
-                            assignFields: ([NSTextField]) -> Void) {
-        let labelW: CGFloat = 100
-        let fieldW: CGFloat = 300
-        let paddingX: CGFloat = 16
-        let rowH: CGFloat = 28
-        let gap: CGFloat = 8
-        let totalRows = readRows.count + editRows.count
-        var rowIndex = 0
-        var editFields: [NSTextField] = []
-
-        for (label, value) in readRows {
-            let y = CGFloat(totalRows - 1 - rowIndex) * (rowH + gap) + 56 + 16
-            addLabel(to: cv, text: label + ":", x: paddingX, y: y + 5, w: labelW, editable: false)
-            addReadValue(to: cv, text: value, x: paddingX + labelW + 8, y: y + 5, w: fieldW)
-            rowIndex += 1
+        case .episode(let episode):
+            addReadOnlyRow(grid: grid, label: "File", value: episode.url.lastPathComponent)
+            addReadOnlyRow(grid: grid, label: "Duration", value: episode.formattedDuration)
+            addReadOnlyRow(grid: grid, label: "Date Added", value: formatDate(episode.dateAdded))
+            addEditableRow(grid: grid, key: "title", label: "Title", value: episode.title)
+            addEditableRow(grid: grid, key: "showTitle", label: "Show Title", value: episode.showTitle)
+            addEditableRow(grid: grid, key: "season", label: "Season #", value: String(episode.seasonNumber))
+            addEditableRow(grid: grid, key: "episode", label: "Episode #", value: episode.episodeNumber.map(String.init) ?? "")
         }
 
-        for (label, value) in editRows {
-            let y = CGFloat(totalRows - 1 - rowIndex) * (rowH + gap) + 56 + 16
-            addLabel(to: cv, text: label + ":", x: paddingX, y: y + 5, w: labelW, editable: true)
-            let field = makeEditableField(value: value)
-            field.frame = NSRect(x: paddingX + labelW + 8, y: y + 3, width: fieldW, height: 22)
-            cv.addSubview(field)
-            editFields.append(field)
-            rowIndex += 1
+        if grid.numberOfColumns > 1 {
+            grid.column(at: 0).width = labelColumnWidth
+            grid.column(at: 0).xPlacement = .trailing
+            grid.column(at: 1).xPlacement = .fill
         }
 
-        assignFields(editFields)
+        let actionRow = NSStackView()
+        actionRow.translatesAutoresizingMaskIntoConstraints = false
+        actionRow.orientation = .horizontal
+        actionRow.alignment = .centerY
+        actionRow.distribution = .fill
+        actionRow.spacing = 8
+        actionRow.addArrangedSubview(NSButton(title: "Cancel", target: self, action: #selector(cancelClicked)))
+        let save = NSButton(title: "Save", target: self, action: #selector(saveClicked))
+        save.keyEquivalent = "\r"
+        actionRow.addArrangedSubview(save)
+        cv.addSubview(actionRow)
 
-        // Buttons
-        let cancelBtn = NSButton(title: "Cancel", target: self, action: #selector(cancelClicked))
-        cancelBtn.bezelStyle = .rounded
-        cancelBtn.frame = NSRect(x: 238, y: 14, width: 90, height: 28)
-        cancelBtn.autoresizingMask = [.minXMargin]
-        cv.addSubview(cancelBtn)
-
-        let saveBtn = NSButton(title: "Save", target: self, action: #selector(saveClicked))
-        saveBtn.bezelStyle = .rounded
-        saveBtn.frame = NSRect(x: 332, y: 14, width: 90, height: 28)
-        saveBtn.autoresizingMask = [.minXMargin]
-        saveBtn.keyEquivalent = "\r"
-        cv.addSubview(saveBtn)
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: cv.leadingAnchor, constant: 16),
+            scrollView.trailingAnchor.constraint(equalTo: cv.trailingAnchor, constant: -16),
+            scrollView.topAnchor.constraint(equalTo: cv.topAnchor, constant: 16),
+            scrollView.bottomAnchor.constraint(equalTo: actionRow.topAnchor, constant: -12),
+            actionRow.leadingAnchor.constraint(equalTo: cv.leadingAnchor, constant: 16),
+            actionRow.trailingAnchor.constraint(lessThanOrEqualTo: cv.trailingAnchor, constant: -16),
+            actionRow.bottomAnchor.constraint(equalTo: cv.bottomAnchor, constant: -16)
+        ])
     }
 
-    private func addLabel(to view: NSView, text: String, x: CGFloat, y: CGFloat, w: CGFloat, editable: Bool) {
-        let lbl = NSTextField(labelWithString: text)
-        lbl.frame = NSRect(x: x, y: y, width: w, height: 18)
-        lbl.textColor = editable ? Colors.label : Colors.dimLabel
-        lbl.font = NSFont.boldSystemFont(ofSize: 11)
-        lbl.alignment = .right
-        view.addSubview(lbl)
+    private func addReadOnlyRow(grid: NSGridView, label: String, value: String) {
+        let labelView = NSTextField(labelWithString: "\(label):")
+        labelView.font = NSFont.boldSystemFont(ofSize: 12)
+        labelView.textColor = .secondaryLabelColor
+        labelView.alignment = .right
+        labelView.translatesAutoresizingMaskIntoConstraints = false
+        labelView.widthAnchor.constraint(equalToConstant: labelColumnWidth).isActive = true
+        let valueView = NSTextField(labelWithString: value)
+        valueView.font = NSFont.systemFont(ofSize: 12)
+        valueView.lineBreakMode = .byTruncatingMiddle
+        valueView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        grid.addRow(with: [labelView, valueView])
     }
 
-    private func addReadValue(to view: NSView, text: String, x: CGFloat, y: CGFloat, w: CGFloat) {
-        let lbl = NSTextField(labelWithString: text)
-        lbl.frame = NSRect(x: x, y: y, width: w, height: 18)
-        lbl.textColor = Colors.value
-        lbl.font = NSFont.systemFont(ofSize: 11)
-        lbl.lineBreakMode = .byTruncatingMiddle
-        view.addSubview(lbl)
-    }
-
-    private func makeEditableField(value: String) -> NSTextField {
+    private func addEditableRow(grid: NSGridView, key: String, label: String, value: String) {
+        let labelView = NSTextField(labelWithString: "\(label):")
+        labelView.font = NSFont.boldSystemFont(ofSize: 12)
+        labelView.alignment = .right
+        labelView.translatesAutoresizingMaskIntoConstraints = false
+        labelView.widthAnchor.constraint(equalToConstant: labelColumnWidth).isActive = true
         let field = NSTextField(string: value)
-        field.font = NSFont.systemFont(ofSize: 11)
-        field.textColor = .black
-        field.backgroundColor = .white
-        field.drawsBackground = true
-        field.isBezeled = true
-        field.bezelStyle = .squareBezel
-        field.isEditable = true
-        field.isSelectable = true
-        return field
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        fields[key] = field
+        grid.addRow(with: [labelView, field])
     }
-
-    // MARK: - Actions
 
     @objc private func saveClicked() {
         switch item {
-        case .movie(var m):
-            if let titleField = movieTitleField, !titleField.stringValue.isEmpty {
-                m.title = titleField.stringValue
-            }
-            m.year = movieYearField.flatMap { Int($0.stringValue) }
-            MediaLibrary.shared.updateMovie(m)
+        case .movie(var movie):
+            movie.title = fields["title"]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? movie.title
+            movie.year = intValue("year", fallback: movie.year)
+            MediaLibrary.shared.updateMovie(movie)
 
-        case .episode(var e):
-            if let titleField = epTitleField, !titleField.stringValue.isEmpty {
-                e.title = titleField.stringValue
-            }
-            if let showField = epShowTitleField, !showField.stringValue.isEmpty {
-                e.showTitle = showField.stringValue
-            }
-            if let seasonField = epSeasonField, let season = Int(seasonField.stringValue) {
-                e.seasonNumber = season
-            }
-            e.episodeNumber = epEpisodeField.flatMap { Int($0.stringValue) }
-            MediaLibrary.shared.updateEpisode(e)
+        case .episode(var episode):
+            episode.title = fields["title"]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? episode.title
+            episode.showTitle = fields["showTitle"]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? episode.showTitle
+            if let season = intValue("season", fallback: episode.seasonNumber) { episode.seasonNumber = season }
+            episode.episodeNumber = intValue("episode", fallback: episode.episodeNumber)
+            MediaLibrary.shared.updateEpisode(episode)
         }
         onSave?()
         close()
     }
 
-    @objc private func cancelClicked() { close() }
-
-    // MARK: - Helpers
-
-    private func formatDate(_ date: Date) -> String {
-        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short
-        return f.string(from: date)
+    @objc private func cancelClicked() {
+        close()
     }
 
-    // MARK: - Presentation
+    private func nonEmpty(_ key: String) -> String? {
+        guard let text = fields[key]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return nil }
+        return text
+    }
+
+    /// Returns the parsed integer from the field, or nil if the field is blank.
+    /// If the field contains non-numeric text, returns `fallback` to avoid silently clearing
+    /// a previously-set value due to a typo.
+    private func intValue(_ key: String, fallback: Int? = nil) -> Int? {
+        guard let raw = fields[key]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        return Int(raw) ?? fallback
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
 
     func show() {
         level = .modalPanel

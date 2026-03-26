@@ -47,6 +47,7 @@ struct SubsonicArtist: Identifiable, Equatable {
     let coverArt: String?        // Cover art ID for artwork URL
     let artistImageUrl: String?  // Direct URL to artist image (Navidrome)
     let starred: Date?           // Date when starred (favorited)
+    var indexLetter: String? = nil // The index bucket letter from getArtists (e.g. "T" for "The Atlas Moth")
 }
 
 /// An album in a Subsonic music library
@@ -372,14 +373,15 @@ struct ArtistDTO: Decodable {
     let albumCount: Int?
     let starred: String?
     
-    func toArtist() -> SubsonicArtist {
+    func toArtist(indexLetter: String? = nil) -> SubsonicArtist {
         SubsonicArtist(
             id: id,
             name: name,
             albumCount: albumCount ?? 0,
             coverArt: coverArt,
             artistImageUrl: artistImageUrl,
-            starred: parseDate(starred)
+            starred: parseDate(starred),
+            indexLetter: indexLetter
         )
     }
 }

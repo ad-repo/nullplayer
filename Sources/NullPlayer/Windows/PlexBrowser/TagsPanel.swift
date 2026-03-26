@@ -138,6 +138,62 @@ class TagsPanel: NSWindow, NSWindowDelegate {
         if let discNumber = track.discNumber {
             tagData.append(("Disc Number", String(discNumber)))
         }
+
+        if let composer = track.composer, !composer.isEmpty {
+            tagData.append(("Composer", composer))
+        }
+
+        if let comment = track.comment, !comment.isEmpty {
+            tagData.append(("Comment", comment))
+        }
+
+        if let grouping = track.grouping, !grouping.isEmpty {
+            tagData.append(("Grouping", grouping))
+        }
+
+        if let bpm = track.bpm {
+            tagData.append(("BPM", String(bpm)))
+        }
+
+        if let key = track.musicalKey, !key.isEmpty {
+            tagData.append(("Key", key))
+        }
+
+        if let isrc = track.isrc, !isrc.isEmpty {
+            tagData.append(("ISRC", isrc))
+        }
+
+        if let copyright = track.copyright, !copyright.isEmpty {
+            tagData.append(("Copyright", copyright))
+        }
+
+        if let mbRecording = track.musicBrainzRecordingID, !mbRecording.isEmpty {
+            tagData.append(("MusicBrainz Recording ID", mbRecording))
+        }
+
+        if let mbRelease = track.musicBrainzReleaseID, !mbRelease.isEmpty {
+            tagData.append(("MusicBrainz Release ID", mbRelease))
+        }
+
+        if let discogsRelease = track.discogsReleaseID {
+            tagData.append(("Discogs Release ID", String(discogsRelease)))
+        }
+
+        if let discogsMaster = track.discogsMasterID {
+            tagData.append(("Discogs Master ID", String(discogsMaster)))
+        }
+
+        if let discogsLabel = track.discogsLabel, !discogsLabel.isEmpty {
+            tagData.append(("Discogs Label", discogsLabel))
+        }
+
+        if let discogsCatNo = track.discogsCatalogNumber, !discogsCatNo.isEmpty {
+            tagData.append(("Discogs Catalog #", discogsCatNo))
+        }
+
+        if let artworkURL = track.artworkURL, !artworkURL.isEmpty {
+            tagData.append(("Artwork URL", artworkURL))
+        }
         
         // Audio properties
         tagData.append(("Duration", formatDuration(track.duration)))

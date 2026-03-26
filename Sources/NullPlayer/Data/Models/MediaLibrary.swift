@@ -24,6 +24,20 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
     var lastPlayed: Date?
     var playCount: Int
     var rating: Int?             // User rating on 0-10 scale (matching Plex), nil if unrated
+    var composer: String?
+    var comment: String?
+    var grouping: String?
+    var bpm: Int?
+    var musicalKey: String?
+    var isrc: String?
+    var copyright: String?
+    var musicBrainzRecordingID: String?
+    var musicBrainzReleaseID: String?
+    var discogsReleaseID: Int?
+    var discogsMasterID: Int?
+    var discogsLabel: String?
+    var discogsCatalogNumber: String?
+    var artworkURL: String?
 
     /// Transient — populated from `track_artists` table, not persisted via Codable.
     var artists: [(name: String, role: ArtistRole)] = []
@@ -32,6 +46,10 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
         case id, url, title, artist, album, albumArtist, genre, year
         case trackNumber, discNumber, duration, bitrate, sampleRate, channels
         case fileSize, dateAdded, lastPlayed, playCount, rating
+        case composer, comment, grouping, bpm, musicalKey, isrc, copyright
+        case musicBrainzRecordingID, musicBrainzReleaseID
+        case discogsReleaseID, discogsMasterID, discogsLabel, discogsCatalogNumber
+        case artworkURL
         // `artists` is intentionally omitted — transient, re-populated from track_artists
     }
 
@@ -63,7 +81,21 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
          dateAdded: Date = Date(),
          lastPlayed: Date? = nil,
          playCount: Int = 0,
-         rating: Int? = nil) {
+         rating: Int? = nil,
+         composer: String? = nil,
+         comment: String? = nil,
+         grouping: String? = nil,
+         bpm: Int? = nil,
+         musicalKey: String? = nil,
+         isrc: String? = nil,
+         copyright: String? = nil,
+         musicBrainzRecordingID: String? = nil,
+         musicBrainzReleaseID: String? = nil,
+         discogsReleaseID: Int? = nil,
+         discogsMasterID: Int? = nil,
+         discogsLabel: String? = nil,
+         discogsCatalogNumber: String? = nil,
+         artworkURL: String? = nil) {
         self.id = id
         self.url = url
         self.title = title
@@ -83,6 +115,20 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
         self.lastPlayed = lastPlayed
         self.playCount = playCount
         self.rating = rating
+        self.composer = composer
+        self.comment = comment
+        self.grouping = grouping
+        self.bpm = bpm
+        self.musicalKey = musicalKey
+        self.isrc = isrc
+        self.copyright = copyright
+        self.musicBrainzRecordingID = musicBrainzRecordingID
+        self.musicBrainzReleaseID = musicBrainzReleaseID
+        self.discogsReleaseID = discogsReleaseID
+        self.discogsMasterID = discogsMasterID
+        self.discogsLabel = discogsLabel
+        self.discogsCatalogNumber = discogsCatalogNumber
+        self.artworkURL = artworkURL
     }
     
     /// Display title (artist - title or just title)
@@ -148,8 +194,38 @@ struct LibraryTrack: Identifiable, Codable, Hashable {
         lhs.dateAdded == rhs.dateAdded &&
         lhs.lastPlayed == rhs.lastPlayed &&
         lhs.playCount == rhs.playCount &&
-        lhs.rating == rhs.rating
+        lhs.rating == rhs.rating &&
+        lhs.composer == rhs.composer &&
+        lhs.comment == rhs.comment &&
+        lhs.grouping == rhs.grouping &&
+        lhs.bpm == rhs.bpm &&
+        lhs.musicalKey == rhs.musicalKey &&
+        lhs.isrc == rhs.isrc &&
+        lhs.copyright == rhs.copyright &&
+        lhs.musicBrainzRecordingID == rhs.musicBrainzRecordingID &&
+        lhs.musicBrainzReleaseID == rhs.musicBrainzReleaseID &&
+        lhs.discogsReleaseID == rhs.discogsReleaseID &&
+        lhs.discogsMasterID == rhs.discogsMasterID &&
+        lhs.discogsLabel == rhs.discogsLabel &&
+        lhs.discogsCatalogNumber == rhs.discogsCatalogNumber &&
+        lhs.artworkURL == rhs.artworkURL
         // `artists` is not compared — it's transient
+    }
+
+    mutating func rebuildArtistRoles() {
+        // Primary/featured roles from the artist tag.
+        artists = ArtistSplitter.split(artist ?? "", isAlbumArtist: false)
+
+        // album_artist role rows — mirrors coalesce(albumArtist, artist, 'Unknown Artist') fallback.
+        let albumArtistRows: [(name: String, role: ArtistRole)]
+        if let albumArtist, !albumArtist.isEmpty {
+            albumArtistRows = ArtistSplitter.split(albumArtist, isAlbumArtist: true)
+        } else if let artist, !artist.isEmpty {
+            albumArtistRows = ArtistSplitter.split(artist, isAlbumArtist: true)
+        } else {
+            albumArtistRows = [(name: "Unknown Artist", role: .albumArtist)]
+        }
+        artists.append(contentsOf: albumArtistRows)
     }
 
 }
@@ -794,15 +870,38 @@ class MediaLibrary {
 
     /// Update a track's metadata in the library (in-app only, no file write-back)
     func updateTrack(_ track: LibraryTrack) {
-        var didUpdate = false
+        var normalizedTrack = track
+        normalizedTrack.rebuildArtistRoles()
         var sig: FileScanSignature?
+        var foundInMemory = false
         dataQueue.sync {
-            guard let index = tracks.firstIndex(where: { $0.id == track.id }) else { return }
-            tracks[index] = track; tracksByPath[track.url.path] = track; didUpdate = true
-            sig = signatureFromFileSystem(url: track.url, fallbackFileSize: track.fileSize)
-            if let s = sig { scanSignaturesByPath[track.url.path] = s }
+            if let index = tracks.firstIndex(where: { $0.id == normalizedTrack.id }) {
+                tracks[index] = normalizedTrack
+                foundInMemory = true
+            } else if let index = tracks.firstIndex(where: { $0.url.path == normalizedTrack.url.path }) {
+                tracks[index] = normalizedTrack
+                foundInMemory = true
+            }
+            if foundInMemory {
+                tracksByPath[normalizedTrack.url.path] = normalizedTrack
+                sig = signatureFromFileSystem(url: normalizedTrack.url, fallbackFileSize: normalizedTrack.fileSize)
+                if let s = sig { scanSignaturesByPath[normalizedTrack.url.path] = s }
+            }
         }
-        if didUpdate { store.upsertTrack(track, sig: sig); notifyChange() }
+        if !foundInMemory {
+            // In-memory miss: browser edit panels can be opened before the cache loads a track.
+            // Only append and persist if the row still exists in the DB — this prevents an editor
+            // saving a stale snapshot from recreating a row that was deleted since the panel opened.
+            guard store.track(forURL: normalizedTrack.url) != nil else { return }
+            dataQueue.sync {
+                tracks.append(normalizedTrack)
+                tracksByPath[normalizedTrack.url.path] = normalizedTrack
+                sig = signatureFromFileSystem(url: normalizedTrack.url, fallbackFileSize: normalizedTrack.fileSize)
+                if let s = sig { scanSignaturesByPath[normalizedTrack.url.path] = s }
+            }
+        }
+        store.upsertTrack(normalizedTrack, sig: sig)
+        notifyChange()
     }
 
     /// Update a movie's metadata in the library (in-app only, no file write-back)
@@ -1720,8 +1819,24 @@ class MediaLibrary {
         for item in id3Metadata {
             if let key = item.key as? String {
                 switch key {
-                case "TCON", "TIT1":  // Genre
+                case "TCON":  // Genre
                     track.genre = item.stringValue
+                case "TIT1":  // Content group / grouping
+                    track.grouping = item.stringValue
+                case "TCOM":  // Composer
+                    track.composer = item.stringValue
+                case "COMM":  // Comment
+                    track.comment = item.stringValue
+                case "TBPM":  // BPM
+                    if let bpmString = item.stringValue {
+                        track.bpm = Int(bpmString)
+                    }
+                case "TKEY":  // Musical key
+                    track.musicalKey = item.stringValue
+                case "TCOP":  // Copyright
+                    track.copyright = item.stringValue
+                case "TSRC":  // ISRC
+                    track.isrc = item.stringValue
                 case "TRCK":  // Track number
                     if let trackStr = item.stringValue {
                         // Handle "1/10" format
@@ -1762,20 +1877,7 @@ class MediaLibrary {
             }
         }
 
-        // Populate track.artists from the parsed artist and albumArtist fields.
-        // Primary/featured roles from the artist tag:
-        track.artists = ArtistSplitter.split(track.artist ?? "", isAlbumArtist: false)
-
-        // album_artist role rows — mirrors coalesce(albumArtist, artist, 'Unknown Artist') fallback:
-        let albumArtistRows: [(name: String, role: ArtistRole)]
-        if let albumArtist = track.albumArtist, !albumArtist.isEmpty {
-            albumArtistRows = ArtistSplitter.split(albumArtist, isAlbumArtist: true)
-        } else if let artist = track.artist, !artist.isEmpty {
-            albumArtistRows = ArtistSplitter.split(artist, isAlbumArtist: true)
-        } else {
-            albumArtistRows = [(name: "Unknown Artist", role: .albumArtist)]
-        }
-        track.artists.append(contentsOf: albumArtistRows)
+        track.rebuildArtistRoles()
     }
     
     // MARK: - Persistence (SQLite-backed — individual mutations are persisted immediately via store)
@@ -2015,7 +2117,7 @@ class MediaLibrary {
         let suggested = max(2, ProcessInfo.processInfo.activeProcessorCount / 2)
         return min(8, suggested)
     }
-    
+
     // MARK: - Helpers
     
     // MARK: - Local Radio

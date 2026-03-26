@@ -1860,10 +1860,10 @@ class ModernLibraryBrowserView: NSView {
             availableLetters = Set(localAlbumLetterOffsets.keys)
         } else {
             for item in displayItems {
-                availableLetters.insert(sortLetter(for: item.title))
+                availableLetters.insert(effectiveSortLetter(for: item))
             }
         }
-        
+
         for (index, letter) in alphabetLetters.enumerated() {
             // Bottom-left origin: # at top, Z at bottom
             let y = rect.maxY - CGFloat(index + 1) * letterHeight
@@ -3216,10 +3216,20 @@ class ModernLibraryBrowserView: NSView {
         else if itemBottom > scrollOffset + effectiveHeight { scrollOffset = itemBottom - effectiveHeight }
     }
 
+    /// Returns true if title matches the typeahead query, checking both the display form
+    /// and the canonical form for "Surname, Article" style names (e.g. "Atlas Moth, The" → "The Atlas Moth").
+    private func titleMatchesTypeAhead(_ title: String, query: String) -> Bool {
+        if title.lowercased().hasPrefix(query) { return true }
+        // Also match after stripping leading articles so "The Beatles" matches "beat".
+        let normalized = LibraryTextSorter.normalized(title, ignoreLeadingArticles: true).lowercased()
+        if normalized.hasPrefix(query) { return true }
+        return false
+    }
+
     private func jumpToTypeAhead() {
         let query = typeAheadQuery.lowercased()
         guard !query.isEmpty else { return }
-        if let idx = displayItems.firstIndex(where: { $0.title.lowercased().hasPrefix(query) }) {
+        if let idx = displayItems.firstIndex(where: { titleMatchesTypeAhead($0.title, query: query) }) {
             selectedIndices = [idx]; ensureVisible(index: idx); loadArtworkForSelection(); needsDisplay = true
         }
         typeAheadTimer?.invalidate()
@@ -3478,7 +3488,17 @@ class ModernLibraryBrowserView: NSView {
         guard let firstChar = sortTitle.first else { return "#" }
         return firstChar.isLetter ? String(firstChar) : "#"
     }
-    
+
+    /// Returns the sort letter for a display item, using the server's index letter for Subsonic artists.
+    private func effectiveSortLetter(for item: ModernDisplayItem) -> String {
+        if case .subsonicArtist(let artist) = item.type,
+           let raw = artist.indexLetter,
+           let first = raw.trimmingCharacters(in: .whitespaces).first {
+            return String(first).uppercased()
+        }
+        return sortLetter(for: item.title)
+    }
+
     private func scrollToLetter(_ letter: String) {
         if case .local = currentSource {
             switch browseMode {
@@ -3503,7 +3523,7 @@ class ModernLibraryBrowserView: NSView {
             }
         }
         for (index, item) in displayItems.enumerated() {
-            if sortLetter(for: item.title) == letter {
+            if effectiveSortLetter(for: item) == letter {
                 var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
                 if browseMode == .search { contentTopY -= Layout.searchBarHeight }
                 let listHeight = contentTopY - Layout.statusBarHeight
@@ -4763,14 +4783,14 @@ class ModernLibraryBrowserView: NSView {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         activeEditTagsPanel?.close()
         let panel = EditTagsPanel(track: track)
-        panel.onSave = { [weak self] in self?.loadLocalData() }
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
         activeEditTagsPanel = panel; panel.show()
     }
     @objc private func contextMenuEditAlbumTags(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
         activeEditAlbumTagsPanel?.close()
         let panel = EditAlbumTagsPanel(album: album)
-        panel.onSave = { [weak self] in self?.loadLocalData() }
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
         activeEditAlbumTagsPanel = panel; panel.show()
     }
     @objc private func contextMenuEditVideoTags(_ sender: NSMenuItem) {
@@ -4780,7 +4800,7 @@ class ModernLibraryBrowserView: NSView {
         else { return }
         activeEditVideoTagsPanel?.close()
         let panel = EditVideoTagsPanel(item: videoItem)
-        panel.onSave = { [weak self] in self?.loadLocalData() }
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
         activeEditVideoTagsPanel = panel; panel.show()
     }
     @objc private func contextMenuRemoveLocalTrack(_ sender: NSMenuItem) {
@@ -6697,7 +6717,21 @@ class ModernLibraryBrowserView: NSView {
     }
     
     // MARK: - Rate Submenus
-    
+
+    private static func goldStarAttributedTitle(_ label: String) -> NSAttributedString {
+        let goldColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+        let emptyColor = NSColor.secondaryLabelColor
+        let font = NSFont.menuFont(ofSize: 0)
+        let astr = NSMutableAttributedString(string: label,
+                                             attributes: [.font: font,
+                                                          .foregroundColor: emptyColor])
+        for (i, ch) in label.enumerated() where ch == "★" {
+            astr.addAttribute(.foregroundColor, value: goldColor,
+                              range: NSRange(location: i, length: 1))
+        }
+        return astr
+    }
+
     /// Build rate submenu for the currently playing track (art mode overlay)
     private func buildRateSubmenu() -> NSMenu {
         let menu = NSMenu(title: "Rate")
@@ -6705,6 +6739,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateCurrentTrack(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 2  // 0-10 scale
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6721,6 +6756,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRatePlex(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 2; item.representedObject = ratingKey
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6737,6 +6773,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateSubsonic(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars; item.representedObject = songId  // tag is 1-5 for Subsonic
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6752,6 +6789,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateJellyfin(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 20; item.representedObject = itemId  // Jellyfin uses 0-100 scale
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6767,6 +6805,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateEmby(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 20; item.representedObject = itemId  // Emby uses 0-100 scale
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6781,10 +6820,10 @@ class ModernLibraryBrowserView: NSView {
         let current = MediaLibrary.shared.albumRating(for: albumId)
         for stars in 1...5 {
             let rating = stars * 2
-            let filled = current != nil && current! >= rating - 1 && current! <= rating
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocalAlbum(_:)), keyEquivalent: "")
             item.target = self; item.tag = rating; item.representedObject = albumId
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6800,6 +6839,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocalArtist(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 2; item.representedObject = artistId
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6816,6 +6856,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocal(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 2; item.representedObject = trackId  // 0-10 scale
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -7461,6 +7502,16 @@ class ModernLibraryBrowserView: NSView {
         case .radio: loadLocalRadioStations()
         }
         needsDisplay = true
+    }
+
+    private func reloadLocalBrowserAfterMetadataEdit() {
+        guard case .local = currentSource else { return }
+
+        clearLocalCachedData()
+        displayItems.removeAll()
+        selectedIndices.removeAll()
+        scrollOffset = 0
+        loadLocalData()
     }
 
     // MARK: - Radio Data Loading
@@ -8922,8 +8973,19 @@ class ModernLibraryBrowserView: NSView {
         }
 
         switch currentSort {
-        case .nameAsc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
-        case .nameDesc: return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+        case .nameAsc: return artists.sorted {
+            // Use the server's index letter to match Navidrome's grouping (e.g. "The Atlas Moth" → T)
+            let l0 = $0.indexLetter ?? sortLetter(for: $0.name)
+            let l1 = $1.indexLetter ?? sortLetter(for: $1.name)
+            if l0 != l1 { return l0 < l1 }
+            return compareNameStrings($0.name, $1.name, ascending: true)
+        }
+        case .nameDesc: return artists.sorted {
+            let l0 = $0.indexLetter ?? sortLetter(for: $0.name)
+            let l1 = $1.indexLetter ?? sortLetter(for: $1.name)
+            if l0 != l1 { return l0 > l1 }
+            return compareNameStrings($0.name, $1.name, ascending: false)
+        }
         case .dateAddedDesc:
             return artists.sorted {
                 let key0 = subsonicArtistKey(id: $0.id, name: $0.name)

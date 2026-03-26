@@ -377,12 +377,6 @@ class SpectrumAnalyzerView: NSView {
                 renderQualityMode = mode
             }
 
-            if mode == .visClassicExact && visClassicBridge == nil {
-                let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
-                let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
-                visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
-            }
-
             // Heavy fullscreen shader modes can stall at Retina-scale pixel counts.
             // Keep drawable scale in sync with the active mode.
             DispatchQueue.main.async { [weak self] in
@@ -1023,14 +1017,7 @@ class SpectrumAnalyzerView: NSView {
         guard let userInfo = notification.userInfo,
               let command = userInfo["command"] as? String else { return }
         let target = userInfo["target"] as? String
-        switch target {
-        case "mainWindow":
-            guard isEmbedded else { return }
-        case "spectrumWindow", nil:
-            guard !isEmbedded else { return }
-        default:
-            return
-        }
+        guard target == "mainWindow" || target == "spectrumWindow" || target == nil else { return }
 
         switch command {
         case "next":
@@ -2470,7 +2457,7 @@ class SpectrumAnalyzerView: NSView {
         }
 
         if visClassicBridge == nil {
-            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
             if VisClassicBridge.transparentBgDefault(for: visClassicPreferenceScope) {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
@@ -2485,18 +2472,14 @@ class SpectrumAnalyzerView: NSView {
             return
         }
 
-        var left: [UInt8] = []
-        var right: [UInt8] = []
-        var sampleRate: Double = 44100
-        dataLock.withLock {
-            left = visClassicWaveLeft
-            right = visClassicWaveRight
-            sampleRate = visClassicWaveSampleRate
+        let (waveLeft, waveRight, waveSR) = dataLock.withLock {
+            (visClassicWaveLeft, visClassicWaveRight, visClassicWaveSampleRate)
         }
-        bridge.updateWaveform(left: left, right: right, sampleRate: sampleRate)
+        let stride = width * 4
+        bridge.processAndDraw(leftData: waveLeft, rightData: waveRight, sampleRate: waveSR,
+                              width: width, height: height, into: &visClassicFrameBytes, stride: stride)
 
-        guard bridge.renderFrame(width: width, height: height, into: &visClassicFrameBytes),
-              visClassicFrameBytes.count == width * height * 4 else {
+        guard visClassicFrameBytes.count >= width * height * 4 else {
             inFlightSemaphore.signal()
             return
         }
@@ -3000,7 +2983,6 @@ class SpectrumAnalyzerView: NSView {
     private func updateBuffers() {
         // Get render-safe values inside lock
         var localBarCount: Int = 0
-        var localBarWidth: CGFloat = 0
         var localColors: [SIMD4<Float>] = []
         var localSpectrum: [Float] = []
         var localPeakPositions: [Float] = []
@@ -3011,7 +2993,6 @@ class SpectrumAnalyzerView: NSView {
         
         dataLock.withLock {
             localBarCount = renderBarCount
-            localBarWidth = renderBarWidth
             localColors = renderColorPalette
             localSpectrum = displaySpectrum
             // Use appropriate peak positions based on mode
@@ -3126,10 +3107,13 @@ class SpectrumAnalyzerView: NSView {
             }
             
         case .classic, .punch:
-            // Calculate cell dimensions for Classic mode - use exact bar width
             let cellSpacing: Float = 1.0 * Float(scale)
+            let totalSpacing = Float(max(0, localBarCount - 1)) * cellSpacing
             let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
-            let cellWidth = Float(localBarWidth * scale)
+            // Punch fills the full viewport width; Classic respects the user-configured bar width.
+            let cellWidth: Float = localQualityMode == .punch
+                ? max(1.0, (scaledWidth - totalSpacing) / Float(max(1, localBarCount)))
+                : max(1.0, Float(renderBarWidth) * Float(scale))
             
             // Update params buffer for Classic
             if let buffer = paramsBuffer {
@@ -3293,9 +3277,7 @@ class SpectrumAnalyzerView: NSView {
 
     func visClassicProfiles() -> [VisClassicBridge.ProfileEntry] {
         if visClassicBridge == nil {
-            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
-            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
-            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.availableProfiles() ?? []
     }
@@ -3307,9 +3289,7 @@ class SpectrumAnalyzerView: NSView {
     @discardableResult
     func loadVisClassicProfile(named name: String) -> Bool {
         if visClassicBridge == nil {
-            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
-            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
-            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.loadProfile(named: name) ?? false
     }
@@ -3317,9 +3297,7 @@ class SpectrumAnalyzerView: NSView {
     @discardableResult
     func loadNextVisClassicProfile() -> Bool {
         if visClassicBridge == nil {
-            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
-            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
-            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.loadNextProfile() ?? false
     }
@@ -3327,9 +3305,7 @@ class SpectrumAnalyzerView: NSView {
     @discardableResult
     func loadPreviousVisClassicProfile() -> Bool {
         if visClassicBridge == nil {
-            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
-            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
-            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.loadPreviousProfile() ?? false
     }
@@ -3343,9 +3319,7 @@ class SpectrumAnalyzerView: NSView {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if visClassicBridge == nil {
-            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
-            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
-            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
         }
         _ = visClassicBridge?.importProfile(from: url)
     }
@@ -3364,9 +3338,7 @@ class SpectrumAnalyzerView: NSView {
 
     func visClassicFitToWidthEnabled() -> Bool {
         if visClassicBridge == nil {
-            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
-            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
-            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.fitToWidthEnabled() ?? true
     }
@@ -3374,9 +3346,7 @@ class SpectrumAnalyzerView: NSView {
     @discardableResult
     func setVisClassicFitToWidth(_ enabled: Bool) -> Bool {
         if visClassicBridge == nil {
-            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
-            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
-            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
         }
         return visClassicBridge?.setFitToWidth(enabled) ?? false
     }
@@ -3413,9 +3383,7 @@ class SpectrumAnalyzerView: NSView {
     @discardableResult
     func setVisClassicTransparentBackground(_ enabled: Bool) -> Bool {
         if visClassicBridge == nil {
-            let width = max(1, Int(bounds.width * (window?.backingScaleFactor ?? 1.0)))
-            let height = max(1, Int(bounds.height * (window?.backingScaleFactor ?? 1.0)))
-            visClassicBridge = VisClassicBridge(width: width, height: height, scope: visClassicPreferenceScope)
+            visClassicBridge = WindowManager.shared.acquireSharedVisClassicBridge()
         }
         let ok = visClassicBridge?.setTransparentBackground(enabled) ?? false
         if ok {

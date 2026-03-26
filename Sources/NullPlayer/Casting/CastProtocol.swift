@@ -235,9 +235,10 @@ class CastSessionController {
         let params = NWParameters(tls: tlsOptions)
         let conn = NWConnection(host: NWEndpoint.Host(cleanHost), port: NWEndpoint.Port(integerLiteral: UInt16(port)), using: params)
         
+        var didComplete = false
         conn.stateUpdateHandler = { [weak self] state in
             guard let self = self else { return }
-            
+
             switch state {
             case .ready:
                 NSLog("CastSessionController: TLS connected")
@@ -245,15 +246,15 @@ class CastSessionController {
                 self.startReceiving()
                 self.sendMessage(namespace: .connection, payload: ["type": "CONNECT"], to: "receiver-0")
                 self.startHeartbeat()
-                completion(.success(()))
-                
+                if !didComplete { didComplete = true; completion(.success(())) }
+
             case .failed(let error):
                 NSLog("CastSessionController: Connection failed: %@", error.localizedDescription)
-                completion(.failure(error))
-                
+                if !didComplete { didComplete = true; completion(.failure(error)) }
+
             case .cancelled:
                 NSLog("CastSessionController: Connection cancelled")
-                
+
             default:
                 break
             }

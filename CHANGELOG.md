@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.18.1
+
+### Visualization
+
+- **vis_classic decay consistency** — fixed decay divergence between the main window and spectrum window when they run at different frame rates.
+- **Shared vis_classic core** — the main window and spectrum window now share a single vis_classic core instance, eliminating state duplication.
+- **Classic spectrum width fix** — fixed the classic spectrum not filling the full width of the analyzer window.
+- **Main spectrum redraw rect fix** — corrected a coordinate conversion error in the main window spectrum redraw rect.
+- **vis_classic jerkiness fix** — restored synchronous process+draw per frame to eliminate jerkiness in the classic visualizer.
+
+### Library Browser
+
+- **Gold star ratings** — filled ★ characters now render in gold in rating list columns (classic browser) and all Rate context submenu items (both classic and modern browsers).
+- **Local metadata editing flow** — expanded the modern library metadata editor for local tracks, albums, and videos with broader field coverage, improved form layout, and shared metadata form helpers.
+- **Classic metadata editor parity** — the classic library browser now exposes local `Edit Tags`, `Edit Album Tags`, and video `Edit Tags` actions, reusing the shared metadata editors and reloading local browser state after saves to prevent stale rows.
+- **Auto-tagging from Discogs and MusicBrainz** — local tracks and albums can now search Discogs/MusicBrainz candidates, preview the proposed metadata, and apply merged results back into the library.
+- **Album candidate review panel** — album auto-tagging now includes a dedicated candidate selection window with per-track comparison so releases can be reviewed before applying changes.
+- **Artwork metadata support** — metadata editors now load and preview artwork more consistently, including remote artwork URLs used during metadata editing.
+- **Navidrome alphabet navigation fix** — fixed alphabet bar navigation in the Navidrome browser.
+- **Typeahead search in classic browser** — added typeahead/search input to the classic library browser.
+
+### Local Library
+
+- **Metadata persistence expansion** — local library save/update paths now persist the new metadata fields used by the editor and auto-tagging flow, including external IDs and artwork-related values.
+- **Library update propagation** — metadata edits now trigger the necessary shared-library refresh behavior so edited values appear correctly across the browser and related views.
+
+### Playback
+
+- **Sleep/wake timer freeze** — local playback time no longer accumulates while the Mac is asleep; the play clock resumes from the pre-sleep position on wake.
+- **Explicit restore intent** — saved-state restore now explicitly uses the persisted `wasPlaying` flag to decide whether launch should end in playing or paused state, while preserving the current user-visible startup behavior.
+
+### Casting
+
+- **Chromecast disconnect crash fix** — connecting to a Chromecast device no longer risks a continuation-resume crash if the device goes offline immediately afterward.
+- **Sonos radio handoff fix** — switching radio playback to Sonos no longer risks restarting the same stream locally while the cast session is still coming up.
+- **Discovery refresh guard** — cast discovery refresh work is now skipped during local playback to avoid unnecessary churn while the user is listening locally.
+
+### Resources
+
+- **App icon format fix** — the app icon asset is now stored as a proper PNG.
+- **Version bump** — `CFBundleShortVersionString` is now `0.18.1`.
+
+### Documentation
+
+- **Playback follow-up report** — added `docs/playback-state-followups.md` to capture the remaining architectural issues around playback clocks, restore semantics, and testability that are intentionally out of scope for the conservative fix.
+
 ## 0.18.0
 
 ### CLI Mode

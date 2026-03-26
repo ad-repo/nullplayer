@@ -275,6 +275,10 @@ class PlexBrowserView: NSView {
     
     /// Scroll offset
     private var scrollOffset: CGFloat = 0
+
+    /// Typeahead state for keyboard navigation in non-search mode
+    private var typeAheadQuery: String = ""
+    private var typeAheadTimer: Timer?
     
     /// Horizontal scroll offset for column headers
     private var horizontalScrollOffset: CGFloat = 0
@@ -924,6 +928,9 @@ class PlexBrowserView: NSView {
     
     /// Active tags panel (strong reference to prevent premature deallocation)
     private var activeTagsPanel: TagsPanel?
+    private var activeEditTagsPanel: EditTagsPanel?
+    private var activeEditAlbumTagsPanel: EditAlbumTagsPanel?
+    private var activeEditVideoTagsPanel: EditVideoTagsPanel?
     
     /// Window dragging state
     private var isDraggingWindow = false
@@ -1587,8 +1594,12 @@ class PlexBrowserView: NSView {
     private func clearLocalCachedData() {
         localArtistPageOffset = 0; localAlbumPageOffset = 0
         localArtistTotal = 0; localAlbumTotal = 0
+        localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
+        cachedLocalMovies = []; cachedLocalShows = []
         expandedLocalArtists = []
         expandedLocalAlbums = []
+        expandedLocalShows = []
+        expandedLocalSeasons = []
     }
     
     @objc private func mediaLibraryDidChange() {
@@ -3198,7 +3209,18 @@ class PlexBrowserView: NSView {
             
             // Draw with truncation if needed
             let drawRect = NSRect(x: textX, y: textY, width: maxTextWidth, height: textSize.height)
-            value.draw(with: drawRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs)
+            if column.id == "rating" && !isSelected && (value.contains("★") || value.contains("☆")) {
+                let goldColor = NSColor(calibratedRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+                let emptyColor = dimColor.withAlphaComponent(0.4)
+                let astr = NSMutableAttributedString(string: value, attributes: attrs)
+                for (i, ch) in value.enumerated() {
+                    let range = NSRange(location: i, length: 1)
+                    astr.addAttribute(.foregroundColor, value: ch == "★" ? goldColor : emptyColor, range: range)
+                }
+                astr.draw(with: drawRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            } else {
+                value.draw(with: drawRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs)
+            }
             
             x += width
         }
@@ -4955,7 +4977,6 @@ class PlexBrowserView: NSView {
         let fontSize = min(9, letterHeight * 0.8)
         
         // Build set of sort letters that exist in current items
-        // Uses sortLetter() to match how items are actually sorted (strips "The ", "A ", etc.)
         var availableLetters = Set<String>()
         if currentSource == .local && browseMode == .artists {
             availableLetters = Set(localArtistLetterOffsets.keys)
@@ -4963,7 +4984,7 @@ class PlexBrowserView: NSView {
             availableLetters = Set(localAlbumLetterOffsets.keys)
         } else {
             for item in displayItems {
-                availableLetters.insert(sortLetter(for: item.title))
+                availableLetters.insert(effectiveSortLetter(for: item))
             }
         }
         
@@ -8190,7 +8211,7 @@ class PlexBrowserView: NSView {
     private func sortLetter(for title: String) -> String {
         let uppercased = title.uppercased()
         var sortTitle = uppercased
-        
+
         // Strip common prefixes (in order of length to handle "The" before "A")
         let prefixes = ["THE ", "AN ", "A "]
         for prefix in prefixes {
@@ -8199,15 +8220,46 @@ class PlexBrowserView: NSView {
                 break
             }
         }
-        
+
         // Get first character
         guard let firstChar = sortTitle.first else { return "#" }
-        
+
         if firstChar.isLetter {
             return String(firstChar)
         } else {
             return "#"
         }
+    }
+
+    /// Returns the sort letter for a display item, using the server's index letter for Subsonic artists.
+    private func effectiveSortLetter(for item: PlexDisplayItem) -> String {
+        if case .subsonicArtist(let artist) = item.type,
+           let normalized = normalizedIndexLetter(artist.indexLetter) {
+            return normalized
+        }
+        return sortLetter(for: item.title)
+    }
+
+    /// Normalizes a raw Subsonic `indexLetter` to a single uppercase letter, or nil if blank.
+    private func normalizedIndexLetter(_ raw: String?) -> String? {
+        guard let first = raw?.trimmingCharacters(in: .whitespaces).first else { return nil }
+        return String(first).uppercased()
+    }
+
+    /// Returns true if title matches the typeahead query, also checking "Surname, Article" canonical form.
+    private func titleMatchesTypeAhead(_ title: String, query: String) -> Bool {
+        if title.lowercased().hasPrefix(query) { return true }
+        let lower = title.lowercased()
+        for suffix in [", the", ", an", ", a"] {
+            if lower.hasSuffix(suffix) {
+                let article = String(suffix.dropFirst(2))
+                let base = String(title.dropLast(suffix.count))
+                let canonical = (article + " " + base).lowercased()
+                if canonical.hasPrefix(query) { return true }
+                break
+            }
+        }
+        return false
     }
     
     private func scrollToLetter(_ letter: String) {
@@ -8234,8 +8286,7 @@ class PlexBrowserView: NSView {
             }
         }
         for (index, item) in displayItems.enumerated() {
-            let itemLetter = sortLetter(for: item.title)
-            if itemLetter == letter {
+            if effectiveSortLetter(for: item) == letter {
                 var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
                 if browseMode == .search {
                     listY += Layout.searchBarHeight
@@ -9079,6 +9130,11 @@ class PlexBrowserView: NSView {
             
             menu.addItem(NSMenuItem.separator())
             
+            let editTagsItem = NSMenuItem(title: "Edit Tags", action: #selector(contextMenuEditTags(_:)), keyEquivalent: "")
+            editTagsItem.target = self
+            editTagsItem.representedObject = track
+            menu.addItem(editTagsItem)
+
             let tagsItem = NSMenuItem(title: "See Tags", action: #selector(contextMenuShowTags(_:)), keyEquivalent: "")
             tagsItem.target = self
             tagsItem.representedObject = track
@@ -9132,6 +9188,12 @@ class PlexBrowserView: NSView {
             let rateAlbumItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
             rateAlbumItem.submenu = buildRateSubmenuForLocalAlbum(albumId: album.id)
             menu.addItem(rateAlbumItem)
+
+            let editAlbumItem = NSMenuItem(title: "Edit Album Tags", action: #selector(contextMenuEditAlbumTags(_:)), keyEquivalent: "")
+            editAlbumItem.target = self
+            editAlbumItem.representedObject = album
+            menu.addItem(editAlbumItem)
+
             menu.addItem(NSMenuItem.separator())
             
             let removeItem = NSMenuItem(title: "Remove Album from Library", action: #selector(contextMenuRemoveLocalAlbum(_:)), keyEquivalent: "")
@@ -9531,6 +9593,11 @@ class PlexBrowserView: NSView {
             finderItem.target = self
             finderItem.representedObject = movie.url as NSURL
             menu.addItem(finderItem)
+            menu.addItem(NSMenuItem.separator())
+            let editMovieItem = NSMenuItem(title: "Edit Tags", action: #selector(contextMenuEditVideoTags(_:)), keyEquivalent: "")
+            editMovieItem.target = self
+            editMovieItem.representedObject = movie
+            menu.addItem(editMovieItem)
 
         case .localShow(let show):
             let expandItem = NSMenuItem(title: expandedLocalShows.contains(show.id) ? "Collapse" : "Expand",
@@ -9570,12 +9637,31 @@ class PlexBrowserView: NSView {
             finderItem.target = self
             finderItem.representedObject = episode.url as NSURL
             menu.addItem(finderItem)
+            menu.addItem(NSMenuItem.separator())
+            let editEpisodeItem = NSMenuItem(title: "Edit Tags", action: #selector(contextMenuEditVideoTags(_:)), keyEquivalent: "")
+            editEpisodeItem.target = self
+            editEpisodeItem.representedObject = episode
+            menu.addItem(editEpisodeItem)
 
         case .header:
             return
         }
 
         NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    private static func goldStarAttributedTitle(_ label: String) -> NSAttributedString {
+        let goldColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+        let emptyColor = NSColor.secondaryLabelColor
+        let font = NSFont.menuFont(ofSize: 0)
+        let astr = NSMutableAttributedString(string: label,
+                                             attributes: [.font: font,
+                                                          .foregroundColor: emptyColor])
+        for (i, ch) in label.enumerated() where ch == "★" {
+            astr.addAttribute(.foregroundColor, value: goldColor,
+                              range: NSRange(location: i, length: 1))
+        }
+        return astr
     }
 
     private func buildRateSubmenuForLocalAlbum(albumId: String) -> NSMenu {
@@ -9586,6 +9672,7 @@ class PlexBrowserView: NSView {
             item.target = self
             item.tag = stars * 2
             item.representedObject = albumId
+            item.attributedTitle = PlexBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -9606,6 +9693,7 @@ class PlexBrowserView: NSView {
             item.target = self
             item.tag = stars * 2
             item.representedObject = artistId
+            item.attributedTitle = PlexBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -9648,6 +9736,44 @@ class PlexBrowserView: NSView {
         tagsPanel.delegate = self
         activeTagsPanel = tagsPanel
         tagsPanel.show()
+    }
+
+    @objc private func contextMenuEditTags(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? LibraryTrack else { return }
+        activeEditTagsPanel?.close()
+        let panel = EditTagsPanel(track: track)
+        panel.delegate = self
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
+        activeEditTagsPanel = panel
+        panel.show()
+    }
+
+    @objc private func contextMenuEditAlbumTags(_ sender: NSMenuItem) {
+        guard let album = sender.representedObject as? Album else { return }
+        activeEditAlbumTagsPanel?.close()
+        let panel = EditAlbumTagsPanel(album: album)
+        panel.delegate = self
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
+        activeEditAlbumTagsPanel = panel
+        panel.show()
+    }
+
+    @objc private func contextMenuEditVideoTags(_ sender: NSMenuItem) {
+        let videoItem: EditVideoTagsPanel.VideoItem
+        if let movie = sender.representedObject as? LocalVideo {
+            videoItem = .movie(movie)
+        } else if let episode = sender.representedObject as? LocalEpisode {
+            videoItem = .episode(episode)
+        } else {
+            return
+        }
+
+        activeEditVideoTagsPanel?.close()
+        let panel = EditVideoTagsPanel(item: videoItem)
+        panel.delegate = self
+        panel.onSave = { [weak self] in self?.reloadLocalBrowserAfterMetadataEdit() }
+        activeEditVideoTagsPanel = panel
+        panel.show()
     }
     
     @objc private func contextMenuPlayLocalAlbum(_ sender: NSMenuItem) {
@@ -11937,17 +12063,22 @@ class PlexBrowserView: NSView {
             }
             
         default:
-            // Handle typing for search
-            if browseMode == .search, let chars = event.characters, !chars.isEmpty {
+            guard let chars = event.characters, !chars.isEmpty else { break }
+            if browseMode == .search {
                 if event.keyCode == 51 { // Delete
-                    if !searchQuery.isEmpty {
-                        searchQuery.removeLast()
-                        loadDataForCurrentMode()
-                    }
+                    if !searchQuery.isEmpty { searchQuery.removeLast(); loadDataForCurrentMode() }
                 } else if chars.rangeOfCharacter(from: .alphanumerics) != nil ||
                           chars.rangeOfCharacter(from: .whitespaces) != nil {
-                    searchQuery += chars
-                    loadDataForCurrentMode()
+                    searchQuery += chars; loadDataForCurrentMode()
+                }
+            } else {
+                if event.keyCode == 53 { // Escape — clear type-ahead
+                    typeAheadQuery = ""; typeAheadTimer?.invalidate(); typeAheadTimer = nil; needsDisplay = true
+                } else if event.keyCode == 51 { // Backspace
+                    if !typeAheadQuery.isEmpty { typeAheadQuery.removeLast(); jumpToTypeAhead() }
+                } else if chars.rangeOfCharacter(from: .alphanumerics) != nil ||
+                          chars.rangeOfCharacter(from: .whitespaces) != nil {
+                    typeAheadQuery += chars; jumpToTypeAhead()
                 }
             }
         }
@@ -11959,14 +12090,26 @@ class PlexBrowserView: NSView {
             listY += Layout.searchBarHeight
         }
         let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
-        
+
         let itemTop = CGFloat(index) * itemHeight
         let itemBottom = itemTop + itemHeight
-        
+
         if itemTop < scrollOffset {
             scrollOffset = itemTop
         } else if itemBottom > scrollOffset + listHeight {
             scrollOffset = itemBottom - listHeight
+        }
+    }
+
+    private func jumpToTypeAhead() {
+        let query = typeAheadQuery.lowercased()
+        guard !query.isEmpty else { return }
+        if let idx = displayItems.firstIndex(where: { titleMatchesTypeAhead($0.title, query: query) }) {
+            selectedIndices = [idx]; ensureVisible(index: idx); loadArtworkForSelection(); needsDisplay = true
+        }
+        typeAheadTimer?.invalidate()
+        typeAheadTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+            self?.typeAheadQuery = ""
         }
     }
     
@@ -12752,6 +12895,19 @@ class PlexBrowserView: NSView {
         loadLocalBrowseArtwork()
 
         needsDisplay = true
+    }
+
+    private func reloadLocalBrowserAfterMetadataEdit() {
+        guard case .local = currentSource else {
+            loadLocalData()
+            return
+        }
+
+        clearLocalCachedData()
+        displayItems.removeAll()
+        selectedIndices.removeAll()
+        scrollOffset = 0
+        loadLocalData()
     }
     
     /// Load radio stations
@@ -14356,9 +14512,19 @@ class PlexBrowserView: NSView {
 
         switch currentSort {
         case .nameAsc:
-            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: true) }
+            return artists.sorted {
+                let l0 = normalizedIndexLetter($0.indexLetter) ?? sortLetter(for: $0.name)
+                let l1 = normalizedIndexLetter($1.indexLetter) ?? sortLetter(for: $1.name)
+                if l0 != l1 { return l0 < l1 }
+                return compareNameStrings($0.name, $1.name, ascending: true)
+            }
         case .nameDesc:
-            return artists.sorted { compareNameStrings($0.name, $1.name, ascending: false) }
+            return artists.sorted {
+                let l0 = normalizedIndexLetter($0.indexLetter) ?? sortLetter(for: $0.name)
+                let l1 = normalizedIndexLetter($1.indexLetter) ?? sortLetter(for: $1.name)
+                if l0 != l1 { return l0 > l1 }
+                return compareNameStrings($0.name, $1.name, ascending: false)
+            }
         case .dateAddedDesc:
             return artists.sorted {
                 let key0 = subsonicArtistKey(id: $0.id, name: $0.name)
@@ -16146,10 +16312,16 @@ class PlexBrowserView: NSView {
 
 extension PlexBrowserView: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
-        // Clear the tags panel reference when it closes
-        if let closingWindow = notification.object as? TagsPanel,
-           closingWindow === activeTagsPanel {
-            activeTagsPanel = nil
+        if let closingWindow = notification.object as? NSWindow {
+            if closingWindow === activeTagsPanel {
+                activeTagsPanel = nil
+            } else if closingWindow === activeEditTagsPanel {
+                activeEditTagsPanel = nil
+            } else if closingWindow === activeEditAlbumTagsPanel {
+                activeEditAlbumTagsPanel = nil
+            } else if closingWindow === activeEditVideoTagsPanel {
+                activeEditVideoTagsPanel = nil
+            }
         }
     }
 }

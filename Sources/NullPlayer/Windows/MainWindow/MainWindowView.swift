@@ -1267,7 +1267,7 @@ class MainWindowView: NSView {
         
         // Only redraw the visualization area for performance (spectrum mode)
         if mainVisMode == .spectrum {
-            setNeedsDisplay(SkinElements.Visualization.displayArea)
+            setNeedsDisplay(skinRectToViewRect(SkinElements.Visualization.displayArea))
         }
     }
     
