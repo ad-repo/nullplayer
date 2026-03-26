@@ -2472,6 +2472,11 @@ class SpectrumAnalyzerView: NSView {
             return
         }
 
+        let (waveLeft, waveRight, waveSR) = dataLock.withLock {
+            (visClassicWaveLeft, visClassicWaveRight, visClassicWaveSampleRate)
+        }
+        bridge.processUpdate(leftData: waveLeft, rightData: waveRight, sampleRate: waveSR)
+
         let stride = width * 4
         bridge.drawAtSize(width: width, height: height, into: &visClassicFrameBytes, stride: stride)
 

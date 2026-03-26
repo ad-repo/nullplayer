@@ -290,7 +290,6 @@ class WindowManager {
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
-    private var sharedVisClassicObserver: Any?
 
     /// Waveform window controller (classic or modern, accessed via protocol)
     private var waveformWindowController: WaveformWindowProviding?
@@ -1722,17 +1721,6 @@ class WindowManager {
         let bridge = VisClassicBridge(width: 576, height: 128, scope: .spectrumWindow)!
         bridge.setReferenceWidth(576)
         sharedVisClassicBridge = bridge
-        sharedVisClassicObserver = NotificationCenter.default.addObserver(
-            forName: .audioWaveform576DataUpdated,
-            object: nil,
-            queue: nil
-        ) { [weak bridge] note in
-            guard let bridge,
-                  let left = note.userInfo?["left"] as? [UInt8],
-                  let right = note.userInfo?["right"] as? [UInt8],
-                  let sr = note.userInfo?["sampleRate"] as? Double else { return }
-            bridge.processUpdate(leftData: left, rightData: right, sampleRate: sr)
-        }
         return bridge
     }
 
