@@ -15,8 +15,8 @@ let package = Package(
     dependencies: [
         // ZIP extraction for .wsz skin files
         .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.0"),
-        // SQLite for media library
-        .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.14.0"),
+        // SQLite for media library — pinned to 0.15.x; 0.16+ changed Expression<T> init API
+        .package(url: "https://github.com/stephencelis/SQLite.swift.git", .upToNextMinor(from: "0.15.4")),
         // KSPlayer for MKV and extended codec support via FFmpeg
         .package(url: "https://github.com/kingslay/KSPlayer.git", branch: "main"),
         // Audio streaming with AVAudioEngine support (for Plex EQ)

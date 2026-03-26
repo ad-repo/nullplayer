@@ -873,23 +873,32 @@ class MediaLibrary {
         var normalizedTrack = track
         normalizedTrack.rebuildArtistRoles()
         var sig: FileScanSignature?
-        var updateMode = "append"
+        var foundInMemory = false
         dataQueue.sync {
             if let index = tracks.firstIndex(where: { $0.id == normalizedTrack.id }) {
                 tracks[index] = normalizedTrack
-                updateMode = "replace-by-id"
+                foundInMemory = true
             } else if let index = tracks.firstIndex(where: { $0.url.path == normalizedTrack.url.path }) {
                 tracks[index] = normalizedTrack
-                updateMode = "replace-by-path"
-            } else {
-                // Browser edit panels can be hydrated from the SQLite store even when the in-memory
-                // cache has not loaded the track yet. Persist those edits and keep memory in sync.
-                tracks.append(normalizedTrack)
-                updateMode = "append"
+                foundInMemory = true
             }
-            tracksByPath[normalizedTrack.url.path] = normalizedTrack
-            sig = signatureFromFileSystem(url: normalizedTrack.url, fallbackFileSize: normalizedTrack.fileSize)
-            if let s = sig { scanSignaturesByPath[normalizedTrack.url.path] = s }
+            if foundInMemory {
+                tracksByPath[normalizedTrack.url.path] = normalizedTrack
+                sig = signatureFromFileSystem(url: normalizedTrack.url, fallbackFileSize: normalizedTrack.fileSize)
+                if let s = sig { scanSignaturesByPath[normalizedTrack.url.path] = s }
+            }
+        }
+        if !foundInMemory {
+            // In-memory miss: browser edit panels can be opened before the cache loads a track.
+            // Only append and persist if the row still exists in the DB — this prevents an editor
+            // saving a stale snapshot from recreating a row that was deleted since the panel opened.
+            guard store.track(forURL: normalizedTrack.url) != nil else { return }
+            dataQueue.sync {
+                tracks.append(normalizedTrack)
+                tracksByPath[normalizedTrack.url.path] = normalizedTrack
+                sig = signatureFromFileSystem(url: normalizedTrack.url, fallbackFileSize: normalizedTrack.fileSize)
+                if let s = sig { scanSignaturesByPath[normalizedTrack.url.path] = s }
+            }
         }
         store.upsertTrack(normalizedTrack, sig: sig)
         notifyChange()
