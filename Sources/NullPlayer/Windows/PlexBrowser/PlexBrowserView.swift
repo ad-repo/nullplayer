@@ -3209,7 +3209,18 @@ class PlexBrowserView: NSView {
             
             // Draw with truncation if needed
             let drawRect = NSRect(x: textX, y: textY, width: maxTextWidth, height: textSize.height)
-            value.draw(with: drawRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs)
+            if column.id == "rating" && !isSelected && value.contains("★") {
+                let goldColor = NSColor(calibratedRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+                let emptyColor = dimColor.withAlphaComponent(0.4)
+                let astr = NSMutableAttributedString(string: value, attributes: attrs)
+                for (i, ch) in value.enumerated() {
+                    let range = NSRange(location: i, length: 1)
+                    astr.addAttribute(.foregroundColor, value: ch == "★" ? goldColor : emptyColor, range: range)
+                }
+                astr.draw(with: drawRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            } else {
+                value.draw(with: drawRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs)
+            }
             
             x += width
         }
@@ -9632,6 +9643,20 @@ class PlexBrowserView: NSView {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
+    private static func goldStarAttributedTitle(_ label: String) -> NSAttributedString {
+        let goldColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+        let emptyColor = NSColor.secondaryLabelColor
+        let font = NSFont.menuFont(ofSize: 0)
+        let astr = NSMutableAttributedString(string: label,
+                                             attributes: [.font: font,
+                                                          .foregroundColor: emptyColor])
+        for (i, ch) in label.enumerated() where ch == "★" {
+            astr.addAttribute(.foregroundColor, value: goldColor,
+                              range: NSRange(location: i, length: 1))
+        }
+        return astr
+    }
+
     private func buildRateSubmenuForLocalAlbum(albumId: String) -> NSMenu {
         let menu = NSMenu(title: "Rate")
         for stars in 1...5 {
@@ -9640,6 +9665,7 @@ class PlexBrowserView: NSView {
             item.target = self
             item.tag = stars * 2
             item.representedObject = albumId
+            item.attributedTitle = PlexBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -9660,6 +9686,7 @@ class PlexBrowserView: NSView {
             item.target = self
             item.tag = stars * 2
             item.representedObject = artistId
+            item.attributedTitle = PlexBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())

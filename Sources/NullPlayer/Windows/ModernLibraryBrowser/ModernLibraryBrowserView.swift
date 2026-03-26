@@ -6728,7 +6728,21 @@ class ModernLibraryBrowserView: NSView {
     }
     
     // MARK: - Rate Submenus
-    
+
+    private static func goldStarAttributedTitle(_ label: String) -> NSAttributedString {
+        let goldColor = NSColor(srgbRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
+        let emptyColor = NSColor.secondaryLabelColor
+        let font = NSFont.menuFont(ofSize: 0)
+        let astr = NSMutableAttributedString(string: label,
+                                             attributes: [.font: font,
+                                                          .foregroundColor: emptyColor])
+        for (i, ch) in label.enumerated() where ch == "★" {
+            astr.addAttribute(.foregroundColor, value: goldColor,
+                              range: NSRange(location: i, length: 1))
+        }
+        return astr
+    }
+
     /// Build rate submenu for the currently playing track (art mode overlay)
     private func buildRateSubmenu() -> NSMenu {
         let menu = NSMenu(title: "Rate")
@@ -6736,6 +6750,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateCurrentTrack(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 2  // 0-10 scale
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6752,6 +6767,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRatePlex(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 2; item.representedObject = ratingKey
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6768,6 +6784,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateSubsonic(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars; item.representedObject = songId  // tag is 1-5 for Subsonic
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6783,6 +6800,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateJellyfin(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 20; item.representedObject = itemId  // Jellyfin uses 0-100 scale
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6798,6 +6816,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateEmby(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 20; item.representedObject = itemId  // Emby uses 0-100 scale
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6812,10 +6831,10 @@ class ModernLibraryBrowserView: NSView {
         let current = MediaLibrary.shared.albumRating(for: albumId)
         for stars in 1...5 {
             let rating = stars * 2
-            let filled = current != nil && current! >= rating - 1 && current! <= rating
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocalAlbum(_:)), keyEquivalent: "")
             item.target = self; item.tag = rating; item.representedObject = albumId
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6831,6 +6850,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocalArtist(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 2; item.representedObject = artistId
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
@@ -6847,6 +6867,7 @@ class ModernLibraryBrowserView: NSView {
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
             let item = NSMenuItem(title: label, action: #selector(contextMenuRateLocal(_:)), keyEquivalent: "")
             item.target = self; item.tag = stars * 2; item.representedObject = trackId  // 0-10 scale
+            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
