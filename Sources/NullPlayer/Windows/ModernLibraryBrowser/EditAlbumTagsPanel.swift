@@ -317,6 +317,14 @@ class EditAlbumTagsPanel: NSWindow {
             showInfoAlert(title: "Auto-Tag", message: "Selected candidate does not change any album fields or track metadata.")
             return
         }
+        let preview = previewLines.prefix(24).joined(separator: "\n")
+        let confirmAlert = NSAlert()
+        confirmAlert.messageText = "Apply Auto-Tag Changes?"
+        confirmAlert.informativeText = preview
+        confirmAlert.alertStyle = .informational
+        confirmAlert.addButton(withTitle: "Apply")
+        confirmAlert.addButton(withTitle: "Cancel")
+        guard confirmAlert.runModal() == .alertFirstButtonReturn else { return }
         applyPatchToForm(selected.albumPatch)
         pendingPerTrackPatches = selected.perTrackPatches
         lastAppliedAutoTagCandidateID = selected.id

@@ -2475,10 +2475,9 @@ class SpectrumAnalyzerView: NSView {
         let (waveLeft, waveRight, waveSR) = dataLock.withLock {
             (visClassicWaveLeft, visClassicWaveRight, visClassicWaveSampleRate)
         }
-        bridge.processUpdate(leftData: waveLeft, rightData: waveRight, sampleRate: waveSR)
-
         let stride = width * 4
-        bridge.drawAtSize(width: width, height: height, into: &visClassicFrameBytes, stride: stride)
+        bridge.processAndDraw(leftData: waveLeft, rightData: waveRight, sampleRate: waveSR,
+                              width: width, height: height, into: &visClassicFrameBytes, stride: stride)
 
         guard visClassicFrameBytes.count >= width * height * 4 else {
             inFlightSemaphore.signal()

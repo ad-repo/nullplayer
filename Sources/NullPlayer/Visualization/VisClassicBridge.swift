@@ -117,6 +117,27 @@ final class VisClassicBridge {
         }
     }
 
+    /// Process and draw atomically — prevents another view from calling processUpdate
+    /// between this view's processUpdate and drawAtSize on the shared bridge.
+    func processAndDraw(leftData: [UInt8], rightData: [UInt8], sampleRate: Double,
+                        width: Int, height: Int, into buffer: inout [UInt8], stride: Int) {
+        guard let core else { return }
+        let needed = stride * height
+        if buffer.count < needed { buffer = [UInt8](repeating: 0, count: needed) }
+        coreLock.withLock {
+            leftData.withUnsafeBufferPointer { lp in
+                rightData.withUnsafeBufferPointer { rp in
+                    vc_set_waveform_u8(core, lp.baseAddress, rp.baseAddress,
+                                       leftData.count, sampleRate)
+                }
+            }
+            vc_process_frame_only(core)
+            buffer.withUnsafeMutableBufferPointer { bp in
+                _ = vc_draw_at_size(core, bp.baseAddress, Int32(width), Int32(height), Int32(stride))
+            }
+        }
+    }
+
     func updateWaveform(left: [UInt8], right: [UInt8], sampleRate: Double) {
         guard let core else { return }
         guard !left.isEmpty, !right.isEmpty else { return }

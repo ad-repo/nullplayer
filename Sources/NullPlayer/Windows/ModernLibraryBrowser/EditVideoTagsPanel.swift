@@ -148,13 +148,13 @@ class EditVideoTagsPanel: NSWindow {
     @objc private func saveClicked() {
         switch item {
         case .movie(var movie):
-            if let title = nonEmpty("title") { movie.title = title }
+            movie.title = fields["title"]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? movie.title
             movie.year = intValue("year", fallback: movie.year)
             MediaLibrary.shared.updateMovie(movie)
 
         case .episode(var episode):
-            if let title = nonEmpty("title") { episode.title = title }
-            if let show = nonEmpty("showTitle") { episode.showTitle = show }
+            episode.title = fields["title"]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? episode.title
+            episode.showTitle = fields["showTitle"]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? episode.showTitle
             if let season = intValue("season", fallback: episode.seasonNumber) { episode.seasonNumber = season }
             episode.episodeNumber = intValue("episode", fallback: episode.episodeNumber)
             MediaLibrary.shared.updateEpisode(episode)

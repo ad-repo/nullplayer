@@ -233,6 +233,16 @@ class EditTagsPanel: NSWindow {
 
     @objc private func saveClicked() {
         commitPendingEdits()
+        guard MediaLibrary.shared.findTrack(byURL: track.url) != nil else {
+            let alert = NSAlert()
+            alert.messageText = "Track No Longer in Library"
+            alert.informativeText = "This track was removed from the library while the edit panel was open. Changes were not saved."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            close()
+            return
+        }
         track = trackFromForm()
         MediaLibrary.shared.updateTrack(track)
         onSave?()
