@@ -143,14 +143,9 @@ struct AutoTagReleaseTrackHint {
 
 enum AutoTagCandidateMerger {
     static func mergeTrackCandidates(_ input: [AutoTagTrackCandidate], limit: Int = 5) -> [AutoTagTrackCandidate] {
-        var byKey: [String: AutoTagTrackCandidate] = [:]
-        for candidate in input {
-            if let existing = byKey[candidate.mergeKey], existing.confidence >= candidate.confidence {
-                continue
-            }
-            byKey[candidate.mergeKey] = candidate
-        }
-        return byKey.values
+        var seen = Set<String>()
+        return input
+            .filter { seen.insert($0.id).inserted }
             .sorted { lhs, rhs in
                 if lhs.confidence == rhs.confidence {
                     return lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
@@ -162,14 +157,9 @@ enum AutoTagCandidateMerger {
     }
 
     static func mergeAlbumCandidates(_ input: [AutoTagAlbumCandidate], limit: Int = 5) -> [AutoTagAlbumCandidate] {
-        var byKey: [String: AutoTagAlbumCandidate] = [:]
-        for candidate in input {
-            if let existing = byKey[candidate.mergeKey], existing.confidence >= candidate.confidence {
-                continue
-            }
-            byKey[candidate.mergeKey] = candidate
-        }
-        return byKey.values
+        var seen = Set<String>()
+        return input
+            .filter { seen.insert($0.id).inserted }
             .sorted { lhs, rhs in
                 let lhsMatchCount = lhs.perTrackPatches.count
                 let rhsMatchCount = rhs.perTrackPatches.count

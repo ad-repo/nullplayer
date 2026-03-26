@@ -3108,13 +3108,13 @@ class SpectrumAnalyzerView: NSView {
             }
             
         case .classic, .punch:
-            // Derive cell width from viewport so bars always fill the full width.
-            // Using the floor()'d host barWidth here can leave a large right-side gap
-            // at many window widths (e.g. only ~70-80% coverage).
             let cellSpacing: Float = 1.0 * Float(scale)
             let totalSpacing = Float(max(0, localBarCount - 1)) * cellSpacing
             let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
-            let cellWidth = max(1.0, (scaledWidth - totalSpacing) / Float(max(1, localBarCount)))
+            // Punch fills the full viewport width; Classic respects the user-configured bar width.
+            let cellWidth: Float = localQualityMode == .punch
+                ? max(1.0, (scaledWidth - totalSpacing) / Float(max(1, localBarCount)))
+                : max(1.0, Float(renderBarWidth) * Float(scale))
             
             // Update params buffer for Classic
             if let buffer = paramsBuffer {

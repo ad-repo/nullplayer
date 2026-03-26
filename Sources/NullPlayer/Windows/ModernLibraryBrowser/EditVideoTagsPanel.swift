@@ -149,14 +149,14 @@ class EditVideoTagsPanel: NSWindow {
         switch item {
         case .movie(var movie):
             if let title = nonEmpty("title") { movie.title = title }
-            movie.year = intValue("year")
+            movie.year = intValue("year", fallback: movie.year)
             MediaLibrary.shared.updateMovie(movie)
 
         case .episode(var episode):
             if let title = nonEmpty("title") { episode.title = title }
             if let show = nonEmpty("showTitle") { episode.showTitle = show }
-            if let season = intValue("season") { episode.seasonNumber = season }
-            episode.episodeNumber = intValue("episode")
+            if let season = intValue("season", fallback: episode.seasonNumber) { episode.seasonNumber = season }
+            episode.episodeNumber = intValue("episode", fallback: episode.episodeNumber)
             MediaLibrary.shared.updateEpisode(episode)
         }
         onSave?()
@@ -173,10 +173,13 @@ class EditVideoTagsPanel: NSWindow {
         return text
     }
 
-    private func intValue(_ key: String) -> Int? {
+    /// Returns the parsed integer from the field, or nil if the field is blank.
+    /// If the field contains non-numeric text, returns `fallback` to avoid silently clearing
+    /// a previously-set value due to a typo.
+    private func intValue(_ key: String, fallback: Int? = nil) -> Int? {
         guard let raw = fields[key]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else { return nil }
-        return Int(raw)
+        return Int(raw) ?? fallback
     }
 
     private func formatDate(_ date: Date) -> String {

@@ -3209,7 +3209,7 @@ class PlexBrowserView: NSView {
             
             // Draw with truncation if needed
             let drawRect = NSRect(x: textX, y: textY, width: maxTextWidth, height: textSize.height)
-            if column.id == "rating" && !isSelected && value.contains("★") {
+            if column.id == "rating" && !isSelected && (value.contains("★") || value.contains("☆")) {
                 let goldColor = NSColor(calibratedRed: 0.98, green: 0.78, blue: 0.20, alpha: 1.0)
                 let emptyColor = dimColor.withAlphaComponent(0.4)
                 let astr = NSMutableAttributedString(string: value, attributes: attrs)
@@ -8233,10 +8233,17 @@ class PlexBrowserView: NSView {
 
     /// Returns the sort letter for a display item, using the server's index letter for Subsonic artists.
     private func effectiveSortLetter(for item: PlexDisplayItem) -> String {
-        if case .subsonicArtist(let artist) = item.type, let letter = artist.indexLetter {
-            return letter
+        if case .subsonicArtist(let artist) = item.type,
+           let normalized = normalizedIndexLetter(artist.indexLetter) {
+            return normalized
         }
         return sortLetter(for: item.title)
+    }
+
+    /// Normalizes a raw Subsonic `indexLetter` to a single uppercase letter, or nil if blank.
+    private func normalizedIndexLetter(_ raw: String?) -> String? {
+        guard let first = raw?.trimmingCharacters(in: .whitespaces).first else { return nil }
+        return String(first).uppercased()
     }
 
     /// Returns true if title matches the typeahead query, also checking "Surname, Article" canonical form.
@@ -14506,15 +14513,15 @@ class PlexBrowserView: NSView {
         switch currentSort {
         case .nameAsc:
             return artists.sorted {
-                let l0 = $0.indexLetter ?? sortLetter(for: $0.name)
-                let l1 = $1.indexLetter ?? sortLetter(for: $1.name)
+                let l0 = normalizedIndexLetter($0.indexLetter) ?? sortLetter(for: $0.name)
+                let l1 = normalizedIndexLetter($1.indexLetter) ?? sortLetter(for: $1.name)
                 if l0 != l1 { return l0 < l1 }
                 return compareNameStrings($0.name, $1.name, ascending: true)
             }
         case .nameDesc:
             return artists.sorted {
-                let l0 = $0.indexLetter ?? sortLetter(for: $0.name)
-                let l1 = $1.indexLetter ?? sortLetter(for: $1.name)
+                let l0 = normalizedIndexLetter($0.indexLetter) ?? sortLetter(for: $0.name)
+                let l1 = normalizedIndexLetter($1.indexLetter) ?? sortLetter(for: $1.name)
                 if l0 != l1 { return l0 > l1 }
                 return compareNameStrings($0.name, $1.name, ascending: false)
             }

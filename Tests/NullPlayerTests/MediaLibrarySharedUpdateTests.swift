@@ -8,6 +8,7 @@ final class MediaLibrarySharedUpdateTests: XCTestCase {
         let library = MediaLibrary.shared
         let store = MediaLibraryStore.shared
 
+        addTeardownBlock { library.removeTracks(urls: [url]) }
         library.removeTracks(urls: [url])
 
         var track = LibraryTrack(url: url)

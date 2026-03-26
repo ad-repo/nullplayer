@@ -46,6 +46,7 @@ class EditAlbumTagsPanel: NSWindow {
     var onSave: (() -> Void)?
     private var album: Album
     private var fields: [Field: NSTextField] = [:]
+    private var dirtyFields: Set<Field> = []
     private var editingTracks: [LibraryTrack] = []
     private var pendingPerTrackPatches: [UUID: AutoTagTrackPatch] = [:]
     private var lastAppliedAutoTagCandidateID: String?
@@ -147,6 +148,7 @@ class EditAlbumTagsPanel: NSWindow {
             let value = value(for: field)
             let textField = NSTextField(string: value)
             textField.font = NSFont.systemFont(ofSize: 12)
+            textField.delegate = self
             fields[field] = textField
             addEditableRow(grid: grid, label: field.label, field: textField)
         }
@@ -191,6 +193,7 @@ class EditAlbumTagsPanel: NSWindow {
         ])
 
         loadArtworkPreview()
+        delegate = self
     }
 
     private func addReadOnlyRow(grid: NSGridView, label: String, value: String) {
@@ -231,42 +234,46 @@ class EditAlbumTagsPanel: NSWindow {
         commitPendingEdits()
         let sharedPatch = sharedPatchFromForm()
         var savedTracks: [LibraryTrack] = []
-        NSLog("[MetadataDebug] album-save-start album=%@ artist=%@ albumArtist=%@ matchedTrackPatches=%d trackCount=%d sharedPatch={%@}",
-              sharedPatch.album ?? album.name,
-              sharedPatch.artist ?? "nil",
-              sharedPatch.albumArtist ?? "nil",
-              pendingPerTrackPatches.count,
-              editingTracks.count,
-              debugPatchSummary(sharedPatch))
-        if let lastAppliedAutoTagCandidateID {
-            NSLog("[MetadataDebug] album-save-last-applied-candidate id=%@ matchedTrackPatches=%d",
-                  lastAppliedAutoTagCandidateID,
-                  pendingPerTrackPatches.count)
-        }
 
         for track in editingTracks {
             let currentTrack = trackFinder(track.url) ?? track
             var updated = sharedPatch.applying(to: currentTrack)
-            let perTrackPatch = pendingPerTrackPatches[track.id]
+            applyDirtyClears(to: &updated)
             if let perTrack = pendingPerTrackPatches[track.id] {
                 updated = perTrack.applying(to: updated)
             }
-            NSLog("[MetadataDebug] album-save-track url=%@ sourceTrackID=%@ currentTrackID=%@ usedCurrent=%d perTrackPatch={%@} before={%@} after={%@}",
-                  track.url.absoluteString,
-                  track.id.uuidString,
-                  currentTrack.id.uuidString,
-                  currentTrack.id != track.id ? 1 : 0,
-                  perTrackPatch.map(debugPatchSummary) ?? "nil",
-                  debugTrackSummary(currentTrack),
-                  debugTrackSummary(updated))
             trackUpdater(updated)
             savedTracks.append(updated)
         }
         editingTracks = savedTracks
         pendingPerTrackPatches.removeAll()
         lastAppliedAutoTagCandidateID = nil
-        NSLog("[MetadataDebug] album-save-end savedTracks=%d", savedTracks.count)
         return savedTracks
+    }
+
+    /// Clears fields on `track` that the user explicitly blanked out (dirty + empty).
+    private func applyDirtyClears(to track: inout LibraryTrack) {
+        for field in dirtyFields {
+            let raw = fields[field]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard raw.isEmpty else { continue }
+            switch field {
+            case .artist: track.artist = nil
+            case .album: track.album = nil
+            case .albumArtist: track.albumArtist = nil
+            case .genre: track.genre = nil
+            case .year: track.year = nil
+            case .composer: track.composer = nil
+            case .comment: track.comment = nil
+            case .grouping: track.grouping = nil
+            case .copyright: track.copyright = nil
+            case .mbReleaseID: track.musicBrainzReleaseID = nil
+            case .discogsReleaseID: track.discogsReleaseID = nil
+            case .discogsMasterID: track.discogsMasterID = nil
+            case .discogsLabel: track.discogsLabel = nil
+            case .discogsCatalogNumber: track.discogsCatalogNumber = nil
+            case .artworkURL: track.artworkURL = nil
+            }
+        }
     }
 
     @objc private func cancelClicked() {
@@ -303,58 +310,16 @@ class EditAlbumTagsPanel: NSWindow {
         }
 
         let rankedCandidates = rankAlbumCandidates(candidates)
-        for candidate in rankedCandidates {
-            NSLog("[MetadataDebug] album-candidate id=%@ confidence=%.2f matchedTracks=%d totalTracks=%d artist=%@ album=%@ albumArtist=%@",
-                  candidate.id,
-                  candidate.confidence,
-                  candidate.perTrackPatches.count,
-                  editingTracks.count,
-                  candidate.albumPatch.artist ?? "nil",
-                  candidate.albumPatch.album ?? "nil",
-                  candidate.albumPatch.albumArtist ?? "nil")
-        }
-
         guard let selectedCandidate = selectAlbumCandidate(rankedCandidates) else { return }
         let selected = resolvedCandidate(from: selectedCandidate)
-        if selected.perTrackPatches.count != selectedCandidate.perTrackPatches.count {
-            NSLog("[MetadataDebug] album-candidate-remap id=%@ oldMatchedTracks=%d newMatchedTracks=%d totalTracks=%d",
-                  selected.id,
-                  selectedCandidate.perTrackPatches.count,
-                  selected.perTrackPatches.count,
-                  editingTracks.count)
-        }
         let previewLines = buildAlbumChangeLines(candidate: selected)
         guard !previewLines.isEmpty else {
-            NSLog("[MetadataDebug] album-apply-candidate-noop id=%@ matchedTracks=%d totalTracks=%d",
-                  selected.id,
-                  selected.perTrackPatches.count,
-                  editingTracks.count)
             showInfoAlert(title: "Auto-Tag", message: "Selected candidate does not change any album fields or track metadata.")
             return
         }
-        NSLog("[MetadataDebug] album-apply-candidate id=%@ title=%@ sharedArtist=%@ sharedAlbum=%@ sharedAlbumArtist=%@ matchedTracks=%d totalTracks=%d previewLines=%d",
-              selected.id,
-              selected.displayTitle,
-              selected.albumPatch.artist ?? "nil",
-              selected.albumPatch.album ?? "nil",
-              selected.albumPatch.albumArtist ?? "nil",
-              selected.perTrackPatches.count,
-              editingTracks.count,
-              previewLines.count)
-        NSLog("[MetadataDebug] album-apply-candidate-detail id=%@ artistChanged=%d albumPatch={%@}",
-              selected.id,
-              selected.albumPatch.artist != nil && selected.albumPatch.artist != editingTracks.first?.artist ? 1 : 0,
-              debugPatchSummary(selected.albumPatch))
         applyPatchToForm(selected.albumPatch)
         pendingPerTrackPatches = selected.perTrackPatches
         lastAppliedAutoTagCandidateID = selected.id
-        NSLog("[MetadataDebug] album-apply-candidate-committed id=%@ matchedTracks=%d totalTracks=%d fieldArtist=%@ fieldAlbum=%@ fieldAlbumArtist=%@",
-              selected.id,
-              pendingPerTrackPatches.count,
-              editingTracks.count,
-              fields[.artist]?.stringValue ?? "",
-              fields[.album]?.stringValue ?? "",
-              fields[.albumArtist]?.stringValue ?? "")
     }
 
     private func selectAlbumCandidate(_ candidates: [AutoTagAlbumCandidate]) -> AutoTagAlbumCandidate? {
@@ -572,13 +537,13 @@ class EditAlbumTagsPanel: NSWindow {
         setField(.discogsLabel, patch.discogsLabel)
         setField(.discogsCatalogNumber, patch.discogsCatalogNumber)
         setField(.artworkURL, patch.artworkURL)
-        NSLog("[MetadataDebug] album-form-after-patch fields={%@}",
-              debugFormSummary())
+        loadArtworkPreview()
     }
 
     private func setField(_ field: Field, _ value: String?) {
         guard let value else { return }
         fields[field]?.stringValue = value
+        dirtyFields.insert(field)
     }
 
     func applyCandidateForTesting(_ candidate: AutoTagAlbumCandidate) {
@@ -588,21 +553,21 @@ class EditAlbumTagsPanel: NSWindow {
 
     private func sharedPatchFromForm() -> AutoTagTrackPatch {
         AutoTagTrackPatch(
-            artist: nonEmpty(.artist),
-            album: nonEmpty(.album),
-            albumArtist: nonEmpty(.albumArtist),
-            genre: nonEmpty(.genre),
-            year: intValue(.year),
-            composer: nonEmpty(.composer),
-            comment: nonEmpty(.comment),
-            grouping: nonEmpty(.grouping),
-            copyright: nonEmpty(.copyright),
-            musicBrainzReleaseID: nonEmpty(.mbReleaseID),
-            discogsReleaseID: intValue(.discogsReleaseID),
-            discogsMasterID: intValue(.discogsMasterID),
-            discogsLabel: nonEmpty(.discogsLabel),
-            discogsCatalogNumber: nonEmpty(.discogsCatalogNumber),
-            artworkURL: nonEmpty(.artworkURL)
+            artist: dirtyFields.contains(.artist) ? nonEmpty(.artist) : nil,
+            album: dirtyFields.contains(.album) ? nonEmpty(.album) : nil,
+            albumArtist: dirtyFields.contains(.albumArtist) ? nonEmpty(.albumArtist) : nil,
+            genre: dirtyFields.contains(.genre) ? nonEmpty(.genre) : nil,
+            year: dirtyFields.contains(.year) ? intValue(.year) : nil,
+            composer: dirtyFields.contains(.composer) ? nonEmpty(.composer) : nil,
+            comment: dirtyFields.contains(.comment) ? nonEmpty(.comment) : nil,
+            grouping: dirtyFields.contains(.grouping) ? nonEmpty(.grouping) : nil,
+            copyright: dirtyFields.contains(.copyright) ? nonEmpty(.copyright) : nil,
+            musicBrainzReleaseID: dirtyFields.contains(.mbReleaseID) ? nonEmpty(.mbReleaseID) : nil,
+            discogsReleaseID: dirtyFields.contains(.discogsReleaseID) ? intValue(.discogsReleaseID) : nil,
+            discogsMasterID: dirtyFields.contains(.discogsMasterID) ? intValue(.discogsMasterID) : nil,
+            discogsLabel: dirtyFields.contains(.discogsLabel) ? nonEmpty(.discogsLabel) : nil,
+            discogsCatalogNumber: dirtyFields.contains(.discogsCatalogNumber) ? nonEmpty(.discogsCatalogNumber) : nil,
+            artworkURL: dirtyFields.contains(.artworkURL) ? nonEmpty(.artworkURL) : nil
         )
     }
 
@@ -679,68 +644,21 @@ class EditAlbumTagsPanel: NSWindow {
         makeKeyAndOrderFront(nil)
     }
 
-    private func debugTrackSummary(_ track: LibraryTrack) -> String {
-        [
-            "title=\(debugString(track.title))",
-            "artist=\(debugString(track.artist))",
-            "album=\(debugString(track.album))",
-            "albumArtist=\(debugString(track.albumArtist))",
-            "genre=\(debugString(track.genre))",
-            "year=\(debugInt(track.year))",
-            "trackNo=\(debugInt(track.trackNumber))",
-            "discNo=\(debugInt(track.discNumber))",
-            "composer=\(debugString(track.composer))",
-            "comment=\(debugString(track.comment))",
-            "grouping=\(debugString(track.grouping))",
-            "copyright=\(debugString(track.copyright))",
-            "mbRel=\(debugString(track.musicBrainzReleaseID))",
-            "discogsRel=\(debugInt(track.discogsReleaseID))",
-            "discogsMaster=\(debugInt(track.discogsMasterID))",
-            "discogsLabel=\(debugString(track.discogsLabel))",
-            "discogsCat=\(debugString(track.discogsCatalogNumber))",
-            "artURL=\(debugString(track.artworkURL))"
-        ].joined(separator: " ")
-    }
+}
 
-    private func debugPatchSummary(_ patch: AutoTagTrackPatch) -> String {
-        [
-            "artist=\(debugString(patch.artist))",
-            "album=\(debugString(patch.album))",
-            "albumArtist=\(debugString(patch.albumArtist))",
-            "genre=\(debugString(patch.genre))",
-            "year=\(debugInt(patch.year))",
-            "trackNo=\(debugInt(patch.trackNumber))",
-            "discNo=\(debugInt(patch.discNumber))",
-            "composer=\(debugString(patch.composer))",
-            "comment=\(debugString(patch.comment))",
-            "grouping=\(debugString(patch.grouping))",
-            "copyright=\(debugString(patch.copyright))",
-            "isrc=\(debugString(patch.isrc))",
-            "mbRec=\(debugString(patch.musicBrainzRecordingID))",
-            "mbRel=\(debugString(patch.musicBrainzReleaseID))",
-            "discogsRel=\(debugInt(patch.discogsReleaseID))",
-            "discogsMaster=\(debugInt(patch.discogsMasterID))",
-            "discogsLabel=\(debugString(patch.discogsLabel))",
-            "discogsCat=\(debugString(patch.discogsCatalogNumber))",
-            "artURL=\(debugString(patch.artworkURL))"
-        ].joined(separator: " ")
+extension EditAlbumTagsPanel: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        autoTagTask?.cancel()
     }
+}
 
-    private func debugFormSummary() -> String {
-        Field.allCases.map { field in
-            let raw = fields[field]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            return "\(field.label)=\(debugString(raw))"
-        }.joined(separator: " ")
-    }
-
-    private func debugString(_ value: String?) -> String {
-        guard let value else { return "nil" }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return "empty" }
-        return trimmed.replacingOccurrences(of: "\n", with: "\\n")
-    }
-
-    private func debugInt(_ value: Int?) -> String {
-        value.map(String.init) ?? "nil"
+extension EditAlbumTagsPanel: NSTextFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        guard let textField = obj.object as? NSTextField,
+              let field = fields.first(where: { $0.value === textField })?.key else { return }
+        dirtyFields.insert(field)
+        if field == .artworkURL {
+            loadArtworkPreview()
+        }
     }
 }

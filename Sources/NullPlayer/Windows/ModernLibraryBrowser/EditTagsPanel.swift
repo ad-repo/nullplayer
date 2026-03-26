@@ -156,6 +156,7 @@ class EditTagsPanel: NSWindow {
             let value = value(for: field)
             let textField = NSTextField(string: value)
             textField.font = NSFont.systemFont(ofSize: 12)
+            if field == .artworkURL { textField.delegate = self }
             fields[field] = textField
             addEditableRow(grid: grid, label: field.label, field: textField)
         }
@@ -199,6 +200,7 @@ class EditTagsPanel: NSWindow {
         ])
 
         loadArtworkPreview()
+        delegate = self
     }
 
     private func addReadOnlyRow(grid: NSGridView, label: String, value: String) {
@@ -231,16 +233,7 @@ class EditTagsPanel: NSWindow {
 
     @objc private func saveClicked() {
         commitPendingEdits()
-        NSLog("[MetadataDebug] track-save-form url=%@ fields={%@}",
-              track.url.absoluteString,
-              debugFormSummary())
-        let before = MediaLibrary.shared.findTrack(byURL: track.url) ?? track
         track = trackFromForm()
-        NSLog("[MetadataDebug] track-save-diff url=%@ artistChanged=%d before={%@} after={%@}",
-              track.url.absoluteString,
-              before.artist != track.artist ? 1 : 0,
-              debugTrackSummary(before),
-              debugTrackSummary(track))
         MediaLibrary.shared.updateTrack(track)
         onSave?()
         close()
@@ -290,16 +283,6 @@ class EditTagsPanel: NSWindow {
         previewAlert.addButton(withTitle: "Apply")
         previewAlert.addButton(withTitle: "Cancel")
         guard previewAlert.runModal() == .alertFirstButtonReturn else { return }
-        NSLog("[MetadataDebug] track-apply-candidate id=%@ title=%@ artist=%@ album=%@ albumArtist=%@",
-              selected.id,
-              selected.patch.title ?? "nil",
-              selected.patch.artist ?? "nil",
-              selected.patch.album ?? "nil",
-              selected.patch.albumArtist ?? "nil")
-        NSLog("[MetadataDebug] track-apply-candidate-detail id=%@ artistChanged=%d patch={%@}",
-              selected.id,
-              selected.patch.artist != nil && selected.patch.artist != baseTrack.artist ? 1 : 0,
-              debugPatchSummary(selected.patch))
         applyPatchToForm(selected.patch)
     }
 
@@ -423,9 +406,7 @@ class EditTagsPanel: NSWindow {
         setField(.discogsLabel, patch.discogsLabel)
         setField(.discogsCatalogNumber, patch.discogsCatalogNumber)
         setField(.artworkURL, patch.artworkURL)
-        NSLog("[MetadataDebug] track-form-after-patch url=%@ fields={%@}",
-              track.url.absoluteString,
-              debugFormSummary())
+        loadArtworkPreview()
     }
 
     private func setField(_ field: Field, _ value: String?) {
@@ -435,37 +416,29 @@ class EditTagsPanel: NSWindow {
 
     private func trackFromForm() -> LibraryTrack {
         let foundTrack = MediaLibrary.shared.findTrack(byURL: track.url)
-        NSLog("[MetadataDebug] track-form-build-start url=%@ foundCurrent=%d base={%@} fields={%@}",
-              track.url.absoluteString,
-              foundTrack != nil ? 1 : 0,
-              debugTrackSummary(foundTrack ?? track),
-              debugFormSummary())
         var updated = foundTrack ?? track
         updated.title = nonEmpty(.title) ?? track.title
         updated.artist = nonEmpty(.artist)
         updated.album = nonEmpty(.album)
         updated.albumArtist = nonEmpty(.albumArtist)
         updated.genre = nonEmpty(.genre)
-        updated.year = intValue(.year)
-        updated.trackNumber = intValue(.trackNumber)
-        updated.discNumber = intValue(.discNumber)
+        updated.year = intValue(.year, fallback: updated.year)
+        updated.trackNumber = intValue(.trackNumber, fallback: updated.trackNumber)
+        updated.discNumber = intValue(.discNumber, fallback: updated.discNumber)
         updated.composer = nonEmpty(.composer)
         updated.comment = nonEmpty(.comment)
         updated.grouping = nonEmpty(.grouping)
-        updated.bpm = intValue(.bpm)
+        updated.bpm = intValue(.bpm, fallback: updated.bpm)
         updated.musicalKey = nonEmpty(.musicalKey)
         updated.isrc = nonEmpty(.isrc)
         updated.copyright = nonEmpty(.copyright)
         updated.musicBrainzRecordingID = nonEmpty(.mbRecordingID)
         updated.musicBrainzReleaseID = nonEmpty(.mbReleaseID)
-        updated.discogsReleaseID = intValue(.discogsReleaseID)
-        updated.discogsMasterID = intValue(.discogsMasterID)
+        updated.discogsReleaseID = intValue(.discogsReleaseID, fallback: updated.discogsReleaseID)
+        updated.discogsMasterID = intValue(.discogsMasterID, fallback: updated.discogsMasterID)
         updated.discogsLabel = nonEmpty(.discogsLabel)
         updated.discogsCatalogNumber = nonEmpty(.discogsCatalogNumber)
         updated.artworkURL = nonEmpty(.artworkURL)
-        NSLog("[MetadataDebug] track-form-build-end url=%@ result={%@}",
-              track.url.absoluteString,
-              debugTrackSummary(updated))
         return updated
     }
 
@@ -496,10 +469,13 @@ class EditTagsPanel: NSWindow {
         }
     }
 
-    private func intValue(_ field: Field) -> Int? {
+    /// Returns the parsed integer from the field, or nil if the field is blank.
+    /// If the field contains non-numeric text, returns `fallback` to avoid silently clearing
+    /// a previously-set value due to a typo.
+    private func intValue(_ field: Field, fallback: Int? = nil) -> Int? {
         guard let raw = fields[field]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else { return nil }
-        return Int(raw)
+        return Int(raw) ?? fallback
     }
 
     private func nonEmpty(_ field: Field) -> String? {
@@ -544,75 +520,18 @@ class EditTagsPanel: NSWindow {
         makeKeyAndOrderFront(nil)
     }
 
-    private func debugTrackSummary(_ track: LibraryTrack) -> String {
-        [
-            "title=\(debugString(track.title))",
-            "artist=\(debugString(track.artist))",
-            "album=\(debugString(track.album))",
-            "albumArtist=\(debugString(track.albumArtist))",
-            "genre=\(debugString(track.genre))",
-            "year=\(debugInt(track.year))",
-            "trackNo=\(debugInt(track.trackNumber))",
-            "discNo=\(debugInt(track.discNumber))",
-            "composer=\(debugString(track.composer))",
-            "comment=\(debugString(track.comment))",
-            "grouping=\(debugString(track.grouping))",
-            "bpm=\(debugInt(track.bpm))",
-            "key=\(debugString(track.musicalKey))",
-            "isrc=\(debugString(track.isrc))",
-            "copyright=\(debugString(track.copyright))",
-            "mbRec=\(debugString(track.musicBrainzRecordingID))",
-            "mbRel=\(debugString(track.musicBrainzReleaseID))",
-            "discogsRel=\(debugInt(track.discogsReleaseID))",
-            "discogsMaster=\(debugInt(track.discogsMasterID))",
-            "discogsLabel=\(debugString(track.discogsLabel))",
-            "discogsCat=\(debugString(track.discogsCatalogNumber))",
-            "artURL=\(debugString(track.artworkURL))"
-        ].joined(separator: " ")
-    }
+}
 
-    private func debugPatchSummary(_ patch: AutoTagTrackPatch) -> String {
-        [
-            "title=\(debugString(patch.title))",
-            "artist=\(debugString(patch.artist))",
-            "album=\(debugString(patch.album))",
-            "albumArtist=\(debugString(patch.albumArtist))",
-            "genre=\(debugString(patch.genre))",
-            "year=\(debugInt(patch.year))",
-            "trackNo=\(debugInt(patch.trackNumber))",
-            "discNo=\(debugInt(patch.discNumber))",
-            "composer=\(debugString(patch.composer))",
-            "comment=\(debugString(patch.comment))",
-            "grouping=\(debugString(patch.grouping))",
-            "bpm=\(debugInt(patch.bpm))",
-            "key=\(debugString(patch.musicalKey))",
-            "isrc=\(debugString(patch.isrc))",
-            "copyright=\(debugString(patch.copyright))",
-            "mbRec=\(debugString(patch.musicBrainzRecordingID))",
-            "mbRel=\(debugString(patch.musicBrainzReleaseID))",
-            "discogsRel=\(debugInt(patch.discogsReleaseID))",
-            "discogsMaster=\(debugInt(patch.discogsMasterID))",
-            "discogsLabel=\(debugString(patch.discogsLabel))",
-            "discogsCat=\(debugString(patch.discogsCatalogNumber))",
-            "artURL=\(debugString(patch.artworkURL))"
-        ].joined(separator: " ")
+extension EditTagsPanel: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        autoTagTask?.cancel()
     }
+}
 
-    private func debugFormSummary() -> String {
-        Field.allCases.map { field in
-            let raw = fields[field]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            return "\(field.label)=\(debugString(raw))"
-        }.joined(separator: " ")
-    }
-
-    private func debugString(_ value: String?) -> String {
-        guard let value else { return "nil" }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return "empty" }
-        return trimmed.replacingOccurrences(of: "\n", with: "\\n")
-    }
-
-    private func debugInt(_ value: Int?) -> String {
-        value.map(String.init) ?? "nil"
+extension EditTagsPanel: NSTextFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField,
+              field === fields[.artworkURL] else { return }
+        loadArtworkPreview()
     }
 }

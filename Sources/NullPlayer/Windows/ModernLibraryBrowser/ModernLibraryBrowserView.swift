@@ -3220,17 +3220,9 @@ class ModernLibraryBrowserView: NSView {
     /// and the canonical form for "Surname, Article" style names (e.g. "Atlas Moth, The" → "The Atlas Moth").
     private func titleMatchesTypeAhead(_ title: String, query: String) -> Bool {
         if title.lowercased().hasPrefix(query) { return true }
-        // Check canonical form: "Name, The/An/A" → "The/An/A Name"
-        let lower = title.lowercased()
-        for suffix in [", the", ", an", ", a"] {
-            if lower.hasSuffix(suffix) {
-                let article = String(suffix.dropFirst(2)) // ", the" → "the"
-                let base = String(title.dropLast(suffix.count))
-                let canonical = (article + " " + base).lowercased()
-                if canonical.hasPrefix(query) { return true }
-                break
-            }
-        }
+        // Also match after stripping leading articles so "The Beatles" matches "beat".
+        let normalized = LibraryTextSorter.normalized(title, ignoreLeadingArticles: true).lowercased()
+        if normalized.hasPrefix(query) { return true }
         return false
     }
 
@@ -3499,8 +3491,10 @@ class ModernLibraryBrowserView: NSView {
 
     /// Returns the sort letter for a display item, using the server's index letter for Subsonic artists.
     private func effectiveSortLetter(for item: ModernDisplayItem) -> String {
-        if case .subsonicArtist(let artist) = item.type, let letter = artist.indexLetter {
-            return letter
+        if case .subsonicArtist(let artist) = item.type,
+           let raw = artist.indexLetter,
+           let first = raw.trimmingCharacters(in: .whitespaces).first {
+            return String(first).uppercased()
         }
         return sortLetter(for: item.title)
     }
@@ -6195,16 +6189,11 @@ class ModernLibraryBrowserView: NSView {
     
     @objc private func mediaLibraryDidChange() {
         guard case .local = currentSource, browseMode != .radio else { return }
-        NSLog("[MetadataDebug] browser-media-library-did-change browseMode=%d displayItems=%d scrollOffset=%.2f",
-              browseMode.rawValue,
-              displayItems.count,
-              scrollOffset)
         localLibraryReloadWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self,
                   case .local = self.currentSource,
                   self.browseMode != .radio else { return }
-            NSLog("[MetadataDebug] browser-media-library-reload-fire browseMode=%d", self.browseMode.rawValue)
             self.loadLocalData()
             self.needsDisplay = true
         }
@@ -7492,7 +7481,6 @@ class ModernLibraryBrowserView: NSView {
         isLoading = false; errorMessage = nil; stopLoadingAnimation()
         let library = MediaLibrary.shared
         let store = MediaLibraryStore.shared
-        NSLog("[MetadataDebug] browser-load-local-data browseMode=%d", browseMode.rawValue)
         switch browseMode {
         case .artists:
             localArtistPageOffset = 0
@@ -7513,21 +7501,12 @@ class ModernLibraryBrowserView: NSView {
             buildLocalShowItems()
         case .radio: loadLocalRadioStations()
         }
-        NSLog("[MetadataDebug] browser-load-local-data-finished browseMode=%d displayItems=%d", browseMode.rawValue, displayItems.count)
         needsDisplay = true
     }
 
     private func reloadLocalBrowserAfterMetadataEdit() {
-        guard case .local = currentSource else {
-            NSLog("[MetadataDebug] browser-reload-after-edit non-local-source")
-            return
-        }
+        guard case .local = currentSource else { return }
 
-        NSLog("[MetadataDebug] browser-reload-after-edit-reset browseMode=%d oldDisplayItems=%d oldSelected=%d oldScrollOffset=%.2f",
-              browseMode.rawValue,
-              displayItems.count,
-              selectedIndices.count,
-              scrollOffset)
         clearLocalCachedData()
         displayItems.removeAll()
         selectedIndices.removeAll()

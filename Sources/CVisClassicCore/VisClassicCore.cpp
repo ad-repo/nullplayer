@@ -866,6 +866,9 @@ public:
     }
 
     void drawFrame(uint8_t *dst, int width, int height, size_t stride) {
+        if (!dst || width <= 0 || height <= 0 || stride < static_cast<size_t>(width * 4)) {
+            return;
+        }
         draw_height = height;
         fillBackgroundSized(dst, width, height, stride);
 
