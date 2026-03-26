@@ -25,11 +25,11 @@ jobs:
             .build
             ~/Library/Caches/org.swift.swiftpm
           # Include source hash to ensure rebuild when code changes
-          # v2: busted cache after AdAmp -> NullPlayer rename
-          key: ${{ runner.os }}-spm-unit-v2-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**/*.swift', 'Tests/**/*.swift') }}
+          # v3: busted cache after SQLite.swift pin to 0.15.x
+          key: ${{ runner.os }}-spm-unit-v3-${{ hashFiles('Package.resolved') }}-${{ hashFiles('Sources/**/*.swift', 'Tests/**/*.swift') }}
           restore-keys: |
-            ${{ runner.os }}-spm-unit-v2-${{ hashFiles('Package.resolved') }}-
-            ${{ runner.os }}-spm-unit-v2-
+            ${{ runner.os }}-spm-unit-v3-${{ hashFiles('Package.resolved') }}-
+            ${{ runner.os }}-spm-unit-v3-
       
       - name: Cache Frameworks
         uses: actions/cache@v4
