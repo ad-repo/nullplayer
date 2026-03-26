@@ -192,9 +192,11 @@ final class ClassicCenterStackRepairTests: XCTestCase {
         assertEqual(spectrumFrame.maxY, playlistFrame.minY)
         assertEqual(waveformFrame.maxY, spectrumFrame.minY)
 
-        for frame in [eqFrame, playlistFrame, spectrumFrame, waveformFrame] {
+        // EQ width is normalized to main width; playlist/spectrum/waveform preserve original width
+        assertEqual(eqFrame.minX, repaired.mainFrame.minX)
+        assertEqual(eqFrame.width, repaired.mainFrame.width)
+        for frame in [playlistFrame, spectrumFrame, waveformFrame] {
             assertEqual(frame.minX, repaired.mainFrame.minX)
-            assertEqual(frame.width, repaired.mainFrame.width)
         }
     }
 
@@ -239,9 +241,9 @@ final class ClassicCenterStackRepairTests: XCTestCase {
 
         assertEqual(spectrumFrame.maxY, repaired.mainFrame.minY)
         assertEqual(waveformFrame.maxY, spectrumFrame.minY)
+        // spectrum/waveform preserve original width; only minX is corrected
         for frame in [spectrumFrame, waveformFrame] {
             assertEqual(frame.minX, repaired.mainFrame.minX)
-            assertEqual(frame.width, repaired.mainFrame.width)
         }
     }
 

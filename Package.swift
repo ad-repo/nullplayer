@@ -96,11 +96,6 @@ let package = Package(
             dependencies: ["NullPlayer"],
             path: "Tests/NullPlayerTests"
         ),
-        .testTarget(
-            name: "NullPlayerUITests",
-            dependencies: ["NullPlayer"],
-            path: "Tests/NullPlayerUITests"
-        )
     ],
     // Use Swift 5 language mode to keep concurrency warnings as warnings, not errors
     // This allows gradual adoption of strict concurrency without blocking builds

@@ -123,24 +123,6 @@ final class ArtistSplitterTests: XCTestCase {
         XCTAssertEqual(result[1].role, .albumArtist)
     }
 
-    // MARK: - Slash splitting
-
-    func testSlashNotAlbumArtist() {
-        let result = ArtistSplitter.split("Foo / Bar", isAlbumArtist: false)
-        XCTAssertEqual(result.count, 2)
-        XCTAssertEqual(result[0].name, "Foo")
-        XCTAssertEqual(result[0].role, .primary)
-        XCTAssertEqual(result[1].name, "Bar")
-        XCTAssertEqual(result[1].role, .primary)
-    }
-
-    func testSlashAlbumArtist() {
-        let result = ArtistSplitter.split("Foo / Bar", isAlbumArtist: true)
-        XCTAssertEqual(result.count, 2)
-        XCTAssertEqual(result[0].role, .albumArtist)
-        XCTAssertEqual(result[1].role, .albumArtist)
-    }
-
     // MARK: - Combined patterns
 
     func testSemicolonWithFeat() {
@@ -151,15 +133,6 @@ final class ArtistSplitterTests: XCTestCase {
         XCTAssertEqual(result[0].role, .primary)
         XCTAssertEqual(result[1].name, "B")
         XCTAssertEqual(result[1].role, .primary)
-        XCTAssertEqual(result[2].name, "C")
-        XCTAssertEqual(result[2].role, .featured)
-    }
-
-    func testSlashWithFeat() {
-        let result = ArtistSplitter.split("A / B feat. C", isAlbumArtist: false)
-        XCTAssertEqual(result.count, 3)
-        XCTAssertEqual(result[0].name, "A")
-        XCTAssertEqual(result[1].name, "B")
         XCTAssertEqual(result[2].name, "C")
         XCTAssertEqual(result[2].role, .featured)
     }

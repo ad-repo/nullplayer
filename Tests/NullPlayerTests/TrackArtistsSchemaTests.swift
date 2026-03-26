@@ -135,11 +135,8 @@ final class TrackArtistsSchemaTests: XCTestCase {
 
     func testUpsertTrackWritesTrackArtistsRows() {
         var track = LibraryTrack(url: URL(fileURLWithPath: "/tmp/upsert_test.mp3"), title: "Test")
-        track.artists = [
-            (name: "Drake", role: .primary),
-            (name: "Future", role: .featured),
-            (name: "Drake", role: .albumArtist)
-        ]
+        track.artist = "Drake feat. Future"
+        track.albumArtist = "Drake"
         store.upsertTrack(track, sig: nil)
 
         let result = store.artistsForURLs([track.url.absoluteString])
@@ -152,12 +149,12 @@ final class TrackArtistsSchemaTests: XCTestCase {
 
     func testUpsertTrackReplacesTrackArtistsOnRescan() {
         var track = LibraryTrack(url: URL(fileURLWithPath: "/tmp/replace_test.mp3"), title: "Test")
-        track.artists = [(name: "OldArtist", role: .albumArtist)]
+        track.albumArtist = "OldArtist"
         store.upsertTrack(track, sig: nil)
 
         // Re-upsert same URL with different artists
         var track2 = LibraryTrack(url: URL(fileURLWithPath: "/tmp/replace_test.mp3"), title: "Test")
-        track2.artists = [(name: "NewArtist", role: .albumArtist)]
+        track2.albumArtist = "NewArtist"
         store.upsertTrack(track2, sig: nil)
 
         let result = store.artistsForURLs([track.url.absoluteString])
@@ -169,9 +166,9 @@ final class TrackArtistsSchemaTests: XCTestCase {
 
     func testUpsertTracksWritesArtistRowsForBatch() {
         var t1 = LibraryTrack(url: URL(fileURLWithPath: "/tmp/batch1.mp3"), title: "Batch1")
-        t1.artists = [(name: "ArtistA", role: .albumArtist)]
+        t1.albumArtist = "ArtistA"
         var t2 = LibraryTrack(url: URL(fileURLWithPath: "/tmp/batch2.mp3"), title: "Batch2")
-        t2.artists = [(name: "ArtistB", role: .albumArtist)]
+        t2.albumArtist = "ArtistB"
 
         store.upsertTracks([(t1, nil), (t2, nil)])
 
