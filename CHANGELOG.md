@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Visualization
+
+- **vis_classic decay consistency** — fixed decay divergence between the main window and spectrum window when they run at different frame rates.
+- **Shared vis_classic core** — the main window and spectrum window now share a single vis_classic core instance, eliminating state duplication.
+- **Classic spectrum width fix** — fixed the classic spectrum not filling the full width of the analyzer window.
+- **Main spectrum redraw rect fix** — corrected a coordinate conversion error in the main window spectrum redraw rect.
+- **vis_classic jerkiness fix** — restored synchronous process+draw per frame to eliminate jerkiness in the classic visualizer.
+
+### Library Browser
+
+- **Navidrome alphabet navigation fix** — fixed alphabet bar navigation in the Navidrome browser.
+- **Typeahead search in classic browser** — added typeahead/search input to the classic library browser.
+
 ## 0.18.1
 
 ### Library Browser
