@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.18.1
 
 ### Visualization
 
@@ -12,18 +12,13 @@
 
 ### Library Browser
 
-- **Navidrome alphabet navigation fix** — fixed alphabet bar navigation in the Navidrome browser.
-- **Typeahead search in classic browser** — added typeahead/search input to the classic library browser.
-
-## 0.18.1
-
-### Library Browser
-
 - **Local metadata editing flow** — expanded the modern library metadata editor for local tracks, albums, and videos with broader field coverage, improved form layout, and shared metadata form helpers.
 - **Classic metadata editor parity** — the classic library browser now exposes local `Edit Tags`, `Edit Album Tags`, and video `Edit Tags` actions, reusing the shared metadata editors and reloading local browser state after saves to prevent stale rows.
 - **Auto-tagging from Discogs and MusicBrainz** — local tracks and albums can now search Discogs/MusicBrainz candidates, preview the proposed metadata, and apply merged results back into the library.
 - **Album candidate review panel** — album auto-tagging now includes a dedicated candidate selection window with per-track comparison so releases can be reviewed before applying changes.
 - **Artwork metadata support** — metadata editors now load and preview artwork more consistently, including remote artwork URLs used during metadata editing.
+- **Navidrome alphabet navigation fix** — fixed alphabet bar navigation in the Navidrome browser.
+- **Typeahead search in classic browser** — added typeahead/search input to the classic library browser.
 
 ### Local Library
 
