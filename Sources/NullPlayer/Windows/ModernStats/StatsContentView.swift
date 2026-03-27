@@ -1,8 +1,11 @@
 import SwiftUI
 import Charts
 
+// MARK: - Content
+
 struct StatsContentView: View {
     @ObservedObject var agent: PlayHistoryAgent
+    var skinTextColor: Color = .primary
     @State private var selectedTab = 0
 
     var body: some View {
@@ -16,7 +19,7 @@ struct StatsContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             if selectedTab == 0 {
-                StatsOverviewView(agent: agent)
+                StatsOverviewView(agent: agent, skinTextColor: skinTextColor)
             } else {
                 StatsHistoryTableView(agent: agent)
             }
@@ -60,7 +63,7 @@ struct StatsHeaderView: View {
                 Text("All Time").tag(StatsTimeRange.allTime)
             }
             .pickerStyle(.menu)
-            .frame(width: 100)
+            .fixedSize()
             if agent.filter != StatsFilterState() {
                 Button("Clear") { agent.clearAllFilters() }
                     .buttonStyle(.plain)
@@ -98,6 +101,7 @@ struct FilterChip: View {
 
 struct StatsOverviewView: View {
     @ObservedObject var agent: PlayHistoryAgent
+    var skinTextColor: Color = .primary
 
     var body: some View {
         ScrollView {
@@ -106,6 +110,7 @@ struct StatsOverviewView: View {
                     TopDimensionChartView(
                         title: "Top Artists",
                         rows: agent.topArtists,
+                        skinTextColor: skinTextColor,
                         selected: Binding(
                             get: { agent.filter.selectedArtist },
                             set: { (v: String?) in agent.selectArtist(v) }
@@ -120,7 +125,7 @@ struct StatsOverviewView: View {
                     )
                 }
                 .frame(height: 220)
-                TimeSeriesChartView(agent: agent)
+                TimeSeriesChartView(agent: agent, skinTextColor: skinTextColor)
                     .frame(height: 180)
             }
             .padding(12)
@@ -131,6 +136,7 @@ struct StatsOverviewView: View {
 struct TopDimensionChartView: View {
     let title: String
     let rows: [TopDimensionRow]
+    var skinTextColor: Color = .primary
     @Binding var selected: String?
 
     var body: some View {
@@ -139,28 +145,45 @@ struct TopDimensionChartView: View {
             if rows.isEmpty {
                 Text("No data").foregroundColor(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Chart(rows) { row in
-                    BarMark(
-                        x: .value("Plays", row.playCount),
-                        y: .value("Name", row.displayName)
-                    )
-                    .foregroundStyle(row.displayName == selected ? Color.accentColor : Color.accentColor.opacity(0.6))
-                }
-                .chartOverlay { proxy in
-                    GeometryReader { geo in
-                        Rectangle().fill(.clear).contentShape(Rectangle())
-                            .onTapGesture { location in
-                                if let name: String = proxy.value(atY: location.y, as: String.self) {
-                                    selected = (selected == name) ? nil : name
+                let maxCount = rows.map(\.playCount).max() ?? 1
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 3) {
+                        ForEach(rows) { row in
+                            Button { selected = (selected == row.displayName) ? nil : row.displayName } label: {
+                                HStack(spacing: 6) {
+                                    Text(row.displayName)
+                                        .font(.caption2)
+                                        .foregroundColor(row.displayName == selected ? Color.accentColor : skinTextColor)
+                                        .lineLimit(1)
+                                        .frame(width: 90, alignment: .trailing)
+                                    GeometryReader { geo in
+                                        let fraction = CGFloat(row.playCount) / CGFloat(maxCount)
+                                        Capsule()
+                                            .fill(row.displayName == selected ? Color.accentColor : Color.accentColor.opacity(0.55))
+                                            .frame(width: max(2, geo.size.width * fraction), height: 10)
+                                            .frame(maxHeight: .infinity, alignment: .center)
+                                    }
+                                    Text("\(row.playCount)")
+                                        .font(.caption2)
+                                        .foregroundColor(skinTextColor.opacity(0.7))
+                                        .frame(width: 24, alignment: .leading)
                                 }
+                                .frame(height: 18)
                             }
+                            .buttonStyle(.plain)
+                        }
                     }
+                    .padding(.vertical, 2)
                 }
             }
         }
         .frame(maxWidth: .infinity)
     }
 }
+
+private let genreColors: [Color] = [
+    .blue, .green, .orange, .purple, .red, .yellow, .cyan, .pink
+]
 
 struct GenreChartView: View {
     let rows: [TopDimensionRow]
@@ -172,17 +195,33 @@ struct GenreChartView: View {
             if rows.isEmpty {
                 Text("No data").foregroundColor(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Chart(rows) { row in
+                Chart(Array(rows.enumerated()), id: \.element.id) { idx, row in
                     SectorMark(
                         angle: .value("Plays", row.playCount),
                         innerRadius: .ratio(0.5)
                     )
-                    .foregroundStyle(by: .value("Genre", row.displayName))
+                    .foregroundStyle(genreColors[idx % genreColors.count])
                     .opacity(selected == nil || selected == row.displayName ? 1.0 : 0.4)
                 }
-                .onTapGesture {
-                    // Simplified: tap chart area clears selection
-                    selected = nil
+                .chartLegend(.hidden)
+                .onTapGesture { selected = nil }
+                HStack(spacing: 12) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { idx, row in
+                        Button {
+                            selected = (selected == row.displayName) ? nil : row.displayName
+                        } label: {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(genreColors[idx % genreColors.count])
+                                    .frame(width: 8, height: 8)
+                                Text(row.displayName)
+                                    .font(.caption)
+                                    .foregroundColor(.primary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .opacity(selected == nil || selected == row.displayName ? 1.0 : 0.5)
+                    }
                 }
             }
         }
@@ -192,6 +231,28 @@ struct GenreChartView: View {
 
 struct TimeSeriesChartView: View {
     @ObservedObject var agent: PlayHistoryAgent
+    var skinTextColor: Color = .primary
+
+    private var calendarUnit: Calendar.Component {
+        switch agent.granularity {
+        case .day:   return .day
+        case .week:  return .weekOfYear
+        case .month: return .month
+        }
+    }
+
+    private var axisStrideCount: Int {
+        let n = agent.timeSeries.count
+        guard n > 0 else { return 1 }
+        return max(1, n / 6)
+    }
+
+    private var xAxisFormat: Date.FormatStyle {
+        switch agent.granularity {
+        case .day, .week: return .dateTime.month(.abbreviated).day()
+        case .month:      return .dateTime.month(.abbreviated).year(.twoDigits)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -213,16 +274,33 @@ struct TimeSeriesChartView: View {
                 Text("No data").foregroundColor(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Chart(agent.timeSeries) { row in
-                    AreaMark(
-                        x: .value("Date", row.date),
+                    BarMark(
+                        x: .value("Date", row.date, unit: calendarUnit),
                         y: .value("Plays", row.playCount)
                     )
-                    .foregroundStyle(Color.accentColor.opacity(0.3))
-                    LineMark(
-                        x: .value("Date", row.date),
-                        y: .value("Plays", row.playCount)
-                    )
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.accentColor.opacity(0.8))
+                }
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: calendarUnit, count: axisStrideCount)) { value in
+                        AxisGridLine().foregroundStyle(skinTextColor.opacity(0.15))
+                        if let date = value.as(Date.self) {
+                            AxisValueLabel {
+                                Text(date, format: xAxisFormat)
+                                    .font(.caption2)
+                                    .foregroundColor(skinTextColor)
+                            }
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(values: .automatic(desiredCount: 3)) { value in
+                        AxisGridLine().foregroundStyle(skinTextColor.opacity(0.15))
+                        if let count = value.as(Int.self) {
+                            AxisValueLabel {
+                                Text("\(count)").font(.caption2).foregroundColor(skinTextColor)
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -49,7 +49,7 @@ final class PlayHistoryAgent: ObservableObject {
     private(set) var filter = StatsFilterState() {
         didSet { if filter != oldValue { invalidateCache(); scheduleRefresh() } }
     }
-    var granularity = StatsGranularity.day {
+    @Published var granularity = StatsGranularity.day {
         didSet { cachedTimeSeries = nil; scheduleRefresh() }
     }
 
