@@ -4665,8 +4665,17 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // Handle streaming errors gracefully
         // The error callback fires BEFORE the state changes to .error
         // so we handle recovery here
+
+        // AudioStreaming fires this delegate method multiple times for a single error.
+        // If a refresh is already in-flight for this track, suppress duplicate callbacks.
+        if let identity = currentTrack?.streamingServiceIdentity,
+           staleStreamingRefreshRetriedServiceIdentity == identity {
+            NSLog("AudioEngine: Ignoring duplicate streaming error - %@", String(describing: error))
+            return
+        }
+
         NSLog("AudioEngine: Streaming error - %@", String(describing: error))
-        
+
         // Check if this is a radio stream - let RadioManager handle reconnection
         if RadioManager.shared.isActive {
             NSLog("AudioEngine: Radio stream error - delegating to RadioManager for reconnect")
