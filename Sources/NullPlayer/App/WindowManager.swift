@@ -278,7 +278,11 @@ class WindowManager {
     
     /// Library browser window controller (classic or modern, accessed via protocol)
     private var plexBrowserWindowController: LibraryBrowserWindowProviding?
-    
+
+    /// Play history / stats window controller (modern UI only)
+    private var statsWindowController: ModernStatsWindowController?
+    var isStatsWindowVisible: Bool { statsWindowController?.window?.isVisible == true }
+
     /// Video player window controller
     private var videoPlayerWindowController: VideoPlayerWindowController?
     
@@ -792,7 +796,24 @@ class WindowManager {
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }
-    
+
+    // MARK: - Stats Window
+
+    func showStatsWindow() {
+        guard isRunningModernUI else { return }
+        if statsWindowController == nil { statsWindowController = ModernStatsWindowController() }
+        statsWindowController?.showWindow(nil)
+        statsWindowController?.window?.makeKeyAndOrderFront(nil)
+        applyAlwaysOnTopToWindow(statsWindowController?.window)
+        postLayoutChangeNotification()
+    }
+
+    func toggleStatsWindow() {
+        if isStatsWindowVisible { statsWindowController?.window?.orderOut(nil) }
+        else { showStatsWindow() }
+        postLayoutChangeNotification()
+    }
+
     /// Show the Plex account linking sheet
     func showPlexLinkSheet() {
         // Show from main window if available, otherwise standalone
@@ -2048,6 +2069,7 @@ class WindowManager {
         equalizerWindowController?.window?.level = level
         playlistWindowController?.window?.level = level
         plexBrowserWindowController?.window?.level = level
+        statsWindowController?.window?.level = level
         videoPlayerWindowController?.window?.level = level
         projectMWindowController?.window?.level = level
         spectrumWindowController?.window?.level = level
@@ -2073,7 +2095,8 @@ class WindowManager {
             waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
-            plexBrowserWindowController?.window
+            plexBrowserWindowController?.window,
+            statsWindowController?.window
         ]
 
         let topWindow = preferredTopWindow ?? NSApp.keyWindow

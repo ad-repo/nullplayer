@@ -149,8 +149,9 @@ final class MediaLibraryStore {
         var currentVersion = try connection.scalar("PRAGMA user_version") as? Int64 ?? 0
         if currentVersion == 0 {
             try createTablesIfNeeded(connection)
-            try connection.run("PRAGMA user_version = 4")
-            currentVersion = 4
+            try migrateToV5(connection)
+            try connection.run("PRAGMA user_version = 5")
+            currentVersion = 5
         }
         if currentVersion == 1 {
             // Add expression index so artistNames GROUP BY and albumsForArtist WHERE queries
@@ -179,6 +180,11 @@ final class MediaLibraryStore {
         if currentVersion == 3 {
             try migrateTrackMetadataSchemaToV4(connection)
             try connection.run("PRAGMA user_version = 4")
+            currentVersion = 4
+        }
+        if currentVersion == 4 {
+            try migrateToV5(connection)
+            try connection.run("PRAGMA user_version = 5")
         }
     }
 
@@ -197,6 +203,28 @@ final class MediaLibraryStore {
         try addTrackColumnIfMissing(connection, name: "discogs_label", sqlType: "TEXT")
         try addTrackColumnIfMissing(connection, name: "discogs_catalog_number", sqlType: "TEXT")
         try addTrackColumnIfMissing(connection, name: "artwork_url", sqlType: "TEXT")
+    }
+
+    private func migrateToV5(_ connection: Connection) throws {
+        try connection.execute("""
+            CREATE TABLE IF NOT EXISTS play_events (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                track_id          TEXT,
+                track_url         TEXT,
+                event_title       TEXT,
+                event_artist      TEXT,
+                event_album       TEXT,
+                event_genre       TEXT,
+                played_at         REAL NOT NULL,
+                duration_listened REAL NOT NULL DEFAULT 0,
+                source            TEXT NOT NULL CHECK(source IN
+                                  ('local','plex','subsonic','jellyfin','emby','radio')),
+                skipped           INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_play_events_played_at ON play_events(played_at);
+            CREATE INDEX IF NOT EXISTS idx_play_events_track_id  ON play_events(track_id);
+            CREATE INDEX IF NOT EXISTS idx_play_events_source_time ON play_events(source, played_at);
+            """)
     }
 
     private func addTrackColumnIfMissing(_ connection: Connection, name: String, sqlType: String) throws {
@@ -1166,6 +1194,36 @@ final class MediaLibraryStore {
             NSLog("MediaLibraryStore: updatePlayStats failed: %@", error.localizedDescription)
         }
     }
+
+    func insertPlayEvent(trackId: String?, trackURL: String?, title: String?, artist: String?,
+                         album: String?, genre: String?, playedAt: Date,
+                         durationListened: Double, source: String, skipped: Bool) {
+        guard let db = db else { return }
+        do {
+            let bindings: [Binding?] = [
+                trackId as Binding?,
+                trackURL as Binding?,
+                title as Binding?,
+                artist as Binding?,
+                album as Binding?,
+                genre as Binding?,
+                playedAt.timeIntervalSince1970 as Binding,
+                durationListened as Binding,
+                source as Binding,
+                (skipped ? 1 : 0) as Binding
+            ]
+            try db.run("""
+                INSERT INTO play_events
+                  (track_id, track_url, event_title, event_artist, event_album, event_genre,
+                   played_at, duration_listened, source, skipped)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+                """, bindings)
+        } catch {
+            NSLog("MediaLibraryStore: Failed to insert play event: %@", error.localizedDescription)
+        }
+    }
+
+    var analyticsConnection: Connection? { db }
 
     func updateTrackRating(trackId: UUID, rating: Int?) {
         guard let db = db else { return }

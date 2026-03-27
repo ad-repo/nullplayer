@@ -740,8 +740,9 @@ extension StreamingAudioPlayer: AudioPlayerDelegate {
     func audioPlayerDidFinishPlaying(player: AudioPlayer, entryId: AudioEntryId, stopReason: AudioPlayerStopReason, progress: Double, duration: Double) {
         NSLog("StreamingAudioPlayer: Finished playing entry: %@, reason: %@", entryId.id, String(describing: stopReason))
         
-        // Only notify if playback finished naturally (not user action)
-        if stopReason == .eof {
+        // Notify on natural completion (.eof = queue empty, .none = gapless transition)
+        // Do not notify on .userAction (skip/stop) or .error
+        if stopReason == .eof || stopReason == .none {
             delegate?.streamingPlayerDidFinishPlaying()
         }
         

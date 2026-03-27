@@ -3322,6 +3322,40 @@ class AudioEngine {
             }
         }
 
+        // Record play event to analytics
+        if let finishedTrack = currentTrack {
+            Task.detached(priority: .utility) { [track = finishedTrack] in
+                let source: String
+                if track.plexRatingKey != nil        { source = "plex" }
+                else if track.subsonicId != nil      { source = "subsonic" }
+                else if track.jellyfinId != nil      { source = "jellyfin" }
+                else if track.embyId != nil          { source = "emby" }
+                else if !track.url.isFileURL         { source = "radio" }
+                else                                  { source = "local" }
+
+                let trackId: String?
+                switch source {
+                case "plex":      trackId = track.plexRatingKey
+                case "subsonic":  trackId = track.subsonicId
+                case "jellyfin":  trackId = track.jellyfinId
+                case "emby":      trackId = track.embyId
+                default:          trackId = nil
+                }
+
+                MediaLibraryStore.shared.insertPlayEvent(
+                    trackId: trackId,
+                    trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    genre: track.genre,
+                    playedAt: Date(),
+                    durationListened: track.duration ?? 0,
+                    source: source,
+                    skipped: false)
+            }
+        }
+
         // Check if we have a gaplessly pre-scheduled next track (local files)
         if gaplessPlaybackEnabled && nextScheduledFile != nil && nextScheduledTrackIndex >= 0 {
             // Gapless transition - the next file is already scheduled
@@ -3811,6 +3845,40 @@ class AudioEngine {
             }
         }
 
+        // Record play event to analytics (track finished via crossfade)
+        if let outgoingTrack = currentTrack {
+            Task.detached(priority: .utility) { [track = outgoingTrack] in
+                let source: String
+                if track.plexRatingKey != nil        { source = "plex" }
+                else if track.subsonicId != nil      { source = "subsonic" }
+                else if track.jellyfinId != nil      { source = "jellyfin" }
+                else if track.embyId != nil          { source = "emby" }
+                else if !track.url.isFileURL         { source = "radio" }
+                else                                  { source = "local" }
+
+                let trackId: String?
+                switch source {
+                case "plex":      trackId = track.plexRatingKey
+                case "subsonic":  trackId = track.subsonicId
+                case "jellyfin":  trackId = track.jellyfinId
+                case "emby":      trackId = track.embyId
+                default:          trackId = nil
+                }
+
+                MediaLibraryStore.shared.insertPlayEvent(
+                    trackId: trackId,
+                    trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    genre: track.genre,
+                    playedAt: Date(),
+                    durationListened: track.duration ?? 0,
+                    source: source,
+                    skipped: false)
+            }
+        }
+
         // Update state
         audioFile = nextFile
         currentIndex = nextIndex
@@ -3895,6 +3963,40 @@ class AudioEngine {
                 else if track.jellyfinId != nil      { JellyfinRadioHistory.shared.recordTrackPlayed(track) }
                 else if track.embyId != nil          { EmbyRadioHistory.shared.recordTrackPlayed(track) }
                 else                                  { LocalRadioHistory.shared.recordTrackPlayed(track) }
+            }
+        }
+
+        // Record play event to analytics (track finished via streaming crossfade)
+        if let outgoingTrack = currentTrack {
+            Task.detached(priority: .utility) { [track = outgoingTrack] in
+                let source: String
+                if track.plexRatingKey != nil        { source = "plex" }
+                else if track.subsonicId != nil      { source = "subsonic" }
+                else if track.jellyfinId != nil      { source = "jellyfin" }
+                else if track.embyId != nil          { source = "emby" }
+                else if !track.url.isFileURL         { source = "radio" }
+                else                                  { source = "local" }
+
+                let trackId: String?
+                switch source {
+                case "plex":      trackId = track.plexRatingKey
+                case "subsonic":  trackId = track.subsonicId
+                case "jellyfin":  trackId = track.jellyfinId
+                case "emby":      trackId = track.embyId
+                default:          trackId = nil
+                }
+
+                MediaLibraryStore.shared.insertPlayEvent(
+                    trackId: trackId,
+                    trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
+                    title: track.title,
+                    artist: track.artist,
+                    album: track.album,
+                    genre: track.genre,
+                    playedAt: Date(),
+                    durationListened: track.duration ?? 0,
+                    source: source,
+                    skipped: false)
             }
         }
 
@@ -4554,7 +4656,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // Note: We call trackDidFinish() directly instead of handlePlaybackComplete()
         // because the streaming player's state change callback (.stopped) fires BEFORE
         // this callback, so self.state is already .stopped by the time we get here.
-        // 
+        //
         // IMPORTANT: When loading a new track, the old track's EOF callback fires
         // even though we intentionally stopped it. The isLoadingNewStreamingTrack flag
         // is set before stopping and cleared after the new track starts.
