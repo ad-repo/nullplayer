@@ -4697,7 +4697,8 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
 
             Task { [weak self] in
                 guard let self else { return }
-                if let refreshedTrack = await StreamingTrackResolver.resolve(failingTrack) {
+                if let refreshedTrack = await StreamingTrackResolver.resolve(failingTrack),
+                   refreshedTrack.url.path != failingTrack.url.path {
                     await MainActor.run {
                         guard retryIndex >= 0 && retryIndex < self.playlist.count else { return }
                         // Ensure we're still looking at the same logical service track.
@@ -4708,6 +4709,8 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                         }
                     }
                 } else {
+                    // Resolve returned nil or the same file path — token refresh won't help
+                    // (file is corrupt or permanently unavailable). Advance to next track.
                     await MainActor.run {
                         self.handleStreamingErrorFallback(error, errorDescription: errorDescription)
                     }
@@ -4722,9 +4725,14 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
     private func handleStreamingErrorFallback(_ error: AudioPlayerError, errorDescription: String) {
         let isPacketTableError = errorDescription.contains("packet table")
             || errorDescription.contains("streamParseBytesFailure")
+        let isCodecError = errorDescription.contains("codecError")
 
-        if isPacketTableError {
-            NSLog("AudioEngine: M4A parsing error - file may not be optimized for streaming")
+        if isPacketTableError || isCodecError {
+            if isPacketTableError {
+                NSLog("AudioEngine: M4A parsing error - file may not be optimized for streaming")
+            } else {
+                NSLog("AudioEngine: Codec error - file is corrupt or unplayable, advancing")
+            }
 
             // Show error in marquee briefly, then advance to next track
             if let track = currentTrack {
