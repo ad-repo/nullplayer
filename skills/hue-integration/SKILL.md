@@ -107,9 +107,41 @@ Command routing:
 - `room`, `zone`, and `groupedLight` targets write to `grouped_light/{id}`.
 
 Important behavior in current `HueControlView`:
-- UI currently filters to room targets only (`manager.targets.filter { $0.targetType == .room }`).
-- Control enablement is bound to `selectedTarget?.targetType == .room`.
+- UI filters to room targets only (`manager.targets.filter { $0.targetType == .room }`).
+- Room-level controls and the Individual Lights section are enabled only when `selectedTarget?.targetType == .room`.
 - If room → grouped-light mapping is missing, controls can appear active but commands no-op due to unresolved command ID.
+
+## Individual Light Controls
+
+After a scene is applied (or any time a room is selected), the **Individual Lights** section in `HueControlView` shows a scrollable list of per-light rows, one per light in the selected room.
+
+### Per-light row capabilities
+Each `HueLightRowView` renders controls based on the light's `HueCapabilityFlags`:
+- **All lights**: power toggle + light name
+- `supportsDimming`: brightness slider (1–100)
+- `supportsColorTemperature && !supportsColor`: Color Temperature slider (153–500 mirek)
+- `supportsColor`: Color well (NSColorWell, opens system color picker)
+
+### HueManager API for individual lights
+```swift
+manager.lightsForSelectedRoom() -> [HueTarget]   // lights in the selected room, sorted by name
+manager.state(forTarget: HueTarget) -> HueLightState?
+manager.setPower(on: Bool, for: HueTarget)
+manager.setBrightness(_ pct: Double, for: HueTarget)
+manager.setColorTemperature(mirek: Int, for: HueTarget)
+manager.setColor(x: Double, y: Double, for: HueTarget)
+```
+All per-target `set*` methods delegate to `sendStateCommand`, which uses `"\(target.id):\(dedupeKey)"` — so cross-light coalescing is prevented automatically.
+
+### CIE 1931 XY ↔ NSColor conversion
+Color picker display and submission use the Hue-recommended wide-gamut D65 matrices. Both conversion functions are private file-scope helpers at the bottom of `HueControlView.swift`:
+- `nsColor(fromHueXY:)` — XY → XYZ (Y=1) → inverse wide-gamut matrix → sRGB gamma → `NSColor`
+- `hueXY(from:)` — `NSColor` → sRGB → linearise → wide-gamut forward matrix → CIE xy
+
+### Rebuild strategy
+- Light rows are rebuilt (full teardown + recreate) only when the set of light IDs changes (room switch or bridge resource refresh).
+- On `.hueStateDidChange` within the same room, only `row.update(state:isConnected:)` is called — rows and sliders persist, preventing jitter during drags.
+- Each `HueLightRowView` owns its own `isProgrammaticUpdate` flag independent of the parent view.
 
 ## Scene Handling Details
 
@@ -233,10 +265,12 @@ Manual:
 1. Fresh install: local network permission prompt appears.
 2. Discovery via mDNS on same LAN.
 3. Pairing succeeds only after bridge link button press.
-4. Room power/brightness/CCT/color writes apply and UI state refreshes.
+4. Room power/brightness/CCT/color well writes apply and UI state refreshes.
 5. Scene activation for room targets applies expected visual state.
-6. Reactive mode responds while local/streaming playback is active.
-7. Forget/reconnect flows recover cleanly.
+6. Individual Lights section appears after room selection; per-light controls match each light's capabilities.
+7. Color well shows the correct hue after a scene is applied; picking a new color sends correct XY to the bridge.
+8. Reactive mode responds while local/streaming playback is active.
+9. Forget/reconnect flows recover cleanly.
 
 Integration/unit targets to prioritize:
 1. Resource graph mapping (room/zone/device/light/grouped_light relationships).

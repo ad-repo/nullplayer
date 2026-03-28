@@ -478,6 +478,70 @@ final class HueManager {
         }
     }
 
+    func lightsForSelectedRoom() -> [HueTarget] {
+        guard let selected = selectedTarget, selected.targetType == .room else { return [] }
+        let lightIDs = resolvedLightIDs(for: selected)
+        return lightIDs.compactMap { lightID in
+            targets.first { $0.targetType == .light && $0.lightID == lightID }
+        }
+    }
+
+    func state(forTarget target: HueTarget) -> HueLightState? {
+        state(for: target)
+    }
+
+    func setPower(on: Bool, for target: HueTarget) {
+        sendStateCommand(for: target, dedupeKey: "power", isSliderLike: false) { client, id, type in
+            let payload = ["on": ["on": on]]
+            switch type {
+            case .light:
+                try await client.setLight(id: id, payload: payload)
+            default:
+                try await client.setGroupedLight(id: id, payload: payload)
+            }
+        }
+    }
+
+    func setBrightness(_ brightnessPercent: Double, for target: HueTarget) {
+        let clamped = max(1, min(100, brightnessPercent))
+        sendStateCommand(for: target, dedupeKey: "brightness", isSliderLike: true) { client, id, type in
+            let payload = ["dimming": ["brightness": clamped]]
+            switch type {
+            case .light:
+                try await client.setLight(id: id, payload: payload)
+            default:
+                try await client.setGroupedLight(id: id, payload: payload)
+            }
+        }
+    }
+
+    func setColorTemperature(mirek: Int, for target: HueTarget) {
+        let clamped = max(153, min(500, mirek))
+        sendStateCommand(for: target, dedupeKey: "mirek", isSliderLike: true) { client, id, type in
+            let payload = ["color_temperature": ["mirek": clamped]]
+            switch type {
+            case .light:
+                try await client.setLight(id: id, payload: payload)
+            default:
+                try await client.setGroupedLight(id: id, payload: payload)
+            }
+        }
+    }
+
+    func setColor(x: Double, y: Double, for target: HueTarget) {
+        let clampedX = max(0, min(1, x))
+        let clampedY = max(0, min(1, y))
+        sendStateCommand(for: target, dedupeKey: "xy", isSliderLike: true) { client, id, type in
+            let payload: [String: Any] = ["color": ["xy": ["x": clampedX, "y": clampedY]]]
+            switch type {
+            case .light:
+                try await client.setLight(id: id, payload: payload)
+            default:
+                try await client.setGroupedLight(id: id, payload: payload)
+            }
+        }
+    }
+
     func activateScene(_ sceneID: String) {
         guard let client = buildClient() else { return }
         Task {

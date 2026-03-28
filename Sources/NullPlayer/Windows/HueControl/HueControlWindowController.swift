@@ -6,7 +6,7 @@ final class HueControlWindowController: NSWindowController, NSWindowDelegate {
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 700),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 900),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -19,7 +19,7 @@ final class HueControlWindowController: NSWindowController, NSWindowDelegate {
     private func setupWindow() {
         guard let window else { return }
         window.title = "Hue Control"
-        window.minSize = NSSize(width: 600, height: 620)
+        window.minSize = NSSize(width: 600, height: 720)
         window.center()
         window.isReleasedWhenClosed = false
         window.delegate = self
