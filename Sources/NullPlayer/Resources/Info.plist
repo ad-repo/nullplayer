@@ -25,7 +25,7 @@
     
     <!-- Local Network Access -->
     <key>NSLocalNetworkUsageDescription</key>
-    <string>NullPlayer needs access to your local network to discover and cast audio to Chromecast, Sonos, and DLNA devices.</string>
+    <string>NullPlayer needs access to your local network to discover and control Chromecast, Sonos, DLNA, and Philips Hue devices.</string>
     
     <!-- Bonjour Services for Device Discovery -->
     <key>NSBonjourServices</key>
@@ -36,6 +36,8 @@
         <string>_airplay._tcp</string>
         <!-- RAOP (Remote Audio Output Protocol) -->
         <string>_raop._tcp</string>
+        <!-- Philips Hue bridge -->
+        <string>_hue._tcp</string>
     </array>
     
     <!-- App Transport Security for local network communication -->

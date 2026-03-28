@@ -20,6 +20,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **modern-skin-guide**: Modern skin engine and creation
 - **user-guide**: Features, menus, keyboard shortcuts
 - **plex-integration**, **jellyfin-integration**, **subsonic-integration**, **emby-integration**: Server integrations
+- **hue-integration**: Philips Hue bridge discovery, pairing, light control, scenes, TLS/session behavior, and reactive mode
 - **sonos-casting**, **chromecast-casting**: Casting protocols and debugging
 - **radio-streaming**: Internet radio + library radio support
 - **visualizations**: Album art, ProjectM, spectrum modes, Metal gotchas

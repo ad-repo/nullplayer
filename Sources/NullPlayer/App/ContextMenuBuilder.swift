@@ -90,6 +90,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
         menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
+        menu.addItem(buildWindowItem("Hue Control", visible: wm.isHueControlVisible, action: #selector(MenuActions.toggleHueControl)))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
 
         menu.addItem(NSMenuItem.separator())
@@ -185,6 +186,30 @@ class ContextMenuBuilder {
     /// Builds the top-level "Output" menu content for the macOS menu bar.
     static func buildMenuBarOutputMenu() -> NSMenu {
         let menu = buildMenuBarOutputDevicesMenu()
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Builds the top-level "Lights" menu content for the macOS menu bar.
+    static func buildMenuBarLightsMenu() -> NSMenu {
+        let menu = NSMenu()
+        let hue = HueManager.shared
+
+        let openControl = NSMenuItem(title: "Show Hue Control", action: #selector(MenuActions.showHueControl), keyEquivalent: "")
+        openControl.target = MenuActions.shared
+        menu.addItem(openControl)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let discover = NSMenuItem(title: "Discover Bridges", action: #selector(MenuActions.discoverHueBridges), keyEquivalent: "")
+        discover.target = MenuActions.shared
+        menu.addItem(discover)
+
+        let reconnect = NSMenuItem(title: "Reconnect Last Bridge", action: #selector(MenuActions.reconnectHueBridge), keyEquivalent: "")
+        reconnect.target = MenuActions.shared
+        reconnect.isEnabled = hue.hasPairedBridge
+        menu.addItem(reconnect)
+
         menu.autoenablesItems = false
         return menu
     }
@@ -2513,6 +2538,23 @@ class MenuActions: NSObject {
     
     @objc func toggleDebugConsole() {
         WindowManager.shared.toggleDebugWindow()
+    }
+
+    @objc func toggleHueControl() {
+        WindowManager.shared.toggleHueControlWindow()
+    }
+
+    @objc func showHueControl() {
+        WindowManager.shared.showHueControlWindow()
+    }
+
+    @objc func discoverHueBridges() {
+        HueManager.shared.beginDiscovery()
+    }
+
+    @objc func reconnectHueBridge() {
+        HueManager.shared.reconnectLastPairedBridgeIfAvailable()
+        WindowManager.shared.showHueControlWindow()
     }
 
     @objc func rerenderCurrentWaveform() {

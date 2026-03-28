@@ -296,6 +296,9 @@ class WindowManager {
     
     /// Debug console window controller
     private var debugWindowController: DebugWindowController?
+
+    /// Hue control window controller
+    private var hueControlWindowController: HueControlWindowController?
     
     /// Video playback time tracking
     private(set) var videoCurrentTime: TimeInterval = 0
@@ -1535,6 +1538,38 @@ class WindowManager {
         UserDefaults.standard.set(!current, forKey: "waveformHideTooltip")
         waveformWindowController?.updateTrack(audioEngine.currentTrack)
     }
+
+    // MARK: - Hue Window
+
+    var isHueAvailable: Bool {
+        HueManager.shared.isHueAvailable
+    }
+
+    func showHueControlWindow() {
+        if hueControlWindowController == nil {
+            hueControlWindowController = HueControlWindowController()
+        }
+        hueControlWindowController?.showWindow(nil)
+        hueControlWindowController?.window?.makeKeyAndOrderFront(nil)
+        applyAlwaysOnTopToWindow(hueControlWindowController?.window)
+
+        HueManager.shared.reconnectLastPairedBridgeIfAvailable()
+        if HueManager.shared.discoveredBridges.isEmpty {
+            HueManager.shared.beginDiscovery()
+        }
+    }
+
+    var isHueControlVisible: Bool {
+        hueControlWindowController?.window?.isVisible == true
+    }
+
+    func toggleHueControlWindow() {
+        if isHueControlVisible {
+            hueControlWindowController?.window?.orderOut(nil)
+        } else {
+            showHueControlWindow()
+        }
+    }
     
     // MARK: - Debug Window
     
@@ -2052,12 +2087,33 @@ class WindowManager {
         projectMWindowController?.window?.level = level
         spectrumWindowController?.window?.level = level
         waveformWindowController?.window?.level = level
+        hueControlWindowController?.window?.level = level
     }
     
     /// Apply always on top level to a single window (used when showing windows)
     private func applyAlwaysOnTopToWindow(_ window: NSWindow?) {
         guard let window = window else { return }
         window.level = isAlwaysOnTop ? .floating : .normal
+    }
+
+    private func ensureWindowIsOnScreen(_ window: NSWindow) {
+        for screen in NSScreen.screens {
+            if window.frame.intersects(screen.visibleFrame) {
+                return
+            }
+        }
+
+        guard let screen = NSScreen.main else { return }
+        let visibleFrame = screen.visibleFrame
+        let frame = window.frame
+        let centered = NSRect(
+            x: visibleFrame.midX - (frame.width / 2),
+            y: visibleFrame.midY - (frame.height / 2),
+            width: frame.width,
+            height: frame.height
+        )
+        window.setFrame(centered, display: false)
+        NSLog("WindowManager: recentered offscreen window to %@", NSStringFromRect(centered))
     }
     
     /// Bring all visible app windows to front (called when any app window gets focus).
@@ -2073,7 +2129,8 @@ class WindowManager {
             waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
-            plexBrowserWindowController?.window
+            plexBrowserWindowController?.window,
+            hueControlWindowController?.window
         ]
 
         let topWindow = preferredTopWindow ?? NSApp.keyWindow
@@ -3311,6 +3368,7 @@ class WindowManager {
         if let w = projectMWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = hueControlWindowController?.window, w.isVisible { windows.append(w) }
         return windows
     }
     
@@ -3447,6 +3505,9 @@ class WindowManager {
         if let frame = spectrumWindowController?.window?.frame {
             defaults.set(NSStringFromRect(frame), forKey: "SpectrumWindowFrame")
         }
+        if let frame = hueControlWindowController?.window?.frame {
+            defaults.set(NSStringFromRect(frame), forKey: "HueControlWindowFrame")
+        }
     }
     
     func restoreWindowPositions() {
@@ -3484,6 +3545,11 @@ class WindowManager {
         }
         if let frameString = defaults.string(forKey: "SpectrumWindowFrame"),
            let window = spectrumWindowController?.window {
+            let frame = NSRectFromString(frameString)
+            window.setFrame(frame, display: true)
+        }
+        if let frameString = defaults.string(forKey: "HueControlWindowFrame"),
+           let window = hueControlWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }

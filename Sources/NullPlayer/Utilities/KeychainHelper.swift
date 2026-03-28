@@ -247,14 +247,18 @@ class KeychainHelper {
 
     // MARK: - Generic Keychain Operations
     
-    private func setString(_ value: String, forKey key: String) -> Bool {
+    func setString(_ value: String, forKey key: String) -> Bool {
         guard let data = value.data(using: .utf8) else { return false }
         return setData(data, forKey: key)
     }
     
-    private func getString(forKey key: String) -> String? {
+    func getString(forKey key: String) -> String? {
         guard let data = getData(forKey: key) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    func deleteString(forKey key: String) {
+        delete(forKey: key)
     }
     
     private func setData(_ data: Data, forKey key: String) -> Bool {

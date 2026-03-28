@@ -249,6 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         addDynamicTopLevelMenu(title: "Playback", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarPlaybackMenu, refreshOnOpen: true)
         addDynamicTopLevelMenu(title: "Visuals", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarVisualsMenu, refreshOnOpen: true)
         addDynamicTopLevelMenu(title: "Libraries", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarLibrariesMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Lights", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarLightsMenu, refreshOnOpen: true)
         addDynamicTopLevelMenu(title: "Output", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarOutputMenu, refreshOnOpen: true)
         
         NSApplication.shared.mainMenu = mainMenu
