@@ -1554,7 +1554,9 @@ class WindowManager {
         applyAlwaysOnTopToWindow(hueControlWindowController?.window)
 
         HueManager.shared.reconnectLastPairedBridgeIfAvailable()
-        if HueManager.shared.discoveredBridges.isEmpty {
+        // Only run discovery when unpaired — discovery sets connectionState = .discovering
+        // which hides the individual-lights section even when already connected.
+        if HueManager.shared.discoveredBridges.isEmpty && !HueManager.shared.hasPairedBridge {
             HueManager.shared.beginDiscovery()
         }
     }
