@@ -220,82 +220,56 @@ final class HueManager {
             return false
         }
 
-        let templates = actions.compactMap { action -> [String: Any]? in
-            guard let lightAction = action.action else { return nil }
-            return payload(from: lightAction)
+        // Build per-light-ID payload map for direct matches (scenes created for this room)
+        var payloadByLightID: [String: [String: Any]] = [:]
+        for action in actions {
+            guard let lightAction = action.action,
+                  let rid = action.target?.rid else { continue }
+            let p = payload(from: lightAction)
+            if !p.isEmpty { payloadByLightID[rid] = p }
         }
-        guard templates.isEmpty == false else {
+
+        // Fallback templates by capability class (for lights with no direct match)
+        let allTemplates = payloadByLightID.values
+        let colorFallback   = allTemplates.first { $0["color"] != nil }
+        let ctFallback      = allTemplates.first { $0["color"] == nil && $0["color_temperature"] != nil }
+        let dimsOnlyFallback = allTemplates.first { $0["color"] == nil && $0["color_temperature"] == nil }
+
+        if payloadByLightID.isEmpty {
             NSLog("HueManager: scene %@ actions do not include mutable light state", sceneID)
             return false
         }
 
-        let colorFallback = templates.first { template in
-            template["color"] != nil
-        }?["color"]
-        let colorTemperatureFallback = templates.first { template in
-            template["color_temperature"] != nil
-        }?["color_temperature"]
-        let dimmingFallback = templates.first { template in
-            template["dimming"] != nil
-        }?["dimming"]
-
-        let enrichedTemplates = templates.map { template -> [String: Any] in
-            var resolved = template
-            if resolved["color"] == nil && resolved["color_temperature"] == nil {
-                if let colorFallback {
-                    resolved["color"] = colorFallback
-                } else if let colorTemperatureFallback {
-                    resolved["color_temperature"] = colorTemperatureFallback
-                }
-            }
-            if resolved["dimming"] == nil, let dimmingFallback {
-                resolved["dimming"] = dimmingFallback
-            }
-            return resolved
-        }
-
-        let colorTemplates = enrichedTemplates.filter { template in
-            template["color"] != nil
-        }
-        let colorTemperatureTemplates = enrichedTemplates.filter { template in
-            template["color"] == nil && template["color_temperature"] != nil
-        }
-        let nonChromaticTemplates = enrichedTemplates.filter { template in
-            template["color"] == nil && template["color_temperature"] == nil
-        }
-        guard (colorTemplates.isEmpty && colorTemperatureTemplates.isEmpty && nonChromaticTemplates.isEmpty) == false else {
-            return false
-        }
-
-        var colorIndex = 0
-        var colorTemperatureIndex = 0
-        var nonChromaticIndex = 0
-
         for lightID in targetLightIDs {
             let light = lightsByID[lightID]
-            let prefersColor = light?.color != nil
-            let prefersColorTemperature = light?.colorTemperature != nil
+            let supportsColor = light?.color != nil
+            let supportsCT    = light?.colorTemperature != nil
 
-            let payload: [String: Any]
-            if prefersColor && colorTemplates.isEmpty == false {
-                payload = colorTemplates[colorIndex % colorTemplates.count]
-                colorIndex += 1
-            } else if prefersColorTemperature && colorTemperatureTemplates.isEmpty == false {
-                payload = colorTemperatureTemplates[colorTemperatureIndex % colorTemperatureTemplates.count]
-                colorTemperatureIndex += 1
-            } else if colorTemplates.isEmpty == false {
-                payload = colorTemplates[colorIndex % colorTemplates.count]
-                colorIndex += 1
-            } else if colorTemperatureTemplates.isEmpty == false {
-                payload = colorTemperatureTemplates[colorTemperatureIndex % colorTemperatureTemplates.count]
-                colorTemperatureIndex += 1
+            // Pick best payload: direct match first, then capability-matched fallback
+            var chosen: [String: Any]
+            if let direct = payloadByLightID[lightID] {
+                chosen = direct
+            } else if supportsColor, let t = colorFallback {
+                chosen = t
+            } else if supportsCT, let t = ctFallback {
+                chosen = t
+            } else if let t = dimsOnlyFallback {
+                chosen = t
+            } else if let t = colorFallback {
+                chosen = t
             } else {
-                payload = nonChromaticTemplates[nonChromaticIndex % nonChromaticTemplates.count]
-                nonChromaticIndex += 1
+                continue
             }
 
-            if payload.isEmpty { continue }
-            try await client.setLight(id: lightID, payload: payload)
+            // Strip fields incompatible with this light's capabilities
+            if !supportsColor { chosen.removeValue(forKey: "color") }
+            if !supportsCT    { chosen.removeValue(forKey: "color_temperature") }
+
+            if chosen.isEmpty { continue }
+
+            try await client.setLight(id: lightID, payload: chosen)
+            // 100 ms between PUTs to stay within bridge 10 req/s cap
+            try await Task.sleep(nanoseconds: 100_000_000)
         }
         return true
     }
@@ -546,6 +520,9 @@ final class HueManager {
         guard let client = buildClient() else { return }
         Task {
             do {
+                // Discard any pending slider/power commands so they cannot overwrite the scene
+                await commandQueue.cancelAll()
+
                 guard let target = selectedTarget else {
                     await MainActor.run {
                         self.diagnosticsMessage = "Select a room before applying a scene"
@@ -576,6 +553,94 @@ final class HueManager {
                 NSLog("HueManager: activateScene failed for %@: %@", sceneID, error.localizedDescription)
                 await MainActor.run {
                     self.connectionState = .error
+                    self.diagnosticsMessage = error.localizedDescription
+                    NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+                }
+            }
+        }
+    }
+
+    func deleteScene(_ sceneID: String) {
+        guard let client = buildClient() else { return }
+        Task {
+            do {
+                try await client.deleteScene(id: sceneID)
+                NSLog("HueManager: deleted scene %@", sceneID)
+                await self.refreshResources(reason: "Scene deleted")
+            } catch {
+                NSLog("HueManager: deleteScene failed for %@: %@", sceneID, error.localizedDescription)
+                await MainActor.run {
+                    self.diagnosticsMessage = error.localizedDescription
+                    NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+                }
+            }
+        }
+    }
+
+    func createScene(name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        guard let client = buildClient() else { return }
+        guard let target = selectedTarget, target.targetType == .room else {
+            diagnosticsMessage = "Select a room before saving a scene"
+            NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+            return
+        }
+        guard target.id.hasPrefix("room:") else { return }
+        let roomID = String(target.id.dropFirst(5))
+
+        let lightIDs = resolvedLightIDs(for: target)
+
+        let existingIDs = scenes
+            .filter { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
+            .map(\.id)
+
+        Task {
+            do {
+                for id in existingIDs {
+                    try await client.deleteScene(id: id)
+                    NSLog("HueManager: deleted existing scene %@ ('%@')", id, trimmed)
+                }
+
+                // Flush any pending light commands (e.g. a color change the user just made)
+                // before snapshotting, so the bridge state reflects the intended colors.
+                await commandQueue.waitForIdle()
+
+                let freshLights = try await client.getLights()
+                let freshStateByID = Dictionary(
+                    uniqueKeysWithValues: freshLights.map { ($0.id, Self.lightState(from: $0)) }
+                )
+
+                var actions: [[String: Any]] = []
+                for lightID in lightIDs {
+                    guard let state = freshStateByID[lightID] else { continue }
+                    var action: [String: Any] = ["on": ["on": state.isOn]]
+                    if let brightness = state.brightness {
+                        action["dimming"] = ["brightness": max(1.0, min(100.0, brightness))]
+                    }
+                    if let xy = state.colorXY {
+                        action["color"] = ["xy": ["x": xy.x, "y": xy.y]]
+                    } else if let mirek = state.mirek {
+                        action["color_temperature"] = ["mirek": max(153, min(500, mirek))]
+                    }
+                    actions.append([
+                        "target": ["rid": lightID, "rtype": "light"],
+                        "action": action
+                    ])
+                }
+
+                let payload: [String: Any] = [
+                    "metadata": ["name": trimmed],
+                    "group": ["rid": roomID, "rtype": "room"],
+                    "actions": actions
+                ]
+
+                try await client.createScene(payload: payload)
+                NSLog("HueManager: created scene '%@' for room %@", trimmed, roomID)
+                await self.refreshResources(reason: "Scene '\(trimmed)' saved")
+            } catch {
+                NSLog("HueManager: createScene failed: %@", error.localizedDescription)
+                await MainActor.run {
                     self.diagnosticsMessage = error.localizedDescription
                     NotificationCenter.default.post(name: .hueStateDidChange, object: self)
                 }
@@ -822,10 +887,10 @@ final class HueManager {
         guard let target = selectedTarget else { return }
         let brightnessPercent = output.brightness * 100.0
 
+        // color and color_temperature are mutually exclusive in CLIP v2; send color (XY) only
         sendStateCommand(for: target, dedupeKey: "reactive", isSliderLike: false) { client, id, type in
             let payload: [String: Any] = [
                 "dimming": ["brightness": brightnessPercent],
-                "color_temperature": ["mirek": output.mirek],
                 "color": ["xy": ["x": output.xy.x, "y": output.xy.y]]
             ]
             switch type {
@@ -1017,18 +1082,18 @@ final class HueManager {
         if let brightness = action.dimming?.brightness {
             payload["dimming"] = ["brightness": max(1.0, min(100.0, brightness))]
         }
-        if let mirek = action.colorTemperature?.mirek {
-            payload["color_temperature"] = ["mirek": max(153, min(500, mirek))]
-        }
         if let xy = action.color?.xy,
            let x = xy.x,
            let y = xy.y {
+            // color (XY) and color_temperature are mutually exclusive in CLIP v2; XY takes priority
             payload["color"] = [
                 "xy": [
                     "x": max(0, min(1, x)),
                     "y": max(0, min(1, y))
                 ]
             ]
+        } else if let mirek = action.colorTemperature?.mirek {
+            payload["color_temperature"] = ["mirek": max(153, min(500, mirek))]
         }
 
         return payload

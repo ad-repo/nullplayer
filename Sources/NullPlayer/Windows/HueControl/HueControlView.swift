@@ -16,9 +16,13 @@ final class HueControlView: NSView {
 
     private let scenePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let applySceneButton = NSButton(title: "Apply Scene", target: nil, action: nil)
+    private let deleteSceneButton = NSButton(title: "Delete Scene", target: nil, action: nil)
     private var sceneOptions: [HueScene] = []
+    private var selectedSceneID: String?
+    private let sceneNameField = NSTextField()
+    private let saveSceneButton = NSButton(title: "Save Scene", target: nil, action: nil)
 
-    private let powerToggle = NSButton(checkboxWithTitle: "Power", target: nil, action: nil)
+    private let powerToggle = NSButton(checkboxWithTitle: "On", target: nil, action: nil)
     private let brightnessSlider = NSSlider(value: 50, minValue: 1, maxValue: 100, target: nil, action: nil)
     private let colorTempSlider = NSSlider(value: 300, minValue: 153, maxValue: 500, target: nil, action: nil)
     private let colorWell = NSColorWell()
@@ -82,12 +86,21 @@ final class HueControlView: NSView {
         rootStack.addArrangedSubview(roomPopup)
 
         rootStack.addArrangedSubview(sectionLabel("Scene"))
-        let sceneRow = NSStackView(views: [scenePopup, applySceneButton])
+        let sceneRow = NSStackView(views: [scenePopup, applySceneButton, deleteSceneButton])
         sceneRow.orientation = .horizontal
         sceneRow.alignment = .centerY
         sceneRow.spacing = 8
         scenePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
         rootStack.addArrangedSubview(sceneRow)
+
+        sceneNameField.placeholderString = "New scene name"
+        sceneNameField.translatesAutoresizingMaskIntoConstraints = false
+        let saveSceneRow = NSStackView(views: [sceneNameField, saveSceneButton])
+        saveSceneRow.orientation = .horizontal
+        saveSceneRow.alignment = .centerY
+        saveSceneRow.spacing = 8
+        sceneNameField.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
+        rootStack.addArrangedSubview(saveSceneRow)
 
         rootStack.addArrangedSubview(sectionLabel("Controls"))
         rootStack.addArrangedSubview(powerToggle)
@@ -156,8 +169,17 @@ final class HueControlView: NSView {
         roomPopup.target = self
         roomPopup.action = #selector(roomChanged)
 
+        scenePopup.target = self
+        scenePopup.action = #selector(scenePickerChanged)
+
         applySceneButton.target = self
         applySceneButton.action = #selector(applyScenePressed)
+
+        deleteSceneButton.target = self
+        deleteSceneButton.action = #selector(deleteScenePressed)
+
+        saveSceneButton.target = self
+        saveSceneButton.action = #selector(saveScenePressed)
 
         powerToggle.target = self
         powerToggle.action = #selector(powerToggled)
@@ -231,18 +253,29 @@ final class HueControlView: NSView {
             }
         }
 
-        sceneOptions = manager.scenes
+        sceneOptions = manager.filteredScenes
         scenePopup.removeAllItems()
         if sceneOptions.isEmpty {
             scenePopup.addItem(withTitle: "No scenes in bridge")
         } else {
             scenePopup.addItems(withTitles: sceneOptions.map(\.name))
+            if let id = selectedSceneID,
+               let index = sceneOptions.firstIndex(where: { $0.id == id }) {
+                scenePopup.selectItem(at: index)
+            } else {
+                selectedSceneID = sceneOptions.first?.id
+            }
         }
 
-        applySceneButton.isEnabled =
+        let hasScenes = manager.connectionState == .connected
+            && manager.selectedTarget?.targetType == .room
+            && sceneOptions.isEmpty == false
+        applySceneButton.isEnabled = hasScenes
+        deleteSceneButton.isEnabled = hasScenes
+
+        saveSceneButton.isEnabled =
             manager.connectionState == .connected &&
-            manager.selectedTarget?.targetType == .room &&
-            sceneOptions.isEmpty == false
+            manager.selectedTarget?.targetType == .room
 
         let isConnected = manager.connectionState == .connected
         let selectedState = manager.stateForSelectedTarget()
@@ -336,12 +369,37 @@ final class HueControlView: NSView {
         }
     }
 
+    @objc private func scenePickerChanged() {
+        if isProgrammaticUpdate { return }
+        let index = scenePopup.indexOfSelectedItem
+        if index >= 0, index < sceneOptions.count {
+            selectedSceneID = sceneOptions[index].id
+        }
+    }
+
     @objc private func applyScenePressed() {
         if isProgrammaticUpdate { return }
         let sceneIndex = scenePopup.indexOfSelectedItem
         if sceneIndex >= 0, sceneIndex < sceneOptions.count {
+            selectedSceneID = sceneOptions[sceneIndex].id
             manager.activateScene(sceneOptions[sceneIndex].id)
         }
+    }
+
+    @objc private func deleteScenePressed() {
+        if isProgrammaticUpdate { return }
+        let sceneIndex = scenePopup.indexOfSelectedItem
+        if sceneIndex >= 0, sceneIndex < sceneOptions.count {
+            manager.deleteScene(sceneOptions[sceneIndex].id)
+        }
+    }
+
+    @objc private func saveScenePressed() {
+        if isProgrammaticUpdate { return }
+        let name = sceneNameField.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        manager.createScene(name: name)
+        sceneNameField.stringValue = ""
     }
 
     @objc private func powerToggled() {
@@ -372,16 +430,14 @@ private final class HueLightRowView: NSView {
     private var isProgrammaticUpdate = false
 
     private let powerToggle: NSButton
-    private let nameLabel: NSTextField
     private var brightnessSlider: NSSlider?
     private var colorTempSlider: NSSlider?
     private var colorWell: NSColorWell?
 
     init(target: HueTarget) {
         self.target = target
-        self.powerToggle = NSButton(checkboxWithTitle: "", target: nil, action: nil)
-        self.nameLabel = NSTextField(labelWithString: target.name)
-        self.nameLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        self.powerToggle = NSButton(checkboxWithTitle: target.name, target: nil, action: nil)
+        self.powerToggle.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         super.init(frame: .zero)
         buildLayout()
         setupActions()
@@ -418,11 +474,7 @@ private final class HueLightRowView: NSView {
             outerStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
         ])
 
-        let headerRow = NSStackView(views: [powerToggle, nameLabel])
-        headerRow.orientation = .horizontal
-        headerRow.alignment = .centerY
-        headerRow.spacing = 8
-        outerStack.addArrangedSubview(headerRow)
+        outerStack.addArrangedSubview(powerToggle)
 
         if target.capabilities.supportsDimming {
             let s = NSSlider(value: 50, minValue: 1, maxValue: 100, target: nil, action: nil)

@@ -86,7 +86,8 @@ Read resources:
 Write resources:
 - `PUT /clip/v2/resource/light/{id}`
 - `PUT /clip/v2/resource/grouped_light/{id}`
-- Optional scene recall endpoint exists in client: `PUT /clip/v2/resource/scene/{id}`.
+- `PUT /clip/v2/resource/scene/{id}` — scene recall (`"recall": {"action": "active"}`)
+- `POST /clip/v2/resource/scene` — scene creation (see Scene Creation below)
 
 Event stream probes (in order):
 - `/eventstream/clip/v2`
@@ -143,15 +144,57 @@ Color picker display and submission use the Hue-recommended wide-gamut D65 matri
 - On `.hueStateDidChange` within the same room, only `row.update(state:isConnected:)` is called — rows and sliders persist, preventing jitter during drags.
 - Each `HueLightRowView` owns its own `isProgrammaticUpdate` flag independent of the parent view.
 
+## Scene Creation
+
+`HueManager.createScene(name:)` snapshots current per-light states (`lightStateByID`) for all lights in the selected room and POSTs them as a new scene to `POST /clip/v2/resource/scene`.
+
+CLIP v2 payload shape:
+```json
+{
+  "metadata": { "name": "My Scene" },
+  "group": { "rid": "<raw-room-id>", "rtype": "room" },
+  "actions": [
+    {
+      "target": { "rid": "<light-id>", "rtype": "light" },
+      "action": {
+        "on": { "on": true },
+        "dimming": { "brightness": 80.0 },
+        "color": { "xy": { "x": 0.3, "y": 0.3 } }
+      }
+    }
+  ]
+}
+```
+
+Rules:
+- Room target ID has `"room:"` prefix; strip it to get the raw ID for the `group.rid` field.
+- `color` (XY) and `color_temperature` (mirek) are **mutually exclusive** in every CLIP v2 PUT. Never send both in the same payload — the bridge discards one silently.
+- After the POST succeeds, `refreshResources` is called so the new scene immediately appears in the UI.
+- Duplicate scene names: `createScene` deletes all scenes with the same name (global `scenes` list, not `filteredScenes`) before POSTing the new one.
+
+UI entry point: `HueControlView` Scene section — name text field + "Save Scene" button. Button is enabled whenever connected and a room is selected.
+
 ## Scene Handling Details
 
-- Scene list is sourced from bridge scenes.
-- Manager computes scene group affinity using room/zone/light relationships.
-- Applying a scene for room targets can use per-light action payload synthesis:
-  - Extract mutable action payloads from scene actions.
-  - Resolve room light IDs.
-  - Prefer color templates for color-capable lights and CCT templates for white lights.
-  - Fallback to non-chromatic templates.
+### Scene picker
+- `sceneOptions` in `HueControlView` is sourced from `manager.filteredScenes` (room-filtered), not `manager.scenes`.
+- `selectedSceneID` (String?) is tracked by ID so the popup survives `refreshUI` rebuilds without snapping to index 0.
+
+### Scene recall (`activateScene` → `applySceneToTarget`)
+1. `commandQueue.cancelAll()` is called first — discards any pending slider/power commands that would otherwise overwrite the scene.
+2. `applySceneToTarget` builds a `payloadByLightID: [String: [String: Any]]` map from `scene.actions` (each action carries `target.rid`).
+3. For each light in the target room:
+   - **Direct match**: use the action whose `target.rid == lightID` (works for scenes created for this room).
+   - **Capability fallback**: pick the best template by `colorFallback` → `ctFallback` → `dimsOnlyFallback`.
+   - **Capability strip**: remove `"color"` from payloads sent to CT-only lights; remove `"color_temperature"` from payloads sent to color-only lights.
+4. 100 ms sleep between each `setLight` PUT to stay under the bridge's 10 req/s cap.
+5. Do NOT use `client.activateScene()` (bridge recall) — that applies to the scene's stored group, ignoring the selected room.
+
+### `payload(from: OpenHueLightAction)`
+- Checks `color.xy` first; if present, includes only `"color"` and skips `"color_temperature"`.
+- Falls through to `"color_temperature"` only when `color.xy` is absent.
+- Hue bridge firmware often returns both fields populated in scene actions regardless of which mode the light is in — this mutual-exclusivity rule in `payload(from:)` is the sole guard.
+
 - Scene assignments can be pinned per target via `hue_scene_assignments_v1`.
 
 ## Command Queue and Rate Strategy
@@ -188,8 +231,7 @@ Signal processing in `HueReactiveEngine`:
 
 Output mapping:
 - Brightness 0...1
-- Mirek 153...500 (warm/cool bias from bass/high balance)
-- XY color lane from spectral tilt
+- XY color lane from spectral tilt (sent as `"color"` only — no `"color_temperature"` in the same payload)
 
 Commands are still sent through `HueCommandQueue`.
 
@@ -252,6 +294,13 @@ Practical implications:
 - `HueBridgeTLSPinningDelegate`:
   - Trust evaluation and bridge-id mismatch details
 
+## Scene / Room Design Rules
+
+- **Scene picker uses `filteredScenes`**: `HueControlView.sceneOptions` is sourced from `manager.filteredScenes`, which filters to scenes relevant to the selected room. Do NOT use `manager.scenes` (global) for the UI picker — it would show and allow deletion of scenes from other rooms.
+- **Scene recall always targets the selected room**: `activateScene` cancels pending queue commands, then calls `applySceneToTarget`, which applies per-light actions to the currently selected room's lights by direct light-ID match. Do NOT use native `client.activateScene()` (bridge recall) — that applies to the scene's stored group on the bridge, ignoring which room is selected.
+- **`color` and `color_temperature` are always mutually exclusive**: never include both in a single PUT. `payload(from:)` enforces XY-first. Violating this causes the bridge to silently drop one field.
+- **CCT-only lights must never receive `color` payloads**: `applySceneToTarget` strips `"color"` from payloads before sending to lights where `light.color == nil`. Sending `color` to a CT-only bulb returns a 400 and the light is not updated.
+
 ## Integration Guardrails
 
 - Keep Hue window mode-independent (works in both classic and modern UI modes).
@@ -267,6 +316,7 @@ Manual:
 3. Pairing succeeds only after bridge link button press.
 4. Room power/brightness/CCT/color well writes apply and UI state refreshes.
 5. Scene activation for room targets applies expected visual state.
+5a. Scene creation: type a name, click Save Scene — new scene appears in the popup after refresh; bridge confirms creation.
 6. Individual Lights section appears after room selection; per-light controls match each light's capabilities.
 7. Color well shows the correct hue after a scene is applied; picking a new color sends correct XY to the bridge.
 8. Reactive mode responds while local/streaming playback is active.

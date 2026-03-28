@@ -30,6 +30,10 @@ actor HueCommandQueue {
         }
     }
 
+    func waitForIdle() async {
+        await worker?.value
+    }
+
     func cancelAll() {
         pending.removeAll()
         order.removeAll()

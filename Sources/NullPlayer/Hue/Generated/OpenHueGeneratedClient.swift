@@ -72,6 +72,14 @@ final class OpenHueGeneratedClient {
         ])
     }
 
+    func createScene(payload: [String: Any]) async throws {
+        _ = try await request(path: "/clip/v2/resource/scene", method: "POST", payload: payload)
+    }
+
+    func deleteScene(id: String) async throws {
+        _ = try await request(path: "/clip/v2/resource/scene/\(id)", method: "DELETE")
+    }
+
     func createLinkToken(deviceType: String) async throws -> String {
         guard let url = URL(string: "\(bridge.baseURLString)/api") else {
             throw HueClientError.invalidBridgeURL
