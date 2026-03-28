@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 final class HueManager {
     static let shared = HueManager()
@@ -9,6 +10,7 @@ final class HueManager {
         static let reactiveIntensity = "hue_reactive_intensity"
         static let reactiveSpeed = "hue_reactive_speed"
         static let sceneAssignments = "hue_scene_assignments_v1"
+        static let multiRoomScenes = "hue_multi_room_scenes_v1"
     }
 
     private let discoveryService = HueBridgeDiscoveryService()
@@ -43,6 +45,7 @@ final class HueManager {
     private var zones: [OpenHueZoneResource] = []
     private var rawScenes: [OpenHueSceneResource] = []
     private var assignedSceneIDsByTargetID: [String: [String]] = [:]
+    private(set) var multiRoomSceneRecords: [HueMultiRoomSceneRecord] = []
 
     private var groupedLightStateByID: [String: HueLightState] = [:]
     private var lightStateByID: [String: HueLightState] = [:]
@@ -80,6 +83,30 @@ final class HueManager {
         if let data = defaults.data(forKey: DefaultsKeys.sceneAssignments),
            let decoded = try? JSONDecoder().decode([String: [String]].self, from: data) {
             assignedSceneIDsByTargetID = decoded
+        }
+
+        if let data = defaults.data(forKey: DefaultsKeys.multiRoomScenes),
+           let decoded = try? JSONDecoder().decode([HueMultiRoomSceneRecord].self, from: data) {
+            multiRoomSceneRecords = decoded
+        }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(handleDidWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleDidWake() {
+        guard hasPairedBridge else { return }
+        NSLog("HueManager: system woke, scheduling bridge reconnect")
+        Task {
+            // Give the network a moment to come back up before reconnecting
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await MainActor.run {
+                self.reconnectLastPairedBridgeIfAvailable()
+            }
         }
     }
 
@@ -200,78 +227,38 @@ final class HueManager {
         return assignedIDs.contains(sceneID)
     }
 
-    private func applySceneToTarget(
-        sceneID: String,
-        to target: HueTarget,
+    /// Flushes the command queue then fetches fresh light states, returning a CLIP v2 actions array
+    /// for the given light IDs. Suitable for use as the `actions` field in a scene POST payload.
+    private func snapshotActions(
+        for lightIDs: [String],
         using client: OpenHueGeneratedClient
-    ) async throws -> Bool {
-        guard let scene = rawScenes.first(where: { $0.id == sceneID }) else {
-            return false
-        }
-        guard let actions = scene.actions?.filter({ $0.action != nil }),
-              actions.isEmpty == false else {
-            NSLog("HueManager: scene %@ has no actions payload", sceneID)
-            return false
-        }
+    ) async throws -> [[String: Any]] {
+        // Flush any pending light commands so the bridge state reflects the intended colors.
+        await commandQueue.waitForIdle()
 
-        let targetLightIDs = resolvedLightIDs(for: target)
-        guard targetLightIDs.isEmpty == false else {
-            NSLog("HueManager: scene %@ has no lights for target %@", sceneID, target.id)
-            return false
-        }
+        let freshLights = try await client.getLights()
+        let freshStateByID = Dictionary(
+            uniqueKeysWithValues: freshLights.map { ($0.id, Self.lightState(from: $0)) }
+        )
 
-        // Build per-light-ID payload map for direct matches (scenes created for this room)
-        var payloadByLightID: [String: [String: Any]] = [:]
-        for action in actions {
-            guard let lightAction = action.action,
-                  let rid = action.target?.rid else { continue }
-            let p = payload(from: lightAction)
-            if !p.isEmpty { payloadByLightID[rid] = p }
-        }
-
-        // Fallback templates by capability class (for lights with no direct match)
-        let allTemplates = payloadByLightID.values
-        let colorFallback   = allTemplates.first { $0["color"] != nil }
-        let ctFallback      = allTemplates.first { $0["color"] == nil && $0["color_temperature"] != nil }
-        let dimsOnlyFallback = allTemplates.first { $0["color"] == nil && $0["color_temperature"] == nil }
-
-        if payloadByLightID.isEmpty {
-            NSLog("HueManager: scene %@ actions do not include mutable light state", sceneID)
-            return false
-        }
-
-        for lightID in targetLightIDs {
-            let light = lightsByID[lightID]
-            let supportsColor = light?.color != nil
-            let supportsCT    = light?.colorTemperature != nil
-
-            // Pick best payload: direct match first, then capability-matched fallback
-            var chosen: [String: Any]
-            if let direct = payloadByLightID[lightID] {
-                chosen = direct
-            } else if supportsColor, let t = colorFallback {
-                chosen = t
-            } else if supportsCT, let t = ctFallback {
-                chosen = t
-            } else if let t = dimsOnlyFallback {
-                chosen = t
-            } else if let t = colorFallback {
-                chosen = t
-            } else {
-                continue
+        var actions: [[String: Any]] = []
+        for lightID in lightIDs {
+            guard let state = freshStateByID[lightID] else { continue }
+            var action: [String: Any] = ["on": ["on": state.isOn]]
+            if let brightness = state.brightness {
+                action["dimming"] = ["brightness": max(1.0, min(100.0, brightness))]
             }
-
-            // Strip fields incompatible with this light's capabilities
-            if !supportsColor { chosen.removeValue(forKey: "color") }
-            if !supportsCT    { chosen.removeValue(forKey: "color_temperature") }
-
-            if chosen.isEmpty { continue }
-
-            try await client.setLight(id: lightID, payload: chosen)
-            // 100 ms between PUTs to stay within bridge 10 req/s cap
-            try await Task.sleep(nanoseconds: 100_000_000)
+            if let xy = state.colorXY {
+                action["color"] = ["xy": ["x": xy.x, "y": xy.y]]
+            } else if let mirek = state.mirek {
+                action["color_temperature"] = ["mirek": max(153, min(500, mirek))]
+            }
+            actions.append([
+                "target": ["rid": lightID, "rtype": "light"],
+                "action": action
+            ])
         }
-        return true
+        return actions
     }
 
     private func persistSceneAssignments() {
@@ -460,6 +447,21 @@ final class HueManager {
         }
     }
 
+    /// All individual light targets, grouped by room name. Lights not in any room appear last.
+    func allLightTargetsByRoom() -> [(roomName: String, lights: [HueTarget])] {
+        var result: [(roomName: String, lights: [HueTarget])] = []
+        for room in rooms.sorted(by: { ($0.metadata?.name ?? "") < ($1.metadata?.name ?? "") }) {
+            let lightIDs = Array(lightIDsForRoom(id: room.id)).sorted()
+            let lights = lightIDs.compactMap { id in
+                targets.first { $0.targetType == .light && $0.lightID == id }
+            }
+            if !lights.isEmpty {
+                result.append((roomName: room.metadata?.name ?? "Room", lights: lights))
+            }
+        }
+        return result
+    }
+
     func state(forTarget target: HueTarget) -> HueLightState? {
         state(for: target)
     }
@@ -520,34 +522,9 @@ final class HueManager {
         guard let client = buildClient() else { return }
         Task {
             do {
-                // Discard any pending slider/power commands so they cannot overwrite the scene
                 await commandQueue.cancelAll()
-
-                guard let target = selectedTarget else {
-                    await MainActor.run {
-                        self.diagnosticsMessage = "Select a room before applying a scene"
-                        NotificationCenter.default.post(name: .hueStateDidChange, object: self)
-                    }
-                    return
-                }
-                guard target.targetType == .room else {
-                    await MainActor.run {
-                        self.diagnosticsMessage = "Scene application requires a room target"
-                        NotificationCenter.default.post(name: .hueStateDidChange, object: self)
-                    }
-                    return
-                }
-
-                if try await applySceneToTarget(sceneID: sceneID, to: target, using: client) {
-                    NSLog("HueManager: applied scene %@ to room %@", sceneID, target.id)
-                } else {
-                    await MainActor.run {
-                        self.diagnosticsMessage = "Unable to apply this scene to the selected room"
-                        NotificationCenter.default.post(name: .hueStateDidChange, object: self)
-                    }
-                    return
-                }
-
+                try await client.activateScene(id: sceneID)
+                NSLog("HueManager: activated scene %@", sceneID)
                 await self.refreshResources(reason: "Scene activated")
             } catch {
                 NSLog("HueManager: activateScene failed for %@: %@", sceneID, error.localizedDescription)
@@ -588,9 +565,7 @@ final class HueManager {
         }
         guard target.id.hasPrefix("room:") else { return }
         let roomID = String(target.id.dropFirst(5))
-
         let lightIDs = resolvedLightIDs(for: target)
-
         let existingIDs = scenes
             .filter { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
             .map(\.id)
@@ -601,40 +576,12 @@ final class HueManager {
                     try await client.deleteScene(id: id)
                     NSLog("HueManager: deleted existing scene %@ ('%@')", id, trimmed)
                 }
-
-                // Flush any pending light commands (e.g. a color change the user just made)
-                // before snapshotting, so the bridge state reflects the intended colors.
-                await commandQueue.waitForIdle()
-
-                let freshLights = try await client.getLights()
-                let freshStateByID = Dictionary(
-                    uniqueKeysWithValues: freshLights.map { ($0.id, Self.lightState(from: $0)) }
-                )
-
-                var actions: [[String: Any]] = []
-                for lightID in lightIDs {
-                    guard let state = freshStateByID[lightID] else { continue }
-                    var action: [String: Any] = ["on": ["on": state.isOn]]
-                    if let brightness = state.brightness {
-                        action["dimming"] = ["brightness": max(1.0, min(100.0, brightness))]
-                    }
-                    if let xy = state.colorXY {
-                        action["color"] = ["xy": ["x": xy.x, "y": xy.y]]
-                    } else if let mirek = state.mirek {
-                        action["color_temperature"] = ["mirek": max(153, min(500, mirek))]
-                    }
-                    actions.append([
-                        "target": ["rid": lightID, "rtype": "light"],
-                        "action": action
-                    ])
-                }
-
+                let actions = try await snapshotActions(for: lightIDs, using: client)
                 let payload: [String: Any] = [
                     "metadata": ["name": trimmed],
                     "group": ["rid": roomID, "rtype": "room"],
                     "actions": actions
                 ]
-
                 try await client.createScene(payload: payload)
                 NSLog("HueManager: created scene '%@' for room %@", trimmed, roomID)
                 await self.refreshResources(reason: "Scene '\(trimmed)' saved")
@@ -646,6 +593,105 @@ final class HueManager {
                 }
             }
         }
+    }
+
+    func createMultiRoomScene(name: String, lightIDs: [String]) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !lightIDs.isEmpty else { return }
+        guard let client = buildClient() else { return }
+
+        // Records to clean up from the bridge (same name)
+        let existingRecords = multiRoomSceneRecords
+            .filter { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
+
+        Task {
+            do {
+                for record in existingRecords {
+                    try? await client.deleteScene(id: record.sceneID)
+                    try? await client.deleteZone(id: record.zoneID)
+                    NSLog("HueManager: removed existing multi-room scene '%@'", trimmed)
+                }
+
+                let actions = try await snapshotActions(for: lightIDs.sorted(), using: client)
+
+                let zonePayload: [String: Any] = [
+                    "metadata": ["name": "NP: \(trimmed)", "archetype": "other"],
+                    "children": lightIDs.map { ["rid": $0, "rtype": "light"] }
+                ]
+                let zoneID = try await client.createZone(payload: zonePayload)
+                NSLog("HueManager: created zone %@ for multi-room scene '%@'", zoneID, trimmed)
+
+                let scenePayload: [String: Any] = [
+                    "metadata": ["name": trimmed],
+                    "group": ["rid": zoneID, "rtype": "zone"],
+                    "actions": actions
+                ]
+                let sceneID = try await client.createScene(payload: scenePayload)
+                NSLog("HueManager: created multi-room scene %@ ('%@')", sceneID, trimmed)
+
+                let record = HueMultiRoomSceneRecord(
+                    sceneID: sceneID,
+                    zoneID: zoneID,
+                    name: trimmed,
+                    lightIDs: lightIDs.sorted()
+                )
+                await MainActor.run {
+                    self.multiRoomSceneRecords.removeAll {
+                        $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+                    }
+                    self.multiRoomSceneRecords.append(record)
+                    self.multiRoomSceneRecords.sort {
+                        $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                    }
+                    self.persistMultiRoomScenes()
+                }
+                await self.refreshResources(reason: "Multi-room scene '\(trimmed)' saved")
+            } catch {
+                NSLog("HueManager: createMultiRoomScene failed: %@", error.localizedDescription)
+                await MainActor.run {
+                    self.diagnosticsMessage = error.localizedDescription
+                    NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+                }
+            }
+        }
+    }
+
+    func activateMultiRoomScene(_ record: HueMultiRoomSceneRecord) {
+        guard let client = buildClient() else { return }
+        Task {
+            do {
+                await commandQueue.cancelAll()
+                try await client.activateScene(id: record.sceneID)
+                NSLog("HueManager: activated multi-room scene '%@'", record.name)
+                await self.refreshResources(reason: "Multi-room scene '\(record.name)' applied")
+            } catch {
+                NSLog("HueManager: activateMultiRoomScene failed: %@", error.localizedDescription)
+                await MainActor.run {
+                    self.diagnosticsMessage = error.localizedDescription
+                    NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+                }
+            }
+        }
+    }
+
+    func deleteMultiRoomScene(_ record: HueMultiRoomSceneRecord) {
+        guard let client = buildClient() else { return }
+        Task {
+            // Best-effort bridge cleanup — ignore 404s (already deleted from Hue app)
+            try? await client.deleteScene(id: record.sceneID)
+            try? await client.deleteZone(id: record.zoneID)
+            NSLog("HueManager: deleted multi-room scene '%@'", record.name)
+            await MainActor.run {
+                self.multiRoomSceneRecords.removeAll { $0.sceneID == record.sceneID }
+                self.persistMultiRoomScenes()
+            }
+            await self.refreshResources(reason: "Multi-room scene '\(record.name)' deleted")
+        }
+    }
+
+    private func persistMultiRoomScenes() {
+        let data = try? JSONEncoder().encode(multiRoomSceneRecords)
+        UserDefaults.standard.set(data, forKey: DefaultsKeys.multiRoomScenes)
     }
 
     func setReactiveMode(_ mode: HueReactiveMode) {

@@ -301,6 +301,17 @@ Practical implications:
 - **`color` and `color_temperature` are always mutually exclusive**: never include both in a single PUT. `payload(from:)` enforces XY-first. Violating this causes the bridge to silently drop one field.
 - **CCT-only lights must never receive `color` payloads**: `applySceneToTarget` strips `"color"` from payloads before sending to lights where `light.color == nil`. Sending `color` to a CT-only bulb returns a 400 and the light is not updated.
 
+## Sleep / Wake Behavior
+
+`HueManager` registers for `NSWorkspace.didWakeNotification` in its `init()`. On wake:
+1. Guards on `hasPairedBridge` — no-ops if never paired.
+2. Waits 2 seconds to let the network come back up.
+3. Calls `reconnectLastPairedBridgeIfAvailable()`, which refreshes resources and restarts the event stream.
+
+**Why this is needed**: After sleep, the event stream connection drops. Without the wake observer, `connectionState` may be `.error` from a failed post-sleep refresh triggered by `showHueControlWindow()`, and there is no automatic recovery path if the event stream is also dead and no events arrive. The wake observer ensures a proactive reconnect on every wake.
+
+**Discovery is NOT triggered on wake** — `reconnectLastPairedBridgeIfAvailable` only calls `connectToCurrentBridge`, not `beginDiscovery`. Discovery stays opt-in (first-time pairing only), per the guard in `showHueControlWindow`.
+
 ## Integration Guardrails
 
 - Keep Hue window mode-independent (works in both classic and modern UI modes).
