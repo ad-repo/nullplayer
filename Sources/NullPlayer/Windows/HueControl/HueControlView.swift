@@ -32,6 +32,21 @@ final class HueControlView: NSView {
     private let lightsStackView = NSStackView()
     private var lightRows: [String: HueLightRowView] = [:]
 
+    private let multiRoomSectionLabel = NSTextField(labelWithString: "Multi-Room Scenes")
+    private let multiRoomScenePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let applyMultiRoomSceneButton = NSButton(title: "Apply", target: nil, action: nil)
+    private let editMultiRoomSceneButton = NSButton(title: "Edit", target: nil, action: nil)
+    private let deleteMultiRoomSceneButton = NSButton(title: "Delete", target: nil, action: nil)
+    private let newMultiRoomSceneButton = NSButton(title: "New Multi-Room Scene…", target: nil, action: nil)
+    private var multiRoomSceneOptions: [HueMultiRoomSceneRecord] = []
+    private var multiRoomScenePicker: HueMultiRoomScenePickerSheet?
+
+    private let reactiveModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let reactiveIntensitySlider = NSSlider(value: 0.6, minValue: 0.1, maxValue: 1.0, target: nil, action: nil)
+    private let reactiveSpeedSlider = NSSlider(value: 0.5, minValue: 0.0, maxValue: 1.0, target: nil, action: nil)
+    private let reactivePresetPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let reactiveStatusLabel = NSTextField(labelWithString: "Reactive idle")
+
     private let diagnosticsLabel = NSTextField(labelWithString: "")
 
     override init(frame frameRect: NSRect) {
@@ -128,6 +143,26 @@ final class HueControlView: NSView {
         lightsScrollView.widthAnchor.constraint(equalTo: rootStack.widthAnchor).isActive = true
         lightsStackView.widthAnchor.constraint(equalTo: lightsScrollView.contentView.widthAnchor).isActive = true
 
+        multiRoomSectionLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        rootStack.addArrangedSubview(multiRoomSectionLabel)
+        let multiRoomRow = NSStackView(views: [multiRoomScenePopup, applyMultiRoomSceneButton, editMultiRoomSceneButton, deleteMultiRoomSceneButton])
+        multiRoomRow.orientation = .horizontal
+        multiRoomRow.alignment = .centerY
+        multiRoomRow.spacing = 8
+        multiRoomScenePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
+        rootStack.addArrangedSubview(multiRoomRow)
+        rootStack.addArrangedSubview(newMultiRoomSceneButton)
+
+        rootStack.addArrangedSubview(sectionLabel("Reactive"))
+        reactiveModePopup.widthAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
+        rootStack.addArrangedSubview(labeledRow("Mode", control: reactiveModePopup))
+        rootStack.addArrangedSubview(labeledRow("Preset", control: reactivePresetPopup))
+        rootStack.addArrangedSubview(labeledRow("Intensity", control: reactiveIntensitySlider))
+        rootStack.addArrangedSubview(labeledRow("Speed", control: reactiveSpeedSlider))
+        reactiveStatusLabel.font = NSFont.systemFont(ofSize: 11)
+        reactiveStatusLabel.textColor = .secondaryLabelColor
+        rootStack.addArrangedSubview(reactiveStatusLabel)
+
         diagnosticsLabel.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         diagnosticsLabel.textColor = .secondaryLabelColor
         rootStack.addArrangedSubview(sectionLabel("Diagnostics"))
@@ -194,6 +229,32 @@ final class HueControlView: NSView {
 
         colorWell.target = self
         colorWell.action = #selector(colorChanged)
+
+        applyMultiRoomSceneButton.target = self
+        applyMultiRoomSceneButton.action = #selector(applyMultiRoomScenePressed)
+
+        editMultiRoomSceneButton.target = self
+        editMultiRoomSceneButton.action = #selector(editMultiRoomScenePressed)
+
+        deleteMultiRoomSceneButton.target = self
+        deleteMultiRoomSceneButton.action = #selector(deleteMultiRoomScenePressed)
+
+        newMultiRoomSceneButton.target = self
+        newMultiRoomSceneButton.action = #selector(newMultiRoomScenePressed)
+
+        reactiveModePopup.target = self
+        reactiveModePopup.action = #selector(reactiveModeChanged)
+
+        reactivePresetPopup.target = self
+        reactivePresetPopup.action = #selector(reactivePresetChanged)
+
+        reactiveIntensitySlider.target = self
+        reactiveIntensitySlider.action = #selector(reactiveIntensityChanged)
+        reactiveIntensitySlider.isContinuous = true
+
+        reactiveSpeedSlider.target = self
+        reactiveSpeedSlider.action = #selector(reactiveSpeedChanged)
+        reactiveSpeedSlider.isContinuous = true
     }
 
     private func setupObservers() {
@@ -302,6 +363,59 @@ final class HueControlView: NSView {
         if shouldShowLights {
             refreshLightRows()
         }
+
+        multiRoomSceneOptions = manager.multiRoomSceneRecords
+        multiRoomSectionLabel.isHidden = !isConnected
+        multiRoomScenePopup.isHidden = !isConnected
+        applyMultiRoomSceneButton.isHidden = !isConnected
+        deleteMultiRoomSceneButton.isHidden = !isConnected
+        newMultiRoomSceneButton.isHidden = !isConnected
+
+        multiRoomScenePopup.removeAllItems()
+        if multiRoomSceneOptions.isEmpty {
+            multiRoomScenePopup.addItem(withTitle: "No multi-room scenes")
+        } else {
+            multiRoomScenePopup.addItems(withTitles: multiRoomSceneOptions.map(\.name))
+        }
+        let hasMultiRoomScenes = isConnected && !multiRoomSceneOptions.isEmpty
+        applyMultiRoomSceneButton.isEnabled = hasMultiRoomScenes
+        editMultiRoomSceneButton.isEnabled = hasMultiRoomScenes
+        deleteMultiRoomSceneButton.isEnabled = hasMultiRoomScenes
+        newMultiRoomSceneButton.isEnabled = isConnected
+
+        let modeOptions: [(String, HueReactiveMode)] = [
+            ("Off", .off),
+            ("Entertainment (Low Latency)", .entertainment),
+            ("Group Fallback", .groupFallback)
+        ]
+        reactiveModePopup.removeAllItems()
+        reactiveModePopup.addItems(withTitles: modeOptions.map(\.0))
+        if let modeIndex = modeOptions.firstIndex(where: { $0.1 == manager.reactiveSettings.mode }) {
+            reactiveModePopup.selectItem(at: modeIndex)
+        }
+
+        let presetOptions = HueLightshowPreset.allCases
+        reactivePresetPopup.removeAllItems()
+        reactivePresetPopup.addItems(withTitles: presetOptions.map { preset in
+            switch preset {
+            case .auto: return "Auto"
+            case .pulse: return "Pulse"
+            case .ambientWave: return "Ambient Wave"
+            case .strobeSafe: return "Strobe Safe"
+            }
+        })
+        if let presetIndex = presetOptions.firstIndex(of: manager.lightshowPreset) {
+            reactivePresetPopup.selectItem(at: presetIndex)
+        }
+
+        reactiveIntensitySlider.doubleValue = manager.reactiveSettings.intensity
+        reactiveSpeedSlider.doubleValue = manager.reactiveSettings.speed
+        let reactiveControlsEnabled = isConnected && hasRoom
+        reactiveModePopup.isEnabled = reactiveControlsEnabled
+        reactivePresetPopup.isEnabled = reactiveControlsEnabled
+        reactiveIntensitySlider.isEnabled = reactiveControlsEnabled
+        reactiveSpeedSlider.isEnabled = reactiveControlsEnabled
+        reactiveStatusLabel.stringValue = "Mode: \(modeOptions.first(where: { $0.1 == manager.reactiveSettings.mode })?.0 ?? "Off")"
     }
 
     private func refreshLightRows() {
@@ -421,6 +535,69 @@ final class HueControlView: NSView {
         if isProgrammaticUpdate { return }
         let xy = hueXY(from: colorWell.color)
         manager.setColor(x: xy.x, y: xy.y)
+    }
+
+    @objc private func reactiveModeChanged() {
+        if isProgrammaticUpdate { return }
+        let modeOptions: [HueReactiveMode] = [.off, .entertainment, .groupFallback]
+        let index = reactiveModePopup.indexOfSelectedItem
+        guard index >= 0, index < modeOptions.count else { return }
+        manager.setReactiveMode(modeOptions[index])
+    }
+
+    @objc private func reactivePresetChanged() {
+        if isProgrammaticUpdate { return }
+        let presets = HueLightshowPreset.allCases
+        let index = reactivePresetPopup.indexOfSelectedItem
+        guard index >= 0, index < presets.count else { return }
+        manager.setLightshowPreset(presets[index])
+    }
+
+    @objc private func reactiveIntensityChanged() {
+        if isProgrammaticUpdate { return }
+        manager.setReactiveIntensity(reactiveIntensitySlider.doubleValue)
+    }
+
+    @objc private func reactiveSpeedChanged() {
+        if isProgrammaticUpdate { return }
+        manager.setReactiveSpeed(reactiveSpeedSlider.doubleValue)
+    }
+
+    @objc private func applyMultiRoomScenePressed() {
+        if isProgrammaticUpdate { return }
+        let index = multiRoomScenePopup.indexOfSelectedItem
+        guard index >= 0, index < multiRoomSceneOptions.count else { return }
+        manager.activateMultiRoomScene(multiRoomSceneOptions[index])
+    }
+
+    @objc private func deleteMultiRoomScenePressed() {
+        if isProgrammaticUpdate { return }
+        let index = multiRoomScenePopup.indexOfSelectedItem
+        guard index >= 0, index < multiRoomSceneOptions.count else { return }
+        manager.deleteMultiRoomScene(multiRoomSceneOptions[index])
+    }
+
+    @objc private func editMultiRoomScenePressed() {
+        if isProgrammaticUpdate { return }
+        let index = multiRoomScenePopup.indexOfSelectedItem
+        guard index >= 0, index < multiRoomSceneOptions.count else { return }
+        showMultiRoomScenePicker(editing: multiRoomSceneOptions[index])
+    }
+
+    @objc private func newMultiRoomScenePressed() {
+        showMultiRoomScenePicker(editing: nil)
+    }
+
+    private func showMultiRoomScenePicker(editing record: HueMultiRoomSceneRecord?) {
+        guard let window else { return }
+        let picker = HueMultiRoomScenePickerSheet(editing: record)
+        picker.onSave = { [weak self] name, lightIDs in
+            self?.manager.createMultiRoomScene(name: name, lightIDs: lightIDs)
+        }
+        multiRoomScenePicker = picker
+        window.beginSheet(picker.window) { [weak self] _ in
+            self?.multiRoomScenePicker = nil
+        }
     }
 }
 
@@ -551,6 +728,312 @@ private final class HueLightRowView: NSView {
     }
 
     @objc private func colorWellChanged() {
+        guard !isProgrammaticUpdate, let cw = colorWell else { return }
+        let xy = hueXY(from: cw.color)
+        manager.setColor(x: xy.x, y: xy.y, for: target)
+    }
+}
+
+// MARK: - Multi-Room Scene Picker Sheet
+
+private final class HueMultiRoomScenePickerSheet: NSObject {
+    var onSave: ((String, [String]) -> Void)?
+
+    private let manager = HueManager.shared
+    let window: NSWindow
+
+    private let nameField = NSTextField()
+    private let saveButton = NSButton(title: "Save", target: nil, action: nil)
+    private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
+    private var lightRows: [HueLightPickerRow] = []
+
+    init(editing record: HueMultiRoomSceneRecord? = nil) {
+        let panel = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 560),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = record == nil ? "New Multi-Room Scene" : "Edit Multi-Room Scene"
+        panel.isReleasedWhenClosed = false
+        self.window = panel
+        super.init()
+        buildUI(in: panel, preselectedLightIDs: record.map { Set($0.lightIDs) }, prefilledName: record?.name)
+    }
+
+    private func buildUI(in window: NSWindow, preselectedLightIDs: Set<String>?, prefilledName: String?) {
+        let root = NSStackView()
+        root.orientation = .vertical
+        root.alignment = .leading
+        root.spacing = 12
+        root.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+        root.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleLabel = NSTextField(labelWithString: "Configure lights for this scene:")
+        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        root.addArrangedSubview(titleLabel)
+
+        let hintLabel = NSTextField(wrappingLabelWithString: "Check lights to include. Adjust brightness and color — changes apply live to your lights.")
+        hintLabel.font = NSFont.systemFont(ofSize: 11)
+        hintLabel.textColor = .secondaryLabelColor
+        root.addArrangedSubview(hintLabel)
+
+        let listStack = NSStackView()
+        listStack.orientation = .vertical
+        listStack.alignment = .leading
+        listStack.spacing = 2
+        listStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let groups = manager.allLightTargetsByRoom()
+        for group in groups {
+            let roomLabel = NSTextField(labelWithString: group.roomName.uppercased())
+            roomLabel.font = NSFont.systemFont(ofSize: 10, weight: .semibold)
+            roomLabel.textColor = .secondaryLabelColor
+            let roomHeader = NSView()
+            roomHeader.translatesAutoresizingMaskIntoConstraints = false
+            roomLabel.translatesAutoresizingMaskIntoConstraints = false
+            roomHeader.addSubview(roomLabel)
+            NSLayoutConstraint.activate([
+                roomLabel.leadingAnchor.constraint(equalTo: roomHeader.leadingAnchor, constant: 8),
+                roomLabel.centerYAnchor.constraint(equalTo: roomHeader.centerYAnchor),
+                roomHeader.heightAnchor.constraint(equalToConstant: 22)
+            ])
+            listStack.addArrangedSubview(roomHeader)
+            roomHeader.widthAnchor.constraint(equalTo: listStack.widthAnchor).isActive = true
+
+            for light in group.lights {
+                let included = preselectedLightIDs.map { $0.contains(light.lightID ?? "") } ?? true
+                let row = HueLightPickerRow(target: light, included: included)
+                row.translatesAutoresizingMaskIntoConstraints = false
+                listStack.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: listStack.widthAnchor).isActive = true
+                lightRows.append(row)
+            }
+        }
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = listStack
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .lineBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.heightAnchor.constraint(equalToConstant: 320).isActive = true
+        scrollView.widthAnchor.constraint(equalToConstant: 424).isActive = true
+        listStack.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor).isActive = true
+        root.addArrangedSubview(scrollView)
+
+        if let name = prefilledName { nameField.stringValue = name }
+        nameField.placeholderString = "Enter scene name"
+        nameField.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        let nameRow = NSStackView(views: [NSTextField(labelWithString: "Scene name:"), nameField])
+        nameRow.orientation = .horizontal
+        nameRow.alignment = .centerY
+        nameRow.spacing = 8
+        root.addArrangedSubview(nameRow)
+
+        saveButton.bezelStyle = .rounded
+        saveButton.keyEquivalent = "\r"
+        cancelButton.bezelStyle = .rounded
+        cancelButton.keyEquivalent = "\u{1b}"
+        saveButton.target = self
+        saveButton.action = #selector(savePressed)
+        cancelButton.target = self
+        cancelButton.action = #selector(cancelPressed)
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let buttonRow = NSStackView(views: [spacer, cancelButton, saveButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 8
+        root.addArrangedSubview(buttonRow)
+
+        let contentView = NSView()
+        contentView.addSubview(root)
+        NSLayoutConstraint.activate([
+            root.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            root.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            root.topAnchor.constraint(equalTo: contentView.topAnchor),
+            root.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        ])
+        window.contentView = contentView
+    }
+
+    @objc private func savePressed() {
+        let name = nameField.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else {
+            nameField.becomeFirstResponder()
+            return
+        }
+        let selectedIDs = lightRows
+            .filter { $0.isIncluded }
+            .compactMap { $0.target.lightID }
+        guard !selectedIDs.isEmpty else { return }
+        window.sheetParent?.endSheet(window)
+        onSave?(name, selectedIDs)
+    }
+
+    @objc private func cancelPressed() {
+        window.sheetParent?.endSheet(window)
+    }
+}
+
+// MARK: - Light picker row (include checkbox + live controls)
+
+private final class HueLightPickerRow: NSView {
+    let target: HueTarget
+    var isIncluded: Bool { includeCheckbox.state == .on }
+
+    private let manager = HueManager.shared
+    private var isProgrammaticUpdate = false
+
+    private let includeCheckbox: NSButton
+    private let controlsStack = NSStackView()
+    private var powerToggle: NSButton?
+    private var brightnessSlider: NSSlider?
+    private var colorTempSlider: NSSlider?
+    private var colorWell: NSColorWell?
+
+    init(target: HueTarget, included: Bool) {
+        self.target = target
+        self.includeCheckbox = NSButton(checkboxWithTitle: target.name, target: nil, action: nil)
+        super.init(frame: .zero)
+        includeCheckbox.state = included ? .on : .off
+        includeCheckbox.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        buildLayout()
+        setupActions()
+        updateControlsVisibility()
+        NotificationCenter.default.addObserver(self, selector: #selector(hueStateChanged), name: .hueStateDidChange, object: nil)
+        refreshControls()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    private func buildLayout() {
+        let outerStack = NSStackView()
+        outerStack.orientation = .vertical
+        outerStack.alignment = .leading
+        outerStack.spacing = 4
+        outerStack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(outerStack)
+        NSLayoutConstraint.activate([
+            outerStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            outerStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            outerStack.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            outerStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4)
+        ])
+
+        outerStack.addArrangedSubview(includeCheckbox)
+
+        controlsStack.orientation = .vertical
+        controlsStack.alignment = .leading
+        controlsStack.spacing = 4
+        controlsStack.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 0)
+        outerStack.addArrangedSubview(controlsStack)
+        controlsStack.widthAnchor.constraint(equalTo: outerStack.widthAnchor).isActive = true
+
+        let pt = NSButton(checkboxWithTitle: "On", target: nil, action: nil)
+        pt.font = NSFont.systemFont(ofSize: 12)
+        powerToggle = pt
+        controlsStack.addArrangedSubview(pt)
+
+        if target.capabilities.supportsDimming {
+            let s = NSSlider(value: 50, minValue: 1, maxValue: 100, target: nil, action: nil)
+            s.isContinuous = true
+            brightnessSlider = s
+            controlsStack.addArrangedSubview(pickerRow("Brightness", control: s))
+        }
+
+        if target.capabilities.supportsColor {
+            let cw = NSColorWell()
+            colorWell = cw
+            controlsStack.addArrangedSubview(pickerRow("Color", control: cw))
+        } else if target.capabilities.supportsColorTemperature {
+            let s = NSSlider(value: 300, minValue: 153, maxValue: 500, target: nil, action: nil)
+            s.isContinuous = true
+            colorTempSlider = s
+            controlsStack.addArrangedSubview(pickerRow("Color Temp", control: s))
+        }
+
+        let sep = NSBox()
+        sep.boxType = .separator
+        sep.translatesAutoresizingMaskIntoConstraints = false
+        outerStack.addArrangedSubview(sep)
+        sep.widthAnchor.constraint(equalTo: outerStack.widthAnchor).isActive = true
+    }
+
+    private func pickerRow(_ title: String, control: NSView) -> NSStackView {
+        let label = NSTextField(labelWithString: title)
+        label.font = NSFont.systemFont(ofSize: 12)
+        label.widthAnchor.constraint(equalToConstant: 90).isActive = true
+        let stack = NSStackView(views: [label, control])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 8
+        control.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }
+
+    private func setupActions() {
+        includeCheckbox.target = self
+        includeCheckbox.action = #selector(includeToggled)
+        powerToggle?.target = self
+        powerToggle?.action = #selector(powerToggled)
+        brightnessSlider?.target = self
+        brightnessSlider?.action = #selector(brightnessChanged)
+        colorTempSlider?.target = self
+        colorTempSlider?.action = #selector(colorTempChanged)
+        colorWell?.target = self
+        colorWell?.action = #selector(colorChanged)
+    }
+
+    private func updateControlsVisibility() {
+        controlsStack.isHidden = includeCheckbox.state == .off
+    }
+
+    @objc private func hueStateChanged() {
+        refreshControls()
+    }
+
+    private func refreshControls() {
+        isProgrammaticUpdate = true
+        defer { isProgrammaticUpdate = false }
+        let state = manager.state(forTarget: target)
+        let connected = manager.connectionState == .connected
+        powerToggle?.isEnabled = connected
+        powerToggle?.state = (state?.isOn ?? false) ? .on : .off
+        brightnessSlider?.isEnabled = connected
+        brightnessSlider?.doubleValue = state?.brightness ?? 50
+        colorTempSlider?.isEnabled = connected
+        colorTempSlider?.doubleValue = Double(state?.mirek ?? 300)
+        colorWell?.isEnabled = connected
+        if let xy = state?.colorXY {
+            colorWell?.color = nsColor(fromHueXY: xy)
+        }
+    }
+
+    @objc private func includeToggled() {
+        updateControlsVisibility()
+    }
+
+    @objc private func powerToggled() {
+        guard !isProgrammaticUpdate, let pt = powerToggle else { return }
+        manager.setPower(on: pt.state == .on, for: target)
+    }
+
+    @objc private func brightnessChanged() {
+        guard !isProgrammaticUpdate, let s = brightnessSlider else { return }
+        manager.setBrightness(s.doubleValue, for: target)
+    }
+
+    @objc private func colorTempChanged() {
+        guard !isProgrammaticUpdate, let s = colorTempSlider else { return }
+        manager.setColorTemperature(mirek: Int(s.doubleValue.rounded()), for: target)
+    }
+
+    @objc private func colorChanged() {
         guard !isProgrammaticUpdate, let cw = colorWell else { return }
         let xy = hueXY(from: cw.color)
         manager.setColor(x: xy.x, y: xy.y, for: target)

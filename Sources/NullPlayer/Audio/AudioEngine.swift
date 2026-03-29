@@ -44,6 +44,16 @@ enum PlaybackState {
     case paused
 }
 
+struct AudioFeatureFrame {
+    let timestampNanos: UInt64
+    let spectrum75: [Float]
+    let bass: Float
+    let mid: Float
+    let high: Float
+    let onset: Float
+    let bpm: Int
+}
+
 /// Delegate protocol for audio engine events
 protocol AudioEngineDelegate: AnyObject {
     func audioEngineDidChangeState(_ state: PlaybackState)
@@ -398,6 +408,14 @@ class AudioEngine {
 
     /// Spectrum consumers — FFT is skipped entirely when this set is empty
     private var spectrumConsumers = Set<String>()
+
+    /// Low-latency feature consumers fed directly from the audio tap thread.
+    private var featureConsumers: [String: @Sendable (AudioFeatureFrame) -> Void] = [:]
+    private let featureConsumersLock = NSLock()
+    private var featurePreviousBassBands = Array(repeating: Float(0), count: 10)
+    private var featureRollingFlux = Array(repeating: Float(0), count: 24)
+    private var featureRollingFluxIndex = 0
+    private var currentBPMForFeatures: Int = 0
     
     /// Live waveform consumers — 576-sample waveform chunk generation is skipped entirely when this set is empty.
     private var waveformConsumers = Set<String>()
@@ -407,15 +425,34 @@ class AudioEngine {
 
     func addSpectrumConsumer(_ id: String) {
         spectrumConsumers.insert(id)
-        streamingPlayer?.spectrumNeeded = !spectrumConsumers.isEmpty
+        streamingPlayer?.spectrumNeeded = spectrumNeeded
     }
 
     func removeSpectrumConsumer(_ id: String) {
         spectrumConsumers.remove(id)
-        streamingPlayer?.spectrumNeeded = !spectrumConsumers.isEmpty
+        streamingPlayer?.spectrumNeeded = spectrumNeeded
     }
 
-    var spectrumNeeded: Bool { !spectrumConsumers.isEmpty }
+    var spectrumNeeded: Bool {
+        featureConsumersLock.lock()
+        let hasFeatureConsumers = !featureConsumers.isEmpty
+        featureConsumersLock.unlock()
+        return !spectrumConsumers.isEmpty || hasFeatureConsumers
+    }
+
+    func addFeatureConsumer(_ id: String, handler: @escaping @Sendable (AudioFeatureFrame) -> Void) {
+        featureConsumersLock.lock()
+        featureConsumers[id] = handler
+        featureConsumersLock.unlock()
+        streamingPlayer?.spectrumNeeded = spectrumNeeded
+    }
+
+    func removeFeatureConsumer(_ id: String) {
+        featureConsumersLock.lock()
+        featureConsumers.removeValue(forKey: id)
+        featureConsumersLock.unlock()
+        streamingPlayer?.spectrumNeeded = spectrumNeeded
+    }
 
     func addWaveformConsumer(_ id: String) {
         waveformConsumers.insert(id)
@@ -550,6 +587,13 @@ class AudioEngine {
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleBPMUpdated(_:)),
+            name: .bpmUpdated,
+            object: nil
+        )
+
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(handleSystemWillSleep),
@@ -634,6 +678,12 @@ class AudioEngine {
 
     @objc private func handleModernUIChanged() {
         isModernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+    }
+
+    @objc private func handleBPMUpdated(_ notification: Notification) {
+        if let bpm = notification.userInfo?["bpm"] as? Int {
+            currentBPMForFeatures = max(0, bpm)
+        }
     }
 
     // MARK: - Setup
@@ -1100,6 +1150,7 @@ class AudioEngine {
         // Smooth with previous values (decay) and update on main thread
         // Copy spectrum data to avoid data races since we reuse the buffer
         let spectrumCopy = Array(fftNewSpectrum)
+        publishFeatureFrame(spectrumCopy)
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             for i in 0..<bandCount {
@@ -1119,6 +1170,65 @@ class AudioEngine {
                 userInfo: ["spectrum": self.spectrumData]
             )
         }
+    }
+
+    private func publishFeatureFrame(_ spectrum: [Float]) {
+        featureConsumersLock.lock()
+        let handlers = Array(featureConsumers.values)
+        featureConsumersLock.unlock()
+        guard handlers.isEmpty == false else { return }
+        guard spectrum.count >= 75 else { return }
+
+        let bassBands = Array(spectrum[0...9])
+        let midBands = spectrum[10...29]
+        let highBands = spectrum[30...74]
+
+        let bass = bassBands.reduce(Float(0), +) / 10.0
+        let mid = midBands.reduce(Float(0), +) / 20.0
+        let high = highBands.reduce(Float(0), +) / 45.0
+
+        let flux = zip(bassBands, featurePreviousBassBands).reduce(Float(0)) { partial, pair in
+            let diff = pair.0 - pair.1
+            return partial + max(0, diff)
+        }
+        featurePreviousBassBands = bassBands
+
+        featureRollingFlux[featureRollingFluxIndex] = flux
+        featureRollingFluxIndex = (featureRollingFluxIndex + 1) % featureRollingFlux.count
+        let rollingMean = featureRollingFlux.reduce(0, +) / Float(featureRollingFlux.count)
+        let onset = rollingMean > 0 ? min(1, flux / (rollingMean * 1.5)) : 0
+
+        let frame = AudioFeatureFrame(
+            timestampNanos: DispatchTime.now().uptimeNanoseconds,
+            spectrum75: spectrum,
+            bass: bass,
+            mid: mid,
+            high: high,
+            onset: onset,
+            bpm: currentBPMForFeatures
+        )
+        for handler in handlers {
+            handler(frame)
+        }
+    }
+
+    private func resampleSpectrumTo75(_ levels: [Float]) -> [Float] {
+        guard levels.count != 75 else { return levels }
+        guard levels.isEmpty == false else { return Array(repeating: 0, count: 75) }
+        if levels.count == 1 {
+            return Array(repeating: levels[0], count: 75)
+        }
+
+        var output = Array(repeating: Float(0), count: 75)
+        let sourceMax = Double(levels.count - 1)
+        for index in 0..<75 {
+            let position = (Double(index) / 74.0) * sourceMax
+            let lower = Int(position.rounded(.down))
+            let upper = min(levels.count - 1, lower + 1)
+            let t = Float(position - Double(lower))
+            output[index] = (levels[lower] * (1 - t)) + (levels[upper] * t)
+        }
+        return output
     }
 
     private func enqueueWaveformSamplesAndPost(
@@ -4582,13 +4692,17 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
     }
     
     func streamingPlayerDidUpdateSpectrum(_ levels: [Float]) {
+        // Streaming path still needs feature frames for Hue reactive mode.
+        let normalizedLevels = resampleSpectrumTo75(levels)
+        spectrumData = normalizedLevels
+        publishFeatureFrame(normalizedLevels)
+
         // Forward spectrum data from streaming player to delegate
-        spectrumData = levels
-        delegate?.audioEngineDidUpdateSpectrum(levels)
+        delegate?.audioEngineDidUpdateSpectrum(normalizedLevels)
         NotificationCenter.default.post(
             name: .audioSpectrumDataUpdated,
             object: self,
-            userInfo: ["spectrum": levels]
+            userInfo: ["spectrum": normalizedLevels]
         )
     }
     

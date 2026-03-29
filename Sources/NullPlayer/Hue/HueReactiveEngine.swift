@@ -9,13 +9,9 @@ struct HueReactiveOutput {
 
 final class HueReactiveEngine {
     private let consumerID = "hueReactive"
-    private var observer: NSObjectProtocol?
     private weak var audioEngine: AudioEngine?
     private var onOutput: ((HueReactiveOutput) -> Void)?
 
-    private var previousBassBands = Array(repeating: Float(0), count: 10)
-    private var rollingFlux = Array(repeating: Double(0), count: 24)
-    private var rollingFluxIndex = 0
     private var emaBass: Double = 0
     private var emaMid: Double = 0
     private var emaHigh: Double = 0
@@ -32,40 +28,28 @@ final class HueReactiveEngine {
         self.settings = settings
         self.onOutput = onOutput
 
-        audioEngine.addSpectrumConsumer(consumerID)
-        observer = NotificationCenter.default.addObserver(
-            forName: .audioSpectrumDataUpdated,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            self?.handleSpectrum(notification)
+        audioEngine.addFeatureConsumer(consumerID) { [weak self] frame in
+            self?.handleFeatureFrame(frame)
         }
     }
 
     func stop() {
-        if let observer {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        observer = nil
         if let audioEngine {
-            audioEngine.removeSpectrumConsumer(consumerID)
+            audioEngine.removeFeatureConsumer(consumerID)
         }
         audioEngine = nil
         onOutput = nil
         beatActive = false
-        previousBassBands = Array(repeating: Float(0), count: 10)
-        rollingFlux = Array(repeating: Double(0), count: 24)
-        rollingFluxIndex = 0
+        emaBass = 0
+        emaMid = 0
+        emaHigh = 0
     }
 
     func updateSettings(_ settings: HueReactiveSettings) {
         self.settings = settings
     }
 
-    private func handleSpectrum(_ notification: Notification) {
-        guard settings.mode == .groupFallback else { return }
-        guard let spectrum = notification.userInfo?["spectrum"] as? [Float], spectrum.count >= 75 else { return }
-
+    private func handleFeatureFrame(_ frame: AudioFeatureFrame) {
         let now = Date()
         let maxRate = 4.0 + (settings.speed * 4.0)
         let minInterval = 1.0 / maxRate
@@ -73,31 +57,16 @@ final class HueReactiveEngine {
             return
         }
 
-        let bassBands = Array(spectrum[0...9])
-        let midBands = spectrum[10...29]
-        let highBands = spectrum[30...74]
-
-        let bass = Double(bassBands.reduce(0, +)) / 10.0
-        let mid = Double(midBands.reduce(0, +)) / 20.0
-        let high = Double(highBands.reduce(0, +)) / 45.0
-
-        let flux = zip(bassBands, previousBassBands).reduce(Double(0)) { partial, pair in
-            let diff = Double(pair.0 - pair.1)
-            return partial + max(0, diff)
-        }
-        previousBassBands = bassBands
-
-        rollingFlux[rollingFluxIndex] = flux
-        rollingFluxIndex = (rollingFluxIndex + 1) % rollingFlux.count
-        let rollingMean = rollingFlux.reduce(0, +) / Double(rollingFlux.count)
-        let threshold = rollingMean * 1.5
-        let beatConfidence = threshold > 0 ? min(1, flux / threshold) : 0
+        let bass = Double(frame.bass)
+        let mid = Double(frame.mid)
+        let high = Double(frame.high)
+        let beatConfidence = Double(frame.onset)
 
         emaBass = alpha * bass + (1 - alpha) * emaBass
         emaMid = alpha * mid + (1 - alpha) * emaMid
         emaHigh = alpha * high + (1 - alpha) * emaHigh
 
-        let candidateBeatActive = beatConfidence > 1.0
+        let candidateBeatActive = beatConfidence > 0.8
         if candidateBeatActive != beatActive {
             if now.timeIntervalSince(lastBeatTransition) >= 0.08 {
                 beatActive = candidateBeatActive

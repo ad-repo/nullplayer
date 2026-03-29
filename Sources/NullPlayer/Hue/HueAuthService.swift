@@ -20,6 +20,8 @@ enum HueAuthError: LocalizedError {
 final class HueAuthService {
     private enum Keys {
         static let appKey = "hue_app_key"
+        static let clientKey = "hue_client_key"
+        static let hueApplicationID = "hue_application_id"
         static let bridgeID = "hue_bridge_id"
         static let bridgeIP = "hue_bridge_ip"
     }
@@ -38,19 +40,34 @@ final class HueAuthService {
         keychain.getString(forKey: Keys.appKey)
     }
 
-    func saveCredentials(appKey: String, bridge: HueBridge) {
+    func clientKey() -> String? {
+        keychain.getString(forKey: Keys.clientKey)
+    }
+
+    func hueApplicationID() -> String? {
+        keychain.getString(forKey: Keys.hueApplicationID)
+    }
+
+    func saveHueApplicationID(_ hueApplicationID: String) {
+        _ = keychain.setString(hueApplicationID, forKey: Keys.hueApplicationID)
+    }
+
+    func saveCredentials(appKey: String, clientKey: String, bridge: HueBridge) {
         _ = keychain.setString(appKey, forKey: Keys.appKey)
+        _ = keychain.setString(clientKey, forKey: Keys.clientKey)
         _ = keychain.setString(bridge.id.lowercased(), forKey: Keys.bridgeID)
         _ = keychain.setString(bridge.ipAddress, forKey: Keys.bridgeIP)
     }
 
     func clearCredentials() {
         keychain.deleteString(forKey: Keys.appKey)
+        keychain.deleteString(forKey: Keys.clientKey)
+        keychain.deleteString(forKey: Keys.hueApplicationID)
         keychain.deleteString(forKey: Keys.bridgeID)
         keychain.deleteString(forKey: Keys.bridgeIP)
     }
 
-    func pair(bridge: HueBridge, session: URLSession) async throws -> String {
+    func pair(bridge: HueBridge, session: URLSession) async throws -> OpenHuePairingCredentials {
         let client = OpenHueGeneratedClient(bridge: bridge, appKey: nil, session: session)
         do {
             return try await client.createLinkToken(deviceType: "nullplayer#mac")

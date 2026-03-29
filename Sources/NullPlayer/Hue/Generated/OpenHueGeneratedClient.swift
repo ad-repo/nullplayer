@@ -23,6 +23,11 @@ enum HueClientError: LocalizedError {
     }
 }
 
+struct OpenHuePairingCredentials {
+    let appKey: String
+    let clientKey: String
+}
+
 final class OpenHueGeneratedClient {
     private let bridge: HueBridge
     private let appKey: String?
@@ -58,6 +63,30 @@ final class OpenHueGeneratedClient {
         try await getResource(path: "/clip/v2/resource/scene")
     }
 
+    func getEntertainmentConfigurations() async throws -> [OpenHueEntertainmentConfigurationResource] {
+        try await getResource(path: "/clip/v2/resource/entertainment_configuration")
+    }
+
+    func getEntertainment(id: String) async throws -> OpenHueEntertainmentResource {
+        let resources: [OpenHueEntertainmentResource] = try await getResource(path: "/clip/v2/resource/entertainment/\(id)")
+        guard let resource = resources.first else {
+            throw HueClientError.invalidResponse
+        }
+        return resource
+    }
+
+    func getHueApplicationID() async throws -> String {
+        let (_, response) = try await request(path: "/auth/v1", method: "GET")
+        guard let http = response as? HTTPURLResponse else {
+            throw HueClientError.invalidResponse
+        }
+        guard let hueApplicationID = http.value(forHTTPHeaderField: "hue-application-id"),
+              hueApplicationID.isEmpty == false else {
+            throw HueClientError.invalidResponse
+        }
+        return hueApplicationID
+    }
+
     func setGroupedLight(id: String, payload: [String: Any]) async throws {
         try await put(path: "/clip/v2/resource/grouped_light/\(id)", payload: payload)
     }
@@ -72,15 +101,39 @@ final class OpenHueGeneratedClient {
         ])
     }
 
-    func createScene(payload: [String: Any]) async throws {
-        _ = try await request(path: "/clip/v2/resource/scene", method: "POST", payload: payload)
+    @discardableResult
+    func createScene(payload: [String: Any]) async throws -> String {
+        try await postResource(path: "/clip/v2/resource/scene", payload: payload)
     }
 
     func deleteScene(id: String) async throws {
         _ = try await request(path: "/clip/v2/resource/scene/\(id)", method: "DELETE")
     }
 
-    func createLinkToken(deviceType: String) async throws -> String {
+    @discardableResult
+    func createZone(payload: [String: Any]) async throws -> String {
+        try await postResource(path: "/clip/v2/resource/zone", payload: payload)
+    }
+
+    func deleteZone(id: String) async throws {
+        _ = try await request(path: "/clip/v2/resource/zone/\(id)", method: "DELETE")
+    }
+
+    func startEntertainment(id: String) async throws {
+        try await put(
+            path: "/clip/v2/resource/entertainment_configuration/\(id)",
+            payload: ["action": "start"]
+        )
+    }
+
+    func stopEntertainment(id: String) async throws {
+        try await put(
+            path: "/clip/v2/resource/entertainment_configuration/\(id)",
+            payload: ["action": "stop"]
+        )
+    }
+
+    func createLinkToken(deviceType: String) async throws -> OpenHuePairingCredentials {
         guard let url = URL(string: "\(bridge.baseURLString)/api") else {
             throw HueClientError.invalidBridgeURL
         }
@@ -121,8 +174,10 @@ final class OpenHueGeneratedClient {
         }
         if let success = items.first?.success,
            let username = success.username,
-           !username.isEmpty {
-            return username
+           !username.isEmpty,
+           let clientKey = success.clientkey,
+           !clientKey.isEmpty {
+            return OpenHuePairingCredentials(appKey: username, clientKey: clientKey)
         }
 
         if let error = items.first?.error {
@@ -131,6 +186,18 @@ final class OpenHueGeneratedClient {
         }
 
         throw HueClientError.invalidResponse
+    }
+
+    private func postResource(path: String, payload: [String: Any]) async throws -> String {
+        let (data, _) = try await request(path: path, method: "POST", payload: payload)
+        let envelope = try JSONDecoder().decode(OpenHueEnvelope<OpenHueResourceIdentifier>.self, from: data)
+        if let error = envelope.errors?.first?.description {
+            throw HueClientError.apiError(error)
+        }
+        guard let id = envelope.data.first?.rid else {
+            throw HueClientError.invalidResponse
+        }
+        return id
     }
 
     private func getResource<T: Decodable>(path: String) async throws -> [T] {

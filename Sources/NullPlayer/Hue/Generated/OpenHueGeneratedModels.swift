@@ -96,6 +96,44 @@ struct OpenHueSceneResource: Decodable {
     let actions: [OpenHueSceneAction]?
 }
 
+struct OpenHueEntertainmentChannelMember: Decodable {
+    let service: OpenHueResourceIdentifier?
+    let index: Int?
+}
+
+struct OpenHueEntertainmentChannel: Decodable {
+    let channelID: Int
+    let members: [OpenHueEntertainmentChannelMember]?
+
+    enum CodingKeys: String, CodingKey {
+        case channelID = "channel_id"
+        case members
+    }
+}
+
+struct OpenHueEntertainmentConfigurationResource: Decodable {
+    let id: String
+    let metadata: OpenHueMetadata?
+    let status: String?
+    let channels: [OpenHueEntertainmentChannel]?
+    let lightServices: [OpenHueResourceIdentifier]?
+    let activeStreamer: OpenHueResourceIdentifier?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case metadata
+        case status
+        case channels
+        case lightServices = "light_services"
+        case activeStreamer = "active_streamer"
+    }
+}
+
+struct OpenHueEntertainmentResource: Decodable {
+    let id: String
+    let owner: OpenHueResourceIdentifier?
+}
+
 struct OpenHueSceneAction: Decodable {
     let target: OpenHueResourceIdentifier?
     let action: OpenHueLightAction?

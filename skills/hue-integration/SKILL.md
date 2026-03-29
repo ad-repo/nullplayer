@@ -17,8 +17,12 @@ NullPlayer integrates with Philips Hue bridges over the local network using CLIP
 | `Hue/HueBridgeSession.swift` | Dedicated pinned `URLSession` + TLS validation delegate for bridge trust |
 | `Hue/HueCommandQueue.swift` | Command coalescing + rate limiting (global and per-slider target) |
 | `Hue/HueReactiveEngine.swift` | Spectrum-driven reactive output (brightness + CCT + XY) |
+| `Hue/HueEntertainmentEngine.swift` | DTLS/UDP entertainment transport lifecycle, packet send loop, and keepalive |
+| `Hue/HueEntertainmentPacketBuilder.swift` | HueStream v2 packet encoding (`HueStream`, version, colorspace, area ID, channels) |
+| `Hue/HueLightshowOrchestrator.swift` | Maps audio feature frames to per-channel brightness/XY animation frames |
 | `Hue/Generated/OpenHueGeneratedClient.swift` | REST client for CLIP v2 resources and writes |
 | `Hue/Generated/OpenHueGeneratedModels.swift` | Decodable resource models and envelope parsing |
+| `Audio/AudioEngine.swift` | Emits `AudioFeatureFrame` to feature consumers (Hue uses this for low-latency reactive streaming) |
 | `Windows/HueControl/HueControlView.swift` | AppKit controls for discovery/pairing/target/scene/light state |
 | `Windows/HueControl/HueControlWindowController.swift` | Hue window host/lifecycle |
 | `App/WindowManager.swift` | Hue window visibility, restore, always-on-top behavior integration |
@@ -63,6 +67,8 @@ Both are posted from `HueManager` and consumed by `HueControlView`.
 
 Keychain (generic string storage):
 - `hue_app_key`
+- `hue_client_key`
+- `hue_application_id` (from `/auth/v1` response header `hue-application-id`; used as DTLS PSK identity)
 - `hue_bridge_id`
 - `hue_bridge_ip`
 
@@ -82,12 +88,15 @@ Read resources:
 - `/clip/v2/resource/zone`
 - `/clip/v2/resource/device`
 - `/clip/v2/resource/scene`
+- `/clip/v2/resource/entertainment_configuration`
+- `/auth/v1` (header-only read for `hue-application-id`)
 
 Write resources:
 - `PUT /clip/v2/resource/light/{id}`
 - `PUT /clip/v2/resource/grouped_light/{id}`
 - `PUT /clip/v2/resource/scene/{id}` — scene recall (`"recall": {"action": "active"}`)
 - `POST /clip/v2/resource/scene` — scene creation (see Scene Creation below)
+- `PUT /clip/v2/resource/entertainment_configuration/{id}` with `{"action":"start"}` / `{"action":"stop"}`
 
 Event stream probes (in order):
 - `/eventstream/clip/v2`
@@ -208,32 +217,34 @@ UI entry point: `HueControlView` Scene section — name text field + "Save Scene
 
 When debugging "controls do nothing", this swallowed error behavior is a primary suspect; inspect logs first.
 
-## Reactive Mode (v1 Group Fallback)
+## Reactive Modes
 
-Reactive mode currently supports:
+Reactive mode supports:
 - `off`
-- `groupFallback`
+- `entertainment` (low-latency DTLS stream)
+- `groupFallback` (grouped-light REST path)
 
-Data source:
-- `audioSpectrumDataUpdated` notification.
-- `userInfo["spectrum"]` expected as 75-band `[Float]`.
+### Entertainment mode pipeline
+1. User selects a room in `HueControlView`; manager resolves room light IDs.
+2. `HueManager.startEntertainmentPipeline` picks the best entertainment area by light overlap (`light_services` intersection).
+3. Manager starts area via `PUT .../entertainment_configuration/{id} {"action":"start"}`.
+4. Manager ensures DTLS credentials:
+   - `hue_client_key` (PSK key bytes),
+   - `hue_application_id` (PSK identity; fetched from `/auth/v1` and cached in keychain).
+5. `HueEntertainmentEngine` opens DTLS/UDP to bridge `:2100` and streams HueStream v2 packets.
+6. Audio path:
+   - `HueManager` registers a feature consumer with `AudioEngine.addFeatureConsumer("hueEntertainment", ...)`.
+   - `AudioEngine` produces `AudioFeatureFrame` from local tap and streaming delegate path.
+   - `HueLightshowOrchestrator` maps feature frame -> per-channel XY/brightness frame.
+   - `HueEntertainmentPacketBuilder` encodes and `HueEntertainmentEngine.push(...)` sends.
 
-Signal processing in `HueReactiveEngine`:
-- Band partitions:
-  - 0-9 bass
-  - 10-29 mid
-  - 30-74 high
-- Bass spectral flux for onset/beat confidence.
-- Rolling mean threshold (`1.5x`) for beat gating.
-- EMA smoothing (`alpha = 0.3`).
-- Hysteresis (`>= 80ms`) for beat state transitions.
-- Dispatch cap based on speed setting (`4-8 Hz`).
+### Group fallback mode
+- Uses `HueReactiveEngine` + `HueCommandQueue` REST writes to selected grouped target.
+- Same signal model (bass/mid/high partition, onset, smoothing), lower output cadence than entertainment stream.
 
-Output mapping:
-- Brightness 0...1
-- XY color lane from spectral tilt (sent as `"color"` only — no `"color_temperature"` in the same payload)
-
-Commands are still sent through `HueCommandQueue`.
+### Streaming source gotcha (important)
+- If lights react for local files but not stream/radio, verify streaming feature frames are emitted.
+- Current implementation explicitly calls `publishFeatureFrame(...)` from `streamingPlayerDidUpdateSpectrum(...)` and resamples to 75 bands when needed.
 
 ## TLS and Session Security
 
@@ -267,6 +278,9 @@ Practical implications:
    - Trust failures / bridge ID mismatch.
 8. Check event stream status:
    - 4xx disables stream loop; state sync then depends on explicit refresh calls.
+9. For reactive entertainment: check feature-frame flow and DTLS send telemetry:
+   - `HueManager: entertainment has zero audio feature frames after 3s` means transport may be fine but audio features are not reaching Hue path.
+   - `HueEntertainmentEngine: DTLS ready` without `HueEntertainmentEngine: packets sent=...` indicates no frame ingress.
 
 ## Common Failure Classes
 
@@ -276,6 +290,8 @@ Practical implications:
 - UI restricted to room-only targets when resource graph is incomplete.
 - Command failures hidden by queue logging-only behavior.
 - TLS identity mismatch when expected bridge ID differs from cert summary token.
+- Entertainment PSK identity mismatch (using app key instead of `hue-application-id`) causes no effective stream control.
+- Streaming playback path not emitting feature frames to Hue consumer.
 
 ## Debug Logging Hotspots
 
@@ -284,9 +300,13 @@ Practical implications:
   - Pair/connect/refresh failures
   - Scene filter/application diagnostics
   - Event stream retries and disablement
+  - Entertainment feature feed registration/removal and feature-frame counters
 - `OpenHueGeneratedClient`:
   - HTTP status/body snippets for failed requests
   - Decode failures on `POST /api` pairing
+- `HueEntertainmentEngine`:
+  - DTLS state transitions (`starting`, `ready`, `waiting`, `failed`, `cancelled`)
+  - Packet send/throttle stats and send failures
 - `HueCommandQueue`:
   - Command execution failures per dedupe key
 - `HueBridgeDiscoveryService`:
@@ -330,8 +350,9 @@ Manual:
 5a. Scene creation: type a name, click Save Scene — new scene appears in the popup after refresh; bridge confirms creation.
 6. Individual Lights section appears after room selection; per-light controls match each light's capabilities.
 7. Color well shows the correct hue after a scene is applied; picking a new color sends correct XY to the bridge.
-8. Reactive mode responds while local/streaming playback is active.
-9. Forget/reconnect flows recover cleanly.
+8. Reactive mode responds while local playback is active.
+9. Reactive mode responds while streaming/radio playback is active (verify feature-frame logs and packet-send logs).
+10. Forget/reconnect flows recover cleanly.
 
 Integration/unit targets to prioritize:
 1. Resource graph mapping (room/zone/device/light/grouped_light relationships).

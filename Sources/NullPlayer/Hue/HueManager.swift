@@ -9,14 +9,22 @@ final class HueManager {
         static let reactiveMode = "hue_reactive_mode"
         static let reactiveIntensity = "hue_reactive_intensity"
         static let reactiveSpeed = "hue_reactive_speed"
+        static let reactivePreset = "hue_reactive_preset"
         static let sceneAssignments = "hue_scene_assignments_v1"
         static let multiRoomScenes = "hue_multi_room_scenes_v1"
+        static let entertainmentEnabled = "hue_entertainment_enabled"
+        static let entertainmentForceFallback = "hue_entertainment_force_fallback"
+        static let entertainmentAutoResume = "hue_entertainment_auto_resume"
+        static let entertainmentTargetFPS = "hue_entertainment_target_fps"
+        static let entertainmentDebugStats = "hue_entertainment_debug_stats"
     }
 
     private let discoveryService = HueBridgeDiscoveryService()
     private let authService = HueAuthService()
     private let commandQueue = HueCommandQueue()
     private let reactiveEngine = HueReactiveEngine()
+    private let entertainmentEngine = HueEntertainmentEngine()
+    private let lightshowOrchestrator = HueLightshowOrchestrator()
 
     private var pinnedSession: URLSession?
     private var eventStreamTask: Task<Void, Never>?
@@ -37,6 +45,8 @@ final class HueManager {
 
     private(set) var currentBridge: HueBridge?
     private(set) var appKey: String?
+    private(set) var clientKey: String?
+    private(set) var hueApplicationID: String?
 
     private var lightsByID: [String: OpenHueLightResource] = [:]
     private var groupedLightsByID: [String: OpenHueGroupedLightResource] = [:]
@@ -49,6 +59,14 @@ final class HueManager {
 
     private var groupedLightStateByID: [String: HueLightState] = [:]
     private var lightStateByID: [String: HueLightState] = [:]
+    private var entertainmentAreaID: String?
+    private var entertainmentLightIDs: [String] = []
+    private var entertainmentChannelByLightID: [String: UInt8] = [:]
+    private var entertainmentFeatureConsumerRegistered = false
+    private var entertainmentFeatureFramesSinceStart: UInt64 = 0
+    private var entertainmentLastFrameLogNanos: UInt64 = 0
+    private var reactivePipelineGeneration: UInt64 = 0
+    private let entertainmentFeatureConsumerID = "hueEntertainment"
 
     private(set) var selectedTargetID: String? {
         didSet {
@@ -66,6 +84,43 @@ final class HueManager {
         }
     }
 
+    private(set) var lightshowPreset: HueLightshowPreset {
+        didSet {
+            UserDefaults.standard.set(lightshowPreset.rawValue, forKey: DefaultsKeys.reactivePreset)
+            NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+        }
+    }
+
+    private(set) var entertainmentEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(entertainmentEnabled, forKey: DefaultsKeys.entertainmentEnabled)
+        }
+    }
+
+    private(set) var entertainmentForceFallback: Bool {
+        didSet {
+            UserDefaults.standard.set(entertainmentForceFallback, forKey: DefaultsKeys.entertainmentForceFallback)
+        }
+    }
+
+    private(set) var entertainmentAutoResume: Bool {
+        didSet {
+            UserDefaults.standard.set(entertainmentAutoResume, forKey: DefaultsKeys.entertainmentAutoResume)
+        }
+    }
+
+    private(set) var entertainmentTargetFPS: Int {
+        didSet {
+            UserDefaults.standard.set(entertainmentTargetFPS, forKey: DefaultsKeys.entertainmentTargetFPS)
+        }
+    }
+
+    private(set) var entertainmentDebugStats: Bool {
+        didSet {
+            UserDefaults.standard.set(entertainmentDebugStats, forKey: DefaultsKeys.entertainmentDebugStats)
+        }
+    }
+
     private init() {
         let defaults = UserDefaults.standard
         selectedTargetID = defaults.string(forKey: DefaultsKeys.selectedTargetID)
@@ -79,6 +134,16 @@ final class HueManager {
             intensity: max(0.1, min(1.0, storedIntensity)),
             speed: max(0.0, min(1.0, storedSpeed))
         )
+        lightshowPreset = defaults.string(forKey: DefaultsKeys.reactivePreset)
+            .flatMap(HueLightshowPreset.init(rawValue:)) ?? .auto
+        entertainmentEnabled = defaults.object(forKey: DefaultsKeys.entertainmentEnabled) as? Bool ?? true
+        entertainmentForceFallback = defaults.object(forKey: DefaultsKeys.entertainmentForceFallback) as? Bool ?? false
+        entertainmentAutoResume = defaults.object(forKey: DefaultsKeys.entertainmentAutoResume) as? Bool ?? true
+        entertainmentTargetFPS = max(20, min(60, defaults.object(forKey: DefaultsKeys.entertainmentTargetFPS) as? Int ?? 50))
+        entertainmentDebugStats = defaults.object(forKey: DefaultsKeys.entertainmentDebugStats) as? Bool ?? false
+        lightshowOrchestrator.setPreset(lightshowPreset)
+        lightshowOrchestrator.setIntensity(reactiveSettings.intensity)
+        lightshowOrchestrator.setSpeed(reactiveSettings.speed)
 
         if let data = defaults.data(forKey: DefaultsKeys.sceneAssignments),
            let decoded = try? JSONDecoder().decode([String: [String]].self, from: data) {
@@ -96,6 +161,26 @@ final class HueManager {
             name: NSWorkspace.didWakeNotification,
             object: nil
         )
+
+        entertainmentEngine.onStateChange = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .idle:
+                break
+            case .connecting:
+                self.startEntertainmentFeatureFeed()
+                self.diagnosticsMessage = "Hue Entertainment connecting"
+                NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+            case .streaming:
+                self.diagnosticsMessage = "Hue Entertainment streaming"
+                self.startEntertainmentFeatureFeed()
+                NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+            case .failed(let reason):
+                self.stopEntertainmentFeatureFeed()
+                self.diagnosticsMessage = "Entertainment failed: \(reason)"
+                NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+            }
+        }
     }
 
     @objc private func handleDidWake() {
@@ -112,6 +197,10 @@ final class HueManager {
 
     var hasPairedBridge: Bool {
         authService.pairedBridgeID() != nil && authService.appKey() != nil
+    }
+
+    var hasEntertainmentCredentials: Bool {
+        hasPairedBridge && authService.clientKey() != nil && authService.hueApplicationID() != nil
     }
 
     var isHueAvailable: Bool {
@@ -308,6 +397,8 @@ final class HueManager {
 
         let bridge = HueBridge(id: bridgeID.lowercased(), ipAddress: bridgeIP, name: "Hue Bridge", port: 443)
         self.appKey = appKey
+        self.clientKey = authService.clientKey()
+        self.hueApplicationID = authService.hueApplicationID()
         currentBridge = bridge
         pinnedSession = HueBridgeSessionFactory.makePinnedSession(expectedBridgeID: bridge.id)
 
@@ -326,10 +417,16 @@ final class HueManager {
 
         Task {
             do {
-                let appKey = try await self.authService.pair(bridge: bridge, session: session)
+                let credentials = try await self.authService.pair(bridge: bridge, session: session)
                 await MainActor.run {
-                    self.authService.saveCredentials(appKey: appKey, bridge: bridge)
-                    self.appKey = appKey
+                    self.authService.saveCredentials(
+                        appKey: credentials.appKey,
+                        clientKey: credentials.clientKey,
+                        bridge: bridge
+                    )
+                    self.appKey = credentials.appKey
+                    self.clientKey = credentials.clientKey
+                    self.hueApplicationID = nil
                     self.currentBridge = bridge
                 }
                 await self.connectToCurrentBridge(refreshOnly: false)
@@ -364,12 +461,14 @@ final class HueManager {
         eventStreamTask = nil
         eventRefreshTask?.cancel()
         eventRefreshTask = nil
+        stopReactivePipelines()
         Task {
             await commandQueue.cancelAll()
         }
-        reactiveEngine.stop()
         currentBridge = nil
         appKey = nil
+        clientKey = nil
+        hueApplicationID = nil
         pinnedSession?.invalidateAndCancel()
         pinnedSession = nil
         connectionState = .disconnected
@@ -702,11 +801,41 @@ final class HueManager {
     func setReactiveIntensity(_ intensity: Double) {
         reactiveSettings.intensity = max(0.1, min(1.0, intensity))
         reactiveEngine.updateSettings(reactiveSettings)
+        lightshowOrchestrator.setIntensity(reactiveSettings.intensity)
     }
 
     func setReactiveSpeed(_ speed: Double) {
         reactiveSettings.speed = max(0.0, min(1.0, speed))
         reactiveEngine.updateSettings(reactiveSettings)
+        lightshowOrchestrator.setSpeed(reactiveSettings.speed)
+    }
+
+    func setLightshowPreset(_ preset: HueLightshowPreset) {
+        lightshowPreset = preset
+        lightshowOrchestrator.setPreset(preset)
+    }
+
+    func setEntertainmentEnabled(_ enabled: Bool) {
+        entertainmentEnabled = enabled
+        updateReactiveEngineState()
+    }
+
+    func setEntertainmentForceFallback(_ enabled: Bool) {
+        entertainmentForceFallback = enabled
+        updateReactiveEngineState()
+    }
+
+    func setEntertainmentAutoResume(_ enabled: Bool) {
+        entertainmentAutoResume = enabled
+    }
+
+    func setEntertainmentTargetFPS(_ fps: Int) {
+        entertainmentTargetFPS = max(20, min(60, fps))
+        updateReactiveEngineState()
+    }
+
+    func setEntertainmentDebugStats(_ enabled: Bool) {
+        entertainmentDebugStats = enabled
     }
 
     // MARK: - Internal connection/state
@@ -722,6 +851,12 @@ final class HueManager {
         if appKey == nil {
             appKey = authService.appKey()
         }
+        if clientKey == nil {
+            clientKey = authService.clientKey()
+        }
+        if hueApplicationID == nil {
+            hueApplicationID = authService.hueApplicationID()
+        }
         guard appKey != nil else {
             NSLog("HueManager: connect requested without app key (bridge not paired yet)")
             connectionState = .awaitingLinkButton
@@ -729,12 +864,29 @@ final class HueManager {
             return
         }
 
+        await refreshHueApplicationIDIfNeeded()
         await refreshResources(reason: "Connected to Hue bridge")
         if connectionState == .connected {
             startEventStreamIfNeeded()
-            if refreshOnly == false {
+            if refreshOnly == false || entertainmentAutoResume {
                 updateReactiveEngineState()
             }
+        }
+    }
+
+    private func refreshHueApplicationIDIfNeeded() async {
+        guard hueApplicationID == nil else { return }
+        guard let client = buildClient() else { return }
+
+        do {
+            let resolvedID = try await client.getHueApplicationID()
+            await MainActor.run {
+                self.hueApplicationID = resolvedID
+                self.authService.saveHueApplicationID(resolvedID)
+            }
+            NSLog("HueManager: resolved hue-application-id %@", resolvedID)
+        } catch {
+            NSLog("HueManager: failed to resolve hue-application-id: %@", error.localizedDescription)
         }
     }
 
@@ -907,38 +1059,38 @@ final class HueManager {
     }
 
     private func updateReactiveEngineState() {
-        guard connectionState == .connected else {
-            reactiveEngine.stop()
-            return
-        }
+        reactivePipelineGeneration &+= 1
+        let generation = reactivePipelineGeneration
+        stopReactivePipelines()
 
-        guard reactiveSettings.mode == .groupFallback else {
-            reactiveEngine.stop()
-            return
-        }
+        guard connectionState == .connected else { return }
+        guard selectedTarget != nil else { return }
 
-        guard selectedTarget != nil else {
-            reactiveEngine.stop()
-            return
+        switch reactiveSettings.mode {
+        case .off:
+            diagnosticsMessage = "Reactive mode disabled"
+            NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+        case .groupFallback:
+            startGroupReactivePipeline(reason: "Reactive fallback mode enabled")
+        case .entertainment:
+            startEntertainmentPipeline(generation: generation)
         }
-
-        reactiveEngine.start(audioEngine: WindowManager.shared.audioEngine, settings: reactiveSettings) { [weak self] output in
-            self?.applyReactiveOutput(output)
-        }
-        diagnosticsMessage = "Reactive mode enabled"
-        NotificationCenter.default.post(name: .hueStateDidChange, object: self)
     }
 
     private func applyReactiveOutput(_ output: HueReactiveOutput) {
         guard let target = selectedTarget else { return }
         let brightnessPercent = output.brightness * 100.0
 
-        // color and color_temperature are mutually exclusive in CLIP v2; send color (XY) only
         sendStateCommand(for: target, dedupeKey: "reactive", isSliderLike: false) { client, id, type in
-            let payload: [String: Any] = [
-                "dimming": ["brightness": brightnessPercent],
-                "color": ["xy": ["x": output.xy.x, "y": output.xy.y]]
+            var payload: [String: Any] = [
+                "dimming": ["brightness": brightnessPercent]
             ]
+            if target.capabilities.supportsColor {
+                // color and color_temperature are mutually exclusive in CLIP v2; prefer XY for color-capable targets
+                payload["color"] = ["xy": ["x": output.xy.x, "y": output.xy.y]]
+            } else if target.capabilities.supportsColorTemperature {
+                payload["color_temperature"] = ["mirek": output.mirek]
+            }
             switch type {
             case .light:
                 try await client.setLight(id: id, payload: payload)
@@ -946,6 +1098,214 @@ final class HueManager {
                 try await client.setGroupedLight(id: id, payload: payload)
             }
         }
+    }
+
+    private func startGroupReactivePipeline(reason: String) {
+        reactiveEngine.start(audioEngine: WindowManager.shared.audioEngine, settings: reactiveSettings) { [weak self] output in
+            self?.applyReactiveOutput(output)
+        }
+        diagnosticsMessage = reason
+        NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+    }
+
+    private func startEntertainmentPipeline(generation: UInt64) {
+        guard let target = selectedTarget else {
+            setEntertainmentFailure("Select a room before starting entertainment mode")
+            return
+        }
+        let selectedLightIDs = Set(resolvedLightIDs(for: target))
+        guard selectedLightIDs.isEmpty == false else {
+            setEntertainmentFailure("Selected room has no controllable lights")
+            return
+        }
+
+        guard let bridge = currentBridge,
+              let clientKey = clientKey ?? authService.clientKey() else {
+            setEntertainmentFailure("Entertainment requires complete bridge credentials")
+            return
+        }
+        guard let client = buildClient() else {
+            setEntertainmentFailure("Hue bridge client unavailable")
+            return
+        }
+
+        diagnosticsMessage = "Starting Hue Entertainment session"
+        NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+
+        Task {
+            do {
+                var resolvedPSKIdentity = self.hueApplicationID ?? self.authService.hueApplicationID()
+                if resolvedPSKIdentity == nil {
+                    let fetchedPSKIdentity = try await client.getHueApplicationID()
+                    resolvedPSKIdentity = fetchedPSKIdentity
+                    await MainActor.run {
+                        self.hueApplicationID = fetchedPSKIdentity
+                        self.authService.saveHueApplicationID(fetchedPSKIdentity)
+                    }
+                }
+                guard let pskIdentity = resolvedPSKIdentity, pskIdentity.isEmpty == false else {
+                    throw HueClientError.apiError("Entertainment requires complete bridge credentials")
+                }
+
+                let configs = try await client.getEntertainmentConfigurations()
+                guard let areaSelection = selectEntertainmentArea(
+                    for: selectedLightIDs,
+                    from: configs
+                ) else {
+                    throw HueClientError.apiError("No entertainment area found on Hue bridge")
+                }
+                let area = areaSelection.area
+                let channelIDs = (area.channels ?? [])
+                    .compactMap { UInt8(exactly: $0.channelID) }
+                    .sorted()
+                guard channelIDs.isEmpty == false else {
+                    throw HueClientError.apiError("Entertainment area has no stream channels")
+                }
+                let channelMap = Dictionary(
+                    uniqueKeysWithValues: channelIDs.map { channelID in
+                        ("channel:\(channelID)", channelID)
+                    }
+                )
+
+                guard generation == self.reactivePipelineGeneration else { return }
+                try await client.startEntertainment(id: area.id)
+                guard generation == self.reactivePipelineGeneration else {
+                    try? await client.stopEntertainment(id: area.id)
+                    return
+                }
+
+                entertainmentAreaID = area.id
+                entertainmentLightIDs = channelIDs.map { "channel:\($0)" }
+                entertainmentChannelByLightID = channelMap
+                entertainmentFeatureFramesSinceStart = 0
+                entertainmentLastFrameLogNanos = 0
+                lightshowOrchestrator.setPreset(lightshowPreset)
+                lightshowOrchestrator.setIntensity(reactiveSettings.intensity)
+                lightshowOrchestrator.setSpeed(reactiveSettings.speed)
+                lightshowOrchestrator.resetForTrackChange()
+
+                entertainmentEngine.configure(
+                    bridge: bridge,
+                    pskIdentity: pskIdentity,
+                    clientKey: clientKey,
+                    entertainmentAreaID: area.id,
+                    targetFPS: entertainmentTargetFPS
+                )
+                entertainmentEngine.start()
+                let areaName = area.metadata?.name ?? area.id
+                diagnosticsMessage = "Entertainment '\(areaName)' session started (\(areaSelection.matchedLights) room lights, \(channelIDs.count) channels)"
+                NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+
+                Task { [weak self] in
+                    guard let self else { return }
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    guard generation == self.reactivePipelineGeneration else { return }
+                    if self.entertainmentFeatureFramesSinceStart == 0 {
+                        self.diagnosticsMessage = "Entertainment active but no audio feature frames"
+                        NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+                        NSLog("HueManager: entertainment has zero audio feature frames after 3s")
+                    }
+                }
+            } catch {
+                setEntertainmentFailure("Entertainment start failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private struct EntertainmentAreaSelection {
+        let area: OpenHueEntertainmentConfigurationResource
+        let matchedLights: Int
+    }
+
+    private func selectEntertainmentArea(
+        for selectedLightIDs: Set<String>,
+        from configurations: [OpenHueEntertainmentConfigurationResource]
+    ) -> EntertainmentAreaSelection? {
+        var best: EntertainmentAreaSelection?
+        var bestMatchCount = 0
+
+        for config in configurations {
+            let areaLights = Set((config.lightServices ?? []).compactMap { service -> String? in
+                service.rtype == "light" ? service.rid : nil
+            })
+            guard areaLights.isEmpty == false else { continue }
+
+            let matches = selectedLightIDs.intersection(areaLights).count
+            if matches > bestMatchCount {
+                bestMatchCount = matches
+                best = EntertainmentAreaSelection(area: config, matchedLights: matches)
+            }
+        }
+
+        if let best, best.matchedLights > 0 {
+            return best
+        }
+        return nil
+    }
+
+    private func setEntertainmentFailure(_ message: String) {
+        stopEntertainmentFeatureFeed()
+        diagnosticsMessage = message
+        NotificationCenter.default.post(name: .hueStateDidChange, object: self)
+    }
+
+    private func startEntertainmentFeatureFeed() {
+        guard entertainmentFeatureConsumerRegistered == false else { return }
+        entertainmentFeatureConsumerRegistered = true
+        NSLog("HueManager: entertainment feature feed registered")
+        WindowManager.shared.audioEngine.addFeatureConsumer(entertainmentFeatureConsumerID) { [weak self] frame in
+            self?.handleEntertainmentFeatureFrame(frame)
+        }
+    }
+
+    private func stopEntertainmentFeatureFeed() {
+        guard entertainmentFeatureConsumerRegistered else { return }
+        WindowManager.shared.audioEngine.removeFeatureConsumer(entertainmentFeatureConsumerID)
+        entertainmentFeatureConsumerRegistered = false
+        entertainmentFeatureFramesSinceStart = 0
+        entertainmentLastFrameLogNanos = 0
+        NSLog("HueManager: entertainment feature feed removed")
+    }
+
+    private func handleEntertainmentFeatureFrame(_ frame: AudioFeatureFrame) {
+        switch entertainmentEngine.state {
+        case .connecting, .streaming:
+            break
+        case .idle, .failed:
+            return
+        }
+        entertainmentFeatureFramesSinceStart &+= 1
+        let nowNanos = DispatchTime.now().uptimeNanoseconds
+        if nowNanos - entertainmentLastFrameLogNanos >= 1_000_000_000 {
+            entertainmentLastFrameLogNanos = nowNanos
+            NSLog(
+                "HueManager: entertainment frames=%llu state=%@ bass=%.3f mid=%.3f high=%.3f onset=%.3f",
+                entertainmentFeatureFramesSinceStart,
+                String(describing: entertainmentEngine.state),
+                frame.bass,
+                frame.mid,
+                frame.high,
+                frame.onset
+            )
+        }
+        guard entertainmentLightIDs.isEmpty == false else { return }
+        guard let showFrame = lightshowOrchestrator.update(feature: frame, lightIDs: entertainmentLightIDs) else { return }
+        entertainmentEngine.push(frame: showFrame, channelByLightID: entertainmentChannelByLightID)
+    }
+
+    private func stopReactivePipelines() {
+        reactiveEngine.stop()
+        stopEntertainmentFeatureFeed()
+        entertainmentEngine.stop()
+
+        if let areaID = entertainmentAreaID, let client = buildClient() {
+            Task {
+                try? await client.stopEntertainment(id: areaID)
+            }
+        }
+        entertainmentAreaID = nil
+        entertainmentLightIDs = []
+        entertainmentChannelByLightID = [:]
     }
 
     private func sendStateCommand(
@@ -1199,10 +1559,6 @@ final class HueManager {
                 )
                 if case HueClientError.httpStatus(let statusCode) = error,
                    (400...499).contains(statusCode) {
-                    await MainActor.run {
-                        self.diagnosticsMessage = "Hue event stream unavailable (HTTP \(statusCode)); continuing without stream"
-                        NotificationCenter.default.post(name: .hueStateDidChange, object: self)
-                    }
                     NSLog("HueManager: disabling event stream loop after HTTP %d", statusCode)
                     return
                 }
@@ -1211,11 +1567,6 @@ final class HueManager {
                     delay = 2
                 } else {
                     delay = min(30, pow(2, Double(failures - 1)))
-                }
-
-                await MainActor.run {
-                    self.diagnosticsMessage = "Hue event stream reconnecting in \(Int(delay))s"
-                    NotificationCenter.default.post(name: .hueStateDidChange, object: self)
                 }
 
                 let ns = UInt64(delay * 1_000_000_000)

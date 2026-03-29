@@ -15,7 +15,15 @@ enum HueConnectionState: String {
 
 enum HueReactiveMode: String, CaseIterable {
     case off
+    case entertainment
     case groupFallback
+}
+
+enum HueLightshowPreset: String, CaseIterable {
+    case auto
+    case pulse
+    case ambientWave
+    case strobeSafe
 }
 
 enum HueControlTarget: String, CaseIterable {
@@ -81,6 +89,13 @@ struct HueLightState {
     var brightness: Double?
     var mirek: Int?
     var colorXY: (x: Double, y: Double)?
+}
+
+struct HueMultiRoomSceneRecord: Codable, Equatable {
+    let sceneID: String
+    let zoneID: String
+    let name: String
+    let lightIDs: [String]
 }
 
 struct HueReactiveSettings: Equatable {
