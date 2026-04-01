@@ -12,6 +12,7 @@ struct PlayEventGenreStub: Sendable {
 /// Replaces library.json with a proper relational database for scalable performance.
 final class MediaLibraryStore {
     static let shared = MediaLibraryStore()
+    static let playHistoryDidChangeNotification = Notification.Name("PlayHistoryDidChange")
 
     private var db: Connection?
 
@@ -1226,6 +1227,7 @@ final class MediaLibraryStore {
                    played_at, duration_listened, source, skipped)
                 VALUES (?,?,?,?,?,?,?,?,?,?)
                 """, bindings)
+            NotificationCenter.default.post(name: Self.playHistoryDidChangeNotification, object: nil)
             return db.lastInsertRowid
         } catch {
             NSLog("MediaLibraryStore: Failed to insert play event: %@", error.localizedDescription)
@@ -1239,6 +1241,7 @@ final class MediaLibraryStore {
             try db.run(
                 "UPDATE play_events SET event_genre = ? WHERE id = ? AND (event_genre IS NULL OR event_genre = '')",
                 [genre as Binding, id as Binding])
+            NotificationCenter.default.post(name: Self.playHistoryDidChangeNotification, object: nil)
         } catch {
             NSLog("MediaLibraryStore: updatePlayEventGenre failed: %@", error.localizedDescription)
         }

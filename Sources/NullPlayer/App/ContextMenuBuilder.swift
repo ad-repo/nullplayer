@@ -89,9 +89,9 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
-        if wm.isModernUIEnabled {
-            menu.addItem(buildWindowItem("Play History", visible: wm.isStatsWindowVisible,
-                                         action: #selector(MenuActions.toggleStatsWindow)))
+        if wm.isRunningModernUI {
+            menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
+                                         action: #selector(MenuActions.toggleLibraryHistory)))
         }
         menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
@@ -2519,8 +2519,8 @@ class MenuActions: NSObject {
         WindowManager.shared.toggleDebugWindow()
     }
 
-    @objc func toggleStatsWindow() {
-        WindowManager.shared.toggleStatsWindow()
+    @objc func toggleLibraryHistory() {
+        WindowManager.shared.toggleLibraryHistory()
     }
 
     @objc func rerenderCurrentWaveform() {

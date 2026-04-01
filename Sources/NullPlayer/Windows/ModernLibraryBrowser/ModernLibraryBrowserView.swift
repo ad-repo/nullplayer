@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import SwiftUI
 
 // =============================================================================
 // MODERN LIBRARY BROWSER VIEW - Library browser with modern skin chrome
@@ -108,7 +109,7 @@ enum ModernBrowserSource: Equatable, Codable {
 
 enum ModernBrowseMode: Int, CaseIterable {
     case artists = 0, albums = 1, plists = 3
-    case movies = 4, shows = 5, search = 6, radio = 7
+    case movies = 4, shows = 5, search = 6, radio = 7, history = 8
 
     var title: String {
         switch self {
@@ -119,11 +120,13 @@ enum ModernBrowseMode: Int, CaseIterable {
         case .shows: return "Shows"
         case .search: return "Search"
         case .radio: return "Radio"
+        case .history: return "History"
         }
     }
     var isVideoMode: Bool { self == .movies || self == .shows }
     var isMusicMode: Bool { self == .artists || self == .albums || self == .plists }
     var isRadioMode: Bool { self == .radio }
+    var isHistoryMode: Bool { self == .history }
 }
 
 // MARK: - Sort Option
@@ -178,7 +181,20 @@ class ModernLibraryBrowserView: NSView {
         didSet { currentSource.save(); onSourceChanged() }
     }
     private var pendingSourceRestore: ModernBrowserSource?
-    private var browseMode: ModernBrowseMode = .artists
+    private var browseMode: ModernBrowseMode = .artists {
+        didSet {
+            guard browseMode != oldValue else { return }
+            if browseMode.isHistoryMode {
+                isArtOnlyMode = false
+                if isRatingOverlayVisible {
+                    hideRatingOverlay()
+                }
+                syncHistorySourceFilterToCurrentSource()
+                historyAgent.scheduleRefresh()
+            }
+            updateHistoryHostingVisibility()
+        }
+    }
     
     /// Expose browse mode for state save/restore
     var browseModeRawValue: Int {
@@ -209,6 +225,8 @@ class ModernLibraryBrowserView: NSView {
     private var selectedIndices: Set<Int> = []
     private var scrollOffset: CGFloat = 0
     private var horizontalScrollOffset: CGFloat = 0
+    private let historyAgent = PlayHistoryAgent()
+    private var historyHostingView: NSHostingView<StatsContentView>?
     
     private var itemHeight: CGFloat { 18 * ModernSkinElements.sizeMultiplier }
     private var columnHeaderHeight: CGFloat { 18 * ModernSkinElements.sizeMultiplier }
@@ -633,6 +651,8 @@ class ModernLibraryBrowserView: NSView {
                                                name: RadioManager.stationsDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(trackDidChange),
                                                name: .audioTrackDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(playHistoryDidChange),
+                                               name: MediaLibraryStore.playHistoryDidChangeNotification, object: nil)
         
         NotificationCenter.default.addObserver(self, selector: #selector(jellyfinMusicLibraryDidChange),
                                                name: JellyfinManager.musicLibraryDidChangeNotification, object: nil)
@@ -684,6 +704,7 @@ class ModernLibraryBrowserView: NSView {
         setAccessibilityRole(.group)
         setAccessibilityLabel("Library Browser")
         updateCornerMask()
+        updateHistoryHostingVisibility()
     }
     
     deinit {
@@ -699,11 +720,18 @@ class ModernLibraryBrowserView: NSView {
         super.viewDidMoveToWindow()
         layer?.isOpaque = false
         updateCornerMask()
+        updateEmbeddedSubviewFrames()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         startServerNameScroll()
+        updateEmbeddedSubviewFrames()
+    }
+
+    override func layout() {
+        super.layout()
+        updateEmbeddedSubviewFrames()
     }
 
     // MARK: - Current Skin Helper
@@ -721,6 +749,78 @@ class ModernLibraryBrowserView: NSView {
         let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
                                          .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         layer.maskedCorners = allCorners.subtracting(sharpCorners)
+    }
+
+    private func normalizedHistorySource(for source: ModernBrowserSource) -> String? {
+        switch source {
+        case .local: return "local"
+        case .plex: return "plex"
+        case .subsonic: return "subsonic"
+        case .jellyfin: return "jellyfin"
+        case .emby: return "emby"
+        case .radio: return "radio"
+        }
+    }
+
+    private func syncHistorySourceFilterToCurrentSource() {
+        historyAgent.selectSource(normalizedHistorySource(for: currentSource))
+    }
+
+    private func skinAppearance(for skin: ModernSkin) -> NSAppearance? {
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        skin.backgroundColor.usingColorSpace(.deviceRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let brightness = 0.299 * r + 0.587 * g + 0.114 * b
+        return NSAppearance(named: brightness < 0.5 ? .darkAqua : .aqua)
+    }
+
+    private func makeHistoryHostingView() -> NSHostingView<StatsContentView> {
+        let skin = currentSkin()
+        let rootView = StatsContentView(agent: historyAgent, skinTextColor: Color(skin.textColor))
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.appearance = skinAppearance(for: skin)
+        hostingView.setAccessibilityIdentifier("modernLibraryBrowser.history")
+        hostingView.setAccessibilityLabel("Library Play History")
+        return hostingView
+    }
+
+    private func ensureHistoryHostingView() {
+        guard historyHostingView == nil else { return }
+        let hostingView = makeHistoryHostingView()
+        addSubview(hostingView)
+        historyHostingView = hostingView
+        updateEmbeddedSubviewFrames()
+    }
+
+    private func updateHistoryHostingVisibility() {
+        if browseMode.isHistoryMode {
+            ensureHistoryHostingView()
+        }
+        let isVisible = browseMode.isHistoryMode && !isShadeMode && !isArtOnlyMode
+        historyHostingView?.isHidden = !isVisible
+        updateEmbeddedSubviewFrames()
+    }
+
+    private func embeddedHistoryContentRect() -> NSRect {
+        guard !isShadeMode else { return .zero }
+        var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
+        if browseMode == .search { contentTopY -= Layout.searchBarHeight }
+        let statusBarHeight = Layout.statusBarHeight
+        return NSRect(
+            x: Layout.borderWidth,
+            y: statusBarHeight,
+            width: bounds.width - Layout.borderWidth * 2,
+            height: max(0, contentTopY - statusBarHeight)
+        )
+    }
+
+    private func updateEmbeddedSubviewFrames() {
+        historyHostingView?.frame = embeddedHistoryContentRect()
+        if !isRatingOverlayVisible {
+            ratingOverlay.frame = bounds
+        }
     }
     
     // MARK: - Drawing
@@ -860,7 +960,11 @@ class ModernLibraryBrowserView: NSView {
         let listRect = NSRect(x: Layout.borderWidth, y: listAreaY,
                               width: bounds.width - Layout.borderWidth * 2, height: listAreaHeight)
         
-        if isArtOnlyMode {
+        updateHistoryHostingVisibility()
+
+        if browseMode.isHistoryMode {
+            // SwiftUI-hosted history content is rendered via an embedded subview.
+        } else if isArtOnlyMode {
             // Art-only mode takes precedence over loading/error states (matches PlexBrowserView)
             // so that visualization continues uninterrupted during data refreshes
             drawArtOnlyArea(in: context, contentRect: listRect, skin: skin, artwork: capturedArtwork)
@@ -900,7 +1004,7 @@ class ModernLibraryBrowserView: NSView {
         let sortText = "Sort"
         let sortAttrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
+            .foregroundColor: skin.applyTextOpacity(to: browseMode.isHistoryMode ? skin.textDimColor.withAlphaComponent(0.45) : skin.textDimColor)
         ]
         let sortSize = sortText.size(withAttributes: sortAttrs)
         let sortWidth = sortSize.width + 16
@@ -1018,7 +1122,7 @@ class ModernLibraryBrowserView: NSView {
         let artBtnHeight: CGFloat = Layout.serverBarHeight - 6 * m
         var artX = refreshX - artBtnWidth - 12 * m
         
-        if currentArtwork != nil {
+        if !browseMode.isHistoryMode, currentArtwork != nil {
             let artBtnRect = NSRect(x: artX, y: barRect.minY + 3 * m, width: artBtnWidth, height: artBtnHeight)
             drawToggleTab(label: artText, isActive: isArtOnlyMode, rect: artBtnRect,
                           font: font, skin: skin, context: context)
@@ -1028,7 +1132,7 @@ class ModernLibraryBrowserView: NSView {
         
         // VIS button (only in art-only mode, modern boxed toggle style)
         var visEndX = artX
-        if isArtOnlyMode && currentArtwork != nil {
+        if !browseMode.isHistoryMode && isArtOnlyMode && currentArtwork != nil {
             let visText = "VIS"
             let visTextWidth = visText.size(withAttributes: prefixAttrs).width
             let visBtnWidth = visTextWidth + 16 * m
@@ -1040,7 +1144,8 @@ class ModernLibraryBrowserView: NSView {
         }
         
         // Star rating (art-only mode with a track playing)
-        if isArtOnlyMode,
+        if !browseMode.isHistoryMode,
+           isArtOnlyMode,
            let currentTrack = WindowManager.shared.audioEngine.currentTrack,
            currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
             let starSize: CGFloat = 14 * m
@@ -1792,6 +1897,7 @@ class ModernLibraryBrowserView: NSView {
         case .plists: message = "No playlists found"
         case .search: message = searchQuery.isEmpty ? "Type to search" : "No results found"
         case .radio: message = "No radio stations found"
+        case .history: message = "No play history recorded yet"
         }
         
         let font = skin.primaryFont?.withSize(10) ?? NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
@@ -2543,6 +2649,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestSortIndicator(at point: NSPoint) -> Bool {
+        guard !browseMode.isHistoryMode else { return false }
         let tabBarTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight
         let tabBarBottomY = tabBarTopY - Layout.tabBarHeight
         guard point.y >= tabBarBottomY && point.y < tabBarTopY else { return false }
@@ -2986,6 +3093,10 @@ class ModernLibraryBrowserView: NSView {
     }
     
     override func scrollWheel(with event: NSEvent) {
+        if browseMode.isHistoryMode {
+            super.scrollWheel(with: event)
+            return
+        }
         var contentTopY = bounds.height - Layout.titleBarHeight - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - Layout.statusBarHeight
@@ -3312,12 +3423,12 @@ class ModernLibraryBrowserView: NSView {
         let artBtnWidth = artTextWidth + 16 * m
         let artZoneStart = refreshZoneStart - 12 * m - artBtnWidth
         let artZoneEnd = artZoneStart + artBtnWidth
-        if currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
+        if !browseMode.isHistoryMode, currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
             isArtOnlyMode.toggle(); return
         }
         
         // VIS button - match drawn button positions
-        if isArtOnlyMode && currentArtwork != nil {
+        if !browseMode.isHistoryMode && isArtOnlyMode && currentArtwork != nil {
             let visTextWidth = "VIS".size(withAttributes: fontAttrs).width
             let visBtnWidth = visTextWidth + 16 * m
             let visZoneStart = artZoneStart - 8 * m - visBtnWidth
@@ -3326,7 +3437,7 @@ class ModernLibraryBrowserView: NSView {
         }
         
         // RATE button click (star area in art-only mode)
-        if !rateButtonRect.isEmpty {
+        if !browseMode.isHistoryMode && !rateButtonRect.isEmpty {
             let rateRelativeStart = rateButtonRect.minX - barRect.minX
             let rateRelativeEnd = rateButtonRect.maxX - barRect.minX
             if relativeX >= rateRelativeStart && relativeX <= rateRelativeEnd {
@@ -3399,12 +3510,18 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func handleRefreshClick() {
+        if browseMode.isHistoryMode {
+            historyAgent.scheduleRefresh()
+            return
+        }
         if case .radio = currentSource {
             switch browseMode {
             case .radio:
                 loadRadioStations()
             case .search:
                 loadRadioSearchResults()
+            case .history:
+                break
             default:
                 break
             }
@@ -6049,13 +6166,21 @@ class ModernLibraryBrowserView: NSView {
     @objc private func modernSkinDidChange() {
         let skin = currentSkin()
         renderer = ModernSkinRenderer(skin: skin)
+        historyHostingView?.rootView = StatsContentView(agent: historyAgent, skinTextColor: Color(skin.textColor))
+        historyHostingView?.appearance = skinAppearance(for: skin)
         invalidateServerBarFontCache()
         updateCornerMask()
+        updateEmbeddedSubviewFrames()
         needsDisplay = true
     }
     
     @objc private func doubleSizeChanged() {
         modernSkinDidChange()
+    }
+
+    @objc private func playHistoryDidChange() {
+        guard browseMode.isHistoryMode else { return }
+        historyAgent.scheduleRefresh()
     }
     
     @objc private func windowLayoutDidChange() {
@@ -6075,6 +6200,7 @@ class ModernLibraryBrowserView: NSView {
             edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
+        updateEmbeddedSubviewFrames()
     }
 
     @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
@@ -6088,7 +6214,11 @@ class ModernLibraryBrowserView: NSView {
 
     func skinDidChange() { modernSkinDidChange() }
 
-    func setShadeMode(_ enabled: Bool) { isShadeMode = enabled; needsDisplay = true }
+    func setShadeMode(_ enabled: Bool) {
+        isShadeMode = enabled
+        updateHistoryHostingVisibility()
+        needsDisplay = true
+    }
     
     private func toggleShadeMode() { isShadeMode.toggle(); controller?.setShadeMode(isShadeMode) }
     
@@ -6188,12 +6318,13 @@ class ModernLibraryBrowserView: NSView {
     }
     
     @objc private func mediaLibraryDidChange() {
-        guard case .local = currentSource, browseMode != .radio else { return }
+        guard case .local = currentSource, !browseMode.isRadioMode, !browseMode.isHistoryMode else { return }
         localLibraryReloadWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self,
                   case .local = self.currentSource,
-                  self.browseMode != .radio else { return }
+                  !self.browseMode.isRadioMode,
+                  !self.browseMode.isHistoryMode else { return }
             self.loadLocalData()
             self.needsDisplay = true
         }
@@ -6313,8 +6444,12 @@ class ModernLibraryBrowserView: NSView {
         clearAllCachedData(); clearLocalCachedData()
         displayItems.removeAll(); selectedIndices.removeAll()
         scrollOffset = 0; errorMessage = nil; isLoading = false; stopLoadingAnimation()
-        if case .radio = currentSource { browseMode = .radio }
-        else if browseMode == .radio && !currentSource.isPlex { browseMode = .artists }
+        if !browseMode.isHistoryMode {
+            if case .radio = currentSource { browseMode = .radio }
+            else if browseMode == .radio && !currentSource.isPlex { browseMode = .artists }
+        } else {
+            syncHistorySourceFilterToCurrentSource()
+        }
         reloadData()
         startServerNameScroll()
     }
@@ -6606,6 +6741,9 @@ class ModernLibraryBrowserView: NSView {
     private func showRatingOverlay() {
         guard let currentTrack = WindowManager.shared.audioEngine.currentTrack,
               currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.url.isFileURL else { return }
+        if let historyHostingView {
+            addSubview(ratingOverlay, positioned: .above, relativeTo: historyHostingView)
+        }
         ratingOverlay.frame = bounds; ratingOverlay.setRating(currentTrackRating ?? 0)
         ratingOverlay.isHidden = false; isRatingOverlayVisible = true; needsDisplay = true
     }
@@ -7425,6 +7563,17 @@ class ModernLibraryBrowserView: NSView {
     
     private func loadDataForCurrentMode(generation: Int? = nil) {
         let generation = generation ?? loadGeneration
+
+        if browseMode.isHistoryMode {
+            displayItems = []
+            isLoading = false
+            errorMessage = nil
+            stopLoadingAnimation()
+            historyAgent.scheduleRefresh()
+            updateHistoryHostingVisibility()
+            needsDisplay = true
+            return
+        }
         
         if case .radio = currentSource {
             switch browseMode {
@@ -7432,6 +7581,8 @@ class ModernLibraryBrowserView: NSView {
                 loadRadioStations()
             case .search:
                 loadRadioSearchResults()
+            case .history:
+                break
             default:
                 displayItems = []
                 isLoading = false
@@ -7500,6 +7651,7 @@ class ModernLibraryBrowserView: NSView {
             cachedLocalShows = library.allShows()
             buildLocalShowItems()
         case .radio: loadLocalRadioStations()
+        case .history: break
         }
         needsDisplay = true
     }
@@ -7685,6 +7837,8 @@ class ModernLibraryBrowserView: NSView {
                 case .radio:
                     self.loadPlexRadioStations(generation: generation)
                     return
+                case .history:
+                    self.displayItems = []
                 }
                 
                 self.finishLoadIfActive(generation: generation, source: expectedSource)
@@ -7791,6 +7945,8 @@ class ModernLibraryBrowserView: NSView {
                 case .radio:
                     self.loadSubsonicRadioStations(generation: generation)
                     return
+                case .history:
+                    self.displayItems = []
                 }
                 
                 self.finishLoadIfActive(generation: generation, source: expectedSource)
@@ -7916,6 +8072,8 @@ class ModernLibraryBrowserView: NSView {
                 case .radio:
                     self.loadJellyfinRadioStations(generation: generation)
                     return
+                case .history:
+                    self.displayItems = []
                 }
                 
                 self.finishLoadIfActive(generation: generation, source: expectedSource)
@@ -8060,6 +8218,8 @@ class ModernLibraryBrowserView: NSView {
                 case .radio:
                     self.loadEmbyRadioStations(generation: generation)
                     return
+                case .history:
+                    self.displayItems = []
                 }
                 self.finishLoadIfActive(generation: generation, source: expectedSource)
             } catch is CancellationError {
@@ -9314,6 +9474,7 @@ class ModernLibraryBrowserView: NSView {
             case .plists: buildPlexPlaylistItems()
             case .search: buildSearchItems()
             case .radio: break
+            case .history: break
             }
         }
         if columnSortId != nil { applyColumnSort() }

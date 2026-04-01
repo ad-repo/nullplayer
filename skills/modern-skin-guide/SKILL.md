@@ -268,7 +268,7 @@ The modern skin system renders multiple windows:
 - **EQ Window** -- 10-band graphic equalizer with curve graph
 - **Spectrum Analyzer Window** -- standalone visualization
 - **ProjectM Window** -- MilkDrop visualization with presets
-- **Library Browser Window** -- multi-source browser with columns
+- **Library Browser Window** -- multi-source browser with columns and an embedded Play History tab
 
 All windows share palette colors, glow, grid, and font settings. Customize individual windows by prefixing element IDs (e.g., `spectrum_titlebar` vs `titlebar`).
 

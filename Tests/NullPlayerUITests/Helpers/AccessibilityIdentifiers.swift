@@ -140,6 +140,8 @@ enum AccessibilityIdentifiers {
         static let moviesTab = "plexBrowser.moviesTab"
         static let showsTab = "plexBrowser.showsTab"
         static let searchTab = "plexBrowser.searchTab"
+        static let radioTab = "plexBrowser.radioTab"
+        static let historyTab = "plexBrowser.historyTab"
         
         // Content
         static let contentList = "plexBrowser.contentList"

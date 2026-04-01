@@ -279,10 +279,6 @@ class WindowManager {
     /// Library browser window controller (classic or modern, accessed via protocol)
     private var plexBrowserWindowController: LibraryBrowserWindowProviding?
 
-    /// Play history / stats window controller (modern UI only)
-    private var statsWindowController: ModernStatsWindowController?
-    var isStatsWindowVisible: Bool { statsWindowController?.window?.isVisible == true }
-
     /// Video player window controller
     private var videoPlayerWindowController: VideoPlayerWindowController?
     
@@ -781,6 +777,11 @@ class WindowManager {
             }
         }
     }
+
+    var isLibraryHistoryVisible: Bool {
+        guard isRunningModernUI, isPlexBrowserVisible else { return false }
+        return plexBrowserBrowseMode == ModernBrowseMode.history.rawValue
+    }
     
     /// Get the ProjectM window frame (for state saving)
     var projectMWindowFrame: NSRect? {
@@ -797,21 +798,28 @@ class WindowManager {
         updateDockedChildWindows()
     }
 
-    // MARK: - Stats Window
+    // MARK: - Library History
 
-    func showStatsWindow() {
+    func showLibraryHistory() {
         guard isRunningModernUI else { return }
-        if statsWindowController == nil { statsWindowController = ModernStatsWindowController() }
-        statsWindowController?.showWindow(nil)
-        statsWindowController?.window?.makeKeyAndOrderFront(nil)
-        applyAlwaysOnTopToWindow(statsWindowController?.window)
+        showPlexBrowser()
+        plexBrowserBrowseMode = ModernBrowseMode.history.rawValue
+        plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
+        applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
         postLayoutChangeNotification()
+        updateDockedChildWindows()
     }
 
-    func toggleStatsWindow() {
-        if isStatsWindowVisible { statsWindowController?.window?.orderOut(nil) }
-        else { showStatsWindow() }
-        postLayoutChangeNotification()
+    func toggleLibraryHistory() {
+        guard isRunningModernUI else { return }
+        if isLibraryHistoryVisible {
+            plexBrowserWindowController?.window?.orderOut(nil)
+            postLayoutChangeNotification()
+            updateDockedChildWindows()
+            return
+        }
+
+        showLibraryHistory()
     }
 
     /// Show the Plex account linking sheet
@@ -2069,7 +2077,6 @@ class WindowManager {
         equalizerWindowController?.window?.level = level
         playlistWindowController?.window?.level = level
         plexBrowserWindowController?.window?.level = level
-        statsWindowController?.window?.level = level
         videoPlayerWindowController?.window?.level = level
         projectMWindowController?.window?.level = level
         spectrumWindowController?.window?.level = level
@@ -2095,8 +2102,7 @@ class WindowManager {
             waveformWindowController?.window,
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
-            plexBrowserWindowController?.window,
-            statsWindowController?.window
+            plexBrowserWindowController?.window
         ]
 
         let topWindow = preferredTopWindow ?? NSApp.keyWindow
