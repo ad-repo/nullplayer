@@ -45,6 +45,9 @@ final class PlayHistoryAgent: ObservableObject {
     @Published var recentEvents:   [RecentEventRow]  = []
     @Published var isLoading: Bool = false
     @Published var error: String? = nil
+    @Published var isBackfilling = false
+    @Published var backfillCurrent = 0
+    @Published var backfillTotal = 0
 
     private(set) var filter = StatsFilterState() {
         didSet { if filter != oldValue { invalidateCache(); scheduleRefresh() } }
@@ -54,6 +57,7 @@ final class PlayHistoryAgent: ObservableObject {
     }
 
     private var refreshTask: Task<Void, Never>?
+    private var backfillTask: Task<Void, Never>?
     private var cachedTopArtists:     [TopDimensionRow]?
     private var cachedTopAlbums:      [TopDimensionRow]?
     private var cachedTimeSeries:     [TimeSeriesRow]?
@@ -104,5 +108,31 @@ final class PlayHistoryAgent: ObservableObject {
             self.error = error.localizedDescription
         }
         isLoading = false
+    }
+
+    // MARK: - Genre Backfill
+
+    func startGenreBackfill() {
+        guard !isBackfilling else { return }
+        isBackfilling = true
+        backfillCurrent = 0
+        backfillTotal = 0
+        backfillTask = Task {
+            let resolved = await GenreDiscoveryService.shared.backfillNullGenres { [weak self] current, total in
+                self?.backfillCurrent = current
+                self?.backfillTotal = total
+            }
+            isBackfilling = false
+            if resolved > 0 {
+                invalidateCache()
+                scheduleRefresh()
+            }
+        }
+    }
+
+    func cancelGenreBackfill() {
+        backfillTask?.cancel()
+        backfillTask = nil
+        isBackfilling = false
     }
 }

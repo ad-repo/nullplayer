@@ -1,6 +1,13 @@
 import Foundation
 import SQLite
 
+struct PlayEventGenreStub: Sendable {
+    let id: Int64
+    let title: String?
+    let artist: String?
+    let album: String?
+}
+
 /// SQLite-backed storage for the local media library.
 /// Replaces library.json with a proper relational database for scalable performance.
 final class MediaLibraryStore {
@@ -1195,10 +1202,11 @@ final class MediaLibraryStore {
         }
     }
 
+    @discardableResult
     func insertPlayEvent(trackId: String?, trackURL: String?, title: String?, artist: String?,
                          album: String?, genre: String?, playedAt: Date,
-                         durationListened: Double, source: String, skipped: Bool) {
-        guard let db = db else { return }
+                         durationListened: Double, source: String, skipped: Bool) -> Int64? {
+        guard let db = db else { return nil }
         do {
             let bindings: [Binding?] = [
                 trackId as Binding?,
@@ -1218,8 +1226,44 @@ final class MediaLibraryStore {
                    played_at, duration_listened, source, skipped)
                 VALUES (?,?,?,?,?,?,?,?,?,?)
                 """, bindings)
+            return db.lastInsertRowid
         } catch {
             NSLog("MediaLibraryStore: Failed to insert play event: %@", error.localizedDescription)
+            return nil
+        }
+    }
+
+    func updatePlayEventGenre(id: Int64, genre: String) {
+        guard let db = db else { return }
+        do {
+            try db.run(
+                "UPDATE play_events SET event_genre = ? WHERE id = ? AND (event_genre IS NULL OR event_genre = '')",
+                [genre as Binding, id as Binding])
+        } catch {
+            NSLog("MediaLibraryStore: updatePlayEventGenre failed: %@", error.localizedDescription)
+        }
+    }
+
+    func fetchPlayEventsWithNullGenre() -> [PlayEventGenreStub] {
+        guard let db = db else { return [] }
+        do {
+            let stmt = try db.prepare("""
+                SELECT id, event_title, event_artist, event_album
+                FROM play_events
+                WHERE event_genre IS NULL OR event_genre = ''
+                ORDER BY played_at DESC
+                """)
+            return stmt.map { row in
+                PlayEventGenreStub(
+                    id: row[0] as! Int64,
+                    title: row[1] as? String,
+                    artist: row[2] as? String,
+                    album: row[3] as? String
+                )
+            }
+        } catch {
+            NSLog("MediaLibraryStore: fetchPlayEventsWithNullGenre failed: %@", error.localizedDescription)
+            return []
         }
     }
 

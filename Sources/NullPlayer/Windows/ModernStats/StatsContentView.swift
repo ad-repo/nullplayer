@@ -121,7 +121,8 @@ struct StatsOverviewView: View {
                         selected: Binding(
                             get: { agent.filter.selectedGenre },
                             set: { (v: String?) in agent.selectGenre(v) }
-                        )
+                        ),
+                        agent: agent
                     )
                 }
                 .frame(height: 220)
@@ -188,6 +189,7 @@ private let genreColors: [Color] = [
 struct GenreChartView: View {
     let rows: [TopDimensionRow]
     @Binding var selected: String?
+    @ObservedObject var agent: PlayHistoryAgent
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -221,6 +223,23 @@ struct GenreChartView: View {
                         }
                         .buttonStyle(.plain)
                         .opacity(selected == nil || selected == row.displayName ? 1.0 : 0.5)
+                    }
+                }
+                if rows.contains(where: { $0.displayName == "Unknown" }) {
+                    if agent.isBackfilling {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("\(agent.backfillCurrent)/\(agent.backfillTotal)")
+                                .font(.caption2)
+                                .monospacedDigit()
+                                .foregroundColor(.secondary)
+                            Button("Cancel") { agent.cancelGenreBackfill() }
+                                .font(.caption2)
+                        }
+                    } else {
+                        Button("Discover Genres") { agent.startGenreBackfill() }
+                            .font(.caption2)
                     }
                 }
             }

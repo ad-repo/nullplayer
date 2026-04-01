@@ -3342,7 +3342,7 @@ class AudioEngine {
                 default:          trackId = nil
                 }
 
-                MediaLibraryStore.shared.insertPlayEvent(
+                if let eventId = MediaLibraryStore.shared.insertPlayEvent(
                     trackId: trackId,
                     trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
                     title: track.title,
@@ -3352,7 +3352,11 @@ class AudioEngine {
                     playedAt: Date(),
                     durationListened: track.duration ?? 0,
                     source: source,
-                    skipped: false)
+                    skipped: false),
+                   track.genre == nil || track.genre?.isEmpty == true {
+                    await GenreDiscoveryService.shared.enrichPlayEvent(
+                        id: eventId, title: track.title, artist: track.artist, album: track.album)
+                }
             }
         }
 
@@ -3865,7 +3869,7 @@ class AudioEngine {
                 default:          trackId = nil
                 }
 
-                MediaLibraryStore.shared.insertPlayEvent(
+                if let eventId = MediaLibraryStore.shared.insertPlayEvent(
                     trackId: trackId,
                     trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
                     title: track.title,
@@ -3875,7 +3879,11 @@ class AudioEngine {
                     playedAt: Date(),
                     durationListened: track.duration ?? 0,
                     source: source,
-                    skipped: false)
+                    skipped: false),
+                   track.genre == nil || track.genre?.isEmpty == true {
+                    await GenreDiscoveryService.shared.enrichPlayEvent(
+                        id: eventId, title: track.title, artist: track.artist, album: track.album)
+                }
             }
         }
 
@@ -3986,7 +3994,7 @@ class AudioEngine {
                 default:          trackId = nil
                 }
 
-                MediaLibraryStore.shared.insertPlayEvent(
+                if let eventId = MediaLibraryStore.shared.insertPlayEvent(
                     trackId: trackId,
                     trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
                     title: track.title,
@@ -3996,7 +4004,11 @@ class AudioEngine {
                     playedAt: Date(),
                     durationListened: track.duration ?? 0,
                     source: source,
-                    skipped: false)
+                    skipped: false),
+                   track.genre == nil || track.genre?.isEmpty == true {
+                    await GenreDiscoveryService.shared.enrichPlayEvent(
+                        id: eventId, title: track.title, artist: track.artist, album: track.album)
+                }
             }
         }
 
