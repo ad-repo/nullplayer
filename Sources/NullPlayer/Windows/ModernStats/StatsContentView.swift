@@ -139,6 +139,7 @@ struct TopDimensionChartView: View {
     let rows: [TopDimensionRow]
     var skinTextColor: Color = .primary
     @Binding var selected: String?
+    private let labelColumnWidth: CGFloat = 150
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -156,7 +157,7 @@ struct TopDimensionChartView: View {
                                         .font(.caption2)
                                         .foregroundColor(row.displayName == selected ? Color.accentColor : skinTextColor)
                                         .lineLimit(1)
-                                        .frame(width: 90, alignment: .trailing)
+                                        .frame(width: labelColumnWidth, alignment: .trailing)
                                     GeometryReader { geo in
                                         let fraction = CGFloat(row.playCount) / CGFloat(maxCount)
                                         Capsule()
@@ -190,6 +191,7 @@ struct GenreChartView: View {
     let rows: [TopDimensionRow]
     @Binding var selected: String?
     @ObservedObject var agent: PlayHistoryAgent
+    private let chartSize: CGFloat = 156
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -197,51 +199,71 @@ struct GenreChartView: View {
             if rows.isEmpty {
                 Text("No data").foregroundColor(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Chart(Array(rows.enumerated()), id: \.element.id) { idx, row in
-                    SectorMark(
-                        angle: .value("Plays", row.playCount),
-                        innerRadius: .ratio(0.5)
-                    )
-                    .foregroundStyle(genreColors[idx % genreColors.count])
-                    .opacity(selected == nil || selected == row.displayName ? 1.0 : 0.4)
-                }
-                .chartLegend(.hidden)
-                .onTapGesture { selected = nil }
-                HStack(spacing: 12) {
-                    ForEach(Array(rows.enumerated()), id: \.offset) { idx, row in
-                        Button {
-                            selected = (selected == row.displayName) ? nil : row.displayName
-                        } label: {
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(genreColors[idx % genreColors.count])
-                                    .frame(width: 8, height: 8)
-                                Text(row.displayName)
-                                    .font(.caption)
-                                    .foregroundColor(.primary)
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Chart(Array(rows.enumerated()), id: \.element.id) { idx, row in
+                            SectorMark(
+                                angle: .value("Plays", row.playCount),
+                                innerRadius: .ratio(0.5)
+                            )
+                            .foregroundStyle(genreColors[idx % genreColors.count])
+                            .opacity(selected == nil || selected == row.displayName ? 1.0 : 0.4)
+                        }
+                        .chartLegend(.hidden)
+                        .frame(width: chartSize, height: chartSize)
+                        .onTapGesture { selected = nil }
+
+                        if rows.contains(where: { $0.displayName == "Unknown" }) {
+                            if agent.isBackfilling {
+                                HStack(spacing: 6) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("\(agent.backfillCurrent)/\(agent.backfillTotal)")
+                                        .font(.caption2)
+                                        .monospacedDigit()
+                                        .foregroundColor(.secondary)
+                                    Button("Cancel") { agent.cancelGenreBackfill() }
+                                        .font(.caption2)
+                                }
+                            } else {
+                                Button("Discover Genres") { agent.startGenreBackfill() }
+                                    .font(.caption2)
                             }
                         }
-                        .buttonStyle(.plain)
-                        .opacity(selected == nil || selected == row.displayName ? 1.0 : 0.5)
                     }
-                }
-                if rows.contains(where: { $0.displayName == "Unknown" }) {
-                    if agent.isBackfilling {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("\(agent.backfillCurrent)/\(agent.backfillTotal)")
-                                .font(.caption2)
-                                .monospacedDigit()
-                                .foregroundColor(.secondary)
-                            Button("Cancel") { agent.cancelGenreBackfill() }
-                                .font(.caption2)
+
+                    ScrollView(.vertical, showsIndicators: true) {
+                        VStack(spacing: 3) {
+                            ForEach(Array(rows.enumerated()), id: \.offset) { idx, row in
+                                Button {
+                                    selected = (selected == row.displayName) ? nil : row.displayName
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(genreColors[idx % genreColors.count])
+                                            .frame(width: 8, height: 8)
+                                        Text(row.displayName)
+                                            .font(.caption2)
+                                            .foregroundColor(row.displayName == selected ? .accentColor : .primary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 0)
+                                        Text("\(row.playCount)")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .monospacedDigit()
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .opacity(selected == nil || selected == row.displayName ? 1.0 : 0.5)
+                            }
                         }
-                    } else {
-                        Button("Discover Genres") { agent.startGenreBackfill() }
-                            .font(.caption2)
+                        .padding(.vertical, 2)
+                        .padding(.trailing, 12)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity)

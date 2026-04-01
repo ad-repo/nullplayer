@@ -54,6 +54,13 @@ actor GenreDiscoveryService {
             return genre
         }
 
+        // Tier 4: artist-only DB fallback (even when album was provided but all else failed)
+        if album != nil, !(album?.isEmpty == true),
+           let genre = lookupGenreInHistory(artist: resolvedArtist, album: nil) {
+            NSLog("GenreDiscovery: [%@] tier 4 (artist-only fallback) → '%@'", label, genre)
+            return genre
+        }
+
         NSLog("GenreDiscovery: [%@] no genre found", label)
         return nil
     }
