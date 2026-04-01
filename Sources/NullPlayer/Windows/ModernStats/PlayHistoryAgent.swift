@@ -72,7 +72,25 @@ final class PlayHistoryAgent: ObservableObject {
     func selectGenre(_ name: String?)   { filter.selectedGenre  = name }
     func selectSource(_ s: String?)     { filter.selectedSource = s }
     func clearAllFilters()              { filter = StatsFilterState() }
+    func clearVisibleFilters() {
+        filter = StatsFilterState(
+            timeRange: .last30Days,
+            selectedArtist: nil,
+            selectedAlbum: nil,
+            selectedGenre: nil,
+            selectedSource: filter.selectedSource,
+            excludeSkipped: true
+        )
+    }
     func setGranularity(_ g: StatsGranularity) { granularity = g }
+
+    var hasVisibleFilters: Bool {
+        filter.timeRange != .last30Days ||
+        filter.selectedArtist != nil ||
+        filter.selectedAlbum != nil ||
+        filter.selectedGenre != nil ||
+        filter.excludeSkipped != true
+    }
 
     private func invalidateCache() {
         cachedTopArtists = nil; cachedTopAlbums = nil

@@ -120,7 +120,7 @@ enum ModernBrowseMode: Int, CaseIterable {
         case .shows: return "Shows"
         case .search: return "Search"
         case .radio: return "Radio"
-        case .history: return "History"
+        case .history: return "Data"
         }
     }
     var isVideoMode: Bool { self == .movies || self == .shows }
@@ -778,11 +778,16 @@ class ModernLibraryBrowserView: NSView {
 
     private func makeHistoryHostingView() -> NSHostingView<StatsContentView> {
         let skin = currentSkin()
-        let rootView = StatsContentView(agent: historyAgent, skinTextColor: Color(skin.textColor))
+        let rootView = StatsContentView(agent: historyAgent,
+                                        skinTextColor: Color(skin.textColor),
+                                        headerTitle: "Library Data")
         let hostingView = NSHostingView(rootView: rootView)
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.layer?.isOpaque = false
         hostingView.appearance = skinAppearance(for: skin)
-        hostingView.setAccessibilityIdentifier("modernLibraryBrowser.history")
-        hostingView.setAccessibilityLabel("Library Play History")
+        hostingView.setAccessibilityIdentifier("modernLibraryBrowser.data")
+        hostingView.setAccessibilityLabel("Library Data")
         return hostingView
     }
 
@@ -963,6 +968,7 @@ class ModernLibraryBrowserView: NSView {
         updateHistoryHostingVisibility()
 
         if browseMode.isHistoryMode {
+            drawArtworkBackground(in: context, listRect: listRect, artwork: capturedArtwork)
             // SwiftUI-hosted history content is rendered via an embedded subview.
         } else if isArtOnlyMode {
             // Art-only mode takes precedence over loading/error states (matches PlexBrowserView)
@@ -1030,30 +1036,42 @@ class ModernLibraryBrowserView: NSView {
     /// Draw a modern boxed toggle button
     private func drawToggleTab(label: String, isActive: Bool, rect: NSRect,
                                font: NSFont, skin: ModernSkin, context: CGContext) {
+        let scale = ModernSkinElements.scaleFactor
         let outlineColor = skin.elementColor(for: "tab_outline", fallback: skin.accentColor)
         let activeTextColor = skin.elementColor(for: "tab_text", fallback: skin.accentColor)
         let color = isActive ? activeTextColor : skin.textDimColor
+        let strokeRect = rect.insetBy(dx: scale, dy: scale)
+        let cornerRadius = 2 * scale
+        let strokePath = CGPath(roundedRect: strokeRect,
+                                cornerWidth: cornerRadius,
+                                cornerHeight: cornerRadius,
+                                transform: nil)
+        let lineWidth = max(0.5, 0.8 * scale)
 
         context.saveGState()
 
         if isActive {
             context.setFillColor(outlineColor.withAlphaComponent(0.12).cgColor)
-            context.fill(rect)
+            context.addPath(strokePath)
+            context.fillPath()
 
             context.setShadow(offset: .zero, blur: 6, color: outlineColor.withAlphaComponent(0.6).cgColor)
             context.setStrokeColor(outlineColor.withAlphaComponent(0.8).cgColor)
-            context.setLineWidth(1.0)
-            context.stroke(rect)
+            context.setLineWidth(lineWidth)
+            context.addPath(strokePath)
+            context.strokePath()
             context.restoreGState()
 
             context.saveGState()
             context.setStrokeColor(outlineColor.withAlphaComponent(0.6).cgColor)
-            context.setLineWidth(1.0)
-            context.stroke(rect)
+            context.setLineWidth(lineWidth)
+            context.addPath(strokePath)
+            context.strokePath()
         } else {
-            context.setStrokeColor(skin.textDimColor.withAlphaComponent(0.3).cgColor)
-            context.setLineWidth(0.5)
-            context.stroke(rect)
+            context.setStrokeColor(skin.textDimColor.withAlphaComponent(0.4).cgColor)
+            context.setLineWidth(lineWidth)
+            context.addPath(strokePath)
+            context.strokePath()
         }
 
         let attrs: [NSAttributedString.Key: Any] = [
@@ -1232,7 +1250,6 @@ class ModernLibraryBrowserView: NSView {
                 let maxServerWidth: CGFloat = 100 * m
                 let textH = font.pointSize + 4 * m
 
-                // Store widths for scroll logic
                 serverNameMaxWidth = maxServerWidth
                 serverNameTextWidth = (serverName as NSString).size(withAttributes: dataAttrs).width
 
@@ -1605,16 +1622,7 @@ class ModernLibraryBrowserView: NSView {
         context.saveGState()
         context.clip(to: listRect)
         
-        // Draw album art background if enabled
-        if WindowManager.shared.showBrowserArtworkBackground, let artworkImage = artwork,
-           let cgImage = artworkImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            context.saveGState()
-            let imageSize = NSSize(width: cgImage.width, height: cgImage.height)
-            let artworkRect = calculateCenterFillRect(imageSize: imageSize, in: listRect)
-            context.setAlpha(0.12)
-            context.draw(cgImage, in: artworkRect)
-            context.restoreGState()
-        }
+        drawArtworkBackground(in: context, listRect: listRect, artwork: artwork)
         
         // Draw items (bottom-left origin: item 0 at top of list, so we draw from top down)
         let visibleStart = max(0, Int(scrollOffset / itemHeight))
@@ -1703,6 +1711,20 @@ class ModernLibraryBrowserView: NSView {
         let alphabetRect = NSRect(x: bounds.width - Layout.borderWidth - Layout.scrollbarWidth - alphabetWidth,
                                  y: listAreaY, width: alphabetWidth, height: alphabetHeight)
         drawAlphabetIndex(in: context, rect: alphabetRect, skin: skin)
+    }
+
+    private func drawArtworkBackground(in context: CGContext, listRect: NSRect, artwork: NSImage?) {
+        guard WindowManager.shared.showBrowserArtworkBackground,
+              let artworkImage = artwork,
+              let cgImage = artworkImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+
+        context.saveGState()
+        context.clip(to: listRect)
+        let imageSize = NSSize(width: cgImage.width, height: cgImage.height)
+        let artworkRect = calculateCenterFillRect(imageSize: imageSize, in: listRect)
+        context.setAlpha(0.12)
+        context.draw(cgImage, in: artworkRect)
+        context.restoreGState()
     }
     
     // MARK: - Column Headers
@@ -6166,7 +6188,9 @@ class ModernLibraryBrowserView: NSView {
     @objc private func modernSkinDidChange() {
         let skin = currentSkin()
         renderer = ModernSkinRenderer(skin: skin)
-        historyHostingView?.rootView = StatsContentView(agent: historyAgent, skinTextColor: Color(skin.textColor))
+        historyHostingView?.rootView = StatsContentView(agent: historyAgent,
+                                                        skinTextColor: Color(skin.textColor),
+                                                        headerTitle: "Library Data")
         historyHostingView?.appearance = skinAppearance(for: skin)
         invalidateServerBarFontCache()
         updateCornerMask()

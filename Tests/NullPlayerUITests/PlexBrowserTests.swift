@@ -25,7 +25,7 @@ final class PlexBrowserTests: NullPlayerUITestCase {
         XCTAssertTrue(plexBrowserWindow.exists, "Browser window should exist")
         XCTAssertTrue(plexBrowserWindow.isHittable, "Browser window should be hittable")
         
-        // Tab clicks across the full tab strip, including History.
+        // Tab clicks across the full tab strip, including Data.
         let tabOffsets: [CGFloat] = [0.06, 0.16, 0.27, 0.38, 0.49, 0.60, 0.71, 0.82]
         for dx in tabOffsets {
             let tabArea = plexBrowserWindow.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: 0.06))

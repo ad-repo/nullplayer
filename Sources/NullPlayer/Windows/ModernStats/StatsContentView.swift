@@ -6,11 +6,12 @@ import Charts
 struct StatsContentView: View {
     @ObservedObject var agent: PlayHistoryAgent
     var skinTextColor: Color = .primary
+    var headerTitle: String = "Play History"
     @State private var selectedTab = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            StatsHeaderView(agent: agent)
+            StatsHeaderView(agent: agent, title: headerTitle)
             Picker("", selection: $selectedTab) {
                 Text("Overview").tag(0)
                 Text("History").tag(1)
@@ -30,10 +31,11 @@ struct StatsContentView: View {
 
 struct StatsHeaderView: View {
     @ObservedObject var agent: PlayHistoryAgent
+    let title: String
 
     var body: some View {
         HStack {
-            Text("Play History")
+            Text(title)
                 .font(.headline)
             Spacer()
             // Active filter chips
@@ -45,9 +47,6 @@ struct StatsHeaderView: View {
             }
             if let genre = agent.filter.selectedGenre {
                 FilterChip(label: genre) { agent.selectGenre(nil) }
-            }
-            if let source = agent.filter.selectedSource {
-                FilterChip(label: source) { agent.selectSource(nil) }
             }
             if agent.isLoading {
                 ProgressView().controlSize(.small)
@@ -64,8 +63,8 @@ struct StatsHeaderView: View {
             }
             .pickerStyle(.menu)
             .fixedSize()
-            if agent.filter != StatsFilterState() {
-                Button("Clear") { agent.clearAllFilters() }
+            if agent.hasVisibleFilters {
+                Button("Clear") { agent.clearVisibleFilters() }
                     .buttonStyle(.plain)
                     .foregroundColor(.accentColor)
             }
