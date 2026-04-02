@@ -32,11 +32,14 @@ struct StatsContentView: View {
 struct StatsHeaderView: View {
     @ObservedObject var agent: PlayHistoryAgent
     let title: String
+    private var shouldShowTitle: Bool { title != "Library Data" }
 
     var body: some View {
         HStack {
-            Text(title)
-                .font(.headline)
+            if shouldShowTitle {
+                Text(title)
+                    .font(.headline)
+            }
             Spacer()
             // Active filter chips
             if let artist = agent.filter.selectedArtist {
@@ -53,37 +56,6 @@ struct StatsHeaderView: View {
             }
             if agent.isLoading {
                 ProgressView().controlSize(.small)
-            }
-            Picker("Range", selection: Binding(
-                get: { agent.filter.timeRange },
-                set: { agent.setTimeRange($0) }
-            )) {
-                Text("7 Days").tag(StatsTimeRange.last7Days)
-                Text("30 Days").tag(StatsTimeRange.last30Days)
-                Text("90 Days").tag(StatsTimeRange.last90Days)
-                Text("1 Year").tag(StatsTimeRange.last365Days)
-                Text("All Time").tag(StatsTimeRange.allTime)
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
-            if agent.genreBreakdown.contains(where: { $0.id == "Unknown" }) {
-                if agent.isBackfilling {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("\(agent.backfillCurrent)/\(agent.backfillTotal)")
-                            .font(.caption2)
-                            .monospacedDigit()
-                            .foregroundColor(.secondary)
-                        Button("Cancel") { agent.cancelGenreBackfill() }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.accentColor)
-                    }
-                } else {
-                    Button("Discover Genres") { agent.startGenreBackfill() }
-                        .buttonStyle(.plain)
-                        .foregroundColor(.accentColor)
-                }
             }
             if agent.hasVisibleFilters {
                 Button("Clear") { agent.clearVisibleFilters() }
@@ -127,6 +99,8 @@ struct StatsOverviewView: View {
     var body: some View {
         ScrollView(.vertical) {
             VStack(spacing: 16) {
+                PlayTimeSummarySection(agent: agent, skinTextColor: skinTextColor)
+
                 TopDimensionChartView(
                     title: "Top Artists",
                     rows: agent.topArtists,
@@ -161,6 +135,157 @@ struct StatsOverviewView: View {
                     .frame(height: 220)
             }
             .padding(12)
+        }
+    }
+}
+
+struct PlayTimeSummarySection: View {
+    @ObservedObject var agent: PlayHistoryAgent
+    var skinTextColor: Color = .primary
+    @State private var selectedMetricID = "day"
+
+    private var metricOptions: [PlayTimeSummaryRow] {
+        agent.playTimeSummaries.isEmpty ? [
+            PlayTimeSummaryRow(id: "day", title: "Day", durationListened: 0)
+        ] : agent.playTimeSummaries
+    }
+
+    private var selectedRow: PlayTimeSummaryRow {
+        metricOptions.first(where: { $0.id == selectedMetricID }) ?? metricOptions[0]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Play Time")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                metricSelector
+                Text(formatPlayTime(selectedRow.durationListened))
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(skinTextColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Text(selectedRow.title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+            .padding(12)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+
+            HStack(spacing: 10) {
+                Picker("Range", selection: Binding(
+                    get: { agent.filter.timeRange },
+                    set: { agent.setTimeRange($0) }
+                )) {
+                    Text("7 Days").tag(StatsTimeRange.last7Days)
+                    Text("30 Days").tag(StatsTimeRange.last30Days)
+                    Text("90 Days").tag(StatsTimeRange.last90Days)
+                    Text("1 Year").tag(StatsTimeRange.last365Days)
+                    Text("All Time").tag(StatsTimeRange.allTime)
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+
+                Spacer()
+
+                if agent.genreBreakdown.contains(where: { $0.id == "Unknown" }) {
+                    if agent.isBackfilling {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("\(agent.backfillCurrent)/\(agent.backfillTotal)")
+                                .font(.caption2)
+                                .monospacedDigit()
+                                .foregroundColor(.secondary)
+                            Button("Cancel") { agent.cancelGenreBackfill() }
+                                .buttonStyle(.plain)
+                                .foregroundColor(.accentColor)
+                        }
+                    } else {
+                        Button("Discover Genres") { agent.startGenreBackfill() }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.accentColor)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear {
+            if !metricOptions.contains(where: { $0.id == selectedMetricID }) {
+                selectedMetricID = metricOptions[0].id
+            }
+        }
+        .onChange(of: metricOptions.map { $0.id }) { ids in
+            if let firstID = ids.first, !ids.contains(selectedMetricID) {
+                selectedMetricID = firstID
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var metricSelector: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                metricButtons
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    metricButtons
+                }
+                .padding(.bottom, 1)
+            }
+        }
+    }
+
+    private var metricButtons: some View {
+        ForEach(metricOptions) { row in
+            Button {
+                selectedMetricID = row.id
+            } label: {
+                Text(shortLabel(for: row.title))
+                    .font(.caption)
+                    .fontWeight(selectedMetricID == row.id ? .semibold : .regular)
+                    .foregroundColor(selectedMetricID == row.id ? .white : skinTextColor.opacity(0.8))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(selectedMetricID == row.id ? Color.accentColor : Color.primary.opacity(0.08))
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func formatPlayTime(_ duration: Double) -> String {
+        let totalSeconds = max(0, Int(duration.rounded()))
+        let days = totalSeconds / 86_400
+        let hours = (totalSeconds % 86_400) / 3_600
+        let minutes = (totalSeconds % 3_600) / 60
+
+        if days > 0 {
+            return hours > 0 ? "\(days)d \(hours)h" : "\(days)d"
+        }
+        if hours > 0 {
+            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+        }
+        if minutes > 0 {
+            return "\(minutes)m"
+        }
+        return "<1m"
+    }
+
+    private func shortLabel(for title: String) -> String {
+        switch title {
+        case "All Time": return "All"
+        default: return title
         }
     }
 }

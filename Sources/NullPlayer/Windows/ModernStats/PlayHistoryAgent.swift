@@ -38,6 +38,7 @@ struct StatsFilterState: Equatable {
 
 @MainActor
 final class PlayHistoryAgent: ObservableObject {
+    @Published var playTimeSummaries: [PlayTimeSummaryRow] = []
     @Published var topArtists:     [TopDimensionRow] = []
     @Published var topAlbums:      [TopDimensionRow] = []
     @Published var timeSeries:     [TimeSeriesRow]   = []
@@ -59,6 +60,7 @@ final class PlayHistoryAgent: ObservableObject {
 
     private var refreshTask: Task<Void, Never>?
     private var backfillTask: Task<Void, Never>?
+    private var cachedPlayTimeSummaries: [PlayTimeSummaryRow]?
     private var cachedTopArtists:     [TopDimensionRow]?
     private var cachedTopAlbums:      [TopDimensionRow]?
     private var cachedTimeSeries:     [TimeSeriesRow]?
@@ -96,7 +98,7 @@ final class PlayHistoryAgent: ObservableObject {
     }
 
     private func invalidateCache() {
-        cachedTopArtists = nil; cachedTopAlbums = nil
+        cachedPlayTimeSummaries = nil; cachedTopArtists = nil; cachedTopAlbums = nil
         cachedTimeSeries = nil; cachedGenreBreakdown = nil
         cachedSourceBreakdown = nil; cachedRecentEvents = nil
     }
@@ -113,19 +115,20 @@ final class PlayHistoryAgent: ObservableObject {
         error = nil
         do {
             let result = try await Task.detached(priority: .userInitiated) { [store, currentFilter, currentGranularity] in
+                let p = try store.fetchPlayTimeSummaries(filter: currentFilter)
                 let a = try store.fetchTopDimension(dimension: .artist, filter: currentFilter)
                 let b = try store.fetchTopDimension(dimension: .album,  filter: currentFilter)
                 let s = try store.fetchTimeSeries(filter: currentFilter, granularity: currentGranularity)
                 let g = try store.fetchGenreBreakdown(filter: currentFilter)
                 let o = try store.fetchTopDimension(dimension: .source, filter: currentFilter)
                 let r = try store.fetchRecentEvents(filter: currentFilter)
-                return (a, b, s, g, o, r)
+                return (p, a, b, s, g, o, r)
             }.value
             try Task.checkCancellation()
-            (topArtists, topAlbums, timeSeries, genreBreakdown, sourceBreakdown, recentEvents) = result
-            cachedTopArtists = result.0; cachedTopAlbums = result.1
-            cachedTimeSeries = result.2; cachedGenreBreakdown = result.3
-            cachedSourceBreakdown = result.4; cachedRecentEvents = result.5
+            (playTimeSummaries, topArtists, topAlbums, timeSeries, genreBreakdown, sourceBreakdown, recentEvents) = result
+            cachedPlayTimeSummaries = result.0; cachedTopArtists = result.1; cachedTopAlbums = result.2
+            cachedTimeSeries = result.3; cachedGenreBreakdown = result.4
+            cachedSourceBreakdown = result.5; cachedRecentEvents = result.6
         } catch is CancellationError {
             // Refresh was superseded by a newer request — discard results silently
         } catch {

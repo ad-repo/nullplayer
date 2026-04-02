@@ -39,6 +39,12 @@ struct RecentEventRow: Identifiable, Sendable {
     }
 }
 
+struct PlayTimeSummaryRow: Identifiable, Sendable {
+    let id: String
+    let title: String
+    let durationListened: Double
+}
+
 // MARK: - Store
 
 final class PlayHistoryStore: Sendable {
@@ -170,6 +176,52 @@ final class PlayHistoryStore: Sendable {
                                   playedAt: Date(timeIntervalSince1970: ts),
                                   durationListened: dur, skipped: skip)
         }
+    }
+
+    func fetchPlayTimeSummaries(filter: StatsFilterState) throws -> [PlayTimeSummaryRow] {
+        let calendar = Calendar.current
+        let now = Date()
+        let dayStart = calendar.startOfDay(for: now)
+        let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) ?? dayStart
+        let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? dayStart
+        let yearStart = calendar.date(from: calendar.dateComponents([.year], from: now)) ?? dayStart
+
+        var rangeAgnosticFilter = filter
+        rangeAgnosticFilter.timeRange = .allTime
+        let (whereStr, params) = whereClause(for: rangeAgnosticFilter)
+
+        let sql = """
+            SELECT
+                COALESCE(SUM(CASE WHEN played_at >= ? THEN duration_listened ELSE 0 END), 0.0),
+                COALESCE(SUM(CASE WHEN played_at >= ? THEN duration_listened ELSE 0 END), 0.0),
+                COALESCE(SUM(CASE WHEN played_at >= ? THEN duration_listened ELSE 0 END), 0.0),
+                COALESCE(SUM(CASE WHEN played_at >= ? THEN duration_listened ELSE 0 END), 0.0),
+                COALESCE(SUM(duration_listened), 0.0)
+            FROM play_events
+            \(whereStr)
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
+
+        let statementParams: [Binding?] = [
+            dayStart.timeIntervalSince1970,
+            weekStart.timeIntervalSince1970,
+            monthStart.timeIntervalSince1970,
+            yearStart.timeIntervalSince1970
+        ] + params
+
+        let stmt = try db.prepare(sql, statementParams)
+        let row = stmt.makeIterator().next()
+        let durations = (0...4).map { index -> Double in
+            row?[index] as? Double ?? 0
+        }
+
+        return [
+            PlayTimeSummaryRow(id: "day", title: "Day", durationListened: durations[0]),
+            PlayTimeSummaryRow(id: "week", title: "Week", durationListened: durations[1]),
+            PlayTimeSummaryRow(id: "month", title: "Month", durationListened: durations[2]),
+            PlayTimeSummaryRow(id: "year", title: "Year", durationListened: durations[3]),
+            PlayTimeSummaryRow(id: "all-time", title: "All Time", durationListened: durations[4])
+        ]
     }
 
     // MARK: - WHERE clause builder
