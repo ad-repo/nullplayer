@@ -7,6 +7,30 @@ enum MediaType: String, Codable {
     case video
 }
 
+enum PlayHistorySource: String, CaseIterable, Sendable {
+    case local
+    case plex
+    case subsonic
+    case jellyfin
+    case emby
+    case radio
+
+    var displayName: String {
+        switch self {
+        case .local: return "Local"
+        case .plex: return "Plex"
+        case .subsonic: return "Subsonic"
+        case .jellyfin: return "Jellyfin"
+        case .emby: return "Emby"
+        case .radio: return "Radio"
+        }
+    }
+
+    static func displayName(for rawValue: String) -> String {
+        PlayHistorySource(rawValue: rawValue)?.displayName ?? rawValue.capitalized
+    }
+}
+
 /// Represents a single audio or video track
 struct Track: Identifiable, Equatable {
     let id: UUID
@@ -309,6 +333,30 @@ struct Track: Identifiable, Equatable {
             return "emby:\(embyServerId ?? ""):\(embyId)"
         }
         return nil
+    }
+
+    var playHistorySource: PlayHistorySource {
+        if plexRatingKey != nil { return .plex }
+        if subsonicId != nil { return .subsonic }
+        if jellyfinId != nil { return .jellyfin }
+        if embyId != nil { return .emby }
+        if !url.isFileURL { return .radio }
+        return .local
+    }
+
+    var playHistoryTrackIdentifier: String? {
+        switch playHistorySource {
+        case .plex:
+            return plexRatingKey
+        case .subsonic:
+            return subsonicId
+        case .jellyfin:
+            return jellyfinId
+        case .emby:
+            return embyId
+        case .local, .radio:
+            return nil
+        }
     }
 }
 

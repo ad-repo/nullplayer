@@ -189,7 +189,6 @@ class ModernLibraryBrowserView: NSView {
                 if isRatingOverlayVisible {
                     hideRatingOverlay()
                 }
-                syncHistorySourceFilterToCurrentSource()
                 historyAgent.scheduleRefresh()
             }
             updateHistoryHostingVisibility()
@@ -749,21 +748,6 @@ class ModernLibraryBrowserView: NSView {
         let allCorners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner,
                                          .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         layer.maskedCorners = allCorners.subtracting(sharpCorners)
-    }
-
-    private func normalizedHistorySource(for source: ModernBrowserSource) -> String? {
-        switch source {
-        case .local: return "local"
-        case .plex: return "plex"
-        case .subsonic: return "subsonic"
-        case .jellyfin: return "jellyfin"
-        case .emby: return "emby"
-        case .radio: return "radio"
-        }
-    }
-
-    private func syncHistorySourceFilterToCurrentSource() {
-        historyAgent.selectSource(normalizedHistorySource(for: currentSource))
     }
 
     private func skinAppearance(for skin: ModernSkin) -> NSAppearance? {
@@ -6471,8 +6455,6 @@ class ModernLibraryBrowserView: NSView {
         if !browseMode.isHistoryMode {
             if case .radio = currentSource { browseMode = .radio }
             else if browseMode == .radio && !currentSource.isPlex { browseMode = .artists }
-        } else {
-            syncHistorySourceFilterToCurrentSource()
         }
         reloadData()
         startServerNameScroll()

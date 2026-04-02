@@ -12,9 +12,15 @@ struct TopDimensionRow: Identifiable, Sendable {
 
 struct TimeSeriesRow: Identifiable, Sendable {
     let id: String
+    let bucket: String
     let date: Date
+    let source: String
     let playCount: Int
     let totalMinutes: Double
+
+    var sourceDisplayName: String {
+        PlayHistorySource.displayName(for: source)
+    }
 }
 
 struct RecentEventRow: Identifiable, Sendable {
@@ -27,6 +33,10 @@ struct RecentEventRow: Identifiable, Sendable {
     let playedAt: Date
     let durationListened: Double
     let skipped: Bool
+
+    var sourceDisplayName: String {
+        PlayHistorySource.displayName(for: source)
+    }
 }
 
 // MARK: - Store
@@ -39,6 +49,7 @@ final class PlayHistoryStore: Sendable {
         case .artist: col = "event_artist"
         case .album:  col = "event_album"
         case .genre:  col = "event_genre"
+        case .source: col = "source"
         }
         let (whereStr, params) = whereClause(for: filter)
         let sql = """
@@ -55,7 +66,8 @@ final class PlayHistoryStore: Sendable {
             let name = row[0] as? String ?? "Unknown"
             let count = Int(row[1] as? Int64 ?? 0)
             let mins = row[2] as? Double ?? 0
-            return TopDimensionRow(id: name, displayName: name, playCount: count, totalMinutes: mins)
+            let displayName = dimension == .source ? PlayHistorySource.displayName(for: name) : name
+            return TopDimensionRow(id: name, displayName: displayName, playCount: count, totalMinutes: mins)
         }
     }
 
@@ -69,12 +81,13 @@ final class PlayHistoryStore: Sendable {
         let (whereStr, params) = whereClause(for: filter)
         let sql = """
             SELECT strftime('\(fmt)', played_at, 'unixepoch', 'localtime'),
+                   source,
                    COUNT(*),
                    COALESCE(SUM(duration_listened), 0.0) / 60.0
             FROM play_events
             \(whereStr)
-            GROUP BY 1
-            ORDER BY 1 ASC
+            GROUP BY 1, 2
+            ORDER BY 1 ASC, 2 ASC
             """
         guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
         let stmt = try db.prepare(sql, params)
@@ -95,10 +108,18 @@ final class PlayHistoryStore: Sendable {
         }
         return stmt.compactMap { row in
             guard let bucket = row[0] as? String else { return nil }
-            let count = Int(row[1] as? Int64 ?? 0)
-            let mins = row[2] as? Double ?? 0
+            let source = row[1] as? String ?? PlayHistorySource.local.rawValue
+            let count = Int(row[2] as? Int64 ?? 0)
+            let mins = row[3] as? Double ?? 0
             let date = bucketFormatter.date(from: bucket) ?? Date(timeIntervalSince1970: 0)
-            return TimeSeriesRow(id: bucket, date: date, playCount: count, totalMinutes: mins)
+            return TimeSeriesRow(
+                id: "\(bucket)-\(source)",
+                bucket: bucket,
+                date: date,
+                source: source,
+                playCount: count,
+                totalMinutes: mins
+            )
         }
     }
 

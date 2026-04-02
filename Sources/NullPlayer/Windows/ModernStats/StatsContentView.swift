@@ -48,6 +48,9 @@ struct StatsHeaderView: View {
             if let genre = agent.filter.selectedGenre {
                 FilterChip(label: genre) { agent.selectGenre(nil) }
             }
+            if let source = agent.filter.selectedSource {
+                FilterChip(label: PlayHistorySource.displayName(for: source)) { agent.selectSource(nil) }
+            }
             if agent.isLoading {
                 ProgressView().controlSize(.small)
             }
@@ -63,6 +66,25 @@ struct StatsHeaderView: View {
             }
             .pickerStyle(.menu)
             .fixedSize()
+            if agent.genreBreakdown.contains(where: { $0.id == "Unknown" }) {
+                if agent.isBackfilling {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("\(agent.backfillCurrent)/\(agent.backfillTotal)")
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .foregroundColor(.secondary)
+                        Button("Cancel") { agent.cancelGenreBackfill() }
+                            .buttonStyle(.plain)
+                            .foregroundColor(.accentColor)
+                    }
+                } else {
+                    Button("Discover Genres") { agent.startGenreBackfill() }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.accentColor)
+                }
+            }
             if agent.hasVisibleFilters {
                 Button("Clear") { agent.clearVisibleFilters() }
                     .buttonStyle(.plain)
@@ -103,30 +125,40 @@ struct StatsOverviewView: View {
     var skinTextColor: Color = .primary
 
     var body: some View {
-        ScrollView {
+        ScrollView(.vertical) {
             VStack(spacing: 16) {
-                HStack(alignment: .top, spacing: 16) {
-                    TopDimensionChartView(
-                        title: "Top Artists",
-                        rows: agent.topArtists,
-                        skinTextColor: skinTextColor,
-                        selected: Binding(
-                            get: { agent.filter.selectedArtist },
-                            set: { (v: String?) in agent.selectArtist(v) }
-                        )
+                TopDimensionChartView(
+                    title: "Top Artists",
+                    rows: agent.topArtists,
+                    skinTextColor: skinTextColor,
+                    selected: Binding(
+                        get: { agent.filter.selectedArtist },
+                        set: { (v: String?) in agent.selectArtist(v) }
                     )
-                    GenreChartView(
-                        rows: agent.genreBreakdown,
-                        selected: Binding(
-                            get: { agent.filter.selectedGenre },
-                            set: { (v: String?) in agent.selectGenre(v) }
-                        ),
-                        agent: agent
-                    )
-                }
+                )
                 .frame(height: 220)
+
+                GenreChartView(
+                    rows: agent.genreBreakdown,
+                    selected: Binding(
+                        get: { agent.filter.selectedGenre },
+                        set: { (v: String?) in agent.selectGenre(v) }
+                    ),
+                    agent: agent
+                )
+                .frame(height: 240)
+
+                SourceChartView(
+                    rows: agent.sourceBreakdown,
+                    selected: Binding(
+                        get: { agent.filter.selectedSource },
+                        set: { (v: String?) in agent.selectSource(v) }
+                    )
+                )
+                .frame(height: 220)
+
                 TimeSeriesChartView(agent: agent, skinTextColor: skinTextColor)
-                    .frame(height: 180)
+                    .frame(height: 220)
             }
             .padding(12)
         }
@@ -150,17 +182,17 @@ struct TopDimensionChartView: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(spacing: 3) {
                         ForEach(rows) { row in
-                            Button { selected = (selected == row.displayName) ? nil : row.displayName } label: {
+                            Button { selected = (selected == row.id) ? nil : row.id } label: {
                                 HStack(spacing: 6) {
                                     Text(row.displayName)
                                         .font(.caption2)
-                                        .foregroundColor(row.displayName == selected ? Color.accentColor : skinTextColor)
+                                        .foregroundColor(row.id == selected ? Color.accentColor : skinTextColor)
                                         .lineLimit(1)
                                         .frame(width: labelColumnWidth, alignment: .trailing)
                                     GeometryReader { geo in
                                         let fraction = CGFloat(row.playCount) / CGFloat(maxCount)
                                         Capsule()
-                                            .fill(row.displayName == selected ? Color.accentColor : Color.accentColor.opacity(0.55))
+                                            .fill(row.id == selected ? Color.accentColor : Color.accentColor.opacity(0.55))
                                             .frame(width: max(2, geo.size.width * fraction), height: 10)
                                             .frame(maxHeight: .infinity, alignment: .center)
                                     }
@@ -186,11 +218,24 @@ private let genreColors: [Color] = [
     .blue, .green, .orange, .purple, .red, .yellow, .cyan, .pink
 ]
 
+private let sourceColorScale: KeyValuePairs<String, Color> = [
+    "Local": .blue,
+    "Plex": .orange,
+    "Subsonic": .green,
+    "Jellyfin": .purple,
+    "Emby": .pink,
+    "Radio": .red
+]
+
+private func sourceColor(for source: String) -> Color {
+    sourceColorScale.first(where: { $0.0 == source })?.1 ?? .gray
+}
+
 struct GenreChartView: View {
     let rows: [TopDimensionRow]
     @Binding var selected: String?
     @ObservedObject var agent: PlayHistoryAgent
-    private let chartSize: CGFloat = 156
+    private let chartSize: CGFloat = 184
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -199,43 +244,29 @@ struct GenreChartView: View {
                 Text("No data").foregroundColor(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack {
+                        Spacer(minLength: 0)
                         Chart(Array(rows.enumerated()), id: \.element.id) { idx, row in
                             SectorMark(
                                 angle: .value("Plays", row.playCount),
                                 innerRadius: .ratio(0.5)
                             )
                             .foregroundStyle(genreColors[idx % genreColors.count])
-                            .opacity(selected == nil || selected == row.displayName ? 1.0 : 0.4)
+                            .opacity(selected == nil || selected == row.id ? 1.0 : 0.4)
                         }
                         .chartLegend(.hidden)
                         .frame(width: chartSize, height: chartSize)
                         .onTapGesture { selected = nil }
-
-                        if rows.contains(where: { $0.displayName == "Unknown" }) {
-                            if agent.isBackfilling {
-                                HStack(spacing: 6) {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    Text("\(agent.backfillCurrent)/\(agent.backfillTotal)")
-                                        .font(.caption2)
-                                        .monospacedDigit()
-                                        .foregroundColor(.secondary)
-                                    Button("Cancel") { agent.cancelGenreBackfill() }
-                                        .font(.caption2)
-                                }
-                            } else {
-                                Button("Discover Genres") { agent.startGenreBackfill() }
-                                    .font(.caption2)
-                            }
-                        }
+                        Spacer(minLength: 0)
                     }
+                    .frame(width: chartSize)
+                    .frame(maxHeight: .infinity)
 
                     ScrollView(.vertical, showsIndicators: true) {
                         VStack(spacing: 3) {
                             ForEach(Array(rows.enumerated()), id: \.offset) { idx, row in
                                 Button {
-                                    selected = (selected == row.displayName) ? nil : row.displayName
+                                    selected = (selected == row.id) ? nil : row.id
                                 } label: {
                                     HStack(spacing: 6) {
                                         Circle()
@@ -243,7 +274,7 @@ struct GenreChartView: View {
                                             .frame(width: 8, height: 8)
                                         Text(row.displayName)
                                             .font(.caption2)
-                                            .foregroundColor(row.displayName == selected ? .accentColor : .primary)
+                                            .foregroundColor(row.id == selected ? .accentColor : .primary)
                                             .lineLimit(1)
                                         Spacer(minLength: 0)
                                         Text("\(row.playCount)")
@@ -254,7 +285,69 @@ struct GenreChartView: View {
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
-                                .opacity(selected == nil || selected == row.displayName ? 1.0 : 0.5)
+                                .opacity(selected == nil || selected == row.id ? 1.0 : 0.5)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                        .padding(.trailing, 12)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct SourceChartView: View {
+    let rows: [TopDimensionRow]
+    @Binding var selected: String?
+    private let chartSize: CGFloat = 156
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Sources").font(.subheadline).fontWeight(.medium)
+            if rows.isEmpty {
+                Text("No data").foregroundColor(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    Chart(rows) { row in
+                        SectorMark(
+                            angle: .value("Plays", row.playCount),
+                            innerRadius: .ratio(0.5)
+                        )
+                        .foregroundStyle(sourceColor(for: row.displayName))
+                        .opacity(selected == nil || selected == row.id ? 1.0 : 0.4)
+                    }
+                    .chartLegend(.hidden)
+                    .frame(width: chartSize, height: chartSize)
+                    .onTapGesture { selected = nil }
+
+                    ScrollView(.vertical, showsIndicators: true) {
+                        VStack(spacing: 3) {
+                            ForEach(rows) { row in
+                                Button {
+                                    selected = (selected == row.id) ? nil : row.id
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(sourceColor(for: row.displayName))
+                                            .frame(width: 8, height: 8)
+                                        Text(row.displayName)
+                                            .font(.caption2)
+                                            .foregroundColor(row.id == selected ? .accentColor : .primary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 0)
+                                        Text("\(row.playCount)")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .monospacedDigit()
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .opacity(selected == nil || selected == row.id ? 1.0 : 0.5)
                             }
                         }
                         .padding(.vertical, 2)
@@ -273,6 +366,10 @@ struct TimeSeriesChartView: View {
     @ObservedObject var agent: PlayHistoryAgent
     var skinTextColor: Color = .primary
 
+    private var bucketCount: Int {
+        Set(agent.timeSeries.map(\.bucket)).count
+    }
+
     private var calendarUnit: Calendar.Component {
         switch agent.granularity {
         case .day:   return .day
@@ -282,7 +379,7 @@ struct TimeSeriesChartView: View {
     }
 
     private var axisStrideCount: Int {
-        let n = agent.timeSeries.count
+        let n = bucketCount
         guard n > 0 else { return 1 }
         return max(1, n / 6)
     }
@@ -318,8 +415,10 @@ struct TimeSeriesChartView: View {
                         x: .value("Date", row.date, unit: calendarUnit),
                         y: .value("Plays", row.playCount)
                     )
-                    .foregroundStyle(Color.accentColor.opacity(0.8))
+                    .foregroundStyle(by: .value("Source", row.sourceDisplayName))
                 }
+                .chartForegroundStyleScale(sourceColorScale)
+                .chartLegend(.hidden)
                 .chartXAxis {
                     AxisMarks(values: .stride(by: calendarUnit, count: axisStrideCount)) { value in
                         AxisGridLine().foregroundStyle(skinTextColor.opacity(0.15))
@@ -360,18 +459,23 @@ struct StatsHistoryTableView: View {
                 Spacer()
             }
         } else {
-            Table(agent.recentEvents) {
-                TableColumn("Title", value: \.title)
-                TableColumn("Artist", value: \.artist)
-                TableColumn("Album", value: \.album)
-                TableColumn("Genre", value: \.genre)
-                TableColumn("Source", value: \.source)
-                TableColumn("Played At") { row in
-                    Text(row.playedAt, style: .date)
+            ScrollView(.horizontal) {
+                Table(agent.recentEvents) {
+                    TableColumn("Title", value: \.title)
+                    TableColumn("Artist", value: \.artist)
+                    TableColumn("Album", value: \.album)
+                    TableColumn("Genre", value: \.genre)
+                    TableColumn("Source") { row in
+                        Text(row.sourceDisplayName)
+                    }
+                    TableColumn("Played At") { row in
+                        Text(row.playedAt, style: .date)
+                    }
+                    TableColumn("Duration") { row in
+                        Text(String(format: "%.1f min", row.durationListened / 60))
+                    }
                 }
-                TableColumn("Duration") { row in
-                    Text(String(format: "%.1f min", row.durationListened / 60))
-                }
+                .frame(minWidth: 980)
             }
         }
     }

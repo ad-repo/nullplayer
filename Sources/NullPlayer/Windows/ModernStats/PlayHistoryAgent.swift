@@ -1,6 +1,6 @@
 import Foundation
 
-enum StatsDimension { case artist, album, genre }
+enum StatsDimension { case artist, album, genre, source }
 enum StatsGranularity { case day, week, month }
 enum StatsTimeRange: Equatable, Hashable {
     case last7Days, last30Days, last90Days, last365Days, allTime
@@ -42,6 +42,7 @@ final class PlayHistoryAgent: ObservableObject {
     @Published var topAlbums:      [TopDimensionRow] = []
     @Published var timeSeries:     [TimeSeriesRow]   = []
     @Published var genreBreakdown: [TopDimensionRow] = []
+    @Published var sourceBreakdown: [TopDimensionRow] = []
     @Published var recentEvents:   [RecentEventRow]  = []
     @Published var isLoading: Bool = false
     @Published var error: String? = nil
@@ -62,6 +63,7 @@ final class PlayHistoryAgent: ObservableObject {
     private var cachedTopAlbums:      [TopDimensionRow]?
     private var cachedTimeSeries:     [TimeSeriesRow]?
     private var cachedGenreBreakdown: [TopDimensionRow]?
+    private var cachedSourceBreakdown: [TopDimensionRow]?
     private var cachedRecentEvents:   [RecentEventRow]?
 
     private let store = PlayHistoryStore()
@@ -78,7 +80,7 @@ final class PlayHistoryAgent: ObservableObject {
             selectedArtist: nil,
             selectedAlbum: nil,
             selectedGenre: nil,
-            selectedSource: filter.selectedSource,
+            selectedSource: nil,
             excludeSkipped: true
         )
     }
@@ -89,12 +91,14 @@ final class PlayHistoryAgent: ObservableObject {
         filter.selectedArtist != nil ||
         filter.selectedAlbum != nil ||
         filter.selectedGenre != nil ||
+        filter.selectedSource != nil ||
         filter.excludeSkipped != true
     }
 
     private func invalidateCache() {
         cachedTopArtists = nil; cachedTopAlbums = nil
-        cachedTimeSeries = nil; cachedGenreBreakdown = nil; cachedRecentEvents = nil
+        cachedTimeSeries = nil; cachedGenreBreakdown = nil
+        cachedSourceBreakdown = nil; cachedRecentEvents = nil
     }
 
     func scheduleRefresh() {
@@ -113,13 +117,15 @@ final class PlayHistoryAgent: ObservableObject {
                 let b = try store.fetchTopDimension(dimension: .album,  filter: currentFilter)
                 let s = try store.fetchTimeSeries(filter: currentFilter, granularity: currentGranularity)
                 let g = try store.fetchGenreBreakdown(filter: currentFilter)
+                let o = try store.fetchTopDimension(dimension: .source, filter: currentFilter)
                 let r = try store.fetchRecentEvents(filter: currentFilter)
-                return (a, b, s, g, r)
+                return (a, b, s, g, o, r)
             }.value
             try Task.checkCancellation()
-            (topArtists, topAlbums, timeSeries, genreBreakdown, recentEvents) = result
+            (topArtists, topAlbums, timeSeries, genreBreakdown, sourceBreakdown, recentEvents) = result
             cachedTopArtists = result.0; cachedTopAlbums = result.1
-            cachedTimeSeries = result.2; cachedGenreBreakdown = result.3; cachedRecentEvents = result.4
+            cachedTimeSeries = result.2; cachedGenreBreakdown = result.3
+            cachedSourceBreakdown = result.4; cachedRecentEvents = result.5
         } catch is CancellationError {
             // Refresh was superseded by a newer request — discard results silently
         } catch {
