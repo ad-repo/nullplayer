@@ -762,9 +762,13 @@ class ModernEQView: NSView {
         context.setFillColor(NSColor(calibratedWhite: 0.03, alpha: opacityStyle.background).cgColor)
         context.fill(trackRect)
         if opacityStyle.border > 0 {
-            context.setStrokeColor(skin.borderColor.withAlphaComponent(opacityStyle.border).cgColor)
+            // Subtle vertical dividers only — no full rect border to avoid harsh grid look
+            let dividerAlpha = opacityStyle.border * 0.4
+            context.setStrokeColor(skin.borderColor.withAlphaComponent(dividerAlpha).cgColor)
             context.setLineWidth(max(0.5, 0.5 * scale))
-            context.stroke(trackRect)
+            context.move(to: CGPoint(x: trackRect.minX, y: trackRect.minY))
+            context.addLine(to: CGPoint(x: trackRect.minX, y: trackRect.maxY))
+            context.strokePath()
         }
         context.restoreGState()
 
