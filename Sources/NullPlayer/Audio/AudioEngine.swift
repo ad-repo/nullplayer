@@ -3354,6 +3354,7 @@ class AudioEngine {
                           self.currentIndex == index,
                           self.playlist[index].id == expectedTrackID else { return }
 
+                    self.commitShufflePlaybackAdvance(to: index)
                     self.commitLoadedLocalTrack(newAudioFile, track: track, generation: currentGeneration)
                     self.play()
                 }
@@ -3816,7 +3817,7 @@ class AudioEngine {
         if repeatEnabled {
             if shuffleEnabled {
                 // Repeat mode + shuffle: follow the shuffled cycle, reshuffling only after a full pass
-                guard let nextIndex = nextShuffleIndexForPlaybackAdvance() else {
+                guard let nextIndex = peekNextShuffleIndexForPlayback() else {
                     stop()
                     return
                 }
@@ -3829,7 +3830,7 @@ class AudioEngine {
         } else {
             // No repeat mode: check if we're at the end of playlist
             if shuffleEnabled {
-                guard let nextIndex = nextShuffleIndexForPlaybackAdvance() else {
+                guard let nextIndex = peekNextShuffleIndexForPlayback() else {
                     stop()
                     return
                 }
@@ -3864,11 +3865,12 @@ class AudioEngine {
         } else {
             // Streaming tracks, placeholders (about:blank URL fails isFileURL),
             // and video files use the existing synchronous path.
+            commitShufflePlaybackAdvance(to: index)
             loadTrack(at: index)
             play()
         }
     }
-    
+
     // MARK: - Gapless Playback
     
     /// Pre-schedule the next track for gapless playback
