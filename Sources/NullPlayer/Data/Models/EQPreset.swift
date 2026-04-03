@@ -1,84 +1,89 @@
 import Foundation
+import NullPlayerCore
 
 /// Represents an equalizer preset
 struct EQPreset: Identifiable, Codable {
     let id: UUID
     var name: String
     var preamp: Float
-    var bands: [Float]  // 10 bands, -12 to +12 dB
+    var bands: [Float]  // Active layout bands, -12 to +12 dB
     
-    init(name: String, preamp: Float = 0, bands: [Float] = Array(repeating: 0, count: 10)) {
+    init(name: String, preamp: Float = 0, bands: [Float]? = nil) {
         self.id = UUID()
         self.name = name
         self.preamp = preamp
-        self.bands = bands
+        self.bands = bands ?? Array(repeating: 0, count: Self.activeLayout.bandCount)
     }
     
+    private static let presetSourceLayout = EQConfiguration.classic10
+
+    private static var activeLayout: EQConfiguration {
+        EQConfiguration.forModernUI(UserDefaults.standard.bool(forKey: "modernUIEnabled"))
+    }
+
+    private static func preset(name: String, preamp: Float = 0, classicBands: [Float]) -> EQPreset {
+        EQPreset(
+            name: name,
+            preamp: preamp,
+            bands: activeLayout.gainValues(remapping: classicBands, from: presetSourceLayout)
+        )
+    }
+
     // MARK: - Built-in Presets
-    // Bands: 60Hz, 170Hz, 310Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz
-    
-    static let flat = EQPreset(name: "Flat")
-    
-    static let imOld = EQPreset(
-        name: "I'm Old",
-        preamp: 0,
-        bands: [-2, -1, 0, 0, 1, 2, 4, 6, 7, 8]  // Progressive treble boost for high-frequency hearing loss
-    )
-    
-    static let imYoung = EQPreset(
-        name: "I'm Young",
-        preamp: -2,
-        bands: [8, 6, 4, 2, 0, -1, 0, 1, 1, 0]  // Heavy bass boost, slight sub-bass rolloff protection
-    )
-    
-    static let allPresets: [EQPreset] = [
-        .flat, .imOld, .imYoung, .rock, .pop, .electronic, .hipHop, .jazz, .classical
-    ]
+
+    static var flat: EQPreset { EQPreset(name: "Flat") }
+
+    static var imOld: EQPreset {
+        preset(
+            name: "I'm Old",
+            preamp: 0,
+            classicBands: [-2, -1, 0, 0, 1, 2, 4, 6, 7, 8]
+        )
+    }
+
+    static var imYoung: EQPreset {
+        preset(
+            name: "I'm Young",
+            preamp: -2,
+            classicBands: [8, 6, 4, 2, 0, -1, 0, 1, 1, 0]
+        )
+    }
+
+    static var allPresets: [EQPreset] {
+        [.flat, .imOld, .imYoung, .rock, .pop, .electronic, .hipHop, .jazz, .classical]
+    }
 
     /// Presets shown as compact toggle buttons in the modern EQ window (excludes I'm Old / I'm Young)
-    static let buttonPresets: [(preset: EQPreset, label: String)] = [
-        (.flat, "FLAT"), (.rock, "ROCK"), (.pop, "POP"),
-        (.electronic, "ELEC"), (.hipHop, "HIP"), (.jazz, "JAZZ"), (.classical, "CLSC")
-    ]
-    
+    static var buttonPresets: [(preset: EQPreset, label: String)] {
+        [(.flat, "FLAT"), (.rock, "ROCK"), (.pop, "POP"),
+         (.electronic, "ELEC"), (.hipHop, "HIP"), (.jazz, "JAZZ"), (.classical, "CLSC")]
+    }
+
     // MARK: - Genre-Based Auto EQ Presets
-    // Bands: 60Hz, 170Hz, 310Hz, 600Hz, 1kHz, 3kHz, 6kHz, 12kHz, 14kHz, 16kHz
-    
-    static let rock = EQPreset(
-        name: "Rock",
-        preamp: 0,
-        bands: [4, 3, 1, -1, 0, 2, 3, 4, 3, 3]
-    )
-    
-    static let pop = EQPreset(
-        name: "Pop",
-        preamp: 0,
-        bands: [2, 3, 2, 0, 1, 2, 2, 1, 1, 1]
-    )
-    
-    static let electronic = EQPreset(
-        name: "Electronic",
-        preamp: -1,
-        bands: [5, 4, 2, 0, -1, 0, 2, 3, 3, 2]
-    )
-    
-    static let hipHop = EQPreset(
-        name: "Hip-Hop",
-        preamp: -1,
-        bands: [5, 4, 2, 0, 1, 2, 1, 1, 1, 1]
-    )
-    
-    static let jazz = EQPreset(
-        name: "Jazz",
-        preamp: 0,
-        bands: [3, 2, 1, 0, 0, 1, 2, 3, 2, 2]
-    )
-    
-    static let classical = EQPreset(
-        name: "Classical",
-        preamp: 0,
-        bands: [2, 1, 0, 0, 0, 0, 1, 1, 1, 0]
-    )
+
+    static var rock: EQPreset {
+        preset(name: "Rock", preamp: 0, classicBands: [4, 3, 1, -1, 0, 2, 3, 4, 3, 3])
+    }
+
+    static var pop: EQPreset {
+        preset(name: "Pop", preamp: 0, classicBands: [2, 3, 2, 0, 1, 2, 2, 1, 1, 1])
+    }
+
+    static var electronic: EQPreset {
+        preset(name: "Electronic", preamp: -1, classicBands: [5, 4, 2, 0, -1, 0, 2, 3, 3, 2])
+    }
+
+    static var hipHop: EQPreset {
+        preset(name: "Hip-Hop", preamp: -1, classicBands: [5, 4, 2, 0, 1, 2, 1, 1, 1, 1])
+    }
+
+    static var jazz: EQPreset {
+        preset(name: "Jazz", preamp: 0, classicBands: [3, 2, 1, 0, 0, 1, 2, 3, 2, 2])
+    }
+
+    static var classical: EQPreset {
+        preset(name: "Classical", preamp: 0, classicBands: [2, 1, 0, 0, 0, 0, 1, 1, 1, 0])
+    }
     
     /// Map a genre string to an appropriate EQ preset using fuzzy matching
     /// - Parameter genre: The genre string from track metadata
@@ -171,7 +176,8 @@ extension EQPreset {
             }
             offset += 10
             
-            presets.append(EQPreset(name: name, preamp: preamp, bands: bands))
+            let mappedBands = activeLayout.gainValues(remapping: bands, from: presetSourceLayout)
+            presets.append(EQPreset(name: name, preamp: preamp, bands: mappedBands))
         }
         
         return presets

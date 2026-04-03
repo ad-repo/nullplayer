@@ -39,6 +39,12 @@ final class EqualizerTests: NullPlayerUITestCase {
         let endPoint = equalizerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
         startPoint.click(forDuration: 0.1, thenDragTo: endPoint)
         XCTAssertTrue(equalizerWindow.exists)
+
+        // Integrated PRE control / left EQ control interaction
+        let preStart = equalizerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.14, dy: 0.34))
+        let preEnd = equalizerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.14, dy: 0.48))
+        preStart.click(forDuration: 0.1, thenDragTo: preEnd)
+        XCTAssertTrue(equalizerWindow.exists)
         
         // Preset menu
         let presetsArea = equalizerWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.15))

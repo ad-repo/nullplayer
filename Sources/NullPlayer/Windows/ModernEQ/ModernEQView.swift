@@ -1,10 +1,11 @@
 import AppKit
+import NullPlayerCore
 
 // =============================================================================
 // MODERN EQ VIEW - Equalizer with modern skin chrome
 // =============================================================================
-// Renders a 10-band graphic equalizer with preamp, ON/OFF toggle, AUTO toggle,
-// compact preset buttons, EQ curve graph, and frequency labels using the modern skin system.
+// Renders the modern 21-band graphic equalizer with an integrated preamp control,
+// preset buttons, EQ curve graph, and compact frequency labels using the modern skin system.
 //
 // Color scale for sliders and graph curve:
 // - RED at top (+12dB boost)
@@ -34,9 +35,9 @@ class ModernEQView: NSView {
     private var preamp: Float = 0
     
     /// Band values (-12 to +12)
-    private var bands: [Float] = Array(repeating: 0, count: 10)
+    private var bands: [Float] = Array(repeating: 0, count: EQConfiguration.modern21.bandCount)
     
-    /// Currently dragging slider index (-1 = preamp, 0-9 = bands)
+    /// Currently dragging control index (-1 = preamp control, 0... = band faders)
     private var draggingSlider: Int?
     
     /// Button being pressed (for visual feedback)
@@ -73,17 +74,18 @@ class ModernEQView: NSView {
         return hide ? borderWidth : ModernSkinElements.eqTitleBarHeight
     }
     private var borderWidth: CGFloat { ModernSkinElements.eqBorderWidth }
-    
-    /// Frequency labels for the 10 bands
-    private let frequencies = ["60", "170", "310", "600", "1K", "3K", "6K", "12K", "14K", "16K"]
+
+    private var eqConfiguration: EQConfiguration {
+        WindowManager.shared.audioEngine.eqConfiguration
+    }
     
     // Layout matching classic EQ (macOS bottom-left origin, Y increases upward)
     //
     // Visual layout (top to bottom on screen = high Y to low Y):
     //   title bar
     //   [ON] [AUTO] [FLAT][ROCK][POP][ELEC][HIP][JAZZ][CLSC]  <- button row
-    //   [--- EQ curve graph ---] <- full-width graph
-    //   sliders (preamp + 10 bands)
+    //   [PRE][--- EQ curve graph ---]
+    //   sliders (21 bands)
     //   frequency labels
     //   border
     
@@ -94,14 +96,19 @@ class ModernEQView: NSView {
     private var buttonRowY: CGFloat { bounds.height - titleBarHeight - 2 * scale - btnHeight }
     
     /// Graph height
-    private var graphHeight: CGFloat { 20 * scale }
+    private var graphHeight: CGFloat { 22 * scale }
     
     /// Graph Y (below button row)
     private var graphY: CGFloat { buttonRowY - 2 * scale - graphHeight }
     
-    /// Graph area rect (full width below buttons)
+    /// Compact preamp control integrated into the graph strip.
+    private var preampControlRect: NSRect {
+        NSRect(x: borderWidth + 4 * scale, y: graphY, width: 42 * scale, height: graphHeight)
+    }
+
+    /// Graph area rect (to the right of the integrated preamp control)
     private var graphRect: NSRect {
-        let graphX = borderWidth + 4 * scale
+        let graphX = preampControlRect.maxX + 4 * scale
         let graphWidth = bounds.width - graphX - borderWidth - 4 * scale
         return NSRect(x: graphX, y: graphY, width: graphWidth, height: graphHeight)
     }
@@ -110,7 +117,7 @@ class ModernEQView: NSView {
     private var sliderTopY: CGFloat { graphY - 2 * scale }
     
     /// Frequency label height
-    private var freqLabelHeight: CGFloat { 8 * scale }
+    private var freqLabelHeight: CGFloat { 12 * scale }
     
     /// Slider bottom Y (above freq labels)
     private var sliderBottomY: CGFloat { borderWidth + 2 * scale + freqLabelHeight + 1 * scale }
@@ -121,19 +128,22 @@ class ModernEQView: NSView {
     /// Slider height
     private var sliderHeight: CGFloat { sliderTopY - sliderBottomY }
     
-    /// Preamp slider X position
-    private var preampX: CGFloat { borderWidth + 8 * scale }
-    
-    /// Preamp slider width
-    private var sliderWidth: CGFloat { 12 * scale }
-    
-    /// Band sliders start X
-    private var bandStartX: CGFloat { borderWidth + 46 * scale }
-    
-    /// Band spacing
-    private var bandSpacing: CGFloat {
+    private var bandStartX: CGFloat { borderWidth + 4 * scale }
+
+    private var bandGap: CGFloat { max(1.0, 1.1 * scale) }
+
+    private var sliderWidth: CGFloat {
+        let count = CGFloat(eqConfiguration.bandCount)
         let availableWidth = bounds.width - bandStartX - borderWidth - 4 * scale
-        return availableWidth / 10
+        return max(4.5 * scale, (availableWidth - bandGap * (count - 1)) / count)
+    }
+
+    private var bandSpacing: CGFloat {
+        sliderWidth + bandGap
+    }
+
+    private func bandX(_ index: Int) -> CGFloat {
+        bandStartX + CGFloat(index) * bandSpacing
     }
     
     // MARK: - Initialization
@@ -207,7 +217,10 @@ class ModernEQView: NSView {
         
         // Load preamp and band values
         preamp = engine.getPreamp()
-        for i in 0..<10 {
+        if bands.count != eqConfiguration.bandCount {
+            bands = Array(repeating: 0, count: eqConfiguration.bandCount)
+        }
+        for i in 0..<eqConfiguration.bandCount {
             bands[i] = engine.getEQBand(i)
         }
         
@@ -222,7 +235,10 @@ class ModernEQView: NSView {
     /// Apply an EQ preset (updates UI and audio engine)
     private func applyPreset(_ preset: EQPreset) {
         preamp = preset.preamp
-        bands = preset.bands
+        bands = Array(preset.bands.prefix(eqConfiguration.bandCount))
+        if bands.count < eqConfiguration.bandCount {
+            bands.append(contentsOf: Array(repeating: 0, count: eqConfiguration.bandCount - bands.count))
+        }
         
         // Apply to audio engine
         WindowManager.shared.audioEngine.setPreamp(preset.preamp)
@@ -461,39 +477,21 @@ class ModernEQView: NSView {
         let tinyFont = skin.eqValueFont()
         let faderOpacity = skin.resolvedOpacity(for: .eqFaderBackground)
         let curveOpacity = skin.resolvedOpacity(for: .curveBackground)
-        
+
         // == 1. Sliders (clip so glow doesn't bleed up) ==
-        let preampCenterX = preampX + sliderWidth / 2
-        
         context.saveGState()
         context.clip(to: NSRect(x: 0, y: 0, width: bounds.width, height: sliderTopY))
-        
-        // Preamp slider
-        drawSlider(index: -1, x: preampX, opacityStyle: faderOpacity, context: context)
-        
-        // Separator line between preamp and bands
-        let sepX = bandStartX - 5 * scale
-        context.saveGState()
-        context.setShadow(offset: .zero, blur: 3 * scale * glowMultiplier,
-                          color: skin.primaryColor.withAlphaComponent(0.3).cgColor)
-        context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.2).cgColor)
-        context.setLineWidth(1.0)
-        context.move(to: CGPoint(x: sepX, y: sliderBottomY))
-        context.addLine(to: CGPoint(x: sepX, y: sliderTopY))
-        context.strokePath()
-        context.restoreGState()
-        
-        // 10 band sliders
-        for i in 0..<10 {
-            let x = bandStartX + CGFloat(i) * bandSpacing
+
+        for i in bands.indices {
+            let x = bandX(i)
             drawSlider(index: i, x: x, opacityStyle: faderOpacity, context: context)
         }
-        
+
         context.restoreGState() // end slider clip
-        
+
         // == 2. Button row + EQ graph (same horizontal strip, on top of everything) ==
         let btnY = buttonRowY
-        
+
         // ON/OFF button (left side)
         let onOffX = borderWidth + 4 * scale
         let onOffWidth: CGFloat = 26 * scale
@@ -523,21 +521,23 @@ class ModernEQView: NSView {
                              font: font, context: context)
         }
 
+        drawPreampControl(font: font, tinyFont: tinyFont, context: context)
+
         // EQ curve graph
         drawEQGraph(opacityStyle: curveOpacity, context: context)
-        
+
         // == 3. Frequency labels (bottom) ==
-        // PRE dB value under preamp
-        let dbValue = String(format: "%+.0f", preamp)
-        drawGlowText(dbValue, at: NSPoint(x: preampCenterX, y: freqLabelY + freqLabelHeight / 2),
-                     font: tinyFont, color: eqValueToColor(preamp), glow: true, context: context)
-        
-        // Band frequency labels
-        for i in 0..<10 {
-            let x = bandStartX + CGFloat(i) * bandSpacing
+
+        for i in bands.indices {
+            let x = bandX(i)
             let sliderCenterX = x + sliderWidth / 2
-            drawGlowText(frequencies[i], at: NSPoint(x: sliderCenterX, y: freqLabelY + freqLabelHeight / 2),
-                         font: tinyFont, color: skin.primaryColor.withAlphaComponent(0.5), glow: false, context: context)
+            let labelY = freqLabelY + (i.isMultiple(of: 2) ? freqLabelHeight * 0.72 : freqLabelHeight * 0.28)
+            drawGlowText(eqConfiguration.displayLabels[i],
+                         at: NSPoint(x: sliderCenterX, y: labelY),
+                         font: tinyFont,
+                         color: skin.primaryColor.withAlphaComponent(0.55),
+                         glow: false,
+                         context: context)
         }
     }
     
@@ -673,12 +673,82 @@ class ModernEQView: NSView {
             str.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
         }
     }
+
+    private func drawPreampControl(font: NSFont, tinyFont: NSFont, context: CGContext) {
+        let skin = renderer.skin
+        let rect = preampControlRect
+        let dialSize = min(rect.height - 4 * scale, 16 * scale)
+        let dialRect = NSRect(x: rect.minX + 2 * scale, y: rect.midY - dialSize / 2, width: dialSize, height: dialSize)
+        let center = CGPoint(x: dialRect.midX, y: dialRect.midY)
+        let color = eqValueToColor(preamp)
+        let normalized = CGFloat((preamp + 12) / 24)
+        let startAngle = CGFloat.pi * 0.75
+        let sweep = CGFloat.pi * 1.5
+        let indicatorAngle = startAngle - sweep * normalized
+        let capsulePath = CGPath(roundedRect: rect, cornerWidth: rect.height / 2, cornerHeight: rect.height / 2, transform: nil)
+
+        context.saveGState()
+        context.setFillColor(NSColor(calibratedWhite: 0.02, alpha: 0.92).cgColor)
+        context.addPath(capsulePath)
+        context.fillPath()
+        context.restoreGState()
+
+        context.saveGState()
+        context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.18).cgColor)
+        context.setLineWidth(max(0.5, 0.75 * scale))
+        context.addPath(capsulePath)
+        context.strokePath()
+        context.restoreGState()
+
+        context.saveGState()
+        context.setStrokeColor(skin.textDimColor.withAlphaComponent(0.25).cgColor)
+        context.setLineWidth(max(1.2, 1.4 * scale))
+        context.addEllipse(in: dialRect)
+        context.strokePath()
+        context.restoreGState()
+
+        context.saveGState()
+        context.setLineWidth(max(1.2, 1.5 * scale))
+        context.setLineCap(.round)
+        context.setShadow(offset: .zero, blur: 5 * scale * glowMultiplier, color: color.withAlphaComponent(0.75).cgColor)
+        context.setStrokeColor(color.withAlphaComponent(0.9).cgColor)
+        context.addArc(center: center, radius: dialRect.width / 2, startAngle: startAngle, endAngle: indicatorAngle, clockwise: true)
+        context.strokePath()
+        context.restoreGState()
+
+        let indicatorRadius = dialRect.width / 2
+        let indicatorCenter = CGPoint(
+            x: center.x + cos(indicatorAngle) * indicatorRadius,
+            y: center.y + sin(indicatorAngle) * indicatorRadius
+        )
+        let indicatorRect = NSRect(x: indicatorCenter.x - 1.5 * scale, y: indicatorCenter.y - 1.5 * scale, width: 3 * scale, height: 3 * scale)
+        context.saveGState()
+        context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier, color: color.withAlphaComponent(0.8).cgColor)
+        context.setFillColor(color.cgColor)
+        context.fillEllipse(in: indicatorRect)
+        context.restoreGState()
+
+        drawGlowText("PRE",
+                     at: NSPoint(x: rect.maxX - 10 * scale, y: rect.midY + 4 * scale),
+                     font: font,
+                     color: skin.primaryColor.withAlphaComponent(0.75),
+                     glow: false,
+                     context: context)
+
+        let dbValue = String(format: "%+.0f", preamp)
+        drawGlowText(dbValue,
+                     at: NSPoint(x: rect.maxX - 10 * scale, y: rect.midY - 4 * scale),
+                     font: tinyFont,
+                     color: color,
+                     glow: true,
+                     context: context)
+    }
     
     // MARK: - Slider Drawing
     
     /// Uses `window.areaOpacity.eqFaderBackground` channels.
     private func drawSlider(index: Int, x: CGFloat, opacityStyle: ResolvedAreaOpacityStyle, context: CGContext) {
-        let value = index == -1 ? preamp : bands[index]
+        let value = bands[index]
         let skin = renderer.skin
         
         let trackRect = NSRect(x: x, y: sliderBottomY, width: sliderWidth, height: sliderHeight)
@@ -756,8 +826,8 @@ class ModernEQView: NSView {
             context.restoreGState()
             
             // === THUMB - the big glowing indicator ===
-            let thumbHeight: CGFloat = 4 * scale
-            let thumbOverhang: CGFloat = 3 * scale
+            let thumbHeight: CGFloat = max(3 * scale, 3.5 * scale)
+            let thumbOverhang: CGFloat = min(2 * scale, sliderWidth * 0.4)
             let thumbRect = NSRect(x: x - thumbOverhang, y: thumbY - thumbHeight / 2,
                                    width: sliderWidth + thumbOverhang * 2, height: thumbHeight)
             
@@ -821,8 +891,9 @@ class ModernEQView: NSView {
         // Always draw the curve (even when flat it shows the center line as the curve)
         let insetRect = rect.insetBy(dx: 2, dy: 2)
         var points: [(x: CGFloat, y: CGFloat)] = []
-        for i in 0..<10 {
-            let px = insetRect.minX + (insetRect.width / 9) * CGFloat(i)
+        let divisor = max(1, eqConfiguration.bandCount - 1)
+        for i in bands.indices {
+            let px = insetRect.minX + (insetRect.width / CGFloat(divisor)) * CGFloat(i)
             let bandValue = isEnabled ? bands[i] : Float(0)
             let normalizedValue = (bandValue + 12) / 24
             let py = insetRect.minY + insetRect.height * CGFloat(normalizedValue)
@@ -843,20 +914,54 @@ class ModernEQView: NSView {
                                control2: CGPoint(x: midX, y: curr.y))
         }
         
-        // Filled area between curve and center line
-        let fillPath = curvePath.mutableCopy()!
-        fillPath.addLine(to: CGPoint(x: points.last!.x, y: rect.midY))
-        fillPath.addLine(to: CGPoint(x: points.first!.x, y: rect.midY))
-        fillPath.closeSubpath()
-        
         withContextAlpha(opacityStyle.content, context: context) {
-            context.saveGState()
-            context.clip(to: rect)
-            context.addPath(fillPath)
-            context.clip()
-            context.setFillColor(skin.accentColor.withAlphaComponent(0.3).cgColor)
-            context.fill(rect)
-            context.restoreGState()
+            let centerY = rect.midY
+            let miniTrackWidth = min(3.0 * scale, max(1.4 * scale, insetRect.width / CGFloat(max(1, eqConfiguration.bandCount)) * 0.26))
+            let cornerRadius = miniTrackWidth / 2
+
+            for point in points {
+                let trackRect = NSRect(
+                    x: point.x - miniTrackWidth / 2,
+                    y: insetRect.minY,
+                    width: miniTrackWidth,
+                    height: insetRect.height
+                )
+                let trackPath = CGPath(roundedRect: trackRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+
+                context.saveGState()
+                context.clip(to: rect)
+                context.setFillColor(NSColor(calibratedWhite: 0.03, alpha: 0.85).cgColor)
+                context.addPath(trackPath)
+                context.fillPath()
+                context.restoreGState()
+
+                context.saveGState()
+                context.clip(to: rect)
+                context.setStrokeColor(skin.primaryColor.withAlphaComponent(0.18).cgColor)
+                context.setLineWidth(max(0.35, 0.45 * scale))
+                context.addPath(trackPath)
+                context.strokePath()
+                context.restoreGState()
+
+                let activeMinY = min(centerY, point.y)
+                let activeHeight = max(abs(point.y - centerY), 1.2 * scale)
+                let activeRect = NSRect(
+                    x: point.x - miniTrackWidth / 2,
+                    y: activeMinY,
+                    width: miniTrackWidth,
+                    height: activeHeight
+                )
+                let activePath = CGPath(roundedRect: activeRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+
+                context.saveGState()
+                context.clip(to: rect)
+                context.setShadow(offset: .zero, blur: 4 * scale * glowMultiplier,
+                                  color: skin.accentColor.withAlphaComponent(0.45).cgColor)
+                context.setFillColor(skin.accentColor.withAlphaComponent(0.34).cgColor)
+                context.addPath(activePath)
+                context.fillPath()
+                context.restoreGState()
+            }
             
             // Curve - wide glow
             context.saveGState()
@@ -864,7 +969,7 @@ class ModernEQView: NSView {
             context.setShadow(offset: .zero, blur: 8 * scale * glowMultiplier,
                               color: skin.accentColor.withAlphaComponent(0.8).cgColor)
             context.setStrokeColor(skin.accentColor.withAlphaComponent(0.8).cgColor)
-            context.setLineWidth(2.5 * scale)
+            context.setLineWidth(1.8 * scale)
             context.setLineJoin(.round)
             context.setLineCap(.round)
             context.addPath(curvePath)
@@ -875,7 +980,7 @@ class ModernEQView: NSView {
             context.saveGState()
             context.clip(to: rect)
             context.setStrokeColor(skin.accentColor.cgColor)
-            context.setLineWidth(1.5 * scale)
+            context.setLineWidth(1.1 * scale)
             context.setLineJoin(.round)
             context.setLineCap(.round)
             context.addPath(curvePath)
@@ -886,7 +991,7 @@ class ModernEQView: NSView {
             context.saveGState()
             context.clip(to: rect)
             context.setStrokeColor(NSColor.white.withAlphaComponent(0.4).cgColor)
-            context.setLineWidth(0.5 * scale)
+            context.setLineWidth(max(0.3, 0.45 * scale))
             context.setLineJoin(.round)
             context.setLineCap(.round)
             context.addPath(curvePath)
@@ -895,7 +1000,7 @@ class ModernEQView: NSView {
             
             // Glowing dots at each band point
             for point in points {
-                let dotR: CGFloat = 2.5 * scale
+                let dotR: CGFloat = bands.count > 12 ? 1.25 * scale : 2.5 * scale
                 let dotRect = NSRect(x: point.x - dotR, y: point.y - dotR,
                                      width: dotR * 2, height: dotR * 2)
                 context.saveGState()
@@ -1024,19 +1129,15 @@ class ModernEQView: NSView {
         let rect = NSRect(x: autoX, y: buttonRowY, width: 34 * scale, height: btnHeight)
         return rect.contains(point)
     }
+
+    private func hitTestPreampControl(at point: NSPoint) -> Bool {
+        preampControlRect.insetBy(dx: -2 * scale, dy: -2 * scale).contains(point)
+    }
     
-    /// Hit test sliders. Returns -1 for preamp, 0-9 for bands, nil if miss.
+    /// Hit test band sliders. Returns the band index or nil if miss.
     private func hitTestSlider(at point: NSPoint) -> Int? {
-        // Check preamp
-        let preampRect = NSRect(x: preampX - 2 * scale, y: sliderBottomY,
-                                width: sliderWidth + 4 * scale, height: sliderHeight)
-        if preampRect.contains(point) {
-            return -1
-        }
-        
-        // Check bands
-        for i in 0..<10 {
-            let x = bandStartX + CGFloat(i) * bandSpacing
+        for i in bands.indices {
+            let x = bandX(i)
             let bandRect = NSRect(x: x - 2 * scale, y: sliderBottomY,
                                   width: sliderWidth + 4 * scale, height: sliderHeight)
             if bandRect.contains(point) {
@@ -1138,17 +1239,27 @@ class ModernEQView: NSView {
             }
         }
 
-        // Double-click slider area -> reset only that band/preamp
-        if event.clickCount == 2, let index = hitTestSlider(at: point) {
-            if index == -1 {
-                preamp = 0
-                WindowManager.shared.audioEngine.setPreamp(0)
-            } else {
-                bands[index] = 0
-                WindowManager.shared.audioEngine.setEQBand(index, gain: 0)
-            }
+        // Double-click integrated PRE control -> reset preamp
+        if event.clickCount == 2, hitTestPreampControl(at: point) {
+            preamp = 0
+            WindowManager.shared.audioEngine.setPreamp(0)
             activePresetIndex = nil
             needsDisplay = true
+            return
+        }
+
+        // Double-click slider area -> reset only that band
+        if event.clickCount == 2, let index = hitTestSlider(at: point) {
+            bands[index] = 0
+            WindowManager.shared.audioEngine.setEQBand(index, gain: 0)
+            activePresetIndex = nil
+            needsDisplay = true
+            return
+        }
+
+        if hitTestPreampControl(at: point) {
+            draggingSlider = -1
+            updateSliderFromPoint(point)
             return
         }
 
@@ -1275,16 +1386,17 @@ class ModernEQView: NSView {
         // Clear active preset highlight when user manually adjusts a slider
         activePresetIndex = nil
 
-        // Calculate value from Y position
-        // sliderBottomY = -12dB, sliderTopY (sliderBottomY + sliderHeight) = +12dB
-        let normalizedY = (point.y - sliderBottomY) / sliderHeight
-        let clampedY = max(0, min(1, normalizedY))
-        let value = Float(clampedY) * 24 - 12 // 0..1 -> -12..+12
-
         if index == -1 {
+            let normalizedY = (point.y - preampControlRect.minY) / preampControlRect.height
+            let clampedY = max(0, min(1, normalizedY))
+            let value = Float(clampedY) * 24 - 12
             preamp = value
             WindowManager.shared.audioEngine.setPreamp(value)
         } else {
+            // sliderBottomY = -12dB, sliderTopY (sliderBottomY + sliderHeight) = +12dB
+            let normalizedY = (point.y - sliderBottomY) / sliderHeight
+            let clampedY = max(0, min(1, normalizedY))
+            let value = Float(clampedY) * 24 - 12
             bands[index] = value
             WindowManager.shared.audioEngine.setEQBand(index, gain: value)
         }

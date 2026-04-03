@@ -4,6 +4,7 @@ import Accelerate
 import CoreAudio
 import AudioToolbox
 import AudioStreaming
+import NullPlayerCore
 
 // MARK: - Notifications
 
@@ -108,8 +109,11 @@ class AudioEngine {
     /// Audio player node
     private let playerNode = AVAudioPlayerNode()
     
-    /// 10-band equalizer
-    private let eqNode = AVAudioUnitEQ(numberOfBands: 10)
+    /// Active EQ layout. Classic mode keeps the legacy 10-band layout; modern mode uses 21 bands.
+    private let activeEQConfiguration: EQConfiguration
+
+    /// Equalizer
+    private let eqNode: AVAudioUnitEQ
     
     /// Limiter for anti-clipping protection when EQ boosts are applied
     /// Uses Apple's built-in AUDynamicsProcessor Audio Unit
@@ -403,7 +407,11 @@ class AudioEngine {
     private var waveformConsumers = Set<String>()
 
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
-    private var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+    private var isModernUIEnabled: Bool
+
+    var eqConfiguration: EQConfiguration {
+        activeEQConfiguration
+    }
 
     func addSpectrumConsumer(_ id: String) {
         spectrumConsumers.insert(id)
@@ -491,12 +499,6 @@ class AudioEngine {
     /// Tap for audio analysis
     private var analysisTap: AVAudioNodeTapBlock?
     
-    /// Standard classic skin EQ frequencies
-    static let eqFrequencies: [Float] = [
-        60, 170, 310, 600, 1000,
-        3000, 6000, 12000, 14000, 16000
-    ]
-    
     /// Current output device ID (nil = system default)
     private(set) var currentOutputDeviceID: AudioDeviceID?
     
@@ -519,6 +521,11 @@ class AudioEngine {
     // MARK: - Initialization
     
     init() {
+        let modernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+        isModernUIEnabled = modernUIEnabled
+        activeEQConfiguration = EQConfiguration.forModernUI(modernUIEnabled)
+        eqNode = AVAudioUnitEQ(numberOfBands: activeEQConfiguration.bandCount)
+
         // Initialize cached normalization mode from UserDefaults
         if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
            let mode = SpectrumNormalizationMode(rawValue: saved) {
@@ -826,24 +833,22 @@ class AudioEngine {
     private func setupEqualizer() {
         // Configure each EQ band for graphic EQ behavior
         // Use low shelf for bass, high shelf for treble, and parametric for mids
-        for (index, frequency) in Self.eqFrequencies.enumerated() {
+        for (index, frequency) in activeEQConfiguration.frequencies.enumerated() {
             let band = eqNode.bands[index]
             
-            // First band (60Hz): low shelf for bass control
-            // Last band (16kHz): high shelf for treble control
-            // Middle bands: parametric with wide bandwidth
+            // First band: low shelf for bass control
+            // Last band: high shelf for treble control
+            // Middle bands: parametric for 1/3-octave shaping
             if index == 0 {
                 band.filterType = .lowShelf
-            } else if index == 9 {
+            } else if index == activeEQConfiguration.bandCount - 1 {
                 band.filterType = .highShelf
             } else {
                 band.filterType = .parametric
             }
             
             band.frequency = frequency
-            // Use wider bandwidth (2.0 octaves) for more audible effect
-            // Narrower bandwidth at higher frequencies for precision
-            band.bandwidth = index < 5 ? 2.0 : 1.5
+            band.bandwidth = band.filterType == .parametric ? activeEQConfiguration.parametricBandwidth : 1.0
             band.gain = 0.0       // Flat by default
             band.bypass = false   // Individual bands active when EQ is enabled
         }
@@ -3197,7 +3202,7 @@ class AudioEngine {
         
         // Create streaming player if needed
         if streamingPlayer == nil {
-            streamingPlayer = StreamingAudioPlayer()
+            streamingPlayer = StreamingAudioPlayer(eqConfiguration: activeEQConfiguration)
             streamingPlayer?.delegate = self
             streamingPlayer?.spectrumNeeded = spectrumNeeded
             streamingPlayer?.waveformNeeded = waveformNeeded
@@ -3269,7 +3274,7 @@ class AudioEngine {
         guard let targetPlayer = sp else { return }
         
         var bands: [Float] = []
-        for i in 0..<10 {
+        for i in 0..<activeEQConfiguration.bandCount {
             bands.append(eqNode.bands[i].gain)
         }
         
@@ -3738,7 +3743,7 @@ class AudioEngine {
         
         // Create secondary streaming player if needed
         if crossfadeStreamingPlayer == nil {
-            crossfadeStreamingPlayer = StreamingAudioPlayer()
+            crossfadeStreamingPlayer = StreamingAudioPlayer(eqConfiguration: activeEQConfiguration)
             // Note: We don't set delegate - we handle state internally during crossfade
         }
         
@@ -4235,7 +4240,7 @@ class AudioEngine {
     
     /// Set EQ band gain (-12 to +12 dB)
     func setEQBand(_ band: Int, gain: Float) {
-        guard band >= 0 && band < 10 else { return }
+        guard band >= 0 && band < activeEQConfiguration.bandCount else { return }
         let clampedGain = max(-12, min(12, gain))
         eqNode.bands[band].gain = clampedGain
         // Sync to streaming player
@@ -4244,7 +4249,7 @@ class AudioEngine {
     
     /// Get EQ band gain
     func getEQBand(_ band: Int) -> Float {
-        guard band >= 0 && band < 10 else { return 0 }
+        guard band >= 0 && band < activeEQConfiguration.bandCount else { return 0 }
         return eqNode.bands[band].gain
     }
     

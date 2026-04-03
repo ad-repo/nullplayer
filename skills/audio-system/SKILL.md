@@ -16,7 +16,7 @@ NullPlayer uses two parallel audio pipelines to handle different content types:
 | Local files (.mp3, .flac, etc.) | AVAudioEngine | Yes | Yes | Cached 4096-bucket snapshot |
 | HTTP streaming (Plex/Subsonic/Jellyfin/Emby/radio) | AudioStreaming library | Yes | Yes | Live stream accumulator from 576-sample PCM chunks |
 
-Both pipelines support full 10-band EQ and real-time spectrum visualization. EQ settings are automatically synchronized between them. The waveform window reuses the same playback sources but splits into two modes: cached snapshots for local files and live waveform accumulation for streams.
+Both pipelines support the active EQ layout for the current UI mode and real-time spectrum visualization. Classic mode uses the legacy 10-band layout; modern mode uses a 21-band layout. EQ settings are automatically synchronized between them. The waveform window reuses the same playback sources but splits into two modes: cached snapshots for local files and live waveform accumulation for streams.
 
 ## Architecture Diagram
 
@@ -56,7 +56,7 @@ Both pipelines support full 10-band EQ and real-time spectrum visualization. EQ 
 │                           ▼                                         │
 │                    ┌──────────────┐                                 │
 │                    │ eqNode       │                                 │
-│                    │ (10-band EQ) │                                 │
+│                    │ (mode EQ)    │                                 │
 │                    └──────┬───────┘                                 │
 │                           │                                         │
 │                           ▼                                         │
@@ -100,7 +100,8 @@ Main audio controller managing:
 private let engine = AVAudioEngine()
 private let playerNode = AVAudioPlayerNode()
 private let crossfadePlayerNode = AVAudioPlayerNode()
-private let eqNode = AVAudioUnitEQ(numberOfBands: 10)
+private let activeEQConfiguration: EQConfiguration
+private let eqNode: AVAudioUnitEQ
 private let limiterNode = AVAudioUnitDynamicsProcessor()
 private var streamingPlayer: StreamingAudioPlayer?
 private var crossfadeStreamingPlayer: StreamingAudioPlayer?
@@ -154,7 +155,9 @@ See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 
 ### Configuration
 
-10-band classic configuration (both pipelines):
+Classic mode uses the legacy 10-band configuration; modern mode uses a 21-band configuration derived from `EQConfiguration.modern21`. Both pipelines build their `AVAudioUnitEQ` from the same active layout at launch.
+
+### Classic 10-Band Configuration
 
 | Band | Frequency | Filter Type | Bandwidth |
 |------|-----------|-------------|-----------|
@@ -169,10 +172,20 @@ See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 | 8 | 14 kHz | Parametric | 1.5 octaves |
 | 9 | 16 kHz | High Shelf | 1.5 octaves |
 
+### Modern 21-Band Configuration
+
+Frequencies: `31.5, 45, 63, 90, 125, 180, 250, 355, 500, 710, 1000, 1400, 2000, 2800, 4000, 5600, 8000, 11200, 14000, 16000, 20000`
+
+- First band: `lowShelf`
+- Last band: `highShelf`
+- Middle bands: `parametric`
+- Parametric bandwidth: `1.0` octave
+
 - Per-band gain: **-12 dB to +12 dB**
 - Preamp (global gain): **-12 dB to +12 dB**
 - **Disabled by default** to preserve original audio quality
 - Transparent limiter (threshold: -1 dB) prevents clipping
+- Saved EQ arrays are remapped between 10-band and 21-band layouts when restoring across classic/modern mode switches
 
 ### Modern EQ UI Controls
 
@@ -181,11 +194,15 @@ See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 | ON toggle | Enable/disable EQ |
 | AUTO toggle | Apply genre-based preset for current track; auto-enables EQ if off |
 | FLAT ROCK POP ELEC HIP JAZZ CLSC buttons | Apply preset and highlight active button; auto-enables EQ if off; clicking active button deactivates (applies flat, no highlight) |
-| Drag a fader | Adjust band/preamp; clears active preset highlight |
+| Drag a fader | Adjust that EQ band; clears active preset highlight |
 | Double-click a fader | Reset that band only to 0 dB (not all bands) |
-| Double-click preamp | Reset preamp only to 0 dB |
+| Integrated `PRE` control | Adjust global preamp from `-12...+12 dB`; double-click resets to `0 dB` |
 
-Preset buttons stretch to fill all remaining horizontal space after the AUTO button.
+Modern EQ specifics:
+- 21 compact faders across the full slider strip
+- Integrated glowing `PRE` control in the graph/header strip instead of a dedicated left preamp slider
+- All 21 frequency labels are shown in-window using compact formatting (`1K`, `1.4K`, `2K`, etc.)
+- Graph background uses per-band mini tracks so it visually echoes the fader lanes instead of a single connected fill
 
 ### EQ Synchronization
 

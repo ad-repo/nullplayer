@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import AudioStreaming
 import Accelerate
+import NullPlayerCore
 
 /// Delegate protocol for streaming audio player events
 protocol StreamingAudioPlayerDelegate: AnyObject {
@@ -25,7 +26,10 @@ class StreamingAudioPlayer {
     /// The underlying AudioStreaming player
     private let player: AudioPlayer
     
-    /// 10-band equalizer attached to the player
+    /// Active EQ layout for this player's internal AVAudioUnitEQ.
+    private let eqConfiguration: EQConfiguration
+
+    /// Equalizer attached to the player
     private let eqNode: AVAudioUnitEQ
     
     /// Real-time BPM detector for tempo display
@@ -140,12 +144,6 @@ class StreamingAudioPlayer {
     private var waveformRingWriteIndex = 0
     private var waveformRingCount = 0
     
-    /// Standard classic skin EQ frequencies
-    static let eqFrequencies: [Float] = [
-        60, 170, 310, 600, 1000,
-        3000, 6000, 12000, 14000, 16000
-    ]
-    
     /// Current playback state
     var state: AudioPlayerState {
         player.state
@@ -181,7 +179,9 @@ class StreamingAudioPlayer {
     
     // MARK: - Initialization
     
-    init() {
+    init(eqConfiguration: EQConfiguration = .forModernUI(UserDefaults.standard.bool(forKey: "modernUIEnabled"))) {
+        self.eqConfiguration = eqConfiguration
+
         // Initialize cached normalization mode from UserDefaults
         if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
            let mode = SpectrumNormalizationMode(rawValue: saved) {
@@ -192,7 +192,7 @@ class StreamingAudioPlayer {
         player = AudioPlayer()
         
         // Create and configure the EQ
-        eqNode = AVAudioUnitEQ(numberOfBands: 10)
+        eqNode = AVAudioUnitEQ(numberOfBands: eqConfiguration.bandCount)
         setupEQ()
         
         // Attach EQ to the player's audio graph
@@ -212,7 +212,7 @@ class StreamingAudioPlayer {
             object: nil
         )
         
-        NSLog("StreamingAudioPlayer: Initialized with EQ")
+        NSLog("StreamingAudioPlayer: Initialized with %@ EQ", eqConfiguration.name)
     }
     
     deinit {
@@ -232,22 +232,22 @@ class StreamingAudioPlayer {
     
     private func setupEQ() {
         // Configure each EQ band for graphic EQ behavior
-        for (index, frequency) in Self.eqFrequencies.enumerated() {
+        for (index, frequency) in eqConfiguration.frequencies.enumerated() {
             let band = eqNode.bands[index]
             
-            // First band (60Hz): low shelf for bass control
-            // Last band (16kHz): high shelf for treble control
-            // Middle bands: parametric with wide bandwidth
+            // First band: low shelf for bass control
+            // Last band: high shelf for treble control
+            // Middle bands: parametric for tighter 1/3-octave shaping
             if index == 0 {
                 band.filterType = .lowShelf
-            } else if index == 9 {
+            } else if index == eqConfiguration.bandCount - 1 {
                 band.filterType = .highShelf
             } else {
                 band.filterType = .parametric
             }
             
             band.frequency = frequency
-            band.bandwidth = index < 5 ? 2.0 : 1.5
+            band.bandwidth = band.filterType == .parametric ? eqConfiguration.parametricBandwidth : 1.0
             band.gain = 0.0
             band.bypass = false   // Individual bands active when EQ is enabled
         }
@@ -349,13 +349,13 @@ class StreamingAudioPlayer {
     
     /// Set EQ band gain (-12 to +12 dB)
     func setEQBand(_ band: Int, gain: Float) {
-        guard band >= 0 && band < 10 else { return }
+        guard band >= 0 && band < eqConfiguration.bandCount else { return }
         eqNode.bands[band].gain = max(-12, min(12, gain))
     }
     
     /// Get EQ band gain
     func getEQBand(_ band: Int) -> Float {
-        guard band >= 0 && band < 10 else { return 0 }
+        guard band >= 0 && band < eqConfiguration.bandCount else { return 0 }
         return eqNode.bands[band].gain
     }
     

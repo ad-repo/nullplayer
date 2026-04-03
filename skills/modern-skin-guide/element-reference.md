@@ -166,7 +166,7 @@ The modern playlist has no bottom bar -- all operations via context menu and key
 | `eq_btn_close` | 261,104,10,10 | normal, pressed | EQ close button |
 | `eq_btn_shade` | 249,104,10,10 | normal, pressed | EQ shade button |
 
-The modern EQ window renders a 10-band graphic equalizer with preamp, ON/OFF toggle, AUTO toggle, and PRESETS menu. Sliders use color-coded fill: green (-12dB) through yellow (0dB) to red (+12dB).
+The modern EQ window renders a 21-band graphic equalizer with an integrated `PRE` control, ON/OFF toggle, AUTO toggle, and compact preset buttons (`FLAT`, `ROCK`, `POP`, `ELEC`, `HIP`, `JAZZ`, `CLSC`). The old dedicated preamp slider lane is gone; the `PRE` control now lives in the graph strip. Sliders still use color-coded fill from green (-12dB) through yellow (0dB) to red (+12dB), and the graph background now uses slim per-band mini tracks so it visually matches the fader lanes.
 
 ## ProjectM Window Chrome
 

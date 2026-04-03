@@ -20,7 +20,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 |--------|-------------|--------|
 | **Main Window** | Primary player with transport controls | Always visible |
 | **Playlist Editor** | Track list and playlist management | PL button or context menu |
-| **Equalizer** | 10-band graphic EQ with presets | EQ button or context menu |
+| **Equalizer** | Classic 10-band EQ or modern 21-band EQ with presets | EQ button or context menu |
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic and local media | Logo button or context menu |
 | **ProjectM** | Real-time audio visualizations | Menu button or context menu |
@@ -174,12 +174,15 @@ Import discovery is now unified across classic + modern entry points (main windo
 ## Audio Features
 
 ### Equalizer
-- 10-band graphic EQ (-12dB to +12dB per band)
+- **Classic UI**: 10-band graphic EQ (-12dB to +12dB per band)
+- **Modern UI**: 21-band graphic EQ (-12dB to +12dB per band)
 - Preamp control
 - Anti-clipping limiter
 - **Modern UI**: 7 compact preset toggle buttons in the button row (FLAT, ROCK, POP, ELEC, HIP, JAZZ, CLSC); clicking a preset auto-enables EQ if off; clicking the active preset deactivates it (reverts to flat); dragging any fader clears the active preset
-- **Modern UI**: double-click a fader to reset that band only to 0 dB; double-click preamp to reset preamp only
+- **Modern UI**: integrated glowing `PRE` control in the graph strip replaces the old preamp slider; drag to adjust preamp, double-click to reset to `0 dB`
+- **Modern UI**: double-click a fader to reset that band only to `0 dB`
 - **Modern UI**: AUTO button applies genre-based preset for the current track and auto-enables EQ if off
+- **Modern UI**: all 21 frequency labels are visible in-window, using compact labels like `1K`, `1.4K`, `2K`, `11.2K`
 - **Classic UI**: PRESETS dropdown with all presets including "I'm Old" / "I'm Young"
 
 ### Playback Options

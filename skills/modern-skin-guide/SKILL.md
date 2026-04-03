@@ -265,7 +265,7 @@ The modern skin system renders multiple windows:
 
 - **Main Window** -- transport controls, time, marquee, mini spectrum
 - **Playlist Window** -- track list with selection, scrolling
-- **EQ Window** -- 10-band graphic equalizer with curve graph
+- **EQ Window** -- modern 21-band graphic equalizer with integrated `PRE` control and curve graph
 - **Spectrum Analyzer Window** -- standalone visualization
 - **ProjectM Window** -- MilkDrop visualization with presets
 - **Library Browser Window** -- multi-source browser with columns and an embedded Play History tab
