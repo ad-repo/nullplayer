@@ -85,6 +85,7 @@ Both pipelines support the active EQ layout for the current UI mode and real-tim
 Main audio controller managing:
 - Playback state (play, pause, stop, seek)
 - Playlist management
+- Shuffle cycle management for non-repeating playback order
 - Track loading (routes to appropriate pipeline)
 - EQ settings (synced to both pipelines)
 - Anti-clipping limiter for EQ protection
@@ -110,6 +111,12 @@ var volumeNormalizationEnabled: Bool
 var sweetFadeEnabled: Bool
 var sweetFadeDuration: TimeInterval
 ```
+
+Shuffle-specific behavior in `AudioEngine`:
+- Shuffle playback uses a persistent cycle order instead of choosing a fresh random index for each advance.
+- A shuffled cycle visits each playlist index once before stopping or reshuffling for repeat.
+- Explicit track selection while shuffle is enabled re-anchors the cycle on that selected track.
+- Queue replacement, `playNow`, and empty-queue insertion all start playback from the shuffled `currentIndex`, not from index `0`.
 
 ### StreamingAudioPlayer (`Audio/StreamingAudioPlayer.swift`)
 

@@ -66,6 +66,12 @@ class AudioEngine {
         let suspendedForSleep: Bool
     }
 
+    private struct ShufflePlaybackStateSnapshot {
+        let order: [Int]
+        let position: Int
+        let pendingRepeatOrder: [Int]?
+    }
+
     static func freezeLocalPlaybackClockForSleep(
         currentTime: TimeInterval,
         playbackStartDate: Date,
@@ -197,6 +203,11 @@ class AudioEngine {
     
     /// Current track index in playlist
     private(set) var currentIndex: Int = -1
+
+    /// Stable shuffled traversal state used for auto-advance and manual next/previous.
+    private var shufflePlaybackOrder: [Int] = []
+    private var shufflePlaybackPosition: Int = -1
+    private var pendingRepeatShuffleOrder: [Int]?
     
     /// Volume level (0.0 - 1.0)
     var volume: Float = 0.2 {
@@ -231,6 +242,11 @@ class AudioEngine {
     /// Shuffle enabled
     var shuffleEnabled: Bool = false {
         didSet {
+            if shuffleEnabled {
+                rebuildShufflePlaybackOrder(anchoredAt: currentIndex)
+            } else {
+                clearShufflePlaybackState()
+            }
             notifyPlaybackOptionsChanged()
         }
     }
@@ -590,6 +606,295 @@ class AudioEngine {
 
     private func notifyPlaybackOptionsChanged() {
         NotificationCenter.default.post(name: .audioPlaybackOptionsChanged, object: self)
+    }
+
+    private func captureShufflePlaybackState() -> ShufflePlaybackStateSnapshot {
+        ShufflePlaybackStateSnapshot(
+            order: shufflePlaybackOrder,
+            position: shufflePlaybackPosition,
+            pendingRepeatOrder: pendingRepeatShuffleOrder
+        )
+    }
+
+    private func restoreShufflePlaybackState(_ snapshot: ShufflePlaybackStateSnapshot) {
+        shufflePlaybackOrder = snapshot.order
+        shufflePlaybackPosition = snapshot.position
+        pendingRepeatShuffleOrder = snapshot.pendingRepeatOrder
+    }
+
+    private func clearShufflePlaybackState() {
+        shufflePlaybackOrder.removeAll()
+        shufflePlaybackPosition = -1
+        pendingRepeatShuffleOrder = nil
+    }
+
+    private func isValidShuffleOrder(_ order: [Int], count: Int) -> Bool {
+        guard order.count == count else { return false }
+        return Set(order) == Set(0..<count)
+    }
+
+    private func rebuildShufflePlaybackOrder(anchoredAt index: Int?) {
+        guard shuffleEnabled, !playlist.isEmpty else {
+            clearShufflePlaybackState()
+            return
+        }
+
+        var indices = Array(0..<playlist.count)
+        if let index, index >= 0, index < playlist.count {
+            indices.removeAll { $0 == index }
+            indices.shuffle()
+            shufflePlaybackOrder = [index] + indices
+            shufflePlaybackPosition = 0
+        } else {
+            indices.shuffle()
+            shufflePlaybackOrder = indices
+            shufflePlaybackPosition = -1
+        }
+
+        pendingRepeatShuffleOrder = nil
+    }
+
+    private func startShufflePlaybackCycle(preferredIndices: [Int]? = nil) -> Int? {
+        guard shuffleEnabled, !playlist.isEmpty else { return nil }
+
+        let validPreferredIndices = (preferredIndices ?? Array(playlist.indices))
+            .filter { $0 >= 0 && $0 < playlist.count }
+        let deduplicatedPreferredIndices = Array(NSOrderedSet(array: validPreferredIndices)) as? [Int] ?? validPreferredIndices
+        let preferredPool = deduplicatedPreferredIndices.isEmpty ? Array(playlist.indices) : deduplicatedPreferredIndices
+        guard let startIndex = preferredPool.randomElement() else { return nil }
+
+        let preferredSet = Set(preferredPool)
+        var remainingPreferred = preferredPool.filter { $0 != startIndex }
+        remainingPreferred.shuffle()
+
+        var remainingOther = playlist.indices.filter { index in
+            index != startIndex && !preferredSet.contains(index)
+        }
+        remainingOther.shuffle()
+
+        shufflePlaybackOrder = [startIndex] + remainingPreferred + remainingOther
+        shufflePlaybackPosition = 0
+        pendingRepeatShuffleOrder = nil
+        return startIndex
+    }
+
+    private func invalidateShufflePlaybackStateAfterPlaylistMutation() {
+        guard shuffleEnabled else {
+            clearShufflePlaybackState()
+            return
+        }
+
+        rebuildShufflePlaybackOrder(anchoredAt: currentIndex)
+    }
+
+    private func ensureShufflePlaybackOrderAligned(anchoredAt index: Int?) {
+        guard shuffleEnabled else {
+            clearShufflePlaybackState()
+            return
+        }
+        guard !playlist.isEmpty else {
+            clearShufflePlaybackState()
+            return
+        }
+
+        if !isValidShuffleOrder(shufflePlaybackOrder, count: playlist.count) {
+            rebuildShufflePlaybackOrder(anchoredAt: index)
+            return
+        }
+
+        if let index, index >= 0, index < playlist.count {
+            guard let position = shufflePlaybackOrder.firstIndex(of: index) else {
+                rebuildShufflePlaybackOrder(anchoredAt: index)
+                return
+            }
+            shufflePlaybackPosition = position
+        }
+
+        if let pendingRepeatShuffleOrder,
+           !isValidShuffleOrder(pendingRepeatShuffleOrder, count: playlist.count) {
+            self.pendingRepeatShuffleOrder = nil
+        }
+    }
+
+    private func makeRepeatedShuffleOrder(avoidingImmediateRepeatOf index: Int?) -> [Int] {
+        var order = Array(0..<playlist.count)
+        order.shuffle()
+
+        if let index, order.count > 1, order.first == index {
+            let swapIndex = Int.random(in: 1..<order.count)
+            order.swapAt(0, swapIndex)
+        }
+
+        return order
+    }
+
+    private func preparedRepeatShuffleOrder() -> [Int] {
+        if let pendingRepeatShuffleOrder,
+           isValidShuffleOrder(pendingRepeatShuffleOrder, count: playlist.count) {
+            return pendingRepeatShuffleOrder
+        }
+
+        let order = makeRepeatedShuffleOrder(avoidingImmediateRepeatOf: currentIndex)
+        pendingRepeatShuffleOrder = order
+        return order
+    }
+
+    private func alignShufflePlaybackPositionForSelectedTrack(_ index: Int) {
+        guard shuffleEnabled else { return }
+
+        ensureShufflePlaybackOrderAligned(anchoredAt: index)
+        if let position = shufflePlaybackOrder.firstIndex(of: index) {
+            shufflePlaybackPosition = position
+            pendingRepeatShuffleOrder = nil
+        } else {
+            rebuildShufflePlaybackOrder(anchoredAt: index)
+        }
+    }
+
+    private func anchorShufflePlaybackOrder(at index: Int) {
+        guard shuffleEnabled else { return }
+        rebuildShufflePlaybackOrder(anchoredAt: index)
+    }
+
+    private func commitShufflePlaybackAdvance(to index: Int) {
+        guard shuffleEnabled else { return }
+        guard index >= 0 && index < playlist.count else {
+            clearShufflePlaybackState()
+            return
+        }
+
+        ensureShufflePlaybackOrderAligned(anchoredAt: currentIndex)
+
+        if shufflePlaybackPosition >= 0,
+           shufflePlaybackPosition + 1 < shufflePlaybackOrder.count,
+           shufflePlaybackOrder[shufflePlaybackPosition + 1] == index {
+            shufflePlaybackPosition += 1
+            pendingRepeatShuffleOrder = nil
+            return
+        }
+
+        if let pendingRepeatShuffleOrder,
+           isValidShuffleOrder(pendingRepeatShuffleOrder, count: playlist.count),
+           pendingRepeatShuffleOrder.first == index {
+            shufflePlaybackOrder = pendingRepeatShuffleOrder
+            shufflePlaybackPosition = 0
+            self.pendingRepeatShuffleOrder = nil
+            return
+        }
+
+        if let position = shufflePlaybackOrder.firstIndex(of: index) {
+            shufflePlaybackPosition = position
+            pendingRepeatShuffleOrder = nil
+        } else {
+            rebuildShufflePlaybackOrder(anchoredAt: index)
+        }
+    }
+
+    private func nextShuffleIndexForPlaybackAdvance() -> Int? {
+        guard !playlist.isEmpty else { return nil }
+
+        ensureShufflePlaybackOrderAligned(anchoredAt: currentIndex)
+
+        if currentIndex < 0 || currentIndex >= playlist.count {
+            if shufflePlaybackOrder.isEmpty {
+                rebuildShufflePlaybackOrder(anchoredAt: nil)
+            }
+            guard let first = shufflePlaybackOrder.first else { return nil }
+            shufflePlaybackPosition = 0
+            pendingRepeatShuffleOrder = nil
+            return first
+        }
+
+        if shufflePlaybackPosition >= 0,
+           shufflePlaybackPosition + 1 < shufflePlaybackOrder.count {
+            shufflePlaybackPosition += 1
+            pendingRepeatShuffleOrder = nil
+            return shufflePlaybackOrder[shufflePlaybackPosition]
+        }
+
+        guard repeatEnabled else { return nil }
+
+        let nextOrder = preparedRepeatShuffleOrder()
+        guard let first = nextOrder.first else { return nil }
+        shufflePlaybackOrder = nextOrder
+        shufflePlaybackPosition = 0
+        pendingRepeatShuffleOrder = nil
+        return first
+    }
+
+    private func nextShuffleIndexForManualNavigation() -> Int? {
+        guard !playlist.isEmpty else { return nil }
+
+        ensureShufflePlaybackOrderAligned(anchoredAt: currentIndex)
+
+        if currentIndex < 0 || currentIndex >= playlist.count {
+            if shufflePlaybackOrder.isEmpty {
+                rebuildShufflePlaybackOrder(anchoredAt: nil)
+            }
+            guard let first = shufflePlaybackOrder.first else { return nil }
+            shufflePlaybackPosition = 0
+            pendingRepeatShuffleOrder = nil
+            return first
+        }
+
+        if shufflePlaybackPosition >= 0,
+           shufflePlaybackPosition + 1 < shufflePlaybackOrder.count {
+            shufflePlaybackPosition += 1
+            pendingRepeatShuffleOrder = nil
+            return shufflePlaybackOrder[shufflePlaybackPosition]
+        }
+
+        let nextOrder = makeRepeatedShuffleOrder(avoidingImmediateRepeatOf: currentIndex)
+        guard let first = nextOrder.first else { return nil }
+        shufflePlaybackOrder = nextOrder
+        shufflePlaybackPosition = 0
+        pendingRepeatShuffleOrder = nil
+        return first
+    }
+
+    private func previousShuffleIndexForManualNavigation() -> Int? {
+        guard !playlist.isEmpty else { return nil }
+
+        ensureShufflePlaybackOrderAligned(anchoredAt: currentIndex)
+
+        if currentIndex < 0 || currentIndex >= playlist.count {
+            if shufflePlaybackOrder.isEmpty {
+                rebuildShufflePlaybackOrder(anchoredAt: nil)
+            }
+            guard !shufflePlaybackOrder.isEmpty else { return nil }
+            shufflePlaybackPosition = shufflePlaybackOrder.count - 1
+            pendingRepeatShuffleOrder = nil
+            return shufflePlaybackOrder[shufflePlaybackPosition]
+        }
+
+        if shufflePlaybackPosition > 0 {
+            shufflePlaybackPosition -= 1
+            pendingRepeatShuffleOrder = nil
+            return shufflePlaybackOrder[shufflePlaybackPosition]
+        }
+
+        guard !shufflePlaybackOrder.isEmpty else { return nil }
+        shufflePlaybackPosition = shufflePlaybackOrder.count - 1
+        pendingRepeatShuffleOrder = nil
+        return shufflePlaybackOrder[shufflePlaybackPosition]
+    }
+
+    private func peekNextShuffleIndexForPlayback() -> Int? {
+        guard !playlist.isEmpty else { return nil }
+
+        ensureShufflePlaybackOrderAligned(anchoredAt: currentIndex)
+
+        if currentIndex < 0 || currentIndex >= playlist.count {
+            return shufflePlaybackOrder.first
+        }
+
+        if shufflePlaybackPosition >= 0,
+           shufflePlaybackPosition + 1 < shufflePlaybackOrder.count {
+            return shufflePlaybackOrder[shufflePlaybackPosition + 1]
+        }
+
+        guard repeatEnabled else { return nil }
+        return preparedRepeatShuffleOrder().first
     }
     
     @objc private func handleSpectrumSettingsChanged() {
@@ -1214,7 +1519,12 @@ class AudioEngine {
         guard currentTrack != nil || !playlist.isEmpty else { return }
         
         if currentTrack == nil && !playlist.isEmpty {
-            currentIndex = 0
+            if shuffleEnabled {
+                currentIndex = startShufflePlaybackCycle() ?? 0
+            } else {
+                currentIndex = 0
+                alignShufflePlaybackPositionForSelectedTrack(currentIndex)
+            }
             loadTrack(at: currentIndex)
             if currentTrack == nil,
                currentIndex >= 0,
@@ -1545,9 +1855,12 @@ class AudioEngine {
         
         // Capture previous index before changing (for rollback on cast failure)
         let previousIndex = currentIndex
+        let previousTrack = currentTrack
+        let shuffleSnapshot = captureShufflePlaybackState()
         
         if shuffleEnabled {
-            currentIndex = Int.random(in: 0..<playlist.count)
+            guard let previousShuffleIndex = previousShuffleIndexForManualNavigation() else { return }
+            currentIndex = previousShuffleIndex
         } else {
             currentIndex = (currentIndex - 1 + playlist.count) % playlist.count
         }
@@ -1574,11 +1887,10 @@ class AudioEngine {
                     }
                 } catch {
                     NSLog("AudioEngine: previous() cast failed: %@", error.localizedDescription)
-                    // Restore index on failure to keep playlist navigation consistent
-                    if isLocalFile {
-                        await MainActor.run {
-                            self.currentIndex = previousIndex
-                        }
+                    await MainActor.run {
+                        self.currentIndex = previousIndex
+                        self.currentTrack = previousTrack
+                        self.restoreShufflePlaybackState(shuffleSnapshot)
                     }
                 }
             }
@@ -1605,9 +1917,12 @@ class AudioEngine {
         
         // Capture previous index before changing (for rollback on cast failure)
         let previousIndex = currentIndex
+        let previousTrack = currentTrack
+        let shuffleSnapshot = captureShufflePlaybackState()
         
         if shuffleEnabled {
-            currentIndex = Int.random(in: 0..<playlist.count)
+            guard let nextShuffleIndex = nextShuffleIndexForManualNavigation() else { return }
+            currentIndex = nextShuffleIndex
         } else {
             currentIndex = (currentIndex + 1) % playlist.count
         }
@@ -1634,11 +1949,10 @@ class AudioEngine {
                     }
                 } catch {
                     NSLog("AudioEngine: next() cast failed: %@", error.localizedDescription)
-                    // Restore index on failure to keep playlist navigation consistent
-                    if isLocalFile {
-                        await MainActor.run {
-                            self.currentIndex = previousIndex
-                        }
+                    await MainActor.run {
+                        self.currentIndex = previousIndex
+                        self.currentTrack = previousTrack
+                        self.restoreShufflePlaybackState(shuffleSnapshot)
                     }
                 }
             }
@@ -2257,17 +2571,25 @@ class AudioEngine {
         
         // Capture previous index before any changes (for rollback on cast failure)
         let previousIndex = currentIndex
+        let previousTrack = currentTrack
+        let shuffleSnapshot = captureShufflePlaybackState()
         
         if repeatEnabled {
             if shuffleEnabled {
-                // Repeat mode + shuffle: pick a random track, skipping Sonos-incompatible formats
+                // Repeat mode + shuffle: follow the shuffled cycle, skipping Sonos-incompatible formats
                 let isSonos = CastManager.shared.isCastingToSonos
-                var attempts = 0
-                repeat {
-                    currentIndex = Int.random(in: 0..<playlist.count)
-                    attempts += 1
-                } while isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) && attempts < playlist.count
-                if isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) {
+                var foundCompatibleTrack = false
+                while let nextIndex = nextShuffleIndexForPlaybackAdvance() {
+                    currentIndex = nextIndex
+                    if !isSonos || CastManager.isSonosCompatible(playlist[nextIndex], allowUnknownSampleRate: true) {
+                        foundCompatibleTrack = true
+                        break
+                    }
+                    NSLog("AudioEngine: Skipping '%@' (%@) — not supported by Sonos",
+                          playlist[nextIndex].title,
+                          playlist[nextIndex].url.pathExtension)
+                }
+                if !foundCompatibleTrack {
                     Task { await CastManager.shared.stopCasting() }
                     return
                 }
@@ -2291,24 +2613,29 @@ class AudioEngine {
                     }
                 } catch {
                     NSLog("castTrackDidFinish: failed to cast: %@", error.localizedDescription)
-                    // Restore index on failure (only if shuffle changed it)
-                    if isLocalFile && shuffleEnabled {
-                        await MainActor.run {
-                            self.currentIndex = previousIndex
-                        }
+                    await MainActor.run {
+                        self.currentIndex = previousIndex
+                        self.currentTrack = previousTrack
+                        self.restoreShufflePlaybackState(shuffleSnapshot)
                     }
                 }
             }
         } else if !playlist.isEmpty {
             if shuffleEnabled {
-                // Shuffle without repeat: pick random track, skipping Sonos-incompatible formats
+                // Shuffle without repeat: advance through the current shuffled cycle once
                 let isSonos = CastManager.shared.isCastingToSonos
-                var attempts = 0
-                repeat {
-                    currentIndex = Int.random(in: 0..<playlist.count)
-                    attempts += 1
-                } while isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) && attempts < playlist.count
-                if isSonos && !CastManager.isSonosCompatible(playlist[currentIndex], allowUnknownSampleRate: true) {
+                var foundCompatibleTrack = false
+                while let nextIndex = nextShuffleIndexForPlaybackAdvance() {
+                    currentIndex = nextIndex
+                    if !isSonos || CastManager.isSonosCompatible(playlist[nextIndex], allowUnknownSampleRate: true) {
+                        foundCompatibleTrack = true
+                        break
+                    }
+                    NSLog("AudioEngine: Skipping '%@' (%@) — not supported by Sonos",
+                          playlist[nextIndex].title,
+                          playlist[nextIndex].url.pathExtension)
+                }
+                if !foundCompatibleTrack {
                     Task { await CastManager.shared.stopCasting() }
                     return
                 }
@@ -2330,11 +2657,10 @@ class AudioEngine {
                         }
                     } catch {
                         NSLog("castTrackDidFinish: failed to cast shuffle: %@", error.localizedDescription)
-                        // Restore index on failure to keep playlist navigation consistent
-                        if isLocalFile {
-                            await MainActor.run {
-                                self.currentIndex = previousIndex
-                            }
+                        await MainActor.run {
+                            self.currentIndex = previousIndex
+                            self.currentTrack = previousTrack
+                            self.restoreShufflePlaybackState(shuffleSnapshot)
                         }
                     }
                 }
@@ -2371,11 +2697,10 @@ class AudioEngine {
                         }
                     } catch {
                         NSLog("castTrackDidFinish: failed to cast next: %@", error.localizedDescription)
-                        // Restore index on failure to keep playlist navigation consistent
-                        if isLocalFile {
-                            await MainActor.run {
-                                self.currentIndex = previousIndex
-                            }
+                        await MainActor.run {
+                            self.currentIndex = previousIndex
+                            self.currentTrack = previousTrack
+                            self.restoreShufflePlaybackState(shuffleSnapshot)
                         }
                     }
                 }
@@ -2531,7 +2856,12 @@ class AudioEngine {
         playlist.append(contentsOf: validTracks)
         
         if !validTracks.isEmpty {
-            currentIndex = 0
+            if shuffleEnabled {
+                currentIndex = startShufflePlaybackCycle() ?? 0
+            } else {
+                currentIndex = 0
+                invalidateShufflePlaybackStateAfterPlaylistMutation()
+            }
             
             if wasCasting {
                 // When casting, don't set up local playback - just set the track metadata
@@ -2572,6 +2902,8 @@ class AudioEngine {
                 loadTrack(at: currentIndex)
                 play()
             }
+        } else {
+            invalidateShufflePlaybackStateAfterPlaylistMutation()
         }
         
         delegate?.audioEngineDidChangePlaylist()
@@ -2598,6 +2930,7 @@ class AudioEngine {
         
         let tracks = validation.validURLs.compactMap { Track(lightweightURL: $0) }
         playlist.append(contentsOf: tracks)
+        invalidateShufflePlaybackStateAfterPlaylistMutation()
         delegate?.audioEngineDidChangePlaylist()
     }
     
@@ -2606,6 +2939,7 @@ class AudioEngine {
     func appendTracks(_ tracks: [Track]) {
         guard !tracks.isEmpty else { return }
         playlist.append(contentsOf: tracks)
+        invalidateShufflePlaybackStateAfterPlaylistMutation()
         delegate?.audioEngineDidChangePlaylist()
     }
     
@@ -2618,6 +2952,7 @@ class AudioEngine {
         playlist.removeAll()
         playlist.append(contentsOf: tracks)
         currentIndex = -1  // No track selected
+        invalidateShufflePlaybackStateAfterPlaylistMutation()
         delegate?.audioEngineDidChangePlaylist()
     }
     
@@ -2727,19 +3062,26 @@ class AudioEngine {
         
         // Insert tracks at the calculated position
         playlist.insert(contentsOf: tracks, at: insertIndex)
+        invalidateShufflePlaybackStateAfterPlaylistMutation()
         
         // No need to adjust currentIndex - we're inserting AFTER current
         
         // Start playback if playlist was empty
         if wasEmpty && startPlaybackIfEmpty {
-            currentIndex = 0
+            if shuffleEnabled {
+                let insertedIndices = Array(insertIndex..<(insertIndex + tracks.count))
+                currentIndex = startShufflePlaybackCycle(preferredIndices: insertedIndices) ?? 0
+            } else {
+                currentIndex = 0
+                alignShufflePlaybackPositionForSelectedTrack(currentIndex)
+            }
             
             // Check if we're currently casting
             let wasCasting = isCastingActive
             
             if wasCasting {
                 // When casting, don't set up local playback - just update track metadata and cast
-                let track = playlist[0]
+                let track = playlist[currentIndex]
                 let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
                 
                 // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
@@ -2750,7 +3092,7 @@ class AudioEngine {
                 _currentTime = 0
                 lastReportedTime = 0
                 
-                NSLog("insertTracksAfterCurrent: casting is active, casting track at index 0 (local=%d)", isLocalFile ? 1 : 0)
+                NSLog("insertTracksAfterCurrent: casting is active, casting track at index %d (local=%d)", currentIndex, isLocalFile ? 1 : 0)
                 Task {
                     do {
                         try await CastManager.shared.castNewTrack(track)
@@ -2764,13 +3106,13 @@ class AudioEngine {
                         NSLog("insertTracksAfterCurrent: failed to cast track: %@", error.localizedDescription)
                         // Fall back to local playback if casting fails
                         await MainActor.run {
-                            self.loadTrack(at: 0)
+                            self.loadTrack(at: self.currentIndex)
                             self.play()
                         }
                     }
                 }
             } else {
-                loadTrack(at: 0)
+                loadTrack(at: currentIndex)
                 play()
             }
         }
@@ -2800,14 +3142,20 @@ class AudioEngine {
         playlist.insert(contentsOf: tracks, at: insertIndex)
         
         // Jump to and play the first inserted track
-        currentIndex = insertIndex
+        if shuffleEnabled {
+            let insertedIndices = Array(insertIndex..<(insertIndex + tracks.count))
+            currentIndex = startShufflePlaybackCycle(preferredIndices: insertedIndices) ?? insertIndex
+        } else {
+            currentIndex = insertIndex
+            alignShufflePlaybackPositionForSelectedTrack(insertIndex)
+        }
         
         // Check if we're currently casting
         let wasCasting = isCastingActive
         
         if wasCasting {
             // When casting, don't set up local playback - just update track metadata and cast
-            let track = playlist[insertIndex]
+            let track = playlist[currentIndex]
             let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
             
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
@@ -2818,7 +3166,7 @@ class AudioEngine {
             _currentTime = 0
             lastReportedTime = 0
             
-            NSLog("playNow: casting is active, casting track at index %d (local=%d)", insertIndex, isLocalFile ? 1 : 0)
+            NSLog("playNow: casting is active, casting track at index %d (local=%d)", currentIndex, isLocalFile ? 1 : 0)
             Task {
                 do {
                     try await CastManager.shared.castNewTrack(track)
@@ -2832,13 +3180,13 @@ class AudioEngine {
                     NSLog("playNow: failed to cast track: %@", error.localizedDescription)
                     // Fall back to local playback if casting fails
                     await MainActor.run {
-                        self.loadTrack(at: insertIndex)
+                        self.loadTrack(at: self.currentIndex)
                         self.play()
                     }
                 }
             }
         } else {
-            loadTrack(at: insertIndex)
+            loadTrack(at: currentIndex)
             play()
         }
         
@@ -2874,6 +3222,7 @@ class AudioEngine {
         playlist.removeAll()
         playlist.append(contentsOf: tracks)
         currentIndex = -1  // No track selected
+        invalidateShufflePlaybackStateAfterPlaylistMutation()
         
         delegate?.audioEngineDidChangePlaylist()
     }
@@ -3361,6 +3710,7 @@ class AudioEngine {
         if gaplessPlaybackEnabled && nextScheduledFile != nil && nextScheduledTrackIndex >= 0 {
             // Gapless transition - the next file is already scheduled
             currentIndex = nextScheduledTrackIndex
+            commitShufflePlaybackAdvance(to: currentIndex)
             audioFile = nextScheduledFile
             currentTrack = playlist[currentIndex]
             _currentTime = 0
@@ -3417,6 +3767,7 @@ class AudioEngine {
         if gaplessPlaybackEnabled && isStreamingPlayback && streamingPlayer?.hasQueuedTrack == true && nextScheduledTrackIndex >= 0 {
             // Streaming gapless transition - the player already started the queued track
             currentIndex = nextScheduledTrackIndex
+            commitShufflePlaybackAdvance(to: currentIndex)
             currentTrack = playlist[currentIndex]
             _currentTime = 0
             lastReportedTime = 0
@@ -3464,8 +3815,12 @@ class AudioEngine {
         
         if repeatEnabled {
             if shuffleEnabled {
-                // Repeat mode + shuffle: pick a random track
-                currentIndex = Int.random(in: 0..<playlist.count)
+                // Repeat mode + shuffle: follow the shuffled cycle, reshuffling only after a full pass
+                guard let nextIndex = nextShuffleIndexForPlaybackAdvance() else {
+                    stop()
+                    return
+                }
+                currentIndex = nextIndex
                 advanceToLocalTrackAsync(at: currentIndex)
             } else {
                 // Repeat mode: loop current track
@@ -3474,8 +3829,12 @@ class AudioEngine {
         } else {
             // No repeat mode: check if we're at the end of playlist
             if shuffleEnabled {
-                // Shuffle without repeat: stop after current track
-                stop()
+                guard let nextIndex = nextShuffleIndexForPlaybackAdvance() else {
+                    stop()
+                    return
+                }
+                currentIndex = nextIndex
+                advanceToLocalTrackAsync(at: currentIndex)
             } else if currentIndex < playlist.count - 1 {
                 // More tracks to play
                 currentIndex += 1
@@ -3614,7 +3973,7 @@ class AudioEngine {
         guard !playlist.isEmpty else { return -1 }
         
         if shuffleEnabled {
-            return Int.random(in: 0..<playlist.count)
+            return peekNextShuffleIndexForPlayback() ?? -1
         } else {
             let next = currentIndex + 1
             return next < playlist.count ? next : -1
@@ -3878,6 +4237,7 @@ class AudioEngine {
         // Update state
         audioFile = nextFile
         currentIndex = nextIndex
+        commitShufflePlaybackAdvance(to: nextIndex)
         currentTrack = playlist[nextIndex]
         _currentTime = 0
         lastReportedTime = 0
@@ -3991,6 +4351,7 @@ class AudioEngine {
 
         // Update state
         currentIndex = nextIndex
+        commitShufflePlaybackAdvance(to: nextIndex)
         currentTrack = playlist[nextIndex]
         _currentTime = 0
         lastReportedTime = 0
@@ -4379,6 +4740,7 @@ class AudioEngine {
         EmbyPlaybackReporter.shared.trackStopped()
 
         NSLog("clearPlaylist: done, playlist count=%d", playlist.count)
+        clearShufflePlaybackState()
         delegate?.audioEngineDidChangePlaylist()
     }
     
@@ -4393,12 +4755,17 @@ class AudioEngine {
             audioFile = nil
             if !playlist.isEmpty {
                 currentIndex = min(index, playlist.count - 1)
+                invalidateShufflePlaybackStateAfterPlaylistMutation()
                 loadTrack(at: currentIndex)
             } else {
                 currentIndex = -1
+                clearShufflePlaybackState()
             }
         } else if index < currentIndex {
             currentIndex -= 1
+            invalidateShufflePlaybackStateAfterPlaylistMutation()
+        } else {
+            invalidateShufflePlaybackStateAfterPlaylistMutation()
         }
         
         delegate?.audioEngineDidChangePlaylist()
@@ -4419,6 +4786,7 @@ class AudioEngine {
         } else if sourceIndex > currentIndex && destinationIndex <= currentIndex {
             currentIndex += 1
         }
+        invalidateShufflePlaybackStateAfterPlaylistMutation()
         
         delegate?.audioEngineDidChangePlaylist()
     }
@@ -4444,6 +4812,11 @@ class AudioEngine {
         let wasCasting = isCastingActive
         
         currentIndex = index
+        if shuffleEnabled {
+            anchorShufflePlaybackOrder(at: index)
+        } else {
+            alignShufflePlaybackPositionForSelectedTrack(index)
+        }
         staleStreamingRefreshRetriedServiceIdentity = nil
         let track = playlist[index]
 
@@ -4552,6 +4925,7 @@ class AudioEngine {
         if let url = currentTrackURL {
             currentIndex = playlist.firstIndex(where: { $0.url == url }) ?? -1
         }
+        invalidateShufflePlaybackStateAfterPlaylistMutation()
         
         delegate?.audioEngineDidChangePlaylist()
     }
@@ -4568,6 +4942,7 @@ class AudioEngine {
         if let url = currentTrackURL {
             currentIndex = playlist.firstIndex(where: { $0.url == url }) ?? -1
         }
+        invalidateShufflePlaybackStateAfterPlaylistMutation()
         
         delegate?.audioEngineDidChangePlaylist()
     }
@@ -4584,9 +4959,50 @@ class AudioEngine {
         if let url = currentTrackURL {
             currentIndex = playlist.firstIndex(where: { $0.url == url }) ?? -1
         }
+        invalidateShufflePlaybackStateAfterPlaylistMutation()
         
         delegate?.audioEngineDidChangePlaylist()
     }
+
+#if DEBUG
+    func debugStartShuffleCycleForTesting(at index: Int) {
+        guard index >= 0 && index < playlist.count else { return }
+        currentIndex = index
+        currentTrack = playlist[index]
+        rebuildShufflePlaybackOrder(anchoredAt: index)
+    }
+
+    func debugStartPreferredShuffleCycleForTesting(_ indices: [Int]) -> Int? {
+        let selectedIndex = startShufflePlaybackCycle(preferredIndices: indices)
+        if let selectedIndex {
+            currentIndex = selectedIndex
+            currentTrack = playlist[selectedIndex]
+        }
+        return selectedIndex
+    }
+
+    func debugSelectTrackForShuffleTesting(_ index: Int) {
+        guard index >= 0 && index < playlist.count else { return }
+        currentIndex = index
+        currentTrack = playlist[index]
+        if shuffleEnabled {
+            anchorShufflePlaybackOrder(at: index)
+        } else {
+            alignShufflePlaybackPositionForSelectedTrack(index)
+        }
+    }
+
+    func debugPeekNextShuffleIndexForPlayback() -> Int? {
+        peekNextShuffleIndexForPlayback()
+    }
+
+    func debugAdvanceShuffleIndexForPlayback() -> Int? {
+        guard let nextIndex = nextShuffleIndexForPlaybackAdvance() else { return nil }
+        currentIndex = nextIndex
+        currentTrack = playlist[nextIndex]
+        return nextIndex
+    }
+#endif
 }
 
 // MARK: - StreamingAudioPlayerDelegate

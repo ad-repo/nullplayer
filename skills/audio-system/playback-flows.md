@@ -1,6 +1,42 @@
 # Playback Flows and Integrations
 
-This document covers Plex Radio/Mix, Subsonic/Jellyfin streaming details, and Now Playing integration.
+This document covers shuffle playback behavior, Plex Radio/Mix, Subsonic/Jellyfin streaming details, and Now Playing integration.
+
+## Shuffle Playback
+
+Shuffle behavior is centralized in `AudioEngine` and is intentionally stateful.
+
+### Stable Shuffle Cycle
+
+NullPlayer does not pick a new random index on every natural advance anymore. Instead it builds a shuffle cycle:
+
+1. `shufflePlaybackOrder` stores a full permutation of playlist indices
+2. `shufflePlaybackPosition` tracks the current position inside that order
+3. Natural playback advance, gapless prep, crossfade transitions, cast auto-advance, and manual next/previous all consult the same cycle state
+
+This guarantees that a track is not repeated during shuffle until the cycle is exhausted.
+
+### Repeat + Shuffle
+
+When `repeatEnabled` and `shuffleEnabled` are both on:
+
+- The current cycle still runs to completion before a new order is used
+- The next cycle is reshuffled only after the current one is exhausted
+- The reshuffle avoids immediately repeating the just-finished track when possible
+
+### Explicit Track Selection Under Shuffle
+
+Choosing a specific track while shuffle is enabled resets the active cycle around that selection instead of preserving the old order. This prevents a stale order from making playback appear to "walk backward" from a manually chosen last track.
+
+### Queue Replacement and Queue Insertion
+
+The shuffle entry points have slightly different rules:
+
+- `loadTracks(_:)` builds a new shuffle cycle for the replaced playlist and starts from the selected shuffled index
+- `playNow(_:)` and empty-queue `insertTracksAfterCurrent(_:)` start from a shuffled track inside the inserted range, not index `0`
+- Preferred inserted indices are exhausted before older queue entries when those APIs seed shuffle with a preferred range
+
+This is what the library/browser actions such as "Play Album and Replace Queue" and "Play Now" rely on.
 
 ## Plex Radio/Mix
 
