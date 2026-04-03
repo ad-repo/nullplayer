@@ -41,15 +41,15 @@ struct EQPreset: Identifiable, Codable {
     // MARK: - Built-in Presets
 
     // Stable UUIDs for built-in presets so Identifiable views don't treat them as new items on every access
-    private static let flatID       = UUID(uuidString: "00000000-EQ00-0000-0000-000000000001")!
-    private static let imOldID      = UUID(uuidString: "00000000-EQ00-0000-0000-000000000002")!
-    private static let imYoungID    = UUID(uuidString: "00000000-EQ00-0000-0000-000000000003")!
-    private static let rockID       = UUID(uuidString: "00000000-EQ00-0000-0000-000000000004")!
-    private static let popID        = UUID(uuidString: "00000000-EQ00-0000-0000-000000000005")!
-    private static let electronicID = UUID(uuidString: "00000000-EQ00-0000-0000-000000000006")!
-    private static let hipHopID     = UUID(uuidString: "00000000-EQ00-0000-0000-000000000007")!
-    private static let jazzID       = UUID(uuidString: "00000000-EQ00-0000-0000-000000000008")!
-    private static let classicalID  = UUID(uuidString: "00000000-EQ00-0000-0000-000000000009")!
+    private static let flatID       = UUID(uuidString: "00000000-E000-0000-0000-000000000001")!
+    private static let imOldID      = UUID(uuidString: "00000000-E000-0000-0000-000000000002")!
+    private static let imYoungID    = UUID(uuidString: "00000000-E000-0000-0000-000000000003")!
+    private static let rockID       = UUID(uuidString: "00000000-E000-0000-0000-000000000004")!
+    private static let popID        = UUID(uuidString: "00000000-E000-0000-0000-000000000005")!
+    private static let electronicID = UUID(uuidString: "00000000-E000-0000-0000-000000000006")!
+    private static let hipHopID     = UUID(uuidString: "00000000-E000-0000-0000-000000000007")!
+    private static let jazzID       = UUID(uuidString: "00000000-E000-0000-0000-000000000008")!
+    private static let classicalID  = UUID(uuidString: "00000000-E000-0000-0000-000000000009")!
 
     static var flat: EQPreset {
         EQPreset(stableID: flatID, name: "Flat", bands: Array(repeating: 0, count: activeLayout.bandCount))
