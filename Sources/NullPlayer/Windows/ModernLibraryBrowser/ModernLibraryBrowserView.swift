@@ -1013,8 +1013,8 @@ class ModernLibraryBrowserView: NSView {
         // Sort indicator
         let sortRect = NSRect(x: tabBarRect.maxX - sortWidth, y: tabBarY,
                               width: sortWidth, height: Layout.tabBarHeight)
-        drawToggleTab(label: sortText, isActive: false, rect: sortRect.insetBy(dx: 2, dy: 2),
-                      font: font, skin: skin, context: context)
+        drawInlineTabBarLabel(label: sortText, rect: sortRect,
+                              font: font, skin: skin, context: context)
     }
     
     /// Draw a modern boxed toggle button
@@ -1068,6 +1068,21 @@ class ModernLibraryBrowserView: NSView {
         drawText(label, at: textOrigin, withAttributes: attrs, context: context)
         
         context.restoreGState()
+    }
+
+    private func drawInlineTabBarLabel(label: String, rect: NSRect,
+                                       font: NSFont, skin: ModernSkin, context: CGContext) {
+        let color = browseMode.isHistoryMode
+            ? skin.textDimColor.withAlphaComponent(0.45)
+            : skin.textDimColor
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: color)
+        ]
+        let textSize = label.size(withAttributes: attrs)
+        let textOrigin = NSPoint(x: rect.midX - textSize.width / 2,
+                                 y: rect.midY - textSize.height / 2)
+        drawText(label, at: textOrigin, withAttributes: attrs, context: context)
     }
     
     // MARK: - Server Bar Drawing
