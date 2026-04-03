@@ -11143,7 +11143,7 @@ class PlexBrowserView: NSView {
         
         Task { @MainActor in
             NSLog("startTrackRadio: Creating radio playlist...")
-            let tracks = await PlexManager.shared.createTrackRadio(from: track, limit: 100)
+            let tracks = await PlexManager.shared.createTrackRadio(from: track, limit: RadioPlaybackOptions.playlistLength)
             
             NSLog("startTrackRadio: Got %d tracks from PlexManager", tracks.count)
             
@@ -11168,7 +11168,7 @@ class PlexBrowserView: NSView {
         NSLog("Starting Album Radio for: %@", album.title)
         
         Task { @MainActor in
-            let tracks = await PlexManager.shared.createAlbumRadio(from: album, limit: 100)
+            let tracks = await PlexManager.shared.createAlbumRadio(from: album, limit: RadioPlaybackOptions.playlistLength)
             
             if tracks.isEmpty {
                 NSLog("Album Radio: No similar tracks found for '%@'", album.title)
@@ -11189,7 +11189,7 @@ class PlexBrowserView: NSView {
         NSLog("Starting Artist Radio for: %@", artist.title)
         
         Task { @MainActor in
-            let tracks = await PlexManager.shared.createArtistRadio(from: artist, limit: 100)
+            let tracks = await PlexManager.shared.createArtistRadio(from: artist, limit: RadioPlaybackOptions.playlistLength)
             
             if tracks.isEmpty {
                 NSLog("Artist Radio: No similar tracks found for '%@'", artist.title)

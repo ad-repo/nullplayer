@@ -9,7 +9,7 @@ enum RadioConfig {
     static let deepCutsThreshold = 1_000
     
     /// Default number of tracks to fetch for radio
-    static let defaultLimit = 100
+    static var defaultLimit: Int { RadioPlaybackOptions.playlistLength }
     
     /// Maximum tracks per artist in a radio playlist (for variety)
     static var maxTracksPerArtist: Int { RadioPlaybackOptions.maxTracksPerArtist }
@@ -979,7 +979,7 @@ class PlexServerClient {
     ///   - libraryID: The library section ID
     ///   - limit: Maximum number of tracks to return
     /// - Returns: Array of sonically similar tracks
-    func createTrackRadio(trackID: String, libraryID: String, limit: Int = 100) async throws -> [PlexTrack] {
+    func createTrackRadio(trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating track radio for track %@ in library %@", trackID, libraryID)
         
         // Use the sonicallySimilar filter with random sort for diverse results
@@ -1008,7 +1008,7 @@ class PlexServerClient {
     ///   - libraryID: The library section ID
     ///   - limit: Maximum number of tracks to return
     /// - Returns: Array of tracks from similar artists
-    func createArtistRadio(artistID: String, libraryID: String, limit: Int = 100) async throws -> [PlexTrack] {
+    func createArtistRadio(artistID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating artist radio for artist %@ in library %@", artistID, libraryID)
         
         // First get sonically similar artists
@@ -1072,7 +1072,7 @@ class PlexServerClient {
     ///   - libraryID: The library section ID
     ///   - limit: Maximum number of tracks to return
     /// - Returns: Array of tracks from sonically similar albums
-    func createAlbumRadio(albumID: String, libraryID: String, limit: Int = 100) async throws -> [PlexTrack] {
+    func createAlbumRadio(albumID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating album radio for album %@ in library %@", albumID, libraryID)
         
         // Get sonically similar albums
@@ -1132,21 +1132,54 @@ class PlexServerClient {
     }
     
     // MARK: - Extended Radio API (Non-Sonic and Sonic Versions)
-    
-    /// Library Radio - Non-Sonic (random tracks from library)
-    func createLibraryRadio(libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
-        NSLog("PlexServerClient: Creating library radio (non-sonic) for library %@", libraryID)
-        
+
+    func makeLibraryRadioRequest(libraryID: String, limit: Int) -> URLRequest? {
         let queryItems = [
             URLQueryItem(name: "type", value: "10"),
             URLQueryItem(name: "sort", value: "random"),
             URLQueryItem(name: "limit", value: String(limit))
         ]
-        
-        guard let request = buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: queryItems) else {
+        return buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: queryItems)
+    }
+
+    func makeGenreRadioRequest(genre: String, libraryID: String, limit: Int, sonicTrackID: String? = nil) -> URLRequest? {
+        var queryItems = [
+            URLQueryItem(name: "type", value: "10"),
+            URLQueryItem(name: "genre", value: genre)
+        ]
+        if let sonicTrackID {
+            queryItems.append(URLQueryItem(name: "track.sonicallySimilar", value: sonicTrackID))
+        }
+        queryItems.append(URLQueryItem(name: "sort", value: "random"))
+        queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
+        return buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: queryItems)
+    }
+
+    func makeDecadeRadioRequest(startYear: Int, endYear: Int, libraryID: String, limit: Int, sonicTrackID: String? = nil) -> URLRequest? {
+        var urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&year>=\(startYear)&year<=\(endYear)"
+        if let sonicTrackID {
+            urlString += "&track.sonicallySimilar=\(sonicTrackID)"
+        }
+        urlString += "&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
+
+        guard let url = URL(string: urlString) else { return nil }
+
+        var request = URLRequest(url: url)
+        for (key, value) in standardHeaders {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        return request
+    }
+    
+    /// Library Radio - Non-Sonic (random tracks from library)
+    func createLibraryRadio(libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
+        NSLog("PlexServerClient: Creating library radio (non-sonic) for library %@", libraryID)
+
+        guard let request = makeLibraryRadioRequest(libraryID: libraryID, limit: limit) else {
             throw PlexServerError.invalidURL
         }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Library radio returned %d tracks", tracks.count)
@@ -1178,18 +1211,12 @@ class PlexServerClient {
     /// Genre Radio - Non-Sonic
     func createGenreRadio(genre: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating genre radio (non-sonic) for %@ in library %@", genre, libraryID)
-        
-        let queryItems = [
-            URLQueryItem(name: "type", value: "10"),
-            URLQueryItem(name: "genre", value: genre),
-            URLQueryItem(name: "sort", value: "random"),
-            URLQueryItem(name: "limit", value: String(limit))
-        ]
-        
-        guard let request = buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: queryItems) else {
+
+        guard let request = makeGenreRadioRequest(genre: genre, libraryID: libraryID, limit: limit) else {
             throw PlexServerError.invalidURL
         }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Genre radio returned %d tracks", tracks.count)
@@ -1200,19 +1227,12 @@ class PlexServerClient {
     /// Uses sort=random to get varied results from the sonically similar pool
     func createGenreRadioSonic(genre: String, trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating genre radio (sonic) for %@ with seed %@ in library %@", genre, trackID, libraryID)
-        
-        let queryItems = [
-            URLQueryItem(name: "type", value: "10"),
-            URLQueryItem(name: "genre", value: genre),
-            URLQueryItem(name: "track.sonicallySimilar", value: trackID),
-            URLQueryItem(name: "sort", value: "random"),
-            URLQueryItem(name: "limit", value: String(limit))
-        ]
-        
-        guard let request = buildRequest(path: "/library/sections/\(libraryID)/all", queryItems: queryItems) else {
+
+        guard let request = makeGenreRadioRequest(genre: genre, libraryID: libraryID, limit: limit, sonicTrackID: trackID) else {
             throw PlexServerError.invalidURL
         }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Genre radio (sonic) returned %d tracks", tracks.count)
@@ -1223,19 +1243,12 @@ class PlexServerClient {
     /// - Note: Uses raw query string because Plex requires literal >= and <= operators
     func createDecadeRadio(startYear: Int, endYear: Int, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating decade radio (non-sonic) for %d-%d in library %@", startYear, endYear, libraryID)
-        
-        // Build URL manually - Plex filter syntax requires unencoded >= and <= operators
-        let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&year>=\(startYear)&year<=\(endYear)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
-        
-        guard let url = URL(string: urlString) else {
+
+        guard let request = makeDecadeRadioRequest(startYear: startYear, endYear: endYear, libraryID: libraryID, limit: limit) else {
             throw PlexServerError.invalidURL
         }
-        
-        var request = URLRequest(url: url)
-        for (key, value) in standardHeaders {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Decade radio returned %d tracks", tracks.count)
@@ -1247,19 +1260,12 @@ class PlexServerClient {
     /// - Note: Uses raw query string because Plex requires literal >= and <= operators
     func createDecadeRadioSonic(startYear: Int, endYear: Int, trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating decade radio (sonic) for %d-%d with seed %@ in library %@", startYear, endYear, trackID, libraryID)
-        
-        // Build URL manually - Plex filter syntax requires unencoded >= and <= operators
-        let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&year>=\(startYear)&year<=\(endYear)&track.sonicallySimilar=\(trackID)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
-        
-        guard let url = URL(string: urlString) else {
+
+        guard let request = makeDecadeRadioRequest(startYear: startYear, endYear: endYear, libraryID: libraryID, limit: limit, sonicTrackID: trackID) else {
             throw PlexServerError.invalidURL
         }
-        
-        var request = URLRequest(url: url)
-        for (key, value) in standardHeaders {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Decade radio (sonic) returned %d tracks", tracks.count)
@@ -1271,18 +1277,18 @@ class PlexServerClient {
     func createHitsRadio(libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating hits radio (non-sonic) in library %@", libraryID)
         
-        // Build URL manually - Plex filter syntax requires unencoded >= operator
         let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&ratingCount>=\(RadioConfig.hitsThreshold)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
-        
+
         guard let url = URL(string: urlString) else {
             throw PlexServerError.invalidURL
         }
-        
+
         var request = URLRequest(url: url)
         for (key, value) in standardHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Hits radio returned %d tracks", tracks.count)
@@ -1295,18 +1301,18 @@ class PlexServerClient {
     func createHitsRadioSonic(trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating hits radio (sonic) with seed %@ in library %@", trackID, libraryID)
         
-        // Build URL manually - Plex filter syntax requires unencoded >= operator
         let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&ratingCount>=\(RadioConfig.hitsThreshold)&track.sonicallySimilar=\(trackID)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
-        
+
         guard let url = URL(string: urlString) else {
             throw PlexServerError.invalidURL
         }
-        
+
         var request = URLRequest(url: url)
         for (key, value) in standardHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Hits radio (sonic) returned %d tracks", tracks.count)
@@ -1318,19 +1324,18 @@ class PlexServerClient {
     func createDeepCutsRadio(libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating deep cuts radio (non-sonic) in library %@", libraryID)
         
-        // Build URL manually - Plex filter syntax requires unencoded <= operator
-        // Using <= with threshold-1 because Plex doesn't support < operator (only >=, <=, =, !=)
         let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&ratingCount<=\(RadioConfig.deepCutsThreshold - 1)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
-        
+
         guard let url = URL(string: urlString) else {
             throw PlexServerError.invalidURL
         }
-        
+
         var request = URLRequest(url: url)
         for (key, value) in standardHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Deep cuts radio returned %d tracks", tracks.count)
@@ -1343,19 +1348,18 @@ class PlexServerClient {
     func createDeepCutsRadioSonic(trackID: String, libraryID: String, limit: Int = RadioConfig.defaultLimit) async throws -> [PlexTrack] {
         NSLog("PlexServerClient: Creating deep cuts radio (sonic) with seed %@ in library %@", trackID, libraryID)
         
-        // Build URL manually - Plex filter syntax requires unencoded <= operator
-        // Using <= with threshold-1 because Plex doesn't support < operator (only >=, <=, =, !=)
         let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&ratingCount<=\(RadioConfig.deepCutsThreshold - 1)&track.sonicallySimilar=\(trackID)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
-        
+
         guard let url = URL(string: urlString) else {
             throw PlexServerError.invalidURL
         }
-        
+
         var request = URLRequest(url: url)
         for (key, value) in standardHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Deep cuts radio (sonic) returned %d tracks", tracks.count)
@@ -1380,16 +1384,17 @@ class PlexServerClient {
         // Use max(1, ...) to ensure "All Rated" (minRating=0.1) filters to userRating>=1, not >=0
         let ratingFilter = max(1, Int(minRating))
         let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&userRating>=\(ratingFilter)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
-        
+
         guard let url = URL(string: urlString) else {
             throw PlexServerError.invalidURL
         }
-        
+
         var request = URLRequest(url: url)
         for (key, value) in standardHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Rating radio returned %d tracks", tracks.count)
@@ -1413,16 +1418,17 @@ class PlexServerClient {
         // Use max(1, ...) to ensure "All Rated" (minRating=0.1) filters to userRating>=1, not >=0
         let ratingFilter = max(1, Int(minRating))
         let urlString = "\(baseURL.absoluteString)/library/sections/\(libraryID)/all?type=10&userRating>=\(ratingFilter)&track.sonicallySimilar=\(trackID)&sort=random&limit=\(limit)&X-Plex-Token=\(authToken)"
-        
+
         guard let url = URL(string: urlString) else {
             throw PlexServerError.invalidURL
         }
-        
+
         var request = URLRequest(url: url)
         for (key, value) in standardHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        
+
+        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Rating radio (sonic) returned %d tracks", tracks.count)

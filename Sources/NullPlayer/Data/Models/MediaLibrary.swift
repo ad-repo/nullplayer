@@ -2122,14 +2122,14 @@ class MediaLibrary {
     
     // MARK: - Local Radio
 
-    func createLocalLibraryRadio(limit: Int = 100) -> [Track] {
+    func createLocalLibraryRadio(limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         let pool = tracksSnapshot.shuffled()
         let tracks = pool.map { $0.toTrack() }
         let historyFiltered = LocalRadioHistory.shared.filterOutHistoryTracks(tracks)
         return filterLocalForArtistVariety(historyFiltered, limit: limit)
     }
 
-    func createLocalGenreRadio(genre: String, limit: Int = 100) -> [Track] {
+    func createLocalGenreRadio(genre: String, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         var filter = LibraryFilter()
         filter.genres = Set([genre])
         let pool = filteredTracks(filter: filter, sortBy: .title, ascending: true).shuffled()
@@ -2138,11 +2138,11 @@ class MediaLibrary {
         return filterLocalForArtistVariety(historyFiltered, limit: limit)
     }
 
-    func createLocalGenreRadioSimilar(seedTrack: Track?, genre: String, limit: Int = 100) -> [Track] {
+    func createLocalGenreRadioSimilar(seedTrack: Track?, genre: String, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         return createLocalGenreRadio(genre: genre, limit: limit)
     }
 
-    func createLocalDecadeRadio(start: Int, end: Int, limit: Int = 100) -> [Track] {
+    func createLocalDecadeRadio(start: Int, end: Int, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         var filter = LibraryFilter()
         filter.yearRange = start...end
         let pool = filteredTracks(filter: filter, sortBy: .title, ascending: true).shuffled()
@@ -2151,11 +2151,11 @@ class MediaLibrary {
         return filterLocalForArtistVariety(historyFiltered, limit: limit)
     }
 
-    func createLocalDecadeRadioSimilar(start: Int, end: Int, seedTrack: Track?, limit: Int = 100) -> [Track] {
+    func createLocalDecadeRadioSimilar(start: Int, end: Int, seedTrack: Track?, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         return createLocalDecadeRadio(start: start, end: end, limit: limit)
     }
 
-    func createLocalArtistRadio(artist: String, limit: Int = 100) -> [Track] {
+    func createLocalArtistRadio(artist: String, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         let pool = tracksSnapshot
             .filter { track in
                 // Match via track.artists (populated) or fall back to raw field for pre-backfill tracks

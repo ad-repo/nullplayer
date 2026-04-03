@@ -3741,11 +3741,13 @@ class AudioEngine {
         // Invalidate any stale completion handlers (defense-in-depth for streaming path)
         playbackGeneration += 1
         
-        // Create secondary streaming player if needed
-        if crossfadeStreamingPlayer == nil {
-            crossfadeStreamingPlayer = StreamingAudioPlayer(eqConfiguration: activeEQConfiguration)
-            // Note: We don't set delegate - we handle state internally during crossfade
-        }
+        // Rebuild the secondary streaming player for each crossfade.
+        // Reusing a previously stopped AudioStreaming graph can leave AVAudioUnitEQ
+        // parameter objects pointing at invalid state, which crashes during EQ sync.
+        crossfadeStreamingPlayer?.delegate = nil
+        crossfadeStreamingPlayer?.stop()
+        crossfadeStreamingPlayer = StreamingAudioPlayer(eqConfiguration: activeEQConfiguration)
+        // Note: We don't set delegate - we handle state internally during crossfade
         
         // Sync EQ settings to crossfade player
         syncEQToStreamingPlayer(crossfadeStreamingPlayer)
