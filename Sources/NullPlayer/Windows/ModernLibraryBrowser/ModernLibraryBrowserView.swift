@@ -9975,7 +9975,10 @@ class ModernLibraryBrowserView: NSView {
     }
     private func playRadioStation(_ station: RadioStation) { RadioManager.shared.play(station: station) }
     private func playPlexRadioStation(_ radioType: PlexRadioType) {
-        Task { @MainActor in
+        radioPlayTask?.cancel()
+        isLoading = true; startLoadingAnimation(); needsDisplay = true
+        radioPlayTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             var tracks: [Track] = []
             switch radioType {
             case .libraryRadio: tracks = await PlexManager.shared.createLibraryRadio()
@@ -9991,15 +9994,22 @@ class ModernLibraryBrowserView: NSView {
             case .ratingRadio(let r, _): tracks = await PlexManager.shared.createRatingRadio(minRating: r)
             case .ratingRadioSonic(let r, _): tracks = await PlexManager.shared.createRatingRadioSonic(minRating: r)
             }
-            if !tracks.isEmpty {
-                let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
+            guard !Task.isCancelled else { return }
+            guard !tracks.isEmpty else {
+                self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+                return
             }
+            let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
+            self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+            self.radioPlayTask = nil
         }
     }
     
     private func playSubsonicRadioStation(_ radioType: SubsonicRadioType) {
         radioPlayTask?.cancel()
-        radioPlayTask = Task { @MainActor in
+        isLoading = true; startLoadingAnimation(); needsDisplay = true
+        radioPlayTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             var tracks: [Track] = []
             switch radioType {
             case .libraryRadio: tracks = await SubsonicManager.shared.createLibraryRadio()
@@ -10011,15 +10021,22 @@ class ModernLibraryBrowserView: NSView {
             case .starredRadio: tracks = await SubsonicManager.shared.createRatingRadio()
             case .starredSimilar: tracks = await SubsonicManager.shared.createRatingRadioSimilar()
             }
-            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            guard !Task.isCancelled else { return }
+            guard !tracks.isEmpty else {
+                self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+                return
+            }
             let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
-            radioPlayTask = nil
+            self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+            self.radioPlayTask = nil
         }
     }
 
     private func playJellyfinRadioStation(_ radioType: JellyfinRadioType) {
         radioPlayTask?.cancel()
-        radioPlayTask = Task { @MainActor in
+        isLoading = true; startLoadingAnimation(); needsDisplay = true
+        radioPlayTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             var tracks: [Track] = []
             switch radioType {
             case .libraryRadio: tracks = await JellyfinManager.shared.createLibraryRadio()
@@ -10031,15 +10048,22 @@ class ModernLibraryBrowserView: NSView {
             case .favoritesRadio: tracks = await JellyfinManager.shared.createFavoritesRadio()
             case .favoritesInstantMix: tracks = await JellyfinManager.shared.createFavoritesRadioInstantMix()
             }
-            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            guard !Task.isCancelled else { return }
+            guard !tracks.isEmpty else {
+                self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+                return
+            }
             let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
-            radioPlayTask = nil
+            self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+            self.radioPlayTask = nil
         }
     }
 
     private func playEmbyRadioStation(_ radioType: EmbyRadioType) {
         radioPlayTask?.cancel()
-        radioPlayTask = Task { @MainActor in
+        isLoading = true; startLoadingAnimation(); needsDisplay = true
+        radioPlayTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             var tracks: [Track] = []
             switch radioType {
             case .libraryRadio: tracks = await EmbyManager.shared.createLibraryRadio()
@@ -10051,9 +10075,14 @@ class ModernLibraryBrowserView: NSView {
             case .favoritesRadio: tracks = await EmbyManager.shared.createFavoritesRadio()
             case .favoritesInstantMix: tracks = await EmbyManager.shared.createFavoritesRadioInstantMix()
             }
-            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            guard !Task.isCancelled else { return }
+            guard !tracks.isEmpty else {
+                self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+                return
+            }
             let engine = WindowManager.shared.audioEngine; engine.clearPlaylist(); engine.loadTracks(tracks); engine.play()
-            radioPlayTask = nil
+            self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+            self.radioPlayTask = nil
         }
     }
 
