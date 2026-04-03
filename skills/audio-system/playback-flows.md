@@ -1,6 +1,6 @@
 # Playback Flows and Integrations
 
-This document covers shuffle playback behavior, Plex Radio/Mix, Subsonic/Jellyfin streaming details, and Now Playing integration.
+This document covers shuffle playback behavior, Plex Radio/Mix, Subsonic/Jellyfin/Emby streaming details, and Now Playing integration.
 
 ## Shuffle Playback
 

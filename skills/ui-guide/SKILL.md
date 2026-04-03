@@ -515,7 +515,7 @@ Controls how quickly spectrum bars fall after peaks:
 
 - **Default size**: 275x116 (same as main window at 1x)
 - **Stretching**: Width and height can expand; minimum width stays skin-defined
-- **Bar count**: 55 bars (vs 19 in main window)
+- **Bar count**: 84 bars (vs 19 in main window)
 - **Refresh**: 60Hz via CVDisplayLink
 - **Skin colors**: Uses skin's `viscolor.txt` (24 colors)
 

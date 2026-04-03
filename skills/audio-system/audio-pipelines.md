@@ -14,7 +14,7 @@ When enabled via **Playback Options → Gapless Playback**, the engine pre-sched
 3. When the current track ends, playback continues seamlessly to the pre-scheduled track
 4. The next-next track is then pre-scheduled
 
-**Streaming (Plex/Subsonic/Jellyfin):**
+**Streaming (Plex/Subsonic/Jellyfin/Emby):**
 1. Uses the AudioStreaming library's `queue(url:)` method to pre-buffer the next streaming track
 2. The queued track plays immediately when the current track finishes
 3. Only works when both current and next tracks are streaming (can't cross pipelines)

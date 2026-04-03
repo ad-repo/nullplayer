@@ -22,10 +22,10 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Playlist Editor** | Track list and playlist management | PL button or context menu |
 | **Equalizer** | Classic 10-band EQ or modern 21-band EQ with presets | EQ button or context menu |
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
-| **Library Browser** | Browse Plex/Jellyfin/Subsonic and local media | Logo button or context menu |
+| **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **ProjectM** | Real-time audio visualizations | Menu button or context menu |
 
-In modern UI, **Windows > Play History** opens the **History** tab inside the Library Browser instead of a separate window.
+In modern UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window.
 
 ### Top Menu Bar
 
@@ -108,6 +108,13 @@ Modern UI adds: **HT** (Hide Title Bars), **CA** (Cast), **pM** (ProjectM), **SP
 - Scrobbling (50% or 4 minutes)
 - Casting support via proxy
 
+### Emby Integration
+- Browse music and video libraries
+- **Library selector** in status bar: click "Lib:" to switch library. "All" browses across all libraries.
+- Rating scale: 0-100% (0-10 internal, multiply/divide by 10; 1 star = 20)
+- Scrobbling (50% or 4 minutes for audio, 90% for video)
+- Casting support via proxy (stream URLs have no file extension)
+
 ### Internet Radio
 - Shoutcast/Icecast streaming
 - Live song metadata (ICY + SomaFM fallback when ICY is missing)
@@ -139,7 +146,7 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 - Duplicate detection and per-file signatures prevent unnecessary metadata re-parse for unchanged files
 - Progress updates are throttled/coarse during large imports to keep UI responsive
 
-**Tabs:** Artists, Albums, Playlists (`Plists` in the UI), Movies, Shows, Search, Radio, History
+**Tabs:** Artists, Albums, Playlists (`Plists` in the UI), Movies, Shows, Search, Radio, Data
 
 ### Drag/Drop + Folder Import Behavior (Local/NAS)
 
@@ -271,7 +278,7 @@ Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (dou
 - **Option+Enter**: Add to Queue (append, no auto-play if empty)
 - **Right Arrow**: Expand item (artists, albums, playlists, shows, seasons); if already expanded, move to first child
 - **Left Arrow**: Collapse expanded item; if not expanded, jump to parent item
-- **Tab / Shift+Tab**: Cycle forward/backward through tabs (Artists → Albums → Plists → Movies → Shows → Search → Radio → History)
+- **Tab / Shift+Tab**: Cycle forward/backward through tabs (Artists → Albums → Plists → Movies → Shows → Search → Radio → Data)
 - **Space**: Play/Pause
 - **Type letters**: Jump to first matching item by name (type-ahead, clears after ~1s); Backspace removes last character, Escape clears immediately
 - **Cmd+F**: Focus search field

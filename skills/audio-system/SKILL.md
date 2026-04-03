@@ -373,6 +373,13 @@ HTTP/HTTPS URLs with MP3, AAC, Ogg Vorbis
 - Session API for "now playing"
 - Progress updates with ticks (1 tick = 10,000 ns)
 - Same scrobbling rules as Subsonic
+- Supports both audio (`JellyfinPlaybackReporter`) and video (`JellyfinVideoPlaybackReporter`)
+
+### Emby
+- Session API for "now playing" (same structure as Jellyfin)
+- Progress updates with ticks (1 tick = 10,000 ns)
+- Scrobble at 50% or 4 minutes, whichever comes first
+- Supports both audio (`EmbyPlaybackReporter`) and video (`EmbyVideoPlaybackReporter`)
 
 ## Dependencies
 
@@ -399,5 +406,8 @@ For detailed information, see:
 | EQ | EQ node configuration in AudioEngine, StreamingAudioPlayer |
 | Spectrum | `Audio/AudioEngine.swift` (FFT processing) |
 | BPM | `Audio/BPMDetector.swift` |
+| Output devices | `Audio/AudioOutputManager.swift` |
+| Track URL resolution | `Audio/StreamingTrackResolver.swift` |
+| File validation | `Audio/AudioFileValidator.swift` |
 | ProjectM | `Visualization/ProjectMWrapper.swift`, `Windows/ProjectM/` |
-| Reporters | `Plex/PlexPlaybackReporter.swift`, `Subsonic/SubsonicPlaybackReporter.swift`, `Jellyfin/JellyfinPlaybackReporter.swift` |
+| Reporters | `Plex/PlexPlaybackReporter.swift`, `Plex/PlexVideoPlaybackReporter.swift`, `Subsonic/SubsonicPlaybackReporter.swift`, `Jellyfin/JellyfinPlaybackReporter.swift`, `Jellyfin/JellyfinVideoPlaybackReporter.swift`, `Emby/EmbyPlaybackReporter.swift`, `Emby/EmbyVideoPlaybackReporter.swift` |

@@ -89,6 +89,8 @@ Window-scoped keys:
 - `visClassicFitToWidth.spectrumWindow`
 - `visClassicTransparentBg.mainWindow`
 - `visClassicTransparentBg.spectrumWindow`
+- `visClassicOpacity.mainWindow`
+- `visClassicOpacity.spectrumWindow`
 
 Legacy fallback keys:
 - `visClassicLastProfileName`

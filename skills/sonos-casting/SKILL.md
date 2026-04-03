@@ -299,13 +299,15 @@ Local files are supported via an embedded HTTP server (LocalMediaServer):
 **Supported content:**
 - ✅ Plex streaming (with token in URL)
 - ✅ Subsonic/Navidrome streaming (via proxy)
+- ✅ Jellyfin streaming (via proxy)
+- ✅ Emby streaming (via proxy)
 - ✅ Local files (via embedded HTTP server)
 - ✅ Internet radio (Shoutcast/Icecast streams)
 
-**Subsonic/Navidrome Casting:**
+**Subsonic/Navidrome/Jellyfin/Emby Casting:**
 Streams are proxied through LocalMediaServer because:
 1. Sonos has issues with URLs containing query parameters
-2. Navidrome may be localhost-bound, unreachable by Sonos
+2. The media server may be localhost-bound, unreachable by Sonos
 
 ### Artwork Display
 
@@ -315,6 +317,8 @@ NullPlayer sends artwork URLs via DIDL-Lite metadata:
 |--------|-------------|
 | Plex | `PlexManager.artworkURL(thumb:)` - Plex transcode endpoint |
 | Subsonic | `SubsonicManager.coverArtURL(coverArtId:)` - Subsonic getCoverArt |
+| Jellyfin | `JellyfinManager.imageURL(itemId:imageTag:size:)` - Jellyfin `/Items/{id}/Images/Primary` |
+| Emby | `EmbyManager.imageURL(itemId:imageTag:size:)` - Emby `/Items/{id}/Images/Primary` |
 | Local files | LocalMediaServer extracts embedded artwork and serves as JPEG |
 
 See [artwork-debugging-history.md](artwork-debugging-history.md) for historical artwork troubleshooting attempts.
@@ -344,7 +348,7 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 - **Strict (default)**: nil sample rate on a lossless track → incompatible. Used as the _final_ verdict in `castCurrentTrack` and `castNewTrack` after the sample rate has been fetched.
 - **Permissive** (`allowUnknownSampleRate: true`): nil sample rate → pass through. Used in _scan/positioning_ functions that advance the playlist index before casting begins.
 
-Always-incompatible formats (regardless of sample rate): `alac`, `aiff`, `aif`.
+Always-incompatible formats (regardless of sample rate): `alac`, `aiff`, `aif`, `wv` (WavPack), `ape` (Monkey's Audio).
 Lossless formats requiring the sample-rate check: `flac`, `wav` — rejected above 48 kHz.
 
 ### Scan Functions Use Permissive Mode
@@ -362,7 +366,7 @@ Functions that advance the playlist index use `allowUnknownSampleRate: true` bec
 
 ### Design Principle
 
-> Scan functions only reject _definitively_ incompatible formats (ALAC, AIFF, known >48 kHz SR). They pass nil-SR lossless tracks through so the cast function can fetch and decide. Never use strict mode in a skip/scan loop — it causes Plex FLAC tracks with nil SR to be skipped silently without a fetch attempt.
+> Scan functions only reject _definitively_ incompatible formats (ALAC, AIFF, WavPack, Monkey's Audio, known >48 kHz SR). They pass nil-SR lossless tracks through so the cast function can fetch and decide. Never use strict mode in a skip/scan loop — it causes Plex FLAC tracks with nil SR to be skipped silently without a fetch attempt.
 
 ## Troubleshooting
 
