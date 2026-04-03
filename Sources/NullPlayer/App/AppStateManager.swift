@@ -639,7 +639,8 @@ class AppStateManager {
         }
 
         guard let sourceLayout = EQConfiguration.persistedLayout(forBandCount: savedBands.count) else {
-            return EQBandRemapper.remap(gains: savedBands, from: targetLayout, to: targetLayout)
+            let normalized = Array(savedBands.prefix(targetLayout.bandCount))
+            return normalized + Array(repeating: 0, count: max(0, targetLayout.bandCount - normalized.count))
         }
 
         return targetLayout.gainValues(remapping: savedBands, from: sourceLayout)

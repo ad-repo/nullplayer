@@ -6202,8 +6202,10 @@ class ModernLibraryBrowserView: NSView {
     }
 
     @objc private func playHistoryDidChange() {
-        guard browseMode.isHistoryMode else { return }
-        historyAgent.scheduleRefresh()
+        Task { @MainActor [weak self] in
+            guard let self, self.browseMode.isHistoryMode else { return }
+            self.historyAgent.scheduleRefresh()
+        }
     }
     
     @objc private func windowLayoutDidChange() {

@@ -14,15 +14,24 @@ struct EQPreset: Identifiable, Codable {
         self.preamp = preamp
         self.bands = bands ?? Array(repeating: 0, count: Self.activeLayout.bandCount)
     }
-    
+
+    /// Create a built-in preset with a stable UUID so identity is consistent across accesses
+    private init(stableID: UUID, name: String, preamp: Float = 0, bands: [Float]) {
+        self.id = stableID
+        self.name = name
+        self.preamp = preamp
+        self.bands = bands
+    }
+
     private static let presetSourceLayout = EQConfiguration.classic10
 
     private static var activeLayout: EQConfiguration {
         EQConfiguration.forModernUI(UserDefaults.standard.bool(forKey: "modernUIEnabled"))
     }
 
-    private static func preset(name: String, preamp: Float = 0, classicBands: [Float]) -> EQPreset {
+    private static func preset(stableID: UUID, name: String, preamp: Float = 0, classicBands: [Float]) -> EQPreset {
         EQPreset(
+            stableID: stableID,
             name: name,
             preamp: preamp,
             bands: activeLayout.gainValues(remapping: classicBands, from: presetSourceLayout)
@@ -31,10 +40,24 @@ struct EQPreset: Identifiable, Codable {
 
     // MARK: - Built-in Presets
 
-    static var flat: EQPreset { EQPreset(name: "Flat") }
+    // Stable UUIDs for built-in presets so Identifiable views don't treat them as new items on every access
+    private static let flatID       = UUID(uuidString: "00000000-EQ00-0000-0000-000000000001")!
+    private static let imOldID      = UUID(uuidString: "00000000-EQ00-0000-0000-000000000002")!
+    private static let imYoungID    = UUID(uuidString: "00000000-EQ00-0000-0000-000000000003")!
+    private static let rockID       = UUID(uuidString: "00000000-EQ00-0000-0000-000000000004")!
+    private static let popID        = UUID(uuidString: "00000000-EQ00-0000-0000-000000000005")!
+    private static let electronicID = UUID(uuidString: "00000000-EQ00-0000-0000-000000000006")!
+    private static let hipHopID     = UUID(uuidString: "00000000-EQ00-0000-0000-000000000007")!
+    private static let jazzID       = UUID(uuidString: "00000000-EQ00-0000-0000-000000000008")!
+    private static let classicalID  = UUID(uuidString: "00000000-EQ00-0000-0000-000000000009")!
+
+    static var flat: EQPreset {
+        EQPreset(stableID: flatID, name: "Flat", bands: Array(repeating: 0, count: activeLayout.bandCount))
+    }
 
     static var imOld: EQPreset {
         preset(
+            stableID: imOldID,
             name: "I'm Old",
             preamp: 0,
             classicBands: [-2, -1, 0, 0, 1, 2, 4, 6, 7, 8]
@@ -43,6 +66,7 @@ struct EQPreset: Identifiable, Codable {
 
     static var imYoung: EQPreset {
         preset(
+            stableID: imYoungID,
             name: "I'm Young",
             preamp: -2,
             classicBands: [8, 6, 4, 2, 0, -1, 0, 1, 1, 0]
@@ -62,27 +86,27 @@ struct EQPreset: Identifiable, Codable {
     // MARK: - Genre-Based Auto EQ Presets
 
     static var rock: EQPreset {
-        preset(name: "Rock", preamp: 0, classicBands: [4, 3, 1, -1, 0, 2, 3, 4, 3, 3])
+        preset(stableID: rockID, name: "Rock", preamp: 0, classicBands: [4, 3, 1, -1, 0, 2, 3, 4, 3, 3])
     }
 
     static var pop: EQPreset {
-        preset(name: "Pop", preamp: 0, classicBands: [2, 3, 2, 0, 1, 2, 2, 1, 1, 1])
+        preset(stableID: popID, name: "Pop", preamp: 0, classicBands: [2, 3, 2, 0, 1, 2, 2, 1, 1, 1])
     }
 
     static var electronic: EQPreset {
-        preset(name: "Electronic", preamp: -1, classicBands: [5, 4, 2, 0, -1, 0, 2, 3, 3, 2])
+        preset(stableID: electronicID, name: "Electronic", preamp: -1, classicBands: [5, 4, 2, 0, -1, 0, 2, 3, 3, 2])
     }
 
     static var hipHop: EQPreset {
-        preset(name: "Hip-Hop", preamp: -1, classicBands: [5, 4, 2, 0, 1, 2, 1, 1, 1, 1])
+        preset(stableID: hipHopID, name: "Hip-Hop", preamp: -1, classicBands: [5, 4, 2, 0, 1, 2, 1, 1, 1, 1])
     }
 
     static var jazz: EQPreset {
-        preset(name: "Jazz", preamp: 0, classicBands: [3, 2, 1, 0, 0, 1, 2, 3, 2, 2])
+        preset(stableID: jazzID, name: "Jazz", preamp: 0, classicBands: [3, 2, 1, 0, 0, 1, 2, 3, 2, 2])
     }
 
     static var classical: EQPreset {
-        preset(name: "Classical", preamp: 0, classicBands: [2, 1, 0, 0, 0, 0, 1, 1, 1, 0])
+        preset(stableID: classicalID, name: "Classical", preamp: 0, classicBands: [2, 1, 0, 0, 0, 0, 1, 1, 1, 0])
     }
     
     /// Map a genre string to an appropriate EQ preset using fuzzy matching

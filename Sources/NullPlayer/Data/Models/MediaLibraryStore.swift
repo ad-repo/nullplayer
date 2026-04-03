@@ -1256,9 +1256,10 @@ final class MediaLibraryStore {
                 WHERE event_genre IS NULL OR event_genre = ''
                 ORDER BY played_at DESC
                 """)
-            return stmt.map { row in
-                PlayEventGenreStub(
-                    id: row[0] as! Int64,
+            return stmt.compactMap { row in
+                guard let id = row[0] as? Int64 else { return nil }
+                return PlayEventGenreStub(
+                    id: id,
                     title: row[1] as? String,
                     artist: row[2] as? String,
                     album: row[3] as? String

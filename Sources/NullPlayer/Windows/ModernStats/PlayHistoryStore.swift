@@ -98,15 +98,22 @@ final class PlayHistoryStore: Sendable {
     }
 
     func fetchTimeSeries(filter: StatsFilterState, granularity: StatsGranularity) throws -> [TimeSeriesRow] {
-        let fmt: String
+        // Use bucket-start timestamps to avoid week-boundary mismatches between SQLite strftime and DateFormatter
+        let bucketExpr: String
         switch granularity {
-        case .day:   fmt = "%Y-%m-%d"
-        case .week:  fmt = "%Y-%W"
-        case .month: fmt = "%Y-%m"
+        case .day:
+            // Start of day in local time, returned as unix epoch
+            bucketExpr = "strftime('%s', strftime('%Y-%m-%d', played_at, 'unixepoch', 'localtime'), 'utc')"
+        case .week:
+            // Start of ISO week (Monday) in local time
+            bucketExpr = "strftime('%s', date(played_at, 'unixepoch', 'localtime', 'weekday 0', '-6 days'), 'utc')"
+        case .month:
+            // Start of month in local time
+            bucketExpr = "strftime('%s', strftime('%Y-%m-01', played_at, 'unixepoch', 'localtime'), 'utc')"
         }
         let (whereStr, params) = whereClause(for: filter)
         let sql = """
-            SELECT strftime('\(fmt)', played_at, 'unixepoch', 'localtime'),
+            SELECT \(bucketExpr),
                    pe.source,
                    COUNT(*),
                    COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
@@ -117,27 +124,21 @@ final class PlayHistoryStore: Sendable {
             """
         guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
         let stmt = try db.prepare(sql, params)
-        let dayFormatter = DateFormatter()
-        dayFormatter.dateFormat = "yyyy-MM-dd"
-        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
-        let weekFormatter = DateFormatter()
-        weekFormatter.dateFormat = "yyyy-ww"   // ISO week (%Y-%W maps to week-of-year)
-        weekFormatter.locale = Locale(identifier: "en_US_POSIX")
-        let monthFormatter = DateFormatter()
-        monthFormatter.dateFormat = "yyyy-MM"
-        monthFormatter.locale = Locale(identifier: "en_US_POSIX")
-        let bucketFormatter: DateFormatter
+        let labelFormatter = DateFormatter()
+        labelFormatter.locale = Locale(identifier: "en_US_POSIX")
         switch granularity {
-        case .day:   bucketFormatter = dayFormatter
-        case .week:  bucketFormatter = weekFormatter
-        case .month: bucketFormatter = monthFormatter
+        case .day:   labelFormatter.dateFormat = "yyyy-MM-dd"
+        case .week:  labelFormatter.dateFormat = "yyyy-MM-dd"
+        case .month: labelFormatter.dateFormat = "yyyy-MM"
         }
         return stmt.compactMap { row in
-            guard let bucket = row[0] as? String else { return nil }
+            guard let tsStr = row[0] as? String,
+                  let ts = Double(tsStr) else { return nil }
+            let date = Date(timeIntervalSince1970: ts)
+            let bucket = labelFormatter.string(from: date)
             let source = row[1] as? String ?? PlayHistorySource.local.rawValue
             let count = Int(row[2] as? Int64 ?? 0)
             let mins = row[3] as? Double ?? 0
-            let date = bucketFormatter.date(from: bucket) ?? Date(timeIntervalSince1970: 0)
             return TimeSeriesRow(
                 id: "\(bucket)-\(source)",
                 bucket: bucket,
@@ -285,11 +286,11 @@ final class PlayHistoryStore: Sendable {
             params.append(artist)
         }
         if let album = filter.selectedAlbum {
-            conditions.append("pe.event_album = ?")
+            conditions.append("COALESCE(NULLIF(trim(pe.event_album), ''), 'Unknown') = ?")
             params.append(album)
         }
         if let genre = filter.selectedGenre {
-            conditions.append("pe.event_genre = ?")
+            conditions.append("COALESCE(NULLIF(trim(pe.event_genre), ''), 'Unknown') = ?")
             params.append(genre)
         }
         if let source = filter.selectedSource {

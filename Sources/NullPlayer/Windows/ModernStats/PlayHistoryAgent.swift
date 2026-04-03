@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 enum StatsDimension { case artist, album, genre, source }
 enum StatsGranularity { case day, week, month }
@@ -51,7 +52,7 @@ final class PlayHistoryAgent: ObservableObject {
     @Published var backfillCurrent = 0
     @Published var backfillTotal = 0
 
-    private(set) var filter = StatsFilterState() {
+    @Published private(set) var filter = StatsFilterState() {
         didSet { if filter != oldValue { invalidateCache(); scheduleRefresh() } }
     }
     @Published var granularity = StatsGranularity.day {
@@ -115,12 +116,19 @@ final class PlayHistoryAgent: ObservableObject {
         error = nil
         do {
             let result = try await Task.detached(priority: .userInitiated) { [store, currentFilter, currentGranularity] in
+                try Task.checkCancellation()
                 let p = try store.fetchPlayTimeSummaries(filter: currentFilter)
+                try Task.checkCancellation()
                 let a = try store.fetchTopDimension(dimension: .artist, filter: currentFilter)
+                try Task.checkCancellation()
                 let b = try store.fetchTopDimension(dimension: .album,  filter: currentFilter)
+                try Task.checkCancellation()
                 let s = try store.fetchTimeSeries(filter: currentFilter, granularity: currentGranularity)
+                try Task.checkCancellation()
                 let g = try store.fetchGenreBreakdown(filter: currentFilter)
+                try Task.checkCancellation()
                 let o = try store.fetchTopDimension(dimension: .source, filter: currentFilter)
+                try Task.checkCancellation()
                 let r = try store.fetchRecentEvents(filter: currentFilter)
                 return (p, a, b, s, g, o, r)
             }.value

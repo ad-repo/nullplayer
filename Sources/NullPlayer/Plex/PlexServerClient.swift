@@ -1133,6 +1133,19 @@ class PlexServerClient {
     
     // MARK: - Extended Radio API (Non-Sonic and Sonic Versions)
 
+    private func redactedURL(_ url: URL?) -> String {
+        guard let url,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url?.absoluteString ?? "unknown"
+        }
+        components.queryItems = components.queryItems?.map {
+            $0.name == "X-Plex-Token"
+                ? URLQueryItem(name: $0.name, value: "<redacted>")
+                : $0
+        }
+        return components.url?.absoluteString ?? url.absoluteString
+    }
+
     func makeLibraryRadioRequest(libraryID: String, limit: Int) -> URLRequest? {
         let queryItems = [
             URLQueryItem(name: "type", value: "10"),
@@ -1179,7 +1192,7 @@ class PlexServerClient {
             throw PlexServerError.invalidURL
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Library radio returned %d tracks", tracks.count)
@@ -1216,7 +1229,7 @@ class PlexServerClient {
             throw PlexServerError.invalidURL
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Genre radio returned %d tracks", tracks.count)
@@ -1232,7 +1245,7 @@ class PlexServerClient {
             throw PlexServerError.invalidURL
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Genre radio (sonic) returned %d tracks", tracks.count)
@@ -1248,7 +1261,7 @@ class PlexServerClient {
             throw PlexServerError.invalidURL
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Decade radio returned %d tracks", tracks.count)
@@ -1265,7 +1278,7 @@ class PlexServerClient {
             throw PlexServerError.invalidURL
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Decade radio (sonic) returned %d tracks", tracks.count)
@@ -1288,7 +1301,7 @@ class PlexServerClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Hits radio returned %d tracks", tracks.count)
@@ -1312,7 +1325,7 @@ class PlexServerClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Hits radio (sonic) returned %d tracks", tracks.count)
@@ -1335,7 +1348,7 @@ class PlexServerClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Deep cuts radio returned %d tracks", tracks.count)
@@ -1359,7 +1372,7 @@ class PlexServerClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Deep cuts radio (sonic) returned %d tracks", tracks.count)
@@ -1394,7 +1407,7 @@ class PlexServerClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Rating radio returned %d tracks", tracks.count)
@@ -1428,7 +1441,7 @@ class PlexServerClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
-        NSLog("PlexServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("PlexServerClient: Radio request %@", redactedURL(request.url))
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         NSLog("PlexServerClient: Rating radio (sonic) returned %d tracks", tracks.count)

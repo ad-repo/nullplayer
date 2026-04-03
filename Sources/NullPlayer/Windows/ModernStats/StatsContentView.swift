@@ -594,7 +594,7 @@ struct StatsHistoryTableView: View {
                         Text(row.sourceDisplayName)
                     }
                     TableColumn("Played At") { row in
-                        Text(row.playedAt, style: .date)
+                        Text(row.playedAt.formatted(date: .abbreviated, time: .shortened))
                     }
                     TableColumn("Duration") { row in
                         Text(String(format: "%.1f min", row.durationListened / 60))

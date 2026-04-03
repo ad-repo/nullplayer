@@ -279,13 +279,13 @@ Items under `Playback Options -> Radio`:
 - `1000`
 - `10000`
 
-`Max Tracks Per Artist` and radio history controls were moved under this submenu from the top level playback options menu.
+`Max Tracks Per Artist` and radio history controls were moved under this submenu from the top-level playback options menu.
 
 ### Playlist Generation Pipeline
 
 Each `createXxxRadio` function follows this pattern:
 
-```
+```text
 1. Fetch candidate tracks from server
 2. filterOutHistoryTracks(_:)  — remove recently played
 3. filterForArtistVariety(_:limit:maxPerArtist:)  — cap per-artist slots

@@ -139,7 +139,7 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 - Duplicate detection and per-file signatures prevent unnecessary metadata re-parse for unchanged files
 - Progress updates are throttled/coarse during large imports to keep UI responsive
 
-**Tabs:** Artists, Albums, Plists, Movies, Shows, Search, Radio, History
+**Tabs:** Artists, Albums, Playlists (`Plists` in the UI), Movies, Shows, Search, Radio, History
 
 ### Drag/Drop + Folder Import Behavior (Local/NAS)
 

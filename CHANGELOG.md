@@ -9,7 +9,7 @@
 - **Genre discovery for history events** — added genre enrichment for play-history events to improve genre-based insights.
 - **Play time and source summaries** — added total listening-time summaries and source-level breakdowns in the Data tab.
 
-### 21 Band EQ (modern UI)
+### 21-Band EQ (modern UI)
 
 - **Real 21-band equalizer (modern UI)** — modern mode now runs a full 21-band EQ processing chain (local and streaming), with updated presets/state mapping and a matching 21-band UI.
 

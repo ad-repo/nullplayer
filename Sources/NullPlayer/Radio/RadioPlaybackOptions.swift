@@ -38,7 +38,9 @@ enum RadioPlaybackOptions {
         }
     }
 
-    /// When artist variety is disabled, avoid over-fetching remote candidates we will never use.
+    /// When artist variety is enabled, over-fetch by 3x so filtering by `filterForArtistVariety` / `applyRadioFilters`
+    /// has enough headroom to cap per-artist slots and still return the full requested limit.
+    /// When variety is disabled (maxPerArtist == 0), fetch only the requested amount.
     static func candidateFetchLimit(for requestedLimit: Int, maxPerArtist: Int) -> Int {
         guard requestedLimit > 0 else { return 0 }
         if maxPerArtist <= unlimitedMaxTracksPerArtist {

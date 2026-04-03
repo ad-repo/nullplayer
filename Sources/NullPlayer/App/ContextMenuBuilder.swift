@@ -2542,6 +2542,7 @@ class MenuActions: NSObject {
     }
 
     @objc func toggleLibraryHistory() {
+        guard WindowManager.shared.isModernUIEnabled else { return }
         WindowManager.shared.toggleLibraryHistory()
     }
 

@@ -16,7 +16,7 @@ NullPlayer uses two parallel audio pipelines to handle different content types:
 | Local files (.mp3, .flac, etc.) | AVAudioEngine | Yes | Yes | Cached 4096-bucket snapshot |
 | HTTP streaming (Plex/Subsonic/Jellyfin/Emby/radio) | AudioStreaming library | Yes | Yes | Live stream accumulator from 576-sample PCM chunks |
 
-Both pipelines support the active EQ layout for the current UI mode and real-time spectrum visualization. Classic mode uses the legacy 10-band layout; modern mode uses a 21-band layout. EQ settings are automatically synchronized between them. The waveform window reuses the same playback sources but splits into two modes: cached snapshots for local files and live waveform accumulation for streams.
+Both pipelines support the active EQ layout for the current UI mode and real-time spectrum visualization. Classic mode uses the legacy 10-band layout; modern mode uses a 21-band layout. EQ settings are automatically synchronized between them. The waveform window reuses the same playback sources: local files use cached snapshots, while streams start with live accumulation and may promote to a cached seekable snapshot when prerendering is available.
 
 ## Architecture Diagram
 

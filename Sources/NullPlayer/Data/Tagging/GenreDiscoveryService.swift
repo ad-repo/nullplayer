@@ -144,6 +144,7 @@ actor GenreDiscoveryService {
                     WHERE LOWER(event_artist) = LOWER(?)
                       AND LOWER(event_album) = LOWER(?)
                       AND event_genre IS NOT NULL AND event_genre != ''
+                    ORDER BY played_at DESC
                     LIMIT 1
                     """
                 params = [artist as Binding, album as Binding]
@@ -152,6 +153,7 @@ actor GenreDiscoveryService {
                     SELECT event_genre FROM play_events
                     WHERE LOWER(event_artist) = LOWER(?)
                       AND event_genre IS NOT NULL AND event_genre != ''
+                    ORDER BY played_at DESC
                     LIMIT 1
                     """
                 params = [artist as Binding]
