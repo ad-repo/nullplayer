@@ -398,9 +398,12 @@ actor WaveformCacheService {
             ])
         }
 
+        // Use the source URL's path extension (strips query string) rather than
+        // the temp download path, which has no extension and would resolve to ".bin"
+        let sourceExt = descriptor.sourceURL.pathExtension
         let localURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("waveform-prerender-\(UUID().uuidString)")
-            .appendingPathExtension(tempDownloadURL.pathExtension.isEmpty ? "bin" : tempDownloadURL.pathExtension)
+            .appendingPathExtension(sourceExt.isEmpty ? "bin" : sourceExt)
 
         try? FileManager.default.removeItem(at: localURL)
         try FileManager.default.moveItem(at: tempDownloadURL, to: localURL)
