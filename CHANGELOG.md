@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.19.0
+
+### Play History (modern UI)
+
+- **Play History analytics window (modern UI)** — added a modern analytics window that records listening events and persists history data across launches.
+- **Play History in Library Data tab** — embedded play-history analytics directly into the modern Library Browser Data tab.
+- **Genre discovery for history events** — added genre enrichment for play-history events to improve genre-based insights.
+- **Play time and source summaries** — added total listening-time summaries and source-level breakdowns in the Data tab.
+
+### 21 Band EQ (modern UI)
+
+- **Real 21-band equalizer (modern UI)** — modern mode now runs a full 21-band EQ processing chain (local and streaming), with updated presets/state mapping and a matching 21-band UI.
+
+### Radio
+
+- **Radio playlist controls** — added playlist-level controls for radio playback behavior.
+
 ## 0.18.1
 
 ### Visualization
