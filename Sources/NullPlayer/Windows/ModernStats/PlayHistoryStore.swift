@@ -49,18 +49,38 @@ struct PlayTimeSummaryRow: Identifiable, Sendable {
 
 final class PlayHistoryStore: Sendable {
 
+    private let historyFromClause = """
+        FROM play_events pe
+        LEFT JOIN library_tracks lt ON pe.track_url = lt.url
+        """
+
+    private var resolvedArtistExpression: String {
+        """
+        CASE
+            WHEN lower(trim(coalesce(lt.album_artist, ''))) = 'various artists'
+                 AND nullif(trim(coalesce(lt.artist, '')), '') IS NOT NULL
+            THEN lt.artist
+            ELSE coalesce(nullif(trim(pe.event_artist), ''), nullif(trim(lt.artist), ''), 'Unknown')
+        END
+        """
+    }
+
     func fetchTopDimension(dimension: StatsDimension, filter: StatsFilterState) throws -> [TopDimensionRow] {
-        let col: String
+        let dimensionExpr: String
         switch dimension {
-        case .artist: col = "event_artist"
-        case .album:  col = "event_album"
-        case .genre:  col = "event_genre"
-        case .source: col = "source"
+        case .artist:
+            dimensionExpr = resolvedArtistExpression
+        case .album:
+            dimensionExpr = "COALESCE(NULLIF(trim(pe.event_album), ''), 'Unknown')"
+        case .genre:
+            dimensionExpr = "COALESCE(NULLIF(trim(pe.event_genre), ''), 'Unknown')"
+        case .source:
+            dimensionExpr = "pe.source"
         }
         let (whereStr, params) = whereClause(for: filter)
         let sql = """
-            SELECT COALESCE(\(col), 'Unknown'), COUNT(*), COALESCE(SUM(duration_listened), 0.0) / 60.0
-            FROM play_events
+            SELECT \(dimensionExpr), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
             \(whereStr)
             GROUP BY 1
             ORDER BY 2 DESC
@@ -87,10 +107,10 @@ final class PlayHistoryStore: Sendable {
         let (whereStr, params) = whereClause(for: filter)
         let sql = """
             SELECT strftime('\(fmt)', played_at, 'unixepoch', 'localtime'),
-                   source,
+                   pe.source,
                    COUNT(*),
-                   COALESCE(SUM(duration_listened), 0.0) / 60.0
-            FROM play_events
+                   COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
             \(whereStr)
             GROUP BY 1, 2
             ORDER BY 1 ASC, 2 ASC
@@ -132,8 +152,8 @@ final class PlayHistoryStore: Sendable {
     func fetchGenreBreakdown(filter: StatsFilterState) throws -> [TopDimensionRow] {
         let (whereStr, params) = whereClause(for: filter)
         let sql = """
-            SELECT COALESCE(event_genre, 'Unknown'), COUNT(*), COALESCE(SUM(duration_listened), 0.0) / 60.0
-            FROM play_events
+            SELECT COALESCE(NULLIF(trim(pe.event_genre), ''), 'Unknown'), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
             \(whereStr)
             GROUP BY 1
             ORDER BY 2 DESC
@@ -152,11 +172,18 @@ final class PlayHistoryStore: Sendable {
     func fetchRecentEvents(filter: StatsFilterState) throws -> [RecentEventRow] {
         let (whereStr, params) = whereClause(for: filter)
         let sql = """
-            SELECT id, event_title, event_artist, event_album, event_genre,
-                   source, played_at, duration_listened, skipped
-            FROM play_events
+            SELECT pe.id,
+                   pe.event_title,
+                   \(resolvedArtistExpression) AS resolved_artist,
+                   pe.event_album,
+                   pe.event_genre,
+                   pe.source,
+                   pe.played_at,
+                   pe.duration_listened,
+                   pe.skipped
+            \(historyFromClause)
             \(whereStr)
-            ORDER BY played_at DESC
+            ORDER BY pe.played_at DESC
             LIMIT 200
             """
         guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
@@ -192,12 +219,12 @@ final class PlayHistoryStore: Sendable {
 
         let sql = """
             SELECT
-                COALESCE(SUM(CASE WHEN played_at >= ? THEN duration_listened ELSE 0 END), 0.0),
-                COALESCE(SUM(CASE WHEN played_at >= ? THEN duration_listened ELSE 0 END), 0.0),
-                COALESCE(SUM(CASE WHEN played_at >= ? THEN duration_listened ELSE 0 END), 0.0),
-                COALESCE(SUM(CASE WHEN played_at >= ? THEN duration_listened ELSE 0 END), 0.0),
-                COALESCE(SUM(duration_listened), 0.0)
-            FROM play_events
+                COALESCE(SUM(CASE WHEN pe.played_at >= ? THEN pe.duration_listened ELSE 0 END), 0.0),
+                COALESCE(SUM(CASE WHEN pe.played_at >= ? THEN pe.duration_listened ELSE 0 END), 0.0),
+                COALESCE(SUM(CASE WHEN pe.played_at >= ? THEN pe.duration_listened ELSE 0 END), 0.0),
+                COALESCE(SUM(CASE WHEN pe.played_at >= ? THEN pe.duration_listened ELSE 0 END), 0.0),
+                COALESCE(SUM(pe.duration_listened), 0.0)
+            \(historyFromClause)
             \(whereStr)
             """
         guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
@@ -233,44 +260,44 @@ final class PlayHistoryStore: Sendable {
         let now = Date().timeIntervalSince1970
         switch filter.timeRange {
         case .last7Days:
-            conditions.append("played_at >= ?")
+            conditions.append("pe.played_at >= ?")
             params.append(now - 7 * 86400)
         case .last30Days:
-            conditions.append("played_at >= ?")
+            conditions.append("pe.played_at >= ?")
             params.append(now - 30 * 86400)
         case .last90Days:
-            conditions.append("played_at >= ?")
+            conditions.append("pe.played_at >= ?")
             params.append(now - 90 * 86400)
         case .last365Days:
-            conditions.append("played_at >= ?")
+            conditions.append("pe.played_at >= ?")
             params.append(now - 365 * 86400)
         case .allTime:
             break
         case .custom(let start, let end):
-            conditions.append("played_at >= ?")
+            conditions.append("pe.played_at >= ?")
             params.append(start.timeIntervalSince1970)
-            conditions.append("played_at <= ?")
+            conditions.append("pe.played_at <= ?")
             params.append(end.timeIntervalSince1970)
         }
 
         if let artist = filter.selectedArtist {
-            conditions.append("event_artist = ?")
+            conditions.append("\(resolvedArtistExpression) = ?")
             params.append(artist)
         }
         if let album = filter.selectedAlbum {
-            conditions.append("event_album = ?")
+            conditions.append("pe.event_album = ?")
             params.append(album)
         }
         if let genre = filter.selectedGenre {
-            conditions.append("event_genre = ?")
+            conditions.append("pe.event_genre = ?")
             params.append(genre)
         }
         if let source = filter.selectedSource {
-            conditions.append("source = ?")
+            conditions.append("pe.source = ?")
             params.append(source)
         }
         if filter.excludeSkipped {
-            conditions.append("skipped = 0")
+            conditions.append("pe.skipped = 0")
         }
 
         if conditions.isEmpty {
