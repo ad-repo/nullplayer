@@ -160,7 +160,7 @@ struct EQPreset: Identifiable, Codable {
 
 extension EQPreset {
     /// Load preset from classic skin .eqf file
-    static func fromEQF(url: URL) throws -> [EQPreset] {
+    static func fromEQF(url: URL, layout: EQConfiguration = activeLayout) throws -> [EQPreset] {
         let data = try Data(contentsOf: url)
         var presets: [EQPreset] = []
         
@@ -200,7 +200,7 @@ extension EQPreset {
             }
             offset += 10
             
-            let mappedBands = activeLayout.gainValues(remapping: bands, from: presetSourceLayout)
+            let mappedBands = layout.gainValues(remapping: bands, from: presetSourceLayout)
             presets.append(EQPreset(name: name, preamp: preamp, bands: mappedBands))
         }
         

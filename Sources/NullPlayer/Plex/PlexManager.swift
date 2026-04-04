@@ -883,8 +883,7 @@ class PlexManager {
     ///   - limit: Maximum number of tracks to include
     /// - Returns: Array of tracks for the radio playlist, or empty if unavailable
     func createTrackRadio(from track: PlexTrack, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create track radio - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create track radio") else {
             return []
         }
         
@@ -910,8 +909,7 @@ class PlexManager {
     ///   - limit: Maximum number of tracks to include
     /// - Returns: Array of tracks for the radio playlist, or empty if unavailable
     func createArtistRadio(from artist: PlexArtist, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create artist radio - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create artist radio") else {
             return []
         }
         
@@ -937,8 +935,7 @@ class PlexManager {
     ///   - limit: Maximum number of tracks to include
     /// - Returns: Array of tracks for the radio playlist, or empty if unavailable
     func createAlbumRadio(from album: PlexAlbum, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create album radio - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create album radio") else {
             return []
         }
         

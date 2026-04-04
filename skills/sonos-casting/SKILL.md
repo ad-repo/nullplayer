@@ -337,7 +337,9 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 
 **Redirect limitation:** Sonos doesn't follow HTTP 30x redirects with relative URLs - only absolute URLs work.
 
-**Supported formats:** MP3 (320kbps), AAC/HE-AAC (320kbps), FLAC (24-bit, 48kHz), ALAC (24-bit), WAV/AIFF (16-bit), OGG Vorbis (320kbps).
+**Supported formats:** MP3 (320kbps), AAC/HE-AAC (320kbps), FLAC (24-bit, 48kHz), WAV (16-bit), OGG Vorbis (320kbps).
+
+**Not supported for Sonos casting:** ALAC, AIFF/AIF, WavPack (`wv`), Monkey's Audio (`ape`).
 
 ## Format Compatibility and Auto-Skip
 

@@ -1203,8 +1203,8 @@ class ModernLibraryBrowserView: NSView {
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
             drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
 
-            // Item count (only in list mode, not art-only)
-            if !isArtOnlyMode {
+            // Item count (only in list mode, not art-only, not history mode)
+            if !isArtOnlyMode && !browseMode.isHistoryMode {
                 let totalCount: Int
                 if browseMode == .artists {
                     totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
@@ -1273,8 +1273,8 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
                 
-                // Item count (only in list mode, not art-only)
-                if !isArtOnlyMode {
+                // Item count (only in list mode, not art-only, not history mode)
+                if !isArtOnlyMode && !browseMode.isHistoryMode {
                     let itemCount: Int
                     if manager.currentLibrary?.type == "artist" {
                         itemCount = cachedArtists.count
@@ -1325,8 +1325,8 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
-                // Item count (only in list mode, not art-only)
-                if !isArtOnlyMode {
+                // Item count (only in list mode, not art-only, not history mode)
+                if !isArtOnlyMode && !browseMode.isHistoryMode {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
@@ -1369,8 +1369,8 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
-                // Item count (only in list mode, not art-only)
-                if !isArtOnlyMode {
+                // Item count (only in list mode, not art-only, not history mode)
+                if !isArtOnlyMode && !browseMode.isHistoryMode {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
@@ -1413,8 +1413,8 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
-                // Item count (only in list mode, not art-only)
-                if !isArtOnlyMode {
+                // Item count (only in list mode, not art-only, not history mode)
+                if !isArtOnlyMode && !browseMode.isHistoryMode {
                     let countText = "\(displayItems.count) items"
                     let countWidth = countText.size(withAttributes: dataAttrs).width
                     let countX = visEndX - countWidth - 24 * m
@@ -1436,8 +1436,8 @@ class ModernLibraryBrowserView: NSView {
             let addX = sourceNameStartX + sourceTextWidth + 28 * m
             drawText(addText, at: NSPoint(x: addX, y: textY), withAttributes: activeAttrs, context: context)
             
-            // Item count (only in list mode, not art-only)
-            if !isArtOnlyMode {
+            // Item count (only in list mode, not art-only, not history mode)
+            if !isArtOnlyMode && !browseMode.isHistoryMode {
                 let countText = "\(displayItems.count) stations"
                 let countWidth = countText.size(withAttributes: dataAttrs).width
                 let countX = visEndX - countWidth - 24 * m

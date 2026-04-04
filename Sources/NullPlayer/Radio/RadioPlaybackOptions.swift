@@ -10,7 +10,7 @@ enum RadioPlaybackOptions {
     static let unlimitedMaxTracksPerArtist = 0
     static let defaultMaxTracksPerArtist = 2
     static let maxTracksPerArtistRange = 0...6
-    static let menuChoices = [0, 1, 2, 3, 4, 5, 6]
+    static let maxTracksPerArtistChoices = [0, 1, 2, 3, 4, 5, 6]
     static let defaultPlaylistLength = 100
     static let playlistLengthChoices = [100, 250, 500, 1_000, 10_000]
 

@@ -516,7 +516,7 @@ class ContextMenuBuilder {
         let radioArtistLimitMenu = NSMenu()
         radioArtistLimitMenu.autoenablesItems = false
         let currentRadioArtistLimit = RadioPlaybackOptions.maxTracksPerArtist
-        for limit in RadioPlaybackOptions.menuChoices {
+        for limit in RadioPlaybackOptions.maxTracksPerArtistChoices {
             let title: String
             if limit == RadioPlaybackOptions.unlimitedMaxTracksPerArtist {
                 title = "Unlimited"

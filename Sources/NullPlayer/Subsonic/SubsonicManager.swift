@@ -622,7 +622,9 @@ class SubsonicManager {
     func createLibraryRadioSimilar(limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let currentTrack = WindowManager.shared.audioEngine.currentTrack, let id = currentTrack.subsonicId {
+        if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+           currentTrack.subsonicServerId == currentServer?.id,
+           let id = currentTrack.subsonicId {
             seedId = id
         } else {
             do {
@@ -665,7 +667,9 @@ class SubsonicManager {
     func createGenreRadioSimilar(genre: String, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.subsonicId {
+        if let current = WindowManager.shared.audioEngine.currentTrack,
+           current.subsonicServerId == currentServer?.id,
+           let id = current.subsonicId {
             seedId = id
         } else {
             do {
@@ -705,7 +709,9 @@ class SubsonicManager {
     func createDecadeRadioSimilar(start: Int, end: Int, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.subsonicId {
+        if let current = WindowManager.shared.audioEngine.currentTrack,
+           current.subsonicServerId == currentServer?.id,
+           let id = current.subsonicId {
             seedId = id
         } else {
             do {
@@ -741,7 +747,9 @@ class SubsonicManager {
     func createRatingRadioSimilar(limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.subsonicId {
+        if let current = WindowManager.shared.audioEngine.currentTrack,
+           current.subsonicServerId == currentServer?.id,
+           let id = current.subsonicId {
             seedId = id
         } else {
             do {

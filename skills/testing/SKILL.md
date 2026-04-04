@@ -168,8 +168,9 @@ if CommandLine.arguments.contains("--ui-testing") {
 # Run all tests
 xcodebuild test -scheme NullPlayer -destination 'platform=macOS'
 
-# Run unit tests only
-xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerTests
+# Run unit tests only (core and app targets)
+xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerCoreTests
+xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerAppTests
 
 # Run UI tests only
 xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerUITests
