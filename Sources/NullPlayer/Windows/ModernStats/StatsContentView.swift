@@ -266,6 +266,7 @@ struct PlayTimeSummarySection: View {
 
     private func formatPlayTime(_ duration: Double) -> String {
         let totalSeconds = max(0, Int(duration.rounded()))
+        if totalSeconds == 0 { return "0m" }
         let days = totalSeconds / 86_400
         let hours = (totalSeconds % 86_400) / 3_600
         let minutes = (totalSeconds % 3_600) / 60
@@ -498,7 +499,7 @@ struct TimeSeriesChartView: View {
     private var calendarUnit: Calendar.Component {
         switch agent.granularity {
         case .day:   return .day
-        case .week:  return .weekOfYear
+        case .week:  return .day
         case .month: return .month
         }
     }

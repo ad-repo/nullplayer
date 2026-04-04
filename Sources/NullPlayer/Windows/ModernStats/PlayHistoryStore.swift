@@ -207,7 +207,7 @@ final class PlayHistoryStore: Sendable {
     }
 
     func fetchPlayTimeSummaries(filter: StatsFilterState) throws -> [PlayTimeSummaryRow] {
-        let calendar = Calendar.current
+        let calendar = Calendar(identifier: .iso8601)
         let now = Date()
         let dayStart = calendar.startOfDay(for: now)
         let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) ?? dayStart

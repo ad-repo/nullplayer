@@ -7588,6 +7588,7 @@ class ModernLibraryBrowserView: NSView {
         let generation = generation ?? loadGeneration
 
         if browseMode.isHistoryMode {
+            invalidateActiveLoads()
             displayItems = []
             isLoading = false
             errorMessage = nil
