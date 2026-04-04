@@ -168,11 +168,6 @@ struct SkinElements {
         /// Shade mode background (inactive)
         static let backgroundInactive = NSRect(x: 27, y: 42, width: 275, height: 14)
         
-        /// Position bar in shade mode (from titlebar.bmp)
-        /// Small position indicator showing playback progress
-        static let positionBarBackground = NSRect(x: 0, y: 36, width: 17, height: 7)
-        static let positionBarFill = NSRect(x: 0, y: 36, width: 17, height: 7)
-        
         /// Shade mode position bar position on window
         struct Positions {
             static let positionBar = NSRect(x: 226, y: 4, width: 17, height: 7)
@@ -715,57 +710,6 @@ struct SkinElements {
         
         /// Scrollbar background/track (tiled vertically)
         static let scrollbarTrack = NSRect(x: 36, y: 42, width: 8, height: 29)
-        
-        // === BUTTON GROUPS (each button is 22x18, pressed state at x+23) ===
-        // Button groups are positioned in the bottom bar
-        
-        struct Buttons {
-            /// Button size
-            static let buttonWidth: CGFloat = 22
-            static let buttonHeight: CGFloat = 18
-            
-            // ADD button group (3 options in popup)
-            static let addURLNormal = NSRect(x: 0, y: 111, width: 22, height: 18)
-            static let addURLPressed = NSRect(x: 23, y: 111, width: 22, height: 18)
-            static let addDirNormal = NSRect(x: 0, y: 130, width: 22, height: 18)
-            static let addDirPressed = NSRect(x: 23, y: 130, width: 22, height: 18)
-            static let addFileNormal = NSRect(x: 0, y: 149, width: 22, height: 18)
-            static let addFilePressed = NSRect(x: 23, y: 149, width: 22, height: 18)
-            
-            // REM button group (4 options in popup)
-            static let remAllNormal = NSRect(x: 54, y: 111, width: 22, height: 18)
-            static let remAllPressed = NSRect(x: 77, y: 111, width: 22, height: 18)
-            static let remCropNormal = NSRect(x: 54, y: 130, width: 22, height: 18)
-            static let remCropPressed = NSRect(x: 77, y: 130, width: 22, height: 18)
-            static let remSelectedNormal = NSRect(x: 54, y: 149, width: 22, height: 18)
-            static let remSelectedPressed = NSRect(x: 77, y: 149, width: 22, height: 18)
-            static let remMiscNormal = NSRect(x: 54, y: 168, width: 22, height: 18)
-            static let remMiscPressed = NSRect(x: 77, y: 168, width: 22, height: 18)
-            
-            // SEL button group (3 options in popup)
-            static let selInvertNormal = NSRect(x: 104, y: 111, width: 22, height: 18)
-            static let selInvertPressed = NSRect(x: 127, y: 111, width: 22, height: 18)
-            static let selZeroNormal = NSRect(x: 104, y: 130, width: 22, height: 18)
-            static let selZeroPressed = NSRect(x: 127, y: 130, width: 22, height: 18)
-            static let selAllNormal = NSRect(x: 104, y: 149, width: 22, height: 18)
-            static let selAllPressed = NSRect(x: 127, y: 149, width: 22, height: 18)
-            
-            // MISC button group (3 options in popup)
-            static let miscSortNormal = NSRect(x: 154, y: 111, width: 22, height: 18)
-            static let miscSortPressed = NSRect(x: 177, y: 111, width: 22, height: 18)
-            static let miscInfoNormal = NSRect(x: 154, y: 130, width: 22, height: 18)
-            static let miscInfoPressed = NSRect(x: 177, y: 130, width: 22, height: 18)
-            static let miscOptsNormal = NSRect(x: 154, y: 149, width: 22, height: 18)
-            static let miscOptsPressed = NSRect(x: 177, y: 149, width: 22, height: 18)
-            
-            // LIST button group (3 options in popup)
-            static let listNewNormal = NSRect(x: 204, y: 111, width: 22, height: 18)
-            static let listNewPressed = NSRect(x: 227, y: 111, width: 22, height: 18)
-            static let listSaveNormal = NSRect(x: 204, y: 130, width: 22, height: 18)
-            static let listSavePressed = NSRect(x: 227, y: 130, width: 22, height: 18)
-            static let listLoadNormal = NSRect(x: 204, y: 149, width: 22, height: 18)
-            static let listLoadPressed = NSRect(x: 227, y: 149, width: 22, height: 18)
-        }
         
         /// Button positions in the bottom bar (in skin coordinates)
         struct ButtonPositions {
