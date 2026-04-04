@@ -14926,7 +14926,6 @@ class PlexBrowserView: NSView {
             case .search:
                 buildLocalSearchItems()
             case .plists:
-                // TODO: Build local playlist items
                 displayItems = []
             case .movies:
                 cachedLocalMovies = MediaLibrary.shared.moviesSnapshot
@@ -14945,7 +14944,7 @@ class PlexBrowserView: NSView {
             case .albums:
                 buildSubsonicAlbumItems()
             case .search:
-                displayItems = [] // TODO: Implement Subsonic search
+                displayItems = []
             case .plists:
                 buildSubsonicPlaylistItems()
             case .movies, .shows:
@@ -14961,7 +14960,7 @@ class PlexBrowserView: NSView {
             case .albums:
                 buildJellyfinAlbumItems()
             case .search:
-                displayItems = [] // TODO: Implement Jellyfin search
+                displayItems = []
             case .plists:
                 buildJellyfinPlaylistItems()
             case .movies:
@@ -14978,7 +14977,7 @@ class PlexBrowserView: NSView {
             case .albums:
                 buildEmbyAlbumItems()
             case .search:
-                displayItems = [] // TODO: Implement Emby search
+                displayItems = []
             case .plists:
                 buildEmbyPlaylistItems()
             case .movies:
