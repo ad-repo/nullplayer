@@ -561,23 +561,27 @@ class PlexServerClient {
         let decoder = JSONDecoder()
         let hubResponse = try decoder.decode(HubSearchResponse.self, from: data)
         
+        // Accumulate, then deduplicate by Plex ratingKey — /hubs/search returns one hub
+        // per library section, so a server with N music sections returns N copies of each hit.
+        var seenArtists = Set<String>(); var seenAlbums = Set<String>()
+        var seenTracks = Set<String>(); var seenMovies = Set<String>()
+        var seenShows = Set<String>(); var seenEpisodes = Set<String>()
         var results = PlexSearchResults()
         for hub in hubResponse.MediaContainer.Hub ?? [] {
             guard let metadata = hub.Metadata else { continue }
-            
             switch hub.type {
             case "artist":
-                results.artists.append(contentsOf: metadata.map { $0.toArtist() })
+                for item in metadata { if seenArtists.insert(item.ratingKey).inserted { results.artists.append(item.toArtist()) } }
             case "album":
-                results.albums.append(contentsOf: metadata.map { $0.toAlbum() })
+                for item in metadata { if seenAlbums.insert(item.ratingKey).inserted { results.albums.append(item.toAlbum()) } }
             case "track":
-                results.tracks.append(contentsOf: metadata.map { $0.toTrack() })
+                for item in metadata { if seenTracks.insert(item.ratingKey).inserted { results.tracks.append(item.toTrack()) } }
             case "movie":
-                results.movies.append(contentsOf: metadata.map { $0.toMovie() })
+                for item in metadata { if seenMovies.insert(item.ratingKey).inserted { results.movies.append(item.toMovie()) } }
             case "show":
-                results.shows.append(contentsOf: metadata.map { $0.toShow() })
+                for item in metadata { if seenShows.insert(item.ratingKey).inserted { results.shows.append(item.toShow()) } }
             case "episode":
-                results.episodes.append(contentsOf: metadata.map { $0.toEpisode() })
+                for item in metadata { if seenEpisodes.insert(item.ratingKey).inserted { results.episodes.append(item.toEpisode()) } }
             default:
                 break
             }
