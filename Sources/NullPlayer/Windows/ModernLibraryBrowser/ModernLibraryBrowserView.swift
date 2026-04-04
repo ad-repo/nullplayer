@@ -3293,8 +3293,13 @@ class ModernLibraryBrowserView: NSView {
                 browseMode = allModes[nextIdx]; selectedIndices.removeAll(); scrollOffset = 0
                 loadDataForCurrentMode()
             }
-        case 49: // Space — play/pause
-            if WindowManager.shared.isVideoActivePlayback {
+        case 49: // Space — search input when searching, otherwise play/pause
+            if browseMode == .search {
+                if let chars = event.characters, !chars.isEmpty {
+                    searchQuery += chars
+                    loadDataForCurrentMode()
+                }
+            } else if WindowManager.shared.isVideoActivePlayback {
                 WindowManager.shared.toggleVideoPlayPause()
             } else if WindowManager.shared.audioEngine.state == .playing {
                 WindowManager.shared.audioEngine.pause()
