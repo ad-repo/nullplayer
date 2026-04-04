@@ -561,8 +561,9 @@ class PlexServerClient {
         let decoder = JSONDecoder()
         let hubResponse = try decoder.decode(HubSearchResponse.self, from: data)
         
-        // Accumulate, then deduplicate by Plex ratingKey — /hubs/search returns one hub
-        // per library section, so a server with N music sections returns N copies of each hit.
+        // Deduplicate by content identity — /hubs/search returns one hub per library section,
+        // so a server with N sections returns N copies of each hit, each with a different
+        // ratingKey (keys are section-scoped). Use title-based keys instead.
         var seenArtists = Set<String>(); var seenAlbums = Set<String>()
         var seenTracks = Set<String>(); var seenMovies = Set<String>()
         var seenShows = Set<String>(); var seenEpisodes = Set<String>()
@@ -571,17 +572,33 @@ class PlexServerClient {
             guard let metadata = hub.Metadata else { continue }
             switch hub.type {
             case "artist":
-                for item in metadata { if seenArtists.insert(item.ratingKey).inserted { results.artists.append(item.toArtist()) } }
+                for item in metadata {
+                    let key = item.title.lowercased()
+                    if seenArtists.insert(key).inserted { results.artists.append(item.toArtist()) }
+                }
             case "album":
-                for item in metadata { if seenAlbums.insert(item.ratingKey).inserted { results.albums.append(item.toAlbum()) } }
+                for item in metadata {
+                    let key = "\(item.parentTitle?.lowercased() ?? "")|\(item.title.lowercased())"
+                    if seenAlbums.insert(key).inserted { results.albums.append(item.toAlbum()) }
+                }
             case "track":
-                for item in metadata { if seenTracks.insert(item.ratingKey).inserted { results.tracks.append(item.toTrack()) } }
+                for item in metadata {
+                    let key = "\(item.grandparentTitle?.lowercased() ?? "")|\(item.parentTitle?.lowercased() ?? "")|\(item.title.lowercased())|\(item.index ?? 0)"
+                    if seenTracks.insert(key).inserted { results.tracks.append(item.toTrack()) }
+                }
             case "movie":
-                for item in metadata { if seenMovies.insert(item.ratingKey).inserted { results.movies.append(item.toMovie()) } }
+                for item in metadata {
+                    if seenMovies.insert(item.title.lowercased()).inserted { results.movies.append(item.toMovie()) }
+                }
             case "show":
-                for item in metadata { if seenShows.insert(item.ratingKey).inserted { results.shows.append(item.toShow()) } }
+                for item in metadata {
+                    if seenShows.insert(item.title.lowercased()).inserted { results.shows.append(item.toShow()) }
+                }
             case "episode":
-                for item in metadata { if seenEpisodes.insert(item.ratingKey).inserted { results.episodes.append(item.toEpisode()) } }
+                for item in metadata {
+                    let key = "\(item.grandparentTitle?.lowercased() ?? "")|\(item.parentTitle?.lowercased() ?? "")|\(item.title.lowercased())|\(item.index ?? 0)"
+                    if seenEpisodes.insert(key).inserted { results.episodes.append(item.toEpisode()) }
+                }
             default:
                 break
             }
