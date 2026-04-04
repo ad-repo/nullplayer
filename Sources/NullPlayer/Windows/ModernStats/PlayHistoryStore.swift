@@ -77,6 +77,7 @@ final class PlayHistoryStore: Sendable {
         case .source:
             dimensionExpr = "pe.source"
         }
+        let limit = dimension == .artist ? 250 : 25
         let (whereStr, params) = whereClause(for: filter)
         let sql = """
             SELECT \(dimensionExpr), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
@@ -84,7 +85,7 @@ final class PlayHistoryStore: Sendable {
             \(whereStr)
             GROUP BY 1
             ORDER BY 2 DESC
-            LIMIT 25
+            LIMIT \(limit)
             """
         guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
         let stmt = try db.prepare(sql, params)
