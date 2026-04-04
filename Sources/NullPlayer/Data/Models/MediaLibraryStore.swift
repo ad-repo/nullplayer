@@ -1078,13 +1078,13 @@ final class MediaLibraryStore {
         guard let db = db else { return [] }
         let sql = """
             SELECT
-                coalesce(album_artist, '') || '|' || coalesce(album, 'Unknown Album') as album_id,
+                coalesce(nullif(album_artist, ''), artist, '') || '|' || coalesce(album, 'Unknown Album') as album_id,
                 coalesce(album, 'Unknown Album') as album_name,
-                album_artist,
+                coalesce(nullif(album_artist, ''), artist) as album_artist,
                 min(year) as yr,
                 count(*) as cnt
             FROM library_tracks
-            WHERE album_name LIKE ? OR album_artist LIKE ?
+            WHERE album LIKE ? OR album_artist LIKE ?
             GROUP BY album_id
             ORDER BY album_name ASC
             LIMIT 100
