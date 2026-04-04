@@ -221,6 +221,7 @@ class ModernLibraryBrowserView: NSView {
     private var searchQuery: String = ""
     private var typeAheadQuery: String = ""
     private var typeAheadTimer: Timer?
+    private var searchDebounceTimer: Timer?
     private var selectedIndices: Set<Int> = []
     private var scrollOffset: CGFloat = 0
     private var horizontalScrollOffset: CGFloat = 0
@@ -3297,7 +3298,7 @@ class ModernLibraryBrowserView: NSView {
             if browseMode == .search {
                 if let chars = event.characters, !chars.isEmpty {
                     searchQuery += chars
-                    loadDataForCurrentMode()
+                    scheduleSearchLoad()
                 }
             } else if WindowManager.shared.isVideoActivePlayback {
                 WindowManager.shared.toggleVideoPlayPause()
@@ -3317,10 +3318,10 @@ class ModernLibraryBrowserView: NSView {
         default:
             if browseMode == .search, let chars = event.characters, !chars.isEmpty {
                 if event.keyCode == 51 {
-                    if !searchQuery.isEmpty { searchQuery.removeLast(); loadDataForCurrentMode() }
+                    if !searchQuery.isEmpty { searchQuery.removeLast(); scheduleSearchLoad() }
                 } else if chars.rangeOfCharacter(from: .alphanumerics) != nil ||
                           chars.rangeOfCharacter(from: .whitespaces) != nil {
-                    searchQuery += chars; loadDataForCurrentMode()
+                    searchQuery += chars; scheduleSearchLoad()
                 }
             } else if browseMode != .search, let chars = event.characters, !chars.isEmpty {
                 if event.keyCode == 53 { // Escape — clear type-ahead
@@ -7588,7 +7589,21 @@ class ModernLibraryBrowserView: NSView {
     }
     
     // MARK: - Data Loading
-    
+
+    /// For search mode: fires immediately for local source, debounces 300 ms for remote sources
+    /// to avoid flooding the server with a request per keypress.
+    private func scheduleSearchLoad() {
+        needsDisplay = true // redraw search bar cursor immediately
+        if case .local = currentSource {
+            loadDataForCurrentMode()
+            return
+        }
+        searchDebounceTimer?.invalidate()
+        searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+            self?.loadDataForCurrentMode()
+        }
+    }
+
     private func loadDataForCurrentMode(generation: Int? = nil) {
         let generation = generation ?? loadGeneration
 
