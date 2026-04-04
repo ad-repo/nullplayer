@@ -221,7 +221,7 @@ class ModernLibraryBrowserView: NSView {
     private var searchQuery: String = ""
     private var typeAheadQuery: String = ""
     private var typeAheadTimer: Timer?
-    private var searchDebounceTimer: Timer?
+
     private var selectedIndices: Set<Int> = []
     private var scrollOffset: CGFloat = 0
     private var horizontalScrollOffset: CGFloat = 0
@@ -1569,7 +1569,7 @@ class ModernLibraryBrowserView: NSView {
         }
         
         let font = skin.smallFont?.withSize(9) ?? NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
-        let displayText = searchQuery.isEmpty ? "Type to search..." : searchQuery
+        let displayText = searchQuery.isEmpty ? "Type and press ↵ to search..." : searchQuery
         let textColor = searchQuery.isEmpty ? skin.textDimColor : skin.textColor
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -1917,7 +1917,7 @@ class ModernLibraryBrowserView: NSView {
         case .movies: message = "No movies found"
         case .shows: message = "No TV shows found"
         case .plists: message = "No playlists found"
-        case .search: message = searchQuery.isEmpty ? "Type to search" : "No results found"
+        case .search: message = searchQuery.isEmpty ? "Type and press ↵ to search" : "No results found"
         case .radio: message = "No radio stations found"
         case .history: message = "No play history recorded yet"
         }
@@ -3243,7 +3243,9 @@ class ModernLibraryBrowserView: NSView {
         
         switch event.keyCode {
         case 36: // Enter
-            if event.modifierFlags.contains(.shift) {
+            if browseMode == .search && !searchQuery.isEmpty {
+                loadDataForCurrentMode()
+            } else if event.modifierFlags.contains(.shift) {
                 playNextSelected()
             } else if event.modifierFlags.contains(.option) {
                 addSelectedToQueue()
@@ -3297,8 +3299,7 @@ class ModernLibraryBrowserView: NSView {
         case 49: // Space — search input when searching, otherwise play/pause
             if browseMode == .search {
                 if let chars = event.characters, !chars.isEmpty {
-                    searchQuery += chars
-                    scheduleSearchLoad()
+                    searchQuery += chars; needsDisplay = true
                 }
             } else if WindowManager.shared.isVideoActivePlayback {
                 WindowManager.shared.toggleVideoPlayPause()
@@ -3318,10 +3319,10 @@ class ModernLibraryBrowserView: NSView {
         default:
             if browseMode == .search, let chars = event.characters, !chars.isEmpty {
                 if event.keyCode == 51 {
-                    if !searchQuery.isEmpty { searchQuery.removeLast(); scheduleSearchLoad() }
+                    if !searchQuery.isEmpty { searchQuery.removeLast(); needsDisplay = true }
                 } else if chars.rangeOfCharacter(from: .alphanumerics) != nil ||
                           chars.rangeOfCharacter(from: .whitespaces) != nil {
-                    searchQuery += chars; scheduleSearchLoad()
+                    searchQuery += chars; needsDisplay = true
                 }
             } else if browseMode != .search, let chars = event.characters, !chars.isEmpty {
                 if event.keyCode == 53 { // Escape — clear type-ahead
@@ -7589,20 +7590,6 @@ class ModernLibraryBrowserView: NSView {
     }
     
     // MARK: - Data Loading
-
-    /// For search mode: fires immediately for local source, debounces 300 ms for remote sources
-    /// to avoid flooding the server with a request per keypress.
-    private func scheduleSearchLoad() {
-        needsDisplay = true // redraw search bar cursor immediately
-        if case .local = currentSource {
-            loadDataForCurrentMode()
-            return
-        }
-        searchDebounceTimer?.invalidate()
-        searchDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
-            self?.loadDataForCurrentMode()
-        }
-    }
 
     private func loadDataForCurrentMode(generation: Int? = nil) {
         let generation = generation ?? loadGeneration
