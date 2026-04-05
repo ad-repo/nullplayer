@@ -287,6 +287,10 @@ class ModernLibraryBrowserView: NSView {
     private var cachedLocalMovies: [LocalVideo] = []
     private var cachedLocalShows: [LocalShow] = []
     private var localLibraryReloadWorkItem: DispatchWorkItem?
+
+    // Offline volume state (populated by loadLocalData)
+    private var offlineWatchFolders: [WatchFolderSummary] = []
+    private var offlineVolumePrefixes: Set<String> = []
     
     // Cached data - Subsonic
     private var cachedSubsonicArtists: [SubsonicArtist] = []
@@ -516,6 +520,7 @@ class ModernLibraryBrowserView: NSView {
         static var serverBarHeight: CGFloat { 24 * ModernSkinElements.sizeMultiplier }
         static var searchBarHeight: CGFloat { 26 * ModernSkinElements.sizeMultiplier }
         static var statusBarHeight: CGFloat { 6 * ModernSkinElements.sizeMultiplier }
+        static var offlineBannerHeight: CGFloat { 18 * ModernSkinElements.sizeMultiplier }
         static let scrollbarWidth: CGFloat = 0
         static var alphabetWidth: CGFloat { 16 * ModernSkinElements.sizeMultiplier }
         static var borderWidth: CGFloat { ModernSkinElements.libraryBorderWidth }
@@ -943,14 +948,24 @@ class ModernLibraryBrowserView: NSView {
         
         // Status bar at bottom
         let statusBarHeight = Layout.statusBarHeight
-        
+
+        // Offline volume banner (local source only, above list content)
+        let showOfflineBanner = !currentSource.isRemote && !currentSource.isRadio && !offlineWatchFolders.isEmpty
+        let bannerHeight = showOfflineBanner ? Layout.offlineBannerHeight : 0
+
         // List area (between content top and status bar bottom)
-        let listAreaY = statusBarHeight
-        let listAreaHeight = contentTopY - statusBarHeight
+        let listAreaY = statusBarHeight + bannerHeight
+        let listAreaHeight = contentTopY - statusBarHeight - bannerHeight
         let listRect = NSRect(x: Layout.borderWidth, y: listAreaY,
                               width: bounds.width - Layout.borderWidth * 2, height: listAreaHeight)
-        
+
         updateHistoryHostingVisibility()
+
+        if showOfflineBanner {
+            let bannerRect = NSRect(x: Layout.borderWidth, y: statusBarHeight,
+                                   width: bounds.width - Layout.borderWidth * 2, height: bannerHeight)
+            drawOfflineBanner(in: context, rect: bannerRect, skin: skin)
+        }
 
         if browseMode.isHistoryMode {
             drawArtworkBackground(in: context, listRect: listRect, artwork: capturedArtwork)
@@ -1587,8 +1602,29 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
+    // MARK: - Offline Volume Banner
+
+    private func drawOfflineBanner(in context: CGContext, rect: NSRect, skin: ModernSkin) {
+        // Background — amber tint
+        NSColor.systemOrange.withAlphaComponent(0.18).setFill()
+        context.fill(rect)
+
+        let offlineCount = offlineWatchFolders.reduce(0) { $0 + $1.totalCount }
+        let names = offlineWatchFolders.map { $0.url.lastPathComponent }.joined(separator: ", ")
+        let label = "⚠  \"\(names)\" offline — \(offlineCount) track\(offlineCount == 1 ? "" : "s") unavailable"
+
+        let font = skin.scaledSystemFont(size: 7.5)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: skin.textColor)
+        ]
+        let textSize = label.size(withAttributes: attrs)
+        let textOrigin = NSPoint(x: rect.minX + 6, y: rect.midY - textSize.height / 2)
+        drawText(label, at: textOrigin, withAttributes: attrs, context: context)
+    }
+
     // MARK: - List Area Drawing
-    
+
     private func drawListArea(in context: CGContext, listAreaY: CGFloat, listAreaHeight: CGFloat, skin: ModernSkin, artwork: NSImage?) {
         let alphabetWidth = Layout.alphabetWidth
         let fullListRect = NSRect(x: Layout.borderWidth, y: listAreaY,
@@ -1650,13 +1686,25 @@ class ModernLibraryBrowserView: NSView {
             let itemRect = NSRect(x: listRect.minX, y: y, width: listRect.width, height: itemHeight)
             let item = displayItems[index]
             let isSelected = selectedIndices.contains(index)
-            
+
+            // Dim tracks/episodes whose file lives on an offline volume
+            let isOffline: Bool
+            switch item.type {
+            case .localTrack(let track):
+                isOffline = offlineVolumePrefixes.contains { track.url.path.hasPrefix($0) }
+            case .localEpisode(let ep):
+                isOffline = offlineVolumePrefixes.contains { ep.url.path.hasPrefix($0) }
+            default:
+                isOffline = false
+            }
+            if isOffline { context.saveGState(); context.setAlpha(0.35) }
+
             // Selection background - subtle to keep accent text readable
             if isSelected {
                 skin.primaryColor.withAlphaComponent(0.06).setFill()
                 context.fill(itemRect)
             }
-            
+
             // Check for column rendering
             if let itemColumns = columnsForItem(item) {
                 let indent = CGFloat(item.indentLevel) * 16
@@ -1666,7 +1714,7 @@ class ModernLibraryBrowserView: NSView {
                 // Simple list rendering
                 let indent = CGFloat(item.indentLevel) * 16
                 let textX = itemRect.minX + indent + 4
-                
+
                 // Expand/collapse indicator
                 if item.hasChildren {
                     let expanded = isExpanded(item)
@@ -1677,7 +1725,7 @@ class ModernLibraryBrowserView: NSView {
                     ]
                     drawText(indicator, at: NSPoint(x: textX - 12, y: itemRect.midY - 5), withAttributes: indicatorAttrs, context: context)
                 }
-                
+
                 // Main text
                 let textColor = isSelected ? skin.accentColor : skin.textColor
                 let attrs: [NSAttributedString.Key: Any] = [
@@ -1687,7 +1735,7 @@ class ModernLibraryBrowserView: NSView {
                 let textRect = NSRect(x: textX, y: itemRect.minY + 2,
                                      width: itemRect.width - indent - 60, height: itemHeight - 4)
                 drawText(item.title, in: textRect, withAttributes: attrs, context: context)
-                
+
                 // Secondary info
                 if let info = item.info {
                     let infoColor = isSelected ? skin.accentColor : skin.textDimColor
@@ -1702,6 +1750,8 @@ class ModernLibraryBrowserView: NSView {
                     drawText(info, at: NSPoint(x: infoX, y: itemRect.midY - infoSize.height / 2), withAttributes: infoAttrs, context: context)
                 }
             }
+
+            if isOffline { context.restoreGState() }
         }
         
         context.restoreGState()
@@ -7661,6 +7711,12 @@ class ModernLibraryBrowserView: NSView {
     
     private func loadLocalData() {
         isLoading = false; errorMessage = nil; stopLoadingAnimation()
+
+        // Check which watch folders are on unavailable volumes
+        let summaries = MediaLibrary.shared.watchFolderSummaries()
+        offlineWatchFolders = summaries.filter { !$0.isAvailable }
+        offlineVolumePrefixes = Set(offlineWatchFolders.map { $0.url.path })
+
         let library = MediaLibrary.shared
         let store = MediaLibraryStore.shared
         switch browseMode {

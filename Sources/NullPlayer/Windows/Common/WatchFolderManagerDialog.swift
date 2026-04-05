@@ -34,13 +34,13 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
 
     private init(onLibraryChanged: (() -> Void)?) {
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 310),
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 310),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         w.title = "Manage Watch Folders"
-        w.minSize = NSSize(width: 420, height: 240)
+        w.minSize = NSSize(width: 480, height: 240)
         super.init(window: w)
         self.onLibraryChanged = onLibraryChanged
         w.delegate = self
@@ -58,7 +58,7 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
         // Bottom button bar (frame-based; autoresizingMask handles resize)
         let bh: CGFloat = 28, by: CGFloat = 12
         let gap: CGFloat = 8
-        let cw: CGFloat = 560   // matches contentRect width
+        let cw: CGFloat = 620   // matches contentRect width
 
         let doneBtn  = makeButton("Done",            action: #selector(done))
         removeBtn    = makeButton("Remove...",      action: #selector(removeSelected))
@@ -117,9 +117,15 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
 
         let itemsCol = NSTableColumn(identifier: .init("items"))
         itemsCol.title = "Items"
-        itemsCol.width = 80
-        itemsCol.minWidth = 60
+        itemsCol.width = 60
+        itemsCol.minWidth = 50
         tv.addTableColumn(itemsCol)
+
+        let statusCol = NSTableColumn(identifier: .init("status"))
+        statusCol.title = "Available"
+        statusCol.width = 70
+        statusCol.minWidth = 60
+        tv.addTableColumn(statusCol)
 
         tv.dataSource = self
         tv.delegate = self
@@ -185,6 +191,7 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
             ])
         }
         let s = summaries[row]
+        cell?.textField?.textColor = .labelColor  // reset before per-column overrides
         switch id.rawValue {
         case "name":
             cell?.textField?.stringValue = s.url.lastPathComponent
@@ -195,6 +202,15 @@ final class WatchFolderManagerWindow: NSWindowController, NSWindowDelegate,
         case "items":
             let n = s.totalCount
             cell?.textField?.stringValue = "\(n) item\(n == 1 ? "" : "s")"
+            cell?.textField?.lineBreakMode = .byTruncatingTail
+        case "status":
+            if s.isAvailable {
+                cell?.textField?.stringValue = "Online"
+                cell?.textField?.textColor = .systemGreen
+            } else {
+                cell?.textField?.stringValue = "Offline"
+                cell?.textField?.textColor = .systemOrange
+            }
             cell?.textField?.lineBreakMode = .byTruncatingTail
         default: break
         }

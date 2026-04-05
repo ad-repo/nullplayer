@@ -424,6 +424,7 @@ struct WatchFolderSummary {
     let episodeCount: Int
 
     var totalCount: Int { trackCount + movieCount + episodeCount }
+    var isAvailable: Bool { FileManager.default.fileExists(atPath: url.path) }
 }
 
 struct FileScanSignature: Codable, Hashable {
@@ -491,6 +492,7 @@ class MediaLibrary {
     private var lastScanProgressValue: Double = 0
 
     private let store = MediaLibraryStore.shared
+    private var volumeMountObserver: Any?
 
     private let scanProgressStateQueue = DispatchQueue(label: "NullPlayer.MediaLibrary.scanProgressState")
     
@@ -512,6 +514,7 @@ class MediaLibrary {
 
         store.open()
         loadLibrary()
+        setupVolumeMonitoring()
 
         // Trigger backfill if v2→v3 migration ran and track_artists are not yet populated
         if !UserDefaults.standard.bool(forKey: "trackArtistsBackfillComplete") {
@@ -1923,8 +1926,28 @@ class MediaLibrary {
         }
     }
     
+    // MARK: - Volume Monitoring
+
+    private func setupVolumeMonitoring() {
+        volumeMountObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSNotification.Name("NSWorkspaceDidMountNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let mountedURL = notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL else { return }
+            let mountedPath = mountedURL.path
+            let affected = self.watchFoldersSnapshot.filter { $0.path.hasPrefix(mountedPath + "/") || $0.path == mountedPath }
+            guard !affected.isEmpty else { return }
+            NSLog("MediaLibrary: Volume mounted at '%@' — rescanning %d watch folder(s)", mountedPath, affected.count)
+            for folder in affected {
+                self.rescanWatchFolder(folder, cleanMissing: true)
+            }
+        }
+    }
+
     // MARK: - Backup & Restore
-    
+
     /// Get the library directory URL
     var libraryDirectory: URL {
         libraryURL.deletingLastPathComponent()
