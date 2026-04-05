@@ -161,6 +161,11 @@ class AudioEngine {
     /// Token used to invalidate stale deferred local track loads triggered by direct user selection.
     private var deferredLocalTrackLoadToken: UInt64 = 0
 
+    /// Temp file copied from a network-mounted volume for the current track.
+    /// Using a local copy prevents AVAudioPlayerNode's render pre-fetch thread from doing
+    /// NAS reads during playback, which causes dropouts on any network latency spike.
+    private var tempPlaybackFileURL: URL?
+
     /// Tracks whether the local playback clock was intentionally frozen for a sleep cycle.
     private var suspendedLocalPlaybackClockForSleep = false
 
@@ -2735,6 +2740,7 @@ class AudioEngine {
         let tracks = validation.validURLs.compactMap { Track(lightweightURL: $0) }
         NSLog("loadFiles: %d tracks created (%d invalid)", tracks.count, validation.invalidFiles.count)
         loadTracks(tracks)
+        enrichPlaylistDurationsAsync(for: tracks.map(\.id))
     }
 
     static func shouldStopRadioForIncomingTrack(
@@ -2854,7 +2860,10 @@ class AudioEngine {
         
         playlist.removeAll()
         playlist.append(contentsOf: validTracks)
-        
+
+        let zeroDurationLocalIDs = validTracks.filter { (($0.duration ?? 0) == 0) && $0.url.isFileURL }.map(\.id)
+        enrichPlaylistDurationsAsync(for: zeroDurationLocalIDs)
+
         if !validTracks.isEmpty {
             if shuffleEnabled {
                 currentIndex = startShufflePlaybackCycle() ?? 0
@@ -2932,8 +2941,77 @@ class AudioEngine {
         playlist.append(contentsOf: tracks)
         invalidateShufflePlaybackStateAfterPlaylistMutation()
         delegate?.audioEngineDidChangePlaylist()
+        enrichPlaylistDurationsAsync(for: tracks.map(\.id))
     }
     
+    /// Fills in duration for tracks that have duration == nil.
+    /// Looks up each URL in the MediaLibrary in-memory index first (instant, no I/O).
+    /// Falls back to AVAudioFile only for tracks not in the library — done off the main thread.
+    private func enrichPlaylistDurationsAsync(for trackIDs: [UUID]) {
+        guard !trackIDs.isEmpty else { return }
+        let idsToEnrich = Set(trackIDs)
+
+        // Snapshot tracks needing enrichment from the main actor.
+        let snapshots: [(id: UUID, url: URL)] = playlist.compactMap { t in
+            guard idsToEnrich.contains(t.id), (t.duration ?? 0) == 0, t.url.isFileURL else { return nil }
+            return (id: t.id, url: t.url)
+        }
+        guard !snapshots.isEmpty else { return }
+
+        // Try the MediaLibrary in-memory index first — O(1) per track, no disk I/O.
+        var durations: [UUID: TimeInterval] = [:]
+        var needsFileIO: [(id: UUID, url: URL)] = []
+        for item in snapshots {
+            if let lib = MediaLibrary.shared.findTrack(byURL: item.url), lib.duration > 0 {
+                durations[item.id] = lib.duration
+            } else {
+                needsFileIO.append(item)
+            }
+        }
+
+        // Apply library hits immediately on the main thread.
+        applyDurationUpdates(durations)
+
+        // For anything not in the library, fall back to AVAudioFile on a background thread.
+        guard !needsFileIO.isEmpty else { return }
+        Task.detached(priority: .utility) { [weak self] in
+            var fileDurations: [UUID: TimeInterval] = [:]
+            for item in needsFileIO {
+                guard let af = try? AVAudioFile(forReading: item.url) else { continue }
+                let dur = Double(af.length) / af.processingFormat.sampleRate
+                if dur > 0 { fileDurations[item.id] = dur }
+            }
+            guard !fileDurations.isEmpty else { return }
+            await MainActor.run { [weak self] in
+                self?.applyDurationUpdates(fileDurations)
+            }
+        }
+    }
+
+    /// Replaces playlist tracks whose UUIDs appear in `durations` with copies carrying the real duration.
+    /// Must be called on the main thread.
+    private func applyDurationUpdates(_ durations: [UUID: TimeInterval]) {
+        guard !durations.isEmpty else { return }
+        var changed = false
+        for (idx, track) in playlist.enumerated() {
+            guard let dur = durations[track.id] else { continue }
+            playlist[idx] = Track(
+                id: track.id, url: track.url, title: track.title,
+                artist: track.artist, album: track.album, duration: dur,
+                bitrate: track.bitrate, sampleRate: track.sampleRate,
+                channels: track.channels, plexRatingKey: track.plexRatingKey,
+                plexServerId: track.plexServerId, subsonicId: track.subsonicId,
+                subsonicServerId: track.subsonicServerId, jellyfinId: track.jellyfinId,
+                jellyfinServerId: track.jellyfinServerId, embyId: track.embyId,
+                embyServerId: track.embyServerId, artworkThumb: track.artworkThumb,
+                mediaType: track.mediaType, genre: track.genre,
+                contentType: track.contentType
+            )
+            changed = true
+        }
+        if changed { delegate?.audioEngineDidChangePlaylist() }
+    }
+
     /// Append tracks to the playlist without starting playback
     /// Used for restoring streaming tracks from saved state
     func appendTracks(_ tracks: [Track]) {
@@ -2954,6 +3032,8 @@ class AudioEngine {
         currentIndex = -1  // No track selected
         invalidateShufflePlaybackStateAfterPlaylistMutation()
         delegate?.audioEngineDidChangePlaylist()
+        let missingDuration = tracks.filter { ($0.duration ?? 0) == 0 && $0.url.isFileURL }.map(\.id)
+        enrichPlaylistDurationsAsync(for: missingDuration)
     }
     
     /// Select a track by index for display without loading or playing it.
@@ -3217,14 +3297,15 @@ class AudioEngine {
         NSLog("setPlaylistFiles: %d valid URLs (%d missing)", validURLs.count, missingCount)
         
         let tracks = validURLs.compactMap { Track(lightweightURL: $0) }
-        
+
         // Clear and set playlist without loading or playing
         playlist.removeAll()
         playlist.append(contentsOf: tracks)
         currentIndex = -1  // No track selected
         invalidateShufflePlaybackStateAfterPlaylistMutation()
-        
+
         delegate?.audioEngineDidChangePlaylist()
+        enrichPlaylistDurationsAsync(for: tracks.map(\.id))
     }
     
     private func loadTrack(at index: Int) {
@@ -3338,7 +3419,45 @@ class AudioEngine {
             guard let self else { return }
 
             do {
-                let newAudioFile = try AVAudioFile(forReading: track.url)
+                // For network-mounted volumes, copy the file to a local temp path before
+                // scheduling. AVAudioPlayerNode.scheduleFile reads from disk continuously
+                // via an internal pre-fetch thread — any NAS latency spike drains its ring
+                // buffer and produces an audible dropout. Playing from a local copy avoids
+                // all NAS I/O on the audio render path.
+                var tempURL: URL? = nil
+                let playbackURL: URL
+                let isLocalVolume = (try? track.url.resourceValues(
+                    forKeys: [.volumeIsLocalKey]
+                ))?.volumeIsLocal ?? true
+
+                if !isLocalVolume {
+                    let fileSize = (try? track.url.resourceValues(
+                        forKeys: [.fileSizeKey]
+                    ))?.fileSize ?? 0
+                    // Skip copy for very large files (>300 MB) to avoid excessive startup delay.
+                    if fileSize <= 300 * 1024 * 1024 {
+                        let ext = track.url.pathExtension
+                        let candidate = URL(fileURLWithPath: NSTemporaryDirectory())
+                            .appendingPathComponent("nullplayer-\(UUID().uuidString).\(ext)")
+                        let copyStart = CFAbsoluteTimeGetCurrent()
+                        try FileManager.default.copyItem(at: track.url, to: candidate)
+                        NSLog(
+                            "loadLocalTrackForImmediatePlayback: Copied NAS '%@' to temp in %.3fs",
+                            track.url.lastPathComponent,
+                            CFAbsoluteTimeGetCurrent() - copyStart
+                        )
+                        tempURL = candidate
+                    } else {
+                        NSLog(
+                            "loadLocalTrackForImmediatePlayback: Skipping NAS copy for large file '%@' (%lld MB)",
+                            track.url.lastPathComponent,
+                            Int64(fileSize) / (1024 * 1024)
+                        )
+                    }
+                }
+                playbackURL = tempURL ?? track.url
+
+                let newAudioFile = try AVAudioFile(forReading: playbackURL)
                 let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
                 NSLog(
                     "loadLocalTrackForImmediatePlayback: Opened '%@' in %.3fs",
@@ -3347,13 +3466,20 @@ class AudioEngine {
                 )
 
                 DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
+                    guard let self else {
+                        if let tmp = tempURL { try? FileManager.default.removeItem(at: tmp) }
+                        return
+                    }
                     guard self.deferredLocalTrackLoadToken == token,
                           index >= 0,
                           index < self.playlist.count,
                           self.currentIndex == index,
-                          self.playlist[index].id == expectedTrackID else { return }
+                          self.playlist[index].id == expectedTrackID else {
+                        if let tmp = tempURL { try? FileManager.default.removeItem(at: tmp) }
+                        return
+                    }
 
+                    self.tempPlaybackFileURL = tempURL
                     self.commitShufflePlaybackAdvance(to: index)
                     self.commitLoadedLocalTrack(newAudioFile, track: track, generation: currentGeneration)
                     self.play()
@@ -3396,6 +3522,12 @@ class AudioEngine {
     }
 
     private func prepareForLocalTrackLoad() {
+        // Clean up any temp file from a previous NAS copy.
+        if let tmp = tempPlaybackFileURL {
+            try? FileManager.default.removeItem(at: tmp)
+            tempPlaybackFileURL = nil
+        }
+
         // Stop any streaming playback.
         stopStreamingPlayer()
         isStreamingPlayback = false

@@ -827,7 +827,17 @@ class AppStateManager {
             } else if let urlString = savedTrack.localURL, let url = URL(string: urlString) {
                 // Local file - verify it still exists
                 if FileManager.default.fileExists(atPath: url.path) {
-                    allTracks.append(Track(url: url))
+                    // Use saved metadata to avoid synchronous file I/O on the main thread.
+                    // Re-reading each file via AVAudioFile/AVAsset on NAS volumes blocks
+                    // applicationDidFinishLaunching for minutes with large playlists.
+                    allTracks.append(Track(
+                        url: url,
+                        title: savedTrack.title,
+                        artist: savedTrack.artist,
+                        album: savedTrack.album,
+                        duration: savedTrack.duration,
+                        contentType: savedTrack.contentType
+                    ))
                 } else {
                     // File no longer exists - add a placeholder that will display but won't play
                     NSLog("AppStateManager: Local file missing, skipping: %@", savedTrack.title)
