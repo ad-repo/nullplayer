@@ -1292,11 +1292,14 @@ class MediaLibrary {
             // Safety guard: if discovery found nothing at all but folders previously had content,
             // the volume is likely unreachable (NAS offline, SMB mount stale, etc.). Skip cleanup
             // to avoid wiping the entire library on a transient network failure.
+            // Use url.path directly — normalizedPath() calls standardizedFileURL which hits the
+            // filesystem per-file and holds dataQueue for seconds on network volumes, deadlocking
+            // the main thread. cleanFolderPaths are already normalized at the call site.
             let existingCountInFolders: Int = self.dataQueue.sync {
                 guard !cleanFolderPaths.isEmpty else { return 0 }
-                let trackCount = self.tracks.filter { Self.isPath(Self.normalizedPath(for: $0.url), insideAnyFolderPaths: cleanFolderPaths) }.count
-                let movieCount = self.movies.filter { Self.isPath(Self.normalizedPath(for: $0.url), insideAnyFolderPaths: cleanFolderPaths) }.count
-                let episodeCount = self.episodes.filter { Self.isPath(Self.normalizedPath(for: $0.url), insideAnyFolderPaths: cleanFolderPaths) }.count
+                let trackCount = self.tracks.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
+                let movieCount = self.movies.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
+                let episodeCount = self.episodes.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
                 return trackCount + movieCount + episodeCount
             }
             if discoveredPaths.isEmpty && existingCountInFolders > 0 {
@@ -1310,8 +1313,7 @@ class MediaLibrary {
             self.dataQueue.sync {
                 if !cleanFolderPathSet.isEmpty && !skipCleanup {
                     self.tracks.removeAll { track in
-                        let normalizedTrackPath = Self.normalizedPath(for: track.url)
-                        guard Self.isPath(normalizedTrackPath, insideAnyFolderPaths: cleanFolderPaths),
+                        guard Self.isPath(track.url.path, insideAnyFolderPaths: cleanFolderPaths),
                               !discoveredPaths.contains(track.url.path) else { return false }
                         self.tracksByPath.removeValue(forKey: track.url.path)
                         self.scanSignaturesByPath.removeValue(forKey: track.url.path)
@@ -1320,8 +1322,7 @@ class MediaLibrary {
                         return true
                     }
                     self.movies.removeAll { movie in
-                        let normalizedMoviePath = Self.normalizedPath(for: movie.url)
-                        guard Self.isPath(normalizedMoviePath, insideAnyFolderPaths: cleanFolderPaths),
+                        guard Self.isPath(movie.url.path, insideAnyFolderPaths: cleanFolderPaths),
                               !discoveredPaths.contains(movie.url.path) else { return false }
                         self.moviesByPath.removeValue(forKey: movie.url.path)
                         self.scanSignaturesByPath.removeValue(forKey: movie.url.path)
@@ -1330,8 +1331,7 @@ class MediaLibrary {
                         return true
                     }
                     self.episodes.removeAll { episode in
-                        let normalizedEpisodePath = Self.normalizedPath(for: episode.url)
-                        guard Self.isPath(normalizedEpisodePath, insideAnyFolderPaths: cleanFolderPaths),
+                        guard Self.isPath(episode.url.path, insideAnyFolderPaths: cleanFolderPaths),
                               !discoveredPaths.contains(episode.url.path) else { return false }
                         self.episodesByPath.removeValue(forKey: episode.url.path)
                         self.scanSignaturesByPath.removeValue(forKey: episode.url.path)
