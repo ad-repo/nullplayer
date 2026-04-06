@@ -427,7 +427,6 @@ struct WatchFolderSummary {
     let isAvailable: Bool
 
     var totalCount: Int { trackCount + movieCount + episodeCount }
-    var isAvailable: Bool { FileManager.default.fileExists(atPath: url.path) }
 }
 
 struct FileScanSignature: Codable, Hashable {
