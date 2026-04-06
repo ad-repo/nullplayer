@@ -170,6 +170,7 @@ class AudioEngine {
     /// Promoted to tempPlaybackFileURL on gapless transition; cleaned up otherwise.
     private var tempGaplessFileURL: URL?
 
+
     /// Tracks whether the local playback clock was intentionally frozen for a sleep cycle.
     private var suspendedLocalPlaybackClockForSleep = false
 
