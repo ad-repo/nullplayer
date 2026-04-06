@@ -10,7 +10,7 @@ This document defines the testing philosophy, standards, and practices for NullP
 ## Quick Start
 
 ```bash
-# Run all unit tests (177 tests)
+# Run all unit tests
 swift test
 
 # Run a specific test
@@ -69,8 +69,11 @@ A smaller suite of thorough tests is more valuable than extensive shallow covera
 
 ```
 Tests/
-├── NullPlayerTests/           # Unit tests (218 tests) - run with swift test
-│   └── NullPlayerTests.swift  # All unit tests in single file
+├── NullPlayerCoreTests/       # Unit tests for NullPlayerCore target - run with swift test
+│   └── EQConfigurationTests.swift
+├── NullPlayerAppTests/        # Unit tests for NullPlayer app target - run with swift test
+│   ├── AudioEngineShuffleTests.swift
+│   └── RadioRequestConstructionTests.swift
 └── NullPlayerUITests/         # UI tests - run with xcodebuild
     ├── NullPlayerUITestCase.swift      # Base test class
     ├── Helpers/
@@ -165,8 +168,9 @@ if CommandLine.arguments.contains("--ui-testing") {
 # Run all tests
 xcodebuild test -scheme NullPlayer -destination 'platform=macOS'
 
-# Run unit tests only
-xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerTests
+# Run unit tests only (core and app targets)
+xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerCoreTests
+xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerAppTests
 
 # Run UI tests only
 xcodebuild test -scheme NullPlayer -destination 'platform=macOS' -only-testing:NullPlayerUITests

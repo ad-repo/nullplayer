@@ -139,8 +139,6 @@ struct ColorPalette: Codable {
     func resolvedSurface() -> NSColor { NSColor.from(hex: surface) }
     func resolvedText() -> NSColor { NSColor.from(hex: text) }
     func resolvedTextDim() -> NSColor { NSColor.from(hex: textDim) }
-    func resolvedPositive() -> NSColor { NSColor.from(hex: positive ?? "#00ff00") }
-    func resolvedNegative() -> NSColor { NSColor.from(hex: negative ?? "#ff0000") }
     func resolvedWarning() -> NSColor { NSColor.from(hex: warning ?? "#ffaa00") }
     func resolvedBorder() -> NSColor { NSColor.from(hex: border ?? primary) }
     func resolvedTimeColor() -> NSColor { NSColor.from(hex: timeColor ?? Self.defaultTimeColor) }

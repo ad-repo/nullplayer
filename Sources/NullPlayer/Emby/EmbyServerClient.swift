@@ -778,96 +778,113 @@ class EmbyServerClient {
 
     // MARK: - Radio API
 
-    func fetchRandomSongs(limit: Int, libraryId: String? = nil) async throws -> [EmbySong] {
+    private func baseRadioAudioParams(limit: Int, libraryId: String? = nil) -> [URLQueryItem] {
         var params = [
             URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
+            URLQueryItem(name: "MediaTypes", value: "Audio"),
             URLQueryItem(name: "Recursive", value: "true"),
-            URLQueryItem(name: "SortBy", value: "Random"),
+            URLQueryItem(name: "EnableImages", value: "false"),
+            URLQueryItem(name: "EnableUserData", value: "false"),
+            URLQueryItem(name: "EnableTotalRecordCount", value: "false"),
+            URLQueryItem(name: "Fields", value: "Path,Genres,DateCreated,MediaSources"),
             URLQueryItem(name: "Limit", value: String(limit))
         ]
-        if let libId = libraryId { params.append(URLQueryItem(name: "parentId", value: libId)) }
-        guard let request = buildRequest(path: "/Users/\(server.userId)/Items", params: params) else {
+        if let libId = libraryId {
+            params.append(URLQueryItem(name: "parentId", value: libId))
+        }
+        return params
+    }
+
+    func makeRadioItemsRequest(limit: Int, libraryId: String? = nil, genre: String? = nil, years: String? = nil, filters: String? = nil) -> URLRequest? {
+        var params = baseRadioAudioParams(limit: limit, libraryId: libraryId)
+        params.append(URLQueryItem(name: "SortBy", value: "Random"))
+        if let genre {
+            params.append(URLQueryItem(name: "Genres", value: genre))
+        }
+        if let years {
+            params.append(URLQueryItem(name: "Years", value: years))
+        }
+        if let filters {
+            params.append(URLQueryItem(name: "Filters", value: filters))
+        }
+        return buildRequest(path: "/Users/\(server.userId)/Items", params: params)
+    }
+
+    func makeRadioInstantMixRequest(path: String, limit: Int, artistId: String? = nil) -> URLRequest? {
+        var params = [
+            URLQueryItem(name: "Limit", value: String(limit)),
+            URLQueryItem(name: "userId", value: server.userId),
+            URLQueryItem(name: "EnableImages", value: "false"),
+            URLQueryItem(name: "EnableUserData", value: "false"),
+            URLQueryItem(name: "EnableTotalRecordCount", value: "false"),
+            URLQueryItem(name: "Fields", value: "Path,Genres,DateCreated,MediaSources")
+        ]
+        if let artistId {
+            params.append(URLQueryItem(name: "ArtistIds", value: artistId))
+        }
+        return buildRequest(path: path, params: params)
+    }
+
+    func fetchRandomSongs(limit: Int, libraryId: String? = nil) async throws -> [EmbySong] {
+        guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId) else {
             throw EmbyClientError.invalidURL
         }
+        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
 
     func fetchSongsByGenre(genre: String, limit: Int, libraryId: String? = nil) async throws -> [EmbySong] {
-        var params = [
-            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
-            URLQueryItem(name: "Recursive", value: "true"),
-            URLQueryItem(name: "SortBy", value: "Random"),
-            URLQueryItem(name: "Genres", value: genre),
-            URLQueryItem(name: "Limit", value: String(limit))
-        ]
-        if let libId = libraryId { params.append(URLQueryItem(name: "parentId", value: libId)) }
-        guard let request = buildRequest(path: "/Users/\(server.userId)/Items", params: params) else {
+        guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId, genre: genre) else {
             throw EmbyClientError.invalidURL
         }
+        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
 
     func fetchSongsByDecade(startYear: Int, endYear: Int, limit: Int, libraryId: String? = nil) async throws -> [EmbySong] {
-        var params = [
-            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
-            URLQueryItem(name: "Recursive", value: "true"),
-            URLQueryItem(name: "SortBy", value: "Random"),
-            URLQueryItem(name: "Years", value: (startYear...endYear).map { String($0) }.joined(separator: ",")),
-            URLQueryItem(name: "Limit", value: String(limit))
-        ]
-        if let libId = libraryId { params.append(URLQueryItem(name: "parentId", value: libId)) }
-        guard let request = buildRequest(path: "/Users/\(server.userId)/Items", params: params) else {
+        let years = (startYear...endYear).map { String($0) }.joined(separator: ",")
+        guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId, years: years) else {
             throw EmbyClientError.invalidURL
         }
+        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
 
     func fetchFavoriteSongs(limit: Int, libraryId: String? = nil) async throws -> [EmbySong] {
-        var params = [
-            URLQueryItem(name: "IncludeItemTypes", value: "Audio"),
-            URLQueryItem(name: "Recursive", value: "true"),
-            URLQueryItem(name: "SortBy", value: "Random"),
-            URLQueryItem(name: "Filters", value: "IsFavorite"),
-            URLQueryItem(name: "Limit", value: String(limit))
-        ]
-        if let libId = libraryId { params.append(URLQueryItem(name: "parentId", value: libId)) }
-        guard let request = buildRequest(path: "/Users/\(server.userId)/Items", params: params) else {
+        guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId, filters: "IsFavorite") else {
             throw EmbyClientError.invalidURL
         }
+        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
 
     func fetchInstantMixForTrack(itemId: String, limit: Int) async throws -> [EmbySong] {
-        let params = [URLQueryItem(name: "Limit", value: String(limit)),
-                      URLQueryItem(name: "userId", value: server.userId)]
-        guard let request = buildRequest(path: "/Items/\(itemId)/InstantMix", params: params) else {
+        guard let request = makeRadioInstantMixRequest(path: "/Items/\(itemId)/InstantMix", limit: limit) else {
             throw EmbyClientError.invalidURL
         }
+        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
 
     func fetchInstantMixForArtist(artistId: String, limit: Int) async throws -> [EmbySong] {
-        let params = [URLQueryItem(name: "Limit", value: String(limit)),
-                      URLQueryItem(name: "userId", value: server.userId),
-                      URLQueryItem(name: "ArtistIds", value: artistId)]
-        guard let request = buildRequest(path: "/Artists/InstantMix", params: params) else {
+        guard let request = makeRadioInstantMixRequest(path: "/Artists/InstantMix", limit: limit, artistId: artistId) else {
             throw EmbyClientError.invalidURL
         }
+        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
 
     func fetchInstantMixForAlbum(albumId: String, limit: Int) async throws -> [EmbySong] {
-        let params = [URLQueryItem(name: "Limit", value: String(limit)),
-                      URLQueryItem(name: "userId", value: server.userId)]
-        guard let request = buildRequest(path: "/Items/\(albumId)/InstantMix", params: params) else {
+        guard let request = makeRadioInstantMixRequest(path: "/Items/\(albumId)/InstantMix", limit: limit) else {
             throw EmbyClientError.invalidURL
         }
+        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }

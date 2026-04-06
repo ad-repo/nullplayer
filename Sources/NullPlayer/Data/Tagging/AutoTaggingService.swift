@@ -807,7 +807,7 @@ private actor HTTPHostThrottle {
     }
 }
 
-private struct DiscogsTaggingClient {
+struct DiscogsTaggingClient {
     private let session: URLSession
 
     init() {

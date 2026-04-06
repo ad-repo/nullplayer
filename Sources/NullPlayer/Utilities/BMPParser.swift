@@ -113,20 +113,6 @@ class BMPParser {
         return createImage(from: pixels, width: width, height: height)
     }
     
-    /// Extract a sprite region from an image
-    static func extractSprite(from image: NSImage, rect: NSRect) -> NSImage {
-        let sprite = NSImage(size: rect.size)
-        sprite.lockFocus()
-        
-        image.draw(in: NSRect(origin: .zero, size: rect.size),
-                   from: rect,
-                   operation: .copy,
-                   fraction: 1.0)
-        
-        sprite.unlockFocus()
-        return sprite
-    }
-    
     // MARK: - Private Parsing Methods
     
     private static func parse1Bit(data: Data, offset: Int, width: Int, height: Int,

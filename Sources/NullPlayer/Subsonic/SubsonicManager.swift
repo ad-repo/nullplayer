@@ -602,10 +602,13 @@ class SubsonicManager {
         }
     }
 
-    func createLibraryRadio(limit: Int = 100) async -> [Track] {
+    func createLibraryRadio(limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
-            let fetchLimit = limit * 3
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioPlaybackOptions.maxTracksPerArtist
+            )
             let songs = try await client.getRandomSongs(size: fetchLimit, genre: nil, fromYear: nil, toYear: nil, musicFolderId: currentMusicFolder?.id)
             let allTracks = songs.compactMap { convertToTrack($0) }
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
@@ -616,10 +619,12 @@ class SubsonicManager {
         }
     }
 
-    func createLibraryRadioSimilar(limit: Int = 100) async -> [Track] {
+    func createLibraryRadioSimilar(limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let currentTrack = WindowManager.shared.audioEngine.currentTrack, let id = currentTrack.subsonicId {
+        if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
+           currentTrack.subsonicServerId == currentServer?.id,
+           let id = currentTrack.subsonicId {
             seedId = id
         } else {
             do {
@@ -642,10 +647,14 @@ class SubsonicManager {
         }
     }
 
-    func createGenreRadio(genre: String, limit: Int = 100) async -> [Track] {
+    func createGenreRadio(genre: String, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
-            let songs = try await client.getSongsByGenre(genre: genre, count: limit * 3, offset: 0, musicFolderId: currentMusicFolder?.id)
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioPlaybackOptions.maxTracksPerArtist
+            )
+            let songs = try await client.getSongsByGenre(genre: genre, count: fetchLimit, offset: 0, musicFolderId: currentMusicFolder?.id)
             let allTracks = songs.compactMap { convertToTrack($0) }.shuffled()
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
@@ -655,10 +664,12 @@ class SubsonicManager {
         }
     }
 
-    func createGenreRadioSimilar(genre: String, limit: Int = 100) async -> [Track] {
+    func createGenreRadioSimilar(genre: String, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.subsonicId {
+        if let current = WindowManager.shared.audioEngine.currentTrack,
+           current.subsonicServerId == currentServer?.id,
+           let id = current.subsonicId {
             seedId = id
         } else {
             do {
@@ -678,10 +689,14 @@ class SubsonicManager {
         }
     }
 
-    func createDecadeRadio(start: Int, end: Int, limit: Int = 100) async -> [Track] {
+    func createDecadeRadio(start: Int, end: Int, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
-            let songs = try await client.getRandomSongs(size: limit * 3, fromYear: start, toYear: end, musicFolderId: currentMusicFolder?.id)
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioPlaybackOptions.maxTracksPerArtist
+            )
+            let songs = try await client.getRandomSongs(size: fetchLimit, fromYear: start, toYear: end, musicFolderId: currentMusicFolder?.id)
             let allTracks = songs.compactMap { convertToTrack($0) }
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
@@ -691,10 +706,12 @@ class SubsonicManager {
         }
     }
 
-    func createDecadeRadioSimilar(start: Int, end: Int, limit: Int = 100) async -> [Track] {
+    func createDecadeRadioSimilar(start: Int, end: Int, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.subsonicId {
+        if let current = WindowManager.shared.audioEngine.currentTrack,
+           current.subsonicServerId == currentServer?.id,
+           let id = current.subsonicId {
             seedId = id
         } else {
             do {
@@ -714,7 +731,7 @@ class SubsonicManager {
         }
     }
 
-    func createRatingRadio(limit: Int = 100) async -> [Track] {
+    func createRatingRadio(limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
             let starred = try await client.fetchStarred()
@@ -727,10 +744,12 @@ class SubsonicManager {
         }
     }
 
-    func createRatingRadioSimilar(limit: Int = 100) async -> [Track] {
+    func createRatingRadioSimilar(limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
-        if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.subsonicId {
+        if let current = WindowManager.shared.audioEngine.currentTrack,
+           current.subsonicServerId == currentServer?.id,
+           let id = current.subsonicId {
             seedId = id
         } else {
             do {
@@ -750,7 +769,7 @@ class SubsonicManager {
         }
     }
 
-    func createTrackRadio(from track: Track, limit: Int = 100) async -> [Track] {
+    func createTrackRadio(from track: Track, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient, let trackId = track.subsonicId else { return [] }
         do {
             let songs = try await client.getSimilarSongs(id: trackId, count: limit * 3)
@@ -763,7 +782,7 @@ class SubsonicManager {
         }
     }
 
-    func createArtistRadio(artistId: String, limit: Int = 100) async -> [Track] {
+    func createArtistRadio(artistId: String, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
             let songs = try await client.getSimilarSongs(id: artistId, count: limit * 3)
@@ -776,7 +795,7 @@ class SubsonicManager {
         }
     }
 
-    func createAlbumRadio(albumId: String, limit: Int = 100) async -> [Track] {
+    func createAlbumRadio(albumId: String, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
             let songs = try await client.getSimilarSongs(id: albumId, count: limit * 3)

@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 /// Manages saving and restoring the complete application state.
 /// When "Remember State On Quit" is enabled (context menu toggle), saves app state
@@ -9,7 +10,7 @@ import AppKit
 /// - **Window frames**: main, playlist, EQ, browser, ProjectM, spectrum, waveform; ProjectM fullscreen
 /// - **Audio**: volume, balance, shuffle, repeat, gapless, normalization
 /// - **Sweet Fades**: enabled, duration
-/// - **EQ**: enabled, auto, preamp, 10 bands
+/// - **EQ**: enabled, auto, preamp, active-layout bands (10 classic / 21 modern)
 /// - **Playlist**: all tracks (local, Plex, Subsonic, Jellyfin, radio) with metadata
 /// - **Playback position**: current track index, position in seconds
 /// - **UI**: timeDisplayMode, isAlwaysOnTop, double size mode (modern UI)
@@ -520,7 +521,7 @@ class AppStateManager {
             eqEnabled: engine.isEQEnabled(),
             eqAutoEnabled: UserDefaults.standard.bool(forKey: "EQAutoEnabled"),
             eqPreamp: engine.getPreamp(),
-            eqBands: (0..<10).map { engine.getEQBand($0) },
+            eqBands: (0..<engine.eqConfiguration.bandCount).map { engine.getEQBand($0) },
             
             // Playback state - save all tracks with metadata for restoration
             playlistTracks: engine.playlist.map { track in
@@ -631,6 +632,19 @@ class AppStateManager {
             NSLog("AppStateManager: Failed to restore playlist state: %@", error.localizedDescription)
         }
     }
+
+    private func remappedEQBands(_ savedBands: [Float], for targetLayout: EQConfiguration) -> [Float] {
+        guard !savedBands.isEmpty else {
+            return Array(repeating: 0, count: targetLayout.bandCount)
+        }
+
+        guard let sourceLayout = EQConfiguration.persistedLayout(forBandCount: savedBands.count) else {
+            let normalized = Array(savedBands.prefix(targetLayout.bandCount))
+            return normalized + Array(repeating: 0, count: max(0, targetLayout.bandCount - normalized.count))
+        }
+
+        return targetLayout.gainValues(remapping: savedBands, from: sourceLayout)
+    }
     
     /// Apply settings state (skin, volume, EQ, windows) - no playlist
     private func applySettingsState(_ state: AppState) {
@@ -656,7 +670,8 @@ class AppStateManager {
         engine.setEQEnabled(state.eqEnabled)
         UserDefaults.standard.set(state.eqAutoEnabled, forKey: "EQAutoEnabled")
         engine.setPreamp(state.eqPreamp)
-        for (index, gain) in state.eqBands.enumerated() {
+        let restoredBands = remappedEQBands(state.eqBands, for: engine.eqConfiguration)
+        for (index, gain) in restoredBands.enumerated() {
             engine.setEQBand(index, gain: gain)
         }
         
@@ -812,7 +827,17 @@ class AppStateManager {
             } else if let urlString = savedTrack.localURL, let url = URL(string: urlString) {
                 // Local file - verify it still exists
                 if FileManager.default.fileExists(atPath: url.path) {
-                    allTracks.append(Track(url: url))
+                    // Use saved metadata to avoid synchronous file I/O on the main thread.
+                    // Re-reading each file via AVAudioFile/AVAsset on NAS volumes blocks
+                    // applicationDidFinishLaunching for minutes with large playlists.
+                    allTracks.append(Track(
+                        url: url,
+                        title: savedTrack.title,
+                        artist: savedTrack.artist,
+                        album: savedTrack.album,
+                        duration: savedTrack.duration,
+                        contentType: savedTrack.contentType
+                    ))
                 } else {
                     // File no longer exists - add a placeholder that will display but won't play
                     NSLog("AppStateManager: Local file missing, skipping: %@", savedTrack.title)

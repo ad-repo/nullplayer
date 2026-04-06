@@ -424,6 +424,7 @@ struct WatchFolderSummary {
     let episodeCount: Int
 
     var totalCount: Int { trackCount + movieCount + episodeCount }
+    var isAvailable: Bool { FileManager.default.fileExists(atPath: url.path) }
 }
 
 struct FileScanSignature: Codable, Hashable {
@@ -491,6 +492,7 @@ class MediaLibrary {
     private var lastScanProgressValue: Double = 0
 
     private let store = MediaLibraryStore.shared
+    private var volumeMountObserver: Any?
 
     private let scanProgressStateQueue = DispatchQueue(label: "NullPlayer.MediaLibrary.scanProgressState")
     
@@ -512,6 +514,7 @@ class MediaLibrary {
 
         store.open()
         loadLibrary()
+        setupVolumeMonitoring()
 
         // Trigger backfill if v2→v3 migration ran and track_artists are not yet populated
         if !UserDefaults.standard.bool(forKey: "trackArtistsBackfillComplete") {
@@ -1289,11 +1292,14 @@ class MediaLibrary {
             // Safety guard: if discovery found nothing at all but folders previously had content,
             // the volume is likely unreachable (NAS offline, SMB mount stale, etc.). Skip cleanup
             // to avoid wiping the entire library on a transient network failure.
+            // Use url.path directly — normalizedPath() calls standardizedFileURL which hits the
+            // filesystem per-file and holds dataQueue for seconds on network volumes, deadlocking
+            // the main thread. cleanFolderPaths are already normalized at the call site.
             let existingCountInFolders: Int = self.dataQueue.sync {
                 guard !cleanFolderPaths.isEmpty else { return 0 }
-                let trackCount = self.tracks.filter { Self.isPath(Self.normalizedPath(for: $0.url), insideAnyFolderPaths: cleanFolderPaths) }.count
-                let movieCount = self.movies.filter { Self.isPath(Self.normalizedPath(for: $0.url), insideAnyFolderPaths: cleanFolderPaths) }.count
-                let episodeCount = self.episodes.filter { Self.isPath(Self.normalizedPath(for: $0.url), insideAnyFolderPaths: cleanFolderPaths) }.count
+                let trackCount = self.tracks.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
+                let movieCount = self.movies.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
+                let episodeCount = self.episodes.filter { Self.isPath($0.url.path, insideAnyFolderPaths: cleanFolderPaths) }.count
                 return trackCount + movieCount + episodeCount
             }
             if discoveredPaths.isEmpty && existingCountInFolders > 0 {
@@ -1307,8 +1313,7 @@ class MediaLibrary {
             self.dataQueue.sync {
                 if !cleanFolderPathSet.isEmpty && !skipCleanup {
                     self.tracks.removeAll { track in
-                        let normalizedTrackPath = Self.normalizedPath(for: track.url)
-                        guard Self.isPath(normalizedTrackPath, insideAnyFolderPaths: cleanFolderPaths),
+                        guard Self.isPath(track.url.path, insideAnyFolderPaths: cleanFolderPaths),
                               !discoveredPaths.contains(track.url.path) else { return false }
                         self.tracksByPath.removeValue(forKey: track.url.path)
                         self.scanSignaturesByPath.removeValue(forKey: track.url.path)
@@ -1317,8 +1322,7 @@ class MediaLibrary {
                         return true
                     }
                     self.movies.removeAll { movie in
-                        let normalizedMoviePath = Self.normalizedPath(for: movie.url)
-                        guard Self.isPath(normalizedMoviePath, insideAnyFolderPaths: cleanFolderPaths),
+                        guard Self.isPath(movie.url.path, insideAnyFolderPaths: cleanFolderPaths),
                               !discoveredPaths.contains(movie.url.path) else { return false }
                         self.moviesByPath.removeValue(forKey: movie.url.path)
                         self.scanSignaturesByPath.removeValue(forKey: movie.url.path)
@@ -1327,8 +1331,7 @@ class MediaLibrary {
                         return true
                     }
                     self.episodes.removeAll { episode in
-                        let normalizedEpisodePath = Self.normalizedPath(for: episode.url)
-                        guard Self.isPath(normalizedEpisodePath, insideAnyFolderPaths: cleanFolderPaths),
+                        guard Self.isPath(episode.url.path, insideAnyFolderPaths: cleanFolderPaths),
                               !discoveredPaths.contains(episode.url.path) else { return false }
                         self.episodesByPath.removeValue(forKey: episode.url.path)
                         self.scanSignaturesByPath.removeValue(forKey: episode.url.path)
@@ -1923,8 +1926,28 @@ class MediaLibrary {
         }
     }
     
+    // MARK: - Volume Monitoring
+
+    private func setupVolumeMonitoring() {
+        volumeMountObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSNotification.Name("NSWorkspaceDidMountNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let mountedURL = notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL else { return }
+            let mountedPath = mountedURL.path
+            let affected = self.watchFoldersSnapshot.filter { $0.path.hasPrefix(mountedPath + "/") || $0.path == mountedPath }
+            guard !affected.isEmpty else { return }
+            NSLog("MediaLibrary: Volume mounted at '%@' — rescanning %d watch folder(s)", mountedPath, affected.count)
+            for folder in affected {
+                self.rescanWatchFolder(folder, cleanMissing: true)
+            }
+        }
+    }
+
     // MARK: - Backup & Restore
-    
+
     /// Get the library directory URL
     var libraryDirectory: URL {
         libraryURL.deletingLastPathComponent()
@@ -2122,14 +2145,14 @@ class MediaLibrary {
     
     // MARK: - Local Radio
 
-    func createLocalLibraryRadio(limit: Int = 100) -> [Track] {
+    func createLocalLibraryRadio(limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         let pool = tracksSnapshot.shuffled()
         let tracks = pool.map { $0.toTrack() }
         let historyFiltered = LocalRadioHistory.shared.filterOutHistoryTracks(tracks)
         return filterLocalForArtistVariety(historyFiltered, limit: limit)
     }
 
-    func createLocalGenreRadio(genre: String, limit: Int = 100) -> [Track] {
+    func createLocalGenreRadio(genre: String, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         var filter = LibraryFilter()
         filter.genres = Set([genre])
         let pool = filteredTracks(filter: filter, sortBy: .title, ascending: true).shuffled()
@@ -2138,11 +2161,11 @@ class MediaLibrary {
         return filterLocalForArtistVariety(historyFiltered, limit: limit)
     }
 
-    func createLocalGenreRadioSimilar(seedTrack: Track?, genre: String, limit: Int = 100) -> [Track] {
+    func createLocalGenreRadioSimilar(seedTrack: Track?, genre: String, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         return createLocalGenreRadio(genre: genre, limit: limit)
     }
 
-    func createLocalDecadeRadio(start: Int, end: Int, limit: Int = 100) -> [Track] {
+    func createLocalDecadeRadio(start: Int, end: Int, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         var filter = LibraryFilter()
         filter.yearRange = start...end
         let pool = filteredTracks(filter: filter, sortBy: .title, ascending: true).shuffled()
@@ -2151,11 +2174,11 @@ class MediaLibrary {
         return filterLocalForArtistVariety(historyFiltered, limit: limit)
     }
 
-    func createLocalDecadeRadioSimilar(start: Int, end: Int, seedTrack: Track?, limit: Int = 100) -> [Track] {
+    func createLocalDecadeRadioSimilar(start: Int, end: Int, seedTrack: Track?, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         return createLocalDecadeRadio(start: start, end: end, limit: limit)
     }
 
-    func createLocalArtistRadio(artist: String, limit: Int = 100) -> [Track] {
+    func createLocalArtistRadio(artist: String, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
         let pool = tracksSnapshot
             .filter { track in
                 // Match via track.artists (populated) or fall back to raw field for pre-backfill tracks

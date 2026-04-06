@@ -228,7 +228,7 @@ A dedicated Metal-based spectrum analyzer providing larger, more detailed view t
 
 ### Features
 
-- **Bar Count**: 55 bars (vs 19 in main window)
+- **Bar Count**: 84 bars (vs 19 in main window)
 - **Rendering**: Metal GPU shaders at 60Hz
 - **Window Geometry**: default 275x116 at 1x; supports horizontal + vertical stretching with skin minimum size constraints
 - **Color Source**: Skin's `viscolor.txt` (24-color palette)
@@ -291,6 +291,7 @@ Persistence is window-scoped (independent between main window and spectrum windo
 - Profile keys: `visClassicLastProfileName.mainWindow`, `visClassicLastProfileName.spectrumWindow`
 - Fit keys: `visClassicFitToWidth.mainWindow`, `visClassicFitToWidth.spectrumWindow`
 - Transparent keys: `visClassicTransparentBg.mainWindow`, `visClassicTransparentBg.spectrumWindow`
+- Opacity keys: `visClassicOpacity.mainWindow`, `visClassicOpacity.spectrumWindow`
 
 ### Flame Mode Details
 
@@ -398,7 +399,7 @@ Controls how quickly bars fall:
 - Independent settings from Spectrum window
 
 **Spectrum Analyzer Window:**
-- Detailed frequency visualization (55 bars)
+- Detailed frequency visualization (84 bars)
 - Monitoring audio levels
 - Classic Winamp spectrum aesthetic
 - Larger display complements main window
@@ -434,6 +435,7 @@ Controls how quickly bars fall:
 - `Visualization/CosmicShaders.metal` - JWST mode fragment shaders
 - `Visualization/ElectricityShaders.metal` - Lightning mode fragment shaders
 - `Visualization/MatrixShaders.metal` - Matrix mode fragment shaders
+- `Visualization/SnowShaders.metal` - Snow mode fragment shaders
 - `Sources/CVisClassicCore/` - Portable C/C++ vis_classic core implementation and C API
 - `App/SpectrumWindowProviding.swift` - Protocol abstracting classic/modern
 

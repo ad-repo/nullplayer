@@ -383,68 +383,6 @@ class AudioOutputManager {
         return String(chars)
     }
     
-    /// Print debug info about all detected audio devices
-    func printDeviceDebugInfo() {
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        
-        var dataSize: UInt32 = 0
-        var status = AudioObjectGetPropertyDataSize(
-            AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
-            0,
-            nil,
-            &dataSize
-        )
-        
-        guard status == noErr else {
-            print("Failed to get devices size")
-            return
-        }
-        
-        let deviceCount = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
-        var deviceIDs = [AudioDeviceID](repeating: 0, count: deviceCount)
-        
-        status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
-            0,
-            nil,
-            &dataSize,
-            &deviceIDs
-        )
-        
-        guard status == noErr else {
-            print("Failed to get devices")
-            return
-        }
-        
-        print("=== Audio Device Debug Info ===")
-        print("Total devices found: \(deviceCount)")
-        
-        for deviceID in deviceIDs {
-            let name = getDeviceName(deviceID: deviceID) ?? "(no name)"
-            let uid = getDeviceUID(deviceID: deviceID) ?? "(no uid)"
-            let transportType = getTransportTypeName(deviceID: deviceID)
-            let hasOutput = hasOutputChannels(deviceID: deviceID)
-            let isWireless = checkIfWireless(deviceID: deviceID)
-            let isHidden = shouldHideDevice(deviceID: deviceID, name: name)
-            
-            print("  Device ID: \(deviceID)")
-            print("    Name: \(name)")
-            print("    UID: \(uid)")
-            print("    Transport: \(transportType)")
-            print("    Has Output: \(hasOutput)")
-            print("    Is Wireless: \(isWireless)")
-            print("    Hidden: \(isHidden)")
-            print("")
-        }
-        print("=== End Debug Info ===")
-    }
-    
     /// Write debug info to a file for easier inspection
     func writeDeviceDebugInfoToFile() {
         var output = "=== Audio Device Debug Info ===\n"

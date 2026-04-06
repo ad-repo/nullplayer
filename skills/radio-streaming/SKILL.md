@@ -261,16 +261,41 @@ struct RadioConfig {
 }
 ```
 
+### Playback Options Menu
+
+Playback options now expose a dedicated `Radio` submenu.
+
+Items under `Playback Options -> Radio`:
+
+- `Max Tracks Per Artist`
+- `Playlist Length`
+- `History`
+
+`Playlist Length` is backed by `RadioPlaybackOptions.playlistLength` and supports:
+
+- `100`
+- `250`
+- `500`
+- `1000`
+- `10000`
+
+`Max Tracks Per Artist` and radio history controls were moved under this submenu from the top-level playback options menu.
+
 ### Playlist Generation Pipeline
 
 Each `createXxxRadio` function follows this pattern:
 
-```
-1. Fetch candidate tracks from server (limit * 3 for headroom)
+```text
+1. Fetch candidate tracks from server
 2. filterOutHistoryTracks(_:)  — remove recently played
 3. filterForArtistVariety(_:limit:maxPerArtist:)  — cap per-artist slots
 4. Return up to `limit` tracks
 ```
+
+Candidate fetch sizing:
+
+- Standard behavior: over-fetch by `3x` for headroom before artist dedupe
+- If `Max Tracks Per Artist` is `Unlimited` (`0`), use the requested playlist length directly and do not over-fetch
 
 **Instant Mix / Similar** functions additionally:
 1. Try to reuse the currently playing track as seed (if it belongs to the active server)

@@ -89,6 +89,10 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
+        if wm.isRunningModernUI {
+            menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
+                                         action: #selector(MenuActions.toggleLibraryHistory)))
+        }
         menu.addItem(buildWindowItem("ProjectM", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
 
@@ -504,12 +508,15 @@ class ContextMenuBuilder {
         shuffleItem.state = engine.shuffleEnabled ? .on : .off
         optionsMenu.addItem(shuffleItem)
 
-        // Radio variety (applies to non-sonic radio generation across sources)
-        let radioArtistLimitItem = NSMenuItem(title: "Radio Max Tracks Per Artist", action: nil, keyEquivalent: "")
+        let radioItem = NSMenuItem(title: "Radio", action: nil, keyEquivalent: "")
+        let radioMenu = NSMenu()
+        radioMenu.autoenablesItems = false
+
+        let radioArtistLimitItem = NSMenuItem(title: "Max Tracks Per Artist", action: nil, keyEquivalent: "")
         let radioArtistLimitMenu = NSMenu()
         radioArtistLimitMenu.autoenablesItems = false
         let currentRadioArtistLimit = RadioPlaybackOptions.maxTracksPerArtist
-        for limit in RadioPlaybackOptions.menuChoices {
+        for limit in RadioPlaybackOptions.maxTracksPerArtistChoices {
             let title: String
             if limit == RadioPlaybackOptions.unlimitedMaxTracksPerArtist {
                 title = "Unlimited"
@@ -525,63 +532,30 @@ class ContextMenuBuilder {
             radioArtistLimitMenu.addItem(item)
         }
         radioArtistLimitItem.submenu = radioArtistLimitMenu
-        optionsMenu.addItem(radioArtistLimitItem)
-        
-        optionsMenu.addItem(NSMenuItem.separator())
-        
-        // Audio Quality Options
-        let gaplessItem = NSMenuItem(title: "Gapless Playback", action: #selector(MenuActions.toggleGaplessPlayback), keyEquivalent: "")
-        gaplessItem.target = MenuActions.shared
-        gaplessItem.state = engine.gaplessPlaybackEnabled ? .on : .off
-        optionsMenu.addItem(gaplessItem)
-        
-        let normalizeItem = NSMenuItem(title: "Volume Normalization", action: #selector(MenuActions.toggleVolumeNormalization), keyEquivalent: "")
-        normalizeItem.target = MenuActions.shared
-        normalizeItem.state = engine.volumeNormalizationEnabled ? .on : .off
-        optionsMenu.addItem(normalizeItem)
-        
-        optionsMenu.addItem(NSMenuItem.separator())
-        
-        // Sweet Fades (Crossfade) toggle
-        let sweetFadeItem = NSMenuItem(title: "Sweet Fades (Crossfade)", action: #selector(MenuActions.toggleSweetFade), keyEquivalent: "")
-        sweetFadeItem.target = MenuActions.shared
-        sweetFadeItem.state = engine.sweetFadeEnabled ? .on : .off
-        optionsMenu.addItem(sweetFadeItem)
-        
-        // Duration submenu (only shown if Sweet Fades enabled)
-        if engine.sweetFadeEnabled {
-            let durationItem = NSMenuItem(title: "Fade Duration", action: nil, keyEquivalent: "")
-            let durationMenu = NSMenu()
-            durationMenu.autoenablesItems = false
-            
-            for duration in [1.0, 2.0, 3.0, 5.0, 7.0, 10.0] {
-                let item = NSMenuItem(
-                    title: "\(Int(duration))s",
-                    action: #selector(MenuActions.setSweetFadeDuration(_:)),
-                    keyEquivalent: ""
-                )
-                item.target = MenuActions.shared
-                item.representedObject = duration
-                item.state = engine.sweetFadeDuration == duration ? .on : .off
-                durationMenu.addItem(item)
-            }
-            
-            durationItem.submenu = durationMenu
-            optionsMenu.addItem(durationItem)
+        radioMenu.addItem(radioArtistLimitItem)
+
+        let radioPlaylistLengthItem = NSMenuItem(title: "Playlist Length", action: nil, keyEquivalent: "")
+        let radioPlaylistLengthMenu = NSMenu()
+        radioPlaylistLengthMenu.autoenablesItems = false
+        let currentRadioPlaylistLength = RadioPlaybackOptions.playlistLength
+        for limit in RadioPlaybackOptions.playlistLengthChoices {
+            let item = NSMenuItem(
+                title: "\(limit.formatted()) tracks",
+                action: #selector(MenuActions.setRadioPlaylistLength(_:)),
+                keyEquivalent: ""
+            )
+            item.target = MenuActions.shared
+            item.representedObject = limit
+            item.state = currentRadioPlaylistLength == limit ? .on : .off
+            radioPlaylistLengthMenu.addItem(item)
         }
-        
-        optionsMenu.addItem(NSMenuItem.separator())
-        
-        // Visual Options
-        let artworkBgItem = NSMenuItem(title: "Browser Album Art Background", action: #selector(MenuActions.toggleBrowserArtworkBackground), keyEquivalent: "")
-        artworkBgItem.target = MenuActions.shared
-        artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
-        optionsMenu.addItem(artworkBgItem)
+        radioPlaylistLengthItem.submenu = radioPlaylistLengthMenu
+        radioMenu.addItem(radioPlaylistLengthItem)
+
+        radioMenu.addItem(NSMenuItem.separator())
 
         // Group all source-specific radio history entries under one parent item.
-        optionsMenu.addItem(NSMenuItem.separator())
-
-        let radioHistoryItem = NSMenuItem(title: "Radio History", action: nil, keyEquivalent: "")
+        let radioHistoryItem = NSMenuItem(title: "History", action: nil, keyEquivalent: "")
         let radioHistoryMenu = NSMenu()
         radioHistoryMenu.autoenablesItems = false
 
@@ -764,9 +738,61 @@ class ContextMenuBuilder {
         }
 
         radioHistoryItem.submenu = radioHistoryMenu
-        optionsMenu.addItem(radioHistoryItem)
+        radioMenu.addItem(radioHistoryItem)
 
+        radioItem.submenu = radioMenu
+        optionsMenu.addItem(radioItem)
+        
         optionsMenu.addItem(NSMenuItem.separator())
+        
+        // Audio Quality Options
+        let gaplessItem = NSMenuItem(title: "Gapless Playback", action: #selector(MenuActions.toggleGaplessPlayback), keyEquivalent: "")
+        gaplessItem.target = MenuActions.shared
+        gaplessItem.state = engine.gaplessPlaybackEnabled ? .on : .off
+        optionsMenu.addItem(gaplessItem)
+        
+        let normalizeItem = NSMenuItem(title: "Volume Normalization", action: #selector(MenuActions.toggleVolumeNormalization), keyEquivalent: "")
+        normalizeItem.target = MenuActions.shared
+        normalizeItem.state = engine.volumeNormalizationEnabled ? .on : .off
+        optionsMenu.addItem(normalizeItem)
+        
+        optionsMenu.addItem(NSMenuItem.separator())
+        
+        // Sweet Fades (Crossfade) toggle
+        let sweetFadeItem = NSMenuItem(title: "Sweet Fades (Crossfade)", action: #selector(MenuActions.toggleSweetFade), keyEquivalent: "")
+        sweetFadeItem.target = MenuActions.shared
+        sweetFadeItem.state = engine.sweetFadeEnabled ? .on : .off
+        optionsMenu.addItem(sweetFadeItem)
+        
+        // Duration submenu (only shown if Sweet Fades enabled)
+        if engine.sweetFadeEnabled {
+            let durationItem = NSMenuItem(title: "Fade Duration", action: nil, keyEquivalent: "")
+            let durationMenu = NSMenu()
+            durationMenu.autoenablesItems = false
+            
+            for duration in [1.0, 2.0, 3.0, 5.0, 7.0, 10.0] {
+                let item = NSMenuItem(
+                    title: "\(Int(duration))s",
+                    action: #selector(MenuActions.setSweetFadeDuration(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = MenuActions.shared
+                item.representedObject = duration
+                item.state = engine.sweetFadeDuration == duration ? .on : .off
+                durationMenu.addItem(item)
+            }
+            
+            durationItem.submenu = durationMenu
+            optionsMenu.addItem(durationItem)
+        }
+        
+        optionsMenu.addItem(NSMenuItem.separator())
+        
+        // Visual Options
+        let artworkBgItem = NSMenuItem(title: "Browser Album Art Background", action: #selector(MenuActions.toggleBrowserArtworkBackground), keyEquivalent: "")
+        artworkBgItem.target = MenuActions.shared
+        artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
+        optionsMenu.addItem(artworkBgItem)
 
         return optionsMenu
     }
@@ -2515,6 +2541,11 @@ class MenuActions: NSObject {
         WindowManager.shared.toggleDebugWindow()
     }
 
+    @objc func toggleLibraryHistory() {
+        guard WindowManager.shared.isModernUIEnabled else { return }
+        WindowManager.shared.toggleLibraryHistory()
+    }
+
     @objc func rerenderCurrentWaveform() {
         WindowManager.shared.reloadWaveform(force: true)
     }
@@ -3239,6 +3270,11 @@ class MenuActions: NSObject {
     @objc func setRadioMaxTracksPerArtist(_ sender: NSMenuItem) {
         guard let maxTracks = sender.representedObject as? Int else { return }
         RadioPlaybackOptions.maxTracksPerArtist = maxTracks
+    }
+
+    @objc func setRadioPlaylistLength(_ sender: NSMenuItem) {
+        guard let playlistLength = sender.representedObject as? Int else { return }
+        RadioPlaybackOptions.playlistLength = playlistLength
     }
     
     @objc func toggleBrowserArtworkBackground() {

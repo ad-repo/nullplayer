@@ -735,10 +735,14 @@ class JellyfinManager {
         }
     }
 
-    func createLibraryRadio(limit: Int = 100) async -> [Track] {
+    func createLibraryRadio(limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
-            let songs = try await client.fetchRandomSongs(limit: limit * 3, libraryId: currentMusicLibrary?.id)
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioPlaybackOptions.maxTracksPerArtist
+            )
+            let songs = try await client.fetchRandomSongs(limit: fetchLimit, libraryId: currentMusicLibrary?.id)
             let allTracks = songs.compactMap { convertToTrack($0) }
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
@@ -748,7 +752,7 @@ class JellyfinManager {
         }
     }
 
-    func createLibraryRadioInstantMix(limit: Int = 100) async -> [Track] {
+    func createLibraryRadioInstantMix(limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
         if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.jellyfinId {
@@ -771,10 +775,14 @@ class JellyfinManager {
         }
     }
 
-    func createGenreRadio(genre: String, limit: Int = 100) async -> [Track] {
+    func createGenreRadio(genre: String, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
-            let songs = try await client.fetchSongsByGenre(genre: genre, limit: limit * 3, libraryId: currentMusicLibrary?.id)
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioPlaybackOptions.maxTracksPerArtist
+            )
+            let songs = try await client.fetchSongsByGenre(genre: genre, limit: fetchLimit, libraryId: currentMusicLibrary?.id)
             let allTracks = songs.compactMap { convertToTrack($0) }.shuffled()
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
@@ -784,7 +792,7 @@ class JellyfinManager {
         }
     }
 
-    func createGenreRadioInstantMix(genre: String, limit: Int = 100) async -> [Track] {
+    func createGenreRadioInstantMix(genre: String, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
         if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.jellyfinId {
@@ -807,10 +815,14 @@ class JellyfinManager {
         }
     }
 
-    func createDecadeRadio(start: Int, end: Int, limit: Int = 100) async -> [Track] {
+    func createDecadeRadio(start: Int, end: Int, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
-            let songs = try await client.fetchSongsByDecade(startYear: start, endYear: end, limit: limit * 3, libraryId: currentMusicLibrary?.id)
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioPlaybackOptions.maxTracksPerArtist
+            )
+            let songs = try await client.fetchSongsByDecade(startYear: start, endYear: end, limit: fetchLimit, libraryId: currentMusicLibrary?.id)
             let allTracks = songs.compactMap { convertToTrack($0) }
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
@@ -820,7 +832,7 @@ class JellyfinManager {
         }
     }
 
-    func createDecadeRadioInstantMix(start: Int, end: Int, limit: Int = 100) async -> [Track] {
+    func createDecadeRadioInstantMix(start: Int, end: Int, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
         if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.jellyfinId {
@@ -843,10 +855,14 @@ class JellyfinManager {
         }
     }
 
-    func createFavoritesRadio(limit: Int = 100) async -> [Track] {
+    func createFavoritesRadio(limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
-            let songs = try await client.fetchFavoriteSongs(limit: limit * 3, libraryId: currentMusicLibrary?.id)
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioPlaybackOptions.maxTracksPerArtist
+            )
+            let songs = try await client.fetchFavoriteSongs(limit: fetchLimit, libraryId: currentMusicLibrary?.id)
             let allTracks = songs.compactMap { convertToTrack($0) }.shuffled()
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
@@ -856,7 +872,7 @@ class JellyfinManager {
         }
     }
 
-    func createFavoritesRadioInstantMix(limit: Int = 100) async -> [Track] {
+    func createFavoritesRadioInstantMix(limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         let seedId: String?
         if let current = WindowManager.shared.audioEngine.currentTrack, let id = current.jellyfinId {
@@ -879,7 +895,7 @@ class JellyfinManager {
         }
     }
 
-    func createTrackRadio(from track: Track, limit: Int = 100) async -> [Track] {
+    func createTrackRadio(from track: Track, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient, let trackId = track.jellyfinId else { return [] }
         do {
             let songs = try await client.fetchInstantMixForTrack(itemId: trackId, limit: limit * 3)
@@ -892,7 +908,7 @@ class JellyfinManager {
         }
     }
 
-    func createArtistRadio(artistId: String, limit: Int = 100) async -> [Track] {
+    func createArtistRadio(artistId: String, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
             let songs = try await client.fetchInstantMixForArtist(artistId: artistId, limit: limit * 3)
@@ -905,7 +921,7 @@ class JellyfinManager {
         }
     }
 
-    func createAlbumRadio(albumId: String, limit: Int = 100) async -> [Track] {
+    func createAlbumRadio(albumId: String, limit: Int = RadioPlaybackOptions.playlistLength) async -> [Track] {
         guard let client = serverClient else { return [] }
         do {
             let songs = try await client.fetchInstantMixForAlbum(albumId: albumId, limit: limit * 3)

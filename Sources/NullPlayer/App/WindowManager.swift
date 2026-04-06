@@ -278,7 +278,7 @@ class WindowManager {
     
     /// Library browser window controller (classic or modern, accessed via protocol)
     private var plexBrowserWindowController: LibraryBrowserWindowProviding?
-    
+
     /// Video player window controller
     private var videoPlayerWindowController: VideoPlayerWindowController?
     
@@ -777,6 +777,11 @@ class WindowManager {
             }
         }
     }
+
+    var isLibraryHistoryVisible: Bool {
+        guard isRunningModernUI, isPlexBrowserVisible else { return false }
+        return plexBrowserBrowseMode == ModernBrowseMode.history.rawValue
+    }
     
     /// Get the ProjectM window frame (for state saving)
     var projectMWindowFrame: NSRect? {
@@ -792,7 +797,31 @@ class WindowManager {
         postLayoutChangeNotification()
         updateDockedChildWindows()
     }
-    
+
+    // MARK: - Library History
+
+    func showLibraryHistory() {
+        guard isRunningModernUI else { return }
+        showPlexBrowser()
+        plexBrowserBrowseMode = ModernBrowseMode.history.rawValue
+        plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
+        applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
+    func toggleLibraryHistory() {
+        guard isRunningModernUI else { return }
+        if isLibraryHistoryVisible {
+            plexBrowserWindowController?.window?.orderOut(nil)
+            postLayoutChangeNotification()
+            updateDockedChildWindows()
+            return
+        }
+
+        showLibraryHistory()
+    }
+
     /// Show the Plex account linking sheet
     func showPlexLinkSheet() {
         // Show from main window if available, otherwise standalone

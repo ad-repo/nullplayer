@@ -53,8 +53,6 @@ class ModernSkin {
     let surfaceColor: NSColor
     let textColor: NSColor
     let textDimColor: NSColor
-    let positiveColor: NSColor
-    let negativeColor: NSColor
     let warningColor: NSColor
     let borderColor: NSColor
     let timeColor: NSColor
@@ -82,8 +80,6 @@ class ModernSkin {
         self.surfaceColor = config.palette.resolvedSurface()
         self.textColor = config.palette.resolvedText()
         self.textDimColor = config.palette.resolvedTextDim()
-        self.positiveColor = config.palette.resolvedPositive()
-        self.negativeColor = config.palette.resolvedNegative()
         self.warningColor = config.palette.resolvedWarning()
         self.borderColor = config.palette.resolvedBorder()
         self.timeColor = config.palette.resolvedTimeColor()

@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.19.0
+
+### Play History (modern UI)
+
+- **Play History analytics window (modern UI)** — added a modern analytics window that records listening events and persists history data across launches.
+- **Play History in Library Data tab** — embedded play-history analytics directly into the modern Library Browser Data tab.
+- **Genre discovery for history events** — added genre enrichment for play-history events to improve genre-based insights.
+- **Play time and source summaries** — added total listening-time summaries and source-level breakdowns in the Data tab.
+- **Top artists limit raised to 250** — the Data tab top-artists list now shows up to 250 entries.
+- **Various Artists history attribution** — play history entries now use the track artist rather than "Various Artists" for compilation tracks.
+
+### 21-Band EQ (modern UI)
+
+- **Real 21-band equalizer (modern UI)** — modern mode now runs a full 21-band EQ processing chain (local and streaming), with updated presets/state mapping and a matching 21-band UI.
+- **EQ fader grid style** — replaced the harsh grid borders on EQ faders with subtle vertical dividers.
+
+### Radio
+
+- **Radio playlist controls** — added playlist-level controls for radio playback behavior.
+- **Library radio loading spinner** — a spinner is now shown while a library radio playlist is being generated.
+- **Library radio hardening** — improved library radio playlist generation reliability.
+
+### Local Library
+
+- **Offline watch folder volumes surfaced** — watch folder entries for network volumes that are currently offline are now visible in the library UI so users can see which folders are unavailable.
+
+### Library Browser
+
+- **Search input accepts spaces** — the library browser search field no longer drops space characters mid-input.
+- **Duplicate search results eliminated** — search results no longer show duplicate artists, albums, or tracks across sections or Plex libraries.
+- **Plex search deduplication** — Plex search results are deduplicated by content identity rather than raw rating key, preventing the same item from appearing multiple times.
+- **Plex search session fix** — Plex search now uses the configured server session, fixing searches that previously failed to authenticate.
+- **Enter-to-search** — pressing Enter in the library browser search field now triggers the search immediately.
+- **Remote search debounce** — remote library searches are debounced to avoid flooding the server with a request per keystroke.
+
+### Playback
+
+- **NAS audio dropout fix** — local files on network-mounted volumes (SMB/NFS/AFP) are now copied to a local temp path before scheduling with AVAudioPlayerNode, eliminating dropouts caused by NAS latency spikes stalling the engine's pre-fetch thread.
+- **Zero-duration display fix** — tracks added via drag-and-drop, local radio, or state restore that had no duration now resolve their duration from the MediaLibrary index (instant) or a background AVAudioFile read, and update the playlist display without blocking the UI.
+- **Fast app launch with large NAS playlists** — playlist state restore no longer opens each local file via AVAudioFile/AVAsset on the main thread at launch; saved metadata is used directly, eliminating multi-minute hangs on large NAS playlists.
+- **Shuffle algorithm rewrite** — the shuffle playback cycle now correctly visits every track exactly once before repeating, anchors the cycle at the selected track when the user picks a specific song, and generates a fresh non-repeating order on each new cycle when Repeat is enabled. Explicit track selection mid-shuffle resets the cycle around the chosen track. Covered by tests for full-cycle coverage, repeat-cycle transitions, range-anchored starts, and mid-cycle selection resets.
+- **Shuffle load race fix** — shuffle state mutation is now deferred until track load succeeds, preventing a race where a failed load left shuffle order in an inconsistent state.
+- **Waveform prerender and corrupt stream fix** — fixed waveform prerender extension logic and a loop condition triggered by corrupt or truncated stream data.
+
+### Stability
+
+- **EQPreset startup crash fix** — fixed a crash at launch caused by invalid hex characters in UUID strings read from EQ preset storage.
+- **NAS library scan deadlock fix** — eliminated a deadlock where filesystem I/O inside the `dataQueue` lock during a library scan blocked the main thread when a library-change notification fired concurrently.
+
 ## 0.18.1
 
 ### Visualization

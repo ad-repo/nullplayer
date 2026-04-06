@@ -12,6 +12,7 @@ Reference for local media library: scanning, persistence, NAS responsiveness, an
 | File discovery | `Utilities/LocalFileDiscovery.swift` |
 | Audio engine (NAS paths) | `Audio/AudioEngine.swift` |
 | Waveform (cue-sheet) | `Waveform/BaseWaveformView.swift` |
+| Play history (Data tab) | `Windows/ModernStats/PlayHistoryStore.swift`, `Windows/ModernStats/PlayHistoryAgent.swift` |
 
 ## Database Schema
 
@@ -23,8 +24,11 @@ Reference for local media library: scanning, persistence, NAS responsiveness, an
 - `busyTimeout = 5s` — prevents hard failure on background/main thread contention.
 
 **Schema version** (`PRAGMA user_version`)
-- v0 → v2: full table + index creation.
+- v0 → v5: fresh install creates all tables, then runs `migrateToV5`.
 - v1 → v2: migration adds `idx_tracks_artist_expr` expression index (see Indexes below).
+- v2 → v3: migration adds `track_artists` table with `ON DELETE CASCADE` FK (see Tables below).
+- v3 → v4: migration adds extended metadata columns (`composer`, `comment`, `grouping`, `bpm`, `musical_key`, `isrc`, `copyright`, `musicbrainz_recording_id`, `musicbrainz_release_id`, `discogs_*`, `artwork_url`) via `ALTER TABLE … ADD COLUMN`.
+- v4 → v5: migration adds `play_events` table and indexes (see Tables below).
 
 ### Tables
 
@@ -48,7 +52,7 @@ Reference for local media library: scanning, persistence, NAS responsiveness, an
 | `file_size` | INT | Bytes |
 | `date_added` | REAL | Unix timestamp |
 | `last_played` | REAL? | Unix timestamp |
-| `play_count` | INT? | |
+| `play_count` | INT | Not nullable; defaults to 0 |
 | `rating` | INT? | 0–10 scale |
 | `scan_file_size` | INT? | Snapshot at last scan |
 | `scan_mod_date` | REAL? | Snapshot at last scan |
@@ -70,6 +74,31 @@ Index: `idx_episodes_show (show_title, season_number)`.
 
 #### `library_album_ratings` / `library_artist_ratings`
 `album_id`/`artist_id` (PK), `rating`.
+
+#### `track_artists` (added v3)
+| Column | Type | Notes |
+|--------|------|-------|
+| `track_url` | TEXT | FK → `library_tracks(url)` ON DELETE CASCADE |
+| `artist_name` | TEXT | |
+| `role` | TEXT | `'primary'`, `'featured'`, or `'album_artist'` |
+PK: `(track_url, artist_name, role)`. Indexes: `idx_track_artists_name`, `idx_track_artists_url`.
+
+#### `play_events` (added v5)
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | AUTOINCREMENT |
+| `track_id` | TEXT? | Library UUID if local track |
+| `track_url` | TEXT? | File path if local track |
+| `event_title` | TEXT? | |
+| `event_artist` | TEXT? | |
+| `event_album` | TEXT? | |
+| `event_genre` | TEXT? | |
+| `played_at` | REAL | Unix timestamp, NOT NULL |
+| `duration_listened` | REAL | Seconds, NOT NULL, default 0 |
+| `source` | TEXT | `'local'`, `'plex'`, `'subsonic'`, `'jellyfin'`, `'emby'`, or `'radio'` |
+| `skipped` | INTEGER | 0/1, NOT NULL, default 0 |
+Indexes: `idx_play_events_played_at`, `idx_play_events_track_id`, `idx_play_events_source_time`.
+Queried by `PlayHistoryStore` (in `Windows/ModernStats/`) to power the Data tab in the Library Browser.
 
 ### Key API Methods (MediaLibraryStore)
 

@@ -13,49 +13,49 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `titlebar` | 0,102,275,14 | normal | Title bar background |
-| `titlebar_text` | 50,102,175,14 | normal | Title text area |
-| `btn_close` | 255,103,12,12 | normal, pressed | Close button |
-| `btn_minimize` | 228,103,12,12 | normal, pressed | Minimize button |
-| `btn_shade` | 241,103,12,12 | normal, pressed | Shade mode button |
+| `titlebar` | 0,98,275,18 | normal | Title bar background |
+| `titlebar_text` | 50,98,175,18 | normal | Title text area |
+| `btn_close` | 261,102,10,10 | normal, pressed | Close button |
+| `btn_minimize` | 237,102,10,10 | normal, pressed | Minimize button |
+| `btn_shade` | 249,102,10,10 | normal, pressed | Shade mode button |
 
 ## Time Display
 
 | Element ID | Default Rect | Description |
 |-----------|-------------|-------------|
-| `time_display` | 10,66,80,30 | Time display area |
-| `time_digit_0` through `time_digit_9` | 14x22 each | 7-segment LED digits |
-| `time_colon` | 7x22 | Colon separator |
-| `time_minus` | 14x22 | Minus sign (remaining time) |
+| `time_display` | 14,64,76,26 | Time display area |
+| `time_digit_0` through `time_digit_9` | 12x20 each | 7-segment LED digits |
+| `time_colon` | 5x20 | Colon separator |
+| `time_minus` | 12x20 | Minus sign (remaining time) |
 
 ## Info Panel
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `marquee_bg` | 95,66,170,30 | normal | Marquee background panel |
+| `marquee_bg` | 93,60,176,34 | normal | Marquee background panel |
 | `info_bitrate` | 95,62,40,9 | normal | Bitrate label |
 | `info_samplerate` | 135,62,30,9 | normal | Sample rate label |
 | `info_bpm` | 165,62,30,9 | normal | BPM label |
 | `info_stereo` | 198,62,32,9 | off, on | Stereo indicator |
 | `info_mono` | 198,62,32,9 | off, on | Mono indicator |
-| `info_cast` | 232,62,34,9 | off, on | Cast active indicator |
+| `info_cast` | 230,62,34,9 | off, on | Cast active indicator |
 
 ## Status & Spectrum
 
 | Element ID | Default Rect | Description |
 |-----------|-------------|-------------|
-| `status_play` | 10,48,12,12 | Play status indicator |
-| `status_pause` | 10,48,12,12 | Pause status indicator |
-| `status_stop` | 10,48,12,12 | Stop status indicator |
-| `spectrum_area` | 24,44,60,20 | Mini spectrum analyzer |
+| `status_play` | 6,72,8,10 | Play status indicator |
+| `status_pause` | 6,72,8,10 | Pause status indicator |
+| `status_stop` | 6,72,8,10 | Stop status indicator |
+| `spectrum_area` | 6,39,84,18 | Mini spectrum analyzer |
 
 ## Seek Bar
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `seek_track` | 10,36,255,6 | normal | Seek bar track |
-| `seek_fill` | 10,36,*,6 | normal | Filled portion |
-| `seek_thumb` | *,34,10,10 | normal, pressed | Seek position thumb |
+| `seek_track` | 6,32,263,3 | normal | Seek bar track |
+| `seek_fill` | 6,32,*,3 | normal | Filled portion |
+| `seek_thumb` | *,30,6,6 | normal, pressed | Seek position thumb |
 
 **Color:** Set `seek_fill.color` in `elements` to control the fill and thumb color. Falls back to `palette.primary`.
 
@@ -69,12 +69,12 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `btn_prev` | 10,8,23,20 | normal, pressed, disabled | Previous track |
-| `btn_play` | 33,8,23,20 | normal, pressed, disabled | Play |
-| `btn_pause` | 56,8,23,20 | normal, pressed, disabled | Pause |
-| `btn_stop` | 79,8,23,20 | normal, pressed, disabled | Stop |
-| `btn_next` | 102,8,23,20 | normal, pressed, disabled | Next track |
-| `btn_eject` | 125,8,23,20 | normal, pressed | Open file |
+| `btn_prev` | 6,3,28,24 | normal, pressed, disabled | Previous track |
+| `btn_play` | 34,3,28,24 | normal, pressed, disabled | Play |
+| `btn_pause` | 62,3,28,24 | normal, pressed, disabled | Pause |
+| `btn_stop` | 90,3,28,24 | normal, pressed, disabled | Stop |
+| `btn_next` | 118,3,28,24 | normal, pressed, disabled | Next track |
+| `btn_eject` | 146,3,28,24 | normal, pressed | Open file |
 
 **Color:** Use `play_controls` in `elements` to set one color for all transport button icons. Per-button entries (e.g. `btn_play`) take precedence over `play_controls`. Both fall back to `palette.primary`.
 
@@ -85,14 +85,18 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 }
 ```
 
-## Toggle Buttons
+## Window Toggle Buttons
+
+These buttons appear between the seek bar and transport row, toggling window visibility.
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `btn_shuffle` | 154,8,40,20 | off, on, off_pressed, on_pressed | Shuffle toggle |
-| `btn_repeat` | 196,8,40,20 | off, on, off_pressed, on_pressed | Repeat toggle |
-| `btn_eq` | 154,8,23,12 | off, on, off_pressed, on_pressed | EQ window toggle |
-| `btn_playlist` | 178,8,23,12 | off, on, off_pressed, on_pressed | Playlist toggle |
+| `btn_2x` | 140,42,20,14 | off, on, off_pressed, on_pressed | Large UI (1.5x) toggle |
+| `btn_eq` | 152,42,20,14 | off, on, off_pressed, on_pressed | EQ window toggle |
+| `btn_playlist` | 174,42,20,14 | off, on, off_pressed, on_pressed | Playlist window toggle |
+| `btn_library` | 196,42,20,14 | off, on, off_pressed, on_pressed | Library browser toggle |
+| `btn_projectm` | 218,42,22,14 | off, on, off_pressed, on_pressed | ProjectM window toggle |
+| `btn_spectrum` | 242,42,22,14 | off, on, off_pressed, on_pressed | Spectrum window toggle |
 
 **Color:** Use `minicontrol_buttons` in `elements` to control the ON state color for all main window toggle buttons. Falls back to `palette.accent`.
 
@@ -106,9 +110,9 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `volume_track` | 240,8,28,6 | normal | Volume bar track |
-| `volume_fill` | 240,8,*,6 | normal | Filled portion |
-| `volume_thumb` | *,6,8,10 | normal, pressed | Volume thumb |
+| `volume_track` | 182,12,87,3 | normal | Volume bar track |
+| `volume_fill` | 182,12,*,3 | normal | Filled portion |
+| `volume_thumb` | *,10,6,6 | normal, pressed | Volume thumb |
 
 **Color:** Set `volume_fill.color` in `elements` to control the fill and thumb color independently from the seek bar. Falls back to `seek_fill.color`, then `palette.primary`.
 
@@ -125,16 +129,16 @@ Per-window chrome elements (fall back to shared elements if missing):
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `spectrum_titlebar` | 0,102,275,14 | normal | Spectrum window title bar |
-| `spectrum_btn_close` | 261,104,10,10 | normal, pressed | Spectrum close button |
+| `spectrum_titlebar` | 0,98,275,18 | normal | Spectrum window title bar |
+| `spectrum_btn_close` | 261,102,10,10 | normal, pressed | Spectrum close button |
 
 ## Playlist Window Chrome
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `playlist_titlebar` | 0,102,275,14 | normal | Playlist window title bar |
-| `playlist_btn_close` | 261,104,10,10 | normal, pressed | Playlist close button |
-| `playlist_btn_shade` | 249,104,10,10 | normal, pressed | Playlist shade button |
+| `playlist_titlebar` | 0,98,275,18 | normal | Playlist window title bar |
+| `playlist_btn_close` | 261,102,10,10 | normal, pressed | Playlist close button |
+| `playlist_btn_shade` | 249,102,10,10 | normal, pressed | Playlist shade button |
 
 The modern playlist has no bottom bar -- all operations via context menu and keyboard shortcuts. Currently playing track rendered in `accent` color.
 
@@ -162,18 +166,18 @@ The modern playlist has no bottom bar -- all operations via context menu and key
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `eq_titlebar` | 0,102,275,14 | normal | EQ window title bar |
-| `eq_btn_close` | 261,104,10,10 | normal, pressed | EQ close button |
-| `eq_btn_shade` | 249,104,10,10 | normal, pressed | EQ shade button |
+| `eq_titlebar` | 0,98,275,18 | normal | EQ window title bar |
+| `eq_btn_close` | 261,102,10,10 | normal, pressed | EQ close button |
+| `eq_btn_shade` | 249,102,10,10 | normal, pressed | EQ shade button |
 
-The modern EQ window renders a 10-band graphic equalizer with preamp, ON/OFF toggle, AUTO toggle, and PRESETS menu. Sliders use color-coded fill: green (-12dB) through yellow (0dB) to red (+12dB).
+The modern EQ window renders a 21-band graphic equalizer with an integrated `PRE` control, ON/OFF toggle, AUTO toggle, and compact preset buttons (`FLAT`, `ROCK`, `POP`, `ELEC`, `HIP`, `JAZZ`, `CLSC`). The old dedicated preamp slider lane is gone; the `PRE` control now lives in the graph strip. Sliders still use color-coded fill from green (-12dB) through yellow (0dB) to red (+12dB), and the graph background now uses slim per-band mini tracks so it visually matches the fader lanes.
 
 ## ProjectM Window Chrome
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `projectm_titlebar` | 0,102,275,14 | normal | ProjectM window title bar |
-| `projectm_btn_close` | 256,104,10,10 | normal, pressed | ProjectM close button |
+| `projectm_titlebar` | 0,98,275,18 | normal | ProjectM window title bar |
+| `projectm_btn_close` | 256,102,10,10 | normal, pressed | ProjectM close button |
 
 Embeds the same `VisualizationGLView` (OpenGL) used by classic version. Supports full multi-edge resizing and custom fullscreen.
 
@@ -181,11 +185,18 @@ Embeds the same `VisualizationGLView` (OpenGL) used by classic version. Supports
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `library_titlebar` | 0,102,275,14 | normal | Library browser title bar |
-| `library_btn_close` | 256,104,10,10 | normal, pressed | Library close button |
-| `library_btn_shade` | 244,104,10,10 | normal, pressed | Library shade button |
+| `library_titlebar` | 0,98,275,18 | normal | Library browser title bar |
+| `library_btn_close` | 256,102,10,10 | normal, pressed | Library close button |
+| `library_btn_shade` | 244,102,10,10 | normal, pressed | Library shade button |
 
 Provides multi-source browsing (Local/Plex/Subsonic/Radio) with multiple browse modes. Supports multi-edge resizing.
+
+## Waveform Window Chrome
+
+| Element ID | Default Rect | States | Description |
+|-----------|-------------|--------|-------------|
+| `waveform_titlebar` | 0,98,275,18 | normal | Waveform window title bar |
+| `waveform_btn_close` | 261,102,10,10 | normal, pressed | Waveform close button |
 
 ## Element Image Fallback Chain
 

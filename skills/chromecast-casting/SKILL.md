@@ -217,6 +217,8 @@ Video casting has two distinct code paths — both must be handled in control lo
 
 Controls must check both: `WindowManager.toggleVideoCastPlayPause()` handles routing.
 
+Supported video sources: Plex (`castPlexMovie`, `castPlexEpisode`), Jellyfin (`castJellyfinMovie`, `castJellyfinEpisode`), and Emby (`castEmbyMovie`, `castEmbyEpisode`). All live in `CastManager.swift`.
+
 ## Debugging
 
 The Chromecast implementation uses Google Cast Protocol v2:

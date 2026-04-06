@@ -14,7 +14,7 @@ When enabled via **Playback Options → Gapless Playback**, the engine pre-sched
 3. When the current track ends, playback continues seamlessly to the pre-scheduled track
 4. The next-next track is then pre-scheduled
 
-**Streaming (Plex/Subsonic/Jellyfin):**
+**Streaming (Plex/Subsonic/Jellyfin/Emby):**
 1. Uses the AudioStreaming library's `queue(url:)` method to pre-buffer the next streaming track
 2. The queued track plays immediately when the current track finishes
 3. Only works when both current and next tracks are streaming (can't cross pipelines)
@@ -27,7 +27,7 @@ When enabled via **Playback Options → Gapless Playback**, the engine pre-sched
 | Casting active | Gapless disabled - playback is remote |
 | Mixed sources (local→streaming) | Gapless disabled for that transition |
 | Repeat single track mode | Handled separately (gapless not needed) |
-| Shuffle mode | Random next track is pre-scheduled |
+| Shuffle mode | The next item from the active non-repeating shuffle cycle is pre-scheduled |
 
 ### Settings Persistence
 
@@ -85,6 +85,8 @@ Configurable via **Playback Options → Fade Duration** when Sweet Fades is enab
 | Repeat single track mode | Crossfade skipped (unusual UX) |
 | End of playlist | No crossfade, normal stop |
 | User skips/seeks during fade | Crossfade cancelled, normal playback resumes |
+
+When shuffle is enabled, both gapless and Sweet Fades use the same persisted shuffle cycle that natural EOF playback uses. They should not invent a separate random next-track decision.
 
 ### Cancel Conditions
 

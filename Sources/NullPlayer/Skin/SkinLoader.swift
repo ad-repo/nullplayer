@@ -500,8 +500,6 @@ class SkinLoader {
     }
     
     private func loadCursor(from url: URL) -> NSCursor? {
-        // For now, return nil - cursor loading is complex
-        // TODO: Implement .cur/.ani file parsing
         return nil
     }
 }

@@ -11143,7 +11143,7 @@ class PlexBrowserView: NSView {
         
         Task { @MainActor in
             NSLog("startTrackRadio: Creating radio playlist...")
-            let tracks = await PlexManager.shared.createTrackRadio(from: track, limit: 100)
+            let tracks = await PlexManager.shared.createTrackRadio(from: track, limit: RadioPlaybackOptions.playlistLength)
             
             NSLog("startTrackRadio: Got %d tracks from PlexManager", tracks.count)
             
@@ -11168,7 +11168,7 @@ class PlexBrowserView: NSView {
         NSLog("Starting Album Radio for: %@", album.title)
         
         Task { @MainActor in
-            let tracks = await PlexManager.shared.createAlbumRadio(from: album, limit: 100)
+            let tracks = await PlexManager.shared.createAlbumRadio(from: album, limit: RadioPlaybackOptions.playlistLength)
             
             if tracks.isEmpty {
                 NSLog("Album Radio: No similar tracks found for '%@'", album.title)
@@ -11189,7 +11189,7 @@ class PlexBrowserView: NSView {
         NSLog("Starting Artist Radio for: %@", artist.title)
         
         Task { @MainActor in
-            let tracks = await PlexManager.shared.createArtistRadio(from: artist, limit: 100)
+            let tracks = await PlexManager.shared.createArtistRadio(from: artist, limit: RadioPlaybackOptions.playlistLength)
             
             if tracks.isEmpty {
                 NSLog("Artist Radio: No similar tracks found for '%@'", artist.title)
@@ -14926,7 +14926,6 @@ class PlexBrowserView: NSView {
             case .search:
                 buildLocalSearchItems()
             case .plists:
-                // TODO: Build local playlist items
                 displayItems = []
             case .movies:
                 cachedLocalMovies = MediaLibrary.shared.moviesSnapshot
@@ -14945,7 +14944,7 @@ class PlexBrowserView: NSView {
             case .albums:
                 buildSubsonicAlbumItems()
             case .search:
-                displayItems = [] // TODO: Implement Subsonic search
+                displayItems = []
             case .plists:
                 buildSubsonicPlaylistItems()
             case .movies, .shows:
@@ -14961,7 +14960,7 @@ class PlexBrowserView: NSView {
             case .albums:
                 buildJellyfinAlbumItems()
             case .search:
-                displayItems = [] // TODO: Implement Jellyfin search
+                displayItems = []
             case .plists:
                 buildJellyfinPlaylistItems()
             case .movies:
@@ -14978,7 +14977,7 @@ class PlexBrowserView: NSView {
             case .albums:
                 buildEmbyAlbumItems()
             case .search:
-                displayItems = [] // TODO: Implement Emby search
+                displayItems = []
             case .plists:
                 buildEmbyPlaylistItems()
             case .movies:
@@ -15921,10 +15920,11 @@ class PlexBrowserView: NSView {
     /// Play a Plex Radio station (dynamic playlist from Plex library)
     private func playPlexRadioStation(_ radioType: PlexRadioType) {
         NSLog("playPlexRadioStation: %@", radioType.displayName)
-        
-        Task { @MainActor in
+        radioPlayTask?.cancel()
+        isLoading = true; startLoadingAnimation(); needsDisplay = true
+        radioPlayTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             var tracks: [Track] = []
-            
             switch radioType {
             case .libraryRadio:
                 tracks = await PlexManager.shared.createLibraryRadio()
@@ -15951,22 +15951,27 @@ class PlexBrowserView: NSView {
             case .ratingRadioSonic(let minRating, _):
                 tracks = await PlexManager.shared.createRatingRadioSonic(minRating: minRating)
             }
-            
-            if !tracks.isEmpty {
-                let audioEngine = WindowManager.shared.audioEngine
-                audioEngine.clearPlaylist()
-                audioEngine.loadTracks(tracks)
-                audioEngine.play()
-                NSLog("%@ started with %d tracks", radioType.displayName, tracks.count)
-            } else {
+            guard !Task.isCancelled else { return }
+            guard !tracks.isEmpty else {
                 NSLog("%@: No tracks found", radioType.displayName)
+                self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+                return
             }
+            let audioEngine = WindowManager.shared.audioEngine
+            audioEngine.clearPlaylist()
+            audioEngine.loadTracks(tracks)
+            audioEngine.play()
+            NSLog("%@ started with %d tracks", radioType.displayName, tracks.count)
+            self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+            self.radioPlayTask = nil
         }
     }
 
     private func playSubsonicRadioStation(_ radioType: SubsonicRadioType) {
         radioPlayTask?.cancel()
-        radioPlayTask = Task { @MainActor in
+        isLoading = true; startLoadingAnimation(); needsDisplay = true
+        radioPlayTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             var tracks: [Track] = []
             switch radioType {
             case .libraryRadio:
@@ -15986,18 +15991,25 @@ class PlexBrowserView: NSView {
             case .starredSimilar:
                 tracks = await SubsonicManager.shared.createRatingRadioSimilar()
             }
-            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            guard !Task.isCancelled else { return }
+            guard !tracks.isEmpty else {
+                self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+                return
+            }
             let audioEngine = WindowManager.shared.audioEngine
             audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
             audioEngine.play()
-            radioPlayTask = nil
+            self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+            self.radioPlayTask = nil
         }
     }
 
     private func playJellyfinRadioStation(_ radioType: JellyfinRadioType) {
         radioPlayTask?.cancel()
-        radioPlayTask = Task { @MainActor in
+        isLoading = true; startLoadingAnimation(); needsDisplay = true
+        radioPlayTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             var tracks: [Track] = []
             switch radioType {
             case .libraryRadio:
@@ -16017,18 +16029,25 @@ class PlexBrowserView: NSView {
             case .favoritesInstantMix:
                 tracks = await JellyfinManager.shared.createFavoritesRadioInstantMix()
             }
-            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            guard !Task.isCancelled else { return }
+            guard !tracks.isEmpty else {
+                self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+                return
+            }
             let audioEngine = WindowManager.shared.audioEngine
             audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
             audioEngine.play()
-            radioPlayTask = nil
+            self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+            self.radioPlayTask = nil
         }
     }
 
     private func playEmbyRadioStation(_ radioType: EmbyRadioType) {
         radioPlayTask?.cancel()
-        radioPlayTask = Task { @MainActor in
+        isLoading = true; startLoadingAnimation(); needsDisplay = true
+        radioPlayTask = Task { @MainActor [weak self] in
+            guard let self = self else { return }
             var tracks: [Track] = []
             switch radioType {
             case .libraryRadio:
@@ -16048,12 +16067,17 @@ class PlexBrowserView: NSView {
             case .favoritesInstantMix:
                 tracks = await EmbyManager.shared.createFavoritesRadioInstantMix()
             }
-            guard !Task.isCancelled, !tracks.isEmpty else { return }
+            guard !Task.isCancelled else { return }
+            guard !tracks.isEmpty else {
+                self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+                return
+            }
             let audioEngine = WindowManager.shared.audioEngine
             audioEngine.clearPlaylist()
             audioEngine.loadTracks(tracks)
             audioEngine.play()
-            radioPlayTask = nil
+            self.isLoading = false; self.stopLoadingAnimation(); self.needsDisplay = true
+            self.radioPlayTask = nil
         }
     }
 

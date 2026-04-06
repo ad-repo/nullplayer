@@ -24,30 +24,6 @@ struct FlexibleString: Decodable {
     }
 }
 
-/// A type that can decode either a String or a numeric value into a Double
-/// Used for Plex fields that inconsistently return strings vs numbers (like frameRate)
-struct FlexibleDouble: Codable, Equatable {
-    let value: Double?
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let doubleValue = try? container.decode(Double.self) {
-            value = doubleValue
-        } else if let intValue = try? container.decode(Int.self) {
-            value = Double(intValue)
-        } else if let stringValue = try? container.decode(String.self) {
-            value = Double(stringValue)
-        } else {
-            value = nil
-        }
-    }
-    
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(value)
-    }
-}
-
 // MARK: - Plex Account & Authentication
 
 /// Plex account info obtained via PIN authentication

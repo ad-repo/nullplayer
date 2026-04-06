@@ -71,7 +71,7 @@ MySkin/
         "infoSize": 6.5,
         "eqLabelSize": 7,
         "eqValueSize": 6,
-        "marqueeSize": 11.7,
+        "marqueeSize": 12.7,
         "playlistSize": 8
     },
     "background": {
@@ -143,20 +143,26 @@ MySkin/
 
 17 named colors used throughout the UI:
 
-| Key | Purpose |
-|-----|---------|
-| `primary` | Main accent (buttons, text, indicators) |
-| `secondary` | Secondary accent |
-| `accent` | Highlight accent (spectrum, volume gradient) |
-| `highlight` | Bright highlight |
-| `background` | Window fill |
-| `surface` | Panel/recessed areas |
-| `text` | Primary text |
-| `textDim` | Dimmed/inactive text |
-| `timeColor` | Time display digits |
-| `marqueeColor` | Scrolling title text |
-| `dataColor` | Track numbers, info fields |
-| `eqLow`, `eqMid`, `eqHigh` | EQ gradient colors |
+| Key | Required | Purpose |
+|-----|----------|---------|
+| `primary` | Yes | Main accent (buttons, text, indicators) |
+| `secondary` | Yes | Secondary accent |
+| `accent` | Yes | Highlight accent (spectrum, volume gradient) |
+| `highlight` | No | Bright highlight (falls back to `primary`) |
+| `background` | Yes | Window fill |
+| `surface` | Yes | Panel/recessed areas |
+| `text` | Yes | Primary text |
+| `textDim` | Yes | Dimmed/inactive text |
+| `positive` | No | Positive state indicator (default green) |
+| `negative` | No | Negative state indicator (default red) |
+| `warning` | No | Warning indicator (default amber) |
+| `border` | No | Window border (falls back to `primary`) |
+| `timeColor` | No | Time display digits (default `#d9d900`) |
+| `marqueeColor` | No | Scrolling title text (default `#d9d900`) |
+| `dataColor` | No | Track numbers, info fields (default `#d9d900`) |
+| `eqLow` | No | EQ color at -12dB (default `#00d900`) |
+| `eqMid` | No | EQ color at 0dB (default `#d9d900`) |
+| `eqHigh` | No | EQ color at +12dB (default `#d92600`) |
 
 ### Element-Level Color Overrides
 
@@ -223,19 +229,23 @@ All elements render programmatically using the palette colors.
 
 ## Bundled Skins
 
-### NeonWave (Default)
-- Cyan/magenta palette
-- Sprite-based title text (7x11 pixel art)
-- Procedural elements (no button images)
-- Glow effects and perspective grid
-- Seamless docking (`seamlessDocking: 1.0`)
+The following skins ship in `Sources/NullPlayer/Resources/Skins/`:
 
-### Skulls (Reference)
-- Cream/amber palette with skull decorations
-- Bold 7x11 pixel character sprites
-- Amber 7-segment time digits
-- Beveled transport buttons
-- Lo-fi receiver aesthetic
+| Skin | Notes |
+|------|-------|
+| **NeonWave** (default) | Cyan/magenta, sprite-based pixel-art title text, perspective grid, seamless docking |
+| **Skulls** | Cream/amber, skull decorations, amber 7-segment digits, lo-fi receiver aesthetic |
+| **ArcticMinimal** | Clean minimal arctic color scheme |
+| **BananaParty** | Bright banana/yellow theme |
+| **BloodGlass** | Dark glass with blood-red accents |
+| **Bubblegum Retro** | Pastel retro bubblegum palette |
+| **EmeraldForge** | Green/forge industrial look |
+| **ForgedTitanium** | Dark metallic titanium aesthetic |
+| **HyperPopPrism** | Hyper-saturated prismatic colors |
+| **IndustrialSignal** | Industrial signal/utility aesthetic |
+| **Sakura Minimal** | Soft pink sakura minimal theme |
+| **SeaGlass** | Teal sea-glass translucent look |
+| **SmoothGlass** | Smooth glass translucent aesthetic |
 
 ## Packaging for Distribution
 
@@ -265,10 +275,10 @@ The modern skin system renders multiple windows:
 
 - **Main Window** -- transport controls, time, marquee, mini spectrum
 - **Playlist Window** -- track list with selection, scrolling
-- **EQ Window** -- 10-band graphic equalizer with curve graph
+- **EQ Window** -- modern 21-band graphic equalizer with integrated `PRE` control and curve graph
 - **Spectrum Analyzer Window** -- standalone visualization
 - **ProjectM Window** -- MilkDrop visualization with presets
-- **Library Browser Window** -- multi-source browser with columns
+- **Library Browser Window** -- multi-source browser with columns and an embedded Play History tab
 
 All windows share palette colors, glow, grid, and font settings. Customize individual windows by prefixing element IDs (e.g., `spectrum_titlebar` vs `titlebar`).
 

@@ -31,6 +31,18 @@ GET /library/sections
 
 Returns all libraries. Music libraries have `type: "artist"`.
 
+### Music Library Rule For Radio
+
+Plex radio must target a music library section. `currentLibrary` can point at movies or shows because Plex browsing is cross-media, so radio code must not blindly reuse it.
+
+Actual app behavior:
+
+- Use `currentLibrary` only when `currentLibrary.isMusicLibrary == true`
+- Otherwise fall back to the first available music library from `availableLibraries`
+- If no music library exists, fail early and log that no music library is available
+
+If a track-style Plex radio query is sent to a non-music section, Plex can return `200 OK` with an empty metadata list, which looks like a radio failure even though the query shape is valid.
+
 ### Query Items by Type
 
 ```

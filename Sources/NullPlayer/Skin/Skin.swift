@@ -172,11 +172,4 @@ extension NSColor {
         self.init(red: r, green: g, blue: b, alpha: 1.0)
     }
     
-    var hexString: String {
-        guard let rgbColor = usingColorSpace(.sRGB) else { return "#000000" }
-        let r = Int(rgbColor.redComponent * 255)
-        let g = Int(rgbColor.greenComponent * 255)
-        let b = Int(rgbColor.blueComponent * 255)
-        return String(format: "#%02X%02X%02X", r, g, b)
-    }
 }

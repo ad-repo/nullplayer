@@ -194,7 +194,7 @@ All font sizes are **unscaled base values**. The engine multiplies by `window.sc
 | `infoSize` | Info labels (bitrate, samplerate, BPM) | 6.5 |
 | `eqLabelSize` | EQ frequency labels | 7 |
 | `eqValueSize` | EQ dB value text | 6 |
-| `marqueeSize` | Scrolling title text | 11.7 |
+| `marqueeSize` | Scrolling title text | 12.7 |
 | `playlistSize` | Playlist track list | 8 |
 
 ### Using the Bundled Font

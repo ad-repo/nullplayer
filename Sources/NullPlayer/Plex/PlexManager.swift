@@ -882,9 +882,8 @@ class PlexManager {
     ///   - track: The seed track
     ///   - limit: Maximum number of tracks to include
     /// - Returns: Array of tracks for the radio playlist, or empty if unavailable
-    func createTrackRadio(from track: PlexTrack, limit: Int = 100) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create track radio - no server or library connected")
+    func createTrackRadio(from track: PlexTrack, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
+        guard let (client, library) = radioLibraryContext(logPrefix: "create track radio") else {
             return []
         }
         
@@ -909,9 +908,8 @@ class PlexManager {
     ///   - artist: The seed artist
     ///   - limit: Maximum number of tracks to include
     /// - Returns: Array of tracks for the radio playlist, or empty if unavailable
-    func createArtistRadio(from artist: PlexArtist, limit: Int = 100) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create artist radio - no server or library connected")
+    func createArtistRadio(from artist: PlexArtist, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
+        guard let (client, library) = radioLibraryContext(logPrefix: "create artist radio") else {
             return []
         }
         
@@ -936,9 +934,8 @@ class PlexManager {
     ///   - album: The seed album
     ///   - limit: Maximum number of tracks to include
     /// - Returns: Array of tracks for the radio playlist, or empty if unavailable
-    func createAlbumRadio(from album: PlexAlbum, limit: Int = 100) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create album radio - no server or library connected")
+    func createAlbumRadio(from album: PlexAlbum, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
+        guard let (client, library) = radioLibraryContext(logPrefix: "create album radio") else {
             return []
         }
         
@@ -996,6 +993,25 @@ class PlexManager {
             return cachedGenres
         }
         return await fetchGenres()
+    }
+
+    private func radioLibraryContext(logPrefix: String) -> (PlexServerClient, PlexLibrary)? {
+        guard let client = serverClient else {
+            NSLog("PlexManager: Cannot %@ - no server connected", logPrefix)
+            return nil
+        }
+        if let library = currentLibrary, library.isMusicLibrary {
+            return (client, library)
+        }
+        if let currentLibrary {
+            NSLog("PlexManager: %@ requested with non-music library '%@' (type: %@)", logPrefix, currentLibrary.title, currentLibrary.type)
+        }
+        if let musicLibrary = availableLibraries.first(where: { $0.isMusicLibrary }) {
+            NSLog("PlexManager: Falling back to music library '%@' for %@", musicLibrary.title, logPrefix)
+            return (client, musicLibrary)
+        }
+        NSLog("PlexManager: Cannot %@ - no music library available", logPrefix)
+        return nil
     }
     
     // MARK: - Extended Radio Methods (Non-Sonic and Sonic Versions)
@@ -1085,7 +1101,7 @@ class PlexManager {
         }
         
         // Otherwise, pick a truly random track from the library
-        guard let client = serverClient, let library = currentLibrary else {
+        guard let (client, library) = radioLibraryContext(logPrefix: "resolve sonic seed") else {
             return nil
         }
         
@@ -1117,15 +1133,20 @@ class PlexManager {
     
     /// Library Radio - Non-Sonic (random tracks from library)
     func createLibraryRadio(limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create library radio - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create library radio") else {
             return []
         }
         
         do {
-            // Over-fetch to allow for artist deduplication
-            let fetchLimit = limit * RadioConfig.overFetchMultiplier
-            let plexTracks = try await client.createLibraryRadio(libraryID: library.id, limit: fetchLimit)
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioConfig.maxTracksPerArtist
+            )
+            var plexTracks = try await client.createLibraryRadio(libraryID: library.id, limit: fetchLimit)
+            if plexTracks.isEmpty && fetchLimit > 0 {
+                NSLog("PlexManager: Library radio random query returned 0 tracks, falling back to library track fetch")
+                plexTracks = try await client.fetchTracks(libraryID: library.id, offset: 0, limit: fetchLimit).shuffled()
+            }
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
             NSLog("PlexManager: Library radio created with %d tracks", tracks.count)
@@ -1138,8 +1159,7 @@ class PlexManager {
     
     /// Library Radio - Sonic (sonically similar to seed track)
     func createLibraryRadioSonic(limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create library radio (sonic) - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create library radio (sonic)") else {
             return []
         }
         
@@ -1166,13 +1186,15 @@ class PlexManager {
     
     /// Genre Radio - Non-Sonic
     func createGenreRadio(genre: String, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create genre radio - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create genre radio") else {
             return []
         }
         
         do {
-            let fetchLimit = limit * RadioConfig.overFetchMultiplier
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioConfig.maxTracksPerArtist
+            )
             let plexTracks = try await client.createGenreRadio(genre: genre, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
@@ -1186,8 +1208,7 @@ class PlexManager {
     
     /// Genre Radio - Sonic
     func createGenreRadioSonic(genre: String, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create genre radio (sonic) - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create genre radio (sonic)") else {
             return []
         }
         
@@ -1214,13 +1235,15 @@ class PlexManager {
     
     /// Decade Radio - Non-Sonic
     func createDecadeRadio(startYear: Int, endYear: Int, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create decade radio - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create decade radio") else {
             return []
         }
         
         do {
-            let fetchLimit = limit * RadioConfig.overFetchMultiplier
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioConfig.maxTracksPerArtist
+            )
             let plexTracks = try await client.createDecadeRadio(startYear: startYear, endYear: endYear, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
@@ -1234,8 +1257,7 @@ class PlexManager {
     
     /// Decade Radio - Sonic
     func createDecadeRadioSonic(startYear: Int, endYear: Int, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create decade radio (sonic) - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create decade radio (sonic)") else {
             return []
         }
         
@@ -1262,13 +1284,15 @@ class PlexManager {
     
     /// Only the Hits Radio - Non-Sonic
     func createHitsRadio(limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create hits radio - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create hits radio") else {
             return []
         }
         
         do {
-            let fetchLimit = limit * RadioConfig.overFetchMultiplier
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioConfig.maxTracksPerArtist
+            )
             let plexTracks = try await client.createHitsRadio(libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
@@ -1282,8 +1306,7 @@ class PlexManager {
     
     /// Only the Hits Radio - Sonic
     func createHitsRadioSonic(limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create hits radio (sonic) - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create hits radio (sonic)") else {
             return []
         }
         
@@ -1310,13 +1333,15 @@ class PlexManager {
     
     /// Deep Cuts Radio - Non-Sonic
     func createDeepCutsRadio(limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create deep cuts radio - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create deep cuts radio") else {
             return []
         }
         
         do {
-            let fetchLimit = limit * RadioConfig.overFetchMultiplier
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioConfig.maxTracksPerArtist
+            )
             let plexTracks = try await client.createDeepCutsRadio(libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
@@ -1330,8 +1355,7 @@ class PlexManager {
     
     /// Deep Cuts Radio - Sonic
     func createDeepCutsRadioSonic(limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create deep cuts radio (sonic) - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create deep cuts radio (sonic)") else {
             return []
         }
         
@@ -1362,13 +1386,15 @@ class PlexManager {
     ///   - minRating: Minimum user rating (0-10 scale, where 10 = 5 stars)
     ///   - limit: Maximum number of tracks to return
     func createRatingRadio(minRating: Double, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create rating radio - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create rating radio") else {
             return []
         }
         
         do {
-            let fetchLimit = limit * RadioConfig.overFetchMultiplier
+            let fetchLimit = RadioPlaybackOptions.candidateFetchLimit(
+                for: limit,
+                maxPerArtist: RadioConfig.maxTracksPerArtist
+            )
             let plexTracks = try await client.createRatingRadio(minRating: minRating, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
@@ -1386,8 +1412,7 @@ class PlexManager {
     ///   - minRating: Minimum user rating (0-10 scale, where 10 = 5 stars)
     ///   - limit: Maximum number of tracks to return
     func createRatingRadioSonic(minRating: Double, limit: Int = RadioConfig.defaultLimit) async -> [Track] {
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot create rating radio (sonic) - no server or library connected")
+        guard let (client, library) = radioLibraryContext(logPrefix: "create rating radio (sonic)") else {
             return []
         }
         
