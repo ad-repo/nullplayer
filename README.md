@@ -8,6 +8,12 @@
 
 ![MixCollage_player](https://github.com/user-attachments/assets/5d29303e-2910-4f1d-b5ac-b65b7f17a34f)
 ![MixCollage-12-Mar-2026-03-38-PM-191](https://github.com/user-attachments/assets/b26003a8-bb5d-45ca-9504-2a3e13079fe9)
+<img width="733" height="184" alt="Screenshot 2026-04-05 at 8 52 33 PM" src="https://github.com/user-attachments/assets/3f602a8d-b9bb-43d1-af75-89e4fcb06d08" />
+<img width="1389" height="660" alt="Screenshot 2026-04-05 at 8 54 54 PM" src="https://github.com/user-attachments/assets/4f2dc824-e90e-4f28-b151-02dc05727cdf" />
+<img width="1383" height="632" alt="Screenshot 2026-04-05 at 8 56 50 PM" src="https://github.com/user-attachments/assets/18ccac12-28b2-4a8c-9cea-b742d325c610" />
+<img width="1266" height="559" alt="Screenshot 2026-04-05 at 9 14 34 PM" src="https://github.com/user-attachments/assets/92104d80-c6d2-43f3-bad0-cf626c009919" />
+<img width="1646" height="844" alt="Screenshot 2026-04-05 at 9 21 27 PM" src="https://github.com/user-attachments/assets/8d08d61c-66fb-4ec3-8197-cd2df614444b" />
+
 
 ## Features
 
