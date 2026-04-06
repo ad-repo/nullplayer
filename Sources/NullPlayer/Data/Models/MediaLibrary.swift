@@ -422,9 +422,11 @@ struct WatchFolderSummary {
     let trackCount: Int
     let movieCount: Int
     let episodeCount: Int
+    /// Pre-computed at construction time to avoid filesystem I/O on the main thread during
+    /// table view rendering (FileManager.fileExists on NAS paths can block for seconds).
+    let isAvailable: Bool
 
     var totalCount: Int { trackCount + movieCount + episodeCount }
-    var isAvailable: Bool { FileManager.default.fileExists(atPath: url.path) }
 }
 
 struct FileScanSignature: Codable, Hashable {
@@ -556,7 +558,8 @@ class MediaLibrary {
             let movieCount   = moviePaths.reduce(0)   { $0 + (Self.isPath($1, insideFolderPath: folderPath) ? 1 : 0) }
             let episodeCount = episodePaths.reduce(0) { $0 + (Self.isPath($1, insideFolderPath: folderPath) ? 1 : 0) }
             return WatchFolderSummary(url: folder, trackCount: trackCount,
-                                     movieCount: movieCount, episodeCount: episodeCount)
+                                     movieCount: movieCount, episodeCount: episodeCount,
+                                     isAvailable: FileManager.default.fileExists(atPath: folder.path))
         }.sorted {
             $0.url.path.localizedCaseInsensitiveCompare($1.url.path) == .orderedAscending
         }

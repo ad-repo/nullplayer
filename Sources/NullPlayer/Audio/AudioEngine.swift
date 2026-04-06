@@ -166,6 +166,10 @@ class AudioEngine {
     /// NAS reads during playback, which causes dropouts on any network latency spike.
     private var tempPlaybackFileURL: URL?
 
+    /// Temp file for the gaplessly pre-scheduled next track (NAS copy).
+    /// Promoted to tempPlaybackFileURL on gapless transition; cleaned up otherwise.
+    private var tempGaplessFileURL: URL?
+
     /// Tracks whether the local playback clock was intentionally frozen for a sleep cycle.
     private var suspendedLocalPlaybackClockForSleep = false
 
@@ -3522,10 +3526,14 @@ class AudioEngine {
     }
 
     private func prepareForLocalTrackLoad() {
-        // Clean up any temp file from a previous NAS copy.
+        // Clean up temp files from previous NAS copies.
         if let tmp = tempPlaybackFileURL {
             try? FileManager.default.removeItem(at: tmp)
             tempPlaybackFileURL = nil
+        }
+        if let tmp = tempGaplessFileURL {
+            try? FileManager.default.removeItem(at: tmp)
+            tempGaplessFileURL = nil
         }
 
         // Stop any streaming playback.
@@ -3852,7 +3860,12 @@ class AudioEngine {
             // Clear the pre-scheduled track
             nextScheduledFile = nil
             nextScheduledTrackIndex = -1
-            
+
+            // Promote gapless temp file: delete old primary temp, adopt gapless temp as new primary
+            if let oldTemp = tempPlaybackFileURL { try? FileManager.default.removeItem(at: oldTemp) }
+            tempPlaybackFileURL = tempGaplessFileURL
+            tempGaplessFileURL = nil
+
             // Notify delegate of track change
             delegate?.audioEngineDidChangeTrack(currentTrack)
             
@@ -4070,18 +4083,51 @@ class AudioEngine {
                 guard let self else { return }
                 let openStart = CFAbsoluteTimeGetCurrent()
                 do {
-                    let nextFile = try AVAudioFile(forReading: nextTrackURL)
+                    // Apply the same NAS copy logic as the primary load path so that
+                    // gapless track boundaries are also free of render-thread NAS reads.
+                    var gaplessTempURL: URL? = nil
+                    let isLocalVolume = (try? nextTrackURL.resourceValues(
+                        forKeys: [.volumeIsLocalKey]
+                    ))?.volumeIsLocal ?? true
+
+                    if !isLocalVolume {
+                        let fileSize = (try? nextTrackURL.resourceValues(
+                            forKeys: [.fileSizeKey]
+                        ))?.fileSize ?? 0
+                        if fileSize <= 300 * 1024 * 1024 {
+                            let ext = nextTrackURL.pathExtension
+                            let candidate = URL(fileURLWithPath: NSTemporaryDirectory())
+                                .appendingPathComponent("nullplayer-\(UUID().uuidString).\(ext)")
+                            try FileManager.default.copyItem(at: nextTrackURL, to: candidate)
+                            NSLog("Gapless: Copied NAS '%@' to temp in %.3fs",
+                                  nextTrackTitle, CFAbsoluteTimeGetCurrent() - openStart)
+                            gaplessTempURL = candidate
+                        }
+                    }
+
+                    let playbackURL = gaplessTempURL ?? nextTrackURL
+                    let nextFile = try AVAudioFile(forReading: playbackURL)
                     let elapsed = CFAbsoluteTimeGetCurrent() - openStart
                     NSLog("Gapless: Opened next track '%@' in %.3fs", nextTrackTitle, elapsed)
                     DispatchQueue.main.async { [weak self] in
-                        guard let self else { return }
+                        guard let self else {
+                            if let tmp = gaplessTempURL { try? FileManager.default.removeItem(at: tmp) }
+                            return
+                        }
                         guard self.gaplessPreparationToken == token,
                               self.playbackGeneration == expectedPlaybackGeneration,
                               self.currentIndex == expectedCurrentIndex,
                               self.gaplessPlaybackEnabled,
                               !self.sweetFadeEnabled,
                               !self.isCastingActive,
-                              !self.isStreamingPlayback else { return }
+                              !self.isStreamingPlayback else {
+                            if let tmp = gaplessTempURL { try? FileManager.default.removeItem(at: tmp) }
+                            return
+                        }
+
+                        // Discard any previous pending gapless temp before storing the new one.
+                        if let prev = self.tempGaplessFileURL { try? FileManager.default.removeItem(at: prev) }
+                        self.tempGaplessFileURL = gaplessTempURL
 
                         let activePlayer = self.crossfadePlayerIsActive ? self.crossfadePlayerNode : self.playerNode
                         activePlayer.scheduleFile(nextFile, at: nil, completionHandler: nil)
