@@ -2564,14 +2564,34 @@ class AudioEngine {
 
         // Record to radio history (track actually finished playing via cast)
         if let finishedTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = finishedTrack] in
-                switch track.playHistorySource {
-                case .plex:      PlexRadioHistory.shared.recordTrackPlayed(track)
-                case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(track)
-                case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(track)
-                case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(track)
-                case .local, .radio:
-                    LocalRadioHistory.shared.recordTrackPlayed(track)
+            switch finishedTrack.playHistorySource {
+            case .plex:      PlexRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .local, .radio:
+                LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            }
+        }
+
+        // Play event (analytics) — inline to survive quit
+        if let finishedTrack = currentTrack {
+            let trackId = finishedTrack.playHistoryTrackIdentifier
+            let eventId = MediaLibraryStore.shared.insertPlayEvent(
+                trackId: trackId,
+                trackURL: finishedTrack.url.isFileURL ? finishedTrack.url.absoluteString : nil,
+                title: finishedTrack.title,
+                artist: finishedTrack.artist,
+                album: finishedTrack.album,
+                genre: finishedTrack.genre,
+                playedAt: Date(),
+                durationListened: finishedTrack.duration ?? 0,
+                source: finishedTrack.playHistorySource.rawValue,
+                skipped: false)
+            if let eventId, finishedTrack.genre == nil || finishedTrack.genre?.isEmpty == true {
+                Task.detached(priority: .utility) { [track = finishedTrack] in
+                    await GenreDiscoveryService.shared.enrichPlayEvent(
+                        id: eventId, title: track.title, artist: track.artist, album: track.album)
                 }
             }
         }
@@ -3812,36 +3832,32 @@ class AudioEngine {
 
         // Record to radio history (track actually finished playing)
         if let finishedTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = finishedTrack] in
-                switch track.playHistorySource {
-                case .plex:      PlexRadioHistory.shared.recordTrackPlayed(track)
-                case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(track)
-                case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(track)
-                case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(track)
-                case .local, .radio:
-                    LocalRadioHistory.shared.recordTrackPlayed(track)
-                }
+            switch finishedTrack.playHistorySource {
+            case .plex:      PlexRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .local, .radio:
+                LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
             }
         }
 
         // Record play event to analytics
         if let finishedTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = finishedTrack] in
-                let trackId: String?
-                trackId = track.playHistoryTrackIdentifier
-
-                if let eventId = MediaLibraryStore.shared.insertPlayEvent(
-                    trackId: trackId,
-                    trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
-                    title: track.title,
-                    artist: track.artist,
-                    album: track.album,
-                    genre: track.genre,
-                    playedAt: Date(),
-                    durationListened: track.duration ?? 0,
-                    source: track.playHistorySource.rawValue,
-                    skipped: false),
-                   track.genre == nil || track.genre?.isEmpty == true {
+            let trackId = finishedTrack.playHistoryTrackIdentifier
+            let eventId = MediaLibraryStore.shared.insertPlayEvent(
+                trackId: trackId,
+                trackURL: finishedTrack.url.isFileURL ? finishedTrack.url.absoluteString : nil,
+                title: finishedTrack.title,
+                artist: finishedTrack.artist,
+                album: finishedTrack.album,
+                genre: finishedTrack.genre,
+                playedAt: Date(),
+                durationListened: finishedTrack.duration ?? 0,
+                source: finishedTrack.playHistorySource.rawValue,
+                skipped: false)
+            if let eventId, finishedTrack.genre == nil || finishedTrack.genre?.isEmpty == true {
+                Task.detached(priority: .utility) { [track = finishedTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
                         id: eventId, title: track.title, artist: track.artist, album: track.album)
                 }
@@ -4379,36 +4395,32 @@ class AudioEngine {
         
         // Record outgoing track to radio history (track finished via crossfade)
         if let outgoingTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = outgoingTrack] in
-                switch track.playHistorySource {
-                case .plex:      PlexRadioHistory.shared.recordTrackPlayed(track)
-                case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(track)
-                case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(track)
-                case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(track)
-                case .local, .radio:
-                    LocalRadioHistory.shared.recordTrackPlayed(track)
-                }
+            switch outgoingTrack.playHistorySource {
+            case .plex:      PlexRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .local, .radio:
+                LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             }
         }
 
         // Record play event to analytics (track finished via crossfade)
         if let outgoingTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = outgoingTrack] in
-                let trackId: String?
-                trackId = track.playHistoryTrackIdentifier
-
-                if let eventId = MediaLibraryStore.shared.insertPlayEvent(
-                    trackId: trackId,
-                    trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
-                    title: track.title,
-                    artist: track.artist,
-                    album: track.album,
-                    genre: track.genre,
-                    playedAt: Date(),
-                    durationListened: track.duration ?? 0,
-                    source: track.playHistorySource.rawValue,
-                    skipped: false),
-                   track.genre == nil || track.genre?.isEmpty == true {
+            let trackId = outgoingTrack.playHistoryTrackIdentifier
+            let eventId = MediaLibraryStore.shared.insertPlayEvent(
+                trackId: trackId,
+                trackURL: outgoingTrack.url.isFileURL ? outgoingTrack.url.absoluteString : nil,
+                title: outgoingTrack.title,
+                artist: outgoingTrack.artist,
+                album: outgoingTrack.album,
+                genre: outgoingTrack.genre,
+                playedAt: Date(),
+                durationListened: outgoingTrack.duration ?? 0,
+                source: outgoingTrack.playHistorySource.rawValue,
+                skipped: false)
+            if let eventId, outgoingTrack.genre == nil || outgoingTrack.genre?.isEmpty == true {
+                Task.detached(priority: .utility) { [track = outgoingTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
                         id: eventId, title: track.title, artist: track.artist, album: track.album)
                 }
@@ -4494,36 +4506,32 @@ class AudioEngine {
         
         // Record outgoing track to radio history (track finished via streaming crossfade)
         if let outgoingTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = outgoingTrack] in
-                switch track.playHistorySource {
-                case .plex:      PlexRadioHistory.shared.recordTrackPlayed(track)
-                case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(track)
-                case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(track)
-                case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(track)
-                case .local, .radio:
-                    LocalRadioHistory.shared.recordTrackPlayed(track)
-                }
+            switch outgoingTrack.playHistorySource {
+            case .plex:      PlexRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .local, .radio:
+                LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             }
         }
 
         // Record play event to analytics (track finished via streaming crossfade)
         if let outgoingTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = outgoingTrack] in
-                let trackId: String?
-                trackId = track.playHistoryTrackIdentifier
-
-                if let eventId = MediaLibraryStore.shared.insertPlayEvent(
-                    trackId: trackId,
-                    trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
-                    title: track.title,
-                    artist: track.artist,
-                    album: track.album,
-                    genre: track.genre,
-                    playedAt: Date(),
-                    durationListened: track.duration ?? 0,
-                    source: track.playHistorySource.rawValue,
-                    skipped: false),
-                   track.genre == nil || track.genre?.isEmpty == true {
+            let trackId = outgoingTrack.playHistoryTrackIdentifier
+            let eventId = MediaLibraryStore.shared.insertPlayEvent(
+                trackId: trackId,
+                trackURL: outgoingTrack.url.isFileURL ? outgoingTrack.url.absoluteString : nil,
+                title: outgoingTrack.title,
+                artist: outgoingTrack.artist,
+                album: outgoingTrack.album,
+                genre: outgoingTrack.genre,
+                playedAt: Date(),
+                durationListened: outgoingTrack.duration ?? 0,
+                source: outgoingTrack.playHistorySource.rawValue,
+                skipped: false)
+            if let eventId, outgoingTrack.genre == nil || outgoingTrack.genre?.isEmpty == true {
+                Task.detached(priority: .utility) { [track = outgoingTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
                         id: eventId, title: track.title, artist: track.artist, album: track.album)
                 }

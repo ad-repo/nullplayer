@@ -154,6 +154,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Save window positions (always saved, used by snapToDefault)
         windowManager.saveWindowPositions()
+
+        // Flush WAL to disk before exit so history survives hard shutdown / reboot
+        MediaLibraryStore.shared.checkpoint()
+        MediaLibraryStore.shared.close()
     }
     
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
