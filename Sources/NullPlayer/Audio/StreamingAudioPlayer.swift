@@ -269,7 +269,7 @@ class StreamingAudioPlayer {
     
     /// Play audio from a URL (local or remote)
     func play(url: URL) {
-        NSLog("StreamingAudioPlayer: Playing URL: %@", url.absoluteString)
+        NSLog("StreamingAudioPlayer: Playing URL: %@", url.redacted)
         hasReportedFormat = false  // Reset for new track
         _hasQueuedTrack = false     // Clear any previous queue state
         bpmDetector.reset()         // Reset BPM for new track
@@ -320,7 +320,7 @@ class StreamingAudioPlayer {
     /// Queue a URL for gapless playback after current track
     /// Uses AudioStreaming's built-in queue API
     func queue(url: URL) {
-        NSLog("StreamingAudioPlayer: Queueing URL for gapless: %@", url.absoluteString)
+        NSLog("StreamingAudioPlayer: Queueing URL for gapless: %@", url.redacted)
         player.queue(url: url)
         _hasQueuedTrack = true
     }
@@ -340,7 +340,7 @@ class StreamingAudioPlayer {
     
     /// Attempt to recover from error state by reloading the current URL
     func attemptRecovery(with url: URL) {
-        NSLog("StreamingAudioPlayer: Attempting recovery with URL: %@", url.absoluteString)
+        NSLog("StreamingAudioPlayer: Attempting recovery with URL: %@", url.redacted)
         stop()
         play(url: url)
     }

@@ -3673,7 +3673,7 @@ class AudioEngine {
     
     private func loadStreamingTrack(_ track: Track) {
         NSLog("loadStreamingTrack: %@ - %@", track.artist ?? "Unknown", track.title)
-        NSLog("  URL: %@", track.url.absoluteString)
+        NSLog("  URL: %@", track.url.redacted)
         
         // Stop local playback and REMOVE spectrum tap (streaming player has its own)
         playerNode.stop()

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.1
+
+### Security
+
+- **Redact auth tokens from logs** — Subsonic credentials (`u`, `t`, `s`) and Plex tokens (`X-Plex-Token`) are now stripped from all NSLog output. A shared `URL.redacted` extension covers streaming playback, gapless queue, cast, and recovery log sites.
+
 ## 0.19.0
 
 ### Play History (modern UI)

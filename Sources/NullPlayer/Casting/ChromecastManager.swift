@@ -358,7 +358,7 @@ class ChromecastManager: CastSessionControllerDelegate {
             throw CastError.sessionNotActive
         }
         
-        NSLog("ChromecastManager: Casting %@ to %@", url.absoluteString, session.device.name)
+        NSLog("ChromecastManager: Casting %@ to %@", url.redacted, session.device.name)
         
         // Launch the Default Media Receiver app
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
