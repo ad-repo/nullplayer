@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.19.1
+
+### Bug Fixes
+
+- **Audio distortion after long idle fixed** — removed the `AUDynamicsProcessor` limiter from the audio chain. The node caused intermittent heavy distortion after macOS put the audio hardware into a power-saving state: `AVAudioEngineConfigurationChange` would fire, reconnect the node, and reset it to Apple's aggressive defaults (threshold −20 dB, 2:1 expansion) with no way to recover without restarting the app. Signal chain is now `playerNode → mixerNode → eqNode → output`.
+- **Play/radio history no longer lost on quit** — history writes and play-event inserts now complete synchronously before the process exits. Cast track completions also now record play events (previously missing). The MediaLibrary WAL is checkpointed and closed on `applicationWillTerminate` to flush any pending writes before shutdown.
+
+### Security
+
+- **Redact auth tokens from logs** — Subsonic credentials (`u`, `t`, `s`) and Plex tokens (`X-Plex-Token`) are now stripped from all NSLog output. A shared `URL.redacted` extension covers streaming playback, gapless queue, cast, and recovery log sites.
+
 ## 0.19.0
 
 ### Play History (modern UI)

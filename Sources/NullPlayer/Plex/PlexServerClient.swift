@@ -1155,16 +1155,7 @@ class PlexServerClient {
     // MARK: - Extended Radio API (Non-Sonic and Sonic Versions)
 
     private func redactedURL(_ url: URL?) -> String {
-        guard let url,
-              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return url?.absoluteString ?? "unknown"
-        }
-        components.queryItems = components.queryItems?.map {
-            $0.name == "X-Plex-Token"
-                ? URLQueryItem(name: $0.name, value: "<redacted>")
-                : $0
-        }
-        return components.url?.absoluteString ?? url.absoluteString
+        url?.redacted ?? "unknown"
     }
 
     func makeLibraryRadioRequest(libraryID: String, limit: Int) -> URLRequest? {

@@ -342,7 +342,7 @@ class CastSessionController {
             return
         }
         
-        NSLog("CastSessionController: Loading media: %@", url.absoluteString)
+        NSLog("CastSessionController: Loading media: %@", url.redacted)
         
         let rid = nextRequestId()
         var media: [String: Any] = [

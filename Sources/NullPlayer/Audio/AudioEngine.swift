@@ -121,19 +121,6 @@ class AudioEngine {
     /// Equalizer
     private let eqNode: AVAudioUnitEQ
     
-    /// Limiter for anti-clipping protection when EQ boosts are applied
-    /// Uses Apple's built-in AUDynamicsProcessor Audio Unit
-    private let limiterNode: AVAudioUnitEffect = {
-        let componentDescription = AudioComponentDescription(
-            componentType: kAudioUnitType_Effect,
-            componentSubType: kAudioUnitSubType_DynamicsProcessor,
-            componentManufacturer: kAudioUnitManufacturer_Apple,
-            componentFlags: 0,
-            componentFlagsMask: 0
-        )
-        return AVAudioUnitEffect(audioComponentDescription: componentDescription)
-    }()
-    
     /// Mixer node to combine player nodes (class property for graph rebuilding)
     private let mixerNode = AVAudioMixerNode()
     
@@ -965,27 +952,22 @@ class AudioEngine {
         engine.attach(playerNode)
         engine.attach(crossfadePlayerNode)  // For Sweet Fades crossfade
         engine.attach(eqNode)
-        engine.attach(limiterNode)
         engine.attach(mixerNode)  // Class property for graph rebuilding
         
         // Get the standard format from the mixer
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
         
         // Signal flow: playerNode ─┐
-        //                          ├─► mixerNode ─► eqNode ─► limiter ─► output
+        //                          ├─► mixerNode ─► eqNode ─► output
         //  crossfadePlayerNode ────┘
         
         // Connect both players to the mixer
         engine.connect(playerNode, to: mixerNode, format: mixerFormat)
         engine.connect(crossfadePlayerNode, to: mixerNode, format: mixerFormat)
         
-        // Connect mixer to EQ to limiter to output
+        // Connect mixer to EQ to output
         engine.connect(mixerNode, to: eqNode, format: mixerFormat)
-        engine.connect(eqNode, to: limiterNode, format: mixerFormat)
-        engine.connect(limiterNode, to: engine.mainMixerNode, format: mixerFormat)
-        
-        // Configure limiter for transparent anti-clipping
-        configureLimiter()
+        engine.connect(eqNode, to: engine.mainMixerNode, format: mixerFormat)
         
         // Player nodes stay at unity gain (1.0) - volume applied at mainMixerNode
         // This ensures the spectrum tap captures volume-independent audio
@@ -1003,40 +985,6 @@ class AudioEngine {
         
         // Prepare engine
         engine.prepare()
-    }
-    
-    /// Configure the limiter Audio Unit for transparent anti-clipping protection
-    private func configureLimiter() {
-        let audioUnit = limiterNode.audioUnit
-        
-        // AUDynamicsProcessor parameters (from AudioUnitParameters.h):
-        // kDynamicsProcessorParam_Threshold = 0 (dB, -40 to 20)
-        // kDynamicsProcessorParam_HeadRoom = 1 (dB, 0.1 to 40)
-        // kDynamicsProcessorParam_ExpansionRatio = 2 (1 to 50)
-        // kDynamicsProcessorParam_AttackTime = 4 (seconds, 0.0001 to 0.2)
-        // kDynamicsProcessorParam_ReleaseTime = 5 (seconds, 0.01 to 3)
-        // kDynamicsProcessorParam_MasterGain = 6 (dB, -40 to 40)
-        // kDynamicsProcessorParam_CompressionAmount = 1000 (read-only, dB)
-        
-        // Set threshold close to 0 dB to catch peaks before clipping
-        AudioUnitSetParameter(audioUnit, 0, kAudioUnitScope_Global, 0, -1.0, 0)
-        
-        // Set headroom (how much above threshold before limiting kicks in hard)
-        AudioUnitSetParameter(audioUnit, 1, kAudioUnitScope_Global, 0, 1.0, 0)
-        
-        // Expansion ratio = 1 (no expansion, only compression/limiting)
-        AudioUnitSetParameter(audioUnit, 2, kAudioUnitScope_Global, 0, 1.0, 0)
-        
-        // Fast attack time (1ms) for transparent limiting
-        AudioUnitSetParameter(audioUnit, 4, kAudioUnitScope_Global, 0, 0.001, 0)
-        
-        // Medium release time (50ms)
-        AudioUnitSetParameter(audioUnit, 5, kAudioUnitScope_Global, 0, 0.05, 0)
-        
-        // No makeup gain
-        AudioUnitSetParameter(audioUnit, 6, kAudioUnitScope_Global, 0, 0.0, 0)
-        
-        NSLog("AudioEngine: Limiter configured for anti-clipping protection")
     }
     
     /// Load audio quality preferences from UserDefaults
@@ -1076,9 +1024,8 @@ class AudioEngine {
         engine.connect(playerNode, to: mixerNode, format: mixerFormat)
         engine.connect(crossfadePlayerNode, to: mixerNode, format: mixerFormat)
         engine.connect(mixerNode, to: eqNode, format: mixerFormat)
-        engine.connect(eqNode, to: limiterNode, format: mixerFormat)
-        engine.connect(limiterNode, to: engine.mainMixerNode, format: mixerFormat)
-        
+        engine.connect(eqNode, to: engine.mainMixerNode, format: mixerFormat)
+
         // Re-schedule current audio if we were playing local files
         if wasPlaying && !isStreamingPlayback, let file = audioFile {
             do {
@@ -2564,14 +2511,34 @@ class AudioEngine {
 
         // Record to radio history (track actually finished playing via cast)
         if let finishedTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = finishedTrack] in
-                switch track.playHistorySource {
-                case .plex:      PlexRadioHistory.shared.recordTrackPlayed(track)
-                case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(track)
-                case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(track)
-                case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(track)
-                case .local, .radio:
-                    LocalRadioHistory.shared.recordTrackPlayed(track)
+            switch finishedTrack.playHistorySource {
+            case .plex:      PlexRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .local, .radio:
+                LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            }
+        }
+
+        // Play event (analytics) — inline to survive quit
+        if let finishedTrack = currentTrack {
+            let trackId = finishedTrack.playHistoryTrackIdentifier
+            let eventId = MediaLibraryStore.shared.insertPlayEvent(
+                trackId: trackId,
+                trackURL: finishedTrack.url.isFileURL ? finishedTrack.url.absoluteString : nil,
+                title: finishedTrack.title,
+                artist: finishedTrack.artist,
+                album: finishedTrack.album,
+                genre: finishedTrack.genre,
+                playedAt: Date(),
+                durationListened: finishedTrack.duration ?? 0,
+                source: finishedTrack.playHistorySource.rawValue,
+                skipped: false)
+            if let eventId, finishedTrack.genre == nil || finishedTrack.genre?.isEmpty == true {
+                Task.detached(priority: .utility) { [track = finishedTrack] in
+                    await GenreDiscoveryService.shared.enrichPlayEvent(
+                        id: eventId, title: track.title, artist: track.artist, album: track.album)
                 }
             }
         }
@@ -3673,7 +3640,7 @@ class AudioEngine {
     
     private func loadStreamingTrack(_ track: Track) {
         NSLog("loadStreamingTrack: %@ - %@", track.artist ?? "Unknown", track.title)
-        NSLog("  URL: %@", track.url.absoluteString)
+        NSLog("  URL: %@", track.url.redacted)
         
         // Stop local playback and REMOVE spectrum tap (streaming player has its own)
         playerNode.stop()
@@ -3812,36 +3779,32 @@ class AudioEngine {
 
         // Record to radio history (track actually finished playing)
         if let finishedTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = finishedTrack] in
-                switch track.playHistorySource {
-                case .plex:      PlexRadioHistory.shared.recordTrackPlayed(track)
-                case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(track)
-                case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(track)
-                case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(track)
-                case .local, .radio:
-                    LocalRadioHistory.shared.recordTrackPlayed(track)
-                }
+            switch finishedTrack.playHistorySource {
+            case .plex:      PlexRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(finishedTrack)
+            case .local, .radio:
+                LocalRadioHistory.shared.recordTrackPlayed(finishedTrack)
             }
         }
 
         // Record play event to analytics
         if let finishedTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = finishedTrack] in
-                let trackId: String?
-                trackId = track.playHistoryTrackIdentifier
-
-                if let eventId = MediaLibraryStore.shared.insertPlayEvent(
-                    trackId: trackId,
-                    trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
-                    title: track.title,
-                    artist: track.artist,
-                    album: track.album,
-                    genre: track.genre,
-                    playedAt: Date(),
-                    durationListened: track.duration ?? 0,
-                    source: track.playHistorySource.rawValue,
-                    skipped: false),
-                   track.genre == nil || track.genre?.isEmpty == true {
+            let trackId = finishedTrack.playHistoryTrackIdentifier
+            let eventId = MediaLibraryStore.shared.insertPlayEvent(
+                trackId: trackId,
+                trackURL: finishedTrack.url.isFileURL ? finishedTrack.url.absoluteString : nil,
+                title: finishedTrack.title,
+                artist: finishedTrack.artist,
+                album: finishedTrack.album,
+                genre: finishedTrack.genre,
+                playedAt: Date(),
+                durationListened: finishedTrack.duration ?? 0,
+                source: finishedTrack.playHistorySource.rawValue,
+                skipped: false)
+            if let eventId, finishedTrack.genre == nil || finishedTrack.genre?.isEmpty == true {
+                Task.detached(priority: .utility) { [track = finishedTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
                         id: eventId, title: track.title, artist: track.artist, album: track.album)
                 }
@@ -4379,36 +4342,32 @@ class AudioEngine {
         
         // Record outgoing track to radio history (track finished via crossfade)
         if let outgoingTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = outgoingTrack] in
-                switch track.playHistorySource {
-                case .plex:      PlexRadioHistory.shared.recordTrackPlayed(track)
-                case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(track)
-                case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(track)
-                case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(track)
-                case .local, .radio:
-                    LocalRadioHistory.shared.recordTrackPlayed(track)
-                }
+            switch outgoingTrack.playHistorySource {
+            case .plex:      PlexRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .local, .radio:
+                LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             }
         }
 
         // Record play event to analytics (track finished via crossfade)
         if let outgoingTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = outgoingTrack] in
-                let trackId: String?
-                trackId = track.playHistoryTrackIdentifier
-
-                if let eventId = MediaLibraryStore.shared.insertPlayEvent(
-                    trackId: trackId,
-                    trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
-                    title: track.title,
-                    artist: track.artist,
-                    album: track.album,
-                    genre: track.genre,
-                    playedAt: Date(),
-                    durationListened: track.duration ?? 0,
-                    source: track.playHistorySource.rawValue,
-                    skipped: false),
-                   track.genre == nil || track.genre?.isEmpty == true {
+            let trackId = outgoingTrack.playHistoryTrackIdentifier
+            let eventId = MediaLibraryStore.shared.insertPlayEvent(
+                trackId: trackId,
+                trackURL: outgoingTrack.url.isFileURL ? outgoingTrack.url.absoluteString : nil,
+                title: outgoingTrack.title,
+                artist: outgoingTrack.artist,
+                album: outgoingTrack.album,
+                genre: outgoingTrack.genre,
+                playedAt: Date(),
+                durationListened: outgoingTrack.duration ?? 0,
+                source: outgoingTrack.playHistorySource.rawValue,
+                skipped: false)
+            if let eventId, outgoingTrack.genre == nil || outgoingTrack.genre?.isEmpty == true {
+                Task.detached(priority: .utility) { [track = outgoingTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
                         id: eventId, title: track.title, artist: track.artist, album: track.album)
                 }
@@ -4494,36 +4453,32 @@ class AudioEngine {
         
         // Record outgoing track to radio history (track finished via streaming crossfade)
         if let outgoingTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = outgoingTrack] in
-                switch track.playHistorySource {
-                case .plex:      PlexRadioHistory.shared.recordTrackPlayed(track)
-                case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(track)
-                case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(track)
-                case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(track)
-                case .local, .radio:
-                    LocalRadioHistory.shared.recordTrackPlayed(track)
-                }
+            switch outgoingTrack.playHistorySource {
+            case .plex:      PlexRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .subsonic:  SubsonicRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .jellyfin:  JellyfinRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .emby:      EmbyRadioHistory.shared.recordTrackPlayed(outgoingTrack)
+            case .local, .radio:
+                LocalRadioHistory.shared.recordTrackPlayed(outgoingTrack)
             }
         }
 
         // Record play event to analytics (track finished via streaming crossfade)
         if let outgoingTrack = currentTrack {
-            Task.detached(priority: .utility) { [track = outgoingTrack] in
-                let trackId: String?
-                trackId = track.playHistoryTrackIdentifier
-
-                if let eventId = MediaLibraryStore.shared.insertPlayEvent(
-                    trackId: trackId,
-                    trackURL: track.url.isFileURL ? track.url.absoluteString : nil,
-                    title: track.title,
-                    artist: track.artist,
-                    album: track.album,
-                    genre: track.genre,
-                    playedAt: Date(),
-                    durationListened: track.duration ?? 0,
-                    source: track.playHistorySource.rawValue,
-                    skipped: false),
-                   track.genre == nil || track.genre?.isEmpty == true {
+            let trackId = outgoingTrack.playHistoryTrackIdentifier
+            let eventId = MediaLibraryStore.shared.insertPlayEvent(
+                trackId: trackId,
+                trackURL: outgoingTrack.url.isFileURL ? outgoingTrack.url.absoluteString : nil,
+                title: outgoingTrack.title,
+                artist: outgoingTrack.artist,
+                album: outgoingTrack.album,
+                genre: outgoingTrack.genre,
+                playedAt: Date(),
+                durationListened: outgoingTrack.duration ?? 0,
+                source: outgoingTrack.playHistorySource.rawValue,
+                skipped: false)
+            if let eventId, outgoingTrack.genre == nil || outgoingTrack.genre?.isEmpty == true {
+                Task.detached(priority: .utility) { [track = outgoingTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
                         id: eventId, title: track.title, artist: track.artist, album: track.album)
                 }

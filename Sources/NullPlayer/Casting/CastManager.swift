@@ -142,7 +142,7 @@ class CastManager {
         if let pollResult = await upnpManager.pollSonosPlaybackState() {
             savedPosition = pollResult.position
         }
-        NSLog("CastManager: Saved state - URL: %@, position: %.1f", savedURL.absoluteString, savedPosition)
+        NSLog("CastManager: Saved state - URL: %@, position: %.1f", savedURL.redacted, savedPosition)
         
         // 2. Stop polling and topology refresh to prevent interference during swap
         stopSonosPolling()
@@ -709,7 +709,7 @@ class CastManager {
     
     /// Cast a specific track to a device
     func castTrack(_ track: Track, to device: CastDevice, startPosition: TimeInterval = 0) async throws {
-        NSLog("CastManager: castTrack called for '%@' - track.url: %@", track.title, track.url.absoluteString)
+        NSLog("CastManager: castTrack called for '%@' - track.url: %@", track.title, track.url.redacted)
         NSLog("CastManager: track.subsonicId=%@, track.jellyfinId=%@, track.embyId=%@, track.plexRatingKey=%@",
               track.subsonicId ?? "nil", track.jellyfinId ?? "nil", track.embyId ?? "nil", track.plexRatingKey ?? "nil")
 
@@ -728,7 +728,7 @@ class CastManager {
                 let result = try await prepareProxyURL(for: track, device: device)
                 castURL = result.url
                 effectiveContentType = result.contentType
-                NSLog("CastManager: Using proxy for Subsonic/Jellyfin/Emby->Sonos: %@", castURL.absoluteString)
+                NSLog("CastManager: Using proxy for Subsonic/Jellyfin/Emby->Sonos: %@", castURL.redacted)
             } else {
                 // For Plex/remote URLs, ensure token is included
                 if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: track.url) {
@@ -791,7 +791,7 @@ class CastManager {
             contentType: contentType
         )
         
-        NSLog("CastManager: castTrack URL: %@, contentType: %@", finalCastURL.absoluteString, contentType)
+        NSLog("CastManager: castTrack URL: %@, contentType: %@", finalCastURL.redacted, contentType)
         
         try await cast(to: device, url: finalCastURL, metadata: metadata, startPosition: startPosition)
     }
@@ -884,7 +884,7 @@ class CastManager {
                     let result = try await prepareProxyURL(for: track, device: session.device)
                     castURL = result.url
                     effectiveContentType = result.contentType
-                    NSLog("CastManager: castNewTrack using proxy for Subsonic/Jellyfin/Emby->Sonos: %@", castURL.absoluteString)
+                    NSLog("CastManager: castNewTrack using proxy for Subsonic/Jellyfin/Emby->Sonos: %@", castURL.redacted)
                 } catch {
                     await clearLoadingState()
                     throw error
@@ -1891,11 +1891,7 @@ class CastManager {
     
     /// Redact sensitive tokens from URL for safe logging
     private func redactedURL(_ url: URL) -> String {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return "<invalid URL>"
-        }
-        components.queryItems?.removeAll { $0.name == "X-Plex-Token" }
-        return components.url?.absoluteString ?? "<redacted>"
+        url.redacted
     }
     
     /// Replace localhost/127.0.0.1 with the Mac's actual network IP for casting
