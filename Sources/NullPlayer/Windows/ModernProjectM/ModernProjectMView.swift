@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 // =============================================================================
 // MODERN PROJECTM VIEW - Visualization window with modern skin chrome

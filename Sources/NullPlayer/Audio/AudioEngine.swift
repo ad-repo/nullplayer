@@ -6,57 +6,42 @@ import AudioToolbox
 import AudioStreaming
 import NullPlayerCore
 
-// MARK: - Notifications
+private extension Track {
+    var coreTrack: NullPlayerCore.Track {
+        let coreMediaType: NullPlayerCore.MediaType
+        switch mediaType {
+        case .audio:
+            coreMediaType = .audio
+        case .video:
+            coreMediaType = .video
+        }
 
-extension Notification.Name {
-    /// Posted when new PCM audio data is available for visualization
-    /// userInfo contains: "pcm" ([Float]), "sampleRate" (Double)
-    static let audioPCMDataUpdated = Notification.Name("audioPCMDataUpdated")
-
-    /// Posted when new spectrum data is available for visualization
-    /// userInfo contains: "spectrum" ([Float]) - 75 bands normalized 0-1
-    static let audioSpectrumDataUpdated = Notification.Name("audioSpectrumDataUpdated")
-
-    /// Posted when playback state changes (playing, paused, stopped)
-    /// userInfo contains: "state" (PlaybackState)
-    static let audioPlaybackStateChanged = Notification.Name("audioPlaybackStateChanged")
-
-    /// Posted when playback option state changes (repeat, shuffle, gapless, normalization, crossfade)
-    static let audioPlaybackOptionsChanged = Notification.Name("audioPlaybackOptionsChanged")
-    
-    /// Posted when the current track changes
-    /// userInfo contains: "track" (Track?) - may be nil when playback stops
-    static let audioTrackDidChange = Notification.Name("audioTrackDidChange")
-    
-    /// Posted when a track fails to load
-    /// userInfo contains: "track" (Track), "error" (Error), "message" (String)
-    static let audioTrackDidFailToLoad = Notification.Name("audioTrackDidFailToLoad")
-    
-    /// Posted when BPM detection updates
-    /// userInfo contains: "bpm" (Int) - 0 means no confident reading
-    static let bpmUpdated = Notification.Name("bpmUpdated")
-    
-}
-
-/// Audio playback state
-enum PlaybackState {
-    case stopped
-    case playing
-    case paused
-}
-
-/// Delegate protocol for audio engine events
-protocol AudioEngineDelegate: AnyObject {
-    func audioEngineDidChangeState(_ state: PlaybackState)
-    func audioEngineDidUpdateTime(current: TimeInterval, duration: TimeInterval)
-    func audioEngineDidChangeTrack(_ track: Track?)
-    func audioEngineDidUpdateSpectrum(_ levels: [Float])
-    func audioEngineDidChangePlaylist()
-    func audioEngineDidFailToLoadTrack(_ track: Track, error: Error)
+        return NullPlayerCore.Track(
+            id: id,
+            url: url,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            bitrate: bitrate,
+            sampleRate: sampleRate,
+            channels: channels,
+            plexRatingKey: plexRatingKey,
+            subsonicId: subsonicId,
+            subsonicServerId: subsonicServerId,
+            jellyfinId: jellyfinId,
+            jellyfinServerId: jellyfinServerId,
+            artworkThumb: artworkThumb,
+            mediaType: coreMediaType,
+            contentType: contentType
+        )
+    }
 }
 
 /// Core audio engine using AVAudioEngine for playback and DSP
-class AudioEngine {
+class AudioEngine: AudioPlaybackProviding {
+
+    typealias PlaybackTrack = Track
 
     static var isHeadless = false
 
@@ -183,7 +168,7 @@ class AudioEngine {
     /// Current track
     private(set) var currentTrack: Track? {
         didSet {
-            delegate?.audioEngineDidChangeTrack(currentTrack)
+            delegate?.audioEngineDidChangeTrack(currentTrack?.coreTrack)
             // Reset BPM detector for new track
             bpmDetector.reset()
             // Post notification for views that need to observe track changes
@@ -2236,7 +2221,7 @@ class AudioEngine {
         }
         
         // Notify delegate of track change
-        delegate?.audioEngineDidChangeTrack(currentTrack)
+        delegate?.audioEngineDidChangeTrack(currentTrack?.coreTrack)
         delegate?.audioEngineDidUpdateTime(current: position, duration: duration)
     }
     
@@ -2263,7 +2248,7 @@ class AudioEngine {
         }
         
         // Notify delegate of track change (but not time - wait for Chromecast status)
-        delegate?.audioEngineDidChangeTrack(currentTrack)
+        delegate?.audioEngineDidChangeTrack(currentTrack?.coreTrack)
     }
     
     /// Pause cast playback time tracking
@@ -3017,7 +3002,7 @@ class AudioEngine {
         state = .stopped
         _currentTime = 0
         lastReportedTime = 0
-        delegate?.audioEngineDidChangeTrack(currentTrack)
+        delegate?.audioEngineDidChangeTrack(currentTrack?.coreTrack)
     }
 
     /// Replace a track at a specific index without affecting playback.
@@ -3628,7 +3613,7 @@ class AudioEngine {
     /// Notify delegate and post notification when a track fails to load
     private func notifyTrackLoadFailure(track: Track, error: Error, message: String) {
         DispatchQueue.main.async { [weak self] in
-            self?.delegate?.audioEngineDidFailToLoadTrack(track, error: error)
+            self?.delegate?.audioEngineDidFailToLoadTrack(track.coreTrack, error: error)
             
             NotificationCenter.default.post(
                 name: .audioTrackDidFailToLoad,
@@ -3831,7 +3816,7 @@ class AudioEngine {
             tempGaplessFileURL = nil
 
             // Notify delegate of track change
-            delegate?.audioEngineDidChangeTrack(currentTrack)
+            delegate?.audioEngineDidChangeTrack(currentTrack?.coreTrack)
             
             // Report new track to Plex
             PlexPlaybackReporter.shared.trackDidStart(currentTrack!, at: 0)
@@ -3887,7 +3872,7 @@ class AudioEngine {
             streamingPlayer?.clearQueue()  // Reset queue state (track already playing)
             
             // Notify delegate of track change
-            delegate?.audioEngineDidChangeTrack(currentTrack)
+            delegate?.audioEngineDidChangeTrack(currentTrack?.coreTrack)
             
             // Report new track to Plex
             PlexPlaybackReporter.shared.trackDidStart(currentTrack!, at: 0)
@@ -4389,7 +4374,7 @@ class AudioEngine {
         crossfadeTargetIndex = -1
         
         // Notify delegate
-        delegate?.audioEngineDidChangeTrack(currentTrack)
+        delegate?.audioEngineDidChangeTrack(currentTrack?.coreTrack)
         
         // Report to Plex/Subsonic
         if let track = currentTrack {
@@ -4499,7 +4484,7 @@ class AudioEngine {
         crossfadeTargetIndex = -1
 
         // Notify delegate
-        delegate?.audioEngineDidChangeTrack(currentTrack)
+        delegate?.audioEngineDidChangeTrack(currentTrack?.coreTrack)
 
         // Report to Plex/Subsonic
         if let track = currentTrack {
@@ -5014,15 +4999,7 @@ class AudioEngine {
     
     // MARK: - Playlist Sorting
     
-    /// Sort criteria for playlist
-    enum SortCriteria {
-        case title
-        case filename
-        case path
-        case duration
-        case artist
-        case album
-    }
+    typealias SortCriteria = PlaylistSortCriteria
     
     /// Sort the playlist by the specified criteria
     func sortPlaylist(by criteria: SortCriteria, ascending: Bool = true) {
@@ -5300,7 +5277,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             }
             
             // Notify delegate of track update (for UI refresh)
-            delegate?.audioEngineDidChangeTrack(updatedTrack)
+            delegate?.audioEngineDidChangeTrack(updatedTrack.coreTrack)
         }
     }
     

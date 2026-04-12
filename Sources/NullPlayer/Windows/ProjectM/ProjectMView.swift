@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 // =============================================================================
 // PROJECTM VIEW - Visualization window with skin sprite support

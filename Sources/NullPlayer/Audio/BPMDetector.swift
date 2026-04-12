@@ -1,5 +1,6 @@
 import Foundation
 import CAubio
+import NullPlayerCore
 
 /// Real-time BPM detector powered by aubio's tempo detection.
 ///

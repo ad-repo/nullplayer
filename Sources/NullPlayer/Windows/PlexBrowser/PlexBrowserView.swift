@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import NullPlayerCore
 
 /// Source for browsing content
 enum BrowserSource: Equatable, Codable {

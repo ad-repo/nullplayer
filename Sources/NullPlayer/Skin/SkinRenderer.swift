@@ -1,5 +1,6 @@
 import AppKit
 import CoreImage
+import NullPlayerCore
 
 // =============================================================================
 // SKIN RENDERER - Drawing code for all skin elements

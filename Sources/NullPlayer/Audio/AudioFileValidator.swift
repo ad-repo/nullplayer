@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import NullPlayerCore
 
 /// Validates audio files before adding to playlist or library
 enum AudioFileValidator {

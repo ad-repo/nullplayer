@@ -1,4 +1,9 @@
-import AppKit
+import Foundation
+
+#if !canImport(AppKit)
+public typealias NSRect = CGRect
+public typealias NSSize = CGSize
+#endif
 
 // =============================================================================
 // SKIN ELEMENTS - Sprite coordinates and layout constants

@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 /// Main application delegate for NullPlayer
 /// Manages application lifecycle and window coordination
@@ -475,9 +476,10 @@ extension AppDelegate: AudioEngineDelegate {
         windowManager.updateWaveformTime(current: current, duration: duration)
     }
     
-    func audioEngineDidChangeTrack(_ track: Track?) {
-        windowManager.mainWindowController?.updateTrackInfo(track)
-        windowManager.updateWaveformTrack(track)
+    func audioEngineDidChangeTrack(_ _: NullPlayerCore.Track?) {
+        let currentTrack = windowManager.audioEngine.currentTrack
+        windowManager.mainWindowController?.updateTrackInfo(currentTrack)
+        windowManager.updateWaveformTrack(currentTrack)
     }
     
     func audioEngineDidUpdateSpectrum(_ levels: [Float]) {
@@ -488,7 +490,7 @@ extension AppDelegate: AudioEngineDelegate {
         windowManager.playlistWindowController?.reloadPlaylist()
     }
     
-    func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {
+    func audioEngineDidFailToLoadTrack(_ track: NullPlayerCore.Track, error: Error) {
         // Log the failure - UI notification is handled via NotificationCenter
         NSLog("AppDelegate: Failed to load track '%@': %@", track.title, error.localizedDescription)
     }

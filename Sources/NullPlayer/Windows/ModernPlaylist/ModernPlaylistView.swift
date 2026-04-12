@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import NullPlayerCore
 
 // =============================================================================
 // MODERN PLAYLIST VIEW - Playlist editor with modern skin chrome

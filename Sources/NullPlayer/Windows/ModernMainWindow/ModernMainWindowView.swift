@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import NullPlayerCore
 
 /// The main window view for the modern skin system.
 /// Renders all UI elements using `ModernSkinRenderer`, handles mouse interaction,

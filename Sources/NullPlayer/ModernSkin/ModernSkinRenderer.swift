@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 /// Edges of a window that are adjacent (docked) to another window.
 /// Used by `drawWindowBorder` to suppress borders on shared edges.

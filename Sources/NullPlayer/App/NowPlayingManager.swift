@@ -1,10 +1,11 @@
 import AppKit
 import MediaPlayer
 import AVFoundation
+import NullPlayerCore
 
 /// Manages macOS Now Playing integration for Discord Music Presence and system media controls
 /// Reports track metadata to MPNowPlayingInfoCenter and handles remote commands
-class NowPlayingManager {
+class NowPlayingManager: MediaSessionProviding {
     
     // MARK: - Singleton
     
@@ -56,7 +57,7 @@ class NowPlayingManager {
     
     @objc private func handleTrackDidChange(_ notification: Notification) {
         let track = notification.userInfo?["track"] as? Track
-        updateNowPlayingInfo(for: track)
+        updateNowPlaying(track: track)
     }
     
     @objc private func handlePlaybackStateChanged(_ notification: Notification) {
@@ -64,11 +65,15 @@ class NowPlayingManager {
         updatePlaybackState(state)
         
         // Also update elapsed time when state changes
-        updateElapsedTime()
+        updateElapsedTime(WindowManager.shared.audioEngine.currentTime)
     }
     
     // MARK: - Now Playing Info Updates
-    
+
+    func updateNowPlaying(track: Track?) {
+        updateNowPlayingInfo(for: track)
+    }
+
     private func updateNowPlayingInfo(for track: Track?) {
         guard let track = track else {
             clearNowPlayingInfo()
@@ -123,7 +128,7 @@ class NowPlayingManager {
         NSLog("NowPlayingManager: Updated now playing - %@ by %@", track.title, track.artist ?? "Unknown")
     }
     
-    private func updatePlaybackState(_ state: PlaybackState) {
+    func updatePlaybackState(_ state: PlaybackState) {
         // CRITICAL: On macOS, must explicitly set playbackState
         // This is required for Control Center integration
         switch state {
@@ -142,12 +147,15 @@ class NowPlayingManager {
         }
     }
     
-    private func updateElapsedTime() {
+    func updateElapsedTime(_ elapsedTime: TimeInterval) {
         guard var nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
-        
-        let currentTime = WindowManager.shared.audioEngine.currentTime
-        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = NSNumber(value: currentTime)
+
+        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = NSNumber(value: elapsedTime)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+    }
+
+    private func updateElapsedTime() {
+        updateElapsedTime(WindowManager.shared.audioEngine.currentTime)
     }
     
     private func clearNowPlayingInfo() {

@@ -1,10 +1,11 @@
 import Foundation
 import Security
+import NullPlayerCore
 
 /// Helper for secure storage of sensitive data
 /// Uses UserDefaults for development (to avoid keychain prompts with unsigned builds)
 /// In production, set useKeychain = true for proper security
-class KeychainHelper {
+class KeychainHelper: CredentialStoring {
     
     // MARK: - Singleton
     
@@ -247,17 +248,17 @@ class KeychainHelper {
 
     // MARK: - Generic Keychain Operations
     
-    private func setString(_ value: String, forKey key: String) -> Bool {
+    func setString(_ value: String, forKey key: String) -> Bool {
         guard let data = value.data(using: .utf8) else { return false }
         return setData(data, forKey: key)
     }
     
-    private func getString(forKey key: String) -> String? {
+    func getString(forKey key: String) -> String? {
         guard let data = getData(forKey: key) else { return nil }
         return String(data: data, encoding: .utf8)
     }
     
-    private func setData(_ data: Data, forKey key: String) -> Bool {
+    func setData(_ data: Data, forKey key: String) -> Bool {
         if useKeychain {
             return setDataKeychain(data, forKey: key)
         } else {
@@ -265,7 +266,7 @@ class KeychainHelper {
         }
     }
     
-    private func getData(forKey key: String) -> Data? {
+    func getData(forKey key: String) -> Data? {
         if useKeychain {
             if let existing = getDataKeychain(forKey: key) { return existing }
             // Migrate from UserDefaults (credentials saved before keychain was used)
@@ -280,7 +281,7 @@ class KeychainHelper {
         }
     }
     
-    private func delete(forKey key: String) {
+    func delete(forKey key: String) {
         if useKeychain {
             deleteKeychain(forKey: key)
         } else {

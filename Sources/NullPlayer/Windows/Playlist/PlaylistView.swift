@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 // =============================================================================
 // PLAYLIST VIEW - Playlist editor window with skin sprite support

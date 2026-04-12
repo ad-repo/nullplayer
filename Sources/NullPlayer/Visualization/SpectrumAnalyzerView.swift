@@ -2,6 +2,7 @@ import Accelerate
 import AppKit
 import MetalKit
 import os.lock
+import NullPlayerCore
 
 extension Notification.Name {
     /// Posted when a 576-sample stereo waveform frame is available for vis_classic exact mode.

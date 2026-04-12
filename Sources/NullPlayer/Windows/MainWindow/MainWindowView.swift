@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 /// Visualization mode for the main window's built-in visualization area
 enum MainWindowVisMode: String, CaseIterable {

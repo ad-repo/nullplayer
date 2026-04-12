@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 // =============================================================================
 // MODERN SPECTRUM VIEW - Standalone spectrum analyzer with modern skin chrome

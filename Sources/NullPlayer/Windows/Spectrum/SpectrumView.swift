@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 // =============================================================================
 // SPECTRUM VIEW - Standalone spectrum analyzer window with skin chrome

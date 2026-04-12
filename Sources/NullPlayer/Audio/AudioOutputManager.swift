@@ -2,36 +2,10 @@ import Foundation
 import CoreAudio
 import AudioToolbox
 import Network
-
-/// Represents an audio output device
-struct AudioOutputDevice: Equatable, Hashable {
-    let id: AudioDeviceID
-    let uid: String
-    let name: String
-    /// True for AirPlay, Bluetooth, and other wireless devices
-    let isWireless: Bool
-    /// True if this is a discovered AirPlay device (not yet a Core Audio device)
-    let isAirPlayDiscovered: Bool
-    
-    init(id: AudioDeviceID, uid: String, name: String, isWireless: Bool, isAirPlayDiscovered: Bool = false) {
-        self.id = id
-        self.uid = uid
-        self.name = name
-        self.isWireless = isWireless
-        self.isAirPlayDiscovered = isAirPlayDiscovered
-    }
-    
-    static func == (lhs: AudioOutputDevice, rhs: AudioOutputDevice) -> Bool {
-        return lhs.uid == rhs.uid
-    }
-    
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(uid)
-    }
-}
+import NullPlayerCore
 
 /// Manages audio output device discovery and selection using Core Audio
-class AudioOutputManager {
+class AudioOutputManager: AudioOutputProviding {
     
     // MARK: - Singleton
     
@@ -48,6 +22,13 @@ class AudioOutputManager {
     
     /// Currently selected device ID (nil means system default)
     private(set) var currentDeviceID: AudioDeviceID?
+
+    var currentDeviceUID: String? {
+        if let currentDeviceID {
+            return outputDevices.first(where: { $0.id == currentDeviceID })?.uid
+        }
+        return UserDefaults.standard.string(forKey: savedDeviceUIDKey)
+    }
     
     /// UserDefaults key for persisted device UID
     private let savedDeviceUIDKey = "selectedAudioOutputDeviceUID"
@@ -508,6 +489,14 @@ class AudioOutputManager {
         } else {
             UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
         }
+    }
+
+    func selectDevice(uid: String) -> Bool {
+        guard let device = outputDevices.first(where: { $0.uid == uid }) else {
+            return false
+        }
+        selectDevice(device.id)
+        return true
     }
     
     /// Get device by UID

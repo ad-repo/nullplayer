@@ -1,4 +1,5 @@
 import Foundation
+import NullPlayerCore
 
 class CLIPlayer: AudioEngineDelegate {
     let audioEngine: AudioEngine
@@ -287,7 +288,8 @@ class CLIPlayer: AudioEngineDelegate {
                               repeat: repeatMode)
     }
 
-    func audioEngineDidChangeTrack(_ track: Track?) {
+    func audioEngineDidChangeTrack(_ _: NullPlayerCore.Track?) {
+        let track = audioEngine.currentTrack
         display.printTrackInfo(track)
         if options.art, let track {
             showArtworkIfChanged(for: track)
@@ -338,7 +340,7 @@ class CLIPlayer: AudioEngineDelegate {
         // Optional: could print updated playlist info
     }
 
-    func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {
-        fputs("Error loading '\(track.title ?? "Unknown")': \(error.localizedDescription)\n", stderr)
+    func audioEngineDidFailToLoadTrack(_ track: NullPlayerCore.Track, error: Error) {
+        fputs("Error loading '\(track.title)': \(error.localizedDescription)\n", stderr)
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 class CLIDisplay {
 
