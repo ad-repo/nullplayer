@@ -7,6 +7,8 @@ public struct AppState: Codable, Sendable {
     public var isEqualizerVisible: Bool
     public var isPlexBrowserVisible: Bool
     public var isProjectMVisible: Bool
+    public var isSpectrumVisible: Bool
+    public var isWaveformVisible: Bool
     
     // Window frames (as strings for NSRect compatibility)
     public var mainWindowFrame: String?
@@ -14,6 +16,8 @@ public struct AppState: Codable, Sendable {
     public var equalizerWindowFrame: String?
     public var plexBrowserWindowFrame: String?
     public var projectMWindowFrame: String?
+    public var spectrumWindowFrame: String?
+    public var waveformWindowFrame: String?
     
     // Audio settings
     public var volume: Float
@@ -53,8 +57,8 @@ public struct AppState: Codable, Sendable {
     // MARK: - Custom Decoding for Backward Compatibility
     
     enum CodingKeys: String, CodingKey {
-        case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible
-        case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame
+        case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isWaveformVisible
+        case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, waveformWindowFrame
         case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
         case sweetFadeEnabled, sweetFadeDuration
         case eqEnabled, eqPreamp, eqBands
@@ -72,6 +76,8 @@ public struct AppState: Codable, Sendable {
         isEqualizerVisible = try container.decode(Bool.self, forKey: .isEqualizerVisible)
         isPlexBrowserVisible = try container.decode(Bool.self, forKey: .isPlexBrowserVisible)
         isProjectMVisible = try container.decode(Bool.self, forKey: .isProjectMVisible)
+        isSpectrumVisible = try container.decodeIfPresent(Bool.self, forKey: .isSpectrumVisible) ?? false
+        isWaveformVisible = try container.decodeIfPresent(Bool.self, forKey: .isWaveformVisible) ?? false
         
         // Window frames
         mainWindowFrame = try container.decodeIfPresent(String.self, forKey: .mainWindowFrame)
@@ -79,6 +85,8 @@ public struct AppState: Codable, Sendable {
         equalizerWindowFrame = try container.decodeIfPresent(String.self, forKey: .equalizerWindowFrame)
         plexBrowserWindowFrame = try container.decodeIfPresent(String.self, forKey: .plexBrowserWindowFrame)
         projectMWindowFrame = try container.decodeIfPresent(String.self, forKey: .projectMWindowFrame)
+        spectrumWindowFrame = try container.decodeIfPresent(String.self, forKey: .spectrumWindowFrame)
+        waveformWindowFrame = try container.decodeIfPresent(String.self, forKey: .waveformWindowFrame)
         
         // Audio settings
         volume = try container.decode(Float.self, forKey: .volume)
@@ -121,11 +129,15 @@ public struct AppState: Codable, Sendable {
         isEqualizerVisible: Bool,
         isPlexBrowserVisible: Bool,
         isProjectMVisible: Bool,
+        isSpectrumVisible: Bool = false,
+        isWaveformVisible: Bool = false,
         mainWindowFrame: String?,
         playlistWindowFrame: String?,
         equalizerWindowFrame: String?,
         plexBrowserWindowFrame: String?,
         projectMWindowFrame: String?,
+        spectrumWindowFrame: String? = nil,
+        waveformWindowFrame: String? = nil,
         volume: Float,
         balance: Float,
         shuffleEnabled: Bool,
@@ -151,11 +163,15 @@ public struct AppState: Codable, Sendable {
         self.isEqualizerVisible = isEqualizerVisible
         self.isPlexBrowserVisible = isPlexBrowserVisible
         self.isProjectMVisible = isProjectMVisible
+        self.isSpectrumVisible = isSpectrumVisible
+        self.isWaveformVisible = isWaveformVisible
         self.mainWindowFrame = mainWindowFrame
         self.playlistWindowFrame = playlistWindowFrame
         self.equalizerWindowFrame = equalizerWindowFrame
         self.plexBrowserWindowFrame = plexBrowserWindowFrame
         self.projectMWindowFrame = projectMWindowFrame
+        self.spectrumWindowFrame = spectrumWindowFrame
+        self.waveformWindowFrame = waveformWindowFrame
         self.volume = volume
         self.balance = balance
         self.shuffleEnabled = shuffleEnabled

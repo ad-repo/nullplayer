@@ -10,7 +10,8 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "NullPlayer", targets: ["NullPlayer"])
+        .executable(name: "NullPlayer", targets: ["NullPlayer"]),
+        .executable(name: "NullPlayerLinuxUI", targets: ["NullPlayerLinuxUI"])
     ],
     dependencies: [
         // ZIP extraction for .wsz skin files
@@ -96,6 +97,10 @@ let package = Package(
             name: "CGStreamer",
             path: "Sources/CGStreamer"
         ),
+        .systemLibrary(
+            name: "CGTK4",
+            path: "Sources/CGTK4"
+        ),
         .target(
             name: "NullPlayerPlayback",
             dependencies: [
@@ -114,6 +119,15 @@ let package = Package(
                 "NullPlayerPlayback",
             ],
             path: "Sources/NullPlayerCLI"
+        ),
+        .executableTarget(
+            name: "NullPlayerLinuxUI",
+            dependencies: [
+                "NullPlayerCore",
+                "NullPlayerPlayback",
+                .target(name: "CGTK4", condition: .when(platforms: [.linux])),
+            ],
+            path: "Sources/NullPlayerLinuxUI"
         ),
         .testTarget(
             name: "NullPlayerCoreTests",

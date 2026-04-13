@@ -1,5 +1,6 @@
 import Foundation
 import SQLite
+import NullPlayerCore
 
 struct PlayEventGenreStub: Sendable {
     let id: Int64
