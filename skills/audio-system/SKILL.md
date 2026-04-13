@@ -5,18 +5,34 @@ description: Audio engine architecture, local/streaming pipelines, EQ, spectrum 
 
 # Audio System Architecture
 
-This guide describes NullPlayer's audio playback system, including local file playback, streaming audio, equalization, spectrum analysis, and waveform generation.
+This guide describes NullPlayer's audio playback system, including Darwin local/streaming playback, Linux GStreamer playback, equalization, spectrum analysis, and waveform generation.
 
 ## Overview
 
-NullPlayer uses two parallel audio pipelines to handle different content types:
+NullPlayer now has a shared playback seam (`NullPlayerPlayback`) with backend-specific implementations:
 
-| Content Type | Pipeline | EQ Support | Spectrum | Waveform |
-|-------------|----------|------------|----------|----------|
-| Local files (.mp3, .flac, etc.) | AVAudioEngine | Yes | Yes | Cached 4096-bucket snapshot |
-| HTTP streaming (Plex/Subsonic/Jellyfin/Emby/radio) | AudioStreaming library | Yes | Yes | Live stream accumulator from 576-sample PCM chunks |
+| Platform/Surface | Pipeline | EQ Support | Spectrum | Waveform |
+|------------------|----------|------------|----------|----------|
+| Darwin local files (.mp3, .flac, etc.) | AVAudioEngine | Yes | Yes | Cached 4096-bucket snapshot |
+| Darwin HTTP streams (Plex/Subsonic/Jellyfin/Emby/radio) | AudioStreaming library | Yes | Yes | Live stream accumulator from 576-sample PCM chunks |
+| Linux local files + HTTP streams | GStreamer (`playbin3` + custom sink bin) | Yes (10-band) | Yes (via `appsink` + `PortableAudioAnalysis`) | 512-sample `pcmData` snapshot (facade) |
 
-Both pipelines support the active EQ layout for the current UI mode and real-time spectrum visualization. Classic mode uses the legacy 10-band layout; modern mode uses a 21-band layout. EQ settings are automatically synchronized between them. The waveform window reuses the same playback sources: local files use cached snapshots, while streams start with live accumulation and may promote to a cached seekable snapshot when prerendering is available.
+For cross-platform work, treat `AudioEngineFacade` as the owner of playlist/token/state semantics, and treat each backend (`AudioEngine` on Darwin, `LinuxGStreamerAudioBackend` on Linux) as media I/O only.
+
+## Cross-Platform Seam (NullPlayerPlayback)
+
+Core files:
+- `Sources/NullPlayerPlayback/Audio/AudioBackend.swift`
+- `Sources/NullPlayerPlayback/Audio/AudioBackendEvent.swift`
+- `Sources/NullPlayerPlayback/Audio/AudioEngineFacade.swift`
+- `Sources/NullPlayerPlayback/Audio/PortableAudioAnalysis.swift`
+
+Invariants:
+- Backends emit `AudioBackendEvent`; they do not mutate playlist state directly.
+- Facade token-gates all backend events (`loadToken`) to drop stale EOS/time/state callbacks.
+- Canonical initial load callback order is `track -> time -> state` (covered by `AudioEngineFacadeTests`).
+- Output routing is always via `AudioOutputRouting` and `AudioOutputDevice.persistentID`.
+- Persisted output key is `selectedOutputDevicePersistentID`.
 
 ## Architecture Diagram
 
@@ -128,6 +144,20 @@ Wrapper around [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) li
 - State change callbacks
 
 **Why separate EQ?** AVAudioNode instances can only be attached to one AVAudioEngine. Since AudioStreaming uses its own internal engine, we maintain a separate EQ node that stays synchronized with the main engine's EQ.
+
+### LinuxGStreamerAudioBackend (`NullPlayerPlayback/Audio/Linux/LinuxGStreamerAudioBackend.swift`)
+
+Linux backend highlights:
+- Uses `playbin3` with custom `audio-sink` bin from `GStreamerPipelineBuilder`.
+- Audio graph: `audioconvert ! audioresample ! equalizer-nbands ! tee`.
+- Sink branch: `queue ! volume ! autoaudiosink` (MVP).
+- Analysis branch: `queue leaky=downstream max-size-buffers=2 ! appsink`.
+- `appsink` caps: `audio/x-raw,format=F32LE,layout=interleaved,channels=2`.
+- Capabilities in Phase 2: output selection + EQ enabled, gapless/sweet fade disabled.
+
+Linux correctness notes:
+- `GStreamerBusBridge` timeout (`gst_bus_timed_pop_filtered == nil`) is normal; bus loop must continue polling.
+- If pipeline setup fails (`pipeline == nil` after prepare), backend must emit `.loadFailed` for the requested track/token.
 
 ### Track Switch Race Condition Guard
 
@@ -358,6 +388,9 @@ HTTP/HTTPS URLs with MP3, AAC, Ogg Vorbis
 
 **M4A Limitation:** Only "fast-start" optimized M4A files supported. Non-optimized M4A (moov atom at end) will fail. Fix with: `ffmpeg -i input.m4a -movflags +faststart output.m4a`
 
+### Linux Playback (GStreamer)
+Formats depend on installed GStreamer plugins (`good`, `bad`, `ugly`, and codec packages). Phase 2 supports local file URLs and direct `http://`/`https://` URLs in headless CLI mode.
+
 ## Playback Reporters
 
 ### Plex
@@ -390,6 +423,7 @@ HTTP/HTTPS URLs with MP3, AAC, Ogg Vorbis
 | CoreAudio | Output device management | System |
 | [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) | HTTP streaming | 1.4.0+ |
 | [aubio](https://aubio.org) | BPM/tempo detection | 0.4.9+ |
+| GStreamer (`gstreamer-1.0`, `gstreamer-audio-1.0`, `gstreamer-app-1.0`, `gstreamer-pbutils-1.0`) | Linux playback/output routing/analysis feed | 1.0+ |
 
 ## Additional Documentation
 
@@ -403,6 +437,9 @@ For detailed information, see:
 | Area | Files |
 |------|-------|
 | Core | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift` |
+| Shared facade/protocols | `NullPlayerPlayback/Audio/AudioEngineFacade.swift`, `NullPlayerPlayback/Audio/AudioBackend.swift`, `NullPlayerPlayback/Audio/AudioBackendEvent.swift` |
+| Linux backend | `NullPlayerPlayback/Audio/Linux/LinuxGStreamerAudioBackend.swift`, `NullPlayerPlayback/Audio/Linux/GStreamerPipelineBuilder.swift`, `NullPlayerPlayback/Audio/Linux/GStreamerBusBridge.swift`, `NullPlayerPlayback/Audio/Linux/GStreamerOutputRouter.swift` |
+| Portable analysis | `NullPlayerPlayback/Audio/PortableAudioAnalysis.swift` |
 | EQ | EQ node configuration in AudioEngine, StreamingAudioPlayer |
 | Spectrum | `Audio/AudioEngine.swift` (FFT processing) |
 | BPM | `Audio/BPMDetector.swift` |

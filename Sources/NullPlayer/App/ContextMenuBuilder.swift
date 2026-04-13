@@ -1955,17 +1955,17 @@ class ContextMenuBuilder {
         defaultItem.state = currentDeviceID == nil ? .on : .off
         outputMenu.addItem(defaultItem)
 
-        let localDevices = coreAudioDevices.filter { !$0.isWireless }
+        let localDevices = coreAudioDevices.filter { $0.transport == .builtIn || $0.transport == .usb || $0.transport == .unknown }
         for device in localDevices {
             let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
             deviceItem.target = MenuActions.shared
-            deviceItem.representedObject = device.id
-            deviceItem.state = currentDeviceID == device.id ? .on : .off
+            deviceItem.representedObject = device.backendID
+            deviceItem.state = currentDeviceID.map(String.init) == device.backendID ? .on : .off
             outputMenu.addItem(deviceItem)
         }
 
         // AirPlay
-        let coreAudioWireless = coreAudioDevices.filter { $0.isWireless }
+        let coreAudioWireless = coreAudioDevices.filter { $0.transport == .airplay || $0.transport == .bluetooth || $0.transport == .network }
         if !coreAudioWireless.isEmpty || !airPlayDevices.isEmpty {
             outputMenu.addItem(NSMenuItem.separator())
 
@@ -1978,8 +1978,8 @@ class ContextMenuBuilder {
                 for device in coreAudioWireless {
                     let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
                     deviceItem.target = MenuActions.shared
-                    deviceItem.representedObject = device.id
-                    deviceItem.state = currentDeviceID == device.id ? .on : .off
+                    deviceItem.representedObject = device.backendID
+                    deviceItem.state = currentDeviceID.map(String.init) == device.backendID ? .on : .off
                     airPlayMenu.addItem(deviceItem)
                 }
             }
@@ -2146,37 +2146,37 @@ class ContextMenuBuilder {
         outputMenu.addItem(defaultItem)
         
         // Local/wired devices
-        let localDevices = coreAudioDevices.filter { !$0.isWireless }
+        let localDevices = coreAudioDevices.filter { $0.transport == .builtIn || $0.transport == .usb || $0.transport == .unknown }
         for device in localDevices {
             let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
             deviceItem.target = MenuActions.shared
-            deviceItem.representedObject = device.id
-            deviceItem.state = (currentDeviceID == device.id) ? .on : .off
+            deviceItem.representedObject = device.backendID
+            deviceItem.state = currentDeviceID.map(String.init) == device.backendID ? .on : .off
             outputMenu.addItem(deviceItem)
         }
-        
+
         // ========== AirPlay Section ==========
-        let coreAudioWireless = coreAudioDevices.filter { $0.isWireless }
+        let coreAudioWireless = coreAudioDevices.filter { $0.transport == .airplay || $0.transport == .bluetooth || $0.transport == .network }
         let hasAirPlay = !coreAudioWireless.isEmpty || !airPlayDevices.isEmpty
-        
+
         if hasAirPlay {
             outputMenu.addItem(NSMenuItem.separator())
-            
+
             // AirPlay submenu
             let airplayItem = NSMenuItem(title: "AirPlay", action: nil, keyEquivalent: "")
             let airplayMenu = NSMenu()
             airplayMenu.autoenablesItems = false
-            
+
             // Connected AirPlay devices (via Core Audio)
             if !coreAudioWireless.isEmpty {
                 let connectedHeader = NSMenuItem(title: "Connected", action: nil, keyEquivalent: "")
                 airplayMenu.addItem(connectedHeader)
-                
+
                 for device in coreAudioWireless {
                     let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.selectOutputDevice(_:)), keyEquivalent: "")
                     deviceItem.target = MenuActions.shared
-                    deviceItem.representedObject = device.id
-                    deviceItem.state = (currentDeviceID == device.id) ? .on : .off
+                    deviceItem.representedObject = device.backendID
+                    deviceItem.state = currentDeviceID.map(String.init) == device.backendID ? .on : .off
                     airplayMenu.addItem(deviceItem)
                 }
             }
@@ -4042,7 +4042,8 @@ class MenuActions: NSObject {
     // MARK: - Output Device
     
     @objc func selectOutputDevice(_ sender: NSMenuItem) {
-        let deviceID = sender.representedObject as? AudioDeviceID
+        // representedObject is a backendID String (CoreAudio device ID as string), or nil for system default
+        let deviceID = (sender.representedObject as? String).flatMap { AudioDeviceID($0) }
         WindowManager.shared.audioEngine.setOutputDevice(deviceID)
     }
     

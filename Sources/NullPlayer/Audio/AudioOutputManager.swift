@@ -3,9 +3,10 @@ import CoreAudio
 import AudioToolbox
 import Network
 import NullPlayerCore
+import NullPlayerPlayback
 
 /// Manages audio output device discovery and selection using Core Audio
-class AudioOutputManager: AudioOutputProviding {
+class AudioOutputManager: AudioOutputProviding, AudioOutputRouting {
     
     // MARK: - Singleton
     
@@ -13,7 +14,7 @@ class AudioOutputManager: AudioOutputProviding {
     
     // MARK: - Notifications
     
-    static let devicesDidChangeNotification = Notification.Name("AudioOutputDevicesDidChange")
+    static let devicesDidChangeNotification = AudioOutputDevicesDidChangeNotification
     
     // MARK: - Properties
     
@@ -23,15 +24,23 @@ class AudioOutputManager: AudioOutputProviding {
     /// Currently selected device ID (nil means system default)
     private(set) var currentDeviceID: AudioDeviceID?
 
-    var currentDeviceUID: String? {
+    var currentOutputDevice: AudioOutputDevice? {
         if let currentDeviceID {
-            return outputDevices.first(where: { $0.id == currentDeviceID })?.uid
+            return outputDevices.first(where: { $0.backendID == String(currentDeviceID) })
         }
-        return UserDefaults.standard.string(forKey: savedDeviceUIDKey)
+        if let savedID = UserDefaults.standard.string(forKey: savedDeviceUIDKey) {
+            return outputDevices.first(where: { $0.persistentID == savedID })
+        }
+        return nil
     }
     
-    /// UserDefaults key for persisted device UID
-    private let savedDeviceUIDKey = "selectedAudioOutputDeviceUID"
+    /// Canonical UserDefaults key for persisted output device.
+    static let savedDevicePersistentIDKey = "selectedOutputDevicePersistentID"
+    /// Legacy keys checked once for migration, then removed.
+    static let legacyDevicePersistentIDKeys = ["selectedOutputDeviceUID", "selectedAudioOutputDeviceUID"]
+
+    private let savedDeviceUIDKey = AudioOutputManager.savedDevicePersistentIDKey
+    private let legacyDeviceUIDKeys = AudioOutputManager.legacyDevicePersistentIDKeys
     
     /// Discovered AirPlay devices (via Bonjour)
     private(set) var discoveredAirPlayDevices: [AudioOutputDevice] = []
@@ -42,7 +51,7 @@ class AudioOutputManager: AudioOutputProviding {
     // MARK: - Initialization
     
     private init() {
-        refreshDevices()
+        refreshOutputs()
         setupDeviceChangeListener()
         startAirPlayDiscovery()
         
@@ -96,11 +105,11 @@ class AudioOutputManager: AudioOutputProviding {
                 // Create a discovered AirPlay device
                 let uid = "airplay:\(name).\(type).\(domain)"
                 let device = AudioOutputDevice(
-                    id: 0, // No Core Audio ID yet
-                    uid: uid,
+                    persistentID: uid,
                     name: name,
-                    isWireless: true,
-                    isAirPlayDiscovered: true
+                    backend: "CoreAudio",
+                    backendID: nil,
+                    transport: .airplay
                 )
                 newDevices.append(device)
             default:
@@ -113,7 +122,7 @@ class AudioOutputManager: AudioOutputProviding {
         discoveredAirPlayDevices = newDevices.filter { !coreAudioNames.contains($0.name.lowercased()) }
         
         // Notify observers
-        NotificationCenter.default.post(name: Self.devicesDidChangeNotification, object: self)
+        NotificationCenter.default.post(name: AudioOutputDevicesDidChangeNotification, object: self)
     }
     
     /// Get all available devices (Core Audio + discovered AirPlay)
@@ -126,14 +135,53 @@ class AudioOutputManager: AudioOutputProviding {
     // MARK: - Device Enumeration
     
     /// Refresh the list of available output devices
-    func refreshDevices() {
+    func refreshOutputs() {
         outputDevices = enumerateOutputDevices()
-        
-        // Restore saved device if available
-        if let savedUID = UserDefaults.standard.string(forKey: savedDeviceUIDKey),
-           let device = outputDevices.first(where: { $0.uid == savedUID }) {
-            currentDeviceID = device.id
+
+        let savedID = AudioOutputManager.resolvePersistedOutputDevicePersistentID(
+            defaults: .standard,
+            availablePersistentIDs: Set(outputDevices.map(\.persistentID))
+        )
+
+        if let savedID,
+           let device = outputDevices.first(where: { $0.persistentID == savedID }),
+           let backendIDStr = device.backendID,
+           let deviceID = AudioDeviceID(backendIDStr) {
+            currentDeviceID = deviceID
         }
+    }
+
+    @available(*, deprecated, renamed: "refreshOutputs")
+    func refreshDevices() { refreshOutputs() }
+
+    static func resolvePersistedOutputDevicePersistentID(
+        defaults: UserDefaults = .standard,
+        availablePersistentIDs: Set<String>? = nil
+    ) -> String? {
+        let canonical = savedDevicePersistentIDKey
+        let legacy = legacyDevicePersistentIDKeys
+
+        var resolved = defaults.string(forKey: canonical)
+
+        if resolved == nil {
+            resolved = legacy.compactMap { defaults.string(forKey: $0) }.first
+            if let resolved {
+                defaults.set(resolved, forKey: canonical)
+            }
+        }
+
+        for key in legacy where defaults.object(forKey: key) != nil {
+            defaults.removeObject(forKey: key)
+        }
+
+        if let resolved,
+           let availablePersistentIDs,
+           !availablePersistentIDs.contains(resolved) {
+            defaults.removeObject(forKey: canonical)
+            return nil
+        }
+
+        return resolved
     }
     
     /// Enumerate all audio output devices
@@ -184,17 +232,23 @@ class AudioOutputManager: AudioOutputProviding {
                let name = getDeviceName(deviceID: deviceID),
                let uid = getDeviceUID(deviceID: deviceID),
                !shouldHideDevice(deviceID: deviceID, name: name) {
-                let isWireless = checkIfWireless(deviceID: deviceID)
-                let device = AudioOutputDevice(id: deviceID, uid: uid, name: name, isWireless: isWireless, isAirPlayDiscovered: false)
+                let transport = checkTransport(deviceID: deviceID)
+                let device = AudioOutputDevice(
+                    persistentID: uid,
+                    name: name,
+                    backend: "CoreAudio",
+                    backendID: String(deviceID),
+                    transport: transport
+                )
                 devices.append(device)
             }
         }
         
-        // Sort: wired devices first, then wireless, alphabetically within each group
+        // Sort: wired/built-in first, then wireless, alphabetically within each group
         devices.sort { device1, device2 in
-            if device1.isWireless != device2.isWireless {
-                return !device1.isWireless // Wired first
-            }
+            let w1 = device1.transport == .airplay || device1.transport == .bluetooth || device1.transport == .network
+            let w2 = device2.transport == .airplay || device2.transport == .bluetooth || device2.transport == .network
+            if w1 != w2 { return !w1 }
             return device1.name.localizedCaseInsensitiveCompare(device2.name) == .orderedAscending
         }
         
@@ -258,48 +312,38 @@ class AudioOutputManager: AudioOutputProviding {
         return cfUID as String
     }
     
-    /// Check if a device is a wireless device (AirPlay, Bluetooth, Sonos, HomePod, etc.)
-    private func checkIfWireless(deviceID: AudioDeviceID) -> Bool {
+    /// Map CoreAudio transport type to the portable AudioOutputTransport enum.
+    private func checkTransport(deviceID: AudioDeviceID) -> AudioOutputTransport {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyTransportType,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        
+
         var transportType: UInt32 = 0
         var dataSize = UInt32(MemoryLayout<UInt32>.size)
-        
+
         let status = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, &transportType)
-        
-        guard status == noErr else { return false }
-        
-        // Transport types for wireless/network devices:
-        // kAudioDeviceTransportTypeAirPlay = 'airp' = 0x61697270
-        // kAudioDeviceTransportTypeAVB = 'eavb' = 0x65617662 (Ethernet Audio Video Bridging)
-        // kAudioDeviceTransportTypeBluetooth = 'blue' = 0x626C7565
-        // kAudioDeviceTransportTypeBluetoothLE = 'blea' = 0x626C6561
-        let wirelessTypes: Set<UInt32> = [
-            0x61697270, // 'airp' - AirPlay
-            0x65617662, // 'eavb' - AVB (network audio)
-            0x626C7565, // 'blue' - Bluetooth
-            0x626C6561, // 'blea' - Bluetooth LE
-        ]
-        
-        if wirelessTypes.contains(transportType) {
-            return true
+        guard status == noErr else { return .unknown }
+
+        // CoreAudio FourCC transport codes
+        switch transportType {
+        case 0x626C746E: return .builtIn    // 'bltn' kAudioDeviceTransportTypeBuiltIn
+        case 0x7573626D: return .usb        // 'usbm' kAudioDeviceTransportTypeUSB
+        case 0x626C7565,
+             0x626C6561: return .bluetooth  // 'blue'/'blea' Bluetooth/BLE
+        case 0x61697270: return .airplay    // 'airp' kAudioDeviceTransportTypeAirPlay
+        case 0x65617662: return .network    // 'eavb' kAudioDeviceTransportTypeAVB
+        default: break
         }
-        
-        // Also check device name for common wireless speaker patterns
+
+        // Fallback: check device name for common wireless speaker patterns
         if let name = getDeviceName(deviceID: deviceID)?.lowercased() {
             let wirelessPatterns = ["airplay", "sonos", "homepod", "airpod", "bluetooth", "wireless"]
-            for pattern in wirelessPatterns {
-                if name.contains(pattern) {
-                    return true
-                }
-            }
+            if wirelessPatterns.contains(where: { name.contains($0) }) { return .network }
         }
-        
-        return false
+
+        return .unknown
     }
     
     /// Check if a device should be hidden (aggregate devices, etc.)
@@ -415,7 +459,7 @@ class AudioOutputManager: AudioOutputProviding {
             let uid = getDeviceUID(deviceID: deviceID) ?? "(no uid)"
             let transportType = getTransportTypeName(deviceID: deviceID)
             let hasOutput = hasOutputChannels(deviceID: deviceID)
-            let isWireless = checkIfWireless(deviceID: deviceID)
+            let isWireless = checkTransport(deviceID: deviceID) != .builtIn && checkTransport(deviceID: deviceID) != .usb && checkTransport(deviceID: deviceID) != .unknown
             let isHidden = shouldHideDevice(deviceID: deviceID, name: name)
             
             output += "Device ID: \(deviceID)\n"
@@ -431,7 +475,7 @@ class AudioOutputManager: AudioOutputProviding {
         
         output += "=== Devices in outputDevices array ===\n"
         for device in outputDevices {
-            output += "  - \(device.name) (wireless: \(device.isWireless))\n"
+            output += "  - \(device.name) (transport: \(device.transport))\n"
         }
         
         output += "\n=== Discovered AirPlay Devices ===\n"
@@ -477,31 +521,40 @@ class AudioOutputManager: AudioOutputProviding {
     
     // MARK: - Device Selection
     
-    /// Select an output device by ID
-    /// - Parameter deviceID: The device ID to select, or nil for system default
+    /// Select an output device by CoreAudio device ID (internal use only).
     func selectDevice(_ deviceID: AudioDeviceID?) {
         currentDeviceID = deviceID
-        
-        // Save the UID for persistence
+
         if let deviceID = deviceID,
-           let device = outputDevices.first(where: { $0.id == deviceID }) {
-            UserDefaults.standard.set(device.uid, forKey: savedDeviceUIDKey)
+           let device = outputDevices.first(where: { $0.backendID == String(deviceID) }) {
+            UserDefaults.standard.set(device.persistentID, forKey: savedDeviceUIDKey)
         } else {
             UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
         }
     }
 
-    func selectDevice(uid: String) -> Bool {
-        guard let device = outputDevices.first(where: { $0.uid == uid }) else {
+    func selectOutputDevice(persistentID: String?) -> Bool {
+        guard let persistentID else {
+            selectDevice(nil)
+            return true
+        }
+        guard let device = outputDevices.first(where: { $0.persistentID == persistentID }),
+              let backendIDStr = device.backendID,
+              let deviceID = AudioDeviceID(backendIDStr) else {
             return false
         }
-        selectDevice(device.id)
+        selectDevice(deviceID)
         return true
     }
-    
-    /// Get device by UID
+
+    @available(*, deprecated, renamed: "selectOutputDevice(persistentID:)")
+    func selectDevice(uid: String) -> Bool {
+        return selectOutputDevice(persistentID: uid)
+    }
+
+    /// Get device by persistent ID (Darwin: CoreAudio UID).
     func device(withUID uid: String) -> AudioOutputDevice? {
-        return outputDevices.first { $0.uid == uid }
+        return outputDevices.first { $0.persistentID == uid }
     }
     
     // MARK: - Device Change Listener
@@ -552,19 +605,25 @@ class AudioOutputManager: AudioOutputProviding {
     
     private func handleDevicesChanged() {
         let previousDevices = outputDevices
-        refreshDevices()
+        refreshOutputs()
         
         // Check if selected device is still available
         if let currentID = currentDeviceID,
-           !outputDevices.contains(where: { $0.id == currentID }) {
+           !outputDevices.contains(where: { $0.backendID == String(currentID) }) {
             // Device was removed, reset to default
             currentDeviceID = nil
             UserDefaults.standard.removeObject(forKey: savedDeviceUIDKey)
         }
-        
+
         // Notify observers if devices changed
         if previousDevices != outputDevices {
-            NotificationCenter.default.post(name: Self.devicesDidChangeNotification, object: self)
+            NotificationCenter.default.post(name: AudioOutputDevicesDidChangeNotification, object: self)
         }
+    }
+}
+
+enum AudioOutputRoutingProvider {
+    static var shared: any AudioOutputRouting {
+        AudioOutputManager.shared
     }
 }

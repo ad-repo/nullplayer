@@ -1,6 +1,7 @@
 public protocol AudioOutputProviding: AnyObject {
     var outputDevices: [AudioOutputDevice] { get }
-    var currentDeviceUID: String? { get }
-    func refreshDevices()
-    func selectDevice(uid: String) -> Bool
+    var currentOutputDevice: AudioOutputDevice? { get }
+    func refreshOutputs()
+    @discardableResult
+    func selectOutputDevice(persistentID: String?) -> Bool
 }

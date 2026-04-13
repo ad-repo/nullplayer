@@ -63,13 +63,14 @@ let package = Package(
             name: "NullPlayer",
             dependencies: [
                 "NullPlayerCore",
+                "NullPlayerPlayback",
                 "CVisClassicCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
-                "KSPlayer",
-                "AudioStreaming",
-                "CProjectM",
-                "CAubio",
+                .product(name: "KSPlayer", package: "KSPlayer", condition: .when(platforms: [.macOS])),
+                .product(name: "AudioStreaming", package: "AudioStreaming", condition: .when(platforms: [.macOS])),
+                .target(name: "CProjectM", condition: .when(platforms: [.macOS])),
+                .target(name: "CAubio", condition: .when(platforms: [.macOS])),
                 "FlyingFox",
             ],
             path: "Sources/NullPlayer",
@@ -91,6 +92,29 @@ let package = Package(
                 ]),
             ]
         ),
+        .systemLibrary(
+            name: "CGStreamer",
+            path: "Sources/CGStreamer"
+        ),
+        .target(
+            name: "NullPlayerPlayback",
+            dependencies: [
+                "NullPlayerCore",
+                .target(name: "CGStreamer", condition: .when(platforms: [.linux])),
+            ],
+            path: "Sources/NullPlayerPlayback",
+            swiftSettings: [
+                .define("HAVE_GSTREAMER", .when(platforms: [.linux]))
+            ]
+        ),
+        .executableTarget(
+            name: "NullPlayerCLI",
+            dependencies: [
+                "NullPlayerCore",
+                "NullPlayerPlayback",
+            ],
+            path: "Sources/NullPlayerCLI"
+        ),
         .testTarget(
             name: "NullPlayerCoreTests",
             dependencies: [
@@ -104,6 +128,22 @@ let package = Package(
                 "NullPlayer"
             ],
             path: "Tests/NullPlayerAppTests"
+        ),
+        .testTarget(
+            name: "NullPlayerPlaybackTests",
+            dependencies: [
+                "NullPlayerPlayback"
+            ],
+            path: "Tests/NullPlayerPlaybackTests"
+        ),
+        .testTarget(
+            name: "NullPlayerCLITests",
+            dependencies: [
+                "NullPlayerCLI",
+                "NullPlayerPlayback",
+                "NullPlayerCore",
+            ],
+            path: "Tests/NullPlayerCLITests"
         ),
     ],
     // Use Swift 5 language mode to keep concurrency warnings as warnings, not errors

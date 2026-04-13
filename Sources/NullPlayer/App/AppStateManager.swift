@@ -544,7 +544,7 @@ class AppStateManager {
             // v2 fields
             isDoubleSize: wm.isDoubleSize,
             modernSkinName: UserDefaults.standard.string(forKey: "modernSkinName"),
-            selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
+            selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDevicePersistentID"),
             browserBrowseMode: browserBrowseMode,
             savedInModernMode: wm.isRunningModernUI
         )
@@ -697,10 +697,8 @@ class AppStateManager {
             // but we set the UserDefaults value here so subsequent launches use it
         }
         
-        // Restore audio output device
-        if let deviceUID = state.selectedOutputDeviceUID {
-            UserDefaults.standard.set(deviceUID, forKey: "selectedOutputDeviceUID")
-        }
+        // Audio output device is persisted directly by AudioOutputManager (selectedOutputDevicePersistentID).
+        // No restore write needed — AudioOutputManager.refreshOutputs() handles it on launch.
         
         // Check if the saved state's UI mode matches the current mode.
         // If mismatched (e.g. saved in modern, now running classic), skip window frame

@@ -1,0 +1,10 @@
+module CGStreamer [system] {
+    header "gstreamer_link.h"
+    link "gstreamer-1.0"
+    link "gstreamer-audio-1.0"
+    link "gstreamer-app-1.0"
+    link "gstreamer-pbutils-1.0"
+    link "gobject-2.0"
+    link "glib-2.0"
+    export *
+}

@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerPlayback
 
 struct CLIOptions {
     // Mode
@@ -194,7 +195,10 @@ class CLIMode: NSObject, NSApplicationDelegate {
         if opts.isQueryMode {
             Task { @MainActor in
                 do {
-                    try await CLIQueryHandler.handle(opts)
+                    let outputRouting: (any AudioOutputRouting)? = opts.listOutputs
+                        ? AudioOutputRoutingProvider.shared
+                        : nil
+                    try await CLIQueryHandler.handle(opts, outputRouting: outputRouting)
                     exit(0)
                 } catch {
                     fputs("Error: \(error.localizedDescription)\n", stderr)

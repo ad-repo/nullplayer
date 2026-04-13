@@ -1,8 +1,9 @@
 import Foundation
+import NullPlayerPlayback
 
 struct CLIQueryHandler {
 
-    static func handle(_ opts: CLIOptions) async throws {
+    static func handle(_ opts: CLIOptions, outputRouting: (any AudioOutputRouting)? = nil) async throws {
         if opts.listSources {
             try await listSources(json: opts.json)
             return
@@ -18,7 +19,10 @@ struct CLIQueryHandler {
             return
         }
         if opts.listOutputs {
-            listOutputs(json: opts.json)
+            listOutputs(
+                json: opts.json,
+                outputRouting: outputRouting ?? AudioOutputRoutingProvider.shared
+            )
             return
         }
         if opts.listDevices {
@@ -163,8 +167,8 @@ struct CLIQueryHandler {
         }
     }
 
-    private static func listOutputs(json: Bool) {
-        let devices = AudioOutputManager.shared.outputDevices
+    private static func listOutputs(json: Bool, outputRouting: any AudioOutputRouting) {
+        let devices = outputRouting.outputDevices
         if json {
             CLIDisplay.printJSON(devices.map { ["name": $0.name] })
         } else {

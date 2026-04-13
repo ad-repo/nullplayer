@@ -5,6 +5,7 @@ import CoreAudio
 import AudioToolbox
 import AudioStreaming
 import NullPlayerCore
+import NullPlayerPlayback
 
 private extension Track {
     var coreTrack: NullPlayerCore.Track {
@@ -33,6 +34,35 @@ private extension Track {
             jellyfinServerId: jellyfinServerId,
             artworkThumb: artworkThumb,
             mediaType: coreMediaType,
+            contentType: contentType
+        )
+    }
+}
+
+private extension NullPlayerCore.Track {
+    var appTrack: Track {
+        let appMediaType: MediaType = (mediaType == .video) ? .video : .audio
+        return Track(
+            id: id,
+            url: url,
+            title: title,
+            artist: artist,
+            album: album,
+            duration: duration,
+            bitrate: bitrate,
+            sampleRate: sampleRate,
+            channels: channels,
+            plexRatingKey: plexRatingKey,
+            plexServerId: nil,
+            subsonicId: subsonicId,
+            subsonicServerId: subsonicServerId,
+            jellyfinId: jellyfinId,
+            jellyfinServerId: jellyfinServerId,
+            embyId: nil,
+            embyServerId: nil,
+            artworkThumb: artworkThumb,
+            mediaType: appMediaType,
+            genre: nil,
             contentType: contentType
         )
     }
@@ -151,11 +181,34 @@ class AudioEngine: AudioPlaybackProviding {
 
     /// One-shot stale URL refresh guard for the current playback attempt.
     private var staleStreamingRefreshRetriedServiceIdentity: String?
+
+    /// Active backend load token when AudioEngine is used behind AudioBackend.
+    private var backendLoadToken: UInt64 = 0
+
+    /// Suppresses backend event forwarding during internal transition sequences.
+    private var suppressBackendEvents = false
+
+    /// Platform-neutral output routing surface.
+    private let outputRouting: any AudioOutputRouting
+
+    /// Darwin playback preferences and environment services used by AudioEngineFacade.
+    private let playbackPreferences: DarwinPlaybackPreferences
+    private let playbackEnvironment: DarwinPlaybackEnvironment
+
+    lazy var playbackFacade: AudioEngineFacade = AudioEngineFacade(
+        backend: self,
+        preferences: playbackPreferences,
+        environment: playbackEnvironment
+    )
+
+    /// Event sink for AudioBackend consumers (facade/CLI path).
+    var eventHandler: (@Sendable (AudioBackendEvent) -> Void)?
     
     /// Current playback state
     private(set) var state: PlaybackState = .stopped {
         didSet {
             delegate?.audioEngineDidChangeState(state)
+            emitBackendEvent(.stateChanged(state, token: backendLoadToken))
             // Post notification for visualization and other observers
             NotificationCenter.default.post(
                 name: .audioPlaybackStateChanged,
@@ -518,7 +571,15 @@ class AudioEngine: AudioPlaybackProviding {
     
     // MARK: - Initialization
     
-    init() {
+    init(
+        outputRouting: any AudioOutputRouting = AudioOutputRoutingProvider.shared,
+        playbackPreferences: DarwinPlaybackPreferences = DarwinPlaybackPreferences(),
+        playbackEnvironment: DarwinPlaybackEnvironment = DarwinPlaybackEnvironment()
+    ) {
+        self.outputRouting = outputRouting
+        self.playbackPreferences = playbackPreferences
+        self.playbackEnvironment = playbackEnvironment
+
         let modernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
         isModernUIEnabled = modernUIEnabled
         activeEQConfiguration = EQConfiguration.forModernUI(modernUIEnabled)
@@ -555,18 +616,22 @@ class AudioEngine: AudioPlaybackProviding {
             object: nil
         )
 
-        NSWorkspace.shared.notificationCenter.addObserver(
+        NotificationCenter.default.addObserver(
             self,
-            selector: #selector(handleSystemWillSleep),
-            name: NSWorkspace.willSleepNotification,
+            selector: #selector(handleOutputDevicesChanged),
+            name: AudioOutputDevicesDidChangeNotification,
             object: nil
         )
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self,
-            selector: #selector(handleSystemDidWake),
-            name: NSWorkspace.didWakeNotification,
-            object: nil
-        )
+
+        self.playbackEnvironment.beginSleepObservation { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .willSleep:
+                self.handleSystemWillSleep()
+            case .didWake:
+                self.handleSystemDidWake()
+            }
+        }
         
         setupAudioEngine()
         setupEqualizer()
@@ -578,7 +643,6 @@ class AudioEngine: AudioPlaybackProviding {
     
     deinit {
         NotificationCenter.default.removeObserver(self)
-        NSWorkspace.shared.notificationCenter.removeObserver(self)
         timeUpdateTimer?.invalidate()
         mixerNode.removeTap(onBus: 0)  // Changed from playerNode - tap is now on mixerNode
         engine.stop()
@@ -588,6 +652,20 @@ class AudioEngine: AudioPlaybackProviding {
 
     private func notifyPlaybackOptionsChanged() {
         NotificationCenter.default.post(name: .audioPlaybackOptionsChanged, object: self)
+    }
+
+    private func emitBackendEvent(_ event: AudioBackendEvent) {
+        guard !suppressBackendEvents else { return }
+        eventHandler?(event)
+    }
+
+    @objc private func handleOutputDevicesChanged() {
+        emitBackendEvent(
+            .outputsChanged(
+                outputRouting.outputDevices,
+                current: outputRouting.currentOutputDevice
+            )
+        )
     }
 
     private func captureShufflePlaybackState() -> ShufflePlaybackStateSnapshot {
@@ -1062,19 +1140,20 @@ class AudioEngine: AudioPlaybackProviding {
     
     /// Restore saved output device preference
     private func restoreSavedOutputDevice() {
-        guard let savedDeviceUID = UserDefaults.standard.string(forKey: "selectedOutputDeviceUID") else {
+        guard let savedDeviceUID = playbackPreferences.selectedOutputDevicePersistentID else {
             return
         }
         
-        // Find device by UID
-        let devices = AudioOutputManager.shared.outputDevices
-        guard let device = devices.first(where: { $0.uid == savedDeviceUID }) else {
+        // Find device by persistent ID (Darwin: CoreAudio UID)
+        let devices = outputRouting.outputDevices
+        guard let device = devices.first(where: { $0.persistentID == savedDeviceUID }) else {
             NSLog("AudioEngine: Saved output device not found: %@", savedDeviceUID)
             return
         }
-        
+
         NSLog("AudioEngine: Restoring saved output device: %@ (%@)", device.name, savedDeviceUID)
-        setOutputDevice(device.id)
+        guard let backendIDStr = device.backendID, let deviceID = AudioDeviceID(backendIDStr) else { return }
+        setOutputDevice(deviceID)
     }
     
     private func setupEqualizer() {
@@ -2422,6 +2501,7 @@ class AudioEngine: AudioPlaybackProviding {
             let trackDuration = self.duration
             self.lastReportedTime = current
             self.delegate?.audioEngineDidUpdateTime(current: current, duration: trackDuration)
+            self.emitBackendEvent(.timeUpdated(current: current, duration: trackDuration, token: self.backendLoadToken))
             
             // Update Plex playback position (for scrobble threshold detection)
             PlexPlaybackReporter.shared.updatePosition(current)
@@ -2774,17 +2854,12 @@ class AudioEngine: AudioPlaybackProviding {
             return false
         }
         
-        // Show single alert if any files were missing
+        // Show single warning if any files were missing
         if missingCount > 0 {
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = "Files Not Found"
-                alert.informativeText = missingCount == 1
-                    ? "1 file could not be found and was skipped."
-                    : "\(missingCount) files could not be found and were skipped."
-                alert.alertStyle = .warning
-                alert.runModal()
-            }
+            let message = missingCount == 1
+                ? "1 file could not be found and was skipped."
+                : "\(missingCount) files could not be found and were skipped."
+            playbackEnvironment.reportNonFatalPlaybackError(message)
         }
         
         NSLog("loadTracks: %d valid tracks (%d skipped)", validTracks.count, missingCount)
@@ -3377,42 +3452,9 @@ class AudioEngine: AudioPlaybackProviding {
 
             do {
                 // For network-mounted volumes, copy the file to a local temp path before
-                // scheduling. AVAudioPlayerNode.scheduleFile reads from disk continuously
-                // via an internal pre-fetch thread — any NAS latency spike drains its ring
-                // buffer and produces an audible dropout. Playing from a local copy avoids
-                // all NAS I/O on the audio render path.
-                var tempURL: URL? = nil
-                let playbackURL: URL
-                let isLocalVolume = (try? track.url.resourceValues(
-                    forKeys: [.volumeIsLocalKey]
-                ))?.volumeIsLocal ?? true
-
-                if !isLocalVolume {
-                    let fileSize = (try? track.url.resourceValues(
-                        forKeys: [.fileSizeKey]
-                    ))?.fileSize ?? 0
-                    // Skip copy for very large files (>300 MB) to avoid excessive startup delay.
-                    if fileSize <= 300 * 1024 * 1024 {
-                        let ext = track.url.pathExtension
-                        let candidate = URL(fileURLWithPath: NSTemporaryDirectory())
-                            .appendingPathComponent("nullplayer-\(UUID().uuidString).\(ext)")
-                        let copyStart = CFAbsoluteTimeGetCurrent()
-                        try FileManager.default.copyItem(at: track.url, to: candidate)
-                        NSLog(
-                            "loadLocalTrackForImmediatePlayback: Copied NAS '%@' to temp in %.3fs",
-                            track.url.lastPathComponent,
-                            CFAbsoluteTimeGetCurrent() - copyStart
-                        )
-                        tempURL = candidate
-                    } else {
-                        NSLog(
-                            "loadLocalTrackForImmediatePlayback: Skipping NAS copy for large file '%@' (%lld MB)",
-                            track.url.lastPathComponent,
-                            Int64(fileSize) / (1024 * 1024)
-                        )
-                    }
-                }
-                playbackURL = tempURL ?? track.url
+                // scheduling to avoid render-thread NAS reads and dropouts.
+                let playbackURL = try self.playbackEnvironment.makeTemporaryPlaybackURLIfNeeded(for: track.url)
+                let tempURL = playbackURL.standardizedFileURL.path == track.url.standardizedFileURL.path ? nil : playbackURL
 
                 let newAudioFile = try AVAudioFile(forReading: playbackURL)
                 let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
@@ -3612,6 +3654,16 @@ class AudioEngine: AudioPlaybackProviding {
     
     /// Notify delegate and post notification when a track fails to load
     private func notifyTrackLoadFailure(track: Track, error: Error, message: String) {
+        let nsError = error as NSError
+        let failureCode = "\(nsError.domain):\(nsError.code)"
+        emitBackendEvent(
+            .loadFailed(
+                track: track.coreTrack,
+                failure: PlaybackFailure(code: failureCode, message: message),
+                token: backendLoadToken
+            )
+        )
+
         DispatchQueue.main.async { [weak self] in
             self?.delegate?.audioEngineDidFailToLoadTrack(track.coreTrack, error: error)
             
@@ -3742,6 +3794,8 @@ class AudioEngine: AudioPlaybackProviding {
     }
     
     private func trackDidFinish() {
+        emitBackendEvent(.endOfStream(token: backendLoadToken))
+
         // Safety guard: if a crossfade is in progress, ignore stray completion callbacks
         // (the crossfade handles the transition via completeCrossfade/completeStreamingCrossfade)
         guard !isCrossfading else {
@@ -4032,29 +4086,12 @@ class AudioEngine: AudioPlaybackProviding {
                 guard let self else { return }
                 let openStart = CFAbsoluteTimeGetCurrent()
                 do {
-                    // Apply the same NAS copy logic as the primary load path so that
-                    // gapless track boundaries are also free of render-thread NAS reads.
-                    var gaplessTempURL: URL? = nil
-                    let isLocalVolume = (try? nextTrackURL.resourceValues(
-                        forKeys: [.volumeIsLocalKey]
-                    ))?.volumeIsLocal ?? true
-
-                    if !isLocalVolume {
-                        let fileSize = (try? nextTrackURL.resourceValues(
-                            forKeys: [.fileSizeKey]
-                        ))?.fileSize ?? 0
-                        if fileSize <= 300 * 1024 * 1024 {
-                            let ext = nextTrackURL.pathExtension
-                            let candidate = URL(fileURLWithPath: NSTemporaryDirectory())
-                                .appendingPathComponent("nullplayer-\(UUID().uuidString).\(ext)")
-                            try FileManager.default.copyItem(at: nextTrackURL, to: candidate)
-                            NSLog("Gapless: Copied NAS '%@' to temp in %.3fs",
-                                  nextTrackTitle, CFAbsoluteTimeGetCurrent() - openStart)
-                            gaplessTempURL = candidate
-                        }
-                    }
-
-                    let playbackURL = gaplessTempURL ?? nextTrackURL
+                    // Apply the same temp-copy policy as the primary load path so
+                    // gapless boundaries are also free of render-thread NAS reads.
+                    let playbackURL = try self.playbackEnvironment.makeTemporaryPlaybackURLIfNeeded(for: nextTrackURL)
+                    let gaplessTempURL = playbackURL.standardizedFileURL.path == nextTrackURL.standardizedFileURL.path
+                        ? nil
+                        : playbackURL
                     let nextFile = try AVAudioFile(forReading: playbackURL)
                     let elapsed = CFAbsoluteTimeGetCurrent() - openStart
                     NSLog("Gapless: Opened next track '%@' in %.3fs", nextTrackTitle, elapsed)
@@ -4775,7 +4812,7 @@ class AudioEngine: AudioPlaybackProviding {
             targetDeviceID = deviceID
         } else {
             // Use system default
-            guard let defaultID = AudioOutputManager.shared.getDefaultOutputDeviceID() else {
+            guard let defaultID = getDefaultOutputDeviceID() else {
                 NSLog("AudioEngine: Failed to get default output device")
                 return false
             }
@@ -4805,19 +4842,14 @@ class AudioEngine: AudioPlaybackProviding {
         }
         
         currentOutputDeviceID = deviceID
-        
-        // Update the AudioOutputManager's selection
-        AudioOutputManager.shared.selectDevice(deviceID)
-        
-        // Save device UID for restoration on next launch
-        if let deviceID = deviceID,
-           let device = AudioOutputManager.shared.outputDevices.first(where: { $0.id == deviceID }) {
-            UserDefaults.standard.set(device.uid, forKey: "selectedOutputDeviceUID")
-            NSLog("AudioEngine: Saved output device preference: %@ (%@)", device.name, device.uid)
+
+        // Output-device persistence goes through the shared routing abstraction.
+        if let deviceID {
+            if let selected = outputRouting.outputDevices.first(where: { $0.backendID == String(deviceID) }) {
+                _ = outputRouting.selectOutputDevice(persistentID: selected.persistentID)
+            }
         } else {
-            // System default - clear the preference
-            UserDefaults.standard.removeObject(forKey: "selectedOutputDeviceUID")
-            NSLog("AudioEngine: Cleared output device preference (using system default)")
+            _ = outputRouting.selectOutputDevice(persistentID: nil)
         }
         
         // The AVAudioEngineConfigurationChange notification will fire if the format changed,
@@ -4829,7 +4861,30 @@ class AudioEngine: AudioPlaybackProviding {
     /// Get the current output device
     func getCurrentOutputDevice() -> AudioOutputDevice? {
         guard let deviceID = currentOutputDeviceID else { return nil }
-        return AudioOutputManager.shared.outputDevices.first { $0.id == deviceID }
+        return outputRouting.outputDevices.first { $0.backendID == String(deviceID) }
+    }
+
+    /// Get the system default output device ID.
+    private func getDefaultOutputDeviceID() -> AudioDeviceID? {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var deviceID: AudioDeviceID = 0
+        var dataSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize,
+            &deviceID
+        )
+
+        return status == noErr ? deviceID : nil
     }
     
     
@@ -5381,5 +5436,122 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         if RadioManager.shared.isActive {
             RadioManager.shared.streamDidReceiveMetadata(metadata)
         }
+    }
+}
+
+// MARK: - AudioBackend (Darwin bridge)
+
+extension AudioEngine: AudioBackend {
+    var capabilities: AudioBackendCapabilities {
+        AudioBackendCapabilities(
+            supportsOutputSelection: true,
+            supportsGaplessPlayback: true,
+            supportsSweetFade: true,
+            supportsEQ: true,
+            supportsWaveformFrames: true,
+            eqBandCount: activeEQConfiguration.bandCount
+        )
+    }
+
+    var outputDevices: [AudioOutputDevice] {
+        outputRouting.outputDevices
+    }
+
+    var currentOutputDevice: AudioOutputDevice? {
+        outputRouting.currentOutputDevice
+    }
+
+    func refreshOutputs() {
+        outputRouting.refreshOutputs()
+    }
+
+    @discardableResult
+    func selectOutputDevice(persistentID: String?) -> Bool {
+        guard outputRouting.selectOutputDevice(persistentID: persistentID) else {
+            return false
+        }
+
+        guard let persistentID else {
+            return setOutputDevice(nil)
+        }
+
+        guard let selected = outputRouting.outputDevices.first(where: { $0.persistentID == persistentID }),
+              let backendIDString = selected.backendID,
+              let deviceID = AudioDeviceID(backendIDString) else {
+            return false
+        }
+        return setOutputDevice(deviceID)
+    }
+
+    func prepare() {
+        // AudioEngine is already initialized in init().
+    }
+
+    func shutdown() {
+        stop()
+    }
+
+    func load(track: NullPlayerCore.Track, token: UInt64, startPaused: Bool) {
+        suppressBackendEvents = true
+        loadTracks([track.appTrack])
+        if startPaused && state == .playing {
+            pause()
+        }
+        suppressBackendEvents = false
+
+        backendLoadToken = token
+
+        if let sampleRate = track.sampleRate, let channels = track.channels {
+            emitBackendEvent(.formatChanged(sampleRate: Double(sampleRate), channels: channels, token: token))
+        }
+        emitBackendEvent(.timeUpdated(current: currentTime, duration: duration, token: token))
+        emitBackendEvent(.stateChanged(state, token: token))
+    }
+
+    func play(token: UInt64) {
+        guard token == backendLoadToken else { return }
+        play()
+    }
+
+    func pause(token: UInt64) {
+        guard token == backendLoadToken else { return }
+        pause()
+    }
+
+    func stop(token: UInt64) {
+        guard token == backendLoadToken else { return }
+        stop()
+    }
+
+    func seek(to time: TimeInterval, token: UInt64) {
+        guard token == backendLoadToken else { return }
+        seek(to: time)
+    }
+
+    func setVolume(_ value: Float, token: UInt64) {
+        guard token == backendLoadToken else { return }
+        volume = max(0, min(1, value))
+    }
+
+    func setBalance(_ value: Float, token: UInt64) {
+        guard token == backendLoadToken else { return }
+        balance = max(-1, min(1, value))
+    }
+
+    func setEQ(enabled: Bool, preamp: Float, bands: [Float], token: UInt64) {
+        guard token == backendLoadToken else { return }
+
+        setEQEnabled(enabled)
+        setPreamp(preamp)
+        for (index, gain) in bands.enumerated() where index < activeEQConfiguration.bandCount {
+            setEQBand(index, gain: gain)
+        }
+    }
+
+    func setNextTrackHint(_ track: NullPlayerCore.Track?, token: UInt64) {
+        guard token == backendLoadToken else { return }
+        // Existing Darwin path computes gapless candidates from local playlist state.
+        // This hint is accepted for protocol completeness and wired in later refactors.
+        _ = track
     }
 }

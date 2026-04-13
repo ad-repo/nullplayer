@@ -1,16 +1,20 @@
 import Foundation
 import NullPlayerCore
+import NullPlayerPlayback
 
 class CLIPlayer: AudioEngineDelegate {
     let audioEngine: AudioEngine
+    private let outputRouting: any AudioOutputRouting
     private var options: CLIOptions
     let display = CLIDisplay()
     private var previousVolume: Float = 0.5
     private var lastArtworkKey: String?
 
-    init(options: CLIOptions) {
+    init(options: CLIOptions, outputRouting: (any AudioOutputRouting)? = nil) {
         self.options = options
-        self.audioEngine = AudioEngine()
+        let audioEngine = AudioEngine()
+        self.audioEngine = audioEngine
+        self.outputRouting = outputRouting ?? audioEngine
 
         // Wire CLI engine to managers that need it
         RadioManager.cliAudioEngine = audioEngine
@@ -57,12 +61,16 @@ class CLIPlayer: AudioEngineDelegate {
 
         // Output device
         if let outputName = options.output {
-            if let device = AudioOutputManager.shared.outputDevices.first(where: {
+            let availableOutputDevices = self.outputRouting.outputDevices
+            if let device = availableOutputDevices.first(where: {
                 $0.name.caseInsensitiveCompare(outputName) == .orderedSame
             }) {
-                audioEngine.setOutputDevice(device.id)
+                guard self.outputRouting.selectOutputDevice(persistentID: device.persistentID) else {
+                    fputs("Error: Failed to select output device '\(outputName)'\n", stderr)
+                    exit(1)
+                }
             } else {
-                let names = AudioOutputManager.shared.outputDevices.map { $0.name }.joined(separator: ", ")
+                let names = availableOutputDevices.map { $0.name }.joined(separator: ", ")
                 fputs("Error: Unknown output device '\(outputName)'. Available: \(names)\n", stderr)
                 exit(1)
             }
