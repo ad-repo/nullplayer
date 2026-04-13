@@ -11,7 +11,8 @@ let package = Package(
     ],
     products: [
         .executable(name: "NullPlayer", targets: ["NullPlayer"]),
-        .executable(name: "NullPlayerLinuxUI", targets: ["NullPlayerLinuxUI"])
+        .executable(name: "NullPlayerCLI", targets: ["NullPlayerCLI"]),
+        .executable(name: "NullPlayerLinuxUI", targets: ["NullPlayerLinuxUI"]),
     ],
     dependencies: [
         // ZIP extraction for .wsz skin files
@@ -95,7 +96,8 @@ let package = Package(
         ),
         .systemLibrary(
             name: "CGStreamer",
-            path: "Sources/CGStreamer"
+            path: "Sources/CGStreamer",
+            pkgConfig: "gstreamer-1.0 gstreamer-audio-1.0 gstreamer-app-1.0 gstreamer-pbutils-1.0"
         ),
         .systemLibrary(
             name: "CGTK4",

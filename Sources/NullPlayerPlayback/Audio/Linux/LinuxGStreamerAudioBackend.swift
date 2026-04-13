@@ -138,7 +138,7 @@ public final class LinuxGStreamerAudioBackend: AudioBackend {
                   let playbin = self.pipeline?.playbin else { return }
 
             let clamped = max(0, time)
-            let nanos = Int64(clamped * 1_000_000_000)
+            let nanos = Int(clamped * 1_000_000_000)
             let flags = GstSeekFlags(GST_SEEK_FLAG_FLUSH.rawValue | GST_SEEK_FLAG_KEY_UNIT.rawValue)
             let ok = gst_element_seek_simple(playbin, GST_FORMAT_TIME, flags, nanos)
 
@@ -284,7 +284,7 @@ public final class LinuxGStreamerAudioBackend: AudioBackend {
         emit(.analysisFrame(frame, token: currentToken))
     }
 
-    private func makeAnalysisFrame(sample: UnsafeMutablePointer<GstSample>) -> AnalysisFrame? {
+    private func makeAnalysisFrame(sample: OpaquePointer) -> AnalysisFrame? {
         guard let buffer = gst_sample_get_buffer(sample) else { return nil }
 
         var mapInfo = GstMapInfo()
@@ -303,8 +303,8 @@ public final class LinuxGStreamerAudioBackend: AudioBackend {
         let floatPointer = UnsafeRawPointer(rawData).assumingMemoryBound(to: Float.self)
         let samples = Array(UnsafeBufferPointer(start: floatPointer, count: floatCount))
 
-        var sampleRate = 44_100
-        var channels = 2
+        var sampleRate: Int32 = 44_100
+        var channels: Int32 = 2
 
         if let caps = gst_sample_get_caps(sample),
            let structure = gst_caps_get_structure(caps, 0) {
@@ -314,7 +314,7 @@ public final class LinuxGStreamerAudioBackend: AudioBackend {
 
         return AnalysisFrame(
             samples: samples,
-            channels: max(1, channels),
+            channels: Int(max(1, channels)),
             sampleRate: Double(sampleRate),
             monotonicTime: ProcessInfo.processInfo.systemUptime
         )
@@ -344,7 +344,7 @@ public final class LinuxGStreamerAudioBackend: AudioBackend {
 
     private func queryPosition() -> TimeInterval {
         guard let playbin = pipeline?.playbin else { return 0 }
-        var position: Int64 = 0
+        var position: Int = 0
         guard gst_element_query_position(playbin, GST_FORMAT_TIME, &position) != 0 else {
             return 0
         }
@@ -353,7 +353,7 @@ public final class LinuxGStreamerAudioBackend: AudioBackend {
 
     private func queryDuration() -> TimeInterval {
         guard let playbin = pipeline?.playbin else { return 0 }
-        var duration: Int64 = 0
+        var duration: Int = 0
         guard gst_element_query_duration(playbin, GST_FORMAT_TIME, &duration) != 0 else {
             return 0
         }
@@ -377,14 +377,14 @@ public final class LinuxGStreamerAudioBackend: AudioBackend {
     private func setStringProperty(_ element: UnsafeMutablePointer<GstElement>, name: String, value: String) {
         name.withCString { propName in
             value.withCString { valueCString in
-                g_object_set(UnsafeMutableRawPointer(element), propName, valueCString, nil)
+                np_g_object_set_string(UnsafeMutableRawPointer(element), propName, valueCString)
             }
         }
     }
 
     private func setDoubleProperty(_ element: UnsafeMutablePointer<GstElement>, name: String, value: Double) {
         name.withCString { propName in
-            g_object_set(UnsafeMutableRawPointer(element), propName, value, nil)
+            np_g_object_set_double(UnsafeMutableRawPointer(element), propName, value)
         }
     }
 
@@ -393,6 +393,13 @@ public final class LinuxGStreamerAudioBackend: AudioBackend {
     }()
 
     private static func initializeGStreamer() {
+        _ = gstInitOnce
+    }
+
+    /// Call from main() before creating any other objects to ensure GStreamer
+    /// type registration completes on the main thread, suppressing GLib bus
+    /// signal warnings.
+    public static func initializeGStreamerEarly() {
         _ = gstInitOnce
     }
 

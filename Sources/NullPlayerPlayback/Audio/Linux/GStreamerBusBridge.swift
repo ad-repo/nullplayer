@@ -1,6 +1,7 @@
 #if os(Linux)
 import Foundation
 import CGStreamer
+import NullPlayerCore
 
 enum GStreamerBusSignal: Sendable {
     case endOfStream
@@ -68,11 +69,9 @@ final class GStreamerBusBridge {
         let mask = GstMessageType(maskRaw)
 
         while running {
-            autoreleasepool {
-                if let message = gst_bus_timed_pop_filtered(bus, waitNanos, mask) {
-                    handle(message)
-                    gst_message_unref(message)
-                }
+            if let message = gst_bus_timed_pop_filtered(bus, waitNanos, mask) {
+                handle(message)
+                gst_message_unref(message)
             }
         }
     }

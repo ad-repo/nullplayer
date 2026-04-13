@@ -146,13 +146,13 @@ enum GStreamerPipelineBuilder {
 
     private static func setIntProperty(_ element: UnsafeMutablePointer<GstElement>, name: String, value: Int32) {
         name.withCString { propName in
-            g_object_set(UnsafeMutableRawPointer(element), propName, value, nil)
+            np_g_object_set_int(UnsafeMutableRawPointer(element), propName, value)
         }
     }
 
     private static func setPointerProperty(_ element: UnsafeMutablePointer<GstElement>, name: String, pointer: UnsafeMutableRawPointer?) {
         name.withCString { propName in
-            g_object_set(UnsafeMutableRawPointer(element), propName, pointer, nil)
+            np_g_object_set_pointer(UnsafeMutableRawPointer(element), propName, pointer)
         }
     }
 }

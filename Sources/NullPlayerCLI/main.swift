@@ -26,6 +26,8 @@ private func installSignalHandlers(_ onTerminate: @escaping (Int32) -> Void) {
     signalSources = [sigintSource, sigtermSource]
 }
 
+LinuxGStreamerAudioBackend.initializeGStreamerEarly()
+
 do {
     let options = try LinuxCLIOptions.parse(CommandLine.arguments)
 
