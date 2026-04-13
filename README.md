@@ -91,6 +91,14 @@ sudo apt install -y \
   libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 ```
 
+Fedora:
+
+```bash
+sudo dnf install -y \
+  gtk4-devel graphene-devel glib2-devel \
+  gstreamer1-devel gstreamer1-plugins-base-devel
+```
+
 Build and run:
 
 ```bash
@@ -243,5 +251,4 @@ This project is open source and uses the following licensed components:
 
 - **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
 - **libprojectM** (LGPL-2.1) - ProjectM visualizations
-
 
