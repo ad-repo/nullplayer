@@ -16,6 +16,11 @@ final class LinuxAppLifecycle {
     private let stateManager: LinuxAppStateManager
 
     init() {
+        // GTK and GStreamer must be initialized before any widgets or pipelines are created.
+        // np_linux_ui_init() creates a GtkApplication and registers it, which fires the
+        // GTK startup signal (opening the default GdkDisplay) before any widgets are created.
+        np_linux_ui_init()
+        LinuxGStreamerAudioBackend.initializeGStreamerEarly()
         let backend = LinuxGStreamerAudioBackend()
         self.backend = backend
         self.facade = AudioEngineFacade(backend: backend)
@@ -57,7 +62,6 @@ final class LinuxAppLifecycle {
     func run() {
         BrowserPreferences.store = LinuxPreferencesStore.shared
         _ = facade.state
-        np_linux_ui_init()
         _ = commands.playbackState
         _ = graphicsCapabilities.currentCapabilities()
         menuDialogs.updateMainMenu(actions: [])

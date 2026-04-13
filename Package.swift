@@ -101,7 +101,8 @@ let package = Package(
         ),
         .systemLibrary(
             name: "CGTK4",
-            path: "Sources/CGTK4"
+            path: "Sources/CGTK4",
+            pkgConfig: "gtk4"
         ),
         .target(
             name: "NullPlayerPlayback",

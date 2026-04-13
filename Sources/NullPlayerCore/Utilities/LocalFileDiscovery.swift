@@ -79,7 +79,7 @@ public enum LocalFileDiscovery {
         var allAudio: [LocalDiscoveredMediaFile] = []
         var allVideo: [LocalDiscoveredMediaFile] = []
         var pendingAudio: [LocalDiscoveredMediaFile] = []
-        var lastFlushTime = CFAbsoluteTimeGetCurrent()
+        var lastFlushTime = Date().timeIntervalSinceReferenceDate
 
         func processURL(_ url: URL) {
             let isAudio = isSupportedAudioFile(url, includeLegacyWMA: includeLegacyWMA)
@@ -102,7 +102,7 @@ public enum LocalFileDiscovery {
                 allAudio.append(file)
                 pendingAudio.append(file)
 
-                let now = CFAbsoluteTimeGetCurrent()
+                let now = Date().timeIntervalSinceReferenceDate
                 if pendingAudio.count >= audioBatchSize || (now - lastFlushTime) >= 2.0 {
                     onAudioBatch(pendingAudio)
                     pendingAudio.removeAll(keepingCapacity: true)

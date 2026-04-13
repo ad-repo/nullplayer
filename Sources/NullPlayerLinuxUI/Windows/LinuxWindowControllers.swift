@@ -155,7 +155,7 @@ final class LinuxMainWindowController: LinuxBaseWindowController, MainWindowProv
     }
 
     func handleMainAction(_ action: Int32) {
-        switch action {
+        switch Int(action) {
         case NP_LINUX_UI_MAIN_ACTION_PREVIOUS:
             transportCommands?.previous()
         case NP_LINUX_UI_MAIN_ACTION_PLAY:
@@ -186,7 +186,7 @@ final class LinuxMainWindowController: LinuxBaseWindowController, MainWindowProv
     }
 
     func handleMainToggle(_ toggleID: Int32, enabled: Bool) {
-        switch toggleID {
+        switch Int(toggleID) {
         case NP_LINUX_UI_MAIN_TOGGLE_SHUFFLE:
             transportCommands?.shuffleEnabled = enabled
         case NP_LINUX_UI_MAIN_TOGGLE_REPEAT:
@@ -242,8 +242,8 @@ final class LinuxMainWindowController: LinuxBaseWindowController, MainWindowProv
         guard let panel = mainPanel else { return }
 
         np_linux_ui_main_panel_set_volume_value(panel, Double(transportCommands?.volume ?? 0.2))
-        np_linux_ui_main_panel_set_toggle_state(panel, NP_LINUX_UI_MAIN_TOGGLE_SHUFFLE, (transportCommands?.shuffleEnabled ?? false) ? 1 : 0)
-        np_linux_ui_main_panel_set_toggle_state(panel, NP_LINUX_UI_MAIN_TOGGLE_REPEAT, (transportCommands?.repeatEnabled ?? false) ? 1 : 0)
+        np_linux_ui_main_panel_set_toggle_state(panel, Int32(NP_LINUX_UI_MAIN_TOGGLE_SHUFFLE), (transportCommands?.shuffleEnabled ?? false) ? 1 : 0)
+        np_linux_ui_main_panel_set_toggle_state(panel, Int32(NP_LINUX_UI_MAIN_TOGGLE_REPEAT), (transportCommands?.repeatEnabled ?? false) ? 1 : 0)
 
         updateOutputLabel()
         updateWindowToggleStates()
@@ -282,12 +282,12 @@ final class LinuxMainWindowController: LinuxBaseWindowController, MainWindowProv
     private func updateWindowToggleStates() {
         guard let panel = mainPanel, let windowVisibilityProvider else { return }
 
-        np_linux_ui_main_panel_set_toggle_state(panel, NP_LINUX_UI_MAIN_TOGGLE_EQUALIZER, windowVisibilityProvider(.equalizer) ? 1 : 0)
-        np_linux_ui_main_panel_set_toggle_state(panel, NP_LINUX_UI_MAIN_TOGGLE_PLAYLIST, windowVisibilityProvider(.playlist) ? 1 : 0)
-        np_linux_ui_main_panel_set_toggle_state(panel, NP_LINUX_UI_MAIN_TOGGLE_LIBRARY, windowVisibilityProvider(.libraryBrowser) ? 1 : 0)
-        np_linux_ui_main_panel_set_toggle_state(panel, NP_LINUX_UI_MAIN_TOGGLE_SPECTRUM, windowVisibilityProvider(.spectrum) ? 1 : 0)
-        np_linux_ui_main_panel_set_toggle_state(panel, NP_LINUX_UI_MAIN_TOGGLE_WAVEFORM, windowVisibilityProvider(.waveform) ? 1 : 0)
-        np_linux_ui_main_panel_set_toggle_state(panel, NP_LINUX_UI_MAIN_TOGGLE_PROJECTM, windowVisibilityProvider(.projectM) ? 1 : 0)
+        np_linux_ui_main_panel_set_toggle_state(panel, Int32(NP_LINUX_UI_MAIN_TOGGLE_EQUALIZER), windowVisibilityProvider(.equalizer) ? 1 : 0)
+        np_linux_ui_main_panel_set_toggle_state(panel, Int32(NP_LINUX_UI_MAIN_TOGGLE_PLAYLIST), windowVisibilityProvider(.playlist) ? 1 : 0)
+        np_linux_ui_main_panel_set_toggle_state(panel, Int32(NP_LINUX_UI_MAIN_TOGGLE_LIBRARY), windowVisibilityProvider(.libraryBrowser) ? 1 : 0)
+        np_linux_ui_main_panel_set_toggle_state(panel, Int32(NP_LINUX_UI_MAIN_TOGGLE_SPECTRUM), windowVisibilityProvider(.spectrum) ? 1 : 0)
+        np_linux_ui_main_panel_set_toggle_state(panel, Int32(NP_LINUX_UI_MAIN_TOGGLE_WAVEFORM), windowVisibilityProvider(.waveform) ? 1 : 0)
+        np_linux_ui_main_panel_set_toggle_state(panel, Int32(NP_LINUX_UI_MAIN_TOGGLE_PROJECTM), windowVisibilityProvider(.projectM) ? 1 : 0)
     }
 
     private func openFiles() {
@@ -403,7 +403,7 @@ final class LinuxPlaylistWindowController: LinuxBaseWindowController, PlaylistWi
     }
 
     func handlePlaylistAction(_ action: Int32, index: Int32) {
-        switch action {
+        switch Int(action) {
         case NP_LINUX_UI_PLAYLIST_ACTION_ADD_FILES:
             let files = dialogPresenter?.pickFiles(allowMultiple: true) ?? []
             guard !files.isEmpty else { break }
@@ -698,12 +698,12 @@ final class LinuxLibraryBrowserWindowController: LinuxBaseWindowController, Libr
     }
 
     func playTracks(_ tracks: [LibraryTrack]) {
-        let playbackTracks = tracks.map(\.toTrack)
+        let playbackTracks = tracks.map { $0.toTrack() }
         transportCommands?.loadTracks(playbackTracks)
     }
 
     func enqueueTracks(_ tracks: [LibraryTrack]) {
-        let playbackTracks = tracks.map(\.toTrack)
+        let playbackTracks = tracks.map { $0.toTrack() }
         transportCommands?.appendTracks(playbackTracks)
     }
 

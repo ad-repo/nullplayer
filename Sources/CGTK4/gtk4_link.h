@@ -8,14 +8,45 @@
 #include <glib.h>
 #include <gio/gio.h>
 
+static GtkApplication *_np_app = NULL;
+
+static void _np_noop_activate(GtkApplication *app, gpointer data) {
+    (void)app; (void)data;
+}
+
+static void _np_startup_cb(GApplication *app, gpointer data) {
+    (void)app; (void)data;
+}
+
 static inline void np_linux_ui_init(void) {
-    gtk_init();
+    // G_APPLICATION_NON_UNIQUE disables D-Bus instance arbitration so this
+    // process is always treated as the primary instance. That guarantees the
+    // "startup" signal fires synchronously inside g_application_register(),
+    // which triggers gtk_application_startup(): gtk_init() + display open +
+    // CSS style-provider registration. Without this, bare gtk_init() alone
+    // does not install the default CSS providers, causing a SIGSEGV in
+    // gtk_css_value_initial_compute during the first gtk_window_new() call.
+    _np_app = gtk_application_new("org.nullplayer.NullPlayerLinux",
+                                  G_APPLICATION_NON_UNIQUE);
+    g_signal_connect(_np_app, "startup", G_CALLBACK(_np_startup_cb), NULL);
+    g_signal_connect(_np_app, "activate", G_CALLBACK(_np_noop_activate), NULL);
+    GError *err = NULL;
+    if (!g_application_register(G_APPLICATION(_np_app), NULL, &err) && err) {
+        g_printerr("np_linux_ui_init: GtkApplication registration failed: %s\n",
+                   err->message);
+        g_error_free(err);
+    }
 }
 
 static inline void *np_linux_ui_make_window(const char *title, int width, int height) {
     GtkWidget *window = gtk_window_new();
     gtk_window_set_title(GTK_WINDOW(window), title);
     gtk_window_set_default_size(GTK_WINDOW(window), width, height);
+    // Associate with the application so GTK tracks this window's lifetime
+    // and the CSS / style system has a valid application context.
+    if (_np_app) {
+        gtk_window_set_application(GTK_WINDOW(window), _np_app);
+    }
     return window;
 }
 
