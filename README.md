@@ -76,6 +76,35 @@ After either option, NullPlayer will open normally.
 
 - macOS 14.0 (Sonoma) or later
 
+### Linux (NullPlayerLinuxUI target)
+
+The Linux port is built as a separate executable target: `NullPlayerLinuxUI`.
+
+Install required system packages first.
+
+Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install -y \
+  libgtk-4-dev libgraphene-1.0-dev libglib2.0-dev \
+  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+```
+
+Build and run:
+
+```bash
+# From repo root
+swift build --target NullPlayerLinuxUI
+swift run NullPlayerLinuxUI
+```
+
+Binary location after build:
+
+```bash
+./.build/debug/NullPlayerLinuxUI
+```
+
 ## Building from Source
 
 Requires Xcode 15.0+ with Command Line Tools and Swift 5.9+.
@@ -214,6 +243,5 @@ This project is open source and uses the following licensed components:
 
 - **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
 - **libprojectM** (LGPL-2.1) - ProjectM visualizations
-
 
 
