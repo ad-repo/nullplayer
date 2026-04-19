@@ -30,7 +30,9 @@ class BorderlessWindow: NSWindow {
     // MARK: - Resize State
     
     /// Width of the resize edge detection zone in pixels
-    private let edgeThickness: CGFloat = 8
+    private let edgeThickness: CGFloat = 12
+    /// Narrower zone for top edge to avoid interfering with docked window dragging
+    private let topEdgeThickness: CGFloat = 8
     
     /// Whether we're currently in a resize operation
     private var isResizing = false
@@ -58,7 +60,7 @@ class BorderlessWindow: NSWindow {
         if allowedResizeEdges.contains(.bottom) && windowPoint.y < edgeThickness {
             edges.insert(.bottom)
         }
-        if allowedResizeEdges.contains(.top) && windowPoint.y > frame.height - edgeThickness {
+        if allowedResizeEdges.contains(.top) && windowPoint.y > frame.height - topEdgeThickness {
             edges.insert(.top)
         }
         if allowedResizeEdges.contains(.left) && windowPoint.x < edgeThickness {
