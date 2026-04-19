@@ -411,12 +411,22 @@ class CastManager {
                     WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
                 }
             } else if self.isCasting {
-                // Audio casting - forward position sync to AudioEngine
-                self.resolvedAudioEngine.updateCastPosition(
-                    currentTime: status.currentTime,
-                    isPlaying: isPlaying,
-                    isBuffering: isBuffering
-                )
+                // Audio casting
+                if status.playerState == .idle {
+                    // Content finished on Chromecast — trigger track advance
+                    // Must call castTrackDidFinish() directly rather than updateCastPosition(),
+                    // because updateCastPosition treats idle as paused (clears castPlaybackStartDate)
+                    // which prevents the timer-based auto-advance from ever firing.
+                    NSLog("CastManager: Chromecast audio IDLE — triggering track finish")
+                    self.resolvedAudioEngine.castTrackDidFinish()
+                } else {
+                    // Forward position sync to AudioEngine
+                    self.resolvedAudioEngine.updateCastPosition(
+                        currentTime: status.currentTime,
+                        isPlaying: isPlaying,
+                        isBuffering: isBuffering
+                    )
+                }
             }
         }
     }

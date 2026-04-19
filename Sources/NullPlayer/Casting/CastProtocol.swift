@@ -646,8 +646,13 @@ class CastSessionController {
                     NSLog("CastSessionController: MEDIA_STATUS - no mediaSessionId in status")
                 }
             } else {
-                // Empty status array might indicate media stopped
-                NSLog("CastSessionController: MEDIA_STATUS - empty or invalid status array")
+                // Empty status array means media session ended (content finished)
+                NSLog("CastSessionController: MEDIA_STATUS - empty status array, media ended")
+                var idleStatus = CastMediaStatus()
+                idleStatus.playerState = .idle
+                DispatchQueue.main.async { [weak self] in
+                    self?.delegate?.castSessionDidUpdateMediaStatus(idleStatus)
+                }
             }
             
         case "CLOSE":

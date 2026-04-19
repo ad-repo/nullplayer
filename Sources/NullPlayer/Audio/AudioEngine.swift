@@ -2517,7 +2517,10 @@ class AudioEngine {
     }
     
     /// Handle cast track completion - advance to next track
-    private func castTrackDidFinish() {
+    func castTrackDidFinish() {
+        // Guard against re-entry (can be called from both timer auto-advance and Chromecast IDLE status)
+        guard isCastingActive else { return }
+
         // Report track finished to Plex (natural end)
         PlexPlaybackReporter.shared.trackDidStop(at: duration, finished: true)
 
