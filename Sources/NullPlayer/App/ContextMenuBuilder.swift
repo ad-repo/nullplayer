@@ -10,8 +10,8 @@ class ContextMenuBuilder {
         let menu = NSMenu()
         let wm = WindowManager.shared
 
-        // About Playing (shows current track/video info)
-        let aboutPlaying = NSMenuItem(title: "About Playing", action: #selector(MenuActions.showAboutPlaying), keyEquivalent: "")
+        // Now Playing
+        let aboutPlaying = NSMenuItem(title: "Now Playing…", action: #selector(MenuActions.showAboutPlaying), keyEquivalent: "")
         aboutPlaying.target = MenuActions.shared
         let hasAudioContent = wm.audioEngine.currentTrack != nil
         let hasVideoContent = wm.currentVideoTitle != nil
@@ -20,7 +20,6 @@ class ContextMenuBuilder {
         menu.addItem(NSMenuItem.separator())
 
         if includeRepeatShuffle {
-            // Repeat & Shuffle (promoted from Options submenu to flat items)
             let repeatItem = NSMenuItem(title: "Repeat", action: #selector(MenuActions.toggleRepeat), keyEquivalent: "")
             repeatItem.target = MenuActions.shared
             repeatItem.state = wm.audioEngine.repeatEnabled ? .on : .off
@@ -39,33 +38,35 @@ class ContextMenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
-        // Always On Top
+        // Display toggles
         let alwaysOnTop = NSMenuItem(title: "Always On Top", action: #selector(MenuActions.toggleAlwaysOnTop), keyEquivalent: "")
         alwaysOnTop.target = MenuActions.shared
         alwaysOnTop.state = wm.isAlwaysOnTop ? .on : .off
         menu.addItem(alwaysOnTop)
 
-        // Large UI size toggle
         let doubleSize = NSMenuItem(title: "Large UI", action: #selector(MenuActions.toggleDoubleSize), keyEquivalent: "")
         doubleSize.target = MenuActions.shared
         doubleSize.state = wm.isDoubleSize ? .on : .off
         menu.addItem(doubleSize)
 
         menu.addItem(buildWindowLockMenuItem())
+        menu.addItem(NSMenuItem.separator())
 
-        let rememberState = NSMenuItem(title: "Remember State On Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
-        rememberState.target = MenuActions.shared
-        rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
-        menu.addItem(rememberState)
-
+        // Window actions
         let snapToDefault = NSMenuItem(title: "Snap To Default", action: #selector(MenuActions.snapToDefault), keyEquivalent: "")
         snapToDefault.target = MenuActions.shared
         menu.addItem(snapToDefault)
 
-        let minimizeAll = NSMenuItem(title: "Minimize All Windows", action: #selector(MenuActions.minimizeAllWindows), keyEquivalent: "")
+        let minimizeAll = NSMenuItem(title: "Minimize All", action: #selector(MenuActions.minimizeAllWindows), keyEquivalent: "")
         minimizeAll.target = MenuActions.shared
         menu.addItem(minimizeAll)
+        menu.addItem(NSMenuItem.separator())
 
+        // Settings
+        let rememberState = NSMenuItem(title: "Remember State", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
+        rememberState.target = MenuActions.shared
+        rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
+        menu.addItem(rememberState)
         menu.addItem(NSMenuItem.separator())
 
         // Exit
