@@ -102,8 +102,8 @@ final class MediaLibraryStore {
 
         do {
             let connection = try Connection(dbPath)
-            db = connection
             try setupSchema(connection)
+            db = connection
             NSLog("MediaLibraryStore: Database ready at %@", dbPath)
 
             // Migrate from JSON if needed

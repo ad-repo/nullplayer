@@ -50,6 +50,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Current Emby episode (if playing Emby content)
     private var currentEmbyEpisode: EmbyEpisode?
 
+    /// Current Jellyfin item ID (for playlist tracks without full movie/episode)
+    private var currentJellyfinItemId: String?
+
+    /// Current Emby item ID (for playlist tracks without full movie/episode)
+    private var currentEmbyItemId: String?
+
     /// Public access to current Plex movie metadata (for About Playing)
     var plexMovie: PlexMovie? { currentPlexMovie }
 
@@ -384,12 +390,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Whether current content is from Jellyfin
     private var isJellyfinContent: Bool {
-        currentJellyfinMovie != nil || currentJellyfinEpisode != nil
+        currentJellyfinMovie != nil || currentJellyfinEpisode != nil || currentJellyfinItemId != nil
     }
 
     /// Whether current content is from Emby
     private var isEmbyContent: Bool {
-        currentEmbyMovie != nil || currentEmbyEpisode != nil
+        currentEmbyMovie != nil || currentEmbyEpisode != nil || currentEmbyItemId != nil
     }
     
     private func setupKeyboardMonitor() {
@@ -488,9 +494,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
+        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        
+        currentEmbyItemId = nil
+
         // Store local URL for casting
         currentLocalURL = url.isFileURL ? url : nil
         
@@ -541,10 +549,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = ratingKey
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
+        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
+        currentEmbyItemId = nil
         currentLocalURL = nil  // Clear local URL when playing Plex content
-        
+
         // Check if this is being played from the playlist (callback was set)
         isFromPlaylist = onVideoFinishedForPlaylist != nil
         
@@ -606,8 +616,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
+        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
+        currentEmbyItemId = nil
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
         currentContentType = "movie"
@@ -664,8 +676,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
+        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
+        currentEmbyItemId = nil
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
         currentContentType = "tv"
@@ -716,8 +730,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Store Jellyfin content for reporting
         currentJellyfinMovie = movie
         currentJellyfinEpisode = nil
+        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
+        currentEmbyItemId = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
         currentPlexRatingKey = nil
@@ -773,8 +789,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Store Jellyfin content for reporting
         currentJellyfinMovie = nil
         currentJellyfinEpisode = episode
+        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
+        currentEmbyItemId = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
         currentPlexRatingKey = nil
@@ -824,8 +842,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Store Emby content for reporting
         currentEmbyMovie = movie
         currentEmbyEpisode = nil
+        currentEmbyItemId = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
+        currentJellyfinItemId = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
         currentPlexRatingKey = nil
@@ -881,8 +901,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Store Emby content for reporting
         currentEmbyMovie = nil
         currentEmbyEpisode = episode
+        currentEmbyItemId = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
+        currentJellyfinItemId = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
         currentPlexRatingKey = nil
@@ -933,8 +955,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
+        currentJellyfinItemId = jellyfinId
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
+        currentEmbyItemId = nil
         currentLocalURL = nil
 
         // Check if this is being played from the playlist
@@ -984,8 +1008,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
+        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
+        currentEmbyItemId = embyId
         currentLocalURL = nil
 
         // Check if this is being played from the playlist
@@ -1089,8 +1115,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
+        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
+        currentEmbyItemId = nil
         WindowManager.shared.videoPlaybackDidStop()
         close()
     }
@@ -1465,8 +1493,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             currentPlexRatingKey = nil
             currentJellyfinMovie = nil
             currentJellyfinEpisode = nil
+            currentJellyfinItemId = nil
             currentEmbyMovie = nil
             currentEmbyEpisode = nil
+            currentEmbyItemId = nil
             WindowManager.shared.videoPlaybackDidStop()
         }
         removeKeyboardMonitor()
