@@ -1015,11 +1015,15 @@ class AudioEngine {
     private func rebuildAudioGraph() {
         let wasPlaying = state == .playing
         let currentPosition = currentTime
-        
+
+        // Stop engine before reconnecting — connecting nodes while running
+        // with a changed device format throws an ObjC exception (SIGABRT)
+        engine.stop()
+
         // Get new format from the updated output device
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
         NSLog("AudioEngine: Rebuilding graph with format: %@", mixerFormat.description)
-        
+
         // Reconnect all nodes with new format
         engine.connect(playerNode, to: mixerNode, format: mixerFormat)
         engine.connect(crossfadePlayerNode, to: mixerNode, format: mixerFormat)
@@ -1071,6 +1075,14 @@ class AudioEngine {
                 NSLog("AudioEngine: Restarted engine for streaming after config change")
             } catch {
                 NSLog("AudioEngine: Failed to restart engine for streaming: %@", error.localizedDescription)
+            }
+        } else {
+            // Engine was stopped for reconnection — restart so it's ready for next playback
+            do {
+                try engine.start()
+                NSLog("AudioEngine: Restarted engine after config change (was not playing)")
+            } catch {
+                NSLog("AudioEngine: Failed to restart engine after config change: %@", error.localizedDescription)
             }
         }
     }
