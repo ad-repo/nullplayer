@@ -333,6 +333,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             } else if self.isEmbyContent {
                 EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: true)
             }
+
+            // Record analytics before any playlist transition starts the next item.
+            self.recordVideoPlayEvent()
             
             // Advance playlist if this video was from the playlist
             if self.isFromPlaylist {
@@ -476,6 +479,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
+        // Record outgoing playback before replacing with a new item.
+        recordVideoPlayEvent()
+
         // Clear any server content (this is a local video)
         currentPlexMovie = nil
         currentPlexEpisode = nil
@@ -526,6 +532,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
+        // Record outgoing playback before replacing with a new item.
+        recordVideoPlayEvent()
+
         // Clear movie/episode objects but keep track of the rating key for isPlexContent
         currentPlexMovie = nil
         currentPlexEpisode = nil
@@ -542,7 +551,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Get Plex streaming headers
         let headers = PlexManager.shared.streamingHeaders
         
-        currentContentType = "music"
+        currentContentType = "video"
         playbackStartTime = Date()
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
@@ -587,6 +596,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Get full streaming headers (required for remote/relay connections)
         let headers = PlexManager.shared.streamingHeaders
         NSLog("Playing Plex movie: %@ with URL: %@", movie.title, url.absoluteString)
+
+        // Record outgoing playback before replacing with a new item.
+        recordVideoPlayEvent()
         
         // Store Plex content for reporting
         currentPlexMovie = movie
@@ -642,6 +654,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         let headers = PlexManager.shared.streamingHeaders
         let title = "\(episode.grandparentTitle ?? "Unknown") - \(episode.episodeIdentifier) - \(episode.title)"
         NSLog("Playing Plex episode: %@ with URL: %@", title, url.absoluteString)
+
+        // Record outgoing playback before replacing with a new item.
+        recordVideoPlayEvent()
         
         // Store Plex content for reporting
         currentPlexMovie = nil
@@ -694,6 +709,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
 
         NSLog("Playing Jellyfin movie: %@ with URL: %@", movie.title, url.absoluteString)
+
+        // Record outgoing playback before replacing with a new item.
+        recordVideoPlayEvent()
 
         // Store Jellyfin content for reporting
         currentJellyfinMovie = movie
@@ -749,6 +767,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
         NSLog("Playing Jellyfin episode: %@ with URL: %@", title, url.absoluteString)
 
+        // Record outgoing playback before replacing with a new item.
+        recordVideoPlayEvent()
+
         // Store Jellyfin content for reporting
         currentJellyfinMovie = nil
         currentJellyfinEpisode = episode
@@ -796,6 +817,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
 
         NSLog("Playing Emby movie: %@ with URL: %@", movie.title, url.absoluteString)
+
+        // Record outgoing playback before replacing with a new item.
+        recordVideoPlayEvent()
 
         // Store Emby content for reporting
         currentEmbyMovie = movie
@@ -851,6 +875,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
         NSLog("Playing Emby episode: %@ with URL: %@", title, url.absoluteString)
 
+        // Record outgoing playback before replacing with a new item.
+        recordVideoPlayEvent()
+
         // Store Emby content for reporting
         currentEmbyMovie = nil
         currentEmbyEpisode = episode
@@ -897,6 +924,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
+        // Record outgoing playback before replacing with a new item.
+        recordVideoPlayEvent()
+
         // Clear other content state
         currentPlexMovie = nil
         currentPlexEpisode = nil
@@ -910,7 +940,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Check if this is being played from the playlist
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
-        currentContentType = "music"
+        currentContentType = "video"
         playbackStartTime = Date()
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
@@ -945,6 +975,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
+        // Record outgoing playback before replacing with a new item.
+        recordVideoPlayEvent()
+
         // Clear other content state
         currentPlexMovie = nil
         currentPlexEpisode = nil
@@ -958,7 +991,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Check if this is being played from the playlist
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
-        currentContentType = "music"
+        currentContentType = "video"
         playbackStartTime = Date()
         currentTitle = track.displayTitle
         window?.title = track.displayTitle

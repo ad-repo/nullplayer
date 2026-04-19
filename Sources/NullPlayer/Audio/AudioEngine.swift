@@ -2164,6 +2164,22 @@ class AudioEngine {
     private var castStartPosition: TimeInterval = 0
     /// Whether we've received the first status update from Chromecast (prevents UI flash before sync)
     private var castHasReceivedStatus: Bool = false
+    /// Re-entry guard so cast completion is handled once per finished track.
+    private var castFinishHandledForCurrentTrack: Bool = false
+
+    static func shouldHandleCastFinish(
+        isCastingActive: Bool,
+        hasHandledFinishForCurrentTrack: Bool
+    ) -> Bool {
+        isCastingActive && !hasHandledFinishForCurrentTrack
+    }
+
+    static func nextCastFinishHandledStateAfterStatusUpdate(
+        currentValue: Bool,
+        isPlaying: Bool
+    ) -> Bool {
+        isPlaying ? false : currentValue
+    }
     
     var currentTime: TimeInterval {
         // When casting, interpolate from start position
@@ -2234,6 +2250,7 @@ class AudioEngine {
         castStartPosition = position
         castPlaybackStartDate = Date()
         castHasReceivedStatus = true  // Immediate start means we skip waiting for status
+        castFinishHandledForCurrentTrack = false
         _currentTime = position
         lastReportedTime = position
         suspendedLocalPlaybackClockForSleep = false
@@ -2261,6 +2278,7 @@ class AudioEngine {
         castPlaybackStartDate = nil
         // Reset status flag - UI won't update time until we receive first Chromecast status
         castHasReceivedStatus = false
+        castFinishHandledForCurrentTrack = false
         _currentTime = position
         lastReportedTime = position
         suspendedLocalPlaybackClockForSleep = false
@@ -2301,6 +2319,7 @@ class AudioEngine {
         
         castStartPosition = 0
         castPlaybackStartDate = nil
+        castFinishHandledForCurrentTrack = false
         // Keep castHasReceivedStatus true so UI updates work when playing again
         state = .stopped
     }
@@ -2308,6 +2327,7 @@ class AudioEngine {
     /// Resume cast playback time tracking
     func resumeCastPlayback() {
         castPlaybackStartDate = Date()
+        castFinishHandledForCurrentTrack = false
         
         // Report resume to Plex
         PlexPlaybackReporter.shared.trackDidResume(at: castStartPosition)
@@ -2320,6 +2340,11 @@ class AudioEngine {
     /// This syncs the local time tracking with the actual position from the cast device
     func updateCastPosition(currentTime: TimeInterval, isPlaying: Bool, isBuffering: Bool) {
         guard isCastingActive else { return }
+
+        castFinishHandledForCurrentTrack = Self.nextCastFinishHandledStateAfterStatusUpdate(
+            currentValue: castFinishHandledForCurrentTrack,
+            isPlaying: isPlaying
+        )
         
         // Mark that we've received status from Chromecast (enables UI time updates)
         let isFirstStatus = !castHasReceivedStatus
@@ -2373,6 +2398,7 @@ class AudioEngine {
                 castPlaybackStartDate = nil
                 castStartPosition = 0
                 castHasReceivedStatus = false
+                castFinishHandledForCurrentTrack = false
                 
                 // Load and seek to position
                 if let index = playlist.firstIndex(where: { $0.id == track.id }) {
@@ -2389,6 +2415,7 @@ class AudioEngine {
         castPlaybackStartDate = nil
         castStartPosition = 0
         castHasReceivedStatus = false
+        castFinishHandledForCurrentTrack = false
         state = .stopped
     }
     
@@ -2519,7 +2546,11 @@ class AudioEngine {
     /// Handle cast track completion - advance to next track
     func castTrackDidFinish() {
         // Guard against re-entry (can be called from both timer auto-advance and Chromecast IDLE status)
-        guard isCastingActive else { return }
+        guard Self.shouldHandleCastFinish(
+            isCastingActive: isCastingActive,
+            hasHandledFinishForCurrentTrack: castFinishHandledForCurrentTrack
+        ) else { return }
+        castFinishHandledForCurrentTrack = true
 
         // Report track finished to Plex (natural end)
         PlexPlaybackReporter.shared.trackDidStop(at: duration, finished: true)
