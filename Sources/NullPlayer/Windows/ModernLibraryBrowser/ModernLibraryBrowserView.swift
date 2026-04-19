@@ -4801,7 +4801,19 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func selectLibrary(_ sender: NSMenuItem) {
         guard let library = sender.representedObject as? PlexLibrary else { return }
-        PlexManager.shared.selectLibrary(library); clearAllCachedData(); reloadData()
+        PlexManager.shared.selectLibrary(library); clearAllCachedData()
+        // Switch browse mode to match the selected library type
+        if library.isMusicLibrary && !browseMode.isVideoMode || browseMode == .plists || browseMode == .radio || browseMode == .search {
+            // Stay in current mode if compatible
+        } else if library.isMusicLibrary {
+            browseMode = .artists
+        } else if library.isMovieLibrary {
+            browseMode = .movies
+        } else if library.isShowLibrary {
+            browseMode = .shows
+        }
+        selectedIndices.removeAll(); scrollOffset = 0
+        reloadData()
     }
     @objc private func selectJellyfinMusicLibrary(_ sender: NSMenuItem) {
         let library = sender.representedObject as? JellyfinMusicLibrary
