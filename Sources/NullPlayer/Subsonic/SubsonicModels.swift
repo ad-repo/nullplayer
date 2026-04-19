@@ -82,6 +82,7 @@ struct SubsonicSong: Identifiable, Equatable {
     let title: String
     let album: String?
     let artist: String?
+    let albumArtist: String?
     let albumId: String?
     let artistId: String?
     let track: Int?              // Track number
@@ -426,6 +427,7 @@ struct SongDTO: Decodable {
     let title: String
     let album: String?
     let artist: String?
+    let albumArtist: String?
     let albumId: String?
     let artistId: String?
     let track: Int?
@@ -452,6 +454,7 @@ struct SongDTO: Decodable {
             title: title,
             album: album,
             artist: artist,
+            albumArtist: albumArtist,
             albumId: albumId,
             artistId: artistId,
             track: track,

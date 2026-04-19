@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import CoreAudio
 
 /// Builds the shared right-click context menu for all skin windows
@@ -2784,16 +2785,22 @@ class MenuActions: NSObject {
         
         // Check if this is a Subsonic track
         if let subsonicId = track.subsonicId {
-            showSubsonicTrackInfo(track, subsonicId: subsonicId)
+            Task { await showSubsonicTrackInfo(track, subsonicId: subsonicId) }
             return
         }
         
         // Check if this is a Jellyfin track
         if let jellyfinId = track.jellyfinId {
-            showJellyfinTrackInfo(track, jellyfinId: jellyfinId)
+            Task { await showJellyfinTrackInfo(track, jellyfinId: jellyfinId) }
             return
         }
-        
+
+        // Check if this is an Emby track
+        if let embyId = track.embyId {
+            Task { await showEmbyTrackInfo(track, embyId: embyId) }
+            return
+        }
+
         // Local file
         showLocalTrackInfo(track)
     }
@@ -2813,13 +2820,17 @@ class MenuActions: NSObject {
         
         // Basic info (always available from Track)
         info.append("Title: \(track.title)")
-        if let artist = track.artist { info.append("Artist: \(artist)") }
-        if let album = track.album { info.append("Album: \(album)") }
+        if let albumArtist = plexTrack?.grandparentTitle {
+            info.append("Album Artist: \(albumArtist)")
+        } else if let artist = track.artist {
+            info.append("Artist: \(artist)")
+        }
+        if let album = plexTrack?.parentTitle ?? track.album { info.append("Album: \(album)") }
         info.append("")
-        
+
         // Duration
         info.append("Duration: \(track.formattedDuration)")
-        
+
         // Extended info from Plex API
         if let pt = plexTrack {
             if let genre = pt.genre { info.append("Genre: \(genre)") }
@@ -2840,6 +2851,7 @@ class MenuActions: NSObject {
                     }
                     info.append(formatInfo)
                 }
+                if let sr = media.audioSampleRate { info.append("Sample Rate: \(sr) Hz") }
                 if let bitrate = media.bitrate {
                     info.append("Bitrate: \(bitrate) kbps")
                 }
@@ -2847,6 +2859,10 @@ class MenuActions: NSObject {
                 if let part = media.parts.first, let file = part.file {
                     info.append("File: \(file)")
                 }
+            }
+            if let summary = pt.summary, !summary.isEmpty {
+                info.append("")
+                info.append("Summary: \(summary)")
             }
             info.append("")
             
@@ -2877,96 +2893,251 @@ class MenuActions: NSObject {
         alert.runModal()
     }
     
-    private func showSubsonicTrackInfo(_ track: Track, subsonicId: String) {
+    @MainActor
+    private func showSubsonicTrackInfo(_ track: Track, subsonicId: String) async {
         let alert = NSAlert()
         alert.messageText = track.displayTitle
-        
+
         var info = [String]()
-        
-        info.append("Title: \(track.title)")
-        if let artist = track.artist { info.append("Artist: \(artist)") }
-        if let album = track.album { info.append("Album: \(album)") }
+
+        var song: SubsonicSong?
+        if let client = SubsonicManager.shared.serverClient {
+            song = try? await client.fetchSong(id: subsonicId)
+        }
+
+        // Identity
+        info.append("Title: \(song?.title ?? track.title)")
+        if let artist = song?.artist ?? track.artist { info.append("Artist: \(artist)") }
+        if let albumArtist = song?.albumArtist { info.append("Album Artist: \(albumArtist)") }
+        if let album = song?.album ?? track.album { info.append("Album: \(album)") }
+        if let year = song?.year { info.append("Year: \(year)") }
+        if let trackNum = song?.track {
+            var s = "Track: \(trackNum)"
+            if let disc = song?.discNumber { s += " (Disc \(disc))" }
+            info.append(s)
+        }
+        if let genre = song?.genre { info.append("Genre: \(genre)") }
         info.append("")
-        
-        info.append("Duration: \(track.formattedDuration)")
-        if let bitrate = track.bitrate { info.append("Bitrate: \(bitrate) kbps") }
-        if let sampleRate = track.sampleRate { info.append("Sample Rate: \(sampleRate) Hz") }
-        if let channels = track.channels { info.append("Channels: \(formatChannels(channels))") }
+
+        // Audio
+        let durationSecs = song.map { $0.duration } ?? Int(track.duration ?? 0)
+        info.append("Duration: \(durationSecs / 60):\(String(format: "%02d", durationSecs % 60))")
+        if let sr = song?.samplingRate ?? track.sampleRate { info.append("Sample Rate: \(sr) Hz") }
+        if let br = song?.bitRate ?? track.bitrate { info.append("Bitrate: \(br) kbps") }
+        if let ct = song?.contentType { info.append("Format: \(ct)") }
+        if let size = song?.size, size > 0 { info.append("File Size: \(formatFileSize(size))") }
         info.append("")
-        
+
+        // Stats
+        if let pc = song?.playCount { info.append("Play Count: \(pc)") }
+        if let ur = song?.userRating, ur > 0 { info.append("Rating: \(formatStarRating(Double(ur) * 2))") }
+        if let starred = song?.starred { info.append("Starred: \(formatDate(starred))") }
+        if let created = song?.created { info.append("Date Added: \(formatDate(created))") }
+        if song?.playCount != nil || song?.userRating != nil || song?.starred != nil { info.append("") }
+
         // Source
         if let serverName = SubsonicManager.shared.currentServer?.name {
             info.append("Source: Subsonic (\(serverName))")
         } else {
             info.append("Source: Subsonic")
         }
+        if let path = song?.path { info.append("File: \(path)") }
         info.append("Track ID: \(subsonicId)")
-        
+
         alert.informativeText = info.joined(separator: "\n")
         alert.runModal()
     }
     
-    private func showJellyfinTrackInfo(_ track: Track, jellyfinId: String) {
+    @MainActor
+    private func showJellyfinTrackInfo(_ track: Track, jellyfinId: String) async {
         let alert = NSAlert()
         alert.messageText = track.displayTitle
-        
+
         var info = [String]()
-        
-        info.append("Title: \(track.title)")
-        if let artist = track.artist { info.append("Artist: \(artist)") }
-        if let album = track.album { info.append("Album: \(album)") }
+
+        var song: JellyfinSong?
+        if let client = JellyfinManager.shared.serverClient {
+            song = try? await client.fetchSong(id: jellyfinId)
+        }
+
+        // Identity
+        info.append("Title: \(song?.title ?? track.title)")
+        if let artist = song?.artist ?? track.artist { info.append("Artist: \(artist)") }
+        if let albumArtist = song?.albumArtist { info.append("Album Artist: \(albumArtist)") }
+        if let album = song?.album ?? track.album { info.append("Album: \(album)") }
+        if let year = song?.year { info.append("Year: \(year)") }
+        if let trackNum = song?.track {
+            var s = "Track: \(trackNum)"
+            if let disc = song?.discNumber { s += " (Disc \(disc))" }
+            info.append(s)
+        }
+        if let genre = song?.genre { info.append("Genre: \(genre)") }
         info.append("")
-        
-        info.append("Duration: \(track.formattedDuration)")
-        if let bitrate = track.bitrate { info.append("Bitrate: \(bitrate) kbps") }
-        if let sampleRate = track.sampleRate { info.append("Sample Rate: \(sampleRate) Hz") }
-        if let channels = track.channels { info.append("Channels: \(formatChannels(channels))") }
+
+        // Audio
+        let durationSecs = song.map { $0.duration } ?? Int(track.duration ?? 0)
+        info.append("Duration: \(durationSecs / 60):\(String(format: "%02d", durationSecs % 60))")
+        if let sr = song?.sampleRate ?? track.sampleRate { info.append("Sample Rate: \(sr) Hz") }
+        if let ch = song?.channels ?? track.channels { info.append("Channels: \(formatChannels(ch))") }
+        if let br = song?.bitRate ?? track.bitrate { info.append("Bitrate: \(br) kbps") }
+        if let ct = song?.contentType { info.append("Format: \(ct.uppercased())") }
+        if let size = song?.size, size > 0 { info.append("File Size: \(formatFileSize(size))") }
         info.append("")
-        
+
+        // Stats
+        if let pc = song?.playCount { info.append("Play Count: \(pc)") }
+        if let ur = song?.userRating, ur > 0 { info.append("Rating: \(formatStarRating(Double(ur) / 10))") }
+        if let fav = song?.isFavorite, fav { info.append("Favorite: Yes") }
+        if let created = song?.created { info.append("Date Added: \(formatDate(created))") }
+        if song?.playCount != nil || song?.userRating != nil { info.append("") }
+
         // Source
         if let serverName = JellyfinManager.shared.currentServer?.name {
             info.append("Source: Jellyfin (\(serverName))")
         } else {
             info.append("Source: Jellyfin")
         }
+        if let path = song?.path { info.append("File: \(path)") }
         info.append("Track ID: \(jellyfinId)")
-        
+
         alert.informativeText = info.joined(separator: "\n")
         alert.runModal()
     }
     
+    @MainActor
+    private func showEmbyTrackInfo(_ track: Track, embyId: String) async {
+        let alert = NSAlert()
+        alert.messageText = track.displayTitle
+
+        var info = [String]()
+
+        var song: EmbySong?
+        if let client = EmbyManager.shared.serverClient {
+            song = try? await client.fetchSong(id: embyId)
+        }
+
+        // Identity
+        info.append("Title: \(song?.title ?? track.title)")
+        if let artist = song?.artist ?? track.artist { info.append("Artist: \(artist)") }
+        if let albumArtist = song?.albumArtist { info.append("Album Artist: \(albumArtist)") }
+        if let album = song?.album ?? track.album { info.append("Album: \(album)") }
+        if let year = song?.year { info.append("Year: \(year)") }
+        if let trackNum = song?.track {
+            var s = "Track: \(trackNum)"
+            if let disc = song?.discNumber { s += " (Disc \(disc))" }
+            info.append(s)
+        }
+        if let genre = song?.genre { info.append("Genre: \(genre)") }
+        info.append("")
+
+        // Audio
+        let durationSecs = song.map { $0.duration } ?? Int(track.duration ?? 0)
+        info.append("Duration: \(durationSecs / 60):\(String(format: "%02d", durationSecs % 60))")
+        if let sr = song?.sampleRate ?? track.sampleRate { info.append("Sample Rate: \(sr) Hz") }
+        if let ch = song?.channels ?? track.channels { info.append("Channels: \(formatChannels(ch))") }
+        if let br = song?.bitRate ?? track.bitrate { info.append("Bitrate: \(br) kbps") }
+        if let ct = song?.contentType { info.append("Format: \(ct.uppercased())") }
+        if let size = song?.size, size > 0 { info.append("File Size: \(formatFileSize(size))") }
+        info.append("")
+
+        // Stats
+        if let pc = song?.playCount { info.append("Play Count: \(pc)") }
+        if let ur = song?.userRating, ur > 0 { info.append("Rating: \(formatStarRating(Double(ur) / 10))") }
+        if let fav = song?.isFavorite, fav { info.append("Favorite: Yes") }
+        if let created = song?.created { info.append("Date Added: \(formatDate(created))") }
+        if song?.playCount != nil || song?.userRating != nil { info.append("") }
+
+        // Source
+        if let serverName = EmbyManager.shared.currentServer?.name {
+            info.append("Source: Emby (\(serverName))")
+        } else {
+            info.append("Source: Emby")
+        }
+        if let path = song?.path { info.append("File: \(path)") }
+        info.append("Track ID: \(embyId)")
+
+        alert.informativeText = info.joined(separator: "\n")
+        alert.runModal()
+    }
+
     private func showLocalTrackInfo(_ track: Track) {
         let alert = NSAlert()
         alert.messageText = track.displayTitle
-        
+
         var info = [String]()
-        
+        let lt = MediaLibrary.shared.findTrack(byURL: track.url)
+
+        // For non-library files, read extra tags directly from the file
+        var fileAlbumArtist: String?
+        if lt == nil, track.url.isFileURL {
+            let asset = AVAsset(url: track.url)
+            for format in asset.availableMetadataFormats {
+                for item in asset.metadata(forFormat: format) {
+                    if let key = item.key as? String, key == "TPE2" || key == "aART" {
+                        fileAlbumArtist = item.stringValue
+                    }
+                }
+            }
+        }
+
+        // Identity
         info.append("Title: \(track.title)")
-        if let artist = track.artist { info.append("Artist: \(artist)") }
-        if let album = track.album { info.append("Album: \(album)") }
-        info.append("")
-        
-        info.append("Duration: \(track.formattedDuration)")
-        info.append("")
-        
-        // Audio format
-        var formatParts = [String]()
-        if let sampleRate = track.sampleRate {
-            formatParts.append("\(sampleRate / 1000)kHz")
+        if let artist = lt?.artist ?? track.artist { info.append("Artist: \(artist)") }
+        if let albumArtist = lt?.albumArtist ?? fileAlbumArtist { info.append("Album Artist: \(albumArtist)") }
+        if let album = lt?.album ?? track.album { info.append("Album: \(album)") }
+        if let year = lt?.year { info.append("Year: \(year)") }
+        if let trackNum = lt?.trackNumber {
+            var s = "Track: \(trackNum)"
+            if let disc = lt?.discNumber { s += " (Disc \(disc))" }
+            info.append(s)
         }
-        if let channels = track.channels {
-            formatParts.append(formatChannels(channels))
-        }
-        if !formatParts.isEmpty {
-            info.append("Format: \(formatParts.joined(separator: ", "))")
-        }
-        if let bitrate = track.bitrate { info.append("Bitrate: \(bitrate) kbps") }
+        if let genre = lt?.genre ?? track.genre { info.append("Genre: \(genre)") }
+        if let composer = lt?.composer { info.append("Composer: \(composer)") }
+        if let bpm = lt?.bpm { info.append("BPM: \(bpm)") }
+        if let key = lt?.musicalKey { info.append("Key: \(key)") }
         info.append("")
-        
+
+        // Playback stats
+        let duration = lt.map { $0.duration } ?? track.duration
+        if let d = duration {
+            let secs = Int(d)
+            info.append("Duration: \(secs / 60):\(String(format: "%02d", secs % 60))")
+        } else {
+            info.append("Duration: \(track.formattedDuration)")
+        }
+        if let sampleRate = lt?.sampleRate ?? track.sampleRate { info.append("Sample Rate: \(sampleRate) Hz") }
+        if let channels = lt?.channels ?? track.channels { info.append("Channels: \(formatChannels(channels))") }
+        if let bitrate = lt?.bitrate ?? track.bitrate { info.append("Bitrate: \(bitrate) kbps") }
+        if let fileSize = lt?.fileSize, fileSize > 0 { info.append("File Size: \(formatFileSize(fileSize))") }
+        info.append("")
+
+        // Library stats
+        if let lt {
+            info.append("Play Count: \(lt.playCount)")
+            if let rating = lt.rating, rating > 0 { info.append("Rating: \(formatStarRating(Double(rating)))") }
+            if let lastPlayed = lt.lastPlayed { info.append("Last Played: \(formatDate(lastPlayed))") }
+            info.append("Date Added: \(formatDate(lt.dateAdded))")
+            info.append("")
+        }
+
+        // Extra tags
+        var hasExtra = false
+        if let comment = lt?.comment { info.append("Comment: \(comment)"); hasExtra = true }
+        if let grouping = lt?.grouping { info.append("Grouping: \(grouping)"); hasExtra = true }
+        if let isrc = lt?.isrc { info.append("ISRC: \(isrc)"); hasExtra = true }
+        if let copyright = lt?.copyright { info.append("Copyright: \(copyright)"); hasExtra = true }
+        if let mbRec = lt?.musicBrainzRecordingID { info.append("MusicBrainz Recording: \(mbRec)"); hasExtra = true }
+        if let mbRel = lt?.musicBrainzReleaseID { info.append("MusicBrainz Release: \(mbRel)"); hasExtra = true }
+        if let dcRel = lt?.discogsReleaseID { info.append("Discogs Release: \(dcRel)"); hasExtra = true }
+        if let dcMas = lt?.discogsMasterID { info.append("Discogs Master: \(dcMas)"); hasExtra = true }
+        if let dcLab = lt?.discogsLabel { info.append("Discogs Label: \(dcLab)"); hasExtra = true }
+        if let dcCat = lt?.discogsCatalogNumber { info.append("Discogs Catalog: \(dcCat)"); hasExtra = true }
+        if hasExtra { info.append("") }
+
         info.append("Path: \(track.url.path)")
         info.append("")
         info.append("Source: Local File")
-        
+
         alert.informativeText = info.joined(separator: "\n")
         alert.runModal()
     }
@@ -2990,11 +3161,26 @@ class MenuActions: NSObject {
     }
     
     private func formatStarRating(_ rating: Double) -> String {
-        // Plex uses 0-10 scale (10 = 5 stars)
-        let stars = Int(round(rating / 2))
+        // Expects a 0-10 scale (10 = 5 stars)
+        let stars = max(0, min(5, Int(round(rating / 2))))
         return String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
     }
-    
+
+    private func formatFileSize(_ bytes: Int64) -> String {
+        let mb = Double(bytes) / 1_048_576
+        if mb >= 1000 {
+            return String(format: "%.2f GB", mb / 1024)
+        }
+        return String(format: "%.1f MB", mb)
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
+    }
+
     // MARK: - File Operations
     
     @objc func openFile() {

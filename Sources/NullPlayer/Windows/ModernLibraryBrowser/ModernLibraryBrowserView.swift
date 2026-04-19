@@ -7196,8 +7196,8 @@ class ModernLibraryBrowserView: NSView {
             if case .subsonicTrack(let song) = item.type, song.id == songId {
                 let updatedSong = SubsonicSong(
                     id: song.id, parent: song.parent, title: song.title,
-                    album: song.album, artist: song.artist, albumId: song.albumId,
-                    artistId: song.artistId, track: song.track, year: song.year,
+                    album: song.album, artist: song.artist, albumArtist: song.albumArtist,
+                    albumId: song.albumId, artistId: song.artistId, track: song.track, year: song.year,
                     genre: song.genre, coverArt: song.coverArt, size: song.size,
                     contentType: song.contentType, suffix: song.suffix,
                     duration: song.duration, bitRate: song.bitRate,
@@ -7246,7 +7246,8 @@ class ModernLibraryBrowserView: NSView {
             if case .jellyfinTrack(let song) = item.type, song.id == itemId {
                 let updatedSong = JellyfinSong(
                     id: song.id, title: song.title, album: song.album,
-                    artist: song.artist, albumId: song.albumId, artistId: song.artistId,
+                    artist: song.artist, albumArtist: song.albumArtist,
+                    albumId: song.albumId, artistId: song.artistId,
                     track: song.track, year: song.year, genre: song.genre,
                     imageTag: song.imageTag, size: song.size, contentType: song.contentType,
                     duration: song.duration, bitRate: song.bitRate,
@@ -7270,7 +7271,8 @@ class ModernLibraryBrowserView: NSView {
             if case .embyTrack(let song) = item.type, song.id == itemId {
                 let updatedSong = EmbySong(
                     id: song.id, title: song.title, album: song.album,
-                    artist: song.artist, albumId: song.albumId, artistId: song.artistId,
+                    artist: song.artist, albumArtist: song.albumArtist,
+                    albumId: song.albumId, artistId: song.artistId,
                     track: song.track, year: song.year, genre: song.genre,
                     imageTag: song.imageTag, size: song.size, contentType: song.contentType,
                     duration: song.duration, bitRate: song.bitRate,
