@@ -1,6 +1,30 @@
 import Foundation
 import SQLite
 
+// MARK: - Content Type Helper
+
+enum PlayHistoryContentType: String, CaseIterable {
+    case music
+    case movie
+    case tv
+    case radio
+    case video
+
+    var displayName: String {
+        switch self {
+        case .music: return "Music"
+        case .movie: return "Movies"
+        case .tv:    return "TV Shows"
+        case .radio: return "Radio"
+        case .video: return "Video"
+        }
+    }
+
+    static func displayName(for rawValue: String) -> String {
+        PlayHistoryContentType(rawValue: rawValue)?.displayName ?? rawValue.capitalized
+    }
+}
+
 // MARK: - Result Types
 
 struct TopDimensionRow: Identifiable, Sendable {
@@ -171,6 +195,25 @@ final class PlayHistoryStore: Sendable {
         }
     }
 
+    func fetchContentTypeBreakdown(filter: StatsFilterState) throws -> [TopDimensionRow] {
+        let (whereStr, params) = whereClause(for: filter)
+        let sql = """
+            SELECT COALESCE(pe.content_type, 'music'), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
+            \(whereStr)
+            GROUP BY 1
+            ORDER BY 2 DESC
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
+        let stmt = try db.prepare(sql, params)
+        return stmt.map { row in
+            let raw = row[0] as? String ?? "music"
+            let count = Int(row[1] as? Int64 ?? 0)
+            let mins = row[2] as? Double ?? 0
+            return TopDimensionRow(id: raw, displayName: PlayHistoryContentType.displayName(for: raw), playCount: count, totalMinutes: mins)
+        }
+    }
+
     func fetchRecentEvents(filter: StatsFilterState) throws -> [RecentEventRow] {
         let (whereStr, params) = whereClause(for: filter)
         let sql = """
@@ -297,6 +340,10 @@ final class PlayHistoryStore: Sendable {
         if let source = filter.selectedSource {
             conditions.append("pe.source = ?")
             params.append(source)
+        }
+        if let contentType = filter.selectedContentType {
+            conditions.append("COALESCE(pe.content_type, 'music') = ?")
+            params.append(contentType)
         }
         if filter.excludeSkipped {
             conditions.append("pe.skipped = 0")

@@ -13,6 +13,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Whether video is currently playing
     private(set) var isPlaying: Bool = false
+
+    /// Content type for play history analytics (movie, tv, music, video)
+    private var currentContentType: String = "video"
+
+    /// When playback started (for duration calculation in play history)
+    private var playbackStartTime: Date?
     
     /// Flag to prevent recursive stop/close calls
     private var isClosing: Bool = false
@@ -485,6 +491,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Check if this is being played from the playlist (callback was set)
         isFromPlaylist = onVideoFinishedForPlaylist != nil
         
+        currentContentType = "video"
+        playbackStartTime = Date()
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
@@ -493,7 +501,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isPlaying = true
         WindowManager.shared.videoPlaybackDidStart()
     }
-    
+
     /// Play a Plex video track from the playlist
     /// Used when the Track has a plexRatingKey but we don't have the full PlexMovie/PlexEpisode
     func play(plexTrack track: Track) {
@@ -534,6 +542,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Get Plex streaming headers
         let headers = PlexManager.shared.streamingHeaders
         
+        currentContentType = "music"
+        playbackStartTime = Date()
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: true, plexHeaders: headers)
@@ -541,7 +551,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         WindowManager.shared.videoPlaybackDidStart()
-        
+
         // Start Plex playback reporting
         PlexVideoPlaybackReporter.shared.videoTrackDidStart(
             ratingKey: ratingKey,
@@ -588,6 +598,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentEmbyEpisode = nil
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
+        currentContentType = "movie"
+        playbackStartTime = Date()
         currentTitle = movie.title
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: true, plexHeaders: headers)
@@ -595,10 +607,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         WindowManager.shared.videoPlaybackDidStart()
-        
+
         // Start Plex playback reporting
         PlexVideoPlaybackReporter.shared.movieDidStart(movie)
-        
+
         // Pass Plex streams for external subtitle support
         let allStreams = movie.media.flatMap { $0.parts.flatMap { $0.streams } }
         videoPlayerView.setPlexStreams(allStreams)
@@ -641,6 +653,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentEmbyEpisode = nil
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
+        currentContentType = "tv"
+        playbackStartTime = Date()
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: true, plexHeaders: headers)
@@ -691,6 +705,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
+        currentContentType = "movie"
+        playbackStartTime = Date()
         currentTitle = movie.title
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
@@ -743,6 +759,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
+        currentContentType = "tv"
+        playbackStartTime = Date()
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
@@ -789,6 +807,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
+        currentContentType = "movie"
+        playbackStartTime = Date()
         currentTitle = movie.title
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
@@ -841,6 +861,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
+        currentContentType = "tv"
+        playbackStartTime = Date()
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
@@ -852,7 +874,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Start Emby playback reporting
         EmbyVideoPlaybackReporter.shared.episodeDidStart(episode)
     }
-    
+
     /// Play a Jellyfin video track from the playlist
     func play(jellyfinTrack track: Track) {
         guard let jellyfinId = track.jellyfinId else {
@@ -888,6 +910,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Check if this is being played from the playlist
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
+        currentContentType = "music"
+        playbackStartTime = Date()
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
@@ -895,7 +919,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
         WindowManager.shared.videoPlaybackDidStart()
-        
+
         NSLog("VideoPlayerWindowController: Playing Jellyfin track from playlist: %@ (id: %@)", track.displayTitle, jellyfinId)
     }
 
@@ -934,6 +958,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Check if this is being played from the playlist
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
+        currentContentType = "music"
+        playbackStartTime = Date()
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
@@ -943,6 +969,39 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         WindowManager.shared.videoPlaybackDidStart()
 
         NSLog("VideoPlayerWindowController: Playing Emby track from playlist: %@ (id: %@)", track.displayTitle, embyId)
+    }
+
+    /// Record a play event for the current video to analytics
+    private func recordVideoPlayEvent() {
+        guard let startTime = playbackStartTime else { return }
+        let duration = Date().timeIntervalSince(startTime)
+        guard duration > 0 else { return }
+
+        let source: String
+        if isPlexContent {
+            source = PlayHistorySource.plex.rawValue
+        } else if isJellyfinContent {
+            source = PlayHistorySource.jellyfin.rawValue
+        } else if isEmbyContent {
+            source = PlayHistorySource.emby.rawValue
+        } else {
+            source = PlayHistorySource.local.rawValue
+        }
+
+        MediaLibraryStore.shared.insertPlayEvent(
+            trackId: nil,
+            trackURL: nil,
+            title: currentTitle,
+            artist: nil,
+            album: nil,
+            genre: nil,
+            playedAt: startTime,
+            durationListened: duration,
+            source: source,
+            skipped: false,
+            contentType: currentContentType)
+
+        playbackStartTime = nil
     }
 
     /// Stop playback
@@ -985,7 +1044,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             let position = wasCasting ? castPosition : videoPlayerView.currentPlaybackTime
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
-        
+
+        // Record play event to analytics before clearing state
+        recordVideoPlayEvent()
+
         videoPlayerView.stop()
         isPlaying = false
         currentTitle = nil
@@ -1358,6 +1420,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 let position = videoPlayerView.currentPlaybackTime
                 EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
             }
+
+            // Record play event to analytics before clearing state
+            recordVideoPlayEvent()
 
             videoPlayerView.stop()
             isPlaying = false

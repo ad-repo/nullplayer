@@ -344,6 +344,12 @@ struct Track: Identifiable, Equatable {
         return .local
     }
 
+    var playHistoryContentType: String {
+        if playHistorySource == .radio { return "radio" }
+        if mediaType == .video { return "video" }
+        return "music"
+    }
+
     var playHistoryTrackIdentifier: String? {
         switch playHistorySource {
         case .plex:

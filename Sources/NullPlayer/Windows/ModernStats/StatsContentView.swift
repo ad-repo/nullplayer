@@ -54,6 +54,9 @@ struct StatsHeaderView: View {
             if let source = agent.filter.selectedSource {
                 FilterChip(label: PlayHistorySource.displayName(for: source)) { agent.selectSource(nil) }
             }
+            if let contentType = agent.filter.selectedContentType {
+                FilterChip(label: PlayHistoryContentType.displayName(for: contentType)) { agent.selectContentType(nil) }
+            }
             if agent.isLoading {
                 ProgressView().controlSize(.small)
             }
@@ -127,6 +130,15 @@ struct StatsOverviewView: View {
                     selected: Binding(
                         get: { agent.filter.selectedSource },
                         set: { (v: String?) in agent.selectSource(v) }
+                    )
+                )
+                .frame(height: 220)
+
+                ContentTypeChartView(
+                    rows: agent.contentTypeBreakdown,
+                    selected: Binding(
+                        get: { agent.filter.selectedContentType },
+                        set: { (v: String?) in agent.selectContentType(v) }
                     )
                 )
                 .frame(height: 220)
@@ -459,6 +471,80 @@ struct SourceChartView: View {
                                     HStack(spacing: 6) {
                                         Circle()
                                             .fill(sourceColor(for: row.displayName))
+                                            .frame(width: 8, height: 8)
+                                        Text(row.displayName)
+                                            .font(.caption2)
+                                            .foregroundColor(row.id == selected ? .accentColor : .primary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 0)
+                                        Text("\(row.playCount)")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .monospacedDigit()
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .opacity(selected == nil || selected == row.id ? 1.0 : 0.5)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                        .padding(.trailing, 12)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private let contentTypeColorScale: KeyValuePairs<String, Color> = [
+    "Music": .blue,
+    "Movies": .orange,
+    "TV Shows": .purple,
+    "Radio": .red,
+    "Video": .green
+]
+
+private func contentTypeColor(for displayName: String) -> Color {
+    contentTypeColorScale.first(where: { $0.0 == displayName })?.1 ?? .gray
+}
+
+struct ContentTypeChartView: View {
+    let rows: [TopDimensionRow]
+    @Binding var selected: String?
+    private let chartSize: CGFloat = 156
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Content Types").font(.subheadline).fontWeight(.medium)
+            if rows.isEmpty {
+                Text("No data").foregroundColor(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    Chart(rows) { row in
+                        SectorMark(
+                            angle: .value("Plays", row.playCount),
+                            innerRadius: .ratio(0.5)
+                        )
+                        .foregroundStyle(contentTypeColor(for: row.displayName))
+                        .opacity(selected == nil || selected == row.id ? 1.0 : 0.4)
+                    }
+                    .chartLegend(.hidden)
+                    .frame(width: chartSize, height: chartSize)
+                    .onTapGesture { selected = nil }
+
+                    ScrollView(.vertical, showsIndicators: true) {
+                        VStack(spacing: 3) {
+                            ForEach(rows) { row in
+                                Button {
+                                    selected = (selected == row.id) ? nil : row.id
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(contentTypeColor(for: row.displayName))
                                             .frame(width: 8, height: 8)
                                         Text(row.displayName)
                                             .font(.caption2)
