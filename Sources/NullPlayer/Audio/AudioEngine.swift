@@ -1015,15 +1015,11 @@ class AudioEngine {
     private func rebuildAudioGraph() {
         let wasPlaying = state == .playing
         let currentPosition = currentTime
-
-        // Stop engine before reconnecting — connecting nodes while running
-        // with a changed device format throws an ObjC exception (SIGABRT)
-        engine.stop()
-
+        
         // Get new format from the updated output device
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
         NSLog("AudioEngine: Rebuilding graph with format: %@", mixerFormat.description)
-
+        
         // Reconnect all nodes with new format
         engine.connect(playerNode, to: mixerNode, format: mixerFormat)
         engine.connect(crossfadePlayerNode, to: mixerNode, format: mixerFormat)
@@ -1075,14 +1071,6 @@ class AudioEngine {
                 NSLog("AudioEngine: Restarted engine for streaming after config change")
             } catch {
                 NSLog("AudioEngine: Failed to restart engine for streaming: %@", error.localizedDescription)
-            }
-        } else {
-            // Engine was stopped for reconnection — restart so it's ready for next playback
-            do {
-                try engine.start()
-                NSLog("AudioEngine: Restarted engine after config change (was not playing)")
-            } catch {
-                NSLog("AudioEngine: Failed to restart engine after config change: %@", error.localizedDescription)
             }
         }
     }
@@ -2164,22 +2152,6 @@ class AudioEngine {
     private var castStartPosition: TimeInterval = 0
     /// Whether we've received the first status update from Chromecast (prevents UI flash before sync)
     private var castHasReceivedStatus: Bool = false
-    /// Re-entry guard so cast completion is handled once per finished track.
-    private var castFinishHandledForCurrentTrack: Bool = false
-
-    static func shouldHandleCastFinish(
-        isCastingActive: Bool,
-        hasHandledFinishForCurrentTrack: Bool
-    ) -> Bool {
-        isCastingActive && !hasHandledFinishForCurrentTrack
-    }
-
-    static func nextCastFinishHandledStateAfterStatusUpdate(
-        currentValue: Bool,
-        isPlaying: Bool
-    ) -> Bool {
-        isPlaying ? false : currentValue
-    }
     
     var currentTime: TimeInterval {
         // When casting, interpolate from start position
@@ -2250,7 +2222,6 @@ class AudioEngine {
         castStartPosition = position
         castPlaybackStartDate = Date()
         castHasReceivedStatus = true  // Immediate start means we skip waiting for status
-        castFinishHandledForCurrentTrack = false
         _currentTime = position
         lastReportedTime = position
         suspendedLocalPlaybackClockForSleep = false
@@ -2278,7 +2249,6 @@ class AudioEngine {
         castPlaybackStartDate = nil
         // Reset status flag - UI won't update time until we receive first Chromecast status
         castHasReceivedStatus = false
-        castFinishHandledForCurrentTrack = false
         _currentTime = position
         lastReportedTime = position
         suspendedLocalPlaybackClockForSleep = false
@@ -2319,7 +2289,6 @@ class AudioEngine {
         
         castStartPosition = 0
         castPlaybackStartDate = nil
-        castFinishHandledForCurrentTrack = false
         // Keep castHasReceivedStatus true so UI updates work when playing again
         state = .stopped
     }
@@ -2327,7 +2296,6 @@ class AudioEngine {
     /// Resume cast playback time tracking
     func resumeCastPlayback() {
         castPlaybackStartDate = Date()
-        castFinishHandledForCurrentTrack = false
         
         // Report resume to Plex
         PlexPlaybackReporter.shared.trackDidResume(at: castStartPosition)
@@ -2340,11 +2308,6 @@ class AudioEngine {
     /// This syncs the local time tracking with the actual position from the cast device
     func updateCastPosition(currentTime: TimeInterval, isPlaying: Bool, isBuffering: Bool) {
         guard isCastingActive else { return }
-
-        castFinishHandledForCurrentTrack = Self.nextCastFinishHandledStateAfterStatusUpdate(
-            currentValue: castFinishHandledForCurrentTrack,
-            isPlaying: isPlaying
-        )
         
         // Mark that we've received status from Chromecast (enables UI time updates)
         let isFirstStatus = !castHasReceivedStatus
@@ -2398,7 +2361,6 @@ class AudioEngine {
                 castPlaybackStartDate = nil
                 castStartPosition = 0
                 castHasReceivedStatus = false
-                castFinishHandledForCurrentTrack = false
                 
                 // Load and seek to position
                 if let index = playlist.firstIndex(where: { $0.id == track.id }) {
@@ -2415,7 +2377,6 @@ class AudioEngine {
         castPlaybackStartDate = nil
         castStartPosition = 0
         castHasReceivedStatus = false
-        castFinishHandledForCurrentTrack = false
         state = .stopped
     }
     
@@ -2544,14 +2505,7 @@ class AudioEngine {
     }
     
     /// Handle cast track completion - advance to next track
-    func castTrackDidFinish() {
-        // Guard against re-entry (can be called from both timer auto-advance and Chromecast IDLE status)
-        guard Self.shouldHandleCastFinish(
-            isCastingActive: isCastingActive,
-            hasHandledFinishForCurrentTrack: castFinishHandledForCurrentTrack
-        ) else { return }
-        castFinishHandledForCurrentTrack = true
-
+    private func castTrackDidFinish() {
         // Report track finished to Plex (natural end)
         PlexPlaybackReporter.shared.trackDidStop(at: duration, finished: true)
 
@@ -2580,8 +2534,7 @@ class AudioEngine {
                 playedAt: Date(),
                 durationListened: finishedTrack.duration ?? 0,
                 source: finishedTrack.playHistorySource.rawValue,
-                skipped: false,
-                contentType: finishedTrack.playHistoryContentType)
+                skipped: false)
             if let eventId, finishedTrack.genre == nil || finishedTrack.genre?.isEmpty == true {
                 Task.detached(priority: .utility) { [track = finishedTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
@@ -3849,8 +3802,7 @@ class AudioEngine {
                 playedAt: Date(),
                 durationListened: finishedTrack.duration ?? 0,
                 source: finishedTrack.playHistorySource.rawValue,
-                skipped: false,
-                contentType: finishedTrack.playHistoryContentType)
+                skipped: false)
             if let eventId, finishedTrack.genre == nil || finishedTrack.genre?.isEmpty == true {
                 Task.detached(priority: .utility) { [track = finishedTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
@@ -4413,8 +4365,7 @@ class AudioEngine {
                 playedAt: Date(),
                 durationListened: outgoingTrack.duration ?? 0,
                 source: outgoingTrack.playHistorySource.rawValue,
-                skipped: false,
-                contentType: outgoingTrack.playHistoryContentType)
+                skipped: false)
             if let eventId, outgoingTrack.genre == nil || outgoingTrack.genre?.isEmpty == true {
                 Task.detached(priority: .utility) { [track = outgoingTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
@@ -4525,8 +4476,7 @@ class AudioEngine {
                 playedAt: Date(),
                 durationListened: outgoingTrack.duration ?? 0,
                 source: outgoingTrack.playHistorySource.rawValue,
-                skipped: false,
-                contentType: outgoingTrack.playHistoryContentType)
+                skipped: false)
             if let eventId, outgoingTrack.genre == nil || outgoingTrack.genre?.isEmpty == true {
                 Task.detached(priority: .utility) { [track = outgoingTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(

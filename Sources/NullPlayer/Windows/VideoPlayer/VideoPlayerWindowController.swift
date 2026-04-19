@@ -14,18 +14,18 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Whether video is currently playing
     private(set) var isPlaying: Bool = false
 
-    /// Content type for play history analytics (movie, tv, music, video)
-    private var currentContentType: String = "video"
+    /// Flag to prevent recursive stop/close calls
+    private var isClosing: Bool = false
 
-    /// Start of the currently active playback segment.
+    /// Timestamp when playback of the current item started (for analytics)
     private var playbackStartTime: Date?
 
     /// Sum of completed playback segments for the current item.
     private var accumulatedPlaybackDuration: TimeInterval = 0
-    
-    /// Flag to prevent recursive stop/close calls
-    private var isClosing: Bool = false
-    
+
+    /// Content type of the currently playing item (for analytics)
+    private var currentContentType: String = "video"
+
     /// Current video title
     private(set) var currentTitle: String?
     
@@ -52,12 +52,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Current Emby episode (if playing Emby content)
     private var currentEmbyEpisode: EmbyEpisode?
-
-    /// Current Jellyfin item ID (for playlist tracks without full movie/episode)
-    private var currentJellyfinItemId: String?
-
-    /// Current Emby item ID (for playlist tracks without full movie/episode)
-    private var currentEmbyItemId: String?
 
     /// Public access to current Plex movie metadata (for About Playing)
     var plexMovie: PlexMovie? { currentPlexMovie }
@@ -348,9 +342,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: true)
             }
 
-            // Record analytics before any playlist transition starts the next item.
+            // Record analytics before advancing playlist
             self.recordVideoPlayEvent()
-            
+
             // Advance playlist if this video was from the playlist
             if self.isFromPlaylist {
                 NSLog("VideoPlayer: Video finished from playlist, invoking callback")
@@ -398,13 +392,15 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Whether current content is from Jellyfin
     private var isJellyfinContent: Bool {
-        currentJellyfinMovie != nil || currentJellyfinEpisode != nil || currentJellyfinItemId != nil
+        currentJellyfinMovie != nil || currentJellyfinEpisode != nil
     }
 
     /// Whether current content is from Emby
     private var isEmbyContent: Bool {
-        currentEmbyMovie != nil || currentEmbyEpisode != nil || currentEmbyItemId != nil
+        currentEmbyMovie != nil || currentEmbyEpisode != nil
     }
+
+    // MARK: - Playback Analytics
 
     private func beginPlaybackAnalyticsSession(contentType: String) {
         currentContentType = contentType
@@ -426,7 +422,32 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     private func totalPlaybackDuration(at timestamp: Date) -> TimeInterval {
         accumulatedPlaybackDuration + (playbackStartTime.map { timestamp.timeIntervalSince($0) } ?? 0)
     }
-    
+
+    private func recordVideoPlayEvent() {
+        let eventTimestamp = Date()
+        let duration = totalPlaybackDuration(at: eventTimestamp)
+        guard duration > 0 else { return }
+
+        let title = currentTitle
+        let contentType = currentContentType
+
+        _ = MediaLibraryStore.shared.insertPlayEvent(
+            trackId: nil,
+            trackURL: nil,
+            title: title,
+            artist: nil,
+            album: nil,
+            genre: nil,
+            playedAt: eventTimestamp,
+            durationListened: duration,
+            source: "local",
+            skipped: false,
+            contentType: contentType)
+
+        playbackStartTime = nil
+        accumulatedPlaybackDuration = 0
+    }
+
     private func setupKeyboardMonitor() {
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self,
@@ -501,7 +522,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     func play(url: URL, title: String) {
         // Reset any lingering cast state from previous video
         resetCastState()
-        
+
         // Report stop to Plex/Jellyfin/Emby if currently playing server content (before clearing state)
         if isPlexContent {
             let position = videoPlayerView.currentPlaybackTime
@@ -514,7 +535,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
-        // Record outgoing playback before replacing with a new item.
+        // Record analytics for the previous item before clearing state
         recordVideoPlayEvent()
 
         // Clear any server content (this is a local video)
@@ -523,24 +544,22 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
-        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        currentEmbyItemId = nil
-
+        
         // Store local URL for casting
         currentLocalURL = url.isFileURL ? url : nil
         
         // Check if this is being played from the playlist (callback was set)
         isFromPlaylist = onVideoFinishedForPlaylist != nil
         
-        beginPlaybackAnalyticsSession(contentType: "video")
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
+        beginPlaybackAnalyticsSession(contentType: "video")
         WindowManager.shared.videoPlaybackDidStart()
     }
 
@@ -552,10 +571,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             play(url: track.url, title: track.displayTitle)
             return
         }
-        
+
         // Reset any lingering cast state from previous video
         resetCastState()
-        
+
         // Report stop to current server content if playing
         if isPlexContent {
             let position = videoPlayerView.currentPlaybackTime
@@ -568,7 +587,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
-        // Record outgoing playback before replacing with a new item.
+        // Record analytics for the previous item before clearing state
         recordVideoPlayEvent()
 
         // Clear movie/episode objects but keep track of the rating key for isPlexContent
@@ -577,25 +596,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = ratingKey
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
-        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        currentEmbyItemId = nil
         currentLocalURL = nil  // Clear local URL when playing Plex content
-
+        
         // Check if this is being played from the playlist (callback was set)
         isFromPlaylist = onVideoFinishedForPlaylist != nil
         
         // Get Plex streaming headers
         let headers = PlexManager.shared.streamingHeaders
         
-        beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
+        beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         WindowManager.shared.videoPlaybackDidStart()
 
         // Start Plex playback reporting
@@ -604,7 +621,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             title: track.displayTitle,
             durationSeconds: track.duration ?? 0
         )
-        
+
         NSLog("VideoPlayerWindowController: Playing Plex track from playlist: %@ (key: %@)", track.displayTitle, ratingKey)
     }
     
@@ -612,7 +629,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     func play(movie: PlexMovie) {
         // Reset any lingering cast state from previous video
         resetCastState()
-        
+
         // Report stop to current server content if playing
         if isPlexContent {
             let position = videoPlayerView.currentPlaybackTime
@@ -624,6 +641,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             let position = videoPlayerView.currentPlaybackTime
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
+
+        // Record analytics for the previous item before clearing state
+        recordVideoPlayEvent()
 
         guard let url = PlexManager.shared.streamURL(for: movie) else {
             NSLog("Failed to get stream URL for movie: %@", movie.title)
@@ -633,9 +653,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Get full streaming headers (required for remote/relay connections)
         let headers = PlexManager.shared.streamingHeaders
         NSLog("Playing Plex movie: %@ with URL: %@", movie.title, url.absoluteString)
-
-        // Record outgoing playback before replacing with a new item.
-        recordVideoPlayEvent()
         
         // Store Plex content for reporting
         currentPlexMovie = movie
@@ -643,19 +660,17 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
-        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        currentEmbyItemId = nil
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
-        beginPlaybackAnalyticsSession(contentType: "movie")
         currentTitle = movie.title
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
+        beginPlaybackAnalyticsSession(contentType: "movie")
         WindowManager.shared.videoPlaybackDidStart()
 
         // Start Plex playback reporting
@@ -665,12 +680,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         let allStreams = movie.media.flatMap { $0.parts.flatMap { $0.streams } }
         videoPlayerView.setPlexStreams(allStreams)
     }
-    
+
     /// Play a Plex episode
     func play(episode: PlexEpisode) {
         // Reset any lingering cast state from previous video
         resetCastState()
-        
+
         // Report stop to current server content if playing
         if isPlexContent {
             let position = videoPlayerView.currentPlaybackTime
@@ -682,6 +697,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             let position = videoPlayerView.currentPlaybackTime
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
+
+        // Record analytics for the previous item before clearing state
+        recordVideoPlayEvent()
 
         guard let url = PlexManager.shared.streamURL(for: episode) else {
             NSLog("Failed to get stream URL for episode: %@", episode.title)
@@ -692,9 +710,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         let headers = PlexManager.shared.streamingHeaders
         let title = "\(episode.grandparentTitle ?? "Unknown") - \(episode.episodeIdentifier) - \(episode.title)"
         NSLog("Playing Plex episode: %@ with URL: %@", title, url.absoluteString)
-
-        // Record outgoing playback before replacing with a new item.
-        recordVideoPlayEvent()
         
         // Store Plex content for reporting
         currentPlexMovie = nil
@@ -702,29 +717,27 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
-        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        currentEmbyItemId = nil
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
-        beginPlaybackAnalyticsSession(contentType: "tv")
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
+        beginPlaybackAnalyticsSession(contentType: "tv")
         WindowManager.shared.videoPlaybackDidStart()
 
         // Start Plex playback reporting
         PlexVideoPlaybackReporter.shared.episodeDidStart(episode)
-        
+
         // Pass Plex streams for external subtitle support
         let allStreams = episode.media.flatMap { $0.parts.flatMap { $0.streams } }
         videoPlayerView.setPlexStreams(allStreams)
     }
-    
+
     /// Play a Jellyfin movie
     func play(jellyfinMovie movie: JellyfinMovie) {
         // Reset any lingering cast state from previous video
@@ -742,6 +755,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
+        // Record analytics for the previous item before clearing state
+        recordVideoPlayEvent()
+
         guard let url = JellyfinManager.shared.videoStreamURL(for: movie) else {
             NSLog("Failed to get stream URL for Jellyfin movie: %@", movie.title)
             return
@@ -749,28 +765,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
         NSLog("Playing Jellyfin movie: %@ with URL: %@", movie.title, url.absoluteString)
 
-        // Record outgoing playback before replacing with a new item.
-        recordVideoPlayEvent()
-
         // Store Jellyfin content for reporting
         currentJellyfinMovie = movie
         currentJellyfinEpisode = nil
-        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        currentEmbyItemId = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
-        beginPlaybackAnalyticsSession(contentType: "movie")
         currentTitle = movie.title
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
+        beginPlaybackAnalyticsSession(contentType: "movie")
         WindowManager.shared.videoPlaybackDidStart()
 
         // Start Jellyfin playback reporting
@@ -794,6 +805,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
+        // Record analytics for the previous item before clearing state
+        recordVideoPlayEvent()
+
         guard let url = JellyfinManager.shared.videoStreamURL(for: episode) else {
             NSLog("Failed to get stream URL for Jellyfin episode: %@", episode.title)
             return
@@ -807,28 +821,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
         NSLog("Playing Jellyfin episode: %@ with URL: %@", title, url.absoluteString)
 
-        // Record outgoing playback before replacing with a new item.
-        recordVideoPlayEvent()
-
         // Store Jellyfin content for reporting
         currentJellyfinMovie = nil
         currentJellyfinEpisode = episode
-        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        currentEmbyItemId = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
-        beginPlaybackAnalyticsSession(contentType: "tv")
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
+        beginPlaybackAnalyticsSession(contentType: "tv")
         WindowManager.shared.videoPlaybackDidStart()
 
         // Start Jellyfin playback reporting
@@ -852,6 +861,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
+        // Record analytics for the previous item before clearing state
+        recordVideoPlayEvent()
+
         guard let url = EmbyManager.shared.videoStreamURL(for: movie) else {
             NSLog("Failed to get stream URL for Emby movie: %@", movie.title)
             return
@@ -859,28 +871,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
         NSLog("Playing Emby movie: %@ with URL: %@", movie.title, url.absoluteString)
 
-        // Record outgoing playback before replacing with a new item.
-        recordVideoPlayEvent()
-
         // Store Emby content for reporting
         currentEmbyMovie = movie
         currentEmbyEpisode = nil
-        currentEmbyItemId = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
-        currentJellyfinItemId = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
-        beginPlaybackAnalyticsSession(contentType: "movie")
         currentTitle = movie.title
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
+        beginPlaybackAnalyticsSession(contentType: "movie")
         WindowManager.shared.videoPlaybackDidStart()
 
         // Start Emby playback reporting
@@ -904,6 +911,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
+        // Record analytics for the previous item before clearing state
+        recordVideoPlayEvent()
+
         guard let url = EmbyManager.shared.videoStreamURL(for: episode) else {
             NSLog("Failed to get stream URL for Emby episode: %@", episode.title)
             return
@@ -917,28 +927,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
         NSLog("Playing Emby episode: %@ with URL: %@", title, url.absoluteString)
 
-        // Record outgoing playback before replacing with a new item.
-        recordVideoPlayEvent()
-
         // Store Emby content for reporting
         currentEmbyMovie = nil
         currentEmbyEpisode = episode
-        currentEmbyItemId = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
-        currentJellyfinItemId = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
-        beginPlaybackAnalyticsSession(contentType: "tv")
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
+        beginPlaybackAnalyticsSession(contentType: "tv")
         WindowManager.shared.videoPlaybackDidStart()
 
         // Start Emby playback reporting
@@ -951,10 +956,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             play(url: track.url, title: track.displayTitle)
             return
         }
-        
+
         // Reset any lingering cast state from previous video
         resetCastState()
-        
+
         // Report stop to previous content if needed
         if isPlexContent {
             let position = videoPlayerView.currentPlaybackTime
@@ -967,7 +972,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
-        // Record outgoing playback before replacing with a new item.
+        // Record analytics for the previous item before clearing state
         recordVideoPlayEvent()
 
         // Clear other content state
@@ -976,22 +981,20 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
-        currentJellyfinItemId = jellyfinId
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        currentEmbyItemId = nil
         currentLocalURL = nil
 
         // Check if this is being played from the playlist
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
-        beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
+        beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         WindowManager.shared.videoPlaybackDidStart()
 
         NSLog("VideoPlayerWindowController: Playing Jellyfin track from playlist: %@ (id: %@)", track.displayTitle, jellyfinId)
@@ -1019,7 +1022,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
-        // Record outgoing playback before replacing with a new item.
+        // Record analytics for the previous item before clearing state
         recordVideoPlayEvent()
 
         // Clear other content state
@@ -1028,59 +1031,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
-        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        currentEmbyItemId = embyId
         currentLocalURL = nil
 
         // Check if this is being played from the playlist
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
-        beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         isPlaying = true
+        beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         WindowManager.shared.videoPlaybackDidStart()
 
         NSLog("VideoPlayerWindowController: Playing Emby track from playlist: %@ (id: %@)", track.displayTitle, embyId)
-    }
-
-    /// Record a play event for the current video to analytics
-    private func recordVideoPlayEvent() {
-        let eventTimestamp = Date()
-        let duration = totalPlaybackDuration(at: eventTimestamp)
-        guard duration > 0 else { return }
-
-        let source: String
-        if isPlexContent {
-            source = PlayHistorySource.plex.rawValue
-        } else if isJellyfinContent {
-            source = PlayHistorySource.jellyfin.rawValue
-        } else if isEmbyContent {
-            source = PlayHistorySource.emby.rawValue
-        } else {
-            source = PlayHistorySource.local.rawValue
-        }
-
-        MediaLibraryStore.shared.insertPlayEvent(
-            trackId: nil,
-            trackURL: nil,
-            title: currentTitle,
-            artist: nil,
-            album: nil,
-            genre: nil,
-            playedAt: eventTimestamp,
-            durationListened: duration,
-            source: source,
-            skipped: false,
-            contentType: currentContentType)
-
-        playbackStartTime = nil
-        accumulatedPlaybackDuration = 0
     }
 
     /// Stop playback
@@ -1124,7 +1091,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
         }
 
-        // Record play event to analytics before clearing state
+        // Record analytics before clearing state
         recordVideoPlayEvent()
 
         videoPlayerView.stop()
@@ -1135,10 +1102,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentJellyfinMovie = nil
         currentJellyfinEpisode = nil
-        currentJellyfinItemId = nil
         currentEmbyMovie = nil
         currentEmbyEpisode = nil
-        currentEmbyItemId = nil
         WindowManager.shared.videoPlaybackDidStop()
         close()
     }
@@ -1207,7 +1172,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                                 castStartPosition += Date().timeIntervalSince(startDate)
                             }
                             castPlaybackStartDate = nil
-                            self.pausePlaybackAnalytics()
                             isPlaying = false
                             videoPlayerView.updateCastState(isPlaying: false, deviceName: castTargetDevice?.name)
                         }
@@ -1216,7 +1180,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                         await MainActor.run {
                             // Resume time tracking
                             castPlaybackStartDate = Date()
-                            self.resumePlaybackAnalytics()
                             isPlaying = true
                             videoPlayerView.updateCastState(isPlaying: true, deviceName: castTargetDevice?.name)
                         }
@@ -1504,7 +1467,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: false)
             }
 
-            // Record play event to analytics before clearing state
+            // Record analytics before clearing state
             recordVideoPlayEvent()
 
             videoPlayerView.stop()
@@ -1515,10 +1478,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             currentPlexRatingKey = nil
             currentJellyfinMovie = nil
             currentJellyfinEpisode = nil
-            currentJellyfinItemId = nil
             currentEmbyMovie = nil
             currentEmbyEpisode = nil
-            currentEmbyItemId = nil
             WindowManager.shared.videoPlaybackDidStop()
         }
         removeKeyboardMonitor()

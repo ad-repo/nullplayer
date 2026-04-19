@@ -161,14 +161,8 @@ struct CastMediaStatus {
     var duration: TimeInterval?
     /// Current player state
     var playerState: CastPlayerState = .unknown
-    /// Why playback entered IDLE, when the receiver provides it.
-    var idleReason: CastIdleReason?
     /// Media session ID
     var mediaSessionId: Int = 0
-
-    var indicatesNaturalCompletion: Bool {
-        playerState == .idle && idleReason == .finished
-    }
 }
 
 /// Chromecast player states
@@ -178,13 +172,6 @@ enum CastPlayerState: String {
     case playing = "PLAYING"
     case paused = "PAUSED"
     case unknown = "UNKNOWN"
-}
-
-enum CastIdleReason: String {
-    case cancelled = "CANCELLED"
-    case interrupted = "INTERRUPTED"
-    case finished = "FINISHED"
-    case error = "ERROR"
 }
 
 /// Delegate protocol for receiving Chromecast status updates
@@ -199,12 +186,6 @@ protocol CastSessionControllerDelegate: AnyObject {
 
 /// Thread-safe session controller using class with locks
 class CastSessionController {
-    enum MediaStatusParseResult {
-        case status(CastMediaStatus)
-        case idleCompletion
-        case ignore
-    }
-
     private var connection: NWConnection?
     private var receiveBuffer = Data()
     private var transportId: String?
@@ -626,26 +607,47 @@ class CastSessionController {
             }
             
         case "MEDIA_STATUS":
-            switch Self.parseMediaStatus(from: json) {
-            case .status(let mediaStatus):
-                withLock { self.mediaSessionId = mediaStatus.mediaSessionId }
-                NSLog("CastSessionController: MEDIA_STATUS - sessionId: %d, time: %.1f, state: %@",
-                      mediaStatus.mediaSessionId, mediaStatus.currentTime, mediaStatus.playerState.rawValue)
-                // Notify delegate on main thread
-                DispatchQueue.main.async { [weak self] in
-                    self?.delegate?.castSessionDidUpdateMediaStatus(mediaStatus)
+            if let statuses = json["status"] as? [[String: Any]],
+               let status = statuses.first {
+                
+                // Extract mediaSessionId
+                if let msid = status["mediaSessionId"] as? Int {
+                    withLock { self.mediaSessionId = msid }
+                    
+                    // Build status object with all available info
+                    var mediaStatus = CastMediaStatus()
+                    mediaStatus.mediaSessionId = msid
+                    
+                    // Extract currentTime (playback position)
+                    if let currentTime = status["currentTime"] as? Double {
+                        mediaStatus.currentTime = currentTime
+                    }
+                    
+                    // Extract playerState
+                    if let stateString = status["playerState"] as? String,
+                       let state = CastPlayerState(rawValue: stateString) {
+                        mediaStatus.playerState = state
+                    }
+                    
+                    // Extract duration from media object if present
+                    if let media = status["media"] as? [String: Any],
+                       let duration = media["duration"] as? Double {
+                        mediaStatus.duration = duration
+                    }
+                    
+                    NSLog("CastSessionController: MEDIA_STATUS - sessionId: %d, time: %.1f, state: %@", 
+                          msid, mediaStatus.currentTime, mediaStatus.playerState.rawValue)
+                    
+                    // Notify delegate on main thread
+                    DispatchQueue.main.async { [weak self] in
+                        self?.delegate?.castSessionDidUpdateMediaStatus(mediaStatus)
+                    }
+                } else {
+                    NSLog("CastSessionController: MEDIA_STATUS - no mediaSessionId in status")
                 }
-            case .idleCompletion:
-                // Explicitly empty status array means media session ended
-                NSLog("CastSessionController: MEDIA_STATUS - empty status array, media ended")
-                var idleStatus = CastMediaStatus()
-                idleStatus.playerState = .idle
-                idleStatus.idleReason = .finished
-                DispatchQueue.main.async { [weak self] in
-                    self?.delegate?.castSessionDidUpdateMediaStatus(idleStatus)
-                }
-            case .ignore:
-                break
+            } else {
+                // Empty status array might indicate media stopped
+                NSLog("CastSessionController: MEDIA_STATUS - empty or invalid status array")
             }
             
         case "CLOSE":
@@ -658,56 +660,6 @@ class CastSessionController {
         default:
             break
         }
-    }
-
-    static func parseMediaStatus(from json: [String: Any]) -> MediaStatusParseResult {
-        guard let rawStatuses = json["status"] else {
-            NSLog("CastSessionController: MEDIA_STATUS - missing status field")
-            return .ignore
-        }
-
-        guard let statuses = rawStatuses as? [Any] else {
-            NSLog("CastSessionController: MEDIA_STATUS - malformed status payload (non-array)")
-            return .ignore
-        }
-
-        guard let firstStatus = statuses.first else {
-            return .idleCompletion
-        }
-
-        guard let status = firstStatus as? [String: Any] else {
-            NSLog("CastSessionController: MEDIA_STATUS - malformed status entry")
-            return .ignore
-        }
-
-        guard let msid = status["mediaSessionId"] as? Int else {
-            NSLog("CastSessionController: MEDIA_STATUS - no mediaSessionId in status")
-            return .ignore
-        }
-
-        var mediaStatus = CastMediaStatus()
-        mediaStatus.mediaSessionId = msid
-
-        if let currentTime = status["currentTime"] as? Double {
-            mediaStatus.currentTime = currentTime
-        }
-
-        if let stateString = status["playerState"] as? String,
-           let state = CastPlayerState(rawValue: stateString) {
-            mediaStatus.playerState = state
-        }
-
-        if let idleReasonString = status["idleReason"] as? String,
-           let idleReason = CastIdleReason(rawValue: idleReasonString) {
-            mediaStatus.idleReason = idleReason
-        }
-
-        if let media = status["media"] as? [String: Any],
-           let duration = media["duration"] as? Double {
-            mediaStatus.duration = duration
-        }
-
-        return .status(mediaStatus)
     }
     
     private func startHeartbeat() {

@@ -1439,25 +1439,7 @@ class UPnPManager {
     /// Send seek command without waiting for response (for Sonos audio)
     private func sendSeekFireAndForget(controlURL: URL, seekTarget: String) {
         Task {
-            // seek(to:) passes an absolute playback position, so ABS_TIME is the
-            // correct unit here. REL_TIME can be interpreted as an offset.
-            do {
-                try await sendSOAPActionNoRetry(
-                    controlURL: controlURL,
-                    action: "Seek",
-                    arguments: [
-                        ("InstanceID", "0"),
-                        ("Unit", "ABS_TIME"),
-                        ("Target", seekTarget)
-                    ]
-                )
-                NSLog("UPnPManager: Seek to %@ completed (ABS_TIME)", seekTarget)
-                return
-            } catch {
-                NSLog("UPnPManager: ABS_TIME seek failed: %@, trying REL_TIME", error.localizedDescription)
-            }
-            
-            // Fallback to REL_TIME for devices that only implement relative seeking
+            // Try REL_TIME first (most common)
             do {
                 try await sendSOAPActionNoRetry(
                     controlURL: controlURL,
@@ -1469,6 +1451,23 @@ class UPnPManager {
                     ]
                 )
                 NSLog("UPnPManager: Seek to %@ completed (REL_TIME)", seekTarget)
+                return
+            } catch {
+                NSLog("UPnPManager: REL_TIME seek failed: %@, trying ABS_TIME", error.localizedDescription)
+            }
+            
+            // Fallback to ABS_TIME
+            do {
+                try await sendSOAPActionNoRetry(
+                    controlURL: controlURL,
+                    action: "Seek",
+                    arguments: [
+                        ("InstanceID", "0"),
+                        ("Unit", "ABS_TIME"),
+                        ("Target", seekTarget)
+                    ]
+                )
+                NSLog("UPnPManager: Seek to %@ completed (ABS_TIME)", seekTarget)
             } catch {
                 NSLog("UPnPManager: Seek to %@ failed: %@", seekTarget, error.localizedDescription)
             }

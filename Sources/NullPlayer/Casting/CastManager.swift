@@ -411,47 +411,14 @@ class CastManager {
                     WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
                 }
             } else if self.isCasting {
-                // Audio casting
-                if status.playerState == .idle {
-                    if self.shouldTreatChromecastIdleAsCompletion(status) {
-                        // Content finished on Chromecast — trigger track advance.
-                        // Must call castTrackDidFinish() directly rather than updateCastPosition(),
-                        // because updateCastPosition treats idle as paused (clears castPlaybackStartDate)
-                        // which prevents the timer-based auto-advance from ever firing.
-                        NSLog("CastManager: Chromecast audio IDLE (finished) — triggering track finish")
-                        self.resolvedAudioEngine.castTrackDidFinish()
-                    } else {
-                        NSLog(
-                            "CastManager: Chromecast audio IDLE without finish reason%@ — not auto-advancing",
-                            status.idleReason.map { " (\($0.rawValue))" } ?? ""
-                        )
-                        self.resolvedAudioEngine.updateCastPosition(
-                            currentTime: status.currentTime,
-                            isPlaying: false,
-                            isBuffering: false
-                        )
-                    }
-                } else {
-                    // Forward position sync to AudioEngine
-                    self.resolvedAudioEngine.updateCastPosition(
-                        currentTime: status.currentTime,
-                        isPlaying: isPlaying,
-                        isBuffering: isBuffering
-                    )
-                }
+                // Audio casting - forward position sync to AudioEngine
+                self.resolvedAudioEngine.updateCastPosition(
+                    currentTime: status.currentTime,
+                    isPlaying: isPlaying,
+                    isBuffering: isBuffering
+                )
             }
         }
-    }
-
-    private func shouldTreatChromecastIdleAsCompletion(_ status: CastMediaStatus) -> Bool {
-        if status.indicatesNaturalCompletion {
-            return true
-        }
-
-        // Some receivers omit idleReason; only treat IDLE as completion when the
-        // reported position is already at the end of the known item duration.
-        let knownDuration = status.duration ?? resolvedAudioEngine.duration
-        return knownDuration > 0 && status.currentTime >= knownDuration - 0.5
     }
     
     // MARK: - Discovery
@@ -1679,12 +1646,8 @@ class CastManager {
                     }
                 case "STOPPED", "NO_MEDIA_PRESENT":
                     NSLog("CastManager: Sonos reported %@ - playback ended externally", result.state)
-                    if self.shouldTreatSonosStopStateAsCompletion(position: result.position, duration: result.duration) {
-                        engine.castTrackDidFinish()
-                    } else {
-                        // Don't auto-disconnect, just update state so UI reflects reality
-                        engine.pauseCastPlayback()
-                    }
+                    // Don't auto-disconnect, just update state so UI reflects reality
+                    engine.pauseCastPlayback()
                     NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
                 case "TRANSITIONING":
                     // Sonos is loading/buffering - don't change state, just wait
@@ -1724,22 +1687,12 @@ class CastManager {
                 if result.state == "STOPPED" || result.state == "NO_MEDIA_PRESENT" {
                     NSLog("CastManager: Sonos stopped during sleep")
                     await MainActor.run {
-                        let engine = WindowManager.shared.audioEngine
-                        if self.shouldTreatSonosStopStateAsCompletion(position: result.position, duration: result.duration) {
-                            engine.castTrackDidFinish()
-                        } else {
-                            engine.pauseCastPlayback()
-                        }
+                        WindowManager.shared.audioEngine.pauseCastPlayback()
                         NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
                     }
                 }
             }
         }
-    }
-
-    private func shouldTreatSonosStopStateAsCompletion(position: TimeInterval, duration: TimeInterval) -> Bool {
-        let knownDuration = duration > 0 ? duration : resolvedAudioEngine.duration
-        return knownDuration > 0 && position >= knownDuration - 0.5
     }
     
     // MARK: - Sonos Group Topology Refresh (Fix 9)
