@@ -431,6 +431,17 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         let title = currentTitle
         let contentType = currentContentType
 
+        let source: String
+        if isPlexContent {
+            source = PlayHistorySource.plex.rawValue
+        } else if isJellyfinContent {
+            source = PlayHistorySource.jellyfin.rawValue
+        } else if isEmbyContent {
+            source = PlayHistorySource.emby.rawValue
+        } else {
+            source = PlayHistorySource.local.rawValue
+        }
+
         _ = MediaLibraryStore.shared.insertPlayEvent(
             trackId: nil,
             trackURL: nil,
@@ -440,7 +451,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             genre: nil,
             playedAt: eventTimestamp,
             durationListened: duration,
-            source: "local",
+            source: source,
             skipped: false,
             contentType: contentType)
 
