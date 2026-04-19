@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.19.2
+
+### New Features
+
+- **Content type tracking in play history** — play history now records content type (music, movies, TV, radio) for each play event, enabling per-type analytics.
+
+### Bug Fixes
+
+- **Chromecast idle timer fix** — the main window timer no longer keeps running after Chromecast content ends and the device goes idle. Previously the IDLE status was treated as a pause, preventing auto-advance from firing.
+- **Audio engine config change fix** — the audio engine now stops before rebuilding its processing graph when configuration changes, preventing invalid-state crashes.
+
 ## 0.19.1
 
 ### Bug Fixes
