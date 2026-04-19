@@ -161,8 +161,14 @@ struct CastMediaStatus {
     var duration: TimeInterval?
     /// Current player state
     var playerState: CastPlayerState = .unknown
+    /// Why playback entered IDLE, when the receiver provides it.
+    var idleReason: CastIdleReason?
     /// Media session ID
     var mediaSessionId: Int = 0
+
+    var indicatesNaturalCompletion: Bool {
+        playerState == .idle && idleReason == .finished
+    }
 }
 
 /// Chromecast player states
@@ -172,6 +178,13 @@ enum CastPlayerState: String {
     case playing = "PLAYING"
     case paused = "PAUSED"
     case unknown = "UNKNOWN"
+}
+
+enum CastIdleReason: String {
+    case cancelled = "CANCELLED"
+    case interrupted = "INTERRUPTED"
+    case finished = "FINISHED"
+    case error = "ERROR"
 }
 
 /// Delegate protocol for receiving Chromecast status updates
@@ -627,6 +640,7 @@ class CastSessionController {
                 NSLog("CastSessionController: MEDIA_STATUS - empty status array, media ended")
                 var idleStatus = CastMediaStatus()
                 idleStatus.playerState = .idle
+                idleStatus.idleReason = .finished
                 DispatchQueue.main.async { [weak self] in
                     self?.delegate?.castSessionDidUpdateMediaStatus(idleStatus)
                 }
@@ -681,6 +695,11 @@ class CastSessionController {
         if let stateString = status["playerState"] as? String,
            let state = CastPlayerState(rawValue: stateString) {
             mediaStatus.playerState = state
+        }
+
+        if let idleReasonString = status["idleReason"] as? String,
+           let idleReason = CastIdleReason(rawValue: idleReasonString) {
+            mediaStatus.idleReason = idleReason
         }
 
         if let media = status["media"] as? [String: Any],

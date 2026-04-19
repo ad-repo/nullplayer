@@ -834,7 +834,8 @@ class PlexManager {
             plexRatingKey: movie.id,
             plexServerId: currentServer?.id,
             artworkThumb: movie.thumb,
-            mediaType: .video
+            mediaType: .video,
+            playHistoryContentTypeOverride: "movie"
         )
     }
 
@@ -861,7 +862,8 @@ class PlexManager {
             plexRatingKey: episode.id,
             plexServerId: currentServer?.id,
             artworkThumb: episode.thumb,
-            mediaType: .video
+            mediaType: .video,
+            playHistoryContentTypeOverride: "tv"
         )
     }
 

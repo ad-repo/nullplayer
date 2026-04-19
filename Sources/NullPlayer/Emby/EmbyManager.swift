@@ -627,7 +627,8 @@ class EmbyManager {
             embyServerId: currentServer?.id,
             artworkThumb: movie.imageTag,
             mediaType: .video,
-            genre: nil
+            genre: nil,
+            playHistoryContentTypeOverride: "movie"
         )
     }
 
@@ -660,7 +661,8 @@ class EmbyManager {
             embyServerId: currentServer?.id,
             artworkThumb: episode.imageTag,
             mediaType: .video,
-            genre: nil
+            genre: nil,
+            playHistoryContentTypeOverride: "tv"
         )
     }
 

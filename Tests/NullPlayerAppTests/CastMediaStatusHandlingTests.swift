@@ -58,6 +58,27 @@ final class CastMediaStatusHandlingTests: XCTestCase {
         }
     }
 
+    func testMediaStatusParsingCapturesIdleReason() {
+        let result = CastSessionController.parseMediaStatus(from: [
+            "status": [[
+                "mediaSessionId": 321,
+                "currentTime": 179.9,
+                "playerState": "IDLE",
+                "idleReason": "FINISHED",
+                "media": ["duration": 180.0]
+            ]]
+        ])
+
+        switch result {
+        case .status(let status):
+            XCTAssertEqual(status.playerState, .idle)
+            XCTAssertEqual(status.idleReason, .finished)
+            XCTAssertTrue(status.indicatesNaturalCompletion)
+        default:
+            XCTFail("Expected parsed media status with idle reason")
+        }
+    }
+
     func testCastFinishGuardBlocksReentryUntilPlayingStatusResetsIt() {
         var finishHandled = false
 

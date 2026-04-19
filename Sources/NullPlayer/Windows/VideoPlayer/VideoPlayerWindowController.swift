@@ -17,8 +17,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Content type for play history analytics (movie, tv, music, video)
     private var currentContentType: String = "video"
 
-    /// When playback started (for duration calculation in play history)
+    /// Start of the currently active playback segment.
     private var playbackStartTime: Date?
+
+    /// Sum of completed playback segments for the current item.
+    private var accumulatedPlaybackDuration: TimeInterval = 0
     
     /// Flag to prevent recursive stop/close calls
     private var isClosing: Bool = false
@@ -145,12 +148,15 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         if isBuffering {
             // Pause interpolation during buffering
             castPlaybackStartDate = nil
+            pausePlaybackAnalytics()
         } else if isPlaying {
             // Playing - start/restart interpolation from this position
             castPlaybackStartDate = Date()
+            resumePlaybackAnalytics()
         } else {
             // Paused or idle
             castPlaybackStartDate = nil
+            pausePlaybackAnalytics()
         }
         
         // Update duration if provided
@@ -295,6 +301,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Track pause/resume for Plex/Jellyfin/Emby reporting
         videoPlayerView.onPlaybackPaused = { [weak self] position in
             guard let self = self else { return }
+            self.pausePlaybackAnalytics()
             if self.isPlexContent {
                 PlexVideoPlaybackReporter.shared.videoDidPause(at: position)
             } else if self.isJellyfinContent {
@@ -306,6 +313,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
         videoPlayerView.onPlaybackResumed = { [weak self] position in
             guard let self = self else { return }
+            self.resumePlaybackAnalytics()
             if self.isPlexContent {
                 PlexVideoPlaybackReporter.shared.videoDidResume(at: position)
             } else if self.isJellyfinContent {
@@ -396,6 +404,27 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Whether current content is from Emby
     private var isEmbyContent: Bool {
         currentEmbyMovie != nil || currentEmbyEpisode != nil || currentEmbyItemId != nil
+    }
+
+    private func beginPlaybackAnalyticsSession(contentType: String) {
+        currentContentType = contentType
+        accumulatedPlaybackDuration = 0
+        playbackStartTime = Date()
+    }
+
+    private func pausePlaybackAnalytics(at timestamp: Date = Date()) {
+        guard let startTime = playbackStartTime else { return }
+        accumulatedPlaybackDuration += timestamp.timeIntervalSince(startTime)
+        playbackStartTime = nil
+    }
+
+    private func resumePlaybackAnalytics(at timestamp: Date = Date()) {
+        guard playbackStartTime == nil else { return }
+        playbackStartTime = timestamp
+    }
+
+    private func totalPlaybackDuration(at timestamp: Date) -> TimeInterval {
+        accumulatedPlaybackDuration + (playbackStartTime.map { timestamp.timeIntervalSince($0) } ?? 0)
     }
     
     private func setupKeyboardMonitor() {
@@ -505,8 +534,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Check if this is being played from the playlist (callback was set)
         isFromPlaylist = onVideoFinishedForPlaylist != nil
         
-        currentContentType = "video"
-        playbackStartTime = Date()
+        beginPlaybackAnalyticsSession(contentType: "video")
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
@@ -561,8 +589,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Get Plex streaming headers
         let headers = PlexManager.shared.streamingHeaders
         
-        currentContentType = "video"
-        playbackStartTime = Date()
+        beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: true, plexHeaders: headers)
@@ -622,8 +649,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentEmbyItemId = nil
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
-        currentContentType = "movie"
-        playbackStartTime = Date()
+        beginPlaybackAnalyticsSession(contentType: "movie")
         currentTitle = movie.title
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: true, plexHeaders: headers)
@@ -682,8 +708,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentEmbyItemId = nil
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
-        currentContentType = "tv"
-        playbackStartTime = Date()
+        beginPlaybackAnalyticsSession(contentType: "tv")
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: true, plexHeaders: headers)
@@ -739,8 +764,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
-        currentContentType = "movie"
-        playbackStartTime = Date()
+        beginPlaybackAnalyticsSession(contentType: "movie")
         currentTitle = movie.title
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
@@ -798,8 +822,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
-        currentContentType = "tv"
-        playbackStartTime = Date()
+        beginPlaybackAnalyticsSession(contentType: "tv")
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
@@ -851,8 +874,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
-        currentContentType = "movie"
-        playbackStartTime = Date()
+        beginPlaybackAnalyticsSession(contentType: "movie")
         currentTitle = movie.title
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
@@ -910,8 +932,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentPlexRatingKey = nil
         currentLocalURL = nil
 
-        currentContentType = "tv"
-        playbackStartTime = Date()
+        beginPlaybackAnalyticsSession(contentType: "tv")
         currentTitle = title
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
@@ -964,8 +985,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Check if this is being played from the playlist
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
-        currentContentType = "video"
-        playbackStartTime = Date()
+        beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
@@ -1017,8 +1037,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Check if this is being played from the playlist
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
-        currentContentType = "video"
-        playbackStartTime = Date()
+        beginPlaybackAnalyticsSession(contentType: track.playHistoryContentType)
         currentTitle = track.displayTitle
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
@@ -1032,8 +1051,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Record a play event for the current video to analytics
     private func recordVideoPlayEvent() {
-        guard let startTime = playbackStartTime else { return }
-        let duration = Date().timeIntervalSince(startTime)
+        let eventTimestamp = Date()
+        let duration = totalPlaybackDuration(at: eventTimestamp)
         guard duration > 0 else { return }
 
         let source: String
@@ -1054,13 +1073,14 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             artist: nil,
             album: nil,
             genre: nil,
-            playedAt: startTime,
+            playedAt: eventTimestamp,
             durationListened: duration,
             source: source,
             skipped: false,
             contentType: currentContentType)
 
         playbackStartTime = nil
+        accumulatedPlaybackDuration = 0
     }
 
     /// Stop playback
@@ -1187,6 +1207,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                                 castStartPosition += Date().timeIntervalSince(startDate)
                             }
                             castPlaybackStartDate = nil
+                            self.pausePlaybackAnalytics()
                             isPlaying = false
                             videoPlayerView.updateCastState(isPlaying: false, deviceName: castTargetDevice?.name)
                         }
@@ -1195,6 +1216,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                         await MainActor.run {
                             // Resume time tracking
                             castPlaybackStartDate = Date()
+                            self.resumePlaybackAnalytics()
                             isPlaying = true
                             videoPlayerView.updateCastState(isPlaying: true, deviceName: castTargetDevice?.name)
                         }

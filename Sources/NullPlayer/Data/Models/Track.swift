@@ -75,6 +75,10 @@ struct Track: Identifiable, Equatable {
     
     /// Genre metadata for Auto EQ
     let genre: String?
+
+    /// Optional override when a generic video track actually represents a more
+    /// specific analytics type such as a movie or TV episode.
+    let playHistoryContentTypeOverride: String?
     
     /// MIME content type hint for casting (e.g. "audio/flac"). When nil, detected from URL extension.
     let contentType: String?
@@ -209,6 +213,7 @@ struct Track: Identifiable, Equatable {
         let videoTracks = asset.tracks(withMediaType: .video)
         self.mediaType = videoTracks.isEmpty ? .audio : .video
         self.genre = extractedGenre
+        self.playHistoryContentTypeOverride = nil
         self.contentType = nil  // Local files use URL extension detection
     }
 
@@ -234,6 +239,7 @@ struct Track: Identifiable, Equatable {
         self.artworkThumb = nil
         self.mediaType = AudioFileValidator.isVideoFile(url: url) ? .video : .audio
         self.genre = nil
+        self.playHistoryContentTypeOverride = nil
         self.contentType = nil
     }
     
@@ -257,6 +263,7 @@ struct Track: Identifiable, Equatable {
          artworkThumb: String? = nil,
          mediaType: MediaType = .audio,
          genre: String? = nil,
+         playHistoryContentTypeOverride: String? = nil,
          contentType: String? = nil) {
         self.id = id
         self.url = url
@@ -278,6 +285,7 @@ struct Track: Identifiable, Equatable {
         self.artworkThumb = artworkThumb
         self.mediaType = mediaType
         self.genre = genre
+        self.playHistoryContentTypeOverride = playHistoryContentTypeOverride
         self.contentType = contentType
     }
     
@@ -345,6 +353,9 @@ struct Track: Identifiable, Equatable {
     }
 
     var playHistoryContentType: String {
+        if let playHistoryContentTypeOverride {
+            return playHistoryContentTypeOverride
+        }
         if playHistorySource == .radio { return "radio" }
         if mediaType == .video { return "video" }
         return "music"

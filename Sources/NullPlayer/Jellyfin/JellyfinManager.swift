@@ -609,7 +609,8 @@ class JellyfinManager {
             jellyfinServerId: currentServer?.id,
             artworkThumb: movie.imageTag,
             mediaType: .video,
-            genre: nil
+            genre: nil,
+            playHistoryContentTypeOverride: "movie"
         )
     }
     
@@ -640,7 +641,8 @@ class JellyfinManager {
             jellyfinServerId: currentServer?.id,
             artworkThumb: episode.imageTag,
             mediaType: .video,
-            genre: nil
+            genre: nil,
+            playHistoryContentTypeOverride: "tv"
         )
     }
     
