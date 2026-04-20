@@ -299,6 +299,13 @@ class ModernSkin {
     
     /// Playlist track list text font (default base size 8)
     func playlistFont() -> NSFont { scaledFont(size: config.fonts.playlistSize ?? 8) }
+
+    /// Time display font (default base size 20)
+    func timeDisplayFont() -> NSFont {
+        let size = config.fonts.timeSize ?? ModernSkinFont.defaultTimeSize
+        return timeFont?.withSize(size * ModernSkinElements.scaleFactor)
+            ?? NSFont.monospacedSystemFont(ofSize: size * ModernSkinElements.scaleFactor, weight: .regular)
+    }
     
     // MARK: - Title Character Sprites
     

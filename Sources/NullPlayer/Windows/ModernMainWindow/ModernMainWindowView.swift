@@ -75,6 +75,9 @@ class ModernMainWindowView: NSView {
     
     /// Timer for distinguishing single vs double click on vis area
     private var visClickTimer: Timer?
+
+    /// Timer for distinguishing single vs double click on the time display.
+    private var timeDisplayClickTimer: Timer?
     
     /// Throttle timestamp for CPU-rendered mini spectrum updates (20Hz)
     private var lastMiniSpectrumUpdate: CFAbsoluteTime = 0
@@ -145,6 +148,10 @@ class ModernMainWindowView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(playbackOptionsDidChange),
                                                 name: .audioPlaybackOptionsChanged, object: nil)
 
+        // Observe time display settings so timer menu changes redraw the clock immediately.
+        NotificationCenter.default.addObserver(self, selector: #selector(timeDisplaySettingsDidChange),
+                                                name: .timeDisplaySettingsDidChange, object: nil)
+
         // Observe main window vis mode changes from context menu
         NotificationCenter.default.addObserver(self, selector: #selector(mainVisSettingsChanged),
                                                 name: NSNotification.Name("MainWindowVisChanged"), object: nil)
@@ -163,6 +170,7 @@ class ModernMainWindowView: NSView {
     
     deinit {
         visClickTimer?.invalidate()
+        timeDisplayClickTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -240,6 +248,11 @@ class ModernMainWindowView: NSView {
 
     @objc private func playbackOptionsDidChange() {
         needsDisplay = true
+    }
+
+    @objc private func timeDisplaySettingsDidChange() {
+        let timeRect = scaledRect(effectiveTimeDisplayRect).insetBy(dx: -2, dy: -2)
+        setNeedsDisplay(timeRect)
     }
 
     private func updateCornerMask() {
@@ -606,35 +619,18 @@ class ModernMainWindowView: NSView {
         let digitWidth = ModernSkinElements.timeDigitSize.width
         let colonWidth = ModernSkinElements.timeColonSize.width
         let digitHeight = ModernSkinElements.timeDigitSize.height
-        
-        let displayTime: TimeInterval
-        let showMinus: Bool
-        
-        let mode = WindowManager.shared.timeDisplayMode
-        if mode == .remaining && duration > 0 {
-            displayTime = duration - currentTime
-            showMinus = true
-        } else {
-            displayTime = currentTime
-            showMinus = false
-        }
-        
-        let totalSeconds = Int(abs(displayTime))
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
-        
-        // Build character sequence: [-]M:SS
-        var chars: [String] = []
-        if showMinus { chars.append("-") }
-        chars.append("\(minutes)")
-        chars.append(":")
-        chars.append(String(format: "%02d", seconds))
-        
+
+        let displayString = TimeDisplayFormatter.string(
+            currentTime: currentTime,
+            duration: duration,
+            mode: WindowManager.shared.timeDisplayMode,
+            numberSystem: WindowManager.shared.timeDisplayNumberSystem
+        )
+
         // Calculate total width to center within time display area
-        let allChars = chars.joined()
         var totalWidth: CGFloat = 0
         let digitGap: CGFloat = 1
-        for char in allChars {
+        for char in displayString {
             totalWidth += (String(char) == ":" ? colonWidth : digitWidth) + digitGap
         }
         totalWidth -= digitGap
@@ -643,7 +639,7 @@ class ModernMainWindowView: NSView {
         var x = timeDisplayRect.minX + (timeDisplayRect.width - totalWidth) / 2
         let y = timeDisplayRect.minY + (timeDisplayRect.height - digitHeight) / 2
         
-        for char in allChars {
+        for char in displayString {
             let charStr = String(char)
             let charWidth = charStr == ":" ? colonWidth : digitWidth
             let rect = NSRect(x: x, y: y, width: charWidth, height: digitHeight)
@@ -1478,9 +1474,18 @@ class ModernMainWindowView: NSView {
                 isDraggingVolume = true
                 updateVolumePosition(from: point)
             } else if element == "time_display" {
-                // Toggle time display mode
-                let mode = WindowManager.shared.timeDisplayMode
-                WindowManager.shared.timeDisplayMode = (mode == .elapsed) ? .remaining : .elapsed
+                if event.clickCount == 2 {
+                    timeDisplayClickTimer?.invalidate()
+                    timeDisplayClickTimer = nil
+                    cycleTimeDisplayNumberSystem()
+                } else {
+                    timeDisplayClickTimer?.invalidate()
+                    timeDisplayClickTimer = Timer.scheduledTimer(withTimeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
+                        self?.timeDisplayClickTimer = nil
+                        let mode = WindowManager.shared.timeDisplayMode
+                        WindowManager.shared.timeDisplayMode = (mode == .elapsed) ? .remaining : .elapsed
+                    }
+                }
             } else if element == "info_bpm" {
                 if event.clickCount == 2 {
                     // Cycle: normal → 2x → 0.5x → normal
@@ -1519,6 +1524,18 @@ class ModernMainWindowView: NSView {
                 }
             }
         }
+    }
+
+    private func cycleTimeDisplayNumberSystem() {
+        let systems = TimeDisplayNumberSystem.allCases
+        let current = WindowManager.shared.timeDisplayNumberSystem
+        guard let currentIndex = systems.firstIndex(of: current) else {
+            WindowManager.shared.timeDisplayNumberSystem = .modernDefault
+            return
+        }
+
+        let nextIndex = systems.index(after: currentIndex)
+        WindowManager.shared.timeDisplayNumberSystem = nextIndex == systems.endIndex ? systems[systems.startIndex] : systems[nextIndex]
     }
     
     override func mouseDragged(with event: NSEvent) {

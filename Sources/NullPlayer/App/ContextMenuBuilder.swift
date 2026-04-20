@@ -486,16 +486,7 @@ class ContextMenuBuilder {
         let wm = WindowManager.shared
         let engine = wm.audioEngine
         
-        // Time display mode
-        let timeElapsed = NSMenuItem(title: "Time elapsed", action: #selector(MenuActions.setTimeElapsed), keyEquivalent: "")
-        timeElapsed.target = MenuActions.shared
-        timeElapsed.state = wm.timeDisplayMode == .elapsed ? .on : .off
-        optionsMenu.addItem(timeElapsed)
-        
-        let timeRemaining = NSMenuItem(title: "Time remaining", action: #selector(MenuActions.setTimeRemaining), keyEquivalent: "")
-        timeRemaining.target = MenuActions.shared
-        timeRemaining.state = wm.timeDisplayMode == .remaining ? .on : .off
-        optionsMenu.addItem(timeRemaining)
+        optionsMenu.addItem(buildTimerMenuItem())
         
         optionsMenu.addItem(NSMenuItem.separator())
         
@@ -797,6 +788,62 @@ class ContextMenuBuilder {
         optionsMenu.addItem(artworkBgItem)
 
         return optionsMenu
+    }
+
+    private static func buildTimerMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Timer", action: nil, keyEquivalent: "")
+        item.submenu = buildTimerMenu()
+        return item
+    }
+
+    private static func buildTimerMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let wm = WindowManager.shared
+
+        let elapsedItem = NSMenuItem(title: "Elapsed", action: #selector(MenuActions.setTimeElapsed), keyEquivalent: "")
+        elapsedItem.target = MenuActions.shared
+        elapsedItem.state = wm.timeDisplayMode == .elapsed ? .on : .off
+        menu.addItem(elapsedItem)
+
+        let remainingItem = NSMenuItem(title: "Remaining", action: #selector(MenuActions.setTimeRemaining), keyEquivalent: "")
+        remainingItem.target = MenuActions.shared
+        remainingItem.state = wm.timeDisplayMode == .remaining ? .on : .off
+        menu.addItem(remainingItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let numberSystemItem = NSMenuItem(title: "Number System", action: nil, keyEquivalent: "")
+        numberSystemItem.submenu = buildTimeDisplayNumberSystemMenu()
+        numberSystemItem.isEnabled = wm.isRunningModernUI
+        menu.addItem(numberSystemItem)
+
+        return menu
+    }
+
+    private static func buildTimeDisplayNumberSystemMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let selected = WindowManager.shared.timeDisplayNumberSystem
+        let defaultItem = NSMenuItem(title: "Default (Decimal)", action: #selector(MenuActions.setTimeDisplayNumberSystem(_:)), keyEquivalent: "")
+        defaultItem.target = MenuActions.shared
+        defaultItem.representedObject = TimeDisplayNumberSystem.decimal.rawValue
+        defaultItem.state = selected == .decimal ? .on : .off
+        menu.addItem(defaultItem)
+        menu.addItem(NSMenuItem.separator())
+
+        for system in TimeDisplayNumberSystem.allCases {
+            guard system != .decimal else { continue }
+            let item = NSMenuItem(title: system.displayName, action: #selector(MenuActions.setTimeDisplayNumberSystem(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = system.rawValue
+            item.state = selected == system ? .on : .off
+            menu.addItem(item)
+        }
+
+        return menu
     }
     
     // MARK: - Main Window Visualization Submenu
@@ -3447,6 +3494,13 @@ class MenuActions: NSObject {
     
     @objc func setTimeRemaining() {
         WindowManager.shared.timeDisplayMode = .remaining
+    }
+
+    @objc func setTimeDisplayNumberSystem(_ sender: NSMenuItem) {
+        guard WindowManager.shared.isRunningModernUI else { return }
+        guard let rawValue = sender.representedObject as? String,
+              let system = TimeDisplayNumberSystem(rawValue: rawValue) else { return }
+        WindowManager.shared.timeDisplayNumberSystem = system
     }
     
     @objc func toggleRepeat() {

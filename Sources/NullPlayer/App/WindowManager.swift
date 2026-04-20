@@ -4,6 +4,7 @@ import AppKit
 
 extension Notification.Name {
     static let timeDisplayModeDidChange = Notification.Name("timeDisplayModeDidChange")
+    static let timeDisplaySettingsDidChange = Notification.Name("timeDisplaySettingsDidChange")
     static let doubleSizeDidChange = Notification.Name("doubleSizeDidChange")
     static let windowLayoutDidChange = Notification.Name("windowLayoutDidChange")
     static let connectedWindowHighlightDidChange = Notification.Name("connectedWindowHighlightDidChange")
@@ -16,6 +17,43 @@ extension Notification.Name {
 enum TimeDisplayMode: String {
     case elapsed
     case remaining
+}
+
+enum TimeDisplayNumberSystem: String, CaseIterable {
+    case decimal
+    case arabicIndic
+    case extendedArabicIndic
+    case devanagari
+    case bengali
+    case thai
+    case fullwidth
+    case octal
+    case hexadecimal
+
+    static let modernDefault: TimeDisplayNumberSystem = .decimal
+
+    var displayName: String {
+        switch self {
+        case .decimal:
+            return "Decimal"
+        case .arabicIndic:
+            return "Arabic-Indic"
+        case .extendedArabicIndic:
+            return "Extended Arabic-Indic"
+        case .devanagari:
+            return "Devanagari"
+        case .bengali:
+            return "Bengali"
+        case .thai:
+            return "Thai"
+        case .fullwidth:
+            return "Fullwidth"
+        case .octal:
+            return "Octal"
+        case .hexadecimal:
+            return "Hexadecimal"
+        }
+    }
 }
 
 /// Determines how a window drag affects its connected group.
@@ -67,6 +105,21 @@ class WindowManager {
         didSet {
             UserDefaults.standard.set(timeDisplayMode.rawValue, forKey: "timeDisplayMode")
             NotificationCenter.default.post(name: .timeDisplayModeDidChange, object: nil)
+            NotificationCenter.default.post(name: .timeDisplaySettingsDidChange, object: nil)
+        }
+    }
+
+    private var storedTimeDisplayNumberSystem: TimeDisplayNumberSystem = .modernDefault
+
+    /// Numeral system for the modern time display. Falls back to decimal outside modern UI mode.
+    var timeDisplayNumberSystem: TimeDisplayNumberSystem {
+        get { isRunningModernUI ? storedTimeDisplayNumberSystem : .modernDefault }
+        set {
+            guard isRunningModernUI else { return }
+            guard storedTimeDisplayNumberSystem != newValue else { return }
+            storedTimeDisplayNumberSystem = newValue
+            UserDefaults.standard.set(newValue.rawValue, forKey: "timeDisplayNumberSystem")
+            NotificationCenter.default.post(name: .timeDisplaySettingsDidChange, object: nil)
         }
     }
     
@@ -424,6 +477,7 @@ class WindowManager {
     private func registerPreferenceDefaults() {
         UserDefaults.standard.register(defaults: [
             "timeDisplayMode": TimeDisplayMode.elapsed.rawValue,
+            "timeDisplayNumberSystem": TimeDisplayNumberSystem.modernDefault.rawValue,
             "isAlwaysOnTop": false,
             "isWindowLayoutLocked": false,
             "hideTitleBars": true,
@@ -437,6 +491,10 @@ class WindowManager {
         if let mode = UserDefaults.standard.string(forKey: "timeDisplayMode"),
            let displayMode = TimeDisplayMode(rawValue: mode) {
             timeDisplayMode = displayMode
+        }
+        if let rawValue = UserDefaults.standard.string(forKey: "timeDisplayNumberSystem"),
+           let numberSystem = TimeDisplayNumberSystem(rawValue: rawValue) {
+            storedTimeDisplayNumberSystem = numberSystem
         }
         // Note: isDoubleSize always starts false - windows are created at 1x size
         // and we apply double size after they're created if needed
