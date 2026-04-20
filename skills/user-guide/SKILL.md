@@ -59,13 +59,22 @@ Windows automatically snap together when dragged near each other:
 
 | Element | Description |
 |---------|-------------|
-| **Time Display** | Elapsed/remaining time (click to toggle) |
+| **Time Display** | Single-click toggles elapsed/remaining; double-click cycles timer number systems in modern UI |
 | **Track Marquee** | Scrolling song title/artist, with album art thumbnail when available |
 | **Bitrate** | Track bitrate in kbps |
 | **Sample Rate** | Audio sample rate in kHz |
 | **Stereo Indicator** | Shows mono/stereo status |
 | **Cast Indicator** | Shows when casting to external device |
 | **Spectrum Analyzer** | Real-time frequency visualization |
+
+### Playback Menu: Timer
+
+`Playback > Timer` unifies main-window timer options:
+
+- `Elapsed` / `Remaining` choose the time basis
+- `Number System` is modern-only
+- `Default (Decimal)` restores the current default behavior
+- Additional modern timer number systems include Arabic-Indic, Extended Arabic-Indic, Devanagari, Bengali, Thai, Fullwidth, Octal, and Hexadecimal
 
 ### Sliders
 

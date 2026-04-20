@@ -23,10 +23,12 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 
 | Element ID | Default Rect | Description |
 |-----------|-------------|-------------|
-| `time_display` | 14,64,76,26 | Time display area |
-| `time_digit_0` through `time_digit_9` | 12x20 each | 7-segment LED digits |
+| `time_display` | 14,64,76,26 | Time display area; single-click toggles elapsed/remaining, double-click cycles number systems |
+| `time_digit_0` through `time_digit_9` | 12x20 each | 7-segment LED digits for the default decimal timer |
 | `time_colon` | 5x20 | Colon separator |
 | `time_minus` | 12x20 | Minus sign (remaining time) |
+
+If a timer character has no matching sprite, the modern renderer falls back to drawing it with the configured time font. This is how alternate numeral systems render without requiring a full sprite sheet per script.
 
 ## Info Panel
 

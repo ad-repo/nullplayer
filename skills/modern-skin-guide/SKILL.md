@@ -194,6 +194,15 @@ Images go in the `images/` subdirectory:
 - `btn_play_pressed.png` -- Play button, pressed state
 - `time_digit_5.png` -- Digit "5" for time display
 
+### Time Display Rendering
+
+The modern main-window timer supports two rendering paths:
+
+- Sprite-based rendering for the default 7-segment set: `time_digit_0` through `time_digit_9`, `time_colon`, and `time_minus`
+- Font-based fallback rendering for alternate timer number systems when matching sprites are not present
+
+This means skins can keep the existing LED-style decimal timer sprites, while alternate numeral systems and radix modes still render using the configured time font.
+
 The engine automatically checks for `@2x` variants on Retina displays.
 
 ## Creating a Minimal Skin
