@@ -5,11 +5,24 @@
 ### New Features
 
 - **Content type tracking in play history** — play history now records content type (music, movies, TV, radio) for each play event, enabling per-type analytics.
+- **Expanded Now Playing info panel** — the right-click Now Playing panel now shows all available metadata. Local library tracks show album artist, year, track/disc number, composer, BPM, key, file size, play count, rating, last played, date added, comment, grouping, ISRC, copyright, and MusicBrainz/Discogs IDs. Non-library local files read additional tags (album artist, etc.) directly from AVAsset. Streaming sources (Subsonic, Jellyfin, Emby, Plex) now fetch full song detail asynchronously for display.
 
 ### Bug Fixes
 
 - **Chromecast idle timer fix** — the main window timer no longer keeps running after Chromecast content ends and the device goes idle. Previously the IDLE status was treated as a pause, preventing auto-advance from firing.
 - **Audio engine config change fix** — the audio engine now stops before rebuilding its processing graph when configuration changes, preventing invalid-state crashes.
+- **Sonos volume/mute now controls the full group** — volume and mute now use `GroupRenderingControl` instead of `RenderingControl`. The old service only affected the coordinator speaker, so adjusting volume had no effect after adding rooms to a group.
+- **Plex video library browsing fixed** — movie and TV show browsing now auto-resolves the correct library rather than always querying the current music library, which returned empty results. Both browser views also now automatically switch to the correct browse mode (artists/movies/shows) when a library is selected.
+- **Jellyfin/Emby video play history attribution fixed** — video tracks played from Jellyfin and Emby playlists now record the correct server source in play history instead of being attributed to local playback.
+- **Video play analytics source detection restored** — Plex, Jellyfin, and Emby video play events now correctly attribute their server source in analytics (was accidentally hardcoded to "local" after a prior revert).
+- **Cast idle completion hardened** — cast track completion now correctly handles IDLE status transitions, preventing missed auto-advance events and stale analytics.
+- **Database init order fix** — `MediaLibraryStore` now assigns the `db` handle only after schema setup succeeds, so a failed migration leaves the store in a safe nil state rather than pointing at an un-migrated schema.
+- **Window resize grab zones widened** — bottom and side resize edges are now easier to grab (8→12 px on borderless windows, 12→14 px on resizable windows) without affecting top edges where docked-window dragging is sensitive.
+
+### Cosmetic
+
+- **Glass skin opacity increased** — BloodGlass, SeaGlass, and SmoothGlass bundled skins have higher element opacity for better readability.
+- **Right-click context menu reorganized** — menu items are regrouped with clearer separators between display toggles, window actions, settings, and exit. Items renamed for clarity: "Now Playing…", "Remember State", "Minimize All".
 
 ## 0.19.1
 
