@@ -389,8 +389,18 @@ class VisualizationGLView: NSOpenGLView {
     }
     
     // MARK: - Rendering Control
+
+    private func isRenderEligible() -> Bool {
+        guard let window = window else { return false }
+        guard window.isVisible, !window.isMiniaturized else { return false }
+        guard !isHiddenOrHasHiddenAncestor else { return false }
+        // Occlusion state is not always populated yet during initial window attach/show.
+        // Startup callers may legitimately request rendering before AppKit reports .visible.
+        return true
+    }
     
     func startRendering() {
+        guard isRenderEligible() else { return }
         guard let displayLink = displayLink, !isRendering else { return }
         
         // Re-register callback if it was previously cleared by stopRendering()
@@ -653,10 +663,12 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     @objc private func handleScreenParametersChanged() {
+        let shouldResume = isRendering
         stopRendering()
         DispatchQueue.main.async { [weak self] in
-            self?.updateDisplayLinkForCurrentScreen()
-            self?.startRendering()
+            guard let self, shouldResume, self.isRenderEligible() else { return }
+            self.updateDisplayLinkForCurrentScreen()
+            self.startRendering()
         }
     }
 
