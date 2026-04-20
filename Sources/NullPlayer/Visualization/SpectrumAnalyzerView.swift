@@ -3548,6 +3548,7 @@ class SpectrumAnalyzerView: NSView {
 
     @objc private func handleWindowDidChangeScreen(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
+        syncMetalLayerScaleAndSize()
         stopRendering()
         startRendering()
     }
@@ -3555,6 +3556,7 @@ class SpectrumAnalyzerView: NSView {
     @objc private func handleScreenParametersChanged() {
         stopRendering()
         DispatchQueue.main.async { [weak self] in
+            self?.syncMetalLayerScaleAndSize()
             self?.startRendering()
         }
     }
