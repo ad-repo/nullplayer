@@ -60,7 +60,7 @@ Windows automatically snap together when dragged near each other:
 | Element | Description |
 |---------|-------------|
 | **Time Display** | Elapsed/remaining time (click to toggle) |
-| **Track Marquee** | Scrolling song title/artist |
+| **Track Marquee** | Scrolling song title/artist, with album art thumbnail when available |
 | **Bitrate** | Track bitrate in kbps |
 | **Sample Rate** | Audio sample rate in kHz |
 | **Stereo Indicator** | Shows mono/stereo status |

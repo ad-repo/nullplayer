@@ -9,7 +9,8 @@ class NowPlayingManager {
     // MARK: - Singleton
     
     static let shared = NowPlayingManager()
-    
+    static let artworkDidLoadNotification = Notification.Name("NowPlayingArtworkDidLoad")
+
     // MARK: - Properties
     
     /// Current artwork being displayed (cached to avoid reloading)
@@ -160,7 +161,13 @@ class NowPlayingManager {
         // Clear now playing
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
-        
+
+        NotificationCenter.default.post(
+            name: NowPlayingManager.artworkDidLoadNotification,
+            object: nil,
+            userInfo: ["image": NSNull(), "trackId": NSNull()]
+        )
+
         NSLog("NowPlayingManager: Cleared now playing info")
     }
     
@@ -271,7 +278,8 @@ class NowPlayingManager {
         // Cancel previous load
         artworkLoadTask?.cancel()
         currentTrackId = track.id
-        
+        let expectedTrackId = track.id
+
         artworkLoadTask = Task { [weak self] in
             guard let self = self else { return }
             
@@ -302,6 +310,11 @@ class NowPlayingManager {
                 if let imageTag = track.artworkThumb {
                     image = await self.loadJellyfinArtwork(itemId: track.jellyfinId!, imageTag: imageTag)
                 }
+            } else if track.embyId != nil {
+                // Emby track - load cover art
+                if let imageTag = track.artworkThumb {
+                    image = await self.loadEmbyArtwork(itemId: track.embyId!, imageTag: imageTag)
+                }
             }
             
             // Check if cancelled
@@ -312,6 +325,8 @@ class NowPlayingManager {
             
             // Update Now Playing with artwork on main thread
             await MainActor.run {
+                // Guard against a track change that occurred while artwork was loading
+                guard self.currentTrackId == expectedTrackId else { return }
                 self.currentArtwork = loadedImage
                 self.applyArtworkToNowPlaying(loadedImage)
             }
@@ -333,8 +348,14 @@ class NowPlayingManager {
         }
         
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+
+        NotificationCenter.default.post(
+            name: NowPlayingManager.artworkDidLoadNotification,
+            object: nil,
+            userInfo: ["image": image as Any, "trackId": currentTrackId as Any]
+        )
     }
-    
+
     // MARK: - Artwork Loading Helpers
     
     /// Load embedded artwork from local audio file
@@ -456,8 +477,20 @@ class NowPlayingManager {
         }
     }
     
+    private func loadEmbyArtwork(itemId: String, imageTag: String) async -> NSImage? {
+        guard let artworkURL = EmbyManager.shared.imageURL(itemId: itemId, imageTag: imageTag, size: 400) else { return nil }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: artworkURL)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return nil }
+            return NSImage(data: data)
+        } catch {
+            NSLog("NowPlayingManager: Failed to load Emby artwork: %@", error.localizedDescription)
+            return nil
+        }
+    }
+
     // MARK: - Periodic Time Update
-    
+
     /// Call this periodically (e.g., every second) to keep elapsed time in sync
     /// Optional: Hook into existing time update timer in AudioEngine if more precision needed
     func periodicTimeUpdate() {

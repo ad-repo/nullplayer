@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import QuartzCore
 
 /// The main window view for the modern skin system.
@@ -28,6 +29,9 @@ class ModernMainWindowView: NSView {
     
     /// Current track info
     private var currentTrack: Track?
+    private var currentArtworkImage: NSImage?
+    private var artworkLoadTask: Task<Void, Never>?
+    private static let artworkCache = NSCache<NSString, NSImage>()
     
     /// Video title override
     private var videoTitle: String?
@@ -148,7 +152,6 @@ class ModernMainWindowView: NSView {
                                                 name: .visClassicProfileCommand, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                 name: .connectedWindowHighlightDidChange, object: nil)
-
         // Set accessibility
         setAccessibilityIdentifier("ModernMainWindowView")
         setAccessibilityRole(.group)
@@ -818,8 +821,11 @@ class ModernMainWindowView: NSView {
     }
     
     func updateTrackInfo(_ track: Track?) {
+        currentArtworkImage = nil
+        marqueeLayer.artworkImage = nil
         self.currentTrack = track
         self.videoTitle = nil
+        loadArtwork(for: track)
         self.currentBPM = nil  // Reset BPM for new track
         self.bpmMultiplierState = 2  // Reset multiplier for new track (default to 0.5x)
         refreshMarqueeText()
@@ -888,6 +894,7 @@ class ModernMainWindowView: NSView {
         renderer = ModernSkinRenderer(skin: skin)
         setupGridBackground(skin: skin)
         marqueeLayer.configure(with: skin)
+        marqueeLayer.artworkImage = currentArtworkImage
         updateMarqueeOpacity()
         updateSpectrumOverlayOpacity()
         refreshMarqueeText()
@@ -1013,6 +1020,103 @@ class ModernMainWindowView: NSView {
             edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
+    }
+
+    private func loadArtwork(for track: Track?) {
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+
+        guard let track = track else { return }
+        let expectedId = track.id
+
+        artworkLoadTask = Task { [weak self] in
+            guard let self = self else { return }
+
+            var image: NSImage?
+
+            if let plexRatingKey = track.plexRatingKey {
+                let key = NSString(string: "marquee_plex:\(plexRatingKey)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else if let thumbPath = track.artworkThumb,
+                          let url = PlexManager.shared.artworkURL(thumb: thumbPath, size: 400) {
+                    if let (data, resp) = try? await URLSession.shared.data(from: url),
+                       (resp as? HTTPURLResponse)?.statusCode == 200,
+                       let img = NSImage(data: data) {
+                        Self.artworkCache.setObject(img, forKey: key)
+                        image = img
+                    }
+                }
+            } else if let subsonicId = track.subsonicId {
+                let key = NSString(string: "marquee_subsonic:\(subsonicId)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else if let url = SubsonicManager.shared.coverArtURL(coverArtId: subsonicId, size: 400) {
+                    if let (data, resp) = try? await URLSession.shared.data(from: url),
+                       (resp as? HTTPURLResponse)?.statusCode == 200,
+                       let img = NSImage(data: data) {
+                        Self.artworkCache.setObject(img, forKey: key)
+                        image = img
+                    }
+                }
+            } else if let jellyfinId = track.jellyfinId {
+                let key = NSString(string: "marquee_jellyfin:\(jellyfinId)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else if let url = JellyfinManager.shared.imageURL(itemId: jellyfinId, imageTag: nil, size: 400) {
+                    if let (data, resp) = try? await URLSession.shared.data(from: url),
+                       (resp as? HTTPURLResponse)?.statusCode == 200,
+                       let img = NSImage(data: data) {
+                        Self.artworkCache.setObject(img, forKey: key)
+                        image = img
+                    }
+                }
+            } else if let embyId = track.embyId {
+                let key = NSString(string: "marquee_emby:\(embyId)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else if let url = EmbyManager.shared.imageURL(itemId: embyId, imageTag: track.artworkThumb, size: 400) {
+                    if let (data, resp) = try? await URLSession.shared.data(from: url),
+                       (resp as? HTTPURLResponse)?.statusCode == 200,
+                       let img = NSImage(data: data) {
+                        Self.artworkCache.setObject(img, forKey: key)
+                        image = img
+                    }
+                }
+            } else if track.url.isFileURL {
+                let key = NSString(string: "marquee_local:\(track.url.path)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else {
+                    image = await self.loadLocalArtwork(url: track.url)
+                    if let img = image { Self.artworkCache.setObject(img, forKey: key) }
+                }
+            }
+
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard self.currentTrack?.id == expectedId else { return }
+                self.currentArtworkImage = image
+                self.marqueeLayer.artworkImage = image
+            }
+        }
+    }
+
+    private func loadLocalArtwork(url: URL) async -> NSImage? {
+        let asset = AVURLAsset(url: url)
+        do {
+            for format in [try await asset.load(.metadata),
+                           try await asset.loadMetadata(for: .id3Metadata),
+                           try await asset.loadMetadata(for: .iTunesMetadata)] {
+                for item in format {
+                    if item.commonKey == .commonKeyArtwork,
+                       let data = try? await item.load(.dataValue),
+                       let img = NSImage(data: data) { return img }
+                }
+            }
+        } catch {}
+        return nil
     }
 
     @objc private func radioMetadataDidChange() {
