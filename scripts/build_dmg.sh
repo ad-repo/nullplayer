@@ -301,6 +301,15 @@ mkdir -p "$STAGING_DIR"
 # Copy app to staging
 cp -R "$APP_BUNDLE" "$STAGING_DIR/"
 
+# Copy CLI launcher and install helper
+cp "$REPO_ROOT/scripts/nullplayer" "$STAGING_DIR/"
+cp "$REPO_ROOT/scripts/install_cli_launcher.sh" "$STAGING_DIR/"
+cp "$REPO_ROOT/scripts/Install NullPlayer CLI.command" "$STAGING_DIR/"
+chmod 755 \
+    "$STAGING_DIR/nullplayer" \
+    "$STAGING_DIR/install_cli_launcher.sh" \
+    "$STAGING_DIR/Install NullPlayer CLI.command"
+
 # Create Applications symlink for drag-and-drop install
 ln -s /Applications "$STAGING_DIR/Applications"
 
