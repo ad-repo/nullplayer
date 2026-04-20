@@ -159,9 +159,11 @@ class VisualizationGLView: NSOpenGLView {
         openGLContext?.makeCurrentContext()
         setupOpenGL()
         setupEngine()
-        setupDisplayLink()
+        // setupDisplayLink() deferred to viewDidMoveToWindow — the view must be in a real window
+        // before CVDisplayLinkSetCurrentCGDisplay is called, otherwise the GPU driver can panic
+        // on M-series Macs with external monitors.
     }
-    
+
     required init?(coder: NSCoder) {
         super.init(coder: coder)
 
@@ -170,17 +172,17 @@ class VisualizationGLView: NSOpenGLView {
            let type = VisualizationType(rawValue: savedType) {
             currentEngineType = type
         }
-        
+
         // Load saved performance mode preference (defaults to low power / 30fps)
         if UserDefaults.standard.object(forKey: "projectMLowPowerMode") != nil {
             isLowPowerMode = UserDefaults.standard.bool(forKey: "projectMLowPowerMode")
         }
-        
+
         // Load saved PCM gain preference (defaults to 1.0 / unity gain)
         if UserDefaults.standard.object(forKey: "projectMPCMGain") != nil {
             pcmGain = UserDefaults.standard.float(forKey: "projectMPCMGain")
         }
-        
+
         // Load saved beat sensitivity preference (defaults to 1.0 / normal)
         if UserDefaults.standard.object(forKey: "projectMBeatSensitivity") != nil {
             normalBeatSensitivity = UserDefaults.standard.float(forKey: "projectMBeatSensitivity")
@@ -188,7 +190,7 @@ class VisualizationGLView: NSOpenGLView {
 
         setupOpenGL()
         setupEngine()
-        setupDisplayLink()
+        // setupDisplayLink() deferred to viewDidMoveToWindow (see above)
     }
 
     deinit {
@@ -325,49 +327,54 @@ class VisualizationGLView: NSOpenGLView {
     // MARK: - Display Link
     
     private func setupDisplayLink() {
-        // Create display link
+        guard displayLink == nil else { return }
+
         CVDisplayLinkCreateWithActiveCGDisplays(&displayLink)
-        
+
         guard let displayLink = displayLink else {
             NSLog("VisualizationGLView: Failed to create CVDisplayLink")
             return
         }
-        
+
         // Create a retained context wrapper with weak view reference
         // This prevents use-after-free crashes when the view is deallocated
         // while the display link callback is still running on a background thread
         let context = VisualizationDisplayLinkContext(view: self)
         let retainedContext = Unmanaged.passRetained(context)
         self.displayLinkContextRef = retainedContext
-        
+
         // Set the callback with safe context
         let callback: CVDisplayLinkOutputCallback = { displayLink, inNow, inOutputTime, flagsIn, flagsOut, context in
             guard let context = context else { return kCVReturnError }
             let wrapper = Unmanaged<VisualizationDisplayLinkContext>.fromOpaque(context).takeUnretainedValue()
-            
+
             // Safely check if view still exists before rendering
             guard let view = wrapper.view else {
                 // View was deallocated - this is expected during shutdown
                 return kCVReturnSuccess
             }
-            
+
             view.renderFrame()
             return kCVReturnSuccess
         }
-        
+
         CVDisplayLinkSetOutputCallback(displayLink, callback, retainedContext.toOpaque())
 
-        // Set the display link to the display of the OpenGL context
-        if let cglContext = openGLContext?.cglContextObj,
-           let cglPixelFormat = pixelFormat?.cglPixelFormatObj {
-            CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext(displayLink, cglContext, cglPixelFormat)
-        }
+        // Pin to the window's actual display now that the view is in a window.
+        updateDisplayLinkForCurrentScreen()
 
         // Suspend rendering during window drags to prevent WindowServer stalls.
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDragDidBegin),
                                                name: .windowDragDidBegin, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDragDidEnd),
                                                name: .windowDragDidEnd, object: nil)
+    }
+
+    private func updateDisplayLinkForCurrentScreen() {
+        guard let displayLink = displayLink else { return }
+        if let screenNumber = window?.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+            CVDisplayLinkSetCurrentCGDisplay(displayLink, screenNumber)
+        }
     }
 
     @objc private func handleWindowDragDidBegin() { isDragSuspended = true }
@@ -381,8 +388,18 @@ class VisualizationGLView: NSOpenGLView {
     }
     
     // MARK: - Rendering Control
+
+    private func isRenderEligible() -> Bool {
+        guard let window = window else { return false }
+        guard window.isVisible, !window.isMiniaturized else { return false }
+        guard !isHiddenOrHasHiddenAncestor else { return false }
+        // Occlusion state is not always populated yet during initial window attach/show.
+        // Startup callers may legitimately request rendering before AppKit reports .visible.
+        return true
+    }
     
     func startRendering() {
+        guard isRenderEligible() else { return }
         guard let displayLink = displayLink, !isRendering else { return }
         
         // Re-register callback if it was previously cleared by stopRendering()
@@ -604,18 +621,53 @@ class VisualizationGLView: NSOpenGLView {
         super.viewDidMoveToWindow()
 
         if let window = window {
+            // Remove-before-add to avoid duplicate observers if this fires more than once
+            // with a non-nil window (e.g. view re-inserted into hierarchy).
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didMiniaturizeNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didDeminiaturizeNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeScreenNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
+
             NotificationCenter.default.addObserver(self, selector: #selector(windowDidChangeOcclusionState(_:)),
                 name: NSWindow.didChangeOcclusionStateNotification, object: window)
             NotificationCenter.default.addObserver(self, selector: #selector(windowDidMiniaturize(_:)),
                 name: NSWindow.didMiniaturizeNotification, object: window)
             NotificationCenter.default.addObserver(self, selector: #selector(windowDidDeminiaturize(_:)),
                 name: NSWindow.didDeminiaturizeNotification, object: window)
+            NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidChangeScreen(_:)),
+                name: NSWindow.didChangeScreenNotification, object: window)
+            NotificationCenter.default.addObserver(self, selector: #selector(handleScreenParametersChanged),
+                name: NSApplication.didChangeScreenParametersNotification, object: nil)
+
+            if displayLink == nil {
+                setupDisplayLink()
+            } else {
+                updateDisplayLinkForCurrentScreen()
+            }
             startRendering()
         } else {
             NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
             NotificationCenter.default.removeObserver(self, name: NSWindow.didMiniaturizeNotification, object: nil)
             NotificationCenter.default.removeObserver(self, name: NSWindow.didDeminiaturizeNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeScreenNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
             stopRendering()
+        }
+    }
+
+    @objc private func handleWindowDidChangeScreen(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        updateDisplayLinkForCurrentScreen()
+    }
+
+    @objc private func handleScreenParametersChanged() {
+        let shouldResume = isRendering
+        stopRendering()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, shouldResume, self.isRenderEligible() else { return }
+            self.updateDisplayLinkForCurrentScreen()
+            self.startRendering()
         }
     }
 
