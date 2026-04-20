@@ -52,7 +52,7 @@ When enabled via **Playback Options → Sweet Fades (Crossfade)**, tracks smooth
 ```
 playerNode ─────────────────┐
 (outgoing, fading out)      │
-                            ├─► mixerNode ─► eqNode ─► limiter ─► output
+                            ├─► mixerNode ─► eqNode ─► mainMixerNode ─► output
 crossfadePlayerNode ────────┘
 (incoming, fading in)
 ```
