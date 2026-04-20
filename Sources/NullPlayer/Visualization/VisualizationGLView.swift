@@ -642,10 +642,16 @@ class VisualizationGLView: NSOpenGLView {
 
             if displayLink == nil {
                 setupDisplayLink()
+                startRendering()
             } else {
+                // View moved to a new window or re-inserted — stop any in-flight rendering,
+                // update the GL drawable for the new screen, then re-pin and restart.
+                let wasRendering = isRendering
+                stopRendering()
+                openGLContext?.update()
                 updateDisplayLinkForCurrentScreen()
+                if wasRendering { startRendering() }
             }
-            startRendering()
         } else {
             NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
             NotificationCenter.default.removeObserver(self, name: NSWindow.didMiniaturizeNotification, object: nil)
@@ -658,7 +664,13 @@ class VisualizationGLView: NSOpenGLView {
 
     @objc private func handleWindowDidChangeScreen(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
+        // Stop rendering before touching the display association — the callback runs on a
+        // background thread and must not be in-flight when the GL drawable is re-associated.
+        let wasRendering = isRendering
+        stopRendering()
+        openGLContext?.update()
         updateDisplayLinkForCurrentScreen()
+        if wasRendering { startRendering() }
     }
 
     @objc private func handleScreenParametersChanged() {
