@@ -75,7 +75,7 @@ Windows automatically snap together when dragged near each other:
 
 ### Transport Buttons
 
-Previous, Play, Pause, Stop, Next, Eject (open file dialog)
+Previous, Play, Pause, Stop, Next
 
 ### Toggle Buttons
 

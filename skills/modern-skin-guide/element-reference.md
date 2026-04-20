@@ -74,14 +74,13 @@ Complete reference of all skinnable elements with IDs, default positions, and st
 | `btn_pause` | 62,3,28,24 | normal, pressed, disabled | Pause |
 | `btn_stop` | 90,3,28,24 | normal, pressed, disabled | Stop |
 | `btn_next` | 118,3,28,24 | normal, pressed, disabled | Next track |
-| `btn_eject` | 146,3,28,24 | normal, pressed | Open file |
 
 **Color:** Use `play_controls` in `elements` to set one color for all transport button icons. Per-button entries (e.g. `btn_play`) take precedence over `play_controls`. Both fall back to `palette.primary`.
 
 ```json
 "elements": {
     "play_controls": { "color": "#00ffcc" },
-    "btn_eject":     { "color": "#ff00aa" }
+    "btn_play":      { "color": "#ff00aa" }
 }
 ```
 
@@ -110,8 +109,8 @@ These buttons appear between the seek bar and transport row, toggling window vis
 
 | Element ID | Default Rect | States | Description |
 |-----------|-------------|--------|-------------|
-| `volume_track` | 182,12,87,3 | normal | Volume bar track |
-| `volume_fill` | 182,12,*,3 | normal | Filled portion |
+| `volume_track` | 157,12,107,3 | normal | Volume bar track |
+| `volume_fill` | 157,12,*,3 | normal | Filled portion |
 | `volume_thumb` | *,10,6,6 | normal, pressed | Volume thumb |
 
 **Color:** Set `volume_fill.color` in `elements` to control the fill and thumb color independently from the seek bar. Falls back to `seek_fill.color`, then `palette.primary`.

@@ -506,7 +506,7 @@ class ModernMainWindowView: NSView {
                 }
 
                 // 8. Transport buttons
-                let transportRegion = scaledRect(NSRect(x: 6, y: 3, width: 168, height: 24))
+                let transportRegion = scaledRect(NSRect(x: 6, y: 3, width: 140, height: 24))
                 if dirtyRect.intersects(transportRegion) {
                     drawTransportButtons(context: context)
                 }
@@ -516,7 +516,7 @@ class ModernMainWindowView: NSView {
                 if dirtyRect.intersects(volumeScaled) {
                     // `window.areaOpacity.volumeArea` controls panel + slider content.
                     renderer.drawInsetPanel(
-                        in: NSRect(x: 177, y: 6, width: 92, height: 17),
+                        in: NSRect(x: 152, y: 6, width: 117, height: 17),
                         backgroundOpacity: volumeOpacity.background,
                         borderOpacity: volumeOpacity.border,
                         context: context
@@ -748,7 +748,6 @@ class ModernMainWindowView: NSView {
             (ModernSkinElements.btnPause, "btn_pause"),
             (ModernSkinElements.btnStop, "btn_stop"),
             (ModernSkinElements.btnNext, "btn_next"),
-            (ModernSkinElements.btnEject, "btn_eject"),
         ]
         
         for (element, id) in buttons {
@@ -1366,8 +1365,8 @@ class ModernMainWindowView: NSView {
             rect = scaledRect(effectiveMarqueePanelRect)
         case "spectrum_area":
             rect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
-        case "btn_prev", "btn_play", "btn_pause", "btn_stop", "btn_next", "btn_eject":
-            rect = scaledRect(NSRect(x: 6, y: 3, width: 168, height: 24))
+        case "btn_prev", "btn_play", "btn_pause", "btn_stop", "btn_next":
+            rect = scaledRect(NSRect(x: 6, y: 3, width: 140, height: 24))
         case "btn_close", "btn_minimize", "btn_shade":
             rect = scaledRect(ModernSkinElements.titleBar.defaultRect)
         case let id where id.hasPrefix("btn_"):
@@ -1414,7 +1413,6 @@ class ModernMainWindowView: NSView {
             ("btn_pause", ModernSkinElements.btnPause.defaultRect),
             ("btn_stop", ModernSkinElements.btnStop.defaultRect),
             ("btn_next", ModernSkinElements.btnNext.defaultRect),
-            ("btn_eject", ModernSkinElements.btnEject.defaultRect),
             // Toggle button row (10 buttons aligned with marquee panel x:93–267)
         ])
         do {
@@ -1645,9 +1643,6 @@ class ModernMainWindowView: NSView {
                 audioEngine.next()
             }
             
-        case "btn_eject":
-            openFileDialog()
-            
         case "btn_sk":
             showModernSkinsMenu()
             
@@ -1709,25 +1704,6 @@ class ModernMainWindowView: NSView {
         let btnRect = scaledRect(NSRect(x: 163, y: 42, width: 18, height: 14))
         let menuPoint = NSPoint(x: btnRect.minX, y: btnRect.maxY)
         menu.popUp(positioning: nil, at: menuPoint, in: self)
-    }
-    
-    // MARK: - File Dialog
-    
-    private func openFileDialog() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = true
-        panel.allowedContentTypes = [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
-        
-        panel.begin { [weak self] response in
-            guard response == .OK else { return }
-            LocalFileDiscovery.discoverMediaURLsAsync(from: panel.urls, includeVideo: false) { urls in
-                guard !urls.isEmpty else { return }
-                WindowManager.shared.audioEngine.loadFiles(urls)
-                WindowManager.shared.audioEngine.play()
-            }
-            _ = self
-        }
     }
     
     // MARK: - Keyboard Events

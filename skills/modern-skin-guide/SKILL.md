@@ -171,7 +171,7 @@ Some UI sections have dedicated `elements` color keys that override the palette:
 | Element key | Controls | Fallback chain |
 |-------------|----------|----------------|
 | `play_controls` | All transport button icon colors | `palette.primary` |
-| `btn_prev` … `btn_eject` | Individual transport button (overrides `play_controls`) | `play_controls` → `palette.primary` |
+| `btn_prev` … `btn_next` | Individual transport button (overrides `play_controls`) | `play_controls` → `palette.primary` |
 | `seek_fill` | Seek bar fill + thumb | `palette.primary` |
 | `volume_fill` | Volume bar fill + thumb | `seek_fill.color` → `palette.primary` |
 | `playlist_text` | Normal (non-current, non-selected) track text in playlist | `palette.textDim` |
