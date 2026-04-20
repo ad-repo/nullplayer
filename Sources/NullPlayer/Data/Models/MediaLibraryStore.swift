@@ -253,9 +253,14 @@ final class MediaLibraryStore {
         }
         if !hasColumn {
             try connection.execute("ALTER TABLE play_events ADD COLUMN content_type TEXT")
-            // Backfill: radio source → radio content type, everything else → music
-            try connection.execute("UPDATE play_events SET content_type = CASE WHEN source = 'radio' THEN 'radio' ELSE 'music' END")
         }
+        // Backfill: radio source -> radio content type, everything else -> music.
+        // Run on every migration attempt so partial upgrades still recover cleanly.
+        try connection.execute("""
+            UPDATE play_events
+            SET content_type = CASE WHEN source = 'radio' THEN 'radio' ELSE 'music' END
+            WHERE content_type IS NULL
+            """)
     }
 
     private func addTrackColumnIfMissing(_ connection: Connection, name: String, sqlType: String) throws {

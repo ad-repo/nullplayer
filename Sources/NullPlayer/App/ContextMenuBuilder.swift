@@ -2802,7 +2802,7 @@ class MenuActions: NSObject {
         }
 
         // Local file
-        showLocalTrackInfo(track)
+        Task { await showLocalTrackInfo(track) }
     }
     
     @MainActor
@@ -3060,7 +3060,8 @@ class MenuActions: NSObject {
         alert.runModal()
     }
 
-    private func showLocalTrackInfo(_ track: Track) {
+    @MainActor
+    private func showLocalTrackInfo(_ track: Track) async {
         let alert = NSAlert()
         alert.messageText = track.displayTitle
 
@@ -3068,16 +3069,11 @@ class MenuActions: NSObject {
         let lt = MediaLibrary.shared.findTrack(byURL: track.url)
 
         // For non-library files, read extra tags directly from the file
-        var fileAlbumArtist: String?
+        let fileAlbumArtist: String?
         if lt == nil, track.url.isFileURL {
-            let asset = AVAsset(url: track.url)
-            for format in asset.availableMetadataFormats {
-                for item in asset.metadata(forFormat: format) {
-                    if let key = item.key as? String, key == "TPE2" || key == "aART" {
-                        fileAlbumArtist = item.stringValue
-                    }
-                }
-            }
+            fileAlbumArtist = await loadLocalAlbumArtist(from: track.url)
+        } else {
+            fileAlbumArtist = nil
         }
 
         // Identity
@@ -3140,6 +3136,30 @@ class MenuActions: NSObject {
 
         alert.informativeText = info.joined(separator: "\n")
         alert.runModal()
+    }
+
+    private func loadLocalAlbumArtist(from fileURL: URL) async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            let asset = AVAsset(url: fileURL)
+            guard let metadata = try? await asset.load(.metadata) else { return nil }
+
+            let identifiers: [AVMetadataIdentifier] = [
+                .id3MetadataBand,
+                .iTunesMetadataAlbumArtist,
+            ]
+
+            for identifier in identifiers {
+                let items = AVMetadataItem.metadataItems(from: metadata, filteredByIdentifier: identifier)
+                for item in items {
+                    if let albumArtist = try? await item.load(.stringValue),
+                       !albumArtist.isEmpty {
+                        return albumArtist
+                    }
+                }
+            }
+
+            return nil
+        }.value
     }
     
     // MARK: - Formatting Helpers for About Playing

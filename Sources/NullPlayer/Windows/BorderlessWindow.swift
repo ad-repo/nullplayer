@@ -129,6 +129,13 @@ class BorderlessWindow: NSWindow {
             
         case .mouseMoved:
             let windowPoint = event.locationInWindow
+            // Keep cursor behavior aligned with title-bar resize exclusion.
+            if titleBarHeight > 0 && windowPoint.y > frame.height - titleBarHeight {
+                if !isResizing {
+                    NSCursor.arrow.set()
+                }
+                break
+            }
             let edges = detectResizeEdges(at: windowPoint)
             if !edges.isEmpty {
                 cursor(for: edges).set()

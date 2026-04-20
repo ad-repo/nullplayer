@@ -4803,10 +4803,10 @@ class ModernLibraryBrowserView: NSView {
         guard let library = sender.representedObject as? PlexLibrary else { return }
         PlexManager.shared.selectLibrary(library); clearAllCachedData()
         // Switch browse mode to match the selected library type
-        if library.isMusicLibrary && !browseMode.isVideoMode || browseMode == .plists || browseMode == .radio || browseMode == .search {
-            // Stay in current mode if compatible
-        } else if library.isMusicLibrary {
-            browseMode = .artists
+        if library.isMusicLibrary {
+            if browseMode.isVideoMode {
+                browseMode = .artists
+            }
         } else if library.isMovieLibrary {
             browseMode = .movies
         } else if library.isShowLibrary {
@@ -10583,7 +10583,7 @@ extension ModernDisplayItem {
             return song.track.map { String($0) } ?? ""
         case "artist": return song.artist ?? ""
         case "album": return song.album ?? ""
-        case "albumArtist": return song.artist ?? ""  // Subsonic doesn't separate album artist
+        case "albumArtist": return song.albumArtist ?? song.artist ?? ""
         case "year": return song.year.map { String($0) } ?? ""
         case "genre": return song.genre ?? ""
         case "duration": return song.formattedDuration
@@ -10656,7 +10656,7 @@ extension ModernDisplayItem {
             return song.track.map { String($0) } ?? ""
         case "artist": return song.artist ?? ""
         case "album": return song.album ?? ""
-        case "albumArtist": return song.artist ?? ""
+        case "albumArtist": return song.albumArtist ?? song.artist ?? ""
         case "year": return song.year.map { String($0) } ?? ""
         case "genre": return song.genre ?? ""
         case "duration": return song.formattedDuration
@@ -10697,7 +10697,7 @@ extension ModernDisplayItem {
             return song.track.map { String($0) } ?? ""
         case "artist": return song.artist ?? ""
         case "album": return song.album ?? ""
-        case "albumArtist": return song.artist ?? ""
+        case "albumArtist": return song.albumArtist ?? song.artist ?? ""
         case "year": return song.year.map { String($0) } ?? ""
         case "genre": return song.genre ?? ""
         case "duration": return song.formattedDuration

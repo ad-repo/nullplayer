@@ -11805,12 +11805,20 @@ class PlexBrowserView: NSView {
         PlexManager.shared.selectLibrary(library)
 
         // Switch browse mode to match the selected library type
-        if library.isMusicLibrary && browseMode.isVideoMode {
-            browseMode = .artists
-        } else if library.isMovieLibrary {
-            browseMode = .movies
-        } else if library.isShowLibrary {
-            browseMode = .shows
+        let shouldKeepCurrentMode =
+            (library.isMusicLibrary && !browseMode.isVideoMode) ||
+            browseMode == .plists ||
+            browseMode == .radio ||
+            browseMode == .search
+
+        if !shouldKeepCurrentMode {
+            if library.isMusicLibrary {
+                browseMode = .artists
+            } else if library.isMovieLibrary {
+                browseMode = .movies
+            } else if library.isShowLibrary {
+                browseMode = .shows
+            }
         }
 
         // Clear all cached data when switching libraries
@@ -11829,6 +11837,8 @@ class PlexBrowserView: NSView {
         expandedShows = []
         expandedSeasons = []
         searchResults = nil
+        selectedIndices.removeAll()
+        scrollOffset = 0
 
         reloadData()
     }

@@ -352,28 +352,40 @@ class PlexManager {
             }
         }
 
-        // Preload movies from the first movie library
-        if let movieLib = availableLibraries.first(where: { $0.isMovieLibrary }) {
+        // Preload movies from selected movie library, falling back to first movie library
+        let movieLib = (currentLibrary?.isMovieLibrary == true ? currentLibrary : nil)
+            ?? availableLibraries.first(where: { $0.isMovieLibrary })
+        if let movieLib = movieLib {
             do {
                 NSLog("PlexManager: Fetching movies from '%@'...", movieLib.title)
                 let movies = try await client.fetchMovies(libraryID: movieLib.id, offset: 0, limit: 500)
                 await MainActor.run {
-                    self.cachedMovies = movies
-                    NSLog("PlexManager: Stored preloaded movies - %d", movies.count)
+                    let activeMovieLib = (self.currentLibrary?.isMovieLibrary == true ? self.currentLibrary : nil)
+                        ?? self.availableLibraries.first(where: { $0.isMovieLibrary })
+                    if activeMovieLib?.id == movieLib.id {
+                        self.cachedMovies = movies
+                        NSLog("PlexManager: Stored preloaded movies - %d", movies.count)
+                    }
                 }
             } catch {
                 NSLog("PlexManager: Movie preload failed: %@", error.localizedDescription)
             }
         }
 
-        // Preload shows from the first show library
-        if let showLib = availableLibraries.first(where: { $0.isShowLibrary }) {
+        // Preload shows from selected show library, falling back to first show library
+        let showLib = (currentLibrary?.isShowLibrary == true ? currentLibrary : nil)
+            ?? availableLibraries.first(where: { $0.isShowLibrary })
+        if let showLib = showLib {
             do {
                 NSLog("PlexManager: Fetching shows from '%@'...", showLib.title)
                 let shows = try await client.fetchShows(libraryID: showLib.id, offset: 0, limit: 500)
                 await MainActor.run {
-                    self.cachedShows = shows
-                    NSLog("PlexManager: Stored preloaded shows - %d", shows.count)
+                    let activeShowLib = (self.currentLibrary?.isShowLibrary == true ? self.currentLibrary : nil)
+                        ?? self.availableLibraries.first(where: { $0.isShowLibrary })
+                    if activeShowLib?.id == showLib.id {
+                        self.cachedShows = shows
+                        NSLog("PlexManager: Stored preloaded shows - %d", shows.count)
+                    }
                 }
             } catch {
                 NSLog("PlexManager: Show preload failed: %@", error.localizedDescription)
