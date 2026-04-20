@@ -184,10 +184,17 @@ For Sonos audio casting, playback control commands use a **fire-and-forget** pat
 **Error detection:** Consecutive failures are tracked. After 3 failures, a user-facing error notification is posted.
 
 ### Volume Control
-- Control URL: `http://{ip}:1400/MediaRenderer/RenderingControl/Control`
-- `SetVolume` - Set volume (0-100)
-- `GetVolume` - Get current volume
-- `SetMute` / `GetMute` - Mute control
+Sonos uses **GroupRenderingControl** (not `RenderingControl`) so that volume/mute apply to the whole group, not just the coordinator zone. Non-Sonos DLNA devices still use `RenderingControl`.
+
+| | Sonos | Other DLNA |
+|---|---|---|
+| Control URL | `/MediaRenderer/GroupRenderingControl/Control` | `/MediaRenderer/RenderingControl/Control` |
+| Set volume | `SetGroupVolume` (no Channel arg) | `SetVolume` (Channel=Master) |
+| Get volume | `GetGroupVolume` | `GetVolume` |
+| Set mute | `SetGroupMute` (no Channel arg) | `SetMute` (Channel=Master) |
+| Service type | `urn:schemas-upnp-org:service:GroupRenderingControl:1` | `urn:schemas-upnp-org:service:RenderingControl:1` |
+
+This is handled in `UPnPManager.setVolume(_:)`, `getVolume()`, and `setMute(_:)` by branching on `session.device.type == .sonos`.
 
 ### Playback State Monitoring
 

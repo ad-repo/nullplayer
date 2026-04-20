@@ -25,7 +25,7 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **ProjectM** | Real-time audio visualizations | Menu button or context menu |
 
-In modern UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window.
+In modern UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab shows play-time summaries, top artists, a time-series chart, genre breakdown, source breakdown, a **Content Types** donut chart (Music / Movies / TV Shows / Radio / Video), and a recent events list. All charts are interactive filters — clicking a segment narrows all other charts to that slice. The **Now Playing…** context menu item shows rich track info (album artist, year, track number, genre, play count, rating, file path, etc.) fetched live from the server for Plex/Subsonic/Jellyfin/Emby tracks.
 
 ### Top Menu Bar
 

@@ -24,11 +24,12 @@ Reference for local media library: scanning, persistence, NAS responsiveness, an
 - `busyTimeout = 5s` — prevents hard failure on background/main thread contention.
 
 **Schema version** (`PRAGMA user_version`)
-- v0 → v5: fresh install creates all tables, then runs `migrateToV5`.
+- v0 → v6: fresh install creates all tables, runs `migrateToV5` then `migrateToV6`.
 - v1 → v2: migration adds `idx_tracks_artist_expr` expression index (see Indexes below).
 - v2 → v3: migration adds `track_artists` table with `ON DELETE CASCADE` FK (see Tables below).
 - v3 → v4: migration adds extended metadata columns (`composer`, `comment`, `grouping`, `bpm`, `musical_key`, `isrc`, `copyright`, `musicbrainz_recording_id`, `musicbrainz_release_id`, `discogs_*`, `artwork_url`) via `ALTER TABLE … ADD COLUMN`.
 - v4 → v5: migration adds `play_events` table and indexes (see Tables below).
+- v5 → v6: migration adds `content_type` column to `play_events` (TEXT, nullable); backfills `'radio'` for source=radio rows, `'music'` for everything else.
 
 ### Tables
 
@@ -83,7 +84,7 @@ Index: `idx_episodes_show (show_title, season_number)`.
 | `role` | TEXT | `'primary'`, `'featured'`, or `'album_artist'` |
 PK: `(track_url, artist_name, role)`. Indexes: `idx_track_artists_name`, `idx_track_artists_url`.
 
-#### `play_events` (added v5)
+#### `play_events` (added v5, extended v6)
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | INTEGER PK | AUTOINCREMENT |
@@ -97,8 +98,11 @@ PK: `(track_url, artist_name, role)`. Indexes: `idx_track_artists_name`, `idx_tr
 | `duration_listened` | REAL | Seconds, NOT NULL, default 0 |
 | `source` | TEXT | `'local'`, `'plex'`, `'subsonic'`, `'jellyfin'`, `'emby'`, or `'radio'` |
 | `skipped` | INTEGER | 0/1, NOT NULL, default 0 |
+| `content_type` | TEXT? | Added v6. Values: `'music'`, `'movie'`, `'tv'`, `'radio'`, `'video'`. NULL treated as `'music'` in queries. Derived from `Track.playHistoryContentType`; video playback records from `VideoPlayerWindowController` set this explicitly via `beginPlaybackAnalyticsSession(contentType:)`. |
 Indexes: `idx_play_events_played_at`, `idx_play_events_track_id`, `idx_play_events_source_time`.
 Queried by `PlayHistoryStore` (in `Windows/ModernStats/`) to power the Data tab in the Library Browser.
+
+**`insertPlayEvent` signature** (in `MediaLibraryStore`): takes `contentType: String = "music"` as a trailing parameter — defaults to music so all existing callers work unchanged. Pass `track.playHistoryContentType` at call sites that know the content type. `VideoPlayerWindowController` passes the content type explicitly.
 
 ### Key API Methods (MediaLibraryStore)
 
