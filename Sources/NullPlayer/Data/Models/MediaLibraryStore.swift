@@ -102,8 +102,8 @@ final class MediaLibraryStore {
 
         do {
             let connection = try Connection(dbPath)
-            db = connection
             try setupSchema(connection)
+            db = connection
             NSLog("MediaLibraryStore: Database ready at %@", dbPath)
 
             // Migrate from JSON if needed
@@ -158,8 +158,9 @@ final class MediaLibraryStore {
         if currentVersion == 0 {
             try createTablesIfNeeded(connection)
             try migrateToV5(connection)
-            try connection.run("PRAGMA user_version = 5")
-            currentVersion = 5
+            try migrateToV6(connection)
+            try connection.run("PRAGMA user_version = 6")
+            currentVersion = 6
         }
         if currentVersion == 1 {
             // Add expression index so artistNames GROUP BY and albumsForArtist WHERE queries
@@ -193,6 +194,11 @@ final class MediaLibraryStore {
         if currentVersion == 4 {
             try migrateToV5(connection)
             try connection.run("PRAGMA user_version = 5")
+            currentVersion = 5
+        }
+        if currentVersion == 5 {
+            try migrateToV6(connection)
+            try connection.run("PRAGMA user_version = 6")
         }
     }
 
@@ -232,6 +238,28 @@ final class MediaLibraryStore {
             CREATE INDEX IF NOT EXISTS idx_play_events_played_at ON play_events(played_at);
             CREATE INDEX IF NOT EXISTS idx_play_events_track_id  ON play_events(track_id);
             CREATE INDEX IF NOT EXISTS idx_play_events_source_time ON play_events(source, played_at);
+            """)
+    }
+
+    private func migrateToV6(_ connection: Connection) throws {
+        // Add content_type column to play_events
+        let pragmaSQL = "PRAGMA table_info(play_events)"
+        var hasColumn = false
+        for row in try connection.prepare(pragmaSQL) {
+            if let existingName = row[1] as? String, existingName == "content_type" {
+                hasColumn = true
+                break
+            }
+        }
+        if !hasColumn {
+            try connection.execute("ALTER TABLE play_events ADD COLUMN content_type TEXT")
+        }
+        // Backfill: radio source -> radio content type, everything else -> music.
+        // Run on every migration attempt so partial upgrades still recover cleanly.
+        try connection.execute("""
+            UPDATE play_events
+            SET content_type = CASE WHEN source = 'radio' THEN 'radio' ELSE 'music' END
+            WHERE content_type IS NULL
             """)
     }
 
@@ -1206,7 +1234,8 @@ final class MediaLibraryStore {
     @discardableResult
     func insertPlayEvent(trackId: String?, trackURL: String?, title: String?, artist: String?,
                          album: String?, genre: String?, playedAt: Date,
-                         durationListened: Double, source: String, skipped: Bool) -> Int64? {
+                         durationListened: Double, source: String, skipped: Bool,
+                         contentType: String = "music") -> Int64? {
         guard let db = db else { return nil }
         do {
             let bindings: [Binding?] = [
@@ -1219,13 +1248,14 @@ final class MediaLibraryStore {
                 playedAt.timeIntervalSince1970 as Binding,
                 durationListened as Binding,
                 source as Binding,
-                (skipped ? 1 : 0) as Binding
+                (skipped ? 1 : 0) as Binding,
+                contentType as Binding
             ]
             try db.run("""
                 INSERT INTO play_events
                   (track_id, track_url, event_title, event_artist, event_album, event_genre,
-                   played_at, duration_listened, source, skipped)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
+                   played_at, duration_listened, source, skipped, content_type)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 """, bindings)
             NotificationCenter.default.post(name: Self.playHistoryDidChangeNotification, object: nil)
             return db.lastInsertRowid

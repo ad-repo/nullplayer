@@ -6,7 +6,9 @@ class ResizableWindow: NSWindow {
     // MARK: - Resize Edge Detection
     
     /// Width of the resize edge detection zone in pixels (larger = easier to grab)
-    private let edgeThickness: CGFloat = 12
+    private let edgeThickness: CGFloat = 14
+    /// Narrower zone for top edge to avoid interfering with docked window dragging
+    private let topEdgeThickness: CGFloat = 12
     
     /// Which edges are being resized
     struct ResizeEdges: OptionSet {
@@ -107,7 +109,7 @@ class ResizableWindow: NSWindow {
         } else if windowPoint.x > size.width - edgeThickness {
             // Only allow right edge resize near the bottom of the window
             // The rest of the right edge has the scrollbar
-            if windowPoint.y < edgeThickness * 2 {
+            if windowPoint.y < edgeThickness * 3 {
                 edges.insert(.right)
             }
         }
@@ -115,10 +117,10 @@ class ResizableWindow: NSWindow {
         // Check vertical edges (window coordinates: 0 is at bottom)
         if windowPoint.y < edgeThickness {
             edges.insert(.bottom)
-        } else if windowPoint.y > size.height - edgeThickness {
+        } else if windowPoint.y > size.height - topEdgeThickness {
             edges.insert(.top)
         }
-        
+
         return edges
     }
 

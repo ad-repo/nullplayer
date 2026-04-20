@@ -43,7 +43,7 @@
             "color": "#ffb2bf",
             "spacing": 34,
             "angle": 78,
-            "opacity": 0.02,
+            "opacity": 0.12,
             "perspective": false
         }
     },
@@ -59,45 +59,45 @@
         "borderWidth": 1,
         "borderColor": "#ffb8c4",
         "cornerRadius": 14,
-        "opacity": 0.5,
-        "textOpacity": 0.8,
-        "mainSpectrumOpacity": 0.9,
+        "opacity": 0.6,
+        "textOpacity": 0.9,
+        "mainSpectrumOpacity": 1.0,
         "seamlessDocking": 1.0,
         "areaOpacity": {
             "mainWindow": {
-                "background": 0.8,
-                "border": 0.8,
-                "content": 0.8
+                "background": 0.9,
+                "border": 0.9,
+                "content": 0.9
             },
             "timeDisplay": {
-                "background": 0.8,
-                "border": 0.8,
-                "content": 0.8
+                "background": 0.9,
+                "border": 0.9,
+                "content": 0.9
             },
             "trackDisplay": {
-                "background": 0.8,
-                "border": 0.8,
-                "content": 0.8
+                "background": 0.9,
+                "border": 0.9,
+                "content": 0.9
             },
             "volumeArea": {
-                "background": 0.8,
-                "border": 0.8,
-                "content": 0.8
+                "background": 0.9,
+                "border": 0.9,
+                "content": 0.9
             },
             "spectrumArea": {
-                "background": 0.8,
-                "border": 0.8,
-                "content": 0.8
+                "background": 0.9,
+                "border": 0.9,
+                "content": 0.9
             },
             "eqFaderBackground": {
-                "background": 0.8,
-                "border": 0.8,
-                "content": 0.8
+                "background": 0.9,
+                "border": 0.9,
+                "content": 0.9
             },
             "curveBackground": {
-                "background": 0.8,
-                "border": 0.8,
-                "content": 0.8
+                "background": 0.9,
+                "border": 0.9,
+                "content": 0.9
             }
         }
     },
@@ -155,8 +155,8 @@
             "spectrumWindowFitToWidth": true,
             "mainWindowTransparentBackground": true,
             "spectrumWindowTransparentBackground": true,
-            "mainWindowOpacity": 0.8,
-            "spectrumWindowOpacity": 0.8
+            "mainWindowOpacity": 0.9,
+            "spectrumWindowOpacity": 0.9
         },
         "fire": {
             "mainWindowStyle": "Inferno",

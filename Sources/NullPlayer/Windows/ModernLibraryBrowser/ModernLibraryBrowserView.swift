@@ -4801,7 +4801,19 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func selectLibrary(_ sender: NSMenuItem) {
         guard let library = sender.representedObject as? PlexLibrary else { return }
-        PlexManager.shared.selectLibrary(library); clearAllCachedData(); reloadData()
+        PlexManager.shared.selectLibrary(library); clearAllCachedData()
+        // Switch browse mode to match the selected library type
+        if library.isMusicLibrary {
+            if browseMode.isVideoMode {
+                browseMode = .artists
+            }
+        } else if library.isMovieLibrary {
+            browseMode = .movies
+        } else if library.isShowLibrary {
+            browseMode = .shows
+        }
+        selectedIndices.removeAll(); scrollOffset = 0
+        reloadData()
     }
     @objc private func selectJellyfinMusicLibrary(_ sender: NSMenuItem) {
         let library = sender.representedObject as? JellyfinMusicLibrary
@@ -7196,8 +7208,8 @@ class ModernLibraryBrowserView: NSView {
             if case .subsonicTrack(let song) = item.type, song.id == songId {
                 let updatedSong = SubsonicSong(
                     id: song.id, parent: song.parent, title: song.title,
-                    album: song.album, artist: song.artist, albumId: song.albumId,
-                    artistId: song.artistId, track: song.track, year: song.year,
+                    album: song.album, artist: song.artist, albumArtist: song.albumArtist,
+                    albumId: song.albumId, artistId: song.artistId, track: song.track, year: song.year,
                     genre: song.genre, coverArt: song.coverArt, size: song.size,
                     contentType: song.contentType, suffix: song.suffix,
                     duration: song.duration, bitRate: song.bitRate,
@@ -7246,7 +7258,8 @@ class ModernLibraryBrowserView: NSView {
             if case .jellyfinTrack(let song) = item.type, song.id == itemId {
                 let updatedSong = JellyfinSong(
                     id: song.id, title: song.title, album: song.album,
-                    artist: song.artist, albumId: song.albumId, artistId: song.artistId,
+                    artist: song.artist, albumArtist: song.albumArtist,
+                    albumId: song.albumId, artistId: song.artistId,
                     track: song.track, year: song.year, genre: song.genre,
                     imageTag: song.imageTag, size: song.size, contentType: song.contentType,
                     duration: song.duration, bitRate: song.bitRate,
@@ -7270,7 +7283,8 @@ class ModernLibraryBrowserView: NSView {
             if case .embyTrack(let song) = item.type, song.id == itemId {
                 let updatedSong = EmbySong(
                     id: song.id, title: song.title, album: song.album,
-                    artist: song.artist, albumId: song.albumId, artistId: song.artistId,
+                    artist: song.artist, albumArtist: song.albumArtist,
+                    albumId: song.albumId, artistId: song.artistId,
                     track: song.track, year: song.year, genre: song.genre,
                     imageTag: song.imageTag, size: song.size, contentType: song.contentType,
                     duration: song.duration, bitRate: song.bitRate,
@@ -10569,7 +10583,7 @@ extension ModernDisplayItem {
             return song.track.map { String($0) } ?? ""
         case "artist": return song.artist ?? ""
         case "album": return song.album ?? ""
-        case "albumArtist": return song.artist ?? ""  // Subsonic doesn't separate album artist
+        case "albumArtist": return song.albumArtist ?? song.artist ?? ""
         case "year": return song.year.map { String($0) } ?? ""
         case "genre": return song.genre ?? ""
         case "duration": return song.formattedDuration
@@ -10642,7 +10656,7 @@ extension ModernDisplayItem {
             return song.track.map { String($0) } ?? ""
         case "artist": return song.artist ?? ""
         case "album": return song.album ?? ""
-        case "albumArtist": return song.artist ?? ""
+        case "albumArtist": return song.albumArtist ?? song.artist ?? ""
         case "year": return song.year.map { String($0) } ?? ""
         case "genre": return song.genre ?? ""
         case "duration": return song.formattedDuration
@@ -10683,7 +10697,7 @@ extension ModernDisplayItem {
             return song.track.map { String($0) } ?? ""
         case "artist": return song.artist ?? ""
         case "album": return song.album ?? ""
-        case "albumArtist": return song.artist ?? ""
+        case "albumArtist": return song.albumArtist ?? song.artist ?? ""
         case "year": return song.year.map { String($0) } ?? ""
         case "genre": return song.genre ?? ""
         case "duration": return song.formattedDuration

@@ -74,6 +74,7 @@ struct JellyfinSong: Identifiable, Equatable {
     let title: String
     let album: String?
     let artist: String?
+    let albumArtist: String?
     let albumId: String?
     let artistId: String?
     let track: Int?              // IndexNumber
@@ -338,6 +339,7 @@ struct JellyfinItemDTO: Decodable {
             title: Name,
             album: Album,
             artist: Artists?.first ?? ArtistItems?.first?.Name,
+            albumArtist: AlbumArtist ?? AlbumArtists?.first?.Name,
             albumId: AlbumId,
             artistId: ArtistItems?.first?.Id,
             track: IndexNumber,
@@ -358,7 +360,7 @@ struct JellyfinItemDTO: Decodable {
             userRating: UserData?.Rating != nil ? Int(UserData!.Rating!) : nil
         )
     }
-    
+
     func toPlaylist() -> JellyfinPlaylist {
         let durationSeconds: Int
         if let ticks = RunTimeTicks {

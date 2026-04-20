@@ -74,6 +74,7 @@ struct EmbySong: Identifiable, Equatable {
     let title: String
     let album: String?
     let artist: String?
+    let albumArtist: String?
     let albumId: String?
     let artistId: String?
     let track: Int?              // IndexNumber
@@ -338,6 +339,7 @@ struct EmbyItemDTO: Decodable {
             title: Name,
             album: Album,
             artist: Artists?.first ?? ArtistItems?.first?.Name,
+            albumArtist: AlbumArtist ?? AlbumArtists?.first?.Name,
             albumId: AlbumId,
             artistId: ArtistItems?.first?.Id,
             track: IndexNumber,

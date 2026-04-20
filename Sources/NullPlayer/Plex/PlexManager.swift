@@ -315,96 +315,90 @@ class PlexManager {
     
     /// Preload library content in the background for faster Plex browser opening
     func preloadLibraryContent() async {
-        // Capture the current state at the start to avoid race conditions
-        guard let client = serverClient, let library = currentLibrary else {
-            NSLog("PlexManager: Cannot preload - no server or library connected")
+        guard let client = serverClient else {
+            NSLog("PlexManager: Cannot preload - no server connected")
             return
         }
-        
+
         guard !isPreloading else {
             NSLog("PlexManager: Already preloading, skipping")
             return
         }
-        
+
         await MainActor.run {
             isPreloading = true
         }
-        
-        NSLog("PlexManager: Starting library content preload for library: %@", library.title)
-        
-        do {
-            // Preload content based on the library type
-            // Use the captured client and library to avoid race conditions
-            if library.isMusicLibrary {
-                // Preload artists and albums for music library
+
+        NSLog("PlexManager: Starting library content preload")
+
+        // Preload music from the current library if it's a music library
+        if let musicLib = currentLibrary, musicLib.isMusicLibrary {
+            do {
                 NSLog("PlexManager: Fetching artists...")
-                let artists = try await client.fetchAllArtists(libraryID: library.id)
+                let artists = try await client.fetchAllArtists(libraryID: musicLib.id)
                 NSLog("PlexManager: Fetched %d artists, now fetching albums...", artists.count)
-                let albums = try await client.fetchAlbums(libraryID: library.id, offset: 0, limit: 10000)
+                let albums = try await client.fetchAlbums(libraryID: musicLib.id, offset: 0, limit: 10000)
                 NSLog("PlexManager: Fetched %d albums", albums.count)
-                
+
                 await MainActor.run {
-                    // Only store if the library hasn't changed
-                    if self.currentLibrary?.id == library.id {
+                    if self.currentLibrary?.id == musicLib.id {
                         self.cachedArtists = artists
                         self.cachedAlbums = albums
-                        self.isContentPreloaded = true
-                        NSLog("PlexManager: Stored preloaded data - %d artists, %d albums", artists.count, albums.count)
-                    } else {
-                        NSLog("PlexManager: Library changed during preload, discarding results")
+                        NSLog("PlexManager: Stored preloaded music - %d artists, %d albums", artists.count, albums.count)
                     }
-                    self.isPreloading = false
-                    NotificationCenter.default.post(name: Self.libraryContentDidPreloadNotification, object: self)
                 }
-                
-            } else if library.isMovieLibrary {
-                // Preload movies for movie library
-                NSLog("PlexManager: Fetching movies...")
-                let movies = try await client.fetchMovies(libraryID: library.id, offset: 0, limit: 500)
-                
-                await MainActor.run {
-                    if self.currentLibrary?.id == library.id {
-                        self.cachedMovies = movies
-                        self.isContentPreloaded = true
-                        NSLog("PlexManager: Stored preloaded data - %d movies", movies.count)
-                    } else {
-                        NSLog("PlexManager: Library changed during preload, discarding results")
-                    }
-                    self.isPreloading = false
-                    NotificationCenter.default.post(name: Self.libraryContentDidPreloadNotification, object: self)
-                }
-                
-            } else if library.isShowLibrary {
-                // Preload shows for show library
-                NSLog("PlexManager: Fetching shows...")
-                let shows = try await client.fetchShows(libraryID: library.id, offset: 0, limit: 500)
-                
-                await MainActor.run {
-                    if self.currentLibrary?.id == library.id {
-                        self.cachedShows = shows
-                        self.isContentPreloaded = true
-                        NSLog("PlexManager: Stored preloaded data - %d shows", shows.count)
-                    } else {
-                        NSLog("PlexManager: Library changed during preload, discarding results")
-                    }
-                    self.isPreloading = false
-                    NotificationCenter.default.post(name: Self.libraryContentDidPreloadNotification, object: self)
-                }
-            } else {
-                NSLog("PlexManager: Library type not supported for preload: %@", library.type)
-                await MainActor.run {
-                    self.isPreloading = false
-                }
-            }
-            
-            NSLog("PlexManager: Library content preload complete")
-            
-        } catch {
-            NSLog("PlexManager: Library content preload failed: %@", error.localizedDescription)
-            await MainActor.run {
-                self.isPreloading = false
+            } catch {
+                NSLog("PlexManager: Music preload failed: %@", error.localizedDescription)
             }
         }
+
+        // Preload movies from selected movie library, falling back to first movie library
+        let movieLib = (currentLibrary?.isMovieLibrary == true ? currentLibrary : nil)
+            ?? availableLibraries.first(where: { $0.isMovieLibrary })
+        if let movieLib = movieLib {
+            do {
+                NSLog("PlexManager: Fetching movies from '%@'...", movieLib.title)
+                let movies = try await client.fetchMovies(libraryID: movieLib.id, offset: 0, limit: 500)
+                await MainActor.run {
+                    let activeMovieLib = (self.currentLibrary?.isMovieLibrary == true ? self.currentLibrary : nil)
+                        ?? self.availableLibraries.first(where: { $0.isMovieLibrary })
+                    if activeMovieLib?.id == movieLib.id {
+                        self.cachedMovies = movies
+                        NSLog("PlexManager: Stored preloaded movies - %d", movies.count)
+                    }
+                }
+            } catch {
+                NSLog("PlexManager: Movie preload failed: %@", error.localizedDescription)
+            }
+        }
+
+        // Preload shows from selected show library, falling back to first show library
+        let showLib = (currentLibrary?.isShowLibrary == true ? currentLibrary : nil)
+            ?? availableLibraries.first(where: { $0.isShowLibrary })
+        if let showLib = showLib {
+            do {
+                NSLog("PlexManager: Fetching shows from '%@'...", showLib.title)
+                let shows = try await client.fetchShows(libraryID: showLib.id, offset: 0, limit: 500)
+                await MainActor.run {
+                    let activeShowLib = (self.currentLibrary?.isShowLibrary == true ? self.currentLibrary : nil)
+                        ?? self.availableLibraries.first(where: { $0.isShowLibrary })
+                    if activeShowLib?.id == showLib.id {
+                        self.cachedShows = shows
+                        NSLog("PlexManager: Stored preloaded shows - %d", shows.count)
+                    }
+                }
+            } catch {
+                NSLog("PlexManager: Show preload failed: %@", error.localizedDescription)
+            }
+        }
+
+        await MainActor.run {
+            self.isContentPreloaded = true
+            self.isPreloading = false
+            NotificationCenter.default.post(name: Self.libraryContentDidPreloadNotification, object: self)
+        }
+
+        NSLog("PlexManager: Library content preload complete")
     }
     
     /// Clear cached library content (called when library or server changes, or on refresh)
@@ -640,25 +634,19 @@ class PlexManager {
     
     // MARK: - Video Content Fetching
     
-    /// Fetch movies from the current library (returns empty if not a movie library)
+    /// Fetch movies from the current library if it's a movie library, otherwise from the first available movie library
     func fetchMovies(offset: Int = 0, limit: Int = 100) async throws -> [PlexMovie] {
-        guard let client = serverClient, let library = currentLibrary else {
-            return []
-        }
-        guard library.isMovieLibrary else {
-            return []  // Not a movie library, return empty
-        }
+        guard let client = serverClient else { return [] }
+        let library = currentLibrary?.isMovieLibrary == true ? currentLibrary! : availableLibraries.first(where: { $0.isMovieLibrary })
+        guard let library else { return [] }
         return try await client.fetchMovies(libraryID: library.id, offset: offset, limit: limit)
     }
     
-    /// Fetch TV shows from the current library (returns empty if not a show library)
+    /// Fetch TV shows from the current library if it's a show library, otherwise from the first available show library
     func fetchShows(offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
-        guard let client = serverClient, let library = currentLibrary else {
-            return []
-        }
-        guard library.isShowLibrary else {
-            return []  // Not a show library, return empty
-        }
+        guard let client = serverClient else { return [] }
+        let library = currentLibrary?.isShowLibrary == true ? currentLibrary! : availableLibraries.first(where: { $0.isShowLibrary })
+        guard let library else { return [] }
         return try await client.fetchShows(libraryID: library.id, offset: offset, limit: limit)
     }
     
@@ -834,7 +822,8 @@ class PlexManager {
             plexRatingKey: movie.id,
             plexServerId: currentServer?.id,
             artworkThumb: movie.thumb,
-            mediaType: .video
+            mediaType: .video,
+            playHistoryContentTypeOverride: "movie"
         )
     }
 
@@ -861,7 +850,8 @@ class PlexManager {
             plexRatingKey: episode.id,
             plexServerId: currentServer?.id,
             artworkThumb: episode.thumb,
-            mediaType: .video
+            mediaType: .video,
+            playHistoryContentTypeOverride: "tv"
         )
     }
 
