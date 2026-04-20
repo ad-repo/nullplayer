@@ -159,9 +159,9 @@ class VisualizationGLView: NSOpenGLView {
         openGLContext?.makeCurrentContext()
         setupOpenGL()
         setupEngine()
-        // setupDisplayLink() deferred to viewDidMoveToWindow — the CGL context must be
-        // associated with a real display before CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext
-        // is called, otherwise the GPU driver can panic on M-series Macs with external monitors.
+        // setupDisplayLink() deferred to viewDidMoveToWindow — the view must be in a real window
+        // before CVDisplayLinkSetCurrentCGDisplay is called, otherwise the GPU driver can panic
+        // on M-series Macs with external monitors.
     }
 
     required init?(coder: NSCoder) {
@@ -372,9 +372,8 @@ class VisualizationGLView: NSOpenGLView {
 
     private func updateDisplayLinkForCurrentScreen() {
         guard let displayLink = displayLink else { return }
-        if let cglContext = openGLContext?.cglContextObj,
-           let cglPixelFormat = pixelFormat?.cglPixelFormatObj {
-            CVDisplayLinkSetCurrentCGDisplayFromOpenGLContext(displayLink, cglContext, cglPixelFormat)
+        if let screenNumber = window?.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+            CVDisplayLinkSetCurrentCGDisplay(displayLink, screenNumber)
         }
     }
 
