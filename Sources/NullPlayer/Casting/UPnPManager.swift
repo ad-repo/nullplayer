@@ -1698,21 +1698,34 @@ class UPnPManager {
         guard let session = activeSession else {
             throw CastError.sessionNotActive
         }
-        
+
         let clampedVolume = max(0, min(100, volume))
-        let controlURL = getRenderingControlURL(for: session.device)
-        
+
         NSLog("UPnPManager: Setting volume to %d on %@", clampedVolume, session.device.name)
-        
-        try await sendRenderingControlAction(
-            controlURL: controlURL,
-            action: "SetVolume",
-            arguments: [
-                ("InstanceID", "0"),
-                ("Channel", "Master"),
-                ("DesiredVolume", "\(clampedVolume)")
-            ]
-        )
+
+        if session.device.type == .sonos {
+            // Use GroupRenderingControl for Sonos — works for both single speakers and groups
+            let controlURL = getGroupRenderingControlURL(for: session.device)
+            try await sendGroupRenderingControlAction(
+                controlURL: controlURL,
+                action: "SetGroupVolume",
+                arguments: [
+                    ("InstanceID", "0"),
+                    ("DesiredVolume", "\(clampedVolume)")
+                ]
+            )
+        } else {
+            let controlURL = getRenderingControlURL(for: session.device)
+            try await sendRenderingControlAction(
+                controlURL: controlURL,
+                action: "SetVolume",
+                arguments: [
+                    ("InstanceID", "0"),
+                    ("Channel", "Master"),
+                    ("DesiredVolume", "\(clampedVolume)")
+                ]
+            )
+        }
     }
     
     /// Get current volume (0-100)
@@ -1720,23 +1733,32 @@ class UPnPManager {
         guard let session = activeSession else {
             return 0
         }
-        
-        let controlURL = getRenderingControlURL(for: session.device)
-        
-        let response = try await sendRenderingControlAction(
-            controlURL: controlURL,
-            action: "GetVolume",
-            arguments: [
-                ("InstanceID", "0"),
-                ("Channel", "Master")
-            ]
-        )
-        
+
+        let response: String
+        if session.device.type == .sonos {
+            let controlURL = getGroupRenderingControlURL(for: session.device)
+            response = try await sendGroupRenderingControlAction(
+                controlURL: controlURL,
+                action: "GetGroupVolume",
+                arguments: [("InstanceID", "0")]
+            )
+        } else {
+            let controlURL = getRenderingControlURL(for: session.device)
+            response = try await sendRenderingControlAction(
+                controlURL: controlURL,
+                action: "GetVolume",
+                arguments: [
+                    ("InstanceID", "0"),
+                    ("Channel", "Master")
+                ]
+            )
+        }
+
         if let volumeStr = extractXMLValue(response, tag: "CurrentVolume"),
            let volume = Int(volumeStr) {
             return volume
         }
-        
+
         return 0
     }
     
@@ -1745,20 +1767,31 @@ class UPnPManager {
         guard let session = activeSession else {
             throw CastError.sessionNotActive
         }
-        
-        let controlURL = getRenderingControlURL(for: session.device)
-        
+
         NSLog("UPnPManager: Setting mute to %@ on %@", muted ? "ON" : "OFF", session.device.name)
-        
-        try await sendRenderingControlAction(
-            controlURL: controlURL,
-            action: "SetMute",
-            arguments: [
-                ("InstanceID", "0"),
-                ("Channel", "Master"),
-                ("DesiredMute", muted ? "1" : "0")
-            ]
-        )
+
+        if session.device.type == .sonos {
+            let controlURL = getGroupRenderingControlURL(for: session.device)
+            try await sendGroupRenderingControlAction(
+                controlURL: controlURL,
+                action: "SetGroupMute",
+                arguments: [
+                    ("InstanceID", "0"),
+                    ("DesiredMute", muted ? "1" : "0")
+                ]
+            )
+        } else {
+            let controlURL = getRenderingControlURL(for: session.device)
+            try await sendRenderingControlAction(
+                controlURL: controlURL,
+                action: "SetMute",
+                arguments: [
+                    ("InstanceID", "0"),
+                    ("Channel", "Master"),
+                    ("DesiredMute", muted ? "1" : "0")
+                ]
+            )
+        }
     }
     
     /// Get RenderingControl URL for a device
@@ -1769,6 +1802,16 @@ class UPnPManager {
         components.host = device.address
         components.port = device.port
         components.path = "/MediaRenderer/RenderingControl/Control"
+        return components.url!
+    }
+
+    /// Get GroupRenderingControl URL for a Sonos device (group-wide volume/mute)
+    private func getGroupRenderingControlURL(for device: CastDevice) -> URL {
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = device.address
+        components.port = device.port
+        components.path = "/MediaRenderer/GroupRenderingControl/Control"
         return components.url!
     }
     
@@ -1981,7 +2024,90 @@ class UPnPManager {
         
         throw lastError ?? CastError.playbackFailed("Unknown error after retries")
     }
-    
+
+    /// Send a GroupRenderingControl SOAP action with retry logic for transient errors
+    /// Used for Sonos group-wide volume/mute control
+    @discardableResult
+    private func sendGroupRenderingControlAction(controlURL: URL, action: String, arguments: [(String, String)]) async throws -> String {
+        let serviceType = "urn:schemas-upnp-org:service:GroupRenderingControl:1"
+
+        // Build SOAP body
+        var argsXML = ""
+        for (name, value) in arguments {
+            argsXML += "<\(name)>\(value.xmlEscapedForSOAP)</\(name)>"
+        }
+
+        let soapBody = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+        <s:Body>
+        <u:\(action) xmlns:u="\(serviceType)">
+        \(argsXML)
+        </u:\(action)>
+        </s:Body>
+        </s:Envelope>
+        """
+
+        var lastError: Error?
+
+        for attempt in 0...maxRetries {
+            if attempt > 0 {
+                let delay = retryBaseDelay * UInt64(1 << (attempt - 1))
+                NSLog("UPnPManager: Retrying GroupRenderingControl %@ (attempt %d/%d) after %.1fs", action, attempt + 1, maxRetries + 1, Double(delay) / 1_000_000_000)
+                try? await Task.sleep(nanoseconds: delay)
+            }
+
+            var request = URLRequest(url: controlURL)
+            request.httpMethod = "POST"
+            request.setValue("text/xml; charset=\"utf-8\"", forHTTPHeaderField: "Content-Type")
+            request.setValue("\"\(serviceType)#\(action)\"", forHTTPHeaderField: "SOAPACTION")
+            request.httpBody = soapBody.data(using: .utf8)
+            request.timeoutInterval = 10
+
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw CastError.networkError(NSError(domain: "UPnP", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
+                }
+
+                if httpResponse.statusCode >= 400 {
+                    let errorBody = String(data: data, encoding: .utf8) ?? ""
+
+                    if isTransientError(httpResponse.statusCode) && attempt < maxRetries {
+                        NSLog("UPnPManager: GroupRenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)
+                        lastError = CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
+                        continue
+                    }
+
+                    NSLog("UPnPManager: GroupRenderingControl SOAP error %d: %@", httpResponse.statusCode, errorBody)
+                    throw CastError.playbackFailed("SOAP error \(httpResponse.statusCode)")
+                }
+
+                if attempt > 0 {
+                    NSLog("UPnPManager: GroupRenderingControl %@ succeeded on retry attempt %d", action, attempt + 1)
+                }
+                return String(data: data, encoding: .utf8) ?? ""
+
+            } catch let error as CastError {
+                lastError = error
+                if case .playbackFailed(let msg) = error, msg.contains("SOAP error") {
+                    throw error
+                }
+                throw error
+            } catch {
+                if attempt < maxRetries {
+                    NSLog("UPnPManager: GroupRenderingControl %@ network error, will retry: %@", action, error.localizedDescription)
+                    lastError = CastError.networkError(error)
+                    continue
+                }
+                throw CastError.networkError(error)
+            }
+        }
+
+        throw lastError ?? CastError.playbackFailed("Unknown error after retries")
+    }
+
     /// Send a SOAP action to the device with retry logic for transient errors
     @discardableResult
     private func sendSOAPAction(controlURL: URL, action: String, arguments: [(String, String)]) async throws -> String {
