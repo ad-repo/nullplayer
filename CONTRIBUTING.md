@@ -105,9 +105,8 @@ We do not want speculative fixes.
 AI-assisted work is allowed, but the author is fully responsible for correctness.
 
 - Review all AI-generated code before opening the PR
-- Do not submit code you do not understand
+- Do not submit code for a feature you do not fully understand
 - Do not use AI to generate broad cleanup or "fix everything" changes without verifying each change individually
-- If AI was used to help create the PR, say so clearly in the PR description
 - The PR author must still provide proof of the issue, proof of testing, and clear manual test steps
 
 ### Required PR Description
