@@ -1,5 +1,10 @@
 import XCTest
 @testable import NullPlayer
+// `@testable import NullPlayer` exposes types from NullPlayer including those
+// re-exported via internal imports. Plex types are defined in NullPlayerCore,
+// so we import it explicitly for those constructors. NOTE: Jellyfin/Emby/etc.
+// types that exist in BOTH targets will need module-qualified access elsewhere.
+import NullPlayerCore
 
 final class RadioRequestConstructionTests: XCTestCase {
     override func setUp() {
@@ -143,7 +148,9 @@ final class RadioRequestConstructionTests: XCTestCase {
     }
 
     private func makeJellyfinClient() -> JellyfinServerClient? {
-        let server = JellyfinServer(
+        // Disambiguate JellyfinServer — it exists in both NullPlayer and NullPlayerCore
+        // targets. The app uses its own copy, so qualify explicitly.
+        let server = NullPlayer.JellyfinServer(
             id: "srv-jf",
             name: "Test Jellyfin",
             url: "http://127.0.0.1:8096",

@@ -298,15 +298,24 @@ actor WaveformCacheService {
         }
 
         let asset = AVURLAsset(url: descriptor.sourceURL)
-        try await loadAssetValues(for: asset, keys: ["tracks"])
 
-        guard let audioTrack = asset.tracks(withMediaType: .audio).first else {
+        // Modern async API (macOS 13+): replaces synchronous tracks(withMediaType:) + statusOfValue.
+        let audioTracks: [AVAssetTrack]
+        do {
+            audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        } catch {
+            throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Failed to load audio tracks: \(error.localizedDescription)"
+            ])
+        }
+
+        guard let audioTrack = audioTracks.first else {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "No audio track available for waveform prerender"
             ])
         }
 
-        let sampleRate = Self.sampleRate(for: audioTrack) ?? 44_100
+        let sampleRate = (await Self.sampleRate(for: audioTrack)) ?? 44_100
         let totalFrames = max(Int64(round(duration * sampleRate)), 1)
         var accumulator = WaveformBucketAccumulator(totalFrames: totalFrames)
         var frameIndex: Int64 = 0
@@ -431,26 +440,6 @@ actor WaveformCacheService {
             allowsSeeking: true,
             isStreaming: true
         )
-    }
-
-    private func loadAssetValues(for asset: AVAsset, keys: [String]) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            asset.loadValuesAsynchronously(forKeys: keys) {
-                for key in keys {
-                    var error: NSError?
-                    let status = asset.statusOfValue(forKey: key, error: &error)
-                    if status == .failed || status == .cancelled {
-                        continuation.resume(throwing: error ?? NSError(
-                            domain: "WaveformCacheService",
-                            code: 1,
-                            userInfo: [NSLocalizedDescriptionKey: "Failed to load AVAsset key: \(key)"]
-                        ))
-                        return
-                    }
-                }
-                continuation.resume()
-            }
-        }
     }
 
     private func fileMetadata(for url: URL) throws -> (canonicalPath: String, fileSize: Int64, modificationDate: Date) {
@@ -587,9 +576,10 @@ actor WaveformCacheService {
         return amplitude
     }
 
-    private static func sampleRate(for track: AVAssetTrack) -> Double? {
-        for formatDescription in track.formatDescriptions {
-            let description = formatDescription as! CMFormatDescription
+    private static func sampleRate(for track: AVAssetTrack) async -> Double? {
+        // Modern async API (macOS 13+): replaces synchronous formatDescriptions accessor.
+        let descriptions = (try? await track.load(.formatDescriptions)) ?? []
+        for description in descriptions {
             guard let asbdPointer = CMAudioFormatDescriptionGetStreamBasicDescription(description) else {
                 continue
             }

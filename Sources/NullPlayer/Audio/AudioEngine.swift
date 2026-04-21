@@ -258,7 +258,7 @@ class AudioEngine {
     /// Gapless playback mode - pre-schedules next track for seamless transitions
     var gaplessPlaybackEnabled: Bool = false {
         didSet {
-            UserDefaults.standard.set(gaplessPlaybackEnabled, forKey: "gaplessPlaybackEnabled")
+            UserDefaults.standard.set(gaplessPlaybackEnabled, forKey: UserDefaults.Keys.gaplessPlaybackEnabled)
             // If enabling and currently playing, schedule next track
             if gaplessPlaybackEnabled && state == .playing {
                 scheduleNextTrackForGapless()
@@ -270,7 +270,7 @@ class AudioEngine {
     /// Volume normalization - analyzes and normalizes track loudness
     var volumeNormalizationEnabled: Bool = false {
         didSet {
-            UserDefaults.standard.set(volumeNormalizationEnabled, forKey: "volumeNormalizationEnabled")
+            UserDefaults.standard.set(volumeNormalizationEnabled, forKey: UserDefaults.Keys.volumeNormalizationEnabled)
             // Recalculate normalization for current track
             if volumeNormalizationEnabled {
                 applyNormalizationGain()
@@ -293,8 +293,8 @@ class AudioEngine {
     /// Sweet Fades (crossfade) enabled - smooth transition between tracks
     var sweetFadeEnabled: Bool = false {
         didSet {
-            UserDefaults.standard.set(sweetFadeEnabled, forKey: "sweetFadeEnabled")
-            NSLog("AudioEngine: Sweet Fades %@", sweetFadeEnabled ? "enabled" : "disabled")
+            UserDefaults.standard.set(sweetFadeEnabled, forKey: UserDefaults.Keys.sweetFadeEnabled)
+            Log.audio.infoString("AudioEngine: Sweet Fades \(sweetFadeEnabled ? "enabled" : "disabled")")
             notifyPlaybackOptionsChanged()
         }
     }
@@ -302,8 +302,8 @@ class AudioEngine {
     /// Crossfade duration in seconds (default 5s)
     var sweetFadeDuration: TimeInterval = 5.0 {
         didSet {
-            UserDefaults.standard.set(sweetFadeDuration, forKey: "sweetFadeDuration")
-            NSLog("AudioEngine: Sweet Fades duration set to %.1fs", sweetFadeDuration)
+            UserDefaults.standard.set(sweetFadeDuration, forKey: UserDefaults.Keys.sweetFadeDuration)
+            Log.audio.infoString("AudioEngine: Sweet Fades duration set to \(String(format: "%.1f", sweetFadeDuration))s")
             notifyPlaybackOptionsChanged()
         }
     }
@@ -534,7 +534,7 @@ class AudioEngine {
     // MARK: - Initialization
     
     init() {
-        let modernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+        let modernUIEnabled = UserDefaults.standard.bool(forKey: UserDefaults.Keys.modernUIEnabled)
         isModernUIEnabled = modernUIEnabled
         activeEQConfiguration = EQConfiguration.forModernUI(modernUIEnabled)
         eqNode = AVAudioUnitEQ(numberOfBands: activeEQConfiguration.bandCount)
@@ -942,7 +942,7 @@ class AudioEngine {
     }
 
     @objc private func handleModernUIChanged() {
-        isModernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+        isModernUIEnabled = UserDefaults.standard.bool(forKey: UserDefaults.Keys.modernUIEnabled)
     }
 
     // MARK: - Setup
@@ -989,11 +989,11 @@ class AudioEngine {
     
     /// Load audio quality preferences from UserDefaults
     private func loadAudioPreferences() {
-        gaplessPlaybackEnabled = UserDefaults.standard.bool(forKey: "gaplessPlaybackEnabled")
-        volumeNormalizationEnabled = UserDefaults.standard.bool(forKey: "volumeNormalizationEnabled")
-        sweetFadeEnabled = UserDefaults.standard.bool(forKey: "sweetFadeEnabled")
+        gaplessPlaybackEnabled = UserDefaults.standard.bool(forKey: UserDefaults.Keys.gaplessPlaybackEnabled)
+        volumeNormalizationEnabled = UserDefaults.standard.bool(forKey: UserDefaults.Keys.volumeNormalizationEnabled)
+        sweetFadeEnabled = UserDefaults.standard.bool(forKey: UserDefaults.Keys.sweetFadeEnabled)
         // Load sweet fade duration with default of 5.0 seconds
-        let savedDuration = UserDefaults.standard.double(forKey: "sweetFadeDuration")
+        let savedDuration = UserDefaults.standard.double(forKey: UserDefaults.Keys.sweetFadeDuration)
         sweetFadeDuration = savedDuration > 0 ? savedDuration : 5.0
     }
     
@@ -1002,7 +1002,7 @@ class AudioEngine {
     /// Handle audio configuration changes (device format changes)
     /// Called when AVAudioEngine detects a configuration change (e.g., device sample rate changed)
     @objc private func handleAudioConfigChange(_ notification: Notification) {
-        NSLog("AudioEngine: Configuration change detected, rebuilding audio graph")
+        Log.audio.infoString("AudioEngine: Configuration change detected, rebuilding audio graph")
         // CRITICAL: Must use async to avoid deadlock
         // The notification fires on an internal dispatch queue
         DispatchQueue.main.async { [weak self] in
@@ -1018,7 +1018,7 @@ class AudioEngine {
         
         // Get new format from the updated output device
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
-        NSLog("AudioEngine: Rebuilding graph with format: %@", mixerFormat.description)
+        Log.audio.infoString("AudioEngine: Rebuilding graph with format: \(mixerFormat.description)")
         
         // Reconnect all nodes with new format
         engine.connect(playerNode, to: mixerNode, format: mixerFormat)
@@ -1037,7 +1037,7 @@ class AudioEngine {
                 let remainingFrames = file.length - framePosition
                 
                 guard remainingFrames > 0 else {
-                    NSLog("AudioEngine: No remaining frames after config change")
+                    Log.audio.infoString("AudioEngine: No remaining frames after config change")
                     return
                 }
                 
@@ -1060,17 +1060,17 @@ class AudioEngine {
                 _currentTime = currentPosition
                 state = .playing
                 
-                NSLog("AudioEngine: Resumed playback from %.2fs after config change", currentPosition)
+                Log.audio.infoString("AudioEngine: Resumed playback from \(String(format: "%.2f", currentPosition))s after config change")
             } catch {
-                NSLog("AudioEngine: Failed to restart after config change: %@", error.localizedDescription)
+                Log.audio.errorString("AudioEngine: Failed to restart after config change: \(error.localizedDescription)")
             }
         } else if wasPlaying && isStreamingPlayback {
             // For streaming, just restart the engine - StreamingAudioPlayer manages its own state
             do {
                 try engine.start()
-                NSLog("AudioEngine: Restarted engine for streaming after config change")
+                Log.audio.infoString("AudioEngine: Restarted engine for streaming after config change")
             } catch {
-                NSLog("AudioEngine: Failed to restart engine for streaming: %@", error.localizedDescription)
+                Log.audio.errorString("AudioEngine: Failed to restart engine for streaming: \(error.localizedDescription)")
             }
         }
     }
@@ -1084,11 +1084,11 @@ class AudioEngine {
         // Find device by UID
         let devices = AudioOutputManager.shared.outputDevices
         guard let device = devices.first(where: { $0.uid == savedDeviceUID }) else {
-            NSLog("AudioEngine: Saved output device not found: %@", savedDeviceUID)
+            Log.audio.infoString("AudioEngine: Saved output device not found: \(savedDeviceUID)")
             return
         }
         
-        NSLog("AudioEngine: Restoring saved output device: %@ (%@)", device.name, savedDeviceUID)
+        Log.audio.infoString("AudioEngine: Restoring saved output device: \(device.name) (\(savedDeviceUID))")
         setOutputDevice(device.id)
     }
     
@@ -1457,7 +1457,7 @@ class AudioEngine {
         // If local video playback is active, don't start audio playback
         // (video has its own playback controls via the video player window)
         if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback {
-            NSLog("play(): Local video is active - ignoring audio play request")
+            Log.audio.infoString("play(): Local video is active - ignoring audio play request")
             return
         }
         
@@ -1523,7 +1523,7 @@ class AudioEngine {
                     currentIndex = foundIndex
                     reloadIndex = foundIndex
                 } else {
-                    NSLog("play(): unable to reload current track '%@' - not found in playlist", track.title)
+                    Log.audio.errorString("play(): unable to reload current track '\(track.title)' - not found in playlist")
                     return
                 }
 
@@ -1541,12 +1541,12 @@ class AudioEngine {
         
         if isStreamingPlayback {
             // Streaming playback via AudioStreaming (with EQ support)
-            NSLog("play(): Starting streaming playback via AudioStreaming (state: %@)", String(describing: streamingPlayer?.state ?? .stopped))
+            Log.audio.infoString("play(): Starting streaming playback via AudioStreaming (state: \(String(describing: streamingPlayer?.state ?? .stopped)))")
             
             // If streaming player is stopped (not paused), we need to reload the URL
             // resume() only works on a paused player, not a stopped one
             if let playerState = streamingPlayer?.state, playerState == .stopped || playerState == .error {
-                NSLog("play(): Streaming player is stopped/error - reloading track")
+                Log.audio.infoString("play(): Streaming player is stopped/error - reloading track")
                 // Reload the current track to restart playback
                 if currentIndex >= 0 && currentIndex < playlist.count {
                     loadTrack(at: currentIndex)
@@ -1578,7 +1578,7 @@ class AudioEngine {
             // Local file playback via AVAudioEngine
             // Ensure we have a valid audio file loaded before attempting to play
             guard audioFile != nil else {
-                NSLog("play(): No audio file loaded - cannot start local playback")
+                Log.audio.errorString("play(): No audio file loaded - cannot start local playback")
                 return
             }
             
@@ -1617,7 +1617,7 @@ class AudioEngine {
     }
     
     func pause() {
-        NSLog("AudioEngine.pause() called - isVideoCastingActive=%d, isCastingActive=%d", isVideoCastingActive ? 1 : 0, isCastingActive ? 1 : 0)
+        Log.audio.infoString("AudioEngine.pause() called - isVideoCastingActive=\(isVideoCastingActive ? 1 : 0), isCastingActive=\(isCastingActive ? 1 : 0)")
         
         // If video casting is active, forward to video player
         if isVideoCastingActive {
@@ -1628,13 +1628,13 @@ class AudioEngine {
 
         // If audio casting is active, forward command to CastManager
         if isCastingActive {
-            NSLog("AudioEngine.pause() - forwarding to CastManager")
+            Log.audio.infoString("AudioEngine.pause() - forwarding to CastManager")
             Task {
                 do {
                     try await CastManager.shared.pause()
-                    NSLog("AudioEngine.pause() - CastManager.pause() completed")
+                    Log.audio.infoString("AudioEngine.pause() - CastManager.pause() completed")
                 } catch {
-                    NSLog("AudioEngine.pause() - CastManager.pause() failed: %@", error.localizedDescription)
+                    Log.audio.errorString("AudioEngine.pause() - CastManager.pause() failed: \(error.localizedDescription)")
                 }
             }
             return
@@ -1755,7 +1755,7 @@ class AudioEngine {
     /// Fully stops streaming connections (important for Subsonic/Navidrome concurrent stream limits)
     /// but preserves track metadata and position for casting to use
     func stopLocalForCasting() {
-        NSLog("AudioEngine: stopLocalForCasting - releasing streaming connection for cast")
+        Log.audio.infoString("AudioEngine: stopLocalForCasting - releasing streaming connection for cast")
         
         // Save current position before stopping
         let currentPosition = currentTime
@@ -1795,7 +1795,7 @@ class AudioEngine {
         // Don't report to Plex/Subsonic as "stopped" - casting is taking over playback
         // Don't clear spectrum or reset track metadata - casting needs it
         
-        NSLog("AudioEngine: Local playback stopped for casting, position preserved: %.1fs", currentPosition)
+        Log.audio.infoString("AudioEngine: Local playback stopped for casting, position preserved: \(String(format: "%.1f", currentPosition))s")
     }
     
     func previous() {
@@ -1806,7 +1806,7 @@ class AudioEngine {
         
         // When casting local files, block rapid clicks - only accept if not already casting
         if isCastingActive && CastManager.shared.isLocalFileCastInProgress() {
-            NSLog("AudioEngine: previous() blocked - local file cast in progress")
+            Log.audio.infoString("AudioEngine: previous() blocked - local file cast in progress")
             return
         }
         
@@ -1843,7 +1843,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("AudioEngine: previous() cast failed: %@", error.localizedDescription)
+                    Log.audio.errorString("AudioEngine: previous() cast failed: \(error.localizedDescription)")
                     await MainActor.run {
                         self.currentIndex = previousIndex
                         self.currentTrack = previousTrack
@@ -1868,7 +1868,7 @@ class AudioEngine {
         
         // When casting local files, block rapid clicks - only accept if not already casting
         if isCastingActive && CastManager.shared.isLocalFileCastInProgress() {
-            NSLog("AudioEngine: next() blocked - local file cast in progress")
+            Log.audio.infoString("AudioEngine: next() blocked - local file cast in progress")
             return
         }
         
@@ -1905,7 +1905,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("AudioEngine: next() cast failed: %@", error.localizedDescription)
+                    Log.audio.errorString("AudioEngine: next() cast failed: \(error.localizedDescription)")
                     await MainActor.run {
                         self.currentIndex = previousIndex
                         self.currentTrack = previousTrack
@@ -1941,7 +1941,7 @@ class AudioEngine {
         
         // When casting local files, block rapid clicks - only accept if not already casting
         if isCastingActive && CastManager.shared.isLocalFileCastInProgress() {
-            NSLog("AudioEngine: skipTracks() blocked - local file cast in progress")
+            Log.audio.infoString("AudioEngine: skipTracks() blocked - local file cast in progress")
             return
         }
         
@@ -1984,7 +1984,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("AudioEngine: skipTracks() cast failed: %@", error.localizedDescription)
+                    Log.audio.errorString("AudioEngine: skipTracks() cast failed: \(error.localizedDescription)")
                     // Restore index on failure to keep playlist navigation consistent
                     if isLocalFile {
                         await MainActor.run {
@@ -2029,7 +2029,7 @@ class AudioEngine {
         
         // Guard against seeking when duration is unknown
         guard currentDuration > 0 else {
-            NSLog("AudioEngine: Cannot seek - duration is 0 or unknown")
+            Log.audio.errorString("AudioEngine: Cannot seek - duration is 0 or unknown")
             return
         }
         
@@ -2052,12 +2052,12 @@ class AudioEngine {
             // If already seeking, just update the target and return
             // The debounced work item will use the latest value
             if isSeekingStreaming {
-                NSLog("AudioEngine: Seek debounced - already seeking, will seek to %.2f", seekTime)
+                Log.audio.infoString("AudioEngine: Seek debounced - already seeking, will seek to \(String(format: "%.2f", seekTime))")
                 // Schedule the actual seek after a short delay
                 let workItem = DispatchWorkItem { [weak self] in
                     guard let self = self else { return }
                     self.isSeekingStreaming = true
-                    NSLog("AudioEngine: Executing debounced seek to %.2f", seekTime)
+                    Log.audio.infoString("AudioEngine: Executing debounced seek to \(String(format: "%.2f", seekTime))")
                     self.streamingPlayer?.seek(to: seekTime)
                     // Schedule reset with a cancellable work item
                     self.scheduleSeekingReset()
@@ -2069,7 +2069,7 @@ class AudioEngine {
             
             // First seek - execute immediately
             isSeekingStreaming = true
-            NSLog("AudioEngine: Seeking streaming to %.2f", seekTime)
+            Log.audio.infoString("AudioEngine: Seeking streaming to \(String(format: "%.2f", seekTime))")
             streamingPlayer?.seek(to: seekTime)
             
             // Reset seeking flag after a delay to allow player to stabilize
@@ -2495,7 +2495,7 @@ class AudioEngine {
                self.castPlaybackStartDate != nil,  // Casting is playing (not paused)
                trackDuration > 0,
                current >= trackDuration - 0.5 {  // Within 0.5s of end
-                NSLog("AudioEngine: Cast track finished, advancing to next")
+                Log.audio.infoString("AudioEngine: Cast track finished, advancing to next")
                 self.castTrackDidFinish()
             }
         }
@@ -2589,7 +2589,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("castTrackDidFinish: failed to cast: %@", error.localizedDescription)
+                    Log.audio.errorString("castTrackDidFinish: failed to cast: \(error.localizedDescription)")
                     await MainActor.run {
                         self.currentIndex = previousIndex
                         self.currentTrack = previousTrack
@@ -2633,7 +2633,7 @@ class AudioEngine {
                             }
                         }
                     } catch {
-                        NSLog("castTrackDidFinish: failed to cast shuffle: %@", error.localizedDescription)
+                        Log.audio.errorString("castTrackDidFinish: failed to cast shuffle: \(error.localizedDescription)")
                         await MainActor.run {
                             self.currentIndex = previousIndex
                             self.currentTrack = previousTrack
@@ -2673,7 +2673,7 @@ class AudioEngine {
                             }
                         }
                     } catch {
-                        NSLog("castTrackDidFinish: failed to cast next: %@", error.localizedDescription)
+                        Log.audio.errorString("castTrackDidFinish: failed to cast next: \(error.localizedDescription)")
                         await MainActor.run {
                             self.currentIndex = previousIndex
                             self.currentTrack = previousTrack
@@ -2698,7 +2698,7 @@ class AudioEngine {
     // MARK: - File Loading
     
     func loadFiles(_ urls: [URL]) {
-        NSLog("loadFiles: %d URLs", urls.count)
+        Log.audio.infoString("loadFiles: \(urls.count) URLs")
         
         // Quick validate files (checks existence and extension - fast)
         // Full format validation happens at playback time
@@ -2710,7 +2710,7 @@ class AudioEngine {
         }
         
         let tracks = validation.validURLs.compactMap { Track(lightweightURL: $0) }
-        NSLog("loadFiles: %d tracks created (%d invalid)", tracks.count, validation.invalidFiles.count)
+        Log.audio.infoString("loadFiles: \(tracks.count) tracks created (\(validation.invalidFiles.count) invalid)")
         loadTracks(tracks)
         enrichPlaylistDurationsAsync(for: tracks.map(\.id))
     }
@@ -2763,7 +2763,7 @@ class AudioEngine {
         )
 
         if shouldStopRadio {
-            NSLog("%@: stopping RadioManager (loading non-radio content)", context)
+            Log.audio.infoString("\(context): stopping RadioManager (loading non-radio content)")
             RadioManager.shared.stop()
         }
 
@@ -2772,7 +2772,7 @@ class AudioEngine {
     
     /// Load tracks with metadata (for Plex and other sources with pre-populated info)
     func loadTracks(_ tracks: [Track]) {
-        NSLog("loadTracks: %d tracks, currentTrack=%@", tracks.count, currentTrack?.title ?? "nil")
+        Log.audio.infoString("loadTracks: \(tracks.count) tracks, currentTrack=\(currentTrack?.title ?? "nil")")
         
         // Filter out missing local files (remote URLs pass through)
         var missingCount = 0
@@ -2802,7 +2802,7 @@ class AudioEngine {
             }
         }
         
-        NSLog("loadTracks: %d valid tracks (%d skipped)", validTracks.count, missingCount)
+        Log.audio.infoString("loadTracks: \(validTracks.count) valid tracks (\(missingCount) skipped)")
         
         let isRadioContent = stopRadioIfLoadingNonRadioContent(
             incomingTrackURL: validTracks.first?.url,
@@ -2858,7 +2858,7 @@ class AudioEngine {
                 _currentTime = 0
                 lastReportedTime = 0
                 
-                NSLog("loadTracks: casting is active, casting new track '%@' (local=%d)", track.title, isLocalFile ? 1 : 0)
+                Log.audio.infoString("loadTracks: casting is active, casting new track '\(track.title)' (local=\(isLocalFile ? 1 : 0))")
                 Task {
                     do {
                         try await CastManager.shared.castNewTrack(track)
@@ -2869,7 +2869,7 @@ class AudioEngine {
                             }
                         }
                     } catch {
-                        NSLog("loadTracks: failed to cast new track: %@", error.localizedDescription)
+                        Log.audio.errorString("loadTracks: failed to cast new track: \(error.localizedDescription)")
                         // Fall back to local playback if casting fails
                         await MainActor.run {
                             self.loadTrack(at: self.currentIndex)
@@ -2879,7 +2879,7 @@ class AudioEngine {
                 }
             } else {
                 // Normal local playback
-                NSLog("loadTracks: loading track at index %d", currentIndex)
+                Log.audio.infoString("loadTracks: loading track at index \(currentIndex)")
                 loadTrack(at: currentIndex)
                 play()
             }
@@ -2998,7 +2998,7 @@ class AudioEngine {
     /// preserving metadata and streaming IDs. Used by state restoration to maintain
     /// playlist ordering when mixing local and streaming tracks.
     func setPlaylistTracks(_ tracks: [Track]) {
-        NSLog("setPlaylistTracks: %d tracks", tracks.count)
+        Log.audio.infoString("setPlaylistTracks: \(tracks.count) tracks")
         playlist.removeAll()
         playlist.append(contentsOf: tracks)
         currentIndex = -1  // No track selected
@@ -3054,11 +3054,11 @@ class AudioEngine {
         }
 
         if placeholderResolutionTasks[index] != nil {
-            NSLog("AudioEngine: placeholder resolve already in progress for index %d", index)
+            Log.audio.infoString("AudioEngine: placeholder resolve already in progress for index \(index)")
             return
         }
 
-        NSLog("AudioEngine: resolving placeholder track '%@' at index %d", placeholder.title, index)
+        Log.audio.infoString("AudioEngine: resolving placeholder track '\(placeholder.title)' at index \(index)")
         let task = Task { [weak self] in
             guard let self else { return }
             let resolvedTrack = await StreamingTrackResolver.resolve(placeholder)
@@ -3105,7 +3105,7 @@ class AudioEngine {
         
         // When casting local files, block rapid clicks - only accept if not already casting
         if isCastingActive && CastManager.shared.isLocalFileCastInProgress() {
-            NSLog("AudioEngine: insertTracksAfterCurrent() blocked - local file cast in progress")
+            Log.audio.infoString("AudioEngine: insertTracksAfterCurrent() blocked - local file cast in progress")
             return
         }
         
@@ -3144,7 +3144,7 @@ class AudioEngine {
                 _currentTime = 0
                 lastReportedTime = 0
                 
-                NSLog("insertTracksAfterCurrent: casting is active, casting track at index %d (local=%d)", currentIndex, isLocalFile ? 1 : 0)
+                Log.audio.infoString("insertTracksAfterCurrent: casting is active, casting track at index \(currentIndex) (local=\(isLocalFile ? 1 : 0))")
                 Task {
                     do {
                         try await CastManager.shared.castNewTrack(track)
@@ -3155,7 +3155,7 @@ class AudioEngine {
                             }
                         }
                     } catch {
-                        NSLog("insertTracksAfterCurrent: failed to cast track: %@", error.localizedDescription)
+                        Log.audio.errorString("insertTracksAfterCurrent: failed to cast track: \(error.localizedDescription)")
                         // Fall back to local playback if casting fails
                         await MainActor.run {
                             self.loadTrack(at: self.currentIndex)
@@ -3179,7 +3179,7 @@ class AudioEngine {
         
         // When casting local files, block rapid clicks - only accept if not already casting
         if isCastingActive && CastManager.shared.isLocalFileCastInProgress() {
-            NSLog("AudioEngine: playNow() blocked - local file cast in progress")
+            Log.audio.infoString("AudioEngine: playNow() blocked - local file cast in progress")
             return
         }
 
@@ -3218,7 +3218,7 @@ class AudioEngine {
             _currentTime = 0
             lastReportedTime = 0
             
-            NSLog("playNow: casting is active, casting track at index %d (local=%d)", currentIndex, isLocalFile ? 1 : 0)
+            Log.audio.infoString("playNow: casting is active, casting track at index \(currentIndex) (local=\(isLocalFile ? 1 : 0))")
             Task {
                 do {
                     try await CastManager.shared.castNewTrack(track)
@@ -3229,7 +3229,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("playNow: failed to cast track: %@", error.localizedDescription)
+                    Log.audio.errorString("playNow: failed to cast track: \(error.localizedDescription)")
                     // Fall back to local playback if casting fails
                     await MainActor.run {
                         self.loadTrack(at: self.currentIndex)
@@ -3249,7 +3249,7 @@ class AudioEngine {
     /// This clears the existing playlist and populates it with the given files,
     /// but does NOT load or play any track.
     func setPlaylistFiles(_ urls: [URL]) {
-        NSLog("setPlaylistFiles: %d URLs", urls.count)
+        Log.audio.infoString("setPlaylistFiles: \(urls.count) URLs")
         
         // Filter out missing local files (remote URLs pass through)
         var missingCount = 0
@@ -3266,7 +3266,7 @@ class AudioEngine {
             return false
         }
         
-        NSLog("setPlaylistFiles: %d valid URLs (%d missing)", validURLs.count, missingCount)
+        Log.audio.infoString("setPlaylistFiles: \(validURLs.count) valid URLs (\(missingCount) missing)")
         
         let tracks = validURLs.compactMap { Track(lightweightURL: $0) }
 
@@ -3288,7 +3288,7 @@ class AudioEngine {
         
         // Prevent concurrent loads - skip if already loading to avoid dual playback
         guard !isLoadingTrack else {
-            NSLog("loadTrack: Blocked - already loading a track")
+            Log.audio.infoString("loadTrack: Blocked - already loading a track")
             return
         }
         isLoadingTrack = true
@@ -3302,7 +3302,7 @@ class AudioEngine {
 
         // Skip about:blank placeholder tracks — streaming URL not yet resolved via async fetch
         if track.isStreamingPlaceholder {
-            NSLog("loadTrack: skipping placeholder track '%@' — waiting for async URL fetch", track.title)
+            Log.audio.infoString("loadTrack: skipping placeholder track '\(track.title)' — waiting for async URL fetch")
             return
         }
 
@@ -3313,7 +3313,7 @@ class AudioEngine {
 
         // Route video tracks to the video player
         if track.mediaType == .video {
-            NSLog("AudioEngine: Routing video track to video player: %@", track.title)
+            Log.audio.infoString("AudioEngine: Routing video track to video player: \(track.title)")
             currentTrack = track
             currentIndex = index
             _currentTime = 0
@@ -3338,7 +3338,7 @@ class AudioEngine {
         // Stop video playback before loading audio track
         // This ensures the user's intent to play audio takes precedence
         if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback {
-            NSLog("loadTrack: Stopping video playback before loading audio track")
+            Log.audio.infoString("loadTrack: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
         }
         
@@ -3348,7 +3348,7 @@ class AudioEngine {
         } else {
             if !loadLocalTrack(track) {
                 // File doesn't exist or failed to load - skip to next track silently
-                NSLog("loadTrack: Failed to load track at index %d, skipping to next", index)
+                Log.audio.errorString("loadTrack: Failed to load track at index \(index), skipping to next")
                 if index + 1 < playlist.count {
                     currentIndex = index + 1
                     // Must clear isLoadingTrack before recursive call (defer hasn't run yet)
@@ -3361,7 +3361,7 @@ class AudioEngine {
     }
     
     private func loadLocalTrackForImmediatePlayback(_ track: Track, at index: Int) {
-        NSLog("loadLocalTrackForImmediatePlayback: %@", track.url.lastPathComponent)
+        Log.audio.infoString("loadLocalTrackForImmediatePlayback: \(track.url.lastPathComponent)")
 
         // Invalidate any prior deferred local opens; only latest selection should win.
         deferredLocalTrackLoadToken &+= 1
@@ -3374,7 +3374,7 @@ class AudioEngine {
 
         // Stop video playback before loading audio track.
         if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback {
-            NSLog("loadLocalTrackForImmediatePlayback: Stopping video playback before loading audio track")
+            Log.audio.infoString("loadLocalTrackForImmediatePlayback: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
         }
 
@@ -3468,7 +3468,7 @@ class AudioEngine {
 
     @discardableResult
     private func loadLocalTrack(_ track: Track) -> Bool {
-        NSLog("loadLocalTrack: %@", track.url.lastPathComponent)
+        Log.audio.infoString("loadLocalTrack: \(track.url.lastPathComponent)")
 
         // Any synchronous load supersedes deferred opens.
         deferredLocalTrackLoadToken &+= 1
@@ -3483,7 +3483,7 @@ class AudioEngine {
             let openStart = CFAbsoluteTimeGetCurrent()
             let newAudioFile = try AVAudioFile(forReading: track.url)
             let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
-            NSLog("loadLocalTrack: Opened '%@' in %.3fs", track.url.lastPathComponent, openElapsed)
+            Log.audio.infoString("loadLocalTrack: Opened '\(track.url.lastPathComponent)' in \(String(format: "%.3f", openElapsed))s")
 
             commitLoadedLocalTrack(newAudioFile, track: track, generation: currentGeneration)
             return true
@@ -3532,7 +3532,7 @@ class AudioEngine {
     }
 
     private func commitLoadedLocalTrack(_ newAudioFile: AVAudioFile, track: Track, generation: Int) {
-        NSLog("loadLocalTrack: file loaded successfully, format: %@", newAudioFile.processingFormat.description)
+        Log.audio.infoString("loadLocalTrack: file loaded successfully, format: \(newAudioFile.processingFormat.description)")
 
         // Install spectrum analyzer tap.
         installSpectrumTap(format: nil)
@@ -3551,7 +3551,7 @@ class AudioEngine {
             applyNormalizationGain()
         }
 
-        NSLog("loadLocalTrack: Stopping playerNode and scheduling file...")
+        Log.audio.infoString("loadLocalTrack: Stopping playerNode and scheduling file...")
         playerNode.stop()
         playerNode.scheduleFile(newAudioFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             DispatchQueue.main.async {
@@ -3588,7 +3588,7 @@ class AudioEngine {
             EmbyPlaybackReporter.shared.trackStarted(trackId: embyId, serverId: serverId, duration: trackDuration)
         }
 
-        NSLog("loadLocalTrack: file scheduled, EQ bypass = %d, normGain = %.2f", eqNode.bypass, normalizationGain)
+        Log.audio.infoString("loadLocalTrack: file scheduled, EQ bypass = \(eqNode.bypass), normGain = \(String(format: "%.2f", normalizationGain))")
     }
 
     private func handleLocalTrackLoadFailure(track: Track, error: Error) {
@@ -3600,12 +3600,12 @@ class AudioEngine {
             errorMessage += " (WAV files with compressed audio or unusual formats may not be supported)"
         }
 
-        NSLog("loadLocalTrack: FAILED to load file")
-        NSLog("  File: %@", track.url.path)
-        NSLog("  Extension: %@", fileExtension)
-        NSLog("  Error: %@", error.localizedDescription)
+        Log.audio.errorString("loadLocalTrack: FAILED to load file")
+        Log.audio.infoString("  File: \(track.url.path)")
+        Log.audio.infoString("  Extension: \(fileExtension)")
+        Log.audio.errorString("  Error: \(error.localizedDescription)")
         if let nsError = error as NSError? {
-            NSLog("  Error domain: %@, code: %d", nsError.domain, nsError.code)
+            Log.audio.infoString("  Error domain: \(nsError.domain), code: \(nsError.code)")
         }
 
         stopPlaybackOnError()
@@ -3639,8 +3639,8 @@ class AudioEngine {
     }
     
     private func loadStreamingTrack(_ track: Track) {
-        NSLog("loadStreamingTrack: %@ - %@", track.artist ?? "Unknown", track.title)
-        NSLog("  URL: %@", track.url.redacted)
+        Log.audio.infoString("loadStreamingTrack: \(track.artist ?? "Unknown") - \(track.title)")
+        Log.audio.infoString("  URL: \(track.url.redacted)")
         
         // Stop local playback and REMOVE spectrum tap (streaming player has its own)
         playerNode.stop()
@@ -3722,7 +3722,7 @@ class AudioEngine {
             EmbyPlaybackReporter.shared.trackStarted(trackId: embyId, serverId: serverId, duration: trackDuration)
         }
 
-        NSLog("  Created StreamingAudioPlayer, starting playback with EQ")
+        Log.audio.infoString("  Created StreamingAudioPlayer, starting playback with EQ")
     }
     
     /// Sync EQ settings from the main engine's EQ to a streaming player's EQ
@@ -3760,7 +3760,7 @@ class AudioEngine {
         // Safety guard: if a crossfade is in progress, ignore stray completion callbacks
         // (the crossfade handles the transition via completeCrossfade/completeStreamingCrossfade)
         guard !isCrossfading else {
-            NSLog("trackDidFinish: Ignoring during crossfade")
+            Log.audio.infoString("trackDidFinish: Ignoring during crossfade")
             return
         }
         
@@ -3868,7 +3868,7 @@ class AudioEngine {
             // Schedule the next track for gapless
             scheduleNextTrackForGapless()
             
-            NSLog("Gapless transition to: %@", currentTrack?.title ?? "Unknown")
+            Log.audio.infoString("Gapless transition to: \(currentTrack?.title ?? "Unknown")")
             return
         }
         
@@ -3919,7 +3919,7 @@ class AudioEngine {
             // Schedule the next track for gapless
             scheduleNextTrackForGapless()
             
-            NSLog("Streaming gapless transition to: %@", currentTrack?.title ?? "Unknown")
+            Log.audio.infoString("Streaming gapless transition to: \(currentTrack?.title ?? "Unknown")")
             return
         }
         
@@ -3989,13 +3989,13 @@ class AudioEngine {
         
         // Don't queue if Sweet Fades is enabled - it handles transitions
         guard !sweetFadeEnabled else {
-            NSLog("Gapless: Skipping - Sweet Fades enabled")
+            Log.audio.infoString("Gapless: Skipping - Sweet Fades enabled")
             return
         }
         
         // Don't queue when casting - playback is remote
         guard !isCastingActive else {
-            NSLog("Gapless: Skipping - casting is active")
+            Log.audio.infoString("Gapless: Skipping - casting is active")
             return
         }
         
@@ -4019,17 +4019,17 @@ class AudioEngine {
             // Streaming gapless - only if next track is also streaming
             let nextIsStreaming = nextTrack.url.scheme == "http" || nextTrack.url.scheme == "https"
             guard nextIsStreaming else {
-                NSLog("Gapless: Next track is local file, can't queue for streaming gapless")
+                Log.audio.infoString("Gapless: Next track is local file, can't queue for streaming gapless")
                 return
             }
             
             streamingPlayer?.queue(url: nextTrack.url)
             nextScheduledTrackIndex = nextIndex
-            NSLog("Gapless: Queued streaming track: %@", nextTrack.title)
+            Log.audio.infoString("Gapless: Queued streaming track: \(nextTrack.title)")
         } else {
             // Local file gapless
             guard nextTrack.url.isFileURL else {
-                NSLog("Gapless: Next track is streaming, can't queue for local gapless")
+                Log.audio.infoString("Gapless: Next track is streaming, can't queue for local gapless")
                 return
             }
 
@@ -4072,7 +4072,7 @@ class AudioEngine {
                     let playbackURL = gaplessTempURL ?? nextTrackURL
                     let nextFile = try AVAudioFile(forReading: playbackURL)
                     let elapsed = CFAbsoluteTimeGetCurrent() - openStart
-                    NSLog("Gapless: Opened next track '%@' in %.3fs", nextTrackTitle, elapsed)
+                    Log.audio.infoString("Gapless: Opened next track '\(nextTrackTitle)' in \(String(format: "%.3f", elapsed))s")
                     DispatchQueue.main.async { [weak self] in
                         guard let self else {
                             if let tmp = gaplessTempURL { try? FileManager.default.removeItem(at: tmp) }
@@ -4097,13 +4097,13 @@ class AudioEngine {
                         activePlayer.scheduleFile(nextFile, at: nil, completionHandler: nil)
                         self.nextScheduledFile = nextFile
                         self.nextScheduledTrackIndex = nextIndex
-                        NSLog("Gapless: Pre-scheduled next track: %@", nextTrackTitle)
+                        Log.audio.infoString("Gapless: Pre-scheduled next track: \(nextTrackTitle)")
                     }
                 } catch {
                     DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
                         guard self.gaplessPreparationToken == token else { return }
-                        NSLog("Gapless: Failed to pre-schedule next track: %@", error.localizedDescription)
+                        Log.audio.errorString("Gapless: Failed to pre-schedule next track: \(error.localizedDescription)")
                         self.nextScheduledFile = nil
                         self.nextScheduledTrackIndex = -1
                     }
@@ -4133,13 +4133,13 @@ class AudioEngine {
         
         // Don't crossfade in repeat-one mode (unusual UX)
         if repeatEnabled && !shuffleEnabled {
-            NSLog("Sweet Fades: Skipping crossfade - repeat single mode")
+            Log.audio.infoString("Sweet Fades: Skipping crossfade - repeat single mode")
             return
         }
         
         let nextIndex = calculateNextTrackIndex()
         guard nextIndex >= 0 && nextIndex < playlist.count else {
-            NSLog("Sweet Fades: No next track available")
+            Log.audio.infoString("Sweet Fades: No next track available")
             return
         }
         
@@ -4150,19 +4150,19 @@ class AudioEngine {
         let nextIsStreaming = nextTrack.url.scheme == "http" || nextTrack.url.scheme == "https"
         
         guard currentIsStreaming == nextIsStreaming else {
-            NSLog("Sweet Fades: Skipping crossfade - mixed source types")
+            Log.audio.infoString("Sweet Fades: Skipping crossfade - mixed source types")
             return
         }
         
         // Check track duration is sufficient (must be at least 2x fade duration)
         if let nextDuration = nextTrack.duration, nextDuration < sweetFadeDuration * 2 {
-            NSLog("Sweet Fades: Skipping crossfade - next track too short (%.1fs < %.1fs)", nextDuration, sweetFadeDuration * 2)
+            Log.audio.infoString("Sweet Fades: Skipping crossfade - next track too short (\(String(format: "%.1f", nextDuration))s < \(String(format: "%.1f", sweetFadeDuration * 2))s)")
             return
         }
         
         isCrossfading = true
         crossfadeTargetIndex = nextIndex
-        NSLog("Sweet Fades: Starting crossfade to '%@'", nextTrack.title)
+        Log.audio.infoString("Sweet Fades: Starting crossfade to '\(nextTrack.title)'")
         
         if isStreamingPlayback {
             startStreamingCrossfade(to: nextTrack, nextIndex: nextIndex)
@@ -4231,7 +4231,7 @@ class AudioEngine {
                     guard let self,
                           self.crossfadeFileLoadToken == token,
                           self.isCrossfading else { return }
-                    NSLog("Sweet Fades: Failed to load next track: %@", error.localizedDescription)
+                    Log.audio.errorString("Sweet Fades: Failed to load next track: \(error.localizedDescription)")
                     self.isCrossfading = false
                     self.crossfadeTargetIndex = -1
                 }
@@ -4426,7 +4426,7 @@ class AudioEngine {
             scheduleNextTrackForGapless()
         }
         
-        NSLog("Sweet Fades: Crossfade complete, now playing: %@", currentTrack?.title ?? "Unknown")
+        Log.audio.infoString("Sweet Fades: Crossfade complete, now playing: \(currentTrack?.title ?? "Unknown")")
     }
     
     /// Complete streaming crossfade
@@ -4526,7 +4526,7 @@ class AudioEngine {
             }
         }
 
-        NSLog("Sweet Fades: Streaming crossfade complete, now playing: %@", currentTrack?.title ?? "Unknown")
+        Log.audio.infoString("Sweet Fades: Streaming crossfade complete, now playing: \(currentTrack?.title ?? "Unknown")")
     }
     
     /// Cancel an in-progress crossfade (called on seek, skip, stop)
@@ -4562,7 +4562,7 @@ class AudioEngine {
         crossfadeTargetIndex = -1
         // Reset to playerNode as primary (crossfade was incomplete, outgoing player continues)
         crossfadePlayerIsActive = false
-        NSLog("Sweet Fades: Crossfade cancelled")
+        Log.audio.infoString("Sweet Fades: Crossfade cancelled")
     }
 
     /// Reset all crossfade internals and restore direct local playback defaults.
@@ -4607,16 +4607,16 @@ class AudioEngine {
 
         deferredIOQueue.async { [weak self] in
             guard let self else { return }
-            NSLog("Normalization: starting analysis for '%@'", analysisURL.lastPathComponent)
+            Log.audio.infoString("Normalization: starting analysis for '\(analysisURL.lastPathComponent)'")
             let analysisStart = CFAbsoluteTimeGetCurrent()
             do {
                 let analysisFile = try AVAudioFile(forReading: analysisURL)
                 let openElapsed = CFAbsoluteTimeGetCurrent() - analysisStart
-                NSLog("Normalization: opened '%@' in %.3fs", analysisURL.lastPathComponent, openElapsed)
+                Log.audio.infoString("Normalization: opened '\(analysisURL.lastPathComponent)' in \(String(format: "%.3f", openElapsed))s")
 
                 let (peakDB, rmsDB) = self.analyzeAudioLevels(file: analysisFile)
                 let totalElapsed = CFAbsoluteTimeGetCurrent() - analysisStart
-                NSLog("Normalization: analysis for '%@' complete in %.3fs total (open=%.3fs)", analysisURL.lastPathComponent, totalElapsed, openElapsed)
+                Log.audio.infoString("Normalization: analysis for '\(analysisURL.lastPathComponent)' complete in \(String(format: "%.3f", totalElapsed))s total (open=\(String(format: "%.3f", openElapsed))s)")
                 let gain = self.calculateNormalizationGain(peakDB: peakDB, rmsDB: rmsDB)
 
                 DispatchQueue.main.async { [weak self] in
@@ -4634,7 +4634,7 @@ class AudioEngine {
                     guard let self else { return }
                     guard self.normalizationAnalysisToken == token,
                           self.currentTrack?.url == analysisURL else { return }
-                    NSLog("Normalization: analysis skipped for '%@': %@", analysisURL.lastPathComponent, error.localizedDescription)
+                    Log.audio.infoString("Normalization: analysis skipped for '\(analysisURL.lastPathComponent)': \(error.localizedDescription)")
                     self.normalizationGain = 1.0
                     self.applyNormalizationGain()
                 }
@@ -4791,7 +4791,7 @@ class AudioEngine {
         } else {
             // Use system default
             guard let defaultID = AudioOutputManager.shared.getDefaultOutputDeviceID() else {
-                NSLog("AudioEngine: Failed to get default output device")
+                Log.audio.errorString("AudioEngine: Failed to get default output device")
                 return false
             }
             targetDeviceID = defaultID
@@ -4799,7 +4799,7 @@ class AudioEngine {
         
         // Get the audio unit from the output node
         guard let outputUnit = engine.outputNode.audioUnit else {
-            NSLog("AudioEngine: Failed to get output audio unit")
+            Log.audio.errorString("AudioEngine: Failed to get output audio unit")
             return false
         }
         
@@ -4815,7 +4815,7 @@ class AudioEngine {
         )
         
         if status != noErr {
-            NSLog("AudioEngine: Failed to set output device: %d", status)
+            Log.audio.errorString("AudioEngine: Failed to set output device: \(status)")
             return false
         }
         
@@ -4828,11 +4828,11 @@ class AudioEngine {
         if let deviceID = deviceID,
            let device = AudioOutputManager.shared.outputDevices.first(where: { $0.id == deviceID }) {
             UserDefaults.standard.set(device.uid, forKey: "selectedOutputDeviceUID")
-            NSLog("AudioEngine: Saved output device preference: %@ (%@)", device.name, device.uid)
+            Log.audio.infoString("AudioEngine: Saved output device preference: \(device.name) (\(device.uid))")
         } else {
             // System default - clear the preference
             UserDefaults.standard.removeObject(forKey: "selectedOutputDeviceUID")
-            NSLog("AudioEngine: Cleared output device preference (using system default)")
+            Log.audio.infoString("AudioEngine: Cleared output device preference (using system default)")
         }
         
         // The AVAudioEngineConfigurationChange notification will fire if the format changed,
@@ -4851,7 +4851,7 @@ class AudioEngine {
     // MARK: - Playlist Management
     
     func clearPlaylist() {
-        NSLog("clearPlaylist: isStreamingPlayback=%d", isStreamingPlayback)
+        Log.audio.infoString("clearPlaylist: isStreamingPlayback=\(isStreamingPlayback)")
         placeholderResolutionTasks.values.forEach { $0.cancel() }
         placeholderResolutionTasks.removeAll()
         staleStreamingRefreshRetriedServiceIdentity = nil
@@ -4875,7 +4875,7 @@ class AudioEngine {
         // Report stop to Emby
         EmbyPlaybackReporter.shared.trackStopped()
 
-        NSLog("clearPlaylist: done, playlist count=%d", playlist.count)
+        Log.audio.infoString("clearPlaylist: done, playlist count=\(playlist.count)")
         clearShufflePlaybackState()
         delegate?.audioEngineDidChangePlaylist()
     }
@@ -4932,17 +4932,17 @@ class AudioEngine {
         cancelCrossfade()
         
         guard index >= 0 && index < playlist.count else {
-            NSLog("playTrack: invalid index %d (playlist count: %d)", index, playlist.count)
+            Log.audio.infoString("playTrack: invalid index \(index) (playlist count: \(playlist.count))")
             return
         }
         
         // When casting local files, block rapid clicks - only accept if not already casting
         if isCastingActive && CastManager.shared.isLocalFileCastInProgress() {
-            NSLog("AudioEngine: playTrack() blocked - local file cast in progress")
+            Log.audio.infoString("AudioEngine: playTrack() blocked - local file cast in progress")
             return
         }
         
-        NSLog("playTrack: playing track at index %d", index)
+        Log.audio.infoString("playTrack: playing track at index \(index)")
         
         // Check if we're currently casting
         let wasCasting = isCastingActive
@@ -4977,7 +4977,7 @@ class AudioEngine {
             _currentTime = 0
             lastReportedTime = 0
             
-            NSLog("playTrack: casting is active, casting track at index %d (local=%d)", index, isLocalFile ? 1 : 0)
+            Log.audio.infoString("playTrack: casting is active, casting track at index \(index) (local=\(isLocalFile ? 1 : 0))")
             Task {
                 do {
                     try await CastManager.shared.castNewTrack(track)
@@ -4988,7 +4988,7 @@ class AudioEngine {
                         }
                     }
                 } catch {
-                    NSLog("playTrack: failed to cast track: %@", error.localizedDescription)
+                    Log.audio.errorString("playTrack: failed to cast track: \(error.localizedDescription)")
                     // Fall back to local playback if casting fails
                     await MainActor.run {
                         self.loadTrack(at: index)
@@ -5150,7 +5150,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         if isCrossfading {
             switch state {
             case .stopped, .error:
-                NSLog("AudioEngine: Ignoring streaming state %@ during crossfade", String(describing: state))
+                Log.audio.infoString("AudioEngine: Ignoring streaming state \(String(describing: state)) during crossfade")
                 return
             default:
                 break
@@ -5178,7 +5178,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             streamingSeekResetWorkItem?.cancel()
             streamingSeekResetWorkItem = nil
         case .error:
-            NSLog("AudioEngine: Streaming player entered error state")
+            Log.audio.infoString("AudioEngine: Streaming player entered error state")
             self.state = .stopped
             isSeekingStreaming = false
             // Cancel any pending seeks and reset work items
@@ -5202,25 +5202,25 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // even though we intentionally stopped it. The isLoadingNewStreamingTrack flag
         // is set before stopping and cleared after the new track starts.
         guard !isLoadingNewStreamingTrack else {
-            NSLog("AudioEngine: Ignoring EOF during track switch")
+            Log.audio.infoString("AudioEngine: Ignoring EOF during track switch")
             return
         }
         
         // During crossfade, the outgoing streaming player fires EOF - ignore it
         // (the crossfade handles the transition via completeStreamingCrossfade)
         guard !isCrossfading else {
-            NSLog("AudioEngine: Ignoring streaming EOF during crossfade")
+            Log.audio.infoString("AudioEngine: Ignoring streaming EOF during crossfade")
             return
         }
         
         // For radio streams, don't advance - let RadioManager handle reconnection
         if RadioManager.shared.isActive {
-            NSLog("AudioEngine: Radio stream ended - delegating to RadioManager for reconnect")
+            Log.audio.infoString("AudioEngine: Radio stream ended - delegating to RadioManager for reconnect")
             RadioManager.shared.streamDidDisconnect(error: nil)
             return
         }
         
-        NSLog("AudioEngine: Streaming track finished, advancing playlist")
+        Log.audio.infoString("AudioEngine: Streaming track finished, advancing playlist")
         trackDidFinish()
     }
     
@@ -5265,7 +5265,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         
         // Only update if not already set
         if track.sampleRate == nil || track.channels == nil {
-            NSLog("AudioEngine: Detected stream format - sampleRate: %d, channels: %d", sampleRate, channels)
+            Log.audio.infoString("AudioEngine: Detected stream format - sampleRate: \(sampleRate), channels: \(channels)")
             
             // Create updated track with format info
             let updatedTrack = Track(
@@ -5313,15 +5313,15 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // If a refresh is already in-flight for this track, suppress duplicate callbacks.
         if let identity = currentTrack?.streamingServiceIdentity,
            staleStreamingRefreshRetriedServiceIdentity == identity {
-            NSLog("AudioEngine: Ignoring duplicate streaming error - %@", String(describing: error))
+            Log.audio.infoString("AudioEngine: Ignoring duplicate streaming error - \(String(describing: error))")
             return
         }
 
-        NSLog("AudioEngine: Streaming error - %@", String(describing: error))
+        Log.audio.infoString("AudioEngine: Streaming error - \(String(describing: error))")
 
         // Check if this is a radio stream - let RadioManager handle reconnection
         if RadioManager.shared.isActive {
-            NSLog("AudioEngine: Radio stream error - delegating to RadioManager for reconnect")
+            Log.audio.infoString("AudioEngine: Radio stream error - delegating to RadioManager for reconnect")
             RadioManager.shared.streamDidDisconnect(error: error)
             return
         }
@@ -5336,7 +5336,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
            currentIndex >= 0 {
             staleStreamingRefreshRetriedServiceIdentity = retryIdentity
             let retryIndex = currentIndex
-            NSLog("AudioEngine: attempting one-time stream URL refresh for '%@'", failingTrack.title)
+            Log.audio.infoString("AudioEngine: attempting one-time stream URL refresh for '\(failingTrack.title)'")
 
             Task { [weak self] in
                 guard let self else { return }
@@ -5372,9 +5372,9 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
 
         if isPacketTableError || isCodecError {
             if isPacketTableError {
-                NSLog("AudioEngine: M4A parsing error - file may not be optimized for streaming")
+                Log.audio.infoString("AudioEngine: M4A parsing error - file may not be optimized for streaming")
             } else {
-                NSLog("AudioEngine: Codec error - file is corrupt or unplayable, advancing")
+                Log.audio.infoString("AudioEngine: Codec error - file is corrupt or unplayable, advancing")
             }
 
             // Show error in marquee briefly, then advance to next track
@@ -5392,7 +5392,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                 guard let self = self else { return }
                 // Only advance if we're still in error/stopped state
                 if self.state == .stopped {
-                    NSLog("AudioEngine: Auto-advancing after streaming error")
+                    Log.audio.infoString("AudioEngine: Auto-advancing after streaming error")
                     self.next()
                 }
             }

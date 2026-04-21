@@ -95,7 +95,31 @@ public struct PlexServer: Codable, Identifiable, Equatable {
     public let owned: Bool
     public let connections: [PlexConnection]
     public let accessToken: String?    // Server-specific token
-    
+
+    public init(
+        id: String,
+        name: String,
+        product: String?,
+        productVersion: String?,
+        platform: String?,
+        platformVersion: String?,
+        device: String?,
+        owned: Bool,
+        connections: [PlexConnection],
+        accessToken: String?
+    ) {
+        self.id = id
+        self.name = name
+        self.product = product
+        self.productVersion = productVersion
+        self.platform = platform
+        self.platformVersion = platformVersion
+        self.device = device
+        self.owned = owned
+        self.connections = connections
+        self.accessToken = accessToken
+    }
+
     /// Best available connection (prefers local)
     public var preferredConnection: PlexConnection? {
         // Prefer local connections over relay
@@ -118,7 +142,23 @@ public struct PlexConnection: Codable, Equatable {
     public let address: String?
     public let port: Int?
     public let `protocol`: String?
-    
+
+    public init(
+        uri: String,
+        local: Bool,
+        relay: Bool,
+        address: String?,
+        port: Int?,
+        protocol: String?
+    ) {
+        self.uri = uri
+        self.local = local
+        self.relay = relay
+        self.address = address
+        self.port = port
+        self.`protocol` = `protocol`
+    }
+
     public var url: URL? {
         URL(string: uri)
     }
@@ -219,6 +259,48 @@ public struct PlexTrack: Identifiable, Equatable {
     public let parentYear: Int?        // Album release year
     public let ratingCount: Int?       // Last.fm scrobble count (global popularity)
     public let userRating: Double?     // User's star rating (0-10 scale, 10 = 5 stars)
+
+    public init(
+        id: String,
+        key: String,
+        title: String,
+        parentTitle: String?,
+        grandparentTitle: String?,
+        parentKey: String?,
+        grandparentKey: String?,
+        summary: String?,
+        duration: Int,
+        index: Int?,
+        parentIndex: Int?,
+        thumb: String?,
+        media: [PlexMedia],
+        addedAt: Date?,
+        updatedAt: Date?,
+        genre: String?,
+        parentYear: Int?,
+        ratingCount: Int?,
+        userRating: Double?
+    ) {
+        self.id = id
+        self.key = key
+        self.title = title
+        self.parentTitle = parentTitle
+        self.grandparentTitle = grandparentTitle
+        self.parentKey = parentKey
+        self.grandparentKey = grandparentKey
+        self.summary = summary
+        self.duration = duration
+        self.index = index
+        self.parentIndex = parentIndex
+        self.thumb = thumb
+        self.media = media
+        self.addedAt = addedAt
+        self.updatedAt = updatedAt
+        self.genre = genre
+        self.parentYear = parentYear
+        self.ratingCount = ratingCount
+        self.userRating = userRating
+    }
     
     /// Get the streaming part key for this track
     public var partKey: String? {
@@ -246,19 +328,63 @@ public struct PlexPlaylist: Identifiable, Equatable {
     public let summary: String?
     public let playlistType: String    // "audio", "video", or "photo"
     public let smart: Bool             // Whether it's a smart playlist
+    public let content: String?        // Filter URI for smart playlists (e.g., "/library/sections/15/all?type=10&...")
     public let thumb: String?          // Playlist artwork
     public let composite: String?      // Composite image path
     public let duration: Int?          // Total duration in milliseconds
     public let leafCount: Int          // Number of items
     public let addedAt: Date?
     public let updatedAt: Date?
-    
+
+    public init(
+        id: String,
+        key: String,
+        title: String,
+        summary: String?,
+        playlistType: String,
+        smart: Bool,
+        content: String?,
+        thumb: String?,
+        composite: String?,
+        duration: Int?,
+        leafCount: Int,
+        addedAt: Date?,
+        updatedAt: Date?
+    ) {
+        self.id = id
+        self.key = key
+        self.title = title
+        self.summary = summary
+        self.playlistType = playlistType
+        self.smart = smart
+        self.content = content
+        self.thumb = thumb
+        self.composite = composite
+        self.duration = duration
+        self.leafCount = leafCount
+        self.addedAt = addedAt
+        self.updatedAt = updatedAt
+    }
+
     public var isAudioPlaylist: Bool {
         playlistType == "audio"
     }
     
     public var isVideoPlaylist: Bool {
         playlistType == "video"
+    }
+
+    /// Extract library section ID from smart playlist content URI
+    public var librarySectionID: String? {
+        guard let content = content else { return nil }
+        // Parse "/library/sections/15/all?..." to extract "15"
+        let pattern = #"/library/sections/(\d+)/"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)),
+              let range = Range(match.range(at: 1), in: content) else {
+            return nil
+        }
+        return String(content[range])
     }
     
     public var formattedDuration: String? {
@@ -603,7 +729,6 @@ public struct PlexStream: Codable, Equatable, Identifiable {
         
         // Add language if available
         if let lang = language ?? languageCode {
-            let locale = Locale(identifier: lang)
             if let languageName = Locale.current.localizedString(forLanguageCode: lang) {
                 parts.append(languageName)
             } else {
@@ -765,6 +890,7 @@ public struct PlexMetadataDTO: Decodable {
     public let playlistType: String?   // "audio", "video", or "photo"
     public let smart: Bool?            // Whether it's a smart playlist
     public let composite: String?      // Composite image path for playlists
+    public let content: String?        // Filter URI for smart playlists (e.g., "/library/sections/15/all?type=10&...")
     // Track-specific fields for radio
     public let parentYear: Int?        // Album release year (for decade radio)
     public let ratingCount: Int?       // Last.fm scrobble count (for hits/deep cuts)
@@ -803,7 +929,7 @@ public struct PlexMetadataDTO: Decodable {
         case media = "Media"
         case genre = "Genre"
         case studio, contentRating
-        case playlistType, smart, composite
+        case playlistType, smart, composite, content
         case parentYear, ratingCount, userRating
         case extraType, subtype
         case guids = "Guid"
@@ -977,6 +1103,7 @@ public struct PlexMetadataDTO: Decodable {
             summary: summary,
             playlistType: playlistType ?? "audio",
             smart: smart ?? false,
+            content: content,
             thumb: thumb,
             composite: composite,
             duration: duration,

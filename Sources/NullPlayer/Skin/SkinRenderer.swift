@@ -2406,7 +2406,6 @@ class SkinRenderer {
     /// Draw the complete playlist window using skin sprites
     func drawPlaylistWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
                             pressedButton: PlaylistButtonType?, scrollPosition: CGFloat) {
-        let titleHeight = SkinElements.Playlist.titleHeight
         let bottomHeight = SkinElements.Playlist.bottomHeight  // 3px thin border
         
         // Fill background with playlist colors first

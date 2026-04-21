@@ -71,10 +71,7 @@ class JellyfinServerClient {
         }
         self.baseURL = url
         
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60
-        config.timeoutIntervalForResource = 600  // 10 minutes for large library fetches
-        self.session = URLSession(configuration: config)
+        self.session = NetworkClient.makeSession(type: .api)
     }
     
     /// Initialize from stored credentials
@@ -129,9 +126,7 @@ class JellyfinServerClient {
         let body: [String: String] = ["Username": username, "Pw": password]
         request.httpBody = try JSONEncoder().encode(body)
         
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 15
-        let session = URLSession(configuration: config)
+        let session = NetworkClient.makeSession(type: .quickCheck)
         
         do {
             let (data, response) = try await session.data(for: request)
@@ -274,10 +269,7 @@ class JellyfinServerClient {
     func checkConnection() async -> Bool {
         guard let request = buildRequest(path: "/System/Ping") else { return false }
         
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 5
-        config.timeoutIntervalForResource = 10
-        let quickSession = URLSession(configuration: config)
+        let quickSession = NetworkClient.makeSession(type: .quickCheck)
         
         do {
             let (_, response) = try await quickSession.data(for: request)

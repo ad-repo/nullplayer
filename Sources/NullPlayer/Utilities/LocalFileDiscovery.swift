@@ -72,7 +72,7 @@ enum LocalFileDiscovery {
         // first (free — derived from the URL path string) we skip stat calls for all non-media
         // files, which can be the majority of files in a large music library.
         let statKeys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
-        var seenPaths = Set<String>()
+        var seenURLs = Set<URL>()
         var allAudio: [LocalDiscoveredMediaFile] = []
         var allVideo: [LocalDiscoveredMediaFile] = []
         var pendingAudio: [LocalDiscoveredMediaFile] = []
@@ -89,15 +89,15 @@ enum LocalFileDiscovery {
             let isVideo = !isAudio && includeVideo && isSupportedVideoFile(url)
             guard isAudio || isVideo else { return }
 
-            let path = url.path
-            guard seenPaths.insert(path).inserted else { return }
+            // Dedup by URL (faster than converting to path string for every file).
+            guard seenURLs.insert(url).inserted else { return }
 
             // Stat only files that passed the extension filter.
             guard let values = try? url.resourceValues(forKeys: Set(statKeys)),
                   values.isRegularFile == true else { return }
 
             let file = LocalDiscoveredMediaFile(
-                url: url, path: path,
+                url: url, path: url.path,
                 fileSize: Int64(values.fileSize ?? 0),
                 contentModificationDate: values.contentModificationDate
             )
@@ -159,7 +159,7 @@ enum LocalFileDiscovery {
     ) -> LocalFileDiscoveryResult {
         var audioFiles: [LocalDiscoveredMediaFile] = []
         var videoFiles: [LocalDiscoveredMediaFile] = []
-        var seenPaths = Set<String>()
+        var seenURLs = Set<URL>()
 
         for inputURL in inputURLs {
             collectMedia(
@@ -167,7 +167,7 @@ enum LocalFileDiscovery {
                 recursiveDirectories: recursiveDirectories,
                 includeVideo: includeVideo,
                 includeLegacyWMA: includeLegacyWMA,
-                seenPaths: &seenPaths,
+                seenURLs: &seenURLs,
                 audioFiles: &audioFiles,
                 videoFiles: &videoFiles
             )
@@ -201,7 +201,7 @@ enum LocalFileDiscovery {
         recursiveDirectories: Bool,
         includeVideo: Bool,
         includeLegacyWMA: Bool,
-        seenPaths: inout Set<String>,
+        seenURLs: inout Set<URL>,
         audioFiles: inout [LocalDiscoveredMediaFile],
         videoFiles: inout [LocalDiscoveredMediaFile]
     ) {
@@ -211,7 +211,7 @@ enum LocalFileDiscovery {
                     in: url,
                     includeVideo: includeVideo,
                     includeLegacyWMA: includeLegacyWMA,
-                    seenPaths: &seenPaths,
+                    seenURLs: &seenURLs,
                     audioFiles: &audioFiles,
                     videoFiles: &videoFiles
                 )
@@ -220,7 +220,7 @@ enum LocalFileDiscovery {
                     in: url,
                     includeVideo: includeVideo,
                     includeLegacyWMA: includeLegacyWMA,
-                    seenPaths: &seenPaths,
+                    seenURLs: &seenURLs,
                     audioFiles: &audioFiles,
                     videoFiles: &videoFiles
                 )
@@ -232,7 +232,7 @@ enum LocalFileDiscovery {
             url: url,
             includeVideo: includeVideo,
             includeLegacyWMA: includeLegacyWMA,
-            seenPaths: &seenPaths,
+            seenURLs: &seenURLs,
             audioFiles: &audioFiles,
             videoFiles: &videoFiles
         )
@@ -242,7 +242,7 @@ enum LocalFileDiscovery {
         in rootURL: URL,
         includeVideo: Bool,
         includeLegacyWMA: Bool,
-        seenPaths: inout Set<String>,
+        seenURLs: inout Set<URL>,
         audioFiles: inout [LocalDiscoveredMediaFile],
         videoFiles: inout [LocalDiscoveredMediaFile]
     ) {
@@ -259,7 +259,7 @@ enum LocalFileDiscovery {
                 url: next,
                 includeVideo: includeVideo,
                 includeLegacyWMA: includeLegacyWMA,
-                seenPaths: &seenPaths,
+                seenURLs: &seenURLs,
                 audioFiles: &audioFiles,
                 videoFiles: &videoFiles
             )
@@ -270,7 +270,7 @@ enum LocalFileDiscovery {
         in rootURL: URL,
         includeVideo: Bool,
         includeLegacyWMA: Bool,
-        seenPaths: inout Set<String>,
+        seenURLs: inout Set<URL>,
         audioFiles: inout [LocalDiscoveredMediaFile],
         videoFiles: inout [LocalDiscoveredMediaFile]
     ) {
@@ -287,7 +287,7 @@ enum LocalFileDiscovery {
                 url: item,
                 includeVideo: includeVideo,
                 includeLegacyWMA: includeLegacyWMA,
-                seenPaths: &seenPaths,
+                seenURLs: &seenURLs,
                 audioFiles: &audioFiles,
                 videoFiles: &videoFiles
             )
@@ -298,7 +298,7 @@ enum LocalFileDiscovery {
         url: URL,
         includeVideo: Bool,
         includeLegacyWMA: Bool,
-        seenPaths: inout Set<String>,
+        seenURLs: inout Set<URL>,
         audioFiles: inout [LocalDiscoveredMediaFile],
         videoFiles: inout [LocalDiscoveredMediaFile]
     ) {
@@ -308,15 +308,14 @@ enum LocalFileDiscovery {
         let isVideo = !isAudio && includeVideo && isSupportedVideoFile(url)
         guard isAudio || isVideo else { return }
 
-        let path = url.path
-        guard seenPaths.insert(path).inserted else { return }
+        guard seenURLs.insert(url).inserted else { return }
 
         guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]),
               values.isRegularFile == true else { return }
 
         let discovered = LocalDiscoveredMediaFile(
             url: url,
-            path: path,
+            path: url.path,
             fileSize: Int64(values.fileSize ?? 0),
             contentModificationDate: values.contentModificationDate
         )

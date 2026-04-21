@@ -1701,7 +1701,6 @@ final class MediaLibraryStore {
     private func movieFromRow(_ row: Row) -> LocalVideo? {
         guard let id = UUID(uuidString: row[colID]),
               let url = Self.urlFromStoredString(row[colURL]) else { return nil }
-        var movie = LocalVideo(url: url)
         // Override generated UUID with stored one
         return LocalVideo(
             id: id,

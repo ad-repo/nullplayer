@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import NullPlayerCore
 
 /// Helper for secure storage of sensitive data
 /// Uses UserDefaults for development (to avoid keychain prompts with unsigned builds)

@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 // MARK: - Notifications
 
@@ -106,8 +107,8 @@ class WindowManager {
     
     /// Whether the modern UI is enabled (requires restart to take effect)
     var isModernUIEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: "modernUIEnabled") }
-        set { UserDefaults.standard.set(newValue, forKey: "modernUIEnabled") }
+        get { UserDefaults.standard.bool(forKey: UserDefaults.Keys.modernUIEnabled) }
+        set { UserDefaults.standard.set(newValue, forKey: UserDefaults.Keys.modernUIEnabled) }
     }
 
     /// Runtime UI mode inferred from the active main window controller.
@@ -523,9 +524,11 @@ class WindowManager {
     
     func togglePlaylist() {
         if let controller = playlistWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
+            let closingFrame = controller.window?.frame ?? .zero
             controller.window?.orderOut(nil)
-            slideUpWindowsBelow(closingFrame: closingFrame)
+            if closingFrame != .zero {
+                slideUpWindowsBelow(closingFrame: closingFrame)
+            }
         } else {
             showPlaylist()
         }
@@ -570,9 +573,11 @@ class WindowManager {
     
     func toggleEqualizer() {
         if let controller = equalizerWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
+            let closingFrame = controller.window?.frame ?? .zero
             controller.window?.orderOut(nil)
-            slideUpWindowsBelow(closingFrame: closingFrame)
+            if closingFrame != .zero {
+                slideUpWindowsBelow(closingFrame: closingFrame)
+            }
         } else {
             showEqualizer()
         }
@@ -1436,11 +1441,13 @@ class WindowManager {
     
     func toggleSpectrum() {
         if let controller = spectrumWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
+            let closingFrame = controller.window?.frame ?? .zero
             // Stop rendering before hiding to save CPU (orderOut doesn't trigger windowWillClose)
             controller.stopRenderingForHide()
             controller.window?.orderOut(nil)
-            slideUpWindowsBelow(closingFrame: closingFrame)
+            if closingFrame != .zero {
+                slideUpWindowsBelow(closingFrame: closingFrame)
+            }
         } else {
             showSpectrum()
         }
@@ -1506,10 +1513,12 @@ class WindowManager {
 
     func toggleWaveform() {
         if let controller = waveformWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
+            let closingFrame = controller.window?.frame ?? .zero
             controller.stopLoadingForHide()
             controller.window?.orderOut(nil)
-            slideUpWindowsBelow(closingFrame: closingFrame)
+            if closingFrame != .zero {
+                slideUpWindowsBelow(closingFrame: closingFrame)
+            }
         } else {
             showWaveform()
         }

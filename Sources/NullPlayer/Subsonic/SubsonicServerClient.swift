@@ -31,10 +31,7 @@ class SubsonicServerClient {
         }
         self.baseURL = url
         
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60
-        config.timeoutIntervalForResource = 600  // 10 minutes for large library fetches
-        self.session = URLSession(configuration: config)
+        self.session = NetworkClient.makeSession(type: .api)
     }
     
     /// Initialize from stored credentials
@@ -195,10 +192,7 @@ class SubsonicServerClient {
     func checkConnection() async -> Bool {
         guard let request = buildRequest(endpoint: "ping") else { return false }
         
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 5
-        config.timeoutIntervalForResource = 10
-        let quickSession = URLSession(configuration: config)
+        let quickSession = NetworkClient.makeSession(type: .quickCheck)
         
         do {
             let (data, response) = try await quickSession.data(for: request)

@@ -83,6 +83,17 @@ struct Track: Identifiable, Equatable {
     /// MIME content type hint for casting (e.g. "audio/flac"). When nil, detected from URL extension.
     let contentType: String?
     
+    /// Synchronous metadata extraction from a local media URL.
+    ///
+    /// Uses several APIs deprecated in macOS 13 (`asset.duration`, `asset.tracks(withMediaType:)`,
+    /// `asset.availableMetadataFormats`, `asset.metadata(forFormat:)`, `item.stringValue`,
+    /// `audioTrack.formatDescriptions`). The modern replacements are async
+    /// (`asset.load(.duration)`, `asset.loadTracks(withMediaType:)`, etc.), which would
+    /// require converting this `init` to an async factory method and updating every
+    /// call site (there are many in the scan/import hot path).
+    ///
+    /// The deprecated APIs still work and are available through at least macOS 15.
+    /// A proper migration is tracked as technical debt — see issue for plan.
     init(url: URL) {
         self.id = UUID()
         self.url = url

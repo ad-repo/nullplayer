@@ -1,4 +1,5 @@
 import Foundation
+import NullPlayerCore
 
 /// Resolves service-backed streaming tracks to fresh stream URLs using persisted IDs.
 enum StreamingTrackResolver {

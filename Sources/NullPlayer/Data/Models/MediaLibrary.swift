@@ -1653,6 +1653,16 @@ class MediaLibrary {
 
     /// Scan a single video file, classify it as a movie or TV episode, and add it to the library.
     /// Classification priority: iTunes TV atoms → SxxExx filename pattern → parent "Season N" folder → movie.
+    ///
+    /// NOTE: This function uses several AVAsset APIs deprecated in macOS 13
+    /// (`asset.duration`, `asset.availableMetadataFormats`, `asset.metadata(forFormat:)`,
+    /// `asset.tracks(withMediaType:)`, `item.stringValue`, `item.numberValue`,
+    /// `audioTrack.formatDescriptions`). The modern replacements are async
+    /// (`asset.load(.duration)`, `asset.loadMetadata(for:)`, etc.).
+    ///
+    /// Migrating requires making this function `async` and updating the library scan
+    /// pipeline. The deprecated APIs still work and are available through at least
+    /// macOS 15. Tracked as technical debt — see README improvement list.
     private func scanVideoFile(at url: URL, signature: FileScanSignature? = nil) {
         let path = url.path
 
@@ -1781,7 +1791,14 @@ class MediaLibrary {
 
     // MARK: - Metadata Parsing
 
-    /// Parse metadata for a track using AVFoundation
+    /// Parse metadata for a track using AVFoundation.
+    ///
+    /// NOTE: Uses AVAsset APIs deprecated in macOS 13 (`asset.duration`,
+    /// `asset.availableMetadataFormats`, `asset.metadata(forFormat:)`,
+    /// `asset.tracks(withMediaType:)`, `item.stringValue`, `audioTrack.formatDescriptions`).
+    /// Migrating to the async replacements requires converting this function to
+    /// `async` and updating the metadata-enrichment pipeline in `importMedia`.
+    /// Tracked as technical debt. Deprecated APIs still function on macOS 14+.
     private func parseMetadata(for track: inout LibraryTrack) {
         let asset = AVAsset(url: track.url)
         

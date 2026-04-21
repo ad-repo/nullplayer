@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import SwiftUI
+import NullPlayerCore
 
 // =============================================================================
 // MODERN LIBRARY BROWSER VIEW - Library browser with modern skin chrome
@@ -244,8 +245,18 @@ class ModernLibraryBrowserView: NSView {
     private var visibleAlbumColumnIds: [String] = ModernBrowserColumn.defaultAlbumColumnIds { didSet { saveVisibleColumns() } }
     private var visibleArtistColumnIds: [String] = ModernBrowserColumn.defaultArtistColumnIds { didSet { saveVisibleColumns() } }
     
-    // Display items
-    private var displayItems: [ModernDisplayItem] = []
+    // Display items (with cache invalidation on mutation)
+    private var _displayItems: [ModernDisplayItem] = []
+    private var displayItems: [ModernDisplayItem] {
+        get { _displayItems }
+        set {
+            _displayItems = newValue
+            formattedValueCache.removeAll(keepingCapacity: true)
+        }
+    }
+    /// Cache for formatted cell values to avoid re-formatting during scroll.
+    /// Keyed by item id, then by column id. Invalidated when displayItems changes.
+    private var formattedValueCache: [String: [String: String]] = [:]
     
     // Expanded state
     private var expandedArtists: Set<String> = []
@@ -1637,20 +1648,17 @@ class ModernLibraryBrowserView: NSView {
         }
         
         let headerColumns = headerColumnsForCurrentContent()
-        
+
         // Draw column headers
-        var contentListY = listAreaY
         if let columns = headerColumns {
             let headerY = listAreaY + listAreaHeight - columnHeaderHeight
             let headerRect = NSRect(x: fullListRect.minX, y: headerY,
                                     width: fullListRect.width, height: columnHeaderHeight)
             drawColumnHeaders(in: context, rect: headerRect, columns: columns, skin: skin)
-            contentListY = listAreaY
         }
-        
+
         // Content area
         let contentHeight = listAreaHeight - (headerColumns != nil ? columnHeaderHeight : 0)
-        let contentTopY = headerColumns != nil ? (listAreaY + listAreaHeight - columnHeaderHeight) : (listAreaY + listAreaHeight)
         let listRect = NSRect(x: fullListRect.minX, y: listAreaY,
                               width: fullListRect.width, height: contentHeight)
         
@@ -1851,7 +1859,19 @@ class ModernLibraryBrowserView: NSView {
         var x = rect.minX + indent + 4 - horizontalScrollOffset
         for column in columns {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns)
-            let value = item.columnValue(for: column)
+            // Performance: cache formatted values to avoid expensive re-formatting
+            // (duration/date/size formatters) on every scroll redraw.
+            let value: String
+            if let cached = formattedValueCache[item.id]?[column.id] {
+                value = cached
+            } else {
+                let formatted = item.columnValue(for: column)
+                if formattedValueCache[item.id] == nil {
+                    formattedValueCache[item.id] = [:]
+                }
+                formattedValueCache[item.id]?[column.id] = formatted
+                value = formatted
+            }
             let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
                 (isInternetRadioItem(item) && column.id == "rating")
             
@@ -7047,7 +7067,6 @@ class ModernLibraryBrowserView: NSView {
 
     private func buildRateSubmenuForLocalAlbum(albumId: String) -> NSMenu {
         let menu = NSMenu(title: "Rate")
-        let current = MediaLibrary.shared.albumRating(for: albumId)
         for stars in 1...5 {
             let rating = stars * 2
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)

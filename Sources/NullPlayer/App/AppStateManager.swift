@@ -42,10 +42,13 @@ class AppStateManager {
     static let shared = AppStateManager()
     
     // MARK: - UserDefaults Keys
-    
+    //
+    // These are aliased to the centralized UserDefaults.Keys for consistency.
+    // The indirection is kept so existing internal references (Keys.foo) continue
+    // to work without touching every line in this 1200-line file.
     private enum Keys {
-        static let rememberStateEnabled = "rememberStateEnabled"
-        static let savedAppState = "savedAppState"
+        static let rememberStateEnabled = UserDefaults.Keys.rememberStateEnabled
+        static let savedAppState = UserDefaults.Keys.savedAppState
     }
 
     enum PlaylistRestoreMode: Equatable {

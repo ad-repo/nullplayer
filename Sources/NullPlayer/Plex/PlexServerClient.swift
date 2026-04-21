@@ -1,4 +1,5 @@
 import Foundation
+import NullPlayerCore
 
 /// Radio station configuration - easy to modify thresholds
 enum RadioConfig {
@@ -69,10 +70,7 @@ class PlexServerClient {
         }
         self.baseURL = url
         
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 120
-        self.session = URLSession(configuration: config)
+        self.session = NetworkClient.makeSession(type: .api)
     }
     
     // MARK: - Standard Headers
@@ -1467,10 +1465,7 @@ class PlexServerClient {
         guard let request = buildRequest(path: "/") else { return false }
         
         // Use a shorter timeout for connection checks
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 5  // 5 seconds
-        config.timeoutIntervalForResource = 10
-        let quickSession = URLSession(configuration: config)
+        let quickSession = NetworkClient.makeSession(type: .quickCheck)
         
         do {
             let (_, response) = try await quickSession.data(for: request)

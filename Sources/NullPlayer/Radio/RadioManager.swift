@@ -1712,12 +1712,12 @@ class RadioManager {
     func streamDidDisconnect(error: Error?) {
         guard let station = currentStation else { return }
         guard !manualStopRequested else {
-            NSLog("RadioManager: Manual stop - not reconnecting")
+            Log.radio.info("Manual stop - not reconnecting")
             return
         }
-        
-        NSLog("RadioManager: Stream disconnected: %@", error?.localizedDescription ?? "unknown")
-        
+
+        Log.radio.notice("Stream disconnected: \(error?.localizedDescription ?? "unknown", privacy: .public)")
+
         // Attempt auto-reconnect if enabled
         if autoReconnectEnabled && reconnectAttempts < maxReconnectAttempts {
             scheduleReconnect(station: station)
@@ -1731,11 +1731,11 @@ class RadioManager {
     private func scheduleReconnect(station: RadioStation) {
         reconnectAttempts += 1
         connectionState = .reconnecting(attempt: reconnectAttempts)
-        
+
         // Exponential backoff: 2s, 4s, 8s, 16s, 32s
         let delay = pow(2.0, Double(reconnectAttempts))
-        NSLog("RadioManager: Reconnecting in %.0fs (attempt %d/%d)", delay, reconnectAttempts, maxReconnectAttempts)
-        
+        Log.radio.info("Reconnecting in \(delay, format: .fixed(precision: 0))s (attempt \(self.reconnectAttempts)/\(self.maxReconnectAttempts))")
+
         // Must dispatch to main queue - streamDidDisconnect is called from AudioStreaming
         // background threads, and Timer.scheduledTimer requires an active run loop
         DispatchQueue.main.async { [weak self] in
@@ -1748,11 +1748,11 @@ class RadioManager {
     
     private func attemptReconnect(station: RadioStation) {
         guard currentStation?.id == station.id else {
-            NSLog("RadioManager: Station changed, cancelling reconnect")
+            Log.radio.info("Station changed, cancelling reconnect")
             return
         }
-        
-        NSLog("RadioManager: Attempting reconnect to '%@'", station.name)
+
+        Log.radio.info("Attempting reconnect to '\(station.name, privacy: .public)'")
         connectionState = .connecting
         
         // Use startPlayback to handle playlist URL resolution if needed
