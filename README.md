@@ -1,6 +1,6 @@
 # NullPlayer
 
-## A throwback open-source music player for macOS written in Swift, supporting Plex, Sonos, Navidrome, Jellyfin, Emby, Chromecast, ProjectM, local media, internet radio and more.
+## A throwback open-source music player for macOS written in Swift, with a first-class headless CLI for automation, multi-source playback, and casting across Sonos, Chromecast, UPnP/DLNA, local media servers, and internet radio.
 
 ## This is a 100% clean room hobby project is not affiliated with Winamp, Nullsoft, Sonos, Plex, Radionomy Group or anyone else.
 
@@ -17,6 +17,8 @@
 
 ## Features
 
+- First-class headless CLI for terminal workflows and automation pipelines
+- Scriptable media control across multiple sources and playback targets
 - Library browser window for Plex, Jellyfin, Emby, Navidrome/Subsonic, and local library files
 - Plex Media Server integration with PIN-based authentication
 - Jellyfin media server integration with music and video streaming, scrobbling, and library browsing
@@ -46,13 +48,32 @@
 - Cast local files, Jellyfin/Emby/Navidrome/Subsonic streams, and internet radio to Sonos
 - macOS Now Playing integration (Control Center, Touch Bar, AirPods controls)
 - [Discord Music Presence](https://github.com/ungive/discord-music-presence) support
-- Headless CLI mode for terminal-based browsing and playback (no GUI, no Dock icon)
+- Headless CLI mode for querying libraries, starting playback, and routing to local outputs or cast devices (no GUI, no Dock icon)
 
 ## Installation
 
 Download the latest DMG from [Releases](https://github.com/ad-repo/nullplayer/releases).
 
 Follow [r/NullPlayer](https://www.reddit.com/r/NullPlayer/) for release notifications. Report bugs on [GitHub Issues](https://github.com/ad-repo/nullplayer/issues) or the subreddit.
+
+### Optional command-line launcher
+
+If you want to use NullPlayer as a scriptable command in terminal workflows or automation pipelines without digging into `NullPlayer.app/Contents/MacOS`, the DMG includes:
+
+- `nullplayer` — launcher wrapper
+- `Install NullPlayer CLI.command` — one-click installer for `/usr/local/bin/nullplayer`
+
+Install flow:
+
+```bash
+open "/Volumes/NullPlayer/Install NullPlayer CLI.command"
+nullplayer --cli --help
+```
+
+The launcher looks for:
+
+- `/Applications/NullPlayer.app`
+- `~/Applications/NullPlayer.app`
 
 
 ### Fixing "App is damaged" or "macOS cannot verify that this app is free from malware" Error
@@ -128,38 +149,93 @@ Backups are stored in `~/Library/Application Support/NullPlayer/Backups/`.
 
 ## CLI Mode
 
-NullPlayer includes a headless CLI mode for browsing and playing music entirely from the terminal — no GUI, no Dock icon.
+NullPlayer includes a first-class headless CLI mode for browsing, querying, playing, and routing media entirely from the terminal. It is designed to work as a scriptable command in automation pipelines: resolve media from multiple sources, pick a local output or cast target, then hand off playback without opening the GUI.
+
+This is not just a hidden debug flag. `nullplayer` is a supported command surface for:
+
+- querying and searching local, Plex, Subsonic/Navidrome, Jellyfin, Emby, and radio sources
+- starting playback from those sources with a stable command-line interface
+- routing playback to local outputs or casting to Sonos, Chromecast, and UPnP/DLNA devices
+- emitting machine-friendly query output with `--json`
 
 ```bash
-NullPlayer --cli [OPTIONS]
+nullplayer --cli [OPTIONS]
+```
+
+### Multi-source media control
+
+`nullplayer` can act as a scriptable media control command for automation pipelines, connecting multiple media sources to multiple playback targets.
+
+Supported media sources include:
+
+- local library
+- Plex
+- Subsonic / Navidrome
+- Jellyfin
+- Emby
+- internet radio
+
+Supported playback targets include:
+
+- local audio output devices
+- Sonos
+- Chromecast
+- UPnP / DLNA
+
+Typical automation shape:
+
+```bash
+nullplayer --cli --source plex --playlist "Morning Rotation" --cast "Living Room" --cast-type sonos
+nullplayer --cli --source local --artist "Boards of Canada" --output "MacBook Pro Speakers"
+nullplayer --cli --station "KEXP" --source radio --cast "Kitchen Speaker" --cast-type chromecast
 ```
 
 ### Query commands (print results and exit)
 
 ```bash
-NullPlayer --cli --list-sources                          # show configured sources
-NullPlayer --cli --list-artists --source plex            # list artists
-NullPlayer --cli --list-albums  --source local           # list albums
-NullPlayer --cli --list-tracks  --source subsonic        # list tracks
-NullPlayer --cli --list-genres  --source local           # list genres
-NullPlayer --cli --list-playlists --source jellyfin      # list playlists
-NullPlayer --cli --list-stations                         # list internet radio stations
-NullPlayer --cli --list-eq                               # list EQ presets
-NullPlayer --cli --list-outputs                          # list audio output devices
-NullPlayer --cli --search "radiohead" --source local     # search library
-NullPlayer --cli --list-artists --source plex --json     # JSON output
+nullplayer --cli --list-sources                          # show configured sources
+nullplayer --cli --list-artists --source plex            # list artists
+nullplayer --cli --list-albums  --source local           # list albums
+nullplayer --cli --list-tracks  --source subsonic        # list tracks
+nullplayer --cli --list-genres  --source local           # list genres
+nullplayer --cli --list-playlists --source jellyfin      # list playlists
+nullplayer --cli --list-stations                         # list internet radio stations
+nullplayer --cli --list-eq                               # list EQ presets
+nullplayer --cli --list-outputs                          # list audio output devices
+nullplayer --cli --list-devices                          # list cast devices
+nullplayer --cli --search "radiohead" --source local     # search library
+nullplayer --cli --list-artists --source plex --json     # JSON output
 ```
 
 ### Playback
 
 ```bash
-NullPlayer --cli --source local --artist "Pink Floyd"
-NullPlayer --cli --source plex --album "OK Computer" --shuffle
-NullPlayer --cli --source local --genre "Jazz" --repeat-all
-NullPlayer --cli --station "KEXP" --source radio
-NullPlayer --cli --source local --radio artist --artist "Björk"
-NullPlayer --cli --source local --volume 80 --eq "Rock"
+nullplayer --cli --source local --artist "Pink Floyd"
+nullplayer --cli --source plex --album "OK Computer" --shuffle
+nullplayer --cli --source local --genre "Jazz" --repeat-all
+nullplayer --cli --station "KEXP" --source radio
+nullplayer --cli --source local --radio artist --artist "Björk"
+nullplayer --cli --source local --volume 80 --eq "Rock"
+nullplayer --cli --source jellyfin --playlist "Late Night" --cast "Bedroom" --cast-type sonos
+nullplayer --cli --source local --album "Selected Ambient Works 85-92" --cast "Office TV" --cast-type dlna
 ```
+
+### Volume control
+
+Set the initial playback volume at launch:
+
+```bash
+nullplayer --cli --source local --artist "Björk" --volume 80
+nullplayer --cli --source plex --playlist "Focus" --cast "Living Room" --cast-type sonos --volume 35
+```
+
+During playback:
+
+- `↑` increases volume by 5%
+- `↓` decreases volume by 5%
+- `m` toggles mute
+
+When casting is active, the same CLI volume control path is used for the cast target as well.
 
 ### Keyboard controls (during playback)
 
@@ -175,7 +251,7 @@ NullPlayer --cli --source local --volume 80 --eq "Rock"
 | `m` | Toggle mute |
 | `i` | Show track info |
 
-See `--help` for the full flag reference.
+See `nullplayer --cli --help` for the full flag reference. If you have not installed the launcher yet, the underlying app binary is still available at `NullPlayer.app/Contents/MacOS/NullPlayer`.
 
 ## Development
 
@@ -214,6 +290,3 @@ This project is open source and uses the following licensed components:
 
 - **KSPlayer** (GPL-3.0) - Video playback with FFmpeg backend
 - **libprojectM** (LGPL-2.1) - ProjectM visualizations
-
-
-

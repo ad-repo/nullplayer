@@ -132,7 +132,7 @@ class CLIDisplay {
         NullPlayer CLI Mode
 
         USAGE:
-            NullPlayer --cli [OPTIONS]
+            nullplayer --cli [OPTIONS]
 
         QUERY COMMANDS (print and exit):
             --list-sources              List configured sources
@@ -196,7 +196,7 @@ class CLIDisplay {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
             ?? Bundle(for: CLIDisplay.self).infoDictionary?["CFBundleShortVersionString"] as? String
             ?? "unknown"
-        print("NullPlayer \(version)")
+        print("nullplayer -> NullPlayer \(version)")
     }
 
     // MARK: - ASCII Art

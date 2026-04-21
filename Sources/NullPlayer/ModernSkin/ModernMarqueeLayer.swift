@@ -46,9 +46,16 @@ class ModernMarqueeLayer: CALayer {
     /// Whether scrolling is active
     private(set) var isScrolling = false
     
+    var artworkImage: NSImage? {
+        get { _artworkImage }
+        set { scheduleArtwork(newValue) }
+    }
+
     // MARK: - Private State
-    
+
+    private var _artworkImage: NSImage?
     private var scrollOffset: CGFloat = 0
+    private var artScrollOffset: CGFloat = 0
     private var textWidth: CGFloat = 0
     private var scrollTimer: Timer?
     private var isPaused = false
@@ -127,14 +134,20 @@ class ModernMarqueeLayer: CALayer {
         let attrStr = NSAttributedString(string: text, attributes: attrs)
         textWidth = attrStr.size().width
         
-        let needsScroll = textWidth > bounds.width
         let pad: CGFloat = glowEnabled ? 8.0 : 2.0
-        
+
+        // Art geometry
+        let artSize: CGFloat = _artworkImage != nil ? bounds.height : 0
+        let artGap: CGFloat = _artworkImage != nil ? 8.0 : 0
+        artScrollOffset = artSize + artGap
+
+        let needsScroll = (artScrollOffset + textWidth) > bounds.width
+        let loopWidth = artScrollOffset + textWidth + scrollGap
+
         // Calculate total content width
         let contentWidth: CGFloat
         if needsScroll {
-            // Two copies of text + gap + padding on both sides
-            contentWidth = (textWidth + scrollGap) * 2 + pad * 2
+            contentWidth = loopWidth * 2 + pad * 2
         } else {
             contentWidth = bounds.width + pad * 2
         }
@@ -164,8 +177,13 @@ class ModernMarqueeLayer: CALayer {
         let textSize = attrStr.size()
         let y = (bounds.height - textSize.height) / 2
         
+        func drawArt(atX x: CGFloat) {
+            guard let img = _artworkImage else { return }
+            img.draw(in: NSRect(x: x, y: 0, width: artSize, height: artSize),
+                     from: .zero, operation: .sourceOver, fraction: 1.0)
+        }
+
         if needsScroll {
-            // Draw text twice for seamless looping
             let drawText = { (x: CGFloat) in
                 if self.glowEnabled {
                     self.drawWithGlow(attrStr, at: NSPoint(x: x, y: y), ctx: ctx)
@@ -173,14 +191,16 @@ class ModernMarqueeLayer: CALayer {
                     attrStr.draw(at: NSPoint(x: x, y: y))
                 }
             }
-            drawText(pad)
-            drawText(pad + textWidth + scrollGap)
+            drawArt(atX: pad)
+            drawText(pad + artScrollOffset)
+            drawArt(atX: pad + loopWidth)
+            drawText(pad + loopWidth + artScrollOffset)
         } else {
-            // Static text
+            drawArt(atX: pad)
             if glowEnabled {
-                drawWithGlow(attrStr, at: NSPoint(x: pad, y: y), ctx: ctx)
+                drawWithGlow(attrStr, at: NSPoint(x: pad + artScrollOffset, y: y), ctx: ctx)
             } else {
-                attrStr.draw(at: NSPoint(x: pad, y: y))
+                attrStr.draw(at: NSPoint(x: pad + artScrollOffset, y: y))
             }
         }
         
@@ -213,7 +233,7 @@ class ModernMarqueeLayer: CALayer {
 
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             guard let self = self, !self.isPaused else { return }
-            let loopWidth = self.textWidth + self.scrollGap
+            let loopWidth = self.artScrollOffset + self.textWidth + self.scrollGap
             guard loopWidth > 0 else { return }
             self.scrollOffset += self.scrollSpeed / 30.0
             self.scrollOffset = self.scrollOffset.truncatingRemainder(dividingBy: loopWidth)
@@ -228,6 +248,33 @@ class ModernMarqueeLayer: CALayer {
         isScrolling = false
         scrollTimer?.invalidate()
         scrollTimer = nil
+    }
+
+    private func scheduleArtwork(_ image: NSImage?) {
+        if image == nil {
+            // Clear immediately — never linger with stale art
+            _artworkImage = nil
+            needsTextRender = true
+            renderAndLayout()
+        } else if isScrolling {
+            // Re-render now but compensate scrollOffset so visible text stays put.
+            // The art lands behind the current position and scrolls in from the right naturally.
+            //
+            // Invariant: callers always set artworkImage = nil synchronously before starting a
+            // new load (see ModernMainWindowView.updateTrackInfo), so previousArtScrollOffset
+            // is 0 here. The compensation equals the full artScrollOffset of the new image,
+            // shifting the text back to its current screen position after the loop widens.
+            let previousArtScrollOffset = artScrollOffset
+            _artworkImage = image
+            needsTextRender = true
+            renderAndLayout()
+            scrollOffset += artScrollOffset - previousArtScrollOffset
+            applyScrollPosition()
+        } else {
+            _artworkImage = image
+            needsTextRender = true
+            renderAndLayout()
+        }
     }
     
     /// Apply the current scroll offset to the content layer position (main thread only)

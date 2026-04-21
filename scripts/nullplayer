@@ -1,0 +1,26 @@
+#!/bin/bash
+
+set -euo pipefail
+
+APP_CANDIDATES=(
+    "/Applications/NullPlayer.app"
+    "$HOME/Applications/NullPlayer.app"
+)
+
+for app_path in "${APP_CANDIDATES[@]}"; do
+    binary_path="$app_path/Contents/MacOS/NullPlayer"
+    if [[ -x "$binary_path" ]]; then
+        exec "$binary_path" "$@"
+    fi
+done
+
+cat >&2 <<'EOF'
+NullPlayer.app was not found in a supported location.
+
+Expected one of:
+  /Applications/NullPlayer.app
+  ~/Applications/NullPlayer.app
+
+Install NullPlayer.app first, then run this command again.
+EOF
+exit 1

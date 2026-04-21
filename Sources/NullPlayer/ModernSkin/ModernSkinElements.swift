@@ -141,14 +141,12 @@ enum ModernSkinElements {
                                  states: ["normal", "pressed", "disabled"])
     static let btnNext = Element("btn_next", NSRect(x: 118, y: 3, width: 28, height: 24),
                                  states: ["normal", "pressed", "disabled"])
-    static let btnEject = Element("btn_eject", NSRect(x: 146, y: 3, width: 28, height: 24),
-                                  states: ["normal", "pressed"])
     
-    // MARK: - Volume Slider (bottom-right, replaces old shuffle/repeat/cast buttons)
+    // MARK: - Volume Slider (bottom-right, expanded to fill the former open-file control space)
     
-    static let volumeTrack = Element("volume_track", NSRect(x: 182, y: 12, width: 87, height: 3))
-    static let volumeFill = Element("volume_fill", NSRect(x: 182, y: 12, width: 0, height: 3))
-    static let volumeThumb = Element("volume_thumb", NSRect(x: 182, y: 10, width: 6, height: 6),
+    static let volumeTrack = Element("volume_track", NSRect(x: 157, y: 12, width: 107, height: 3))
+    static let volumeFill = Element("volume_fill", NSRect(x: 157, y: 12, width: 0, height: 3))
+    static let volumeThumb = Element("volume_thumb", NSRect(x: 157, y: 10, width: 6, height: 6),
                                      states: ["normal", "pressed"])
     
     // MARK: - Playlist Window
@@ -337,7 +335,7 @@ enum ModernSkinElements {
         spectrumArea,
         btn2x, btnEQ, btnPlaylist, btnLibrary, btnProjectM, btnSpectrum,
         seekTrack, seekFill, seekThumb,
-        btnPrev, btnPlay, btnPause, btnStop, btnNext, btnEject,
+        btnPrev, btnPlay, btnPause, btnStop, btnNext,
         volumeTrack, volumeFill, volumeThumb,
         playlistTitleBar, playlistBtnClose, playlistBtnShade,
         eqTitleBar, eqBtnClose, eqBtnShade,
