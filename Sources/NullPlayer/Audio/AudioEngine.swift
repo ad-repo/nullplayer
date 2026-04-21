@@ -35,7 +35,13 @@ extension Notification.Name {
     /// Posted when BPM detection updates
     /// userInfo contains: "bpm" (Int) - 0 means no confident reading
     static let bpmUpdated = Notification.Name("bpmUpdated")
-    
+
+    /// Posted when a track finishes playing naturally (not skipped by user).
+    /// Fired from `trackDidFinish()` BEFORE `currentTrack` advances to the next track.
+    /// userInfo contains: "track" (Track) - the track that just finished
+    /// Used by SleepTimerManager to distinguish natural completion from manual skip.
+    static let audioTrackDidFinishNaturally = Notification.Name("audioTrackDidFinishNaturally")
+
 }
 
 /// Audio playback state
@@ -3763,7 +3769,17 @@ class AudioEngine {
             NSLog("trackDidFinish: Ignoring during crossfade")
             return
         }
-        
+
+        // Notify observers that the current track finished naturally BEFORE advancing.
+        // This lets SleepTimerManager distinguish natural completion from user skip.
+        if let finishedTrack = currentTrack {
+            NotificationCenter.default.post(
+                name: .audioTrackDidFinishNaturally,
+                object: self,
+                userInfo: ["track": finishedTrack]
+            )
+        }
+
         // Report track finished to Plex (natural end)
         let finishPosition = duration
         PlexPlaybackReporter.shared.trackDidStop(at: finishPosition, finished: true)
