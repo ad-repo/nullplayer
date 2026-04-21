@@ -92,7 +92,7 @@ actor WaveformCacheService {
                 try fileManager.removeItem(at: cacheURL)
             }
         } catch {
-            NSLog("WaveformCacheService: Failed to clear cache for %@: %@", track.url.path, error.localizedDescription)
+            Log.waveform.error("Failed to clear cache for \(track.url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -104,7 +104,7 @@ actor WaveformCacheService {
                 try? fileManager.removeItem(at: fileURL)
             }
         } catch {
-            NSLog("WaveformCacheService: Failed to clear cache: %@", error.localizedDescription)
+            Log.waveform.error("Failed to clear entire cache: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -277,11 +277,7 @@ actor WaveformCacheService {
         do {
             return try await generateServiceSnapshotViaAssetReader(with: descriptor)
         } catch {
-            NSLog(
-                "WaveformCacheService: Remote asset-reader prerender failed for %@: %@",
-                descriptor.sourcePath,
-                error.localizedDescription
-            )
+            Log.waveform.error("Remote asset-reader prerender failed for \(descriptor.sourcePath, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
         try Task.checkCancellation()
         return try await generateServiceSnapshotViaDownload(with: descriptor)

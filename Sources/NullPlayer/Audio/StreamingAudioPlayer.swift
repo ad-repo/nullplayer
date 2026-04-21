@@ -212,7 +212,7 @@ class StreamingAudioPlayer {
             object: nil
         )
         
-        NSLog("StreamingAudioPlayer: Initialized with %@ EQ", eqConfiguration.name)
+        Log.audio.info("StreamingAudioPlayer initialized with \(eqConfiguration.name, privacy: .public) EQ")
     }
     
     deinit {
@@ -269,7 +269,7 @@ class StreamingAudioPlayer {
     
     /// Play audio from a URL (local or remote)
     func play(url: URL) {
-        NSLog("StreamingAudioPlayer: Playing URL: %@", url.redacted)
+        Log.audio.info("StreamingAudioPlayer: playing URL: \(url.redacted, privacy: .public)")
         hasReportedFormat = false  // Reset for new track
         _hasQueuedTrack = false     // Clear any previous queue state
         bpmDetector.reset()         // Reset BPM for new track
@@ -296,11 +296,11 @@ class StreamingAudioPlayer {
     /// Seek to a specific time
     /// Note: AudioEngine is responsible for clamping to a safe range before calling this method
     func seek(to time: TimeInterval) {
-        NSLog("StreamingAudioPlayer: Seeking to %.2f (duration: %.2f, state: %@)", time, duration, String(describing: state))
+        Log.audio.info("StreamingAudioPlayer: seeking to \(time, format: .fixed(precision: 2)) (duration: \(self.duration, format: .fixed(precision: 2)), state: \(String(describing: self.state), privacy: .public))")
         
         // Guard against seeking when player is in a bad state
         guard state != .error else {
-            NSLog("StreamingAudioPlayer: Cannot seek - player is in error state")
+            Log.audio.warning("StreamingAudioPlayer: cannot seek — player is in error state")
             return
         }
         
@@ -320,14 +320,14 @@ class StreamingAudioPlayer {
     /// Queue a URL for gapless playback after current track
     /// Uses AudioStreaming's built-in queue API
     func queue(url: URL) {
-        NSLog("StreamingAudioPlayer: Queueing URL for gapless: %@", url.redacted)
+        Log.audio.info("StreamingAudioPlayer: queueing URL for gapless: \(url.redacted, privacy: .public)")
         player.queue(url: url)
         _hasQueuedTrack = true
     }
     
     /// Clear all queued tracks (e.g., when playlist changes or Sweet Fades takes over)
     func clearQueue() {
-        NSLog("StreamingAudioPlayer: Clearing queue")
+        Log.audio.info("StreamingAudioPlayer: clearing queue")
         // AudioStreaming clears queue on stop, but we may be playing
         // The queue is cleared when the current track finishes naturally
         _hasQueuedTrack = false
@@ -340,7 +340,7 @@ class StreamingAudioPlayer {
     
     /// Attempt to recover from error state by reloading the current URL
     func attemptRecovery(with url: URL) {
-        NSLog("StreamingAudioPlayer: Attempting recovery with URL: %@", url.redacted)
+        Log.audio.warning("StreamingAudioPlayer: attempting recovery with URL: \(url.redacted, privacy: .public)")
         stop()
         play(url: url)
     }
@@ -723,22 +723,22 @@ class StreamingAudioPlayer {
 
 extension StreamingAudioPlayer: AudioPlayerDelegate {
     func audioPlayerDidStartPlaying(player: AudioPlayer, with entryId: AudioEntryId) {
-        NSLog("StreamingAudioPlayer: Started playing entry: %@", entryId.id)
+        Log.audio.info("StreamingAudioPlayer: started playing entry: \(entryId.id, privacy: .public)")
         hasReportedFormat = false  // Reset for new track (including gapless queue transitions)
         delegate?.streamingPlayerDidChangeState(.playing)
     }
     
     func audioPlayerDidFinishBuffering(player: AudioPlayer, with entryId: AudioEntryId) {
-        NSLog("StreamingAudioPlayer: Finished buffering entry: %@", entryId.id)
+        Log.audio.info("StreamingAudioPlayer: finished buffering entry: \(entryId.id, privacy: .public)")
     }
     
     func audioPlayerStateChanged(player: AudioPlayer, with newState: AudioPlayerState, previous: AudioPlayerState) {
-        NSLog("StreamingAudioPlayer: State changed from %@ to %@", String(describing: previous), String(describing: newState))
+        Log.audio.info("StreamingAudioPlayer: state changed from \(String(describing: previous), privacy: .public) to \(String(describing: newState), privacy: .public)")
         delegate?.streamingPlayerDidChangeState(newState)
     }
     
     func audioPlayerDidFinishPlaying(player: AudioPlayer, entryId: AudioEntryId, stopReason: AudioPlayerStopReason, progress: Double, duration: Double) {
-        NSLog("StreamingAudioPlayer: Finished playing entry: %@, reason: %@", entryId.id, String(describing: stopReason))
+        Log.audio.info("StreamingAudioPlayer: finished playing entry: \(entryId.id, privacy: .public), reason: \(String(describing: stopReason), privacy: .public)")
         
         // Notify on natural completion (.eof = queue empty, .none = gapless transition)
         // Do not notify on .userAction (skip/stop) or .error
@@ -750,16 +750,16 @@ extension StreamingAudioPlayer: AudioPlayerDelegate {
     }
     
     func audioPlayerUnexpectedError(player: AudioPlayer, error: AudioPlayerError) {
-        NSLog("StreamingAudioPlayer: Unexpected error: %@", String(describing: error))
+        Log.audio.error("StreamingAudioPlayer: unexpected error: \(String(describing: error), privacy: .public)")
         delegate?.streamingPlayerDidEncounterError(error)
     }
     
     func audioPlayerDidCancel(player: AudioPlayer, queuedItems: [AudioEntryId]) {
-        NSLog("StreamingAudioPlayer: Cancelled with %d queued items", queuedItems.count)
+        Log.audio.info("StreamingAudioPlayer: cancelled with \(queuedItems.count) queued items")
     }
     
     func audioPlayerDidReadMetadata(player: AudioPlayer, metadata: [String: String]) {
-        NSLog("StreamingAudioPlayer: Read metadata: %@", metadata.description)
+        Log.audio.info("StreamingAudioPlayer: read metadata: \(metadata.description, privacy: .public)")
         
         // Forward metadata to delegate (for ICY stream info like current song)
         DispatchQueue.main.async { [weak self] in
