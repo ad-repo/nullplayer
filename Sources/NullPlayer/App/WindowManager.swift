@@ -523,9 +523,11 @@ class WindowManager {
     
     func togglePlaylist() {
         if let controller = playlistWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
+            let closingFrame = controller.window?.frame ?? .zero
             controller.window?.orderOut(nil)
-            slideUpWindowsBelow(closingFrame: closingFrame)
+            if closingFrame != .zero {
+                slideUpWindowsBelow(closingFrame: closingFrame)
+            }
         } else {
             showPlaylist()
         }
@@ -570,9 +572,11 @@ class WindowManager {
     
     func toggleEqualizer() {
         if let controller = equalizerWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
+            let closingFrame = controller.window?.frame ?? .zero
             controller.window?.orderOut(nil)
-            slideUpWindowsBelow(closingFrame: closingFrame)
+            if closingFrame != .zero {
+                slideUpWindowsBelow(closingFrame: closingFrame)
+            }
         } else {
             showEqualizer()
         }
@@ -1436,11 +1440,13 @@ class WindowManager {
     
     func toggleSpectrum() {
         if let controller = spectrumWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
+            let closingFrame = controller.window?.frame ?? .zero
             // Stop rendering before hiding to save CPU (orderOut doesn't trigger windowWillClose)
             controller.stopRenderingForHide()
             controller.window?.orderOut(nil)
-            slideUpWindowsBelow(closingFrame: closingFrame)
+            if closingFrame != .zero {
+                slideUpWindowsBelow(closingFrame: closingFrame)
+            }
         } else {
             showSpectrum()
         }
@@ -1506,10 +1512,12 @@ class WindowManager {
 
     func toggleWaveform() {
         if let controller = waveformWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
+            let closingFrame = controller.window?.frame ?? .zero
             controller.stopLoadingForHide()
             controller.window?.orderOut(nil)
-            slideUpWindowsBelow(closingFrame: closingFrame)
+            if closingFrame != .zero {
+                slideUpWindowsBelow(closingFrame: closingFrame)
+            }
         } else {
             showWaveform()
         }
