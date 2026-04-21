@@ -244,8 +244,19 @@ class ModernLibraryBrowserView: NSView {
     private var visibleAlbumColumnIds: [String] = ModernBrowserColumn.defaultAlbumColumnIds { didSet { saveVisibleColumns() } }
     private var visibleArtistColumnIds: [String] = ModernBrowserColumn.defaultArtistColumnIds { didSet { saveVisibleColumns() } }
     
-    // Display items
-    private var displayItems: [ModernDisplayItem] = []
+    // Display items (with formatted-value cache invalidation via setter)
+    private var _displayItems: [ModernDisplayItem] = []
+    private var displayItems: [ModernDisplayItem] {
+        get { _displayItems }
+        set {
+            _displayItems = newValue
+            formattedValueCache.removeAll(keepingCapacity: true)
+        }
+    }
+    /// Cache of formatted cell values to avoid re-formatting during scroll.
+    /// Keyed by item.id then column.id. Invalidated when displayItems changes
+    /// and whenever external rating/metadata mutations occur.
+    private var formattedValueCache: [String: [String: String]] = [:]
     
     // Expanded state
     private var expandedArtists: Set<String> = []
@@ -1851,7 +1862,19 @@ class ModernLibraryBrowserView: NSView {
         var x = rect.minX + indent + 4 - horizontalScrollOffset
         for column in columns {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns)
-            let value = item.columnValue(for: column)
+            // Performance: cache formatted values to avoid expensive re-formatting
+            // (duration/date/size formatters) on every scroll redraw.
+            let value: String
+            if let cached = formattedValueCache[item.id]?[column.id] {
+                value = cached
+            } else {
+                let formatted = item.columnValue(for: column)
+                if formattedValueCache[item.id] == nil {
+                    formattedValueCache[item.id] = [:]
+                }
+                formattedValueCache[item.id]?[column.id] = formatted
+                value = formatted
+            }
             let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
                 (isInternetRadioItem(item) && column.id == "rating")
             
@@ -7192,6 +7215,9 @@ class ModernLibraryBrowserView: NSView {
         guard let albumId = sender.representedObject as? String else { return }
         let rating = sender.tag
         MediaLibrary.shared.setAlbumRating(albumId: albumId, rating: rating >= 0 ? rating : nil)
+        // Rating change is external to displayItems; invalidate the formatted cache
+        // so cells recompute rating text on next draw.
+        formattedValueCache.removeAll(keepingCapacity: true)
         needsDisplay = true
     }
 
@@ -7199,6 +7225,7 @@ class ModernLibraryBrowserView: NSView {
         guard let artistId = sender.representedObject as? String else { return }
         let rating = sender.tag
         MediaLibrary.shared.setArtistRating(artistId: artistId, rating: rating >= 0 ? rating : nil)
+        formattedValueCache.removeAll(keepingCapacity: true)
         needsDisplay = true
     }
     
