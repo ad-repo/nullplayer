@@ -593,7 +593,6 @@ struct PlexStream: Codable, Equatable, Identifiable {
         
         // Add language if available
         if let lang = language ?? languageCode {
-            let locale = Locale(identifier: lang)
             if let languageName = Locale.current.localizedString(forLanguageCode: lang) {
                 parts.append(languageName)
             } else {

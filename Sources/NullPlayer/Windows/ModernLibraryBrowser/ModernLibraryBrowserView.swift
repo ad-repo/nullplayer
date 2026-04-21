@@ -1637,20 +1637,17 @@ class ModernLibraryBrowserView: NSView {
         }
         
         let headerColumns = headerColumnsForCurrentContent()
-        
+
         // Draw column headers
-        var contentListY = listAreaY
         if let columns = headerColumns {
             let headerY = listAreaY + listAreaHeight - columnHeaderHeight
             let headerRect = NSRect(x: fullListRect.minX, y: headerY,
                                     width: fullListRect.width, height: columnHeaderHeight)
             drawColumnHeaders(in: context, rect: headerRect, columns: columns, skin: skin)
-            contentListY = listAreaY
         }
-        
+
         // Content area
         let contentHeight = listAreaHeight - (headerColumns != nil ? columnHeaderHeight : 0)
-        let contentTopY = headerColumns != nil ? (listAreaY + listAreaHeight - columnHeaderHeight) : (listAreaY + listAreaHeight)
         let listRect = NSRect(x: fullListRect.minX, y: listAreaY,
                               width: fullListRect.width, height: contentHeight)
         
@@ -7047,7 +7044,6 @@ class ModernLibraryBrowserView: NSView {
 
     private func buildRateSubmenuForLocalAlbum(albumId: String) -> NSMenu {
         let menu = NSMenu(title: "Rate")
-        let current = MediaLibrary.shared.albumRating(for: albumId)
         for stars in 1...5 {
             let rating = stars * 2
             let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)

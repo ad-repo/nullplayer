@@ -4339,8 +4339,7 @@ class PlexBrowserView: NSView {
         
         let colorIndex = Int(fmod(t * 0.5, CGFloat(glowColors.count)))
         let nextIndex = (colorIndex + 1) % glowColors.count
-        let blend = fmod(t * 0.5, 1.0)
-        
+
         // Multiple glow passes
         for pass in 0..<3 {
             let glowSize = CGFloat(pass + 1) * 3 * intensity * (1 + bass * 0.5)
