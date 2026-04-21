@@ -519,7 +519,7 @@ class MediaLibrary {
         setupVolumeMonitoring()
 
         // Trigger backfill if v2→v3 migration ran and track_artists are not yet populated
-        if !UserDefaults.standard.bool(forKey: "trackArtistsBackfillComplete") {
+        if !UserDefaults.standard.bool(forKey: .trackArtistsBackfillComplete) {
             store.backfillTrackArtistsIfNeeded {
                 self.loadLibrary()
                 NotificationCenter.default.post(name: MediaLibrary.libraryDidChangeNotification, object: nil)

@@ -38,8 +38,8 @@ class ModernMainWindowView: NSView {
     /// Main window visualization mode (persisted)
     private var mainVisMode: MainWindowVisMode = .spectrum {
         didSet {
-            UserDefaults.standard.set(mainVisMode.rawValue, forKey: "modernMainWindowVisMode")
-            UserDefaults.standard.set(mainVisMode.rawValue, forKey: "mainWindowVisMode")
+            UserDefaults.standard.set(mainVisMode.rawValue, forKey: .modernMainWindowVisMode)
+            UserDefaults.standard.set(mainVisMode.rawValue, forKey: .mainWindowVisMode)
             updateMetalOverlay()
         }
     }
@@ -1095,17 +1095,17 @@ class ModernMainWindowView: NSView {
                 }
 
                 // Load mode-specific settings from main-window-specific keys
-                if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+                if let savedStyle = UserDefaults.standard.string(forKey: .mainWindowFlameStyle),
                    let style = FlameStyle(rawValue: savedStyle) { overlay.flameStyle = style }
-                if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+                if let savedIntensity = UserDefaults.standard.string(forKey: .mainWindowFlameIntensity),
                    let intensity = FlameIntensity(rawValue: savedIntensity) { overlay.flameIntensity = intensity }
-                if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle"),
+                if let savedStyle = UserDefaults.standard.string(forKey: .mainWindowLightningStyle),
                    let style = LightningStyle(rawValue: savedStyle) { overlay.lightningStyle = style }
-                if let savedScheme = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme"),
+                if let savedScheme = UserDefaults.standard.string(forKey: .mainWindowMatrixColorScheme),
                    let scheme = MatrixColorScheme(rawValue: savedScheme) { overlay.matrixColorScheme = scheme }
-                if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
+                if let savedIntensity = UserDefaults.standard.string(forKey: .mainWindowMatrixIntensity),
                    let intensity = MatrixIntensity(rawValue: savedIntensity) { overlay.matrixIntensity = intensity }
-                if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
+                if let savedDecay = UserDefaults.standard.string(forKey: .mainWindowDecayMode),
                    let mode = SpectrumDecayMode(rawValue: savedDecay) { overlay.decayMode = mode }
 
                 addSubview(overlay)
@@ -1131,7 +1131,7 @@ class ModernMainWindowView: NSView {
     }
     
     private func restoreVisMode() {
-        if let savedMode = UserDefaults.standard.string(forKey: "modernMainWindowVisMode"),
+        if let savedMode = UserDefaults.standard.string(forKey: .modernMainWindowVisMode),
            let mode = MainWindowVisMode(rawValue: savedMode) {
             // Validate shader availability before restoring a GPU mode — if the shader file
             // is missing (e.g., not included in DMG), fall back to Spectrum to prevent crashes
@@ -1155,7 +1155,7 @@ class ModernMainWindowView: NSView {
     }
 
     @objc private func mainVisSettingsChanged() {
-        if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
+        if let savedMode = UserDefaults.standard.string(forKey: .mainWindowVisMode),
            let mode = MainWindowVisMode(rawValue: savedMode) {
             if let qualityMode = mode.spectrumQualityMode,
                !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
@@ -1169,17 +1169,17 @@ class ModernMainWindowView: NSView {
             if let qualityMode = mainVisMode.spectrumQualityMode {
                 overlay.qualityMode = qualityMode
             }
-            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+            if let savedStyle = UserDefaults.standard.string(forKey: .mainWindowFlameStyle),
                let style = FlameStyle(rawValue: savedStyle) { overlay.flameStyle = style }
-            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+            if let savedIntensity = UserDefaults.standard.string(forKey: .mainWindowFlameIntensity),
                let intensity = FlameIntensity(rawValue: savedIntensity) { overlay.flameIntensity = intensity }
-            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle"),
+            if let savedStyle = UserDefaults.standard.string(forKey: .mainWindowLightningStyle),
                let style = LightningStyle(rawValue: savedStyle) { overlay.lightningStyle = style }
-            if let savedScheme = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme"),
+            if let savedScheme = UserDefaults.standard.string(forKey: .mainWindowMatrixColorScheme),
                let scheme = MatrixColorScheme(rawValue: savedScheme) { overlay.matrixColorScheme = scheme }
-            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
+            if let savedIntensity = UserDefaults.standard.string(forKey: .mainWindowMatrixIntensity),
                let intensity = MatrixIntensity(rawValue: savedIntensity) { overlay.matrixIntensity = intensity }
-            if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
+            if let savedDecay = UserDefaults.standard.string(forKey: .mainWindowDecayMode),
                let mode = SpectrumDecayMode(rawValue: savedDecay) { overlay.decayMode = mode }
             if mainVisMode == .visClassicExact {
                 let enabled = VisClassicBridge.transparentBgDefault(for: .mainWindow)

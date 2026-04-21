@@ -325,19 +325,19 @@ class PlexBrowserView: NSView {
     /// Save column sort to UserDefaults
     private func saveColumnSort() {
         if let id = columnSortId {
-            UserDefaults.standard.set(id, forKey: "BrowserColumnSortId")
-            UserDefaults.standard.set(columnSortAscending, forKey: "BrowserColumnSortAscending")
+            UserDefaults.standard.set(id, forKey: .browserColumnSortId)
+            UserDefaults.standard.set(columnSortAscending, forKey: .browserColumnSortAscending)
         } else {
-            UserDefaults.standard.removeObject(forKey: "BrowserColumnSortId")
+            UserDefaults.standard.removeObject(forKey: .browserColumnSortId)
         }
     }
     
     /// Load column sort from UserDefaults
     private func loadColumnSort() {
-        columnSortId = UserDefaults.standard.string(forKey: "BrowserColumnSortId")
-        columnSortAscending = UserDefaults.standard.bool(forKey: "BrowserColumnSortAscending")
+        columnSortId = UserDefaults.standard.string(forKey: .browserColumnSortId)
+        columnSortAscending = UserDefaults.standard.bool(forKey: .browserColumnSortAscending)
         // Default to true if not set
-        if UserDefaults.standard.object(forKey: "BrowserColumnSortAscending") == nil {
+        if UserDefaults.standard.object(forKey: .browserColumnSortAscending) == nil {
             columnSortAscending = true
         }
     }
@@ -444,12 +444,12 @@ class PlexBrowserView: NSView {
     
     /// Save column widths to UserDefaults
     private func saveColumnWidths() {
-        UserDefaults.standard.set(columnWidths, forKey: "BrowserColumnWidths")
+        UserDefaults.standard.set(columnWidths, forKey: .browserColumnWidths)
     }
     
     /// Load column widths from UserDefaults
     private func loadColumnWidths() {
-        if let saved = UserDefaults.standard.dictionary(forKey: "BrowserColumnWidths") as? [String: CGFloat] {
+        if let saved = UserDefaults.standard.dictionary(forKey: .browserColumnWidths) as? [String: CGFloat] {
             columnWidths = saved
         }
     }
@@ -1065,13 +1065,13 @@ class PlexBrowserView: NSView {
         isArtOnlyMode = false
         
         // Load saved visualizer preferences — default effect takes priority over last-used
-        let defaultEffectKey = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
-        let lastUsedKey = UserDefaults.standard.string(forKey: "browserVisEffect")
+        let defaultEffectKey = UserDefaults.standard.string(forKey: .browserVisDefaultEffect)
+        let lastUsedKey = UserDefaults.standard.string(forKey: .browserVisEffect)
         if let raw = defaultEffectKey ?? lastUsedKey, let effect = VisEffect(rawValue: raw) {
             currentVisEffect = effect
         }
-        if UserDefaults.standard.object(forKey: "browserVisIntensity") != nil {
-            visEffectIntensity = CGFloat(UserDefaults.standard.double(forKey: "browserVisIntensity"))
+        if UserDefaults.standard.object(forKey: .browserVisIntensity) != nil {
+            visEffectIntensity = CGFloat(UserDefaults.standard.double(forKey: .browserVisIntensity))
         }
         
         // Observe Plex manager changes
@@ -6902,7 +6902,7 @@ class PlexBrowserView: NSView {
     }
     
     @objc private func menuSetDefaultEffect() {
-        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: "browserVisDefaultEffect")
+        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: .browserVisDefaultEffect)
     }
 
     @objc private func menuNextEffect() {
@@ -6934,7 +6934,7 @@ class PlexBrowserView: NSView {
     /// Appends grouped effect submenus to `menu`. Each item is checked when it
     /// matches `currentVisEffect`; bullet-marked when it matches the saved default.
     private func buildVisEffectGroupSubmenus(into menu: NSMenu) {
-        let savedDefault = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        let savedDefault = UserDefaults.standard.string(forKey: .browserVisDefaultEffect)
         for group in VisEffect.groups {
             let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
             let sub = NSMenu(title: group.title)
@@ -6968,7 +6968,7 @@ class PlexBrowserView: NSView {
         if let effect = sender.representedObject as? VisEffect {
             currentVisEffect = effect
             visMode = .single  // Switch to single mode when selecting an effect
-            UserDefaults.standard.set(effect.rawValue, forKey: "browserVisEffect")
+            UserDefaults.standard.set(effect.rawValue, forKey: .browserVisEffect)
         }
     }
     
@@ -6992,7 +6992,7 @@ class PlexBrowserView: NSView {
     
     @objc private func selectVisIntensity(_ sender: NSMenuItem) {
         visEffectIntensity = CGFloat(sender.tag) / 100.0
-        UserDefaults.standard.set(visEffectIntensity, forKey: "browserVisIntensity")
+        UserDefaults.standard.set(visEffectIntensity, forKey: .browserVisIntensity)
     }
     
     @objc private func turnOffVisualization() {

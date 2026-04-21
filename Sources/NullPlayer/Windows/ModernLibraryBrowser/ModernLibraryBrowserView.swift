@@ -624,13 +624,13 @@ class ModernLibraryBrowserView: NSView {
         isArtOnlyMode = false
         
         // Load saved visualizer preferences — default effect takes priority over last-used
-        let defaultEffectKey = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
-        let lastUsedKey = UserDefaults.standard.string(forKey: "browserVisEffect")
+        let defaultEffectKey = UserDefaults.standard.string(forKey: .browserVisDefaultEffect)
+        let lastUsedKey = UserDefaults.standard.string(forKey: .browserVisEffect)
         if let raw = defaultEffectKey ?? lastUsedKey, let effect = VisEffect(rawValue: raw) {
             currentVisEffect = effect
         }
-        if UserDefaults.standard.object(forKey: "browserVisIntensity") != nil {
-            visEffectIntensity = CGFloat(UserDefaults.standard.double(forKey: "browserVisIntensity"))
+        if UserDefaults.standard.object(forKey: .browserVisIntensity) != nil {
+            visEffectIntensity = CGFloat(UserDefaults.standard.double(forKey: .browserVisIntensity))
         }
         
         // Register notifications
@@ -2466,46 +2466,46 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func saveColumnWidths() {
-        UserDefaults.standard.set(columnWidths, forKey: "BrowserColumnWidths")
+        UserDefaults.standard.set(columnWidths, forKey: .browserColumnWidths)
     }
     
     private func loadColumnWidths() {
-        if let saved = UserDefaults.standard.dictionary(forKey: "BrowserColumnWidths") as? [String: CGFloat] {
+        if let saved = UserDefaults.standard.dictionary(forKey: .browserColumnWidths) as? [String: CGFloat] {
             columnWidths = saved
         }
     }
     
     private func saveColumnSort() {
         if let id = columnSortId {
-            UserDefaults.standard.set(id, forKey: "BrowserColumnSortId")
-            UserDefaults.standard.set(columnSortAscending, forKey: "BrowserColumnSortAscending")
+            UserDefaults.standard.set(id, forKey: .browserColumnSortId)
+            UserDefaults.standard.set(columnSortAscending, forKey: .browserColumnSortAscending)
         } else {
-            UserDefaults.standard.removeObject(forKey: "BrowserColumnSortId")
+            UserDefaults.standard.removeObject(forKey: .browserColumnSortId)
         }
     }
     
     private func loadColumnSort() {
-        columnSortId = UserDefaults.standard.string(forKey: "BrowserColumnSortId")
-        columnSortAscending = UserDefaults.standard.bool(forKey: "BrowserColumnSortAscending")
-        if UserDefaults.standard.object(forKey: "BrowserColumnSortAscending") == nil {
+        columnSortId = UserDefaults.standard.string(forKey: .browserColumnSortId)
+        columnSortAscending = UserDefaults.standard.bool(forKey: .browserColumnSortAscending)
+        if UserDefaults.standard.object(forKey: .browserColumnSortAscending) == nil {
             columnSortAscending = true
         }
     }
     
     private func saveVisibleColumns() {
-        UserDefaults.standard.set(visibleTrackColumnIds, forKey: "BrowserVisibleTrackColumns")
-        UserDefaults.standard.set(visibleAlbumColumnIds, forKey: "BrowserVisibleAlbumColumns")
-        UserDefaults.standard.set(visibleArtistColumnIds, forKey: "BrowserVisibleArtistColumns")
+        UserDefaults.standard.set(visibleTrackColumnIds, forKey: .browserVisibleTrackColumns)
+        UserDefaults.standard.set(visibleAlbumColumnIds, forKey: .browserVisibleAlbumColumns)
+        UserDefaults.standard.set(visibleArtistColumnIds, forKey: .browserVisibleArtistColumns)
     }
     
     private func loadVisibleColumns() {
-        if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleTrackColumns") {
+        if let saved = UserDefaults.standard.stringArray(forKey: .browserVisibleTrackColumns) {
             visibleTrackColumnIds = saved
         }
-        if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleAlbumColumns") {
+        if let saved = UserDefaults.standard.stringArray(forKey: .browserVisibleAlbumColumns) {
             visibleAlbumColumnIds = saved
         }
-        if let saved = UserDefaults.standard.stringArray(forKey: "BrowserVisibleArtistColumns") {
+        if let saved = UserDefaults.standard.stringArray(forKey: .browserVisibleArtistColumns) {
             visibleArtistColumnIds = saved
         }
     }
@@ -4194,7 +4194,7 @@ class ModernLibraryBrowserView: NSView {
     /// Appends grouped effect submenus to `menu`. Each item is checked when it
     /// matches `currentVisEffect`; bullet-marked when it matches the saved default.
     private func buildVisEffectGroupSubmenus(into menu: NSMenu) {
-        let savedDefault = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
+        let savedDefault = UserDefaults.standard.string(forKey: .browserVisDefaultEffect)
         for group in VisEffect.groups {
             let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
             let sub = NSMenu(title: group.title)
@@ -4948,11 +4948,11 @@ class ModernLibraryBrowserView: NSView {
               let effect = VisEffect(rawValue: raw) else { return }
         visMode = .single
         currentVisEffect = effect
-        UserDefaults.standard.set(effect.rawValue, forKey: "browserVisEffect")
+        UserDefaults.standard.set(effect.rawValue, forKey: .browserVisEffect)
     }
 
     @objc private func menuSetDefaultEffect() {
-        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: "browserVisDefaultEffect")
+        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: .browserVisDefaultEffect)
     }
     @objc private func enableArtVisualization() { isVisualizingArt = true }
     @objc private func exitArtView() { isArtOnlyMode = false }

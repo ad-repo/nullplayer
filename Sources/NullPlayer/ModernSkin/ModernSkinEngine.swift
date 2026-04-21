@@ -237,8 +237,8 @@ class ModernSkinEngine {
                    !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
                     NSLog("ModernSkinEngine: Ignoring unsupported mainWindowMode '%@' (shader unavailable)", modeRaw)
                 } else {
-                    defaults.set(mode.rawValue, forKey: "mainWindowVisMode")
-                    defaults.set(mode.rawValue, forKey: "modernMainWindowVisMode")
+                    defaults.set(mode.rawValue, forKey: .mainWindowVisMode)
+                    defaults.set(mode.rawValue, forKey: .modernMainWindowVisMode)
                     mainVisChanged = true
                 }
             } else {
@@ -249,7 +249,7 @@ class ModernSkinEngine {
         if let modeRaw = config?.spectrumWindowMode {
             if let mode = SpectrumQualityMode(rawValue: modeRaw) {
                 if SpectrumAnalyzerView.isShaderAvailable(for: mode) {
-                    defaults.set(mode.rawValue, forKey: "spectrumQualityMode")
+                    defaults.set(mode.rawValue, forKey: .spectrumQualityMode)
                     spectrumSettingsChanged = true
                 } else {
                     NSLog("ModernSkinEngine: Ignoring unsupported spectrumWindowMode '%@' (shader unavailable)", modeRaw)
@@ -307,7 +307,7 @@ class ModernSkinEngine {
         if let fire = config?.fire {
             if let styleRaw = fire.mainWindowStyle,
                let style = FlameStyle(rawValue: styleRaw) {
-                defaults.set(style.rawValue, forKey: "mainWindowFlameStyle")
+                defaults.set(style.rawValue, forKey: .mainWindowFlameStyle)
                 mainVisChanged = true
             } else if let styleRaw = fire.mainWindowStyle {
                 NSLog("ModernSkinEngine: Ignoring unknown fire.mainWindowStyle '%@'", styleRaw)
@@ -315,7 +315,7 @@ class ModernSkinEngine {
 
             if let intensityRaw = fire.mainWindowIntensity,
                let intensity = FlameIntensity(rawValue: intensityRaw) {
-                defaults.set(intensity.rawValue, forKey: "mainWindowFlameIntensity")
+                defaults.set(intensity.rawValue, forKey: .mainWindowFlameIntensity)
                 mainVisChanged = true
             } else if let intensityRaw = fire.mainWindowIntensity {
                 NSLog("ModernSkinEngine: Ignoring unknown fire.mainWindowIntensity '%@'", intensityRaw)
@@ -323,7 +323,7 @@ class ModernSkinEngine {
 
             if let styleRaw = fire.spectrumWindowStyle,
                let style = FlameStyle(rawValue: styleRaw) {
-                defaults.set(style.rawValue, forKey: "flameStyle")
+                defaults.set(style.rawValue, forKey: .flameStyle)
                 spectrumSettingsChanged = true
             } else if let styleRaw = fire.spectrumWindowStyle {
                 NSLog("ModernSkinEngine: Ignoring unknown fire.spectrumWindowStyle '%@'", styleRaw)
@@ -331,7 +331,7 @@ class ModernSkinEngine {
 
             if let intensityRaw = fire.spectrumWindowIntensity,
                let intensity = FlameIntensity(rawValue: intensityRaw) {
-                defaults.set(intensity.rawValue, forKey: "flameIntensity")
+                defaults.set(intensity.rawValue, forKey: .flameIntensity)
                 spectrumSettingsChanged = true
             } else if let intensityRaw = fire.spectrumWindowIntensity {
                 NSLog("ModernSkinEngine: Ignoring unknown fire.spectrumWindowIntensity '%@'", intensityRaw)
@@ -341,7 +341,7 @@ class ModernSkinEngine {
         if let lightning = config?.lightning {
             if let styleRaw = lightning.mainWindowStyle,
                let style = LightningStyle(rawValue: styleRaw) {
-                defaults.set(style.rawValue, forKey: "mainWindowLightningStyle")
+                defaults.set(style.rawValue, forKey: .mainWindowLightningStyle)
                 mainVisChanged = true
             } else if let styleRaw = lightning.mainWindowStyle {
                 NSLog("ModernSkinEngine: Ignoring unknown lightning.mainWindowStyle '%@'", styleRaw)
@@ -349,7 +349,7 @@ class ModernSkinEngine {
 
             if let styleRaw = lightning.spectrumWindowStyle,
                let style = LightningStyle(rawValue: styleRaw) {
-                defaults.set(style.rawValue, forKey: "lightningStyle")
+                defaults.set(style.rawValue, forKey: .lightningStyle)
                 spectrumSettingsChanged = true
             } else if let styleRaw = lightning.spectrumWindowStyle {
                 NSLog("ModernSkinEngine: Ignoring unknown lightning.spectrumWindowStyle '%@'", styleRaw)
@@ -359,7 +359,7 @@ class ModernSkinEngine {
         if let matrix = config?.matrix {
             if let schemeRaw = matrix.mainWindowColorScheme,
                let scheme = MatrixColorScheme(rawValue: schemeRaw) {
-                defaults.set(scheme.rawValue, forKey: "mainWindowMatrixColorScheme")
+                defaults.set(scheme.rawValue, forKey: .mainWindowMatrixColorScheme)
                 mainVisChanged = true
             } else if let schemeRaw = matrix.mainWindowColorScheme {
                 NSLog("ModernSkinEngine: Ignoring unknown matrix.mainWindowColorScheme '%@'", schemeRaw)
@@ -367,7 +367,7 @@ class ModernSkinEngine {
 
             if let intensityRaw = matrix.mainWindowIntensity,
                let intensity = MatrixIntensity(rawValue: intensityRaw) {
-                defaults.set(intensity.rawValue, forKey: "mainWindowMatrixIntensity")
+                defaults.set(intensity.rawValue, forKey: .mainWindowMatrixIntensity)
                 mainVisChanged = true
             } else if let intensityRaw = matrix.mainWindowIntensity {
                 NSLog("ModernSkinEngine: Ignoring unknown matrix.mainWindowIntensity '%@'", intensityRaw)
@@ -375,7 +375,7 @@ class ModernSkinEngine {
 
             if let schemeRaw = matrix.spectrumWindowColorScheme,
                let scheme = MatrixColorScheme(rawValue: schemeRaw) {
-                defaults.set(scheme.rawValue, forKey: "matrixColorScheme")
+                defaults.set(scheme.rawValue, forKey: .matrixColorScheme)
                 spectrumSettingsChanged = true
             } else if let schemeRaw = matrix.spectrumWindowColorScheme {
                 NSLog("ModernSkinEngine: Ignoring unknown matrix.spectrumWindowColorScheme '%@'", schemeRaw)
@@ -383,7 +383,7 @@ class ModernSkinEngine {
 
             if let intensityRaw = matrix.spectrumWindowIntensity,
                let intensity = MatrixIntensity(rawValue: intensityRaw) {
-                defaults.set(intensity.rawValue, forKey: "matrixIntensity")
+                defaults.set(intensity.rawValue, forKey: .matrixIntensity)
                 spectrumSettingsChanged = true
             } else if let intensityRaw = matrix.spectrumWindowIntensity {
                 NSLog("ModernSkinEngine: Ignoring unknown matrix.spectrumWindowIntensity '%@'", intensityRaw)

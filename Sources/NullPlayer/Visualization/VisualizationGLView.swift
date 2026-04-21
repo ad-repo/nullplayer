@@ -59,7 +59,7 @@ class VisualizationGLView: NSOpenGLView {
     /// User-configurable via context menu, persisted in UserDefaults
     private(set) var normalBeatSensitivity: Float = 1.0 {
         didSet {
-            UserDefaults.standard.set(normalBeatSensitivity, forKey: "projectMBeatSensitivity")
+            UserDefaults.standard.set(normalBeatSensitivity, forKey: .projectMBeatSensitivity)
         }
     }
     
@@ -95,7 +95,7 @@ class VisualizationGLView: NSOpenGLView {
     /// Saved to UserDefaults for persistence
     private(set) var isLowPowerMode: Bool = true {
         didSet {
-            UserDefaults.standard.set(isLowPowerMode, forKey: "projectMLowPowerMode")
+            UserDefaults.standard.set(isLowPowerMode, forKey: .projectMLowPowerMode)
         }
     }
     
@@ -104,7 +104,7 @@ class VisualizationGLView: NSOpenGLView {
     /// Range: 0.5 to 3.0, default 1.0 (unity gain)
     private(set) var pcmGain: Float = 1.0 {
         didSet {
-            UserDefaults.standard.set(pcmGain, forKey: "projectMPCMGain")
+            UserDefaults.standard.set(pcmGain, forKey: .projectMPCMGain)
         }
     }
     
@@ -135,24 +135,24 @@ class VisualizationGLView: NSOpenGLView {
         wantsBestResolutionOpenGLSurface = true
 
         // Load saved engine type preference (defaults to ProjectM)
-        if let savedType = UserDefaults.standard.string(forKey: "visualizationEngineType"),
+        if let savedType = UserDefaults.standard.string(forKey: .visualizationEngineType),
            let type = VisualizationType(rawValue: savedType) {
             currentEngineType = type
         }
         
         // Load saved performance mode preference (defaults to low power / 30fps)
-        if UserDefaults.standard.object(forKey: "projectMLowPowerMode") != nil {
-            isLowPowerMode = UserDefaults.standard.bool(forKey: "projectMLowPowerMode")
+        if UserDefaults.standard.object(forKey: .projectMLowPowerMode) != nil {
+            isLowPowerMode = UserDefaults.standard.bool(forKey: .projectMLowPowerMode)
         }
         
         // Load saved PCM gain preference (defaults to 1.0 / unity gain)
-        if UserDefaults.standard.object(forKey: "projectMPCMGain") != nil {
-            pcmGain = UserDefaults.standard.float(forKey: "projectMPCMGain")
+        if UserDefaults.standard.object(forKey: .projectMPCMGain) != nil {
+            pcmGain = UserDefaults.standard.float(forKey: .projectMPCMGain)
         }
         
         // Load saved beat sensitivity preference (defaults to 1.0 / normal)
-        if UserDefaults.standard.object(forKey: "projectMBeatSensitivity") != nil {
-            normalBeatSensitivity = UserDefaults.standard.float(forKey: "projectMBeatSensitivity")
+        if UserDefaults.standard.object(forKey: .projectMBeatSensitivity) != nil {
+            normalBeatSensitivity = UserDefaults.standard.float(forKey: .projectMBeatSensitivity)
         }
 
         // Set up OpenGL context
@@ -168,24 +168,24 @@ class VisualizationGLView: NSOpenGLView {
         super.init(coder: coder)
 
         // Load saved engine type preference (defaults to ProjectM)
-        if let savedType = UserDefaults.standard.string(forKey: "visualizationEngineType"),
+        if let savedType = UserDefaults.standard.string(forKey: .visualizationEngineType),
            let type = VisualizationType(rawValue: savedType) {
             currentEngineType = type
         }
 
         // Load saved performance mode preference (defaults to low power / 30fps)
-        if UserDefaults.standard.object(forKey: "projectMLowPowerMode") != nil {
-            isLowPowerMode = UserDefaults.standard.bool(forKey: "projectMLowPowerMode")
+        if UserDefaults.standard.object(forKey: .projectMLowPowerMode) != nil {
+            isLowPowerMode = UserDefaults.standard.bool(forKey: .projectMLowPowerMode)
         }
 
         // Load saved PCM gain preference (defaults to 1.0 / unity gain)
-        if UserDefaults.standard.object(forKey: "projectMPCMGain") != nil {
-            pcmGain = UserDefaults.standard.float(forKey: "projectMPCMGain")
+        if UserDefaults.standard.object(forKey: .projectMPCMGain) != nil {
+            pcmGain = UserDefaults.standard.float(forKey: .projectMPCMGain)
         }
 
         // Load saved beat sensitivity preference (defaults to 1.0 / normal)
-        if UserDefaults.standard.object(forKey: "projectMBeatSensitivity") != nil {
-            normalBeatSensitivity = UserDefaults.standard.float(forKey: "projectMBeatSensitivity")
+        if UserDefaults.standard.object(forKey: .projectMBeatSensitivity) != nil {
+            normalBeatSensitivity = UserDefaults.standard.float(forKey: .projectMBeatSensitivity)
         }
 
         setupOpenGL()
@@ -312,7 +312,7 @@ class VisualizationGLView: NSOpenGLView {
         currentEngineType = type
 
         // Save preference
-        UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
+        UserDefaults.standard.set(type.rawValue, forKey: .visualizationEngineType)
 
         // Mark engine for reinitialization on next render
         engineNeedsSetup = true

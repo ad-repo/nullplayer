@@ -163,7 +163,7 @@ class EQView: NSView {
         // Load Auto EQ state from UserDefaults only if "Remember State" is enabled
         // Otherwise default to off (Auto EQ doesn't persist across restarts)
         if AppStateManager.shared.isEnabled {
-            isAuto = UserDefaults.standard.bool(forKey: "EQAutoEnabled")
+            isAuto = UserDefaults.standard.bool(forKey: .eqAutoEnabled)
         } else {
             isAuto = false
         }
@@ -589,7 +589,7 @@ class EQView: NSView {
             
             // Only persist Auto EQ state if "Remember State" is enabled
             if AppStateManager.shared.isEnabled {
-                UserDefaults.standard.set(isAuto, forKey: "EQAutoEnabled")
+                UserDefaults.standard.set(isAuto, forKey: .eqAutoEnabled)
             }
             
             // If Auto was just enabled, immediately apply genre preset for current track

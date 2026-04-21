@@ -258,7 +258,7 @@ class AudioEngine {
     /// Gapless playback mode - pre-schedules next track for seamless transitions
     var gaplessPlaybackEnabled: Bool = false {
         didSet {
-            UserDefaults.standard.set(gaplessPlaybackEnabled, forKey: "gaplessPlaybackEnabled")
+            UserDefaults.standard.set(gaplessPlaybackEnabled, forKey: .gaplessPlaybackEnabled)
             // If enabling and currently playing, schedule next track
             if gaplessPlaybackEnabled && state == .playing {
                 scheduleNextTrackForGapless()
@@ -270,7 +270,7 @@ class AudioEngine {
     /// Volume normalization - analyzes and normalizes track loudness
     var volumeNormalizationEnabled: Bool = false {
         didSet {
-            UserDefaults.standard.set(volumeNormalizationEnabled, forKey: "volumeNormalizationEnabled")
+            UserDefaults.standard.set(volumeNormalizationEnabled, forKey: .volumeNormalizationEnabled)
             // Recalculate normalization for current track
             if volumeNormalizationEnabled {
                 applyNormalizationGain()
@@ -293,7 +293,7 @@ class AudioEngine {
     /// Sweet Fades (crossfade) enabled - smooth transition between tracks
     var sweetFadeEnabled: Bool = false {
         didSet {
-            UserDefaults.standard.set(sweetFadeEnabled, forKey: "sweetFadeEnabled")
+            UserDefaults.standard.set(sweetFadeEnabled, forKey: .sweetFadeEnabled)
             NSLog("AudioEngine: Sweet Fades %@", sweetFadeEnabled ? "enabled" : "disabled")
             notifyPlaybackOptionsChanged()
         }
@@ -302,7 +302,7 @@ class AudioEngine {
     /// Crossfade duration in seconds (default 5s)
     var sweetFadeDuration: TimeInterval = 5.0 {
         didSet {
-            UserDefaults.standard.set(sweetFadeDuration, forKey: "sweetFadeDuration")
+            UserDefaults.standard.set(sweetFadeDuration, forKey: .sweetFadeDuration)
             NSLog("AudioEngine: Sweet Fades duration set to %.1fs", sweetFadeDuration)
             notifyPlaybackOptionsChanged()
         }
@@ -534,13 +534,13 @@ class AudioEngine {
     // MARK: - Initialization
     
     init() {
-        let modernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+        let modernUIEnabled = UserDefaults.standard.bool(forKey: .modernUIEnabled)
         isModernUIEnabled = modernUIEnabled
         activeEQConfiguration = EQConfiguration.forModernUI(modernUIEnabled)
         eqNode = AVAudioUnitEQ(numberOfBands: activeEQConfiguration.bandCount)
 
         // Initialize cached normalization mode from UserDefaults
-        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
+        if let saved = UserDefaults.standard.string(forKey: .spectrumNormalizationMode),
            let mode = SpectrumNormalizationMode(rawValue: saved) {
             spectrumNormalizationMode = mode
         }
@@ -895,7 +895,7 @@ class AudioEngine {
     }
     
     @objc private func handleSpectrumSettingsChanged() {
-        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
+        if let saved = UserDefaults.standard.string(forKey: .spectrumNormalizationMode),
            let mode = SpectrumNormalizationMode(rawValue: saved) {
             spectrumNormalizationMode = mode
         }
@@ -942,7 +942,7 @@ class AudioEngine {
     }
 
     @objc private func handleModernUIChanged() {
-        isModernUIEnabled = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+        isModernUIEnabled = UserDefaults.standard.bool(forKey: .modernUIEnabled)
     }
 
     // MARK: - Setup
@@ -989,11 +989,11 @@ class AudioEngine {
     
     /// Load audio quality preferences from UserDefaults
     private func loadAudioPreferences() {
-        gaplessPlaybackEnabled = UserDefaults.standard.bool(forKey: "gaplessPlaybackEnabled")
-        volumeNormalizationEnabled = UserDefaults.standard.bool(forKey: "volumeNormalizationEnabled")
-        sweetFadeEnabled = UserDefaults.standard.bool(forKey: "sweetFadeEnabled")
+        gaplessPlaybackEnabled = UserDefaults.standard.bool(forKey: .gaplessPlaybackEnabled)
+        volumeNormalizationEnabled = UserDefaults.standard.bool(forKey: .volumeNormalizationEnabled)
+        sweetFadeEnabled = UserDefaults.standard.bool(forKey: .sweetFadeEnabled)
         // Load sweet fade duration with default of 5.0 seconds
-        let savedDuration = UserDefaults.standard.double(forKey: "sweetFadeDuration")
+        let savedDuration = UserDefaults.standard.double(forKey: .sweetFadeDuration)
         sweetFadeDuration = savedDuration > 0 ? savedDuration : 5.0
     }
     
@@ -1077,7 +1077,7 @@ class AudioEngine {
     
     /// Restore saved output device preference
     private func restoreSavedOutputDevice() {
-        guard let savedDeviceUID = UserDefaults.standard.string(forKey: "selectedOutputDeviceUID") else {
+        guard let savedDeviceUID = UserDefaults.standard.string(forKey: .selectedOutputDeviceUID) else {
             return
         }
         
@@ -4827,11 +4827,11 @@ class AudioEngine {
         // Save device UID for restoration on next launch
         if let deviceID = deviceID,
            let device = AudioOutputManager.shared.outputDevices.first(where: { $0.id == deviceID }) {
-            UserDefaults.standard.set(device.uid, forKey: "selectedOutputDeviceUID")
+            UserDefaults.standard.set(device.uid, forKey: .selectedOutputDeviceUID)
             NSLog("AudioEngine: Saved output device preference: %@ (%@)", device.name, device.uid)
         } else {
             // System default - clear the preference
-            UserDefaults.standard.removeObject(forKey: "selectedOutputDeviceUID")
+            UserDefaults.standard.removeObject(forKey: .selectedOutputDeviceUID)
             NSLog("AudioEngine: Cleared output device preference (using system default)")
         }
         

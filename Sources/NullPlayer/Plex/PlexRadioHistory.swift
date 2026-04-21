@@ -112,11 +112,11 @@ class PlexRadioHistory {
 
     var retentionInterval: PlexRadioHistoryInterval {
         get {
-            let raw = UserDefaults.standard.string(forKey: "plexRadioHistoryInterval") ?? PlexRadioHistoryInterval.oneMonth.rawValue
+            let raw = UserDefaults.standard.string(forKey: .plexRadioHistoryInterval) ?? PlexRadioHistoryInterval.oneMonth.rawValue
             return PlexRadioHistoryInterval(rawValue: raw) ?? .oneMonth
         }
         set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "plexRadioHistoryInterval")
+            UserDefaults.standard.set(newValue.rawValue, forKey: .plexRadioHistoryInterval)
         }
     }
 

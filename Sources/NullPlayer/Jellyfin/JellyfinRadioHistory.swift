@@ -112,11 +112,11 @@ class JellyfinRadioHistory {
 
     var retentionInterval: JellyfinRadioHistoryInterval {
         get {
-            let raw = UserDefaults.standard.string(forKey: "jellyfinRadioHistoryInterval") ?? JellyfinRadioHistoryInterval.oneMonth.rawValue
+            let raw = UserDefaults.standard.string(forKey: .jellyfinRadioHistoryInterval) ?? JellyfinRadioHistoryInterval.oneMonth.rawValue
             return JellyfinRadioHistoryInterval(rawValue: raw) ?? .oneMonth
         }
         set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "jellyfinRadioHistoryInterval")
+            UserDefaults.standard.set(newValue.rawValue, forKey: .jellyfinRadioHistoryInterval)
         }
     }
 

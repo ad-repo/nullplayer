@@ -519,7 +519,7 @@ class AppStateManager {
             
             // EQ settings
             eqEnabled: engine.isEQEnabled(),
-            eqAutoEnabled: UserDefaults.standard.bool(forKey: "EQAutoEnabled"),
+            eqAutoEnabled: UserDefaults.standard.bool(forKey: .eqAutoEnabled),
             eqPreamp: engine.getPreamp(),
             eqBands: (0..<engine.eqConfiguration.bandCount).map { engine.getEQBand($0) },
             
@@ -543,8 +543,8 @@ class AppStateManager {
             
             // v2 fields
             isDoubleSize: wm.isDoubleSize,
-            modernSkinName: UserDefaults.standard.string(forKey: "modernSkinName"),
-            selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
+            modernSkinName: UserDefaults.standard.string(forKey: .modernSkinName),
+            selectedOutputDeviceUID: UserDefaults.standard.string(forKey: .selectedOutputDeviceUID),
             browserBrowseMode: browserBrowseMode,
             savedInModernMode: wm.isRunningModernUI
         )
@@ -668,7 +668,7 @@ class AppStateManager {
         
         // Restore EQ settings
         engine.setEQEnabled(state.eqEnabled)
-        UserDefaults.standard.set(state.eqAutoEnabled, forKey: "EQAutoEnabled")
+        UserDefaults.standard.set(state.eqAutoEnabled, forKey: .eqAutoEnabled)
         engine.setPreamp(state.eqPreamp)
         let restoredBands = remappedEQBands(state.eqBands, for: engine.eqConfiguration)
         for (index, gain) in restoredBands.enumerated() {
@@ -692,14 +692,14 @@ class AppStateManager {
         
         // Restore modern skin name (if saved and modern UI is active)
         if runningModernMode, let modernSkin = state.modernSkinName {
-            UserDefaults.standard.set(modernSkin, forKey: "modernSkinName")
+            UserDefaults.standard.set(modernSkin, forKey: .modernSkinName)
             // ModernSkinEngine.loadPreferredSkin() is called in AppDelegate before state restore,
             // but we set the UserDefaults value here so subsequent launches use it
         }
         
         // Restore audio output device
         if let deviceUID = state.selectedOutputDeviceUID {
-            UserDefaults.standard.set(deviceUID, forKey: "selectedOutputDeviceUID")
+            UserDefaults.standard.set(deviceUID, forKey: .selectedOutputDeviceUID)
         }
         
         // Check if the saved state's UI mode matches the current mode.

@@ -36,7 +36,7 @@ class SubsonicManager {
                     serverClient = SubsonicServerClient(credentials: credentials)
                 }
             }
-            UserDefaults.standard.set(currentServer?.id, forKey: "SubsonicCurrentServerID")
+            UserDefaults.standard.set(currentServer?.id, forKey: .subsonicCurrentServerID)
         }
     }
     
@@ -51,7 +51,7 @@ class SubsonicManager {
     /// Currently selected music folder (nil = all folders)
     private(set) var currentMusicFolder: SubsonicMusicFolder? {
         didSet {
-            UserDefaults.standard.set(currentMusicFolder?.id, forKey: "SubsonicCurrentMusicFolderID")
+            UserDefaults.standard.set(currentMusicFolder?.id, forKey: .subsonicCurrentMusicFolderID)
             NotificationCenter.default.post(name: Self.musicFolderDidChangeNotification, object: self)
         }
     }
@@ -113,7 +113,7 @@ class SubsonicManager {
         NSLog("SubsonicManager: Loaded %d saved servers", servers.count)
         
         // Restore previous server selection
-        if let savedServerID = UserDefaults.standard.string(forKey: "SubsonicCurrentServerID"),
+        if let savedServerID = UserDefaults.standard.string(forKey: .subsonicCurrentServerID),
            let savedServer = servers.first(where: { $0.id == savedServerID }) {
             serverConnectTask = Task {
                 await connectInBackground(to: savedServer)
@@ -276,7 +276,7 @@ class SubsonicManager {
                 self.musicFolders = folders
                 
                 // Auto-select saved folder, or leave nil (all folders)
-                if let savedId = UserDefaults.standard.string(forKey: "SubsonicCurrentMusicFolderID"),
+                if let savedId = UserDefaults.standard.string(forKey: .subsonicCurrentMusicFolderID),
                    let savedFolder = folders.first(where: { $0.id == savedId }) {
                     self.currentMusicFolder = savedFolder
                 } else {
@@ -314,8 +314,8 @@ class SubsonicManager {
         clearCachedContent()
         musicFolders = []
         currentMusicFolder = nil
-        UserDefaults.standard.removeObject(forKey: "SubsonicCurrentServerID")
-        UserDefaults.standard.removeObject(forKey: "SubsonicCurrentMusicFolderID")
+        UserDefaults.standard.removeObject(forKey: .subsonicCurrentServerID)
+        UserDefaults.standard.removeObject(forKey: .subsonicCurrentMusicFolderID)
     }
     
     // MARK: - Library Preloading

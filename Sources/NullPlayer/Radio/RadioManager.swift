@@ -110,8 +110,8 @@ class RadioManager {
     
     /// Whether auto-reconnect is enabled (default: true)
     var autoReconnectEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: "RadioAutoReconnect") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "RadioAutoReconnect") }
+        get { UserDefaults.standard.object(forKey: .radioAutoReconnect) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: .radioAutoReconnect) }
     }
     
     /// Maximum number of reconnect attempts

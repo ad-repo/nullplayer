@@ -112,11 +112,11 @@ class SubsonicRadioHistory {
 
     var retentionInterval: SubsonicRadioHistoryInterval {
         get {
-            let raw = UserDefaults.standard.string(forKey: "subsonicRadioHistoryInterval") ?? SubsonicRadioHistoryInterval.oneMonth.rawValue
+            let raw = UserDefaults.standard.string(forKey: .subsonicRadioHistoryInterval) ?? SubsonicRadioHistoryInterval.oneMonth.rawValue
             return SubsonicRadioHistoryInterval(rawValue: raw) ?? .oneMonth
         }
         set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "subsonicRadioHistoryInterval")
+            UserDefaults.standard.set(newValue.rawValue, forKey: .subsonicRadioHistoryInterval)
         }
     }
 

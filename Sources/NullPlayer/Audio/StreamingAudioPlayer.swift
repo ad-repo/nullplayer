@@ -42,7 +42,7 @@ class StreamingAudioPlayer {
     var waveformNeeded: Bool = false
 
     /// Cached value of modernUIEnabled to avoid 60x/sec UserDefaults reads
-    var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: "modernUIEnabled")
+    var isModernUIEnabled: Bool = UserDefaults.standard.bool(forKey: .modernUIEnabled)
 
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
@@ -179,11 +179,11 @@ class StreamingAudioPlayer {
     
     // MARK: - Initialization
     
-    init(eqConfiguration: EQConfiguration = .forModernUI(UserDefaults.standard.bool(forKey: "modernUIEnabled"))) {
+    init(eqConfiguration: EQConfiguration = .forModernUI(UserDefaults.standard.bool(forKey: .modernUIEnabled))) {
         self.eqConfiguration = eqConfiguration
 
         // Initialize cached normalization mode from UserDefaults
-        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
+        if let saved = UserDefaults.standard.string(forKey: .spectrumNormalizationMode),
            let mode = SpectrumNormalizationMode(rawValue: saved) {
             spectrumNormalizationMode = mode
         }
@@ -222,7 +222,7 @@ class StreamingAudioPlayer {
     }
     
     @objc private func handleSpectrumSettingsChanged() {
-        if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
+        if let saved = UserDefaults.standard.string(forKey: .spectrumNormalizationMode),
            let mode = SpectrumNormalizationMode(rawValue: saved) {
             spectrumNormalizationMode = mode
         }

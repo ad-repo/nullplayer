@@ -109,11 +109,11 @@ class LocalRadioHistory {
 
     var retentionInterval: LocalRadioHistoryInterval {
         get {
-            let raw = UserDefaults.standard.string(forKey: "localRadioHistoryInterval") ?? LocalRadioHistoryInterval.oneMonth.rawValue
+            let raw = UserDefaults.standard.string(forKey: .localRadioHistoryInterval) ?? LocalRadioHistoryInterval.oneMonth.rawValue
             return LocalRadioHistoryInterval(rawValue: raw) ?? .oneMonth
         }
         set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "localRadioHistoryInterval")
+            UserDefaults.standard.set(newValue.rawValue, forKey: .localRadioHistoryInterval)
         }
     }
 

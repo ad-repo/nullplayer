@@ -513,7 +513,7 @@ class SpectrumView: NSView {
         }
         let newMode = modes[newIdx]
         view.qualityMode = newMode
-        UserDefaults.standard.set(newMode.rawValue, forKey: "spectrumQualityMode")
+        UserDefaults.standard.set(newMode.rawValue, forKey: .spectrumQualityMode)
     }
     
     private func cycleFlameStyle(forward: Bool) {
@@ -575,7 +575,7 @@ class SpectrumView: NSView {
         // Normalization Mode submenu (not shown for Flame mode)
         if spectrumAnalyzerView?.qualityMode != .flame {
             let normMenu = NSMenu()
-            let currentNormMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
+            let currentNormMode = UserDefaults.standard.string(forKey: .spectrumNormalizationMode)
                 .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
             for mode in SpectrumNormalizationMode.allCases {
                 let item = NSMenuItem(title: "\(mode.displayName) - \(mode.description)", action: #selector(setNormalizationMode(_:)), keyEquivalent: "")
@@ -753,7 +753,7 @@ class SpectrumView: NSView {
     
     @objc private func setNormalizationMode(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
+        UserDefaults.standard.set(mode.rawValue, forKey: .spectrumNormalizationMode)
     }
     
     @objc private func setFlameStyle(_ sender: NSMenuItem) {

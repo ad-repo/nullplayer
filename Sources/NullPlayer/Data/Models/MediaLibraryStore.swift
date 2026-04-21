@@ -183,7 +183,7 @@ final class MediaLibraryStore {
             try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_name ON track_artists(artist_name)")
             try connection.run("CREATE INDEX IF NOT EXISTS idx_track_artists_url ON track_artists(track_url)")
             try connection.run("PRAGMA user_version = 3")
-            UserDefaults.standard.set(false, forKey: "trackArtistsBackfillComplete")
+            UserDefaults.standard.set(false, forKey: .trackArtistsBackfillComplete)
             currentVersion = 3
         }
         if currentVersion == 3 {
@@ -1531,7 +1531,7 @@ final class MediaLibraryStore {
                 }
                 offset += batchSize
             }
-            UserDefaults.standard.set(true, forKey: "trackArtistsBackfillComplete")
+            UserDefaults.standard.set(true, forKey: .trackArtistsBackfillComplete)
             DispatchQueue.main.async { completion() }
         }
     }

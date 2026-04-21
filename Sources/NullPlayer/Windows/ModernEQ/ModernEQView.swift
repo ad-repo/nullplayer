@@ -210,7 +210,7 @@ class ModernEQView: NSView {
         
         // Load Auto EQ state from UserDefaults only if "Remember State" is enabled
         if AppStateManager.shared.isEnabled {
-            isAuto = UserDefaults.standard.bool(forKey: "EQAutoEnabled")
+            isAuto = UserDefaults.standard.bool(forKey: .eqAutoEnabled)
         } else {
             isAuto = false
         }
@@ -1201,7 +1201,7 @@ class ModernEQView: NSView {
             isAuto.toggle()
             
             if AppStateManager.shared.isEnabled {
-                UserDefaults.standard.set(isAuto, forKey: "EQAutoEnabled")
+                UserDefaults.standard.set(isAuto, forKey: .eqAutoEnabled)
             }
             
             if isAuto {

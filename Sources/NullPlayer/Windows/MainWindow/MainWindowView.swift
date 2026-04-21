@@ -69,7 +69,7 @@ class MainWindowView: NSView {
     /// Main window visualization mode (spectrum bars vs GPU-rendered modes)
     private var mainVisMode: MainWindowVisMode = .spectrum {
         didSet {
-            UserDefaults.standard.set(mainVisMode.rawValue, forKey: "mainWindowVisMode")
+            UserDefaults.standard.set(mainVisMode.rawValue, forKey: .mainWindowVisMode)
             updateMetalOverlayVisibility()
         }
     }
@@ -161,7 +161,7 @@ class MainWindowView: NSView {
         registerForDraggedTypes([.fileURL])
         
         // Restore saved visualization mode
-        if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
+        if let savedMode = UserDefaults.standard.string(forKey: .mainWindowVisMode),
            let mode = MainWindowVisMode(rawValue: savedMode) {
             // Validate shader availability before restoring a GPU mode — if the shader file
             // is missing (e.g., not included in DMG), fall back to Spectrum to prevent crashes
@@ -355,27 +355,27 @@ class MainWindowView: NSView {
             overlay.qualityMode = qualityMode
         }
         // Restore all mode-specific settings from main window's own UserDefaults keys
-        if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+        if let savedStyle = UserDefaults.standard.string(forKey: .mainWindowFlameStyle),
            let style = FlameStyle(rawValue: savedStyle) {
             overlay.flameStyle = style
         }
-        if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+        if let savedIntensity = UserDefaults.standard.string(forKey: .mainWindowFlameIntensity),
            let intensity = FlameIntensity(rawValue: savedIntensity) {
             overlay.flameIntensity = intensity
         }
-        if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle"),
+        if let savedStyle = UserDefaults.standard.string(forKey: .mainWindowLightningStyle),
            let style = LightningStyle(rawValue: savedStyle) {
             overlay.lightningStyle = style
         }
-        if let savedScheme = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme"),
+        if let savedScheme = UserDefaults.standard.string(forKey: .mainWindowMatrixColorScheme),
            let scheme = MatrixColorScheme(rawValue: savedScheme) {
             overlay.matrixColorScheme = scheme
         }
-        if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
+        if let savedIntensity = UserDefaults.standard.string(forKey: .mainWindowMatrixIntensity),
            let intensity = MatrixIntensity(rawValue: savedIntensity) {
             overlay.matrixIntensity = intensity
         }
-        if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
+        if let savedDecay = UserDefaults.standard.string(forKey: .mainWindowDecayMode),
            let mode = SpectrumDecayMode(rawValue: savedDecay) {
             overlay.decayMode = mode
         }
@@ -480,7 +480,7 @@ class MainWindowView: NSView {
     
     @objc private func mainVisSettingsChanged() {
         // Reload vis mode from UserDefaults
-        if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
+        if let savedMode = UserDefaults.standard.string(forKey: .mainWindowVisMode),
            let mode = MainWindowVisMode(rawValue: savedMode) {
             // Validate shader availability before applying a GPU mode
             if let qualityMode = mode.spectrumQualityMode,
@@ -498,30 +498,30 @@ class MainWindowView: NSView {
                 overlay.qualityMode = qualityMode
             }
             // Flame settings
-            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle"),
+            if let savedStyle = UserDefaults.standard.string(forKey: .mainWindowFlameStyle),
                let style = FlameStyle(rawValue: savedStyle) {
                 overlay.flameStyle = style
             }
-            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity"),
+            if let savedIntensity = UserDefaults.standard.string(forKey: .mainWindowFlameIntensity),
                let intensity = FlameIntensity(rawValue: savedIntensity) {
                 overlay.flameIntensity = intensity
             }
             // Lightning settings
-            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle"),
+            if let savedStyle = UserDefaults.standard.string(forKey: .mainWindowLightningStyle),
                let style = LightningStyle(rawValue: savedStyle) {
                 overlay.lightningStyle = style
             }
             // Matrix settings
-            if let savedScheme = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme"),
+            if let savedScheme = UserDefaults.standard.string(forKey: .mainWindowMatrixColorScheme),
                let scheme = MatrixColorScheme(rawValue: savedScheme) {
                 overlay.matrixColorScheme = scheme
             }
-            if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
+            if let savedIntensity = UserDefaults.standard.string(forKey: .mainWindowMatrixIntensity),
                let intensity = MatrixIntensity(rawValue: savedIntensity) {
                 overlay.matrixIntensity = intensity
             }
             // Decay/responsiveness
-            if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
+            if let savedDecay = UserDefaults.standard.string(forKey: .mainWindowDecayMode),
                let mode = SpectrumDecayMode(rawValue: savedDecay) {
                 overlay.decayMode = mode
             }

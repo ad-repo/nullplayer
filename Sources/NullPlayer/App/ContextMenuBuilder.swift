@@ -205,7 +205,7 @@ class ContextMenuBuilder {
         let isModern = WindowManager.shared.isModernUIEnabled
 
         // Last used modern skin for quick switch (shown at top when in classic mode)
-        let lastModernSkin = UserDefaults.standard.string(forKey: "modernSkinName")
+        let lastModernSkin = UserDefaults.standard.string(forKey: .modernSkinName)
         if !isModern {
             let switchItem = NSMenuItem(
                 title: "Switch to Modern" + (lastModernSkin.map { " (\($0))" } ?? ""),
@@ -290,7 +290,7 @@ class ContextMenuBuilder {
         modernMenu.autoenablesItems = false
         
         // Last used modern skin for quick switch (shown at top when in classic mode)
-        let lastModernSkin = UserDefaults.standard.string(forKey: "modernSkinName")
+        let lastModernSkin = UserDefaults.standard.string(forKey: .modernSkinName)
         if !isModern {
             let switchItem = NSMenuItem(
                 title: "Switch to Modern" + (lastModernSkin.map { " (\($0))" } ?? ""),
@@ -345,7 +345,7 @@ class ContextMenuBuilder {
         classicMenu.autoenablesItems = false
         
         // Last used classic skin for quick switch (shown at top when in modern mode)
-        let lastClassicSkinPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath")
+        let lastClassicSkinPath = UserDefaults.standard.string(forKey: .lastClassicSkinPath)
         if isModern {
             let lastSkinName = lastClassicSkinPath.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent }
             let switchItem = NSMenuItem(
@@ -806,7 +806,7 @@ class ContextMenuBuilder {
         let visMenu = NSMenu()
         visMenu.autoenablesItems = false
         
-        let currentMode = UserDefaults.standard.string(forKey: "mainWindowVisMode")
+        let currentMode = UserDefaults.standard.string(forKey: .mainWindowVisMode)
             .flatMap { MainWindowVisMode(rawValue: $0) } ?? .spectrum
         
         // Mode submenu
@@ -834,7 +834,7 @@ class ContextMenuBuilder {
         let responsivenessMenu = NSMenu()
         responsivenessMenu.autoenablesItems = false
         
-        let currentDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode")
+        let currentDecay = UserDefaults.standard.string(forKey: .mainWindowDecayMode)
             .flatMap { SpectrumDecayMode(rawValue: $0) } ?? .snappy
         
         for mode in SpectrumDecayMode.allCases {
@@ -853,7 +853,7 @@ class ContextMenuBuilder {
             let normMenu = NSMenu()
             normMenu.autoenablesItems = false
             
-            let currentNorm = UserDefaults.standard.string(forKey: "mainWindowNormalizationMode")
+            let currentNorm = UserDefaults.standard.string(forKey: .mainWindowNormalizationMode)
                 .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
             
             for mode in SpectrumNormalizationMode.allCases {
@@ -873,7 +873,7 @@ class ContextMenuBuilder {
             let flameStyleMenu = NSMenu()
             flameStyleMenu.autoenablesItems = false
             
-            let currentStyle = UserDefaults.standard.string(forKey: "mainWindowFlameStyle")
+            let currentStyle = UserDefaults.standard.string(forKey: .mainWindowFlameStyle)
                 .flatMap { FlameStyle(rawValue: $0) } ?? .inferno
             
             for style in FlameStyle.allCases {
@@ -892,7 +892,7 @@ class ContextMenuBuilder {
             let flameIntensityMenu = NSMenu()
             flameIntensityMenu.autoenablesItems = false
             
-            let currentIntensity = UserDefaults.standard.string(forKey: "mainWindowFlameIntensity")
+            let currentIntensity = UserDefaults.standard.string(forKey: .mainWindowFlameIntensity)
                 .flatMap { FlameIntensity(rawValue: $0) } ?? .mellow
             
             for intensity in FlameIntensity.allCases {
@@ -913,7 +913,7 @@ class ContextMenuBuilder {
             let lightningStyleMenu = NSMenu()
             lightningStyleMenu.autoenablesItems = false
             
-            let currentStyle = UserDefaults.standard.string(forKey: "mainWindowLightningStyle")
+            let currentStyle = UserDefaults.standard.string(forKey: .mainWindowLightningStyle)
                 .flatMap { LightningStyle(rawValue: $0) } ?? .classic
             
             for style in LightningStyle.allCases {
@@ -935,7 +935,7 @@ class ContextMenuBuilder {
             let matrixColorMenu = NSMenu()
             matrixColorMenu.autoenablesItems = false
             
-            let currentMatrixColor = UserDefaults.standard.string(forKey: "mainWindowMatrixColorScheme")
+            let currentMatrixColor = UserDefaults.standard.string(forKey: .mainWindowMatrixColorScheme)
                 .flatMap { MatrixColorScheme(rawValue: $0) } ?? .classic
             
             for scheme in MatrixColorScheme.allCases {
@@ -954,7 +954,7 @@ class ContextMenuBuilder {
             let matrixIntensityMenu = NSMenu()
             matrixIntensityMenu.autoenablesItems = false
             
-            let currentMatrixIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity")
+            let currentMatrixIntensity = UserDefaults.standard.string(forKey: .mainWindowMatrixIntensity)
                 .flatMap { MatrixIntensity(rawValue: $0) } ?? .subtle
             
             for intensity in MatrixIntensity.allCases {
@@ -1065,7 +1065,7 @@ class ContextMenuBuilder {
         let modeMenu = NSMenu()
         modeMenu.autoenablesItems = false
         
-        let currentQuality = UserDefaults.standard.string(forKey: "spectrumQualityMode")
+        let currentQuality = UserDefaults.standard.string(forKey: .spectrumQualityMode)
             .flatMap { SpectrumQualityMode(rawValue: $0) } ?? .classic
         
         for mode in SpectrumQualityMode.allCases {
@@ -1087,7 +1087,7 @@ class ContextMenuBuilder {
         let responsivenessMenu = NSMenu()
         responsivenessMenu.autoenablesItems = false
         
-        let currentDecay = UserDefaults.standard.string(forKey: "spectrumDecayMode")
+        let currentDecay = UserDefaults.standard.string(forKey: .spectrumDecayMode)
             .flatMap { SpectrumDecayMode(rawValue: $0) } ?? .snappy
         
         for mode in SpectrumDecayMode.allCases {
@@ -1105,7 +1105,7 @@ class ContextMenuBuilder {
         let normMenu = NSMenu()
         normMenu.autoenablesItems = false
         
-        let currentNorm = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
+        let currentNorm = UserDefaults.standard.string(forKey: .spectrumNormalizationMode)
             .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
         
         for mode in SpectrumNormalizationMode.allCases {
@@ -1124,7 +1124,7 @@ class ContextMenuBuilder {
             let flameStyleMenu = NSMenu()
             flameStyleMenu.autoenablesItems = false
             
-            let currentStyle = UserDefaults.standard.string(forKey: "flameStyle")
+            let currentStyle = UserDefaults.standard.string(forKey: .flameStyle)
                 .flatMap { FlameStyle(rawValue: $0) } ?? .inferno
             
             for style in FlameStyle.allCases {
@@ -1143,7 +1143,7 @@ class ContextMenuBuilder {
             let flameIntensityMenu = NSMenu()
             flameIntensityMenu.autoenablesItems = false
             
-            let currentIntensity = UserDefaults.standard.string(forKey: "flameIntensity")
+            let currentIntensity = UserDefaults.standard.string(forKey: .flameIntensity)
                 .flatMap { FlameIntensity(rawValue: $0) } ?? .mellow
             
             for intensity in FlameIntensity.allCases {
@@ -1164,7 +1164,7 @@ class ContextMenuBuilder {
             let lightningStyleMenu = NSMenu()
             lightningStyleMenu.autoenablesItems = false
             
-            let currentStyle = UserDefaults.standard.string(forKey: "lightningStyle")
+            let currentStyle = UserDefaults.standard.string(forKey: .lightningStyle)
                 .flatMap { LightningStyle(rawValue: $0) } ?? .classic
             
             for style in LightningStyle.allCases {
@@ -1186,7 +1186,7 @@ class ContextMenuBuilder {
             let matrixColorMenu = NSMenu()
             matrixColorMenu.autoenablesItems = false
             
-            let currentMatrixColor = UserDefaults.standard.string(forKey: "matrixColorScheme")
+            let currentMatrixColor = UserDefaults.standard.string(forKey: .matrixColorScheme)
                 .flatMap { MatrixColorScheme(rawValue: $0) } ?? .classic
             
             for scheme in MatrixColorScheme.allCases {
@@ -1205,7 +1205,7 @@ class ContextMenuBuilder {
             let matrixIntensityMenu = NSMenu()
             matrixIntensityMenu.autoenablesItems = false
             
-            let currentMatrixIntensity = UserDefaults.standard.string(forKey: "matrixIntensity")
+            let currentMatrixIntensity = UserDefaults.standard.string(forKey: .matrixIntensity)
                 .flatMap { MatrixIntensity(rawValue: $0) } ?? .subtle
             
             for intensity in MatrixIntensity.allCases {
@@ -1297,7 +1297,7 @@ class ContextMenuBuilder {
 
         let cuePoints = NSMenuItem(title: "Show CUE Points", action: #selector(MenuActions.toggleWaveformCuePoints), keyEquivalent: "")
         cuePoints.target = MenuActions.shared
-        cuePoints.state = UserDefaults.standard.bool(forKey: "waveformShowCuePoints") ? .on : .off
+        cuePoints.state = UserDefaults.standard.bool(forKey: .waveformShowCuePoints) ? .on : .off
         menu.addItem(cuePoints)
 
         let transparentBackground = NSMenuItem(title: "Transparent Background", action: #selector(MenuActions.toggleWaveformTransparentBackground), keyEquivalent: "")
@@ -1307,7 +1307,7 @@ class ContextMenuBuilder {
 
         let hideTooltip = NSMenuItem(title: "Hide Waveform Tooltip", action: #selector(MenuActions.toggleWaveformTooltip), keyEquivalent: "")
         hideTooltip.target = MenuActions.shared
-        hideTooltip.state = UserDefaults.standard.bool(forKey: "waveformHideTooltip") ? .on : .off
+        hideTooltip.state = UserDefaults.standard.bool(forKey: .waveformHideTooltip) ? .on : .off
         menu.addItem(hideTooltip)
 
         return menu
@@ -3229,9 +3229,9 @@ class MenuActions: NSObject {
     
     @objc func loadDefaultClassicSkin() {
         let wm = WindowManager.shared
-        let previousSkinPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath")
+        let previousSkinPath = UserDefaults.standard.string(forKey: .lastClassicSkinPath)
         // Clear the last used skin so the bundled default loads
-        UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+        UserDefaults.standard.removeObject(forKey: .lastClassicSkinPath)
         
         if wm.isRunningModernUI {
             // Switch to classic mode with default skin on next launch
@@ -3239,9 +3239,9 @@ class MenuActions: NSObject {
                 wm.isModernUIEnabled = false
             }) {
                 if let previousSkinPath = previousSkinPath {
-                    UserDefaults.standard.set(previousSkinPath, forKey: "lastClassicSkinPath")
+                    UserDefaults.standard.set(previousSkinPath, forKey: .lastClassicSkinPath)
                 } else {
-                    UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+                    UserDefaults.standard.removeObject(forKey: .lastClassicSkinPath)
                 }
             }
         } else {
@@ -3286,15 +3286,15 @@ class MenuActions: NSObject {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        let previousSkinName = UserDefaults.standard.string(forKey: "modernSkinName")
+        let previousSkinName = UserDefaults.standard.string(forKey: .modernSkinName)
         do {
             let importedSkinName = try ModernSkinEngine.shared.importSkinBundle(from: url)
             if WindowManager.shared.isRunningModernUI {
                 if !ModernSkinEngine.shared.loadSkin(named: importedSkinName) {
                     if let previousSkinName = previousSkinName {
-                        UserDefaults.standard.set(previousSkinName, forKey: "modernSkinName")
+                        UserDefaults.standard.set(previousSkinName, forKey: .modernSkinName)
                     } else {
-                        UserDefaults.standard.removeObject(forKey: "modernSkinName")
+                        UserDefaults.standard.removeObject(forKey: .modernSkinName)
                     }
                     let alert = NSAlert()
                     alert.messageText = "Failed to Load Modern Skin"
@@ -3320,7 +3320,7 @@ class MenuActions: NSObject {
     @objc func loadSkin(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         WindowManager.shared.loadSkin(from: url)
-        UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
+        UserDefaults.standard.set(url.path, forKey: .lastClassicSkinPath)
     }
     
     /// Select a classic skin and switch to classic mode if needed
@@ -3329,8 +3329,8 @@ class MenuActions: NSObject {
         let wm = WindowManager.shared
         
         // Persist the last used classic skin path
-        let previousSkinPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath")
-        UserDefaults.standard.set(url.path, forKey: "lastClassicSkinPath")
+        let previousSkinPath = UserDefaults.standard.string(forKey: .lastClassicSkinPath)
+        UserDefaults.standard.set(url.path, forKey: .lastClassicSkinPath)
         
         if wm.isRunningModernUI {
             // Switch to classic mode and load this skin on next launch
@@ -3339,9 +3339,9 @@ class MenuActions: NSObject {
             }) {
                 // User cancelled — revert
                 if let previousSkinPath = previousSkinPath {
-                    UserDefaults.standard.set(previousSkinPath, forKey: "lastClassicSkinPath")
+                    UserDefaults.standard.set(previousSkinPath, forKey: .lastClassicSkinPath)
                 } else {
-                    UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+                    UserDefaults.standard.removeObject(forKey: .lastClassicSkinPath)
                 }
             }
         } else {
@@ -3357,8 +3357,8 @@ class MenuActions: NSObject {
         
         // Persist the selected modern skin name (ModernSkinEngine does this too, but
         // we need it set before restart when switching from classic mode)
-        let previousSkinName = UserDefaults.standard.string(forKey: "modernSkinName")
-        UserDefaults.standard.set(name, forKey: "modernSkinName")
+        let previousSkinName = UserDefaults.standard.string(forKey: .modernSkinName)
+        UserDefaults.standard.set(name, forKey: .modernSkinName)
         
         if !wm.isRunningModernUI {
             // Switch to modern mode — skin will load on next launch
@@ -3367,9 +3367,9 @@ class MenuActions: NSObject {
             }) {
                 // User cancelled — revert
                 if let previousSkinName = previousSkinName {
-                    UserDefaults.standard.set(previousSkinName, forKey: "modernSkinName")
+                    UserDefaults.standard.set(previousSkinName, forKey: .modernSkinName)
                 } else {
-                    UserDefaults.standard.removeObject(forKey: "modernSkinName")
+                    UserDefaults.standard.removeObject(forKey: .modernSkinName)
                 }
             }
         } else {
@@ -3660,81 +3660,81 @@ class MenuActions: NSObject {
 
     @objc func setMainVisMode(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? MainWindowVisMode else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "mainWindowVisMode")
+        UserDefaults.standard.set(mode.rawValue, forKey: .mainWindowVisMode)
         // Notify main window to update visualization mode
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     
     @objc func setMainVisFlameStyle(_ sender: NSMenuItem) {
         guard let style = sender.representedObject as? FlameStyle else { return }
-        UserDefaults.standard.set(style.rawValue, forKey: "mainWindowFlameStyle")
+        UserDefaults.standard.set(style.rawValue, forKey: .mainWindowFlameStyle)
         // Notify main window only (independent from spectrum window flame style)
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     
     @objc func setSpectrumFlameStyle(_ sender: NSMenuItem) {
         guard let style = sender.representedObject as? FlameStyle else { return }
-        UserDefaults.standard.set(style.rawValue, forKey: "flameStyle")
+        UserDefaults.standard.set(style.rawValue, forKey: .flameStyle)
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     
     @objc func setSpectrumLightningStyle(_ sender: NSMenuItem) {
         guard let style = sender.representedObject as? LightningStyle else { return }
-        UserDefaults.standard.set(style.rawValue, forKey: "lightningStyle")
+        UserDefaults.standard.set(style.rawValue, forKey: .lightningStyle)
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     
     @objc func setSpectrumFlameIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? FlameIntensity else { return }
-        UserDefaults.standard.set(intensity.rawValue, forKey: "flameIntensity")
+        UserDefaults.standard.set(intensity.rawValue, forKey: .flameIntensity)
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     
     @objc func setSpectrumMatrixColor(_ sender: NSMenuItem) {
         guard let scheme = sender.representedObject as? MatrixColorScheme else { return }
-        UserDefaults.standard.set(scheme.rawValue, forKey: "matrixColorScheme")
+        UserDefaults.standard.set(scheme.rawValue, forKey: .matrixColorScheme)
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     
     @objc func setSpectrumMatrixIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? MatrixIntensity else { return }
-        UserDefaults.standard.set(intensity.rawValue, forKey: "matrixIntensity")
+        UserDefaults.standard.set(intensity.rawValue, forKey: .matrixIntensity)
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     
     @objc func setMainVisFlameIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? FlameIntensity else { return }
-        UserDefaults.standard.set(intensity.rawValue, forKey: "mainWindowFlameIntensity")
+        UserDefaults.standard.set(intensity.rawValue, forKey: .mainWindowFlameIntensity)
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     
     @objc func setMainVisLightningStyle(_ sender: NSMenuItem) {
         guard let style = sender.representedObject as? LightningStyle else { return }
-        UserDefaults.standard.set(style.rawValue, forKey: "mainWindowLightningStyle")
+        UserDefaults.standard.set(style.rawValue, forKey: .mainWindowLightningStyle)
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     
     @objc func setMainVisMatrixColor(_ sender: NSMenuItem) {
         guard let scheme = sender.representedObject as? MatrixColorScheme else { return }
-        UserDefaults.standard.set(scheme.rawValue, forKey: "mainWindowMatrixColorScheme")
+        UserDefaults.standard.set(scheme.rawValue, forKey: .mainWindowMatrixColorScheme)
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     
     @objc func setMainVisMatrixIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? MatrixIntensity else { return }
-        UserDefaults.standard.set(intensity.rawValue, forKey: "mainWindowMatrixIntensity")
+        UserDefaults.standard.set(intensity.rawValue, forKey: .mainWindowMatrixIntensity)
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     
     @objc func setMainVisResponsiveness(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumDecayMode else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "mainWindowDecayMode")
+        UserDefaults.standard.set(mode.rawValue, forKey: .mainWindowDecayMode)
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     
     @objc func setMainVisNormalization(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "mainWindowNormalizationMode")
+        UserDefaults.standard.set(mode.rawValue, forKey: .mainWindowNormalizationMode)
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     
@@ -3742,21 +3742,21 @@ class MenuActions: NSObject {
     
     @objc func setSpectrumQuality(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumQualityMode else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "spectrumQualityMode")
+        UserDefaults.standard.set(mode.rawValue, forKey: .spectrumQualityMode)
         // Notify spectrum analyzer views to update
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     
     @objc func setSpectrumResponsiveness(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumDecayMode else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "spectrumDecayMode")
+        UserDefaults.standard.set(mode.rawValue, forKey: .spectrumDecayMode)
         // Notify spectrum analyzer views to update
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
     
     @objc func setSpectrumNormalization(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? SpectrumNormalizationMode else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "spectrumNormalizationMode")
+        UserDefaults.standard.set(mode.rawValue, forKey: .spectrumNormalizationMode)
         // Normalization mode is read each frame, no notification needed
     }
 

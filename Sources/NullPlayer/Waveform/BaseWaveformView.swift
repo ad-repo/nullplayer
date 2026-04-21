@@ -47,21 +47,21 @@ class BaseWaveformView: NSView {
 
     var isTooltipHidden: Bool {
         get {
-            if UserDefaults.standard.object(forKey: "waveformHideTooltip") == nil {
+            if UserDefaults.standard.object(forKey: .waveformHideTooltip) == nil {
                 return false
             }
-            return UserDefaults.standard.bool(forKey: "waveformHideTooltip")
+            return UserDefaults.standard.bool(forKey: .waveformHideTooltip)
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: "waveformHideTooltip")
+            UserDefaults.standard.set(newValue, forKey: .waveformHideTooltip)
             refreshToolTips()
         }
     }
 
     var showsCuePoints: Bool {
-        get { UserDefaults.standard.bool(forKey: "waveformShowCuePoints") }
+        get { UserDefaults.standard.bool(forKey: .waveformShowCuePoints) }
         set {
-            UserDefaults.standard.set(newValue, forKey: "waveformShowCuePoints")
+            UserDefaults.standard.set(newValue, forKey: .waveformShowCuePoints)
             requestCuePoints(for: currentTrack)
         }
     }

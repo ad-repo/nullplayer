@@ -112,11 +112,11 @@ class EmbyRadioHistory {
 
     var retentionInterval: EmbyRadioHistoryInterval {
         get {
-            let raw = UserDefaults.standard.string(forKey: "embyRadioHistoryInterval") ?? EmbyRadioHistoryInterval.oneMonth.rawValue
+            let raw = UserDefaults.standard.string(forKey: .embyRadioHistoryInterval) ?? EmbyRadioHistoryInterval.oneMonth.rawValue
             return EmbyRadioHistoryInterval(rawValue: raw) ?? .oneMonth
         }
         set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "embyRadioHistoryInterval")
+            UserDefaults.standard.set(newValue.rawValue, forKey: .embyRadioHistoryInterval)
         }
     }
 

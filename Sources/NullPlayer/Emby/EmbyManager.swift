@@ -37,7 +37,7 @@ class EmbyManager {
                     serverClient = EmbyServerClient(credentials: credentials)
                 }
             }
-            UserDefaults.standard.set(currentServer?.id, forKey: "EmbyCurrentServerID")
+            UserDefaults.standard.set(currentServer?.id, forKey: .embyCurrentServerID)
         }
     }
 
@@ -52,7 +52,7 @@ class EmbyManager {
     /// Currently selected music library
     private(set) var currentMusicLibrary: EmbyMusicLibrary? {
         didSet {
-            UserDefaults.standard.set(currentMusicLibrary?.id, forKey: "EmbyCurrentMusicLibraryID")
+            UserDefaults.standard.set(currentMusicLibrary?.id, forKey: .embyCurrentMusicLibraryID)
             NotificationCenter.default.post(name: Self.musicLibraryDidChangeNotification, object: self)
         }
     }
@@ -65,7 +65,7 @@ class EmbyManager {
     /// Currently selected movie library
     private(set) var currentMovieLibrary: EmbyMusicLibrary? {
         didSet {
-            UserDefaults.standard.set(currentMovieLibrary?.id, forKey: "EmbyCurrentMovieLibraryID")
+            UserDefaults.standard.set(currentMovieLibrary?.id, forKey: .embyCurrentMovieLibraryID)
             NotificationCenter.default.post(name: Self.videoLibraryDidChangeNotification, object: self)
         }
     }
@@ -73,7 +73,7 @@ class EmbyManager {
     /// Currently selected TV show library
     private(set) var currentShowLibrary: EmbyMusicLibrary? {
         didSet {
-            UserDefaults.standard.set(currentShowLibrary?.id, forKey: "EmbyCurrentShowLibraryID")
+            UserDefaults.standard.set(currentShowLibrary?.id, forKey: .embyCurrentShowLibraryID)
             NotificationCenter.default.post(name: Self.videoLibraryDidChangeNotification, object: self)
         }
     }
@@ -142,7 +142,7 @@ class EmbyManager {
         NSLog("EmbyManager: Loaded %d saved servers", servers.count)
 
         // Restore previous server selection
-        if let savedServerID = UserDefaults.standard.string(forKey: "EmbyCurrentServerID"),
+        if let savedServerID = UserDefaults.standard.string(forKey: .embyCurrentServerID),
            let savedServer = servers.first(where: { $0.id == savedServerID }) {
             serverConnectTask = Task {
                 await connectInBackground(to: savedServer)
@@ -317,7 +317,7 @@ class EmbyManager {
                 self.connectionState = .connected
 
                 // Auto-select music library
-                if let savedLibId = UserDefaults.standard.string(forKey: "EmbyCurrentMusicLibraryID"),
+                if let savedLibId = UserDefaults.standard.string(forKey: .embyCurrentMusicLibraryID),
                    let savedLib = libraries.first(where: { $0.id == savedLibId }) {
                     self.currentMusicLibrary = savedLib
                 } else if libraries.count == 1 {
@@ -325,7 +325,7 @@ class EmbyManager {
                 }
 
                 // Auto-select movie library: prefer saved, then find first "movies" type, then single fallback
-                if let savedMovieLibId = UserDefaults.standard.string(forKey: "EmbyCurrentMovieLibraryID"),
+                if let savedMovieLibId = UserDefaults.standard.string(forKey: .embyCurrentMovieLibraryID),
                    let savedLib = vidLibraries.first(where: { $0.id == savedMovieLibId }) {
                     self.currentMovieLibrary = savedLib
                 } else if let movieLib = vidLibraries.first(where: { $0.collectionType == "movies" }) {
@@ -335,7 +335,7 @@ class EmbyManager {
                 }
 
                 // Auto-select show library: prefer saved, then find first "tvshows" type, then single fallback
-                if let savedShowLibId = UserDefaults.standard.string(forKey: "EmbyCurrentShowLibraryID"),
+                if let savedShowLibId = UserDefaults.standard.string(forKey: .embyCurrentShowLibraryID),
                    let savedLib = vidLibraries.first(where: { $0.id == savedShowLibId }) {
                     self.currentShowLibrary = savedLib
                 } else if let showLib = vidLibraries.first(where: { $0.collectionType == "tvshows" }) {
@@ -378,10 +378,10 @@ class EmbyManager {
         currentMovieLibrary = nil
         currentShowLibrary = nil
         clearCachedContent()
-        UserDefaults.standard.removeObject(forKey: "EmbyCurrentServerID")
-        UserDefaults.standard.removeObject(forKey: "EmbyCurrentMusicLibraryID")
-        UserDefaults.standard.removeObject(forKey: "EmbyCurrentMovieLibraryID")
-        UserDefaults.standard.removeObject(forKey: "EmbyCurrentShowLibraryID")
+        UserDefaults.standard.removeObject(forKey: .embyCurrentServerID)
+        UserDefaults.standard.removeObject(forKey: .embyCurrentMusicLibraryID)
+        UserDefaults.standard.removeObject(forKey: .embyCurrentMovieLibraryID)
+        UserDefaults.standard.removeObject(forKey: .embyCurrentShowLibraryID)
     }
 
     /// Select a music library

@@ -37,7 +37,7 @@ class JellyfinManager {
                     serverClient = JellyfinServerClient(credentials: credentials)
                 }
             }
-            UserDefaults.standard.set(currentServer?.id, forKey: "JellyfinCurrentServerID")
+            UserDefaults.standard.set(currentServer?.id, forKey: .jellyfinCurrentServerID)
         }
     }
     
@@ -52,7 +52,7 @@ class JellyfinManager {
     /// Currently selected music library
     private(set) var currentMusicLibrary: JellyfinMusicLibrary? {
         didSet {
-            UserDefaults.standard.set(currentMusicLibrary?.id, forKey: "JellyfinCurrentMusicLibraryID")
+            UserDefaults.standard.set(currentMusicLibrary?.id, forKey: .jellyfinCurrentMusicLibraryID)
             NotificationCenter.default.post(name: Self.musicLibraryDidChangeNotification, object: self)
         }
     }
@@ -65,7 +65,7 @@ class JellyfinManager {
     /// Currently selected movie library
     private(set) var currentMovieLibrary: JellyfinMusicLibrary? {
         didSet {
-            UserDefaults.standard.set(currentMovieLibrary?.id, forKey: "JellyfinCurrentMovieLibraryID")
+            UserDefaults.standard.set(currentMovieLibrary?.id, forKey: .jellyfinCurrentMovieLibraryID)
             NotificationCenter.default.post(name: Self.videoLibraryDidChangeNotification, object: self)
         }
     }
@@ -73,7 +73,7 @@ class JellyfinManager {
     /// Currently selected TV show library
     private(set) var currentShowLibrary: JellyfinMusicLibrary? {
         didSet {
-            UserDefaults.standard.set(currentShowLibrary?.id, forKey: "JellyfinCurrentShowLibraryID")
+            UserDefaults.standard.set(currentShowLibrary?.id, forKey: .jellyfinCurrentShowLibraryID)
             NotificationCenter.default.post(name: Self.videoLibraryDidChangeNotification, object: self)
         }
     }
@@ -142,7 +142,7 @@ class JellyfinManager {
         NSLog("JellyfinManager: Loaded %d saved servers", servers.count)
         
         // Restore previous server selection
-        if let savedServerID = UserDefaults.standard.string(forKey: "JellyfinCurrentServerID"),
+        if let savedServerID = UserDefaults.standard.string(forKey: .jellyfinCurrentServerID),
            let savedServer = servers.first(where: { $0.id == savedServerID }) {
             serverConnectTask = Task {
                 await connectInBackground(to: savedServer)
@@ -317,7 +317,7 @@ class JellyfinManager {
                 self.connectionState = .connected
                 
                 // Auto-select music library
-                if let savedLibId = UserDefaults.standard.string(forKey: "JellyfinCurrentMusicLibraryID"),
+                if let savedLibId = UserDefaults.standard.string(forKey: .jellyfinCurrentMusicLibraryID),
                    let savedLib = libraries.first(where: { $0.id == savedLibId }) {
                     self.currentMusicLibrary = savedLib
                 } else if libraries.count == 1 {
@@ -325,7 +325,7 @@ class JellyfinManager {
                 }
                 
                 // Auto-select movie library: prefer saved, then find first "movies" type, then single fallback
-                if let savedMovieLibId = UserDefaults.standard.string(forKey: "JellyfinCurrentMovieLibraryID"),
+                if let savedMovieLibId = UserDefaults.standard.string(forKey: .jellyfinCurrentMovieLibraryID),
                    let savedLib = vidLibraries.first(where: { $0.id == savedMovieLibId }) {
                     self.currentMovieLibrary = savedLib
                 } else if let movieLib = vidLibraries.first(where: { $0.collectionType == "movies" }) {
@@ -335,7 +335,7 @@ class JellyfinManager {
                 }
                 
                 // Auto-select show library: prefer saved, then find first "tvshows" type, then single fallback
-                if let savedShowLibId = UserDefaults.standard.string(forKey: "JellyfinCurrentShowLibraryID"),
+                if let savedShowLibId = UserDefaults.standard.string(forKey: .jellyfinCurrentShowLibraryID),
                    let savedLib = vidLibraries.first(where: { $0.id == savedShowLibId }) {
                     self.currentShowLibrary = savedLib
                 } else if let showLib = vidLibraries.first(where: { $0.collectionType == "tvshows" }) {
@@ -380,10 +380,10 @@ class JellyfinManager {
         currentMovieLibrary = nil
         currentShowLibrary = nil
         clearCachedContent()
-        UserDefaults.standard.removeObject(forKey: "JellyfinCurrentServerID")
-        UserDefaults.standard.removeObject(forKey: "JellyfinCurrentMusicLibraryID")
-        UserDefaults.standard.removeObject(forKey: "JellyfinCurrentMovieLibraryID")
-        UserDefaults.standard.removeObject(forKey: "JellyfinCurrentShowLibraryID")
+        UserDefaults.standard.removeObject(forKey: .jellyfinCurrentServerID)
+        UserDefaults.standard.removeObject(forKey: .jellyfinCurrentMusicLibraryID)
+        UserDefaults.standard.removeObject(forKey: .jellyfinCurrentMovieLibraryID)
+        UserDefaults.standard.removeObject(forKey: .jellyfinCurrentShowLibraryID)
     }
     
     /// Select a music library

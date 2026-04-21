@@ -65,7 +65,7 @@ class WindowManager {
     /// Time display mode (elapsed vs remaining)
     var timeDisplayMode: TimeDisplayMode = .elapsed {
         didSet {
-            UserDefaults.standard.set(timeDisplayMode.rawValue, forKey: "timeDisplayMode")
+            UserDefaults.standard.set(timeDisplayMode.rawValue, forKey: .timeDisplayMode)
             NotificationCenter.default.post(name: .timeDisplayModeDidChange, object: nil)
         }
     }
@@ -87,7 +87,7 @@ class WindowManager {
     /// Always on top mode (floating window level)
     var isAlwaysOnTop: Bool = false {
         didSet {
-            UserDefaults.standard.set(isAlwaysOnTop, forKey: "isAlwaysOnTop")
+            UserDefaults.standard.set(isAlwaysOnTop, forKey: .isAlwaysOnTop)
             NSLog("WindowManager: isAlwaysOnTop changed to %d, applying to windows", isAlwaysOnTop ? 1 : 0)
             applyAlwaysOnTop()
         }
@@ -96,7 +96,7 @@ class WindowManager {
     /// Lock connected windows so dragging keeps connected groups together.
     var isWindowLayoutLocked: Bool = false {
         didSet {
-            UserDefaults.standard.set(isWindowLayoutLocked, forKey: "isWindowLayoutLocked")
+            UserDefaults.standard.set(isWindowLayoutLocked, forKey: .isWindowLayoutLocked)
             NSLog("WindowManager: isWindowLayoutLocked changed to %d", isWindowLayoutLocked ? 1 : 0)
         }
     }
@@ -106,8 +106,8 @@ class WindowManager {
     
     /// Whether the modern UI is enabled (requires restart to take effect)
     var isModernUIEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: "modernUIEnabled") }
-        set { UserDefaults.standard.set(newValue, forKey: "modernUIEnabled") }
+        get { UserDefaults.standard.bool(forKey: .modernUIEnabled) }
+        set { UserDefaults.standard.set(newValue, forKey: .modernUIEnabled) }
     }
 
     /// Runtime UI mode inferred from the active main window controller.
@@ -122,8 +122,8 @@ class WindowManager {
     
     /// Whether title bars are hidden on all windows (only applies in modern UI mode)
     var hideTitleBars: Bool {
-        get { isRunningModernUI && UserDefaults.standard.bool(forKey: "hideTitleBars") }
-        set { UserDefaults.standard.set(newValue, forKey: "hideTitleBars") }
+        get { isRunningModernUI && UserDefaults.standard.bool(forKey: .hideTitleBars) }
+        set { UserDefaults.standard.set(newValue, forKey: .hideTitleBars) }
     }
 
     /// Ensure modern main window keeps full-height geometry in HT mode at startup/restore.
@@ -434,16 +434,16 @@ class WindowManager {
     
     /// Load preferences from UserDefaults
     private func loadPreferences() {
-        if let mode = UserDefaults.standard.string(forKey: "timeDisplayMode"),
+        if let mode = UserDefaults.standard.string(forKey: .timeDisplayMode),
            let displayMode = TimeDisplayMode(rawValue: mode) {
             timeDisplayMode = displayMode
         }
         // Note: isDoubleSize always starts false - windows are created at 1x size
         // and we apply double size after they're created if needed
-        let savedAlwaysOnTop = UserDefaults.standard.bool(forKey: "isAlwaysOnTop")
+        let savedAlwaysOnTop = UserDefaults.standard.bool(forKey: .isAlwaysOnTop)
         isAlwaysOnTop = savedAlwaysOnTop
         NSLog("WindowManager: Loaded isAlwaysOnTop = %d from UserDefaults", savedAlwaysOnTop ? 1 : 0)
-        let savedWindowLayoutLocked = UserDefaults.standard.bool(forKey: "isWindowLayoutLocked")
+        let savedWindowLayoutLocked = UserDefaults.standard.bool(forKey: .isWindowLayoutLocked)
         isWindowLayoutLocked = savedWindowLayoutLocked
         NSLog("WindowManager: Loaded isWindowLayoutLocked = %d from UserDefaults", savedWindowLayoutLocked ? 1 : 0)
     }
@@ -1543,8 +1543,8 @@ class WindowManager {
     }
 
     func toggleWaveformCuePoints() {
-        let current = UserDefaults.standard.bool(forKey: "waveformShowCuePoints")
-        UserDefaults.standard.set(!current, forKey: "waveformShowCuePoints")
+        let current = UserDefaults.standard.bool(forKey: .waveformShowCuePoints)
+        UserDefaults.standard.set(!current, forKey: .waveformShowCuePoints)
         waveformWindowController?.updateTrack(audioEngine.currentTrack)
     }
 
@@ -1560,8 +1560,8 @@ class WindowManager {
     }
 
     func toggleWaveformTooltip() {
-        let current = UserDefaults.standard.bool(forKey: "waveformHideTooltip")
-        UserDefaults.standard.set(!current, forKey: "waveformHideTooltip")
+        let current = UserDefaults.standard.bool(forKey: .waveformHideTooltip)
+        UserDefaults.standard.set(!current, forKey: .waveformHideTooltip)
         waveformWindowController?.updateTrack(audioEngine.currentTrack)
     }
     
@@ -1640,13 +1640,13 @@ class WindowManager {
     var showBrowserArtworkBackground: Bool {
         get {
             // Default to true (enabled) if not set
-            if UserDefaults.standard.object(forKey: "showBrowserArtworkBackground") == nil {
+            if UserDefaults.standard.object(forKey: .showBrowserArtworkBackground) == nil {
                 return true
             }
-            return UserDefaults.standard.bool(forKey: "showBrowserArtworkBackground")
+            return UserDefaults.standard.bool(forKey: .showBrowserArtworkBackground)
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: "showBrowserArtworkBackground")
+            UserDefaults.standard.set(newValue, forKey: .showBrowserArtworkBackground)
             // Trigger browser redraw
             plexBrowserWindowController?.window?.contentView?.needsDisplay = true
         }
@@ -1659,7 +1659,7 @@ class WindowManager {
             currentSkin = skin
             currentSkinPath = url.path
             // Persist last used classic skin for easy reload when switching UI modes
-            userDefaults.set(url.path, forKey: "lastClassicSkinPath")
+            userDefaults.set(url.path, forKey: .lastClassicSkinPath)
             applyClassicVisualizationDefaults(notify: true)
             notifySkinChanged()
             return true
@@ -1678,7 +1678,7 @@ class WindowManager {
     
     private func loadDefaultSkin() {
         // 1. Try last used skin from UserDefaults
-        if let lastPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath"),
+        if let lastPath = UserDefaults.standard.string(forKey: .lastClassicSkinPath),
            FileManager.default.fileExists(atPath: lastPath) {
             do {
                 currentSkin = try SkinLoader.shared.load(from: URL(fileURLWithPath: lastPath))
@@ -1729,7 +1729,7 @@ class WindowManager {
             do {
                 currentSkin = try SkinLoader.shared.load(from: bundledURL)
                 currentSkinPath = nil
-                UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+                UserDefaults.standard.removeObject(forKey: .lastClassicSkinPath)
                 applyClassicVisualizationDefaults(notify: true)
                 notifySkinChanged()
                 return
@@ -1740,7 +1740,7 @@ class WindowManager {
         // Fallback: unskinned
         currentSkin = SkinLoader.shared.loadDefault()
         currentSkinPath = nil
-        UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+        UserDefaults.standard.removeObject(forKey: .lastClassicSkinPath)
         applyClassicVisualizationDefaults(notify: true)
         notifySkinChanged()
     }
@@ -1758,9 +1758,9 @@ class WindowManager {
         let visClassicMode = MainWindowVisMode.visClassicExact.rawValue
         let classicProfile = "Purple Neon"
 
-        defaults.set(visClassicMode, forKey: "mainWindowVisMode")
-        defaults.set(visClassicMode, forKey: "modernMainWindowVisMode")
-        defaults.set(SpectrumQualityMode.visClassicExact.rawValue, forKey: "spectrumQualityMode")
+        defaults.set(visClassicMode, forKey: .mainWindowVisMode)
+        defaults.set(visClassicMode, forKey: .modernMainWindowVisMode)
+        defaults.set(SpectrumQualityMode.visClassicExact.rawValue, forKey: .spectrumQualityMode)
 
         defaults.set(classicProfile, forKey: "visClassicLastProfileName.mainWindow")
         defaults.set(classicProfile, forKey: "visClassicLastProfileName.spectrumWindow")
@@ -1768,8 +1768,8 @@ class WindowManager {
         defaults.set(true, forKey: "visClassicFitToWidth.spectrumWindow")
 
         // Legacy fallback keys are still read by VisClassicBridge.
-        defaults.set(classicProfile, forKey: "visClassicLastProfileName")
-        defaults.set(true, forKey: "visClassicFitToWidth")
+        defaults.set(classicProfile, forKey: .visClassicLastProfileName)
+        defaults.set(true, forKey: .visClassicFitToWidth)
 
         guard notify else { return }
 
@@ -2413,15 +2413,15 @@ class WindowManager {
         }
         
         // Clear any saved positions (windows will be positioned relative to main on open)
-        defaults.removeObject(forKey: "MainWindowFrame")
-        defaults.removeObject(forKey: "EqualizerWindowFrame")
-        defaults.removeObject(forKey: "PlaylistWindowFrame")
-        defaults.removeObject(forKey: "PlexBrowserWindowFrame")
-        defaults.removeObject(forKey: "ProjectMWindowFrame")
-        defaults.removeObject(forKey: "VideoPlayerWindowFrame")
-        defaults.removeObject(forKey: "ArtVisualizerWindowFrame")
-        defaults.removeObject(forKey: "SpectrumWindowFrame")
-        defaults.removeObject(forKey: "WaveformWindowFrame")
+        defaults.removeObject(forKey: .mainWindowFrame)
+        defaults.removeObject(forKey: .equalizerWindowFrame)
+        defaults.removeObject(forKey: .playlistWindowFrame)
+        defaults.removeObject(forKey: .plexBrowserWindowFrame)
+        defaults.removeObject(forKey: .projectMWindowFrame)
+        defaults.removeObject(forKey: .videoPlayerWindowFrame)
+        defaults.removeObject(forKey: .artVisualizerWindowFrame)
+        defaults.removeObject(forKey: .spectrumWindowFrame)
+        defaults.removeObject(forKey: .waveformWindowFrame)
         
         // Disable snapping during programmatic frame changes to prevent interference
         isSnappingWindow = true
@@ -3456,62 +3456,62 @@ class WindowManager {
         let defaults = UserDefaults.standard
         
         if let frame = mainWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "MainWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: .mainWindowFrame)
         }
         if let frame = playlistWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "PlaylistWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: .playlistWindowFrame)
         }
         if let frame = equalizerWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "EqualizerWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: .equalizerWindowFrame)
         }
         if let frame = plexBrowserWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "PlexBrowserWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: .plexBrowserWindowFrame)
         }
         if let frame = videoPlayerWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "VideoPlayerWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: .videoPlayerWindowFrame)
         }
         if let frame = projectMWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "ProjectMWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: .projectMWindowFrame)
         }
         if let frame = spectrumWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: "SpectrumWindowFrame")
+            defaults.set(NSStringFromRect(frame), forKey: .spectrumWindowFrame)
         }
     }
     
     func restoreWindowPositions() {
         let defaults = UserDefaults.standard
         
-        if let frameString = defaults.string(forKey: "MainWindowFrame"),
+        if let frameString = defaults.string(forKey: .mainWindowFrame),
            let window = mainWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "PlaylistWindowFrame"),
+        if let frameString = defaults.string(forKey: .playlistWindowFrame),
            let window = playlistWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "EqualizerWindowFrame"),
+        if let frameString = defaults.string(forKey: .equalizerWindowFrame),
            let window = equalizerWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "PlexBrowserWindowFrame"),
+        if let frameString = defaults.string(forKey: .plexBrowserWindowFrame),
            let window = plexBrowserWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "VideoPlayerWindowFrame"),
+        if let frameString = defaults.string(forKey: .videoPlayerWindowFrame),
            let window = videoPlayerWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "ProjectMWindowFrame"),
+        if let frameString = defaults.string(forKey: .projectMWindowFrame),
            let window = projectMWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)
         }
-        if let frameString = defaults.string(forKey: "SpectrumWindowFrame"),
+        if let frameString = defaults.string(forKey: .spectrumWindowFrame),
            let window = spectrumWindowController?.window {
             let frame = NSRectFromString(frameString)
             window.setFrame(frame, display: true)

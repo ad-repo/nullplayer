@@ -26,7 +26,7 @@ struct EQPreset: Identifiable, Codable {
     private static let presetSourceLayout = EQConfiguration.classic10
 
     private static var activeLayout: EQConfiguration {
-        EQConfiguration.forModernUI(UserDefaults.standard.bool(forKey: "modernUIEnabled"))
+        EQConfiguration.forModernUI(UserDefaults.standard.bool(forKey: .modernUIEnabled))
     }
 
     private static func preset(stableID: UUID, name: String, preamp: Float = 0, classicBands: [Float]) -> EQPreset {

@@ -370,7 +370,7 @@ class SpectrumAnalyzerView: NSView {
     var qualityMode: SpectrumQualityMode = .classic {
         didSet {
             if !isEmbedded {
-                UserDefaults.standard.set(qualityMode.rawValue, forKey: "spectrumQualityMode")
+                UserDefaults.standard.set(qualityMode.rawValue, forKey: .spectrumQualityMode)
             }
             let mode = qualityMode
             dataLock.withLock {
@@ -445,7 +445,7 @@ class SpectrumAnalyzerView: NSView {
     var decayMode: SpectrumDecayMode = .snappy {
         didSet {
             if !isEmbedded {
-                UserDefaults.standard.set(decayMode.rawValue, forKey: "spectrumDecayMode")
+                UserDefaults.standard.set(decayMode.rawValue, forKey: .spectrumDecayMode)
             }
             let factor = decayMode.decayFactor
             dataLock.withLock {
@@ -514,7 +514,7 @@ class SpectrumAnalyzerView: NSView {
     var lightningStyle: LightningStyle = .classic {
         didSet {
             if !isEmbedded {
-                UserDefaults.standard.set(lightningStyle.rawValue, forKey: "lightningStyle")
+                UserDefaults.standard.set(lightningStyle.rawValue, forKey: .lightningStyle)
             }
             let style = lightningStyle
             dataLock.withLock { renderLightningStyle = style }
@@ -525,7 +525,7 @@ class SpectrumAnalyzerView: NSView {
     var matrixColorScheme: MatrixColorScheme = .classic {
         didSet {
             if !isEmbedded {
-                UserDefaults.standard.set(matrixColorScheme.rawValue, forKey: "matrixColorScheme")
+                UserDefaults.standard.set(matrixColorScheme.rawValue, forKey: .matrixColorScheme)
             }
             let scheme = matrixColorScheme
             dataLock.withLock { renderMatrixColorScheme = scheme }
@@ -536,7 +536,7 @@ class SpectrumAnalyzerView: NSView {
     var matrixIntensity: MatrixIntensity = .subtle {
         didSet {
             if !isEmbedded {
-                UserDefaults.standard.set(matrixIntensity.rawValue, forKey: "matrixIntensity")
+                UserDefaults.standard.set(matrixIntensity.rawValue, forKey: .matrixIntensity)
             }
             let intensity = matrixIntensity
             dataLock.withLock { renderMatrixIntensity = intensity }
@@ -547,7 +547,7 @@ class SpectrumAnalyzerView: NSView {
     var flameStyle: FlameStyle = .inferno {
         didSet {
             if !isEmbedded {
-                UserDefaults.standard.set(flameStyle.rawValue, forKey: "flameStyle")
+                UserDefaults.standard.set(flameStyle.rawValue, forKey: .flameStyle)
             }
             let style = flameStyle
             dataLock.withLock { renderFlameStyle = style }
@@ -558,7 +558,7 @@ class SpectrumAnalyzerView: NSView {
     var flameIntensity: FlameIntensity = .mellow {
         didSet {
             if !isEmbedded {
-                UserDefaults.standard.set(flameIntensity.rawValue, forKey: "flameIntensity")
+                UserDefaults.standard.set(flameIntensity.rawValue, forKey: .flameIntensity)
             }
             let intensity = flameIntensity
             dataLock.withLock { renderFlameIntensity = intensity }
@@ -763,39 +763,39 @@ class SpectrumAnalyzerView: NSView {
         wantsLayer = true
         
         // Restore saved settings
-        if let savedQuality = UserDefaults.standard.string(forKey: "spectrumQualityMode"),
+        if let savedQuality = UserDefaults.standard.string(forKey: .spectrumQualityMode),
            let mode = SpectrumQualityMode(rawValue: savedQuality) {
             qualityMode = mode
         }
         
-        if let savedDecay = UserDefaults.standard.string(forKey: "spectrumDecayMode"),
+        if let savedDecay = UserDefaults.standard.string(forKey: .spectrumDecayMode),
            let mode = SpectrumDecayMode(rawValue: savedDecay) {
             decayMode = mode
         }
         
-        if let saved = UserDefaults.standard.string(forKey: "flameStyle"),
+        if let saved = UserDefaults.standard.string(forKey: .flameStyle),
            let style = FlameStyle(rawValue: saved) {
             flameStyle = style
         }
-        if let saved = UserDefaults.standard.string(forKey: "flameIntensity"),
+        if let saved = UserDefaults.standard.string(forKey: .flameIntensity),
            let intensity = FlameIntensity(rawValue: saved) {
             flameIntensity = intensity
         }
         renderFlameStyle = flameStyle
         renderFlameIntensity = flameIntensity
         
-        if let saved = UserDefaults.standard.string(forKey: "lightningStyle"),
+        if let saved = UserDefaults.standard.string(forKey: .lightningStyle),
            let style = LightningStyle(rawValue: saved) {
             lightningStyle = style
         }
         renderLightningStyle = lightningStyle
         
-        if let saved = UserDefaults.standard.string(forKey: "matrixColorScheme"),
+        if let saved = UserDefaults.standard.string(forKey: .matrixColorScheme),
            let scheme = MatrixColorScheme(rawValue: saved) {
             matrixColorScheme = scheme
         }
         renderMatrixColorScheme = matrixColorScheme
-        if let saved = UserDefaults.standard.string(forKey: "matrixIntensity"),
+        if let saved = UserDefaults.standard.string(forKey: .matrixIntensity),
            let intensity = MatrixIntensity(rawValue: saved) {
             matrixIntensity = intensity
         }
@@ -935,12 +935,12 @@ class SpectrumAnalyzerView: NSView {
         // and only respond to flame style changes (which are shared)
         if !isEmbedded {
             // Reload settings from UserDefaults
-            if let savedQuality = UserDefaults.standard.string(forKey: "spectrumQualityMode"),
+            if let savedQuality = UserDefaults.standard.string(forKey: .spectrumQualityMode),
                let mode = SpectrumQualityMode(rawValue: savedQuality) {
                 qualityMode = mode
             }
             
-            if let savedDecay = UserDefaults.standard.string(forKey: "spectrumDecayMode"),
+            if let savedDecay = UserDefaults.standard.string(forKey: .spectrumDecayMode),
                let mode = SpectrumDecayMode(rawValue: savedDecay) {
                 decayMode = mode
             }
@@ -948,23 +948,23 @@ class SpectrumAnalyzerView: NSView {
         
         // Reload flame style and intensity (only for non-embedded views; embedded overlay uses its own key)
         if !isEmbedded {
-            if let savedStyle = UserDefaults.standard.string(forKey: "flameStyle"),
+            if let savedStyle = UserDefaults.standard.string(forKey: .flameStyle),
                let style = FlameStyle(rawValue: savedStyle) {
                 flameStyle = style
             }
-            if let savedIntensity = UserDefaults.standard.string(forKey: "flameIntensity"),
+            if let savedIntensity = UserDefaults.standard.string(forKey: .flameIntensity),
                let intensity = FlameIntensity(rawValue: savedIntensity) {
                 flameIntensity = intensity
             }
-            if let savedStyle = UserDefaults.standard.string(forKey: "lightningStyle"),
+            if let savedStyle = UserDefaults.standard.string(forKey: .lightningStyle),
                let style = LightningStyle(rawValue: savedStyle) {
                 lightningStyle = style
             }
-            if let savedScheme = UserDefaults.standard.string(forKey: "matrixColorScheme"),
+            if let savedScheme = UserDefaults.standard.string(forKey: .matrixColorScheme),
                let scheme = MatrixColorScheme(rawValue: savedScheme) {
                 matrixColorScheme = scheme
             }
-            if let savedMatIntensity = UserDefaults.standard.string(forKey: "matrixIntensity"),
+            if let savedMatIntensity = UserDefaults.standard.string(forKey: .matrixIntensity),
                let matIntensity = MatrixIntensity(rawValue: savedMatIntensity) {
                 matrixIntensity = matIntensity
             }

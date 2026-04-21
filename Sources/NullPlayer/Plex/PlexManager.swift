@@ -51,7 +51,7 @@ class PlexManager {
             }
             // Only save to UserDefaults if we have a valid server (don't overwrite with nil)
             if let serverId = currentServer?.id {
-                UserDefaults.standard.set(serverId, forKey: "PlexCurrentServerID")
+                UserDefaults.standard.set(serverId, forKey: .plexCurrentServerID)
             }
         }
     }
@@ -66,7 +66,7 @@ class PlexManager {
             NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: self)
             // Only save to UserDefaults if we have a valid library (don't overwrite with nil)
             if let libraryId = currentLibrary?.id {
-                UserDefaults.standard.set(libraryId, forKey: "PlexCurrentLibraryID")
+                UserDefaults.standard.set(libraryId, forKey: .plexCurrentLibraryID)
             }
         }
     }
@@ -238,8 +238,8 @@ class PlexManager {
         
         // Clear saved data
         KeychainHelper.shared.clearPlexCredentials()
-        UserDefaults.standard.removeObject(forKey: "PlexCurrentServerID")
-        UserDefaults.standard.removeObject(forKey: "PlexCurrentLibraryID")
+        UserDefaults.standard.removeObject(forKey: .plexCurrentServerID)
+        UserDefaults.standard.removeObject(forKey: .plexCurrentLibraryID)
     }
     
     // MARK: - Server Management
@@ -272,7 +272,7 @@ class PlexManager {
             // Determine which server to connect to
             var serverToConnect: PlexServer? = nil
             
-            if let savedServerID = UserDefaults.standard.string(forKey: "PlexCurrentServerID"),
+            if let savedServerID = UserDefaults.standard.string(forKey: .plexCurrentServerID),
                let savedServer = fetchedServers.first(where: { $0.id == savedServerID }) {
                 serverToConnect = savedServer
                 NSLog("PlexManager: Will connect to saved server: %@", savedServer.name)
@@ -518,7 +518,7 @@ class PlexManager {
             self.availableLibraries = allLibraries
             
             // Restore previous library selection, or default to first music library, or first library
-            if let savedLibraryID = UserDefaults.standard.string(forKey: "PlexCurrentLibraryID"),
+            if let savedLibraryID = UserDefaults.standard.string(forKey: .plexCurrentLibraryID),
                let savedLibrary = allLibraries.first(where: { $0.id == savedLibraryID }) {
                 // Restore saved library
                 self.currentLibrary = savedLibrary
