@@ -259,6 +259,11 @@ class ModernMarqueeLayer: CALayer {
         } else if isScrolling {
             // Re-render now but compensate scrollOffset so visible text stays put.
             // The art lands behind the current position and scrolls in from the right naturally.
+            //
+            // Invariant: callers always set artworkImage = nil synchronously before starting a
+            // new load (see ModernMainWindowView.updateTrackInfo), so previousArtScrollOffset
+            // is 0 here. The compensation equals the full artScrollOffset of the new image,
+            // shifting the text back to its current screen position after the loop widens.
             let previousArtScrollOffset = artScrollOffset
             _artworkImage = image
             needsTextRender = true

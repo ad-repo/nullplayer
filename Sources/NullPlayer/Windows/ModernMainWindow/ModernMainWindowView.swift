@@ -1099,6 +1099,7 @@ class ModernMainWindowView: NSView {
     }
 
     private func loadLocalArtwork(url: URL) async -> NSImage? {
+        guard !Task.isCancelled else { return nil }
         let asset = AVURLAsset(url: url)
         do {
             for format in [try await asset.load(.metadata),
