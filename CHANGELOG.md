@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.20.0
+
+### New Features
+
+- **Modern marquee album art** — the modern main window marquee can now show album artwork alongside scrolling track metadata, making the modern transport feel more like a compact now-playing display instead of text-only chrome.
+- **Installable `nullplayer` launcher** — the bundled CLI is now easier to run from Terminal without digging through `NullPlayer.app/Contents/MacOS`. Releases now include a `nullplayer` launcher, an installer script, and a double-click `.command` helper for installing the launcher into `/usr/local/bin`.
+- **Automation-first CLI positioning** — the README and CLI skill docs now present the headless CLI as a first-class feature for automation pipelines, multi-source playback, and routing to local outputs, Sonos, Chromecast, and UPnP/DLNA devices.
+- **Modern timer number system options** — the modern UI timer now supports additional number system options for its time display styling.
+
+### Improvements
+
+- **Modern transport spacing adjusted** — transport layout spacing in the modern main window has been tightened for a cleaner balance around the marquee and playback controls.
+- **CLI launch path clarified** — built-in CLI help and public docs now use the `nullplayer --cli ...` command as the primary entrypoint while still documenting the underlying bundled executable path for fallback use.
+- **Volume control documentation expanded** — the README now calls out `--volume <0-100>` and the live keyboard volume controls explicitly, including the fact that the same control path is used when casting is active.
+
+### Documentation
+
+- **Audio system limiter docs corrected** — documentation now reflects the current audio chain after removal of the old limiter path.
+- **Timer skill docs updated** — the timer-related skill documentation now matches the current modern timer capabilities and configuration options.
+
 ## 0.19.2
 
 ### New Features
