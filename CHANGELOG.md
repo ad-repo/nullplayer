@@ -20,6 +20,15 @@
 - **Audio system limiter docs corrected** — documentation now reflects the current audio chain after removal of the old limiter path.
 - **Timer skill docs updated** — the timer-related skill documentation now matches the current modern timer capabilities and configuration options.
 
+## 0.19.3
+
+### Bug Fixes
+
+- **External monitor display-link crash fixed** — ProjectM and the spectrum visualizer no longer create or re-pin `CVDisplayLink` objects before their views are associated with a real display. This fixes a GPU kernel panic/crash path seen on Apple Silicon Macs with external monitors connected at launch or when the display topology changed.
+- **ProjectM startup restored** — the display-link safety guard introduced for the monitor crash no longer blocks ProjectM from starting up normally.
+- **Safer display re-pinning** — OpenGL display-link updates now use the window screen's direct display ID instead of the older CGL-context rebind path, avoiding another unsafe re-association window during screen changes.
+- **Spectrum display-change resync fixed** — the spectrum layer now resynchronizes when displays change so visualization rendering stays aligned after moving windows between monitors or changing monitor configuration.
+
 ## 0.19.2
 
 ### New Features
