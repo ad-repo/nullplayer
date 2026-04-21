@@ -141,11 +141,11 @@ class PlexManager {
     
     private func loadSavedAccount() {
         guard let savedAccount = KeychainHelper.shared.getPlexAccount() else {
-            Log.server.infoString("PlexManager: No saved account found in keychain")
+            Log.server.infoPublic("PlexManager: No saved account found in keychain")
             return
         }
         
-        Log.server.infoString("PlexManager: Found saved account: \(savedAccount.username)")
+        Log.server.infoPublic("PlexManager: Found saved account: \(savedAccount.username)")
         self.account = savedAccount
         
         // Restore servers and selection in background
@@ -253,7 +253,7 @@ class PlexManager {
         
         // Skip if already refreshing to prevent race conditions
         guard !isRefreshing else {
-            Log.server.infoString("PlexManager: Already refreshing servers, skipping duplicate request")
+            Log.server.infoPublic("PlexManager: Already refreshing servers, skipping duplicate request")
             return
         }
         
@@ -264,7 +264,7 @@ class PlexManager {
         
         do {
             let fetchedServers = try await authClient.fetchResources(token: token)
-            Log.server.infoString("PlexManager: Fetched \(fetchedServers.count) servers")
+            Log.server.infoPublic("PlexManager: Fetched \(fetchedServers.count) servers")
             
             await MainActor.run {
                 self.servers = fetchedServers
@@ -276,10 +276,10 @@ class PlexManager {
             if let savedServerID = UserDefaults.standard.string(forKey: "PlexCurrentServerID"),
                let savedServer = fetchedServers.first(where: { $0.id == savedServerID }) {
                 serverToConnect = savedServer
-                Log.server.infoString("PlexManager: Will connect to saved server: \(savedServer.name)")
+                Log.server.infoPublic("PlexManager: Will connect to saved server: \(savedServer.name)")
             } else if let firstServer = fetchedServers.first {
                 serverToConnect = firstServer
-                Log.server.infoString("PlexManager: Will connect to first server: \(firstServer.name)")
+                Log.server.infoPublic("PlexManager: Will connect to first server: \(firstServer.name)")
             }
             
             // Connect to the server using the full connection logic (tries all connections)
@@ -287,7 +287,7 @@ class PlexManager {
                 do {
                     try await connect(to: server)
                 } catch {
-                    Log.server.errorString("PlexManager: Failed to connect to server \(server.name): \(error.localizedDescription)")
+                    Log.server.errorPublic("PlexManager: Failed to connect to server \(server.name): \(error.localizedDescription)")
                     // Don't throw - we still have the server list, just no active connection
                     connectionState = .disconnected
                 }
@@ -303,26 +303,26 @@ class PlexManager {
     /// Refresh servers without throwing (for background refresh)
     private func refreshServersInBackground() async {
         do {
-            Log.server.infoString("PlexManager: Background refresh of servers starting...")
+            Log.server.infoPublic("PlexManager: Background refresh of servers starting...")
             try await refreshServers()
-            Log.server.infoString("PlexManager: Background refresh completed, found \(servers.count) servers")
+            Log.server.infoPublic("PlexManager: Background refresh completed, found \(servers.count) servers")
             
             // Preload library content after successful server connection
             await preloadLibraryContent()
         } catch {
-            Log.server.errorString("PlexManager: Background refresh failed: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Background refresh failed: \(error.localizedDescription)")
         }
     }
     
     /// Preload library content in the background for faster Plex browser opening
     func preloadLibraryContent() async {
         guard let client = serverClient else {
-            Log.server.errorString("PlexManager: Cannot preload - no server connected")
+            Log.server.errorPublic("PlexManager: Cannot preload - no server connected")
             return
         }
 
         guard !isPreloading else {
-            Log.server.infoString("PlexManager: Already preloading, skipping")
+            Log.server.infoPublic("PlexManager: Already preloading, skipping")
             return
         }
 
@@ -330,26 +330,26 @@ class PlexManager {
             isPreloading = true
         }
 
-        Log.server.infoString("PlexManager: Starting library content preload")
+        Log.server.infoPublic("PlexManager: Starting library content preload")
 
         // Preload music from the current library if it's a music library
         if let musicLib = currentLibrary, musicLib.isMusicLibrary {
             do {
-                Log.server.infoString("PlexManager: Fetching artists...")
+                Log.server.infoPublic("PlexManager: Fetching artists...")
                 let artists = try await client.fetchAllArtists(libraryID: musicLib.id)
-                Log.server.infoString("PlexManager: Fetched \(artists.count) artists, now fetching albums...")
+                Log.server.infoPublic("PlexManager: Fetched \(artists.count) artists, now fetching albums...")
                 let albums = try await client.fetchAlbums(libraryID: musicLib.id, offset: 0, limit: 10000)
-                Log.server.infoString("PlexManager: Fetched \(albums.count) albums")
+                Log.server.infoPublic("PlexManager: Fetched \(albums.count) albums")
 
                 await MainActor.run {
                     if self.currentLibrary?.id == musicLib.id {
                         self.cachedArtists = artists
                         self.cachedAlbums = albums
-                        Log.server.infoString("PlexManager: Stored preloaded music - \(artists.count) artists, \(albums.count) albums")
+                        Log.server.infoPublic("PlexManager: Stored preloaded music - \(artists.count) artists, \(albums.count) albums")
                     }
                 }
             } catch {
-                Log.server.errorString("PlexManager: Music preload failed: \(error.localizedDescription)")
+                Log.server.errorPublic("PlexManager: Music preload failed: \(error.localizedDescription)")
             }
         }
 
@@ -358,18 +358,18 @@ class PlexManager {
             ?? availableLibraries.first(where: { $0.isMovieLibrary })
         if let movieLib = movieLib {
             do {
-                Log.server.infoString("PlexManager: Fetching movies from '\(movieLib.title)'...")
+                Log.server.infoPublic("PlexManager: Fetching movies from '\(movieLib.title)'...")
                 let movies = try await client.fetchMovies(libraryID: movieLib.id, offset: 0, limit: 500)
                 await MainActor.run {
                     let activeMovieLib = (self.currentLibrary?.isMovieLibrary == true ? self.currentLibrary : nil)
                         ?? self.availableLibraries.first(where: { $0.isMovieLibrary })
                     if activeMovieLib?.id == movieLib.id {
                         self.cachedMovies = movies
-                        Log.server.infoString("PlexManager: Stored preloaded movies - \(movies.count)")
+                        Log.server.infoPublic("PlexManager: Stored preloaded movies - \(movies.count)")
                     }
                 }
             } catch {
-                Log.server.errorString("PlexManager: Movie preload failed: \(error.localizedDescription)")
+                Log.server.errorPublic("PlexManager: Movie preload failed: \(error.localizedDescription)")
             }
         }
 
@@ -378,18 +378,18 @@ class PlexManager {
             ?? availableLibraries.first(where: { $0.isShowLibrary })
         if let showLib = showLib {
             do {
-                Log.server.infoString("PlexManager: Fetching shows from '\(showLib.title)'...")
+                Log.server.infoPublic("PlexManager: Fetching shows from '\(showLib.title)'...")
                 let shows = try await client.fetchShows(libraryID: showLib.id, offset: 0, limit: 500)
                 await MainActor.run {
                     let activeShowLib = (self.currentLibrary?.isShowLibrary == true ? self.currentLibrary : nil)
                         ?? self.availableLibraries.first(where: { $0.isShowLibrary })
                     if activeShowLib?.id == showLib.id {
                         self.cachedShows = shows
-                        Log.server.infoString("PlexManager: Stored preloaded shows - \(shows.count)")
+                        Log.server.infoPublic("PlexManager: Stored preloaded shows - \(shows.count)")
                     }
                 }
             } catch {
-                Log.server.errorString("PlexManager: Show preload failed: \(error.localizedDescription)")
+                Log.server.errorPublic("PlexManager: Show preload failed: \(error.localizedDescription)")
             }
         }
 
@@ -399,7 +399,7 @@ class PlexManager {
             NotificationCenter.default.post(name: Self.libraryContentDidPreloadNotification, object: self)
         }
 
-        Log.server.infoString("PlexManager: Library content preload complete")
+        Log.server.infoPublic("PlexManager: Library content preload complete")
     }
     
     /// Clear cached library content (called when library or server changes, or on refresh)
@@ -418,10 +418,10 @@ class PlexManager {
             throw PlexAuthError.unauthorized
         }
         
-        Log.server.infoString("PlexManager: Connecting to server '\(server.name)' (id: \(server.id))")
-        Log.server.infoString("PlexManager: Server has \(server.connections.count) connections")
+        Log.server.infoPublic("PlexManager: Connecting to server '\(server.name)' (id: \(server.id))")
+        Log.server.infoPublic("PlexManager: Server has \(server.connections.count) connections")
         for (index, conn) in server.connections.enumerated() {
-            Log.server.infoString("  Connection \(index): \(conn.uri) (local: \(conn.local ? 1 : 0), relay: \(conn.relay ? 1 : 0))")
+            Log.server.infoPublic("  Connection \(index): \(conn.uri) (local: \(conn.local ? 1 : 0), relay: \(conn.relay ? 1 : 0))")
         }
         
         connectionState = .connecting
@@ -441,12 +441,12 @@ class PlexManager {
         
         for connection in sortedConnections {
             guard connection.url != nil else {
-                Log.server.infoString("PlexManager: Skipping connection with invalid URL: \(connection.uri)")
+                Log.server.infoPublic("PlexManager: Skipping connection with invalid URL: \(connection.uri)")
                 continue
             }
             
             let connType = connection.local ? "local" : (connection.relay ? "relay" : "remote")
-            Log.server.infoString("PlexManager: Trying connection: \(connection.uri) (\(connType))")
+            Log.server.infoPublic("PlexManager: Trying connection: \(connection.uri) (\(connType))")
             triedConnections.append("\(connType): \(connection.uri)")
             
             // Create a temporary server with just this connection to test it
@@ -464,24 +464,24 @@ class PlexManager {
             )
             
             guard let client = PlexServerClient(server: testServer, authToken: token) else {
-                Log.server.errorString("PlexManager: Failed to create client for connection: \(connection.uri)")
+                Log.server.errorPublic("PlexManager: Failed to create client for connection: \(connection.uri)")
                 continue
             }
             
             // Check connection with short timeout
             let isOnline = await client.checkConnection()
             if isOnline {
-                Log.server.infoString("PlexManager: Connection successful: \(connection.uri)")
+                Log.server.infoPublic("PlexManager: Connection successful: \(connection.uri)")
                 workingClient = client
                 break
             } else {
-                Log.server.errorString("PlexManager: Connection failed: \(connection.uri)")
+                Log.server.errorPublic("PlexManager: Connection failed: \(connection.uri)")
                 lastError = PlexServerError.serverOffline
             }
         }
         
         guard let client = workingClient else {
-            Log.server.errorString("PlexManager: All connections failed for server '\(server.name)'")
+            Log.server.errorPublic("PlexManager: All connections failed for server '\(server.name)'")
             let triedList = triedConnections.joined(separator: "\n")
             connectionState = .error(lastError)
             throw PlexServerError.allConnectionsFailed(serverName: server.name, tried: triedList)
@@ -493,11 +493,11 @@ class PlexManager {
         }
         
         // Fetch libraries
-        Log.server.infoString("PlexManager: Fetching libraries...")
+        Log.server.infoPublic("PlexManager: Fetching libraries...")
         try await refreshLibraries()
         
         connectionState = .connected
-        Log.server.infoString("PlexManager: Connected to server '\(server.name)'")
+        Log.server.infoPublic("PlexManager: Connected to server '\(server.name)'")
     }
     
     // MARK: - Library Management
@@ -510,9 +510,9 @@ class PlexManager {
         
         // Fetch all libraries (music, movies, shows)
         let allLibraries = try await client.fetchLibraries()
-        Log.server.infoString("PlexManager: Found \(allLibraries.count) total libraries")
+        Log.server.infoPublic("PlexManager: Found \(allLibraries.count) total libraries")
         for lib in allLibraries {
-            Log.server.infoString("  Library: \(lib.title) (type: \(lib.type), id: \(lib.id))")
+            Log.server.infoPublic("  Library: \(lib.title) (type: \(lib.type), id: \(lib.id))")
         }
         
         await MainActor.run {
@@ -523,18 +523,18 @@ class PlexManager {
                let savedLibrary = allLibraries.first(where: { $0.id == savedLibraryID }) {
                 // Restore saved library
                 self.currentLibrary = savedLibrary
-                Log.server.infoString("PlexManager: Restored saved library: \(savedLibrary.title)")
+                Log.server.infoPublic("PlexManager: Restored saved library: \(savedLibrary.title)")
             } else if let firstMusicLibrary = allLibraries.first(where: { $0.isMusicLibrary }) {
                 // Default to first music library
                 self.currentLibrary = firstMusicLibrary
-                Log.server.infoString("PlexManager: Defaulting to music library: \(firstMusicLibrary.title)")
+                Log.server.infoPublic("PlexManager: Defaulting to music library: \(firstMusicLibrary.title)")
             } else if let firstLibrary = allLibraries.first {
                 // Fall back to first available library
                 self.currentLibrary = firstLibrary
-                Log.server.infoString("PlexManager: Defaulting to first library: \(firstLibrary.title)")
+                Log.server.infoPublic("PlexManager: Defaulting to first library: \(firstLibrary.title)")
             }
             
-            Log.server.infoString("PlexManager: Current library: \(self.currentLibrary?.title ?? "none")")
+            Log.server.infoPublic("PlexManager: Current library: \(self.currentLibrary?.title ?? "none")")
         }
     }
     
@@ -604,7 +604,7 @@ class PlexManager {
         guard let library = currentLibrary, library.isMusicLibrary else {
             return []
         }
-        Log.server.infoString("PlexManager: fetchAlbums /children returned empty for '\(artist.title)' (id=\(artist.id)), trying library section filter fallback")
+        Log.server.infoPublic("PlexManager: fetchAlbums /children returned empty for '\(artist.title)' (id=\(artist.id)), trying library section filter fallback")
         return try await client.fetchAlbumsByArtistFilter(artistID: artist.id, libraryID: library.id)
     }
     
@@ -764,7 +764,7 @@ class PlexManager {
     /// Convert a Plex track to an AudioEngine-compatible Track
     func convertToTrack(_ plexTrack: PlexTrack) -> Track? {
         guard let streamURL = streamURL(for: plexTrack) else {
-            Log.server.errorString("PlexManager: Cannot convert track '\(plexTrack.title)' - no stream URL (missing partKey)")
+            Log.server.errorPublic("PlexManager: Cannot convert track '\(plexTrack.title)' - no stream URL (missing partKey)")
             return nil
         }
         
@@ -807,7 +807,7 @@ class PlexManager {
     /// Convert a Plex movie to an AudioEngine-compatible Track (video type)
     func convertToTrack(_ movie: PlexMovie) -> Track? {
         guard let streamURL = streamURL(for: movie) else {
-            Log.server.errorString("PlexManager: Cannot convert movie '\(movie.title)' - no stream URL")
+            Log.server.errorPublic("PlexManager: Cannot convert movie '\(movie.title)' - no stream URL")
             return nil
         }
         
@@ -831,7 +831,7 @@ class PlexManager {
     /// Convert a Plex episode to an AudioEngine-compatible Track (video type)
     func convertToTrack(_ episode: PlexEpisode) -> Track? {
         guard let streamURL = streamURL(for: episode) else {
-            Log.server.errorString("PlexManager: Cannot convert episode '\(episode.title)' - no stream URL")
+            Log.server.errorPublic("PlexManager: Cannot convert episode '\(episode.title)' - no stream URL")
             return nil
         }
         
@@ -886,10 +886,10 @@ class PlexManager {
             )
             
             let tracks = convertToTracks(plexTracks)
-            Log.server.infoString("PlexManager: Track radio created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Track radio created with \(tracks.count) tracks")
             return PlexRadioHistory.shared.filterOutHistoryTracks(tracks)
         } catch {
-            Log.server.errorString("PlexManager: Failed to create track radio: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create track radio: \(error.localizedDescription)")
             return []
         }
     }
@@ -912,10 +912,10 @@ class PlexManager {
             )
             
             let tracks = convertToTracks(plexTracks)
-            Log.server.infoString("PlexManager: Artist radio created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Artist radio created with \(tracks.count) tracks")
             return PlexRadioHistory.shared.filterOutHistoryTracks(tracks)
         } catch {
-            Log.server.errorString("PlexManager: Failed to create artist radio: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create artist radio: \(error.localizedDescription)")
             return []
         }
     }
@@ -938,10 +938,10 @@ class PlexManager {
             )
             
             let tracks = convertToTracks(plexTracks)
-            Log.server.infoString("PlexManager: Album radio created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Album radio created with \(tracks.count) tracks")
             return PlexRadioHistory.shared.filterOutHistoryTracks(tracks)
         } catch {
-            Log.server.errorString("PlexManager: Failed to create album radio: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create album radio: \(error.localizedDescription)")
             return []
         }
     }
@@ -964,7 +964,7 @@ class PlexManager {
     /// Fetch available genres from the current library
     func fetchGenres() async -> [String] {
         guard let client = serverClient, let library = currentLibrary else {
-            Log.server.errorString("PlexManager: Cannot fetch genres - no server or library connected")
+            Log.server.errorPublic("PlexManager: Cannot fetch genres - no server or library connected")
             return RadioConfig.fallbackGenres
         }
         
@@ -973,7 +973,7 @@ class PlexManager {
             cachedGenres = genres
             return genres
         } catch {
-            Log.server.errorString("PlexManager: Failed to fetch genres: \(error.localizedDescription), using fallback")
+            Log.server.errorPublic("PlexManager: Failed to fetch genres: \(error.localizedDescription), using fallback")
             return RadioConfig.fallbackGenres
         }
     }
@@ -988,20 +988,20 @@ class PlexManager {
 
     private func radioLibraryContext(logPrefix: String) -> (PlexServerClient, PlexLibrary)? {
         guard let client = serverClient else {
-            Log.server.errorString("PlexManager: Cannot \(logPrefix) - no server connected")
+            Log.server.errorPublic("PlexManager: Cannot \(logPrefix) - no server connected")
             return nil
         }
         if let library = currentLibrary, library.isMusicLibrary {
             return (client, library)
         }
         if let currentLibrary {
-            Log.server.infoString("PlexManager: \(logPrefix) requested with non-music library '\(currentLibrary.title)' (type: \(currentLibrary.type))")
+            Log.server.infoPublic("PlexManager: \(logPrefix) requested with non-music library '\(currentLibrary.title)' (type: \(currentLibrary.type))")
         }
         if let musicLibrary = availableLibraries.first(where: { $0.isMusicLibrary }) {
-            Log.server.infoString("PlexManager: Falling back to music library '\(musicLibrary.title)' for \(logPrefix)")
+            Log.server.infoPublic("PlexManager: Falling back to music library '\(musicLibrary.title)' for \(logPrefix)")
             return (client, musicLibrary)
         }
-        Log.server.errorString("PlexManager: Cannot \(logPrefix) - no music library available")
+        Log.server.errorPublic("PlexManager: Cannot \(logPrefix) - no music library available")
         return nil
     }
     
@@ -1087,7 +1087,7 @@ class PlexManager {
         // Check if currently playing track is a Plex track
         if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
            let ratingKey = currentTrack.plexRatingKey {
-            Log.server.infoString("PlexManager: Using current playing track as sonic seed: \(ratingKey)")
+            Log.server.infoPublic("PlexManager: Using current playing track as sonic seed: \(ratingKey)")
             return ratingKey
         }
         
@@ -1110,11 +1110,11 @@ class PlexManager {
             
             let response: PlexResponse<PlexMetadataResponse> = try await client.performRequest(request)
             if let randomTrack = response.mediaContainer.metadata?.first {
-                Log.server.infoString("PlexManager: Using random track as sonic seed: \(randomTrack.ratingKey)")
+                Log.server.infoPublic("PlexManager: Using random track as sonic seed: \(randomTrack.ratingKey)")
                 return randomTrack.ratingKey
             }
         } catch {
-            Log.server.errorString("PlexManager: Failed to get random seed track: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to get random seed track: \(error.localizedDescription)")
         }
         
         return nil
@@ -1135,15 +1135,15 @@ class PlexManager {
             )
             var plexTracks = try await client.createLibraryRadio(libraryID: library.id, limit: fetchLimit)
             if plexTracks.isEmpty && fetchLimit > 0 {
-                Log.server.infoString("PlexManager: Library radio random query returned 0 tracks, falling back to library track fetch")
+                Log.server.infoPublic("PlexManager: Library radio random query returned 0 tracks, falling back to library track fetch")
                 plexTracks = try await client.fetchTracks(libraryID: library.id, offset: 0, limit: fetchLimit).shuffled()
             }
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
-            Log.server.infoString("PlexManager: Library radio created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Library radio created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create library radio: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create library radio: \(error.localizedDescription)")
             return []
         }
     }
@@ -1155,7 +1155,7 @@ class PlexManager {
         }
         
         guard let seedTrackID = await getSonicSeedTrackID() else {
-            Log.server.errorString("PlexManager: Cannot create library radio (sonic) - no seed track available")
+            Log.server.errorPublic("PlexManager: Cannot create library radio (sonic) - no seed track available")
             return []
         }
         
@@ -1165,10 +1165,10 @@ class PlexManager {
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
             let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
-            Log.server.infoString("PlexManager: Library radio (sonic) created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Library radio (sonic) created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create library radio (sonic): \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create library radio (sonic): \(error.localizedDescription)")
             return []
         }
     }
@@ -1189,10 +1189,10 @@ class PlexManager {
             let plexTracks = try await client.createGenreRadio(genre: genre, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
-            Log.server.infoString("PlexManager: Genre radio (\(genre)) created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Genre radio (\(genre)) created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create genre radio: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create genre radio: \(error.localizedDescription)")
             return []
         }
     }
@@ -1204,7 +1204,7 @@ class PlexManager {
         }
         
         guard let seedTrackID = await getSonicSeedTrackID() else {
-            Log.server.errorString("PlexManager: Cannot create genre radio (sonic) - no seed track available")
+            Log.server.errorPublic("PlexManager: Cannot create genre radio (sonic) - no seed track available")
             return []
         }
         
@@ -1214,10 +1214,10 @@ class PlexManager {
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
             let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
-            Log.server.infoString("PlexManager: Genre radio (sonic) (\(genre)) created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Genre radio (sonic) (\(genre)) created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create genre radio (sonic): \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create genre radio (sonic): \(error.localizedDescription)")
             return []
         }
     }
@@ -1238,10 +1238,10 @@ class PlexManager {
             let plexTracks = try await client.createDecadeRadio(startYear: startYear, endYear: endYear, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
-            Log.server.infoString("PlexManager: Decade radio (\(startYear)-\(endYear)) created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Decade radio (\(startYear)-\(endYear)) created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create decade radio: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create decade radio: \(error.localizedDescription)")
             return []
         }
     }
@@ -1253,7 +1253,7 @@ class PlexManager {
         }
         
         guard let seedTrackID = await getSonicSeedTrackID() else {
-            Log.server.errorString("PlexManager: Cannot create decade radio (sonic) - no seed track available")
+            Log.server.errorPublic("PlexManager: Cannot create decade radio (sonic) - no seed track available")
             return []
         }
         
@@ -1263,10 +1263,10 @@ class PlexManager {
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
             let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
-            Log.server.infoString("PlexManager: Decade radio (sonic) (\(startYear)-\(endYear)) created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Decade radio (sonic) (\(startYear)-\(endYear)) created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create decade radio (sonic): \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create decade radio (sonic): \(error.localizedDescription)")
             return []
         }
     }
@@ -1287,10 +1287,10 @@ class PlexManager {
             let plexTracks = try await client.createHitsRadio(libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
-            Log.server.infoString("PlexManager: Hits radio created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Hits radio created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create hits radio: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create hits radio: \(error.localizedDescription)")
             return []
         }
     }
@@ -1302,7 +1302,7 @@ class PlexManager {
         }
         
         guard let seedTrackID = await getSonicSeedTrackID() else {
-            Log.server.errorString("PlexManager: Cannot create hits radio (sonic) - no seed track available")
+            Log.server.errorPublic("PlexManager: Cannot create hits radio (sonic) - no seed track available")
             return []
         }
         
@@ -1312,10 +1312,10 @@ class PlexManager {
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
             let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
-            Log.server.infoString("PlexManager: Hits radio (sonic) created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Hits radio (sonic) created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create hits radio (sonic): \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create hits radio (sonic): \(error.localizedDescription)")
             return []
         }
     }
@@ -1336,10 +1336,10 @@ class PlexManager {
             let plexTracks = try await client.createDeepCutsRadio(libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
-            Log.server.infoString("PlexManager: Deep cuts radio created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Deep cuts radio created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create deep cuts radio: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create deep cuts radio: \(error.localizedDescription)")
             return []
         }
     }
@@ -1351,7 +1351,7 @@ class PlexManager {
         }
         
         guard let seedTrackID = await getSonicSeedTrackID() else {
-            Log.server.errorString("PlexManager: Cannot create deep cuts radio (sonic) - no seed track available")
+            Log.server.errorPublic("PlexManager: Cannot create deep cuts radio (sonic) - no seed track available")
             return []
         }
         
@@ -1361,10 +1361,10 @@ class PlexManager {
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
             let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
-            Log.server.infoString("PlexManager: Deep cuts radio (sonic) created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Deep cuts radio (sonic) created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create deep cuts radio (sonic): \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create deep cuts radio (sonic): \(error.localizedDescription)")
             return []
         }
     }
@@ -1389,10 +1389,10 @@ class PlexManager {
             let plexTracks = try await client.createRatingRadio(minRating: minRating, libraryID: library.id, limit: fetchLimit)
             let allTracks = convertToTracks(plexTracks)
             let tracks = applyRadioFilters(allTracks, limit: limit)
-            Log.server.infoString("PlexManager: Rating radio (\(String(format: "%.1f", minRating / 2))+ stars) created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Rating radio (\(String(format: "%.1f", minRating / 2))+ stars) created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create rating radio: \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create rating radio: \(error.localizedDescription)")
             return []
         }
     }
@@ -1408,7 +1408,7 @@ class PlexManager {
         }
         
         guard let seedTrackID = await getSonicSeedTrackID() else {
-            Log.server.errorString("PlexManager: Cannot create rating radio (sonic) - no seed track available")
+            Log.server.errorPublic("PlexManager: Cannot create rating radio (sonic) - no seed track available")
             return []
         }
         
@@ -1418,10 +1418,10 @@ class PlexManager {
             let allTracks = convertToTracks(plexTracks)
             // Sonic: limit to 1 track per artist for maximum variety
             let tracks = applyRadioFilters(allTracks, limit: limit, maxPerArtist: 1)
-            Log.server.infoString("PlexManager: Rating radio (sonic, \(String(format: "%.1f", minRating / 2))+ stars) created with \(tracks.count) tracks")
+            Log.server.infoPublic("PlexManager: Rating radio (sonic, \(String(format: "%.1f", minRating / 2))+ stars) created with \(tracks.count) tracks")
             return tracks
         } catch {
-            Log.server.errorString("PlexManager: Failed to create rating radio (sonic): \(error.localizedDescription)")
+            Log.server.errorPublic("PlexManager: Failed to create rating radio (sonic): \(error.localizedDescription)")
             return []
         }
     }

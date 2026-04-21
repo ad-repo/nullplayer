@@ -46,7 +46,14 @@ enum NetworkClient {
             config.timeoutIntervalForResource = 300
         }
 
-        config.urlCache = .shared
+        // Only API sessions benefit from URL caching. Quick-checks and long-polls
+        // should not pollute the cache with ephemeral ping responses.
+        switch type {
+        case .api:
+            config.urlCache = .shared
+        case .quickCheck, .longPoll:
+            config.urlCache = nil
+        }
         return URLSession(configuration: config)
     }
 }

@@ -1466,7 +1466,8 @@ class PlexServerClient {
         
         // Use a shorter timeout for connection checks
         let quickSession = NetworkClient.makeSession(type: .quickCheck)
-        
+        defer { quickSession.finishTasksAndInvalidate() }
+
         do {
             let (_, response) = try await quickSession.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else { return false }

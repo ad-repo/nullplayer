@@ -133,7 +133,7 @@ class CastManager {
         guard let session = upnpManager.activeSession,
               let savedURL = session.currentURL,
               let savedMetadata = session.metadata else {
-            Log.casting.errorString("CastManager: Transfer failed - no active session or missing URL/metadata")
+            Log.casting.errorPublic("CastManager: Transfer failed - no active session or missing URL/metadata")
             await stopCasting()
             throw CastError.sessionNotActive
         }
@@ -143,7 +143,7 @@ class CastManager {
         if let pollResult = await upnpManager.pollSonosPlaybackState() {
             savedPosition = pollResult.position
         }
-        Log.casting.infoString("CastManager: Saved state - URL: \(savedURL.redacted), position: \(String(format: "%.1f", savedPosition))")
+        Log.casting.infoPublic("CastManager: Saved state - URL: \(savedURL.redacted), position: \(String(format: "%.1f", savedPosition))")
         
         // 2. Stop polling and topology refresh to prevent interference during swap
         stopSonosPolling()
@@ -154,9 +154,9 @@ class CastManager {
         // This also stops playback on all grouped members since they were following the coordinator
         do {
             try await unjoinSonos(zoneUDN: oldCoordinatorUDN)
-            Log.casting.infoString("CastManager: Old coordinator \(oldCoordinatorUDN) is now standalone")
+            Log.casting.infoPublic("CastManager: Old coordinator \(oldCoordinatorUDN) is now standalone")
         } catch {
-            Log.casting.errorString("CastManager: Failed to make old coordinator standalone: \(error.localizedDescription)")
+            Log.casting.errorPublic("CastManager: Failed to make old coordinator standalone: \(error.localizedDescription)")
             // Continue anyway - the cast to new coordinator may still work
         }
         
@@ -165,20 +165,20 @@ class CastManager {
         
         // 5. Create CastDevice for new coordinator from zone info
         guard let newDevice = upnpManager.sonosCastDevice(forZoneUDN: newCoordinatorUDN) else {
-            Log.casting.errorString("CastManager: Transfer failed - could not find device for zone \(newCoordinatorUDN)")
+            Log.casting.errorPublic("CastManager: Transfer failed - could not find device for zone \(newCoordinatorUDN)")
             // Fall back to full stop - old coordinator already standalone, just clean up
             await stopCasting()
             throw CastError.playbackFailed("Could not find Sonos device for room")
         }
-        Log.casting.infoString("CastManager: New coordinator device: \(newDevice.name) (\(newDevice.address):\(newDevice.port))")
+        Log.casting.infoPublic("CastManager: New coordinator device: \(newDevice.name) (\(newDevice.address):\(newDevice.port))")
         
         // 6. Cast to new coordinator
         // Since we cleared activeSession in step 4, cast(to:) won't call stopCasting()
         do {
             try await cast(to: newDevice, url: savedURL, metadata: savedMetadata, startPosition: savedPosition)
-            Log.casting.infoString("CastManager: Transfer successful - now casting to \(newDevice.name)")
+            Log.casting.infoPublic("CastManager: Transfer successful - now casting to \(newDevice.name)")
         } catch {
-            Log.casting.errorString("CastManager: Transfer cast failed: \(error.localizedDescription)")
+            Log.casting.errorPublic("CastManager: Transfer cast failed: \(error.localizedDescription)")
             // Clean up whatever partial state exists
             await stopCasting()
             throw error
@@ -189,11 +189,11 @@ class CastManager {
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s for cast to establish
             for udn in otherRoomUDNs {
                 do {
-                    Log.casting.infoString("CastManager: Joining room \(udn) to new coordinator \(newDevice.id)")
+                    Log.casting.infoPublic("CastManager: Joining room \(udn) to new coordinator \(newDevice.id)")
                     try await joinSonosToGroup(zoneUDN: udn, coordinatorUDN: newDevice.id)
                     try? await Task.sleep(nanoseconds: 200_000_000) // 0.2s between joins
                 } catch {
-                    Log.casting.errorString("CastManager: Failed to join room \(udn) to new group: \(error.localizedDescription)")
+                    Log.casting.errorPublic("CastManager: Failed to join room \(udn) to new group: \(error.localizedDescription)")
                     // Non-fatal: continue with other rooms
                 }
             }
@@ -201,7 +201,7 @@ class CastManager {
         
         // 8. Refresh topology to update group state
         await refreshSonosGroups()
-        Log.casting.infoString("CastManager: Transfer complete")
+        Log.casting.infoPublic("CastManager: Transfer complete")
     }
     
     /// Current active cast session (if any)
@@ -432,7 +432,7 @@ class CastManager {
             return
         }
 
-        Log.casting.infoString("CastManager: Starting device discovery...")
+        Log.casting.infoPublic("CastManager: Starting device discovery...")
         isDiscovering = true
 
         chromecastManager.startDiscovery()
@@ -446,7 +446,7 @@ class CastManager {
                 // compete with high-throughput SMB/NAS reads on weaker WiFi links.
                 let engine = self.resolvedAudioEngine
                 if engine.state == .playing && !engine.isCastingActive {
-                    Log.casting.infoString("CastManager: Skipping discovery refresh - local audio is playing")
+                    Log.casting.infoPublic("CastManager: Skipping discovery refresh - local audio is playing")
                     return
                 }
                 self.refreshDevices()
@@ -460,7 +460,7 @@ class CastManager {
     /// Stop discovering devices
     func stopDiscovery() {
         guard isDiscovering, !isCasting else { return }
-        Log.casting.infoString("CastManager: Stopping device discovery (idle)")
+        Log.casting.infoPublic("CastManager: Stopping device discovery (idle)")
         isDiscovering = false
 
         chromecastManager.stopDiscovery()
@@ -482,7 +482,7 @@ class CastManager {
     /// Refresh device list (restart discovery)
     /// Keeps existing devices visible - doesn't clear until new devices are found
     func refreshDevices() {
-        Log.casting.infoString("CastManager: Refreshing devices...")
+        Log.casting.infoPublic("CastManager: Refreshing devices...")
         
         isRefreshing = true
         lastRefreshTime = Date()
@@ -500,7 +500,7 @@ class CastManager {
         // Wait 2s for clean socket shutdown before restarting
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             guard let self = self else { return }
-            Log.casting.infoString("CastManager: Restarting discovery after refresh delay")
+            Log.casting.infoPublic("CastManager: Restarting discovery after refresh delay")
             
             self.isDiscovering = true
             self.chromecastManager.startDiscovery()
@@ -510,7 +510,7 @@ class CastManager {
         // Post-refresh discovery boosts
         DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
             guard let self = self, self.isDiscovering else { return }
-            Log.casting.infoString("CastManager: Sending discovery boost at +10s")
+            Log.casting.infoPublic("CastManager: Sending discovery boost at +10s")
             self.upnpManager.sendDiscoveryBoost()
         }
         
@@ -520,10 +520,10 @@ class CastManager {
             self.isRefreshing = false
             
             if self.isDiscovering {
-                Log.casting.infoString("CastManager: Sending discovery boost at +15s")
+                Log.casting.infoPublic("CastManager: Sending discovery boost at +15s")
                 self.upnpManager.sendDiscoveryBoost()
             }
-            Log.casting.infoString("CastManager: Refresh complete")
+            Log.casting.infoPublic("CastManager: Refresh complete")
         }
     }
     
@@ -542,7 +542,7 @@ class CastManager {
     ///   - metadata: Metadata about the media
     ///   - startPosition: Optional position to start from (for resuming playback)
     func cast(to device: CastDevice, url: URL, metadata: CastMetadata, startPosition: TimeInterval = 0) async throws {
-        Log.casting.infoString("CastManager: Casting to \(device.name) (\(device.type.displayName)), start position: \(String(format: "%.1f", startPosition))")
+        Log.casting.infoPublic("CastManager: Casting to \(device.name) (\(device.type.displayName)), start position: \(String(format: "%.1f", startPosition))")
         
         // Disconnect from any existing session
         if activeSession != nil {
@@ -557,26 +557,26 @@ class CastManager {
         // Connect and cast based on device type
         switch device.type {
         case .chromecast:
-            Log.casting.infoString("CastManager: Connecting to Chromecast...")
+            Log.casting.infoPublic("CastManager: Connecting to Chromecast...")
             do {
                 try await chromecastManager.connect(to: device)
-                Log.casting.infoString("CastManager: Connected to Chromecast, now casting...")
+                Log.casting.infoPublic("CastManager: Connected to Chromecast, now casting...")
                 try await chromecastManager.cast(url: url, metadata: metadata)
-                Log.casting.infoString("CastManager: Cast started successfully")
+                Log.casting.infoPublic("CastManager: Cast started successfully")
             } catch {
-                Log.casting.errorString("CastManager: Chromecast error: \(error.localizedDescription)")
+                Log.casting.errorPublic("CastManager: Chromecast error: \(error.localizedDescription)")
                 throw error
             }
             
         case .sonos, .dlnaTV:
-            Log.casting.infoString("CastManager: Connecting to \(device.type.displayName)...")
+            Log.casting.infoPublic("CastManager: Connecting to \(device.type.displayName)...")
             do {
                 try await upnpManager.connect(to: device)
-                Log.casting.infoString("CastManager: Connected to \(device.type.displayName), now casting...")
+                Log.casting.infoPublic("CastManager: Connected to \(device.type.displayName), now casting...")
                 try await upnpManager.cast(url: url, metadata: metadata)
-                Log.casting.infoString("CastManager: Cast started successfully")
+                Log.casting.infoPublic("CastManager: Cast started successfully")
             } catch {
-                Log.casting.errorString("CastManager: \(device.type.displayName) error: \(error.localizedDescription)")
+                Log.casting.errorPublic("CastManager: \(device.type.displayName) error: \(error.localizedDescription)")
                 // Clean up partial session state - connect() may have succeeded before cast() failed
                 await upnpManager.disconnect()
                 throw error
@@ -589,7 +589,7 @@ class CastManager {
             // Small delay to let playback start before seeking
             try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
             try? await seek(to: startPosition)
-            Log.casting.infoString("CastManager: Seeked cast device to \(String(format: "%.1f", startPosition)) seconds")
+            Log.casting.infoPublic("CastManager: Seeked cast device to \(String(format: "%.1f", startPosition)) seconds")
         }
         
         // Track video casting state
@@ -620,7 +620,7 @@ class CastManager {
                 // Update main window with video title (for casts from library browser menu)
                 WindowManager.shared.mainWindowController?.updateVideoTrackInfo(title: metadata.title)
                 
-                Log.casting.infoString("CastManager: Video cast state initialized - title='\(metadata.title)', duration=\(String(format: "%.1f", self.videoCastDuration)), startPosition=\(String(format: "%.1f", startPosition)), hasReceivedStatus=\(self.videoCastHasReceivedStatus ? 1 : 0)")
+                Log.casting.infoPublic("CastManager: Video cast state initialized - title='\(metadata.title)', duration=\(String(format: "%.1f", self.videoCastDuration)), startPosition=\(String(format: "%.1f", startPosition)), hasReceivedStatus=\(self.videoCastHasReceivedStatus ? 1 : 0)")
             } else {
                 // Audio casting - use different tracking based on device type
                 
@@ -710,7 +710,7 @@ class CastManager {
     
     /// Cast a specific track to a device
     func castTrack(_ track: Track, to device: CastDevice, startPosition: TimeInterval = 0) async throws {
-        Log.casting.infoString("CastManager: castTrack called for '\(track.title)' - track.url: \(track.url.redacted)")
+        Log.casting.infoPublic("CastManager: castTrack called for '\(track.title)' - track.url: \(track.url.redacted)")
         NSLog("CastManager: track.subsonicId=%@, track.jellyfinId=%@, track.embyId=%@, track.plexRatingKey=%@",
               track.subsonicId ?? "nil", track.jellyfinId ?? "nil", track.embyId ?? "nil", track.plexRatingKey ?? "nil")
 
@@ -729,7 +729,7 @@ class CastManager {
                 let result = try await prepareProxyURL(for: track, device: device)
                 castURL = result.url
                 effectiveContentType = result.contentType
-                Log.casting.infoString("CastManager: Using proxy for Subsonic/Jellyfin/Emby->Sonos: \(castURL.redacted)")
+                Log.casting.infoPublic("CastManager: Using proxy for Subsonic/Jellyfin/Emby->Sonos: \(castURL.redacted)")
             } else {
                 // For Plex/remote URLs, ensure token is included
                 if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: track.url) {
@@ -792,7 +792,7 @@ class CastManager {
             contentType: contentType
         )
         
-        Log.casting.infoString("CastManager: castTrack URL: \(finalCastURL.redacted), contentType: \(contentType)")
+        Log.casting.infoPublic("CastManager: castTrack URL: \(finalCastURL.redacted), contentType: \(contentType)")
         
         try await cast(to: device, url: finalCastURL, metadata: metadata, startPosition: startPosition)
     }
@@ -858,7 +858,7 @@ class CastManager {
             return castTrackGeneration
         }
         
-        Log.casting.infoString("CastManager: castNewTrack '\(track.title)' starting (generation \(myGeneration))")
+        Log.casting.infoPublic("CastManager: castNewTrack '\(track.title)' starting (generation \(myGeneration))")
         
         // Helper to clear loading state and notify UI
         // Always posts notification to ensure loading overlay is cleared even for non-local failures
@@ -885,7 +885,7 @@ class CastManager {
                     let result = try await prepareProxyURL(for: track, device: session.device)
                     castURL = result.url
                     effectiveContentType = result.contentType
-                    Log.casting.infoString("CastManager: castNewTrack using proxy for Subsonic/Jellyfin/Emby->Sonos: \(castURL.redacted)")
+                    Log.casting.infoPublic("CastManager: castNewTrack using proxy for Subsonic/Jellyfin/Emby->Sonos: \(castURL.redacted)")
                 } catch {
                     await clearLoadingState()
                     throw error
@@ -917,7 +917,7 @@ class CastManager {
         // Check if we've been superseded by a newer track change
         let currentGen1 = await MainActor.run { castTrackGeneration }
         guard myGeneration == currentGen1 else {
-            Log.casting.infoString("CastManager: castNewTrack '\(track.title)' abandoned - superseded by generation \(currentGen1)")
+            Log.casting.infoPublic("CastManager: castNewTrack '\(track.title)' abandoned - superseded by generation \(currentGen1)")
             // Only clear loading state if we OWN it (pendingCastTrack still matches our track)
             // If another track with loading state superseded us, it set its own pendingCastTrack and we shouldn't clear
             await MainActor.run {
@@ -967,7 +967,7 @@ class CastManager {
             contentType: contentType
         )
         
-        Log.casting.infoString("CastManager: Casting new track '\(track.title)' to \(session.device.name), contentType: \(contentType)")
+        Log.casting.infoPublic("CastManager: Casting new track '\(track.title)' to \(session.device.name), contentType: \(contentType)")
         
         // Cast to the existing connected device
         // Wrap in do/catch to ensure loading state is cleared on failure
@@ -980,7 +980,7 @@ class CastManager {
                 try await upnpManager.cast(url: finalCastURL, metadata: metadata)
             }
         } catch {
-            Log.casting.errorString("CastManager: castNewTrack '\(track.title)' failed: \(error.localizedDescription)")
+            Log.casting.errorPublic("CastManager: castNewTrack '\(track.title)' failed: \(error.localizedDescription)")
             await clearLoadingState()
             throw error
         }
@@ -988,7 +988,7 @@ class CastManager {
         // Check again after the network call - another track change may have started
         let currentGen2 = await MainActor.run { castTrackGeneration }
         guard myGeneration == currentGen2 else {
-            Log.casting.infoString("CastManager: castNewTrack '\(track.title)' post-cast abandoned - superseded by generation \(currentGen2)")
+            Log.casting.infoPublic("CastManager: castNewTrack '\(track.title)' post-cast abandoned - superseded by generation \(currentGen2)")
             // Only clear loading state if we OWN it (pendingCastTrack still matches our track)
             // If another track with loading state superseded us, it set its own pendingCastTrack and we shouldn't clear
             await MainActor.run {
@@ -1005,7 +1005,7 @@ class CastManager {
         await MainActor.run {
             // Final check on main thread before updating UI
             guard myGeneration == self.castTrackGeneration else {
-                Log.casting.infoString("CastManager: castNewTrack '\(track.title)' UI update abandoned - superseded")
+                Log.casting.infoPublic("CastManager: castNewTrack '\(track.title)' UI update abandoned - superseded")
                 // Only clear loading state if we OWN it (pendingCastTrack still matches our track)
                 // If another track with loading state superseded us, it set its own pendingCastTrack and we shouldn't clear
                 if needsLoadingState && self.pendingCastTrack?.id == track.id {
@@ -1091,14 +1091,14 @@ class CastManager {
             summary: movie.summary
         )
         
-        Log.casting.infoString("CastManager: Casting Plex movie '\(movie.title)' to \(device.name) (type: \(device.type.rawValue))")
-        Log.casting.infoString("CastManager: Cast URL: \(redactedURL(castURL))")
+        Log.casting.infoPublic("CastManager: Casting Plex movie '\(movie.title)' to \(device.name) (type: \(device.type.rawValue))")
+        Log.casting.infoPublic("CastManager: Cast URL: \(redactedURL(castURL))")
         
         do {
             try await cast(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
-            Log.casting.infoString("CastManager: Cast completed successfully")
+            Log.casting.infoPublic("CastManager: Cast completed successfully")
         } catch {
-            Log.casting.errorString("CastManager: Cast failed with error: \(error.localizedDescription)")
+            Log.casting.errorPublic("CastManager: Cast failed with error: \(error.localizedDescription)")
             throw error
         }
     }
@@ -1151,8 +1151,8 @@ class CastManager {
             summary: episode.summary
         )
         
-        Log.casting.infoString("CastManager: Casting Plex episode '\(title)' to \(device.name)")
-        Log.casting.infoString("CastManager: Cast URL: \(redactedURL(castURL))")
+        Log.casting.infoPublic("CastManager: Casting Plex episode '\(title)' to \(device.name)")
+        Log.casting.infoPublic("CastManager: Cast URL: \(redactedURL(castURL))")
         try await cast(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
     }
     
@@ -1188,8 +1188,8 @@ class CastManager {
             summary: movie.overview
         )
         
-        Log.casting.infoString("CastManager: Casting Jellyfin movie '\(movie.title)' to \(device.name)")
-        Log.casting.infoString("CastManager: Cast URL: \(redactedURL(streamURL))")
+        Log.casting.infoPublic("CastManager: Casting Jellyfin movie '\(movie.title)' to \(device.name)")
+        Log.casting.infoPublic("CastManager: Cast URL: \(redactedURL(streamURL))")
         try await cast(to: device, url: streamURL, metadata: metadata, startPosition: startPosition)
     }
     
@@ -1233,8 +1233,8 @@ class CastManager {
             summary: episode.overview
         )
         
-        Log.casting.infoString("CastManager: Casting Jellyfin episode '\(title)' to \(device.name)")
-        Log.casting.infoString("CastManager: Cast URL: \(redactedURL(streamURL))")
+        Log.casting.infoPublic("CastManager: Casting Jellyfin episode '\(title)' to \(device.name)")
+        Log.casting.infoPublic("CastManager: Cast URL: \(redactedURL(streamURL))")
         try await cast(to: device, url: streamURL, metadata: metadata, startPosition: startPosition)
     }
     
@@ -1270,8 +1270,8 @@ class CastManager {
             summary: movie.overview
         )
 
-        Log.casting.infoString("CastManager: Casting Emby movie '\(movie.title)' to \(device.name)")
-        Log.casting.infoString("CastManager: Cast URL: \(redactedURL(streamURL))")
+        Log.casting.infoPublic("CastManager: Casting Emby movie '\(movie.title)' to \(device.name)")
+        Log.casting.infoPublic("CastManager: Cast URL: \(redactedURL(streamURL))")
         try await cast(to: device, url: streamURL, metadata: metadata, startPosition: startPosition)
     }
 
@@ -1315,8 +1315,8 @@ class CastManager {
             summary: episode.overview
         )
 
-        Log.casting.infoString("CastManager: Casting Emby episode '\(title)' to \(device.name)")
-        Log.casting.infoString("CastManager: Cast URL: \(redactedURL(streamURL))")
+        Log.casting.infoPublic("CastManager: Casting Emby episode '\(title)' to \(device.name)")
+        Log.casting.infoPublic("CastManager: Cast URL: \(redactedURL(streamURL))")
         try await cast(to: device, url: streamURL, metadata: metadata, startPosition: startPosition)
     }
 
@@ -1358,13 +1358,13 @@ class CastManager {
             mediaType: mediaType
         )
         
-        Log.casting.infoString("CastManager: Casting local video '\(title)' to \(device.name)")
+        Log.casting.infoPublic("CastManager: Casting local video '\(title)' to \(device.name)")
         try await cast(to: device, url: serverURL, metadata: metadata, startPosition: startPosition)
     }
     
     /// Stop casting and disconnect
     func stopCasting() async {
-        Log.casting.infoString("CastManager: Stopping casting")
+        Log.casting.infoPublic("CastManager: Stopping casting")
         
         // Stop Sonos polling and topology refresh
         stopSonosPolling()
@@ -1377,7 +1377,7 @@ class CastManager {
             let groupRoomUDNs = getRoomsInActiveCastGroup()
             let coordinatorUDN = upnpManager.activeSession?.device.id
             for udn in groupRoomUDNs where udn != coordinatorUDN {
-                Log.casting.infoString("CastManager: Ungrouping room \(udn) before stop")
+                Log.casting.infoPublic("CastManager: Ungrouping room \(udn) before stop")
                 try? await unjoinSonos(zoneUDN: udn)
             }
             if groupRoomUDNs.count > 1 {
@@ -1431,7 +1431,7 @@ class CastManager {
     /// Synchronous stop for app termination - stops cast devices without MainActor work
     /// This avoids deadlock when called from applicationWillTerminate on the main thread
     func stopCastingSync() {
-        Log.casting.infoString("CastManager: Stopping casting (sync for termination)")
+        Log.casting.infoPublic("CastManager: Stopping casting (sync for termination)")
         
         // Stop Sonos polling and topology refresh
         stopSonosPolling()
@@ -1643,10 +1643,10 @@ class CastManager {
                 case "PAUSED_PLAYBACK":
                     if engine.state == .playing {
                         engine.pauseCastPlayback()
-                        Log.casting.infoString("CastManager: Sonos reported PAUSED (external pause detected)")
+                        Log.casting.infoPublic("CastManager: Sonos reported PAUSED (external pause detected)")
                     }
                 case "STOPPED", "NO_MEDIA_PRESENT":
-                    Log.casting.infoString("CastManager: Sonos reported \(result.state) - playback ended externally")
+                    Log.casting.infoPublic("CastManager: Sonos reported \(result.state) - playback ended externally")
                     // Don't auto-disconnect, just update state so UI reflects reality
                     engine.pauseCastPlayback()
                     NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
@@ -1654,7 +1654,7 @@ class CastManager {
                     // Sonos is loading/buffering - don't change state, just wait
                     break
                 default:
-                    Log.casting.infoString("CastManager: Unknown Sonos state: \(result.state)")
+                    Log.casting.infoPublic("CastManager: Unknown Sonos state: \(result.state)")
                 }
             }
         }
@@ -1663,12 +1663,12 @@ class CastManager {
     // MARK: - Mac Sleep/Wake Handling (Fix 8)
     
     @objc private func handleWillSleep() {
-        Log.casting.infoString("CastManager: Mac going to sleep, casting will be interrupted")
+        Log.casting.infoPublic("CastManager: Mac going to sleep, casting will be interrupted")
         // Nothing to do proactively -- Sonos will stop on its own when it can't reach the server
     }
     
     @objc private func handleDidWake() {
-        Log.casting.infoString("CastManager: Mac woke up, checking cast state")
+        Log.casting.infoPublic("CastManager: Mac woke up, checking cast state")
         guard isCasting else { return }
         
         Task {
@@ -1679,14 +1679,14 @@ class CastManager {
             if let oldIP = LocalMediaServer.shared.localIPAddress,
                let newIP = LocalMediaServer.shared.refreshIPAddress(),
                oldIP != newIP {
-                Log.casting.infoString("CastManager: IP changed after wake (\(oldIP) -> \(newIP))")
+                Log.casting.infoPublic("CastManager: IP changed after wake (\(oldIP) -> \(newIP))")
             }
             
             // Poll Sonos to see if it's still playing
             if let result = await upnpManager.pollSonosPlaybackState() {
-                Log.casting.infoString("CastManager: Post-wake Sonos state: \(result.state), position: \(String(format: "%.1f", result.position))")
+                Log.casting.infoPublic("CastManager: Post-wake Sonos state: \(result.state), position: \(String(format: "%.1f", result.position))")
                 if result.state == "STOPPED" || result.state == "NO_MEDIA_PRESENT" {
-                    Log.casting.infoString("CastManager: Sonos stopped during sleep")
+                    Log.casting.infoPublic("CastManager: Sonos stopped during sleep")
                     await MainActor.run {
                         WindowManager.shared.audioEngine.pauseCastPlayback()
                         NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
@@ -1737,7 +1737,7 @@ class CastManager {
         var effectiveContentType = track.contentType
         if effectiveContentType == nil {
             effectiveContentType = await detectUpstreamContentType(rewrittenURL)
-            Log.casting.infoString("CastManager: Detected upstream content type: \(effectiveContentType ?? "nil")")
+            Log.casting.infoPublic("CastManager: Detected upstream content type: \(effectiveContentType ?? "nil")")
         }
         
         guard let proxyURL = LocalMediaServer.shared.registerStreamURL(rewrittenURL, contentType: effectiveContentType) else {
@@ -1757,10 +1757,10 @@ class CastManager {
               let http = response as? HTTPURLResponse,
               let ct = http.value(forHTTPHeaderField: "Content-Type"),
               ct.hasPrefix("audio/") else {
-            Log.casting.errorString("CastManager: HEAD content type detection failed or returned non-audio for \(url.host ?? "unknown")")
+            Log.casting.errorPublic("CastManager: HEAD content type detection failed or returned non-audio for \(url.host ?? "unknown")")
             return nil
         }
-        Log.casting.infoString("CastManager: HEAD response Content-Type: \(ct)")
+        Log.casting.infoPublic("CastManager: HEAD response Content-Type: \(ct)")
         return ct
     }
     
@@ -1863,7 +1863,7 @@ class CastManager {
     /// Post an error notification for user feedback
     func postError(_ error: CastError) {
         let errorMessage = error.localizedDescription
-        Log.casting.infoString("CastManager: Error - \(errorMessage)")
+        Log.casting.infoPublic("CastManager: Error - \(errorMessage)")
         
         DispatchQueue.main.async {
             NotificationCenter.default.post(
@@ -1910,11 +1910,11 @@ class CastManager {
         
         // Get the Mac's local network IP
         guard let localIP = LocalMediaServer.shared.localIPAddress else {
-            Log.casting.errorString("CastManager: WARNING - Cannot rewrite localhost URL, no local IP found")
+            Log.casting.errorPublic("CastManager: WARNING - Cannot rewrite localhost URL, no local IP found")
             return url
         }
         
-        Log.casting.infoString("CastManager: Rewriting localhost to \(localIP) for casting")
+        Log.casting.infoPublic("CastManager: Rewriting localhost to \(localIP) for casting")
         components.host = localIP
         
         return components.url ?? url

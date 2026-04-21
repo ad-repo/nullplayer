@@ -374,12 +374,14 @@ public struct PlexPlaylist: Identifiable, Equatable {
         playlistType == "video"
     }
 
+    private static let librarySectionRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"/library/sections/(\d+)/"#)
+    }()
+
     /// Extract library section ID from smart playlist content URI
     public var librarySectionID: String? {
-        guard let content = content else { return nil }
-        // Parse "/library/sections/15/all?..." to extract "15"
-        let pattern = #"/library/sections/(\d+)/"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+        guard let content = content,
+              let regex = Self.librarySectionRegex,
               let match = regex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)),
               let range = Range(match.range(at: 1), in: content) else {
             return nil

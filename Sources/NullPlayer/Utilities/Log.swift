@@ -83,35 +83,39 @@ enum Log {
 // strict closure-capture rules — bare instance members inside `\(...)` require
 // explicit `self.` prefixes.
 //
-// These helpers take a pre-interpolated `String` so callers can write
-// `Log.audio.infoString("Playback started for \(title)")` without worrying
-// about `self.` everywhere. The trade-off is loss of deferred evaluation
-// (the string is built even if the log level is filtered out). For hot-path
-// logging, continue to use the native `Logger` API with `self.`-qualified args.
+// These "Public" variants take a pre-interpolated `String` and log it with
+// `privacy: .public`. The name suffix makes the privacy trade-off explicit.
+// Callers are responsible for NOT including PII (usernames, full file paths,
+// device UIDs) in the interpolated string. For sensitive data, use the native
+// `Logger` API directly with `privacy: .private`.
+//
+// The trade-off vs. native `os.Logger` interpolation: the string is built
+// eagerly even if the log level is filtered out. For hot-path logging,
+// prefer the native API with `self.`-qualified args.
 
 extension Logger {
-    /// Log an info-level message from a pre-built String (no implicit capture).
-    func infoString(_ message: String) {
+    /// Log an info-level message from a pre-built String. Content is public.
+    func infoPublic(_ message: String) {
         self.info("\(message, privacy: .public)")
     }
 
-    /// Log a notice-level message from a pre-built String (no implicit capture).
-    func noticeString(_ message: String) {
+    /// Log a notice-level message from a pre-built String. Content is public.
+    func noticePublic(_ message: String) {
         self.notice("\(message, privacy: .public)")
     }
 
-    /// Log an error-level message from a pre-built String (no implicit capture).
-    func errorString(_ message: String) {
+    /// Log an error-level message from a pre-built String. Content is public.
+    func errorPublic(_ message: String) {
         self.error("\(message, privacy: .public)")
     }
 
-    /// Log a warning-level message from a pre-built String (no implicit capture).
-    func warningString(_ message: String) {
+    /// Log a warning-level message from a pre-built String. Content is public.
+    func warningPublic(_ message: String) {
         self.warning("\(message, privacy: .public)")
     }
 
-    /// Log a debug-level message from a pre-built String (no implicit capture).
-    func debugString(_ message: String) {
+    /// Log a debug-level message from a pre-built String. Content is public.
+    func debugPublic(_ message: String) {
         self.debug("\(message, privacy: .public)")
     }
 }

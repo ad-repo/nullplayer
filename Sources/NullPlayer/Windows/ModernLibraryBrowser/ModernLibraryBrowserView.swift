@@ -7211,6 +7211,7 @@ class ModernLibraryBrowserView: NSView {
         guard let albumId = sender.representedObject as? String else { return }
         let rating = sender.tag
         MediaLibrary.shared.setAlbumRating(albumId: albumId, rating: rating >= 0 ? rating : nil)
+        formattedValueCache.removeAll(keepingCapacity: true)
         needsDisplay = true
     }
 
@@ -7218,6 +7219,7 @@ class ModernLibraryBrowserView: NSView {
         guard let artistId = sender.representedObject as? String else { return }
         let rating = sender.tag
         MediaLibrary.shared.setArtistRating(artistId: artistId, rating: rating >= 0 ? rating : nil)
+        formattedValueCache.removeAll(keepingCapacity: true)
         needsDisplay = true
     }
     
