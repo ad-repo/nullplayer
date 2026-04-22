@@ -207,6 +207,24 @@ Import discovery is now unified across classic + modern entry points (main windo
 - **Volume Normalization**: Consistent loudness (-14dB target)
 - **Remember State on Quit**: Restore session on launch
 
+### Sleep Timer
+Accessible via **Playback > Sleep Timer** (or the right-click context menu).
+
+**Modes**
+| Mode | Behaviour |
+|------|-----------|
+| **Timed** | Pause/stop after 5, 10, 15, 30, 45, 60, or 90 minutes, or 2, 5, 8, or 12 hours. A 10-second linear volume fade-out fires before the action. |
+| **End of Current Track** | Pause/stop when the currently playing track ends naturally. Does **not** fire on manual skip or previous. Works correctly with Sweet Fades crossfade. |
+| **End of Queue** | Pause/stop when the last track in the playlist finishes. |
+
+**Behaviour notes**
+- The submenu shows a live countdown (`Sleep Timer: 1:23`) while a timed timer is running.
+- Selecting the currently active preset again cancels it (toggle behaviour).
+- A **Cancel Sleep Timer** item appears at the top of the submenu while any timer is active.
+- If the volume is adjusted manually during a timed fade-out, the fade aborts and the volume is left at the new level.
+- If a timed timer is cancelled mid-fade, volume is restored to the level it was at when the timer started.
+- State is session-local — not persisted across launches.
+
 ### Spectrum Modes
 - **Accurate**: True signal levels (40dB range)
 - **Adaptive**: Global adaptive normalization

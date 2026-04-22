@@ -148,6 +148,10 @@ class ModernMainWindowView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(playbackOptionsDidChange),
                                                 name: .audioPlaybackOptionsChanged, object: nil)
 
+        // Observe sleep timer state changes to show/hide the Z indicator
+        NotificationCenter.default.addObserver(self, selector: #selector(sleepTimerStateDidChange),
+                                                name: SleepTimerManager.stateDidChangeNotification, object: nil)
+
         // Observe time display settings so timer menu changes redraw the clock immediately.
         NotificationCenter.default.addObserver(self, selector: #selector(timeDisplaySettingsDidChange),
                                                 name: .timeDisplaySettingsDidChange, object: nil)
@@ -683,22 +687,27 @@ class ModernMainWindowView: NSView {
                                font: smallFont, color: infoColor, context: context)
         }
         
-        // Stereo/Mono -- brighter, with glow
+        // Sleep timer indicator — "Zz" between BPM and stereo when active, dim like BPM
+        if SleepTimerManager.shared.isActive {
+            renderer.drawLabel("Zz",
+                               in: ModernSkinElements.infoSleepTimer.defaultRect,
+                               font: smallFont, color: infoColor, context: context)
+        }
+
+        // Stereo/Mono
         let isStereo = currentTrack?.channels ?? 2 >= 2
         let stereoLabel = isStereo ? "STEREO" : "MONO"
-        renderer.drawLabelWithGlow(stereoLabel,
-                                   in: ModernSkinElements.infoStereo.defaultRect,
-                                   font: smallFont, color: skin.textColor,
-                                   alignment: .right, context: context)
-        
-        // Casting indicator -- bright accent when active, hidden when off
-        let isCasting = CastManager.shared.isCasting
-        if isCasting {
-            let castColor = skin.elementColor(for: "info_cast")
-            renderer.drawLabelWithGlow("CASTING",
-                                       in: ModernSkinElements.infoCast.defaultRect,
-                                       font: smallFont, color: castColor,
-                                       alignment: .right, context: context)
+        renderer.drawLabel(stereoLabel,
+                           in: ModernSkinElements.infoStereo.defaultRect,
+                           font: smallFont, color: infoColor,
+                           alignment: .right, context: context)
+
+        // Casting indicator — hidden when off
+        if CastManager.shared.isCasting {
+            renderer.drawLabel("CASTING",
+                               in: ModernSkinElements.infoCast.defaultRect,
+                               font: smallFont, color: infoColor,
+                               alignment: .right, context: context)
         }
     }
     
@@ -994,6 +1003,11 @@ class ModernMainWindowView: NSView {
         guard newBPM != currentBPM else { return }
         currentBPM = newBPM
         // Only invalidate the info panel area where BPM is displayed
+        let infoRect = scaledRect(effectiveMarqueePanelRect)
+        setNeedsDisplay(infoRect)
+    }
+
+    @objc private func sleepTimerStateDidChange() {
         let infoRect = scaledRect(effectiveMarqueePanelRect)
         setNeedsDisplay(infoRect)
     }

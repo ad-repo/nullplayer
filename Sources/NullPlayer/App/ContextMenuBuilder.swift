@@ -33,6 +33,13 @@ class ContextMenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
+        // Sleep Timer submenu
+        let sleepTimerItem = NSMenuItem(title: "Sleep Timer", action: nil, keyEquivalent: "")
+        sleepTimerItem.submenu = buildSleepTimerMenu()
+        if SleepTimerManager.shared.isActive { sleepTimerItem.state = .on }
+        menu.addItem(sleepTimerItem)
+        menu.addItem(NSMenuItem.separator())
+
         // Output Devices submenu
         if includeOutputDevices {
             menu.addItem(buildOutputDevicesMenuItem())
@@ -163,12 +170,83 @@ class ContextMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
+        // Sleep Timer submenu
+        let sleepTimerItem = NSMenuItem(title: "Sleep Timer", action: nil, keyEquivalent: "")
+        sleepTimerItem.submenu = buildSleepTimerMenu()
+        if SleepTimerManager.shared.isActive { sleepTimerItem.state = .on }
+        menu.addItem(sleepTimerItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         let rememberState = NSMenuItem(title: "Remember State On Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
         rememberState.target = MenuActions.shared
         rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
         menu.addItem(rememberState)
 
         menu.autoenablesItems = false
+        return menu
+    }
+
+    // MARK: - Sleep Timer Submenu
+
+    static func buildSleepTimerMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.delegate = SleepTimerManager.shared
+
+        let manager = SleepTimerManager.shared
+
+        if let description = manager.menuDescription {
+            let status = NSMenuItem(title: description, action: nil, keyEquivalent: "")
+            status.tag = SleepTimerManager.menuStatusItemTag
+            status.isEnabled = false
+            menu.addItem(status)
+
+            let cancel = NSMenuItem(title: "Cancel Sleep Timer", action: #selector(MenuActions.cancelSleepTimer), keyEquivalent: "")
+            cancel.target = MenuActions.shared
+            menu.addItem(cancel)
+
+            menu.addItem(NSMenuItem.separator())
+        }
+
+        for minutes in SleepTimerManager.timedChoicesMinutes {
+            let title: String
+            if minutes >= 60 {
+                let hours = Double(minutes) / 60.0
+                title = hours == floor(hours)
+                    ? "\(Int(hours)) hour\(Int(hours) == 1 ? "" : "s")"
+                    : String(format: "%.1f hours", hours)
+            } else {
+                title = "\(minutes) minutes"
+            }
+            let item = NSMenuItem(title: title, action: #selector(MenuActions.startSleepTimerMinutes(_:)), keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = minutes
+            if let state = manager.state,
+               state.mode == .timed,
+               let duration = state.originalDuration,
+               Int(duration / 60) == minutes {
+                item.state = .on
+            }
+            menu.addItem(item)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        let hasActiveTrack = WindowManager.shared.audioEngine.currentTrack != nil
+
+        let endOfTrack = NSMenuItem(title: "End of Current Track", action: #selector(MenuActions.startSleepTimerEndOfTrack), keyEquivalent: "")
+        endOfTrack.target = MenuActions.shared
+        endOfTrack.isEnabled = hasActiveTrack
+        if manager.state?.mode == .endOfTrack { endOfTrack.state = .on }
+        menu.addItem(endOfTrack)
+
+        let endOfQueue = NSMenuItem(title: "End of Queue", action: #selector(MenuActions.startSleepTimerEndOfQueue), keyEquivalent: "")
+        endOfQueue.target = MenuActions.shared
+        endOfQueue.isEnabled = hasActiveTrack
+        if manager.state?.mode == .endOfQueue { endOfQueue.state = .on }
+        menu.addItem(endOfQueue)
+
         return menu
     }
 
@@ -3540,6 +3618,40 @@ class MenuActions: NSObject {
     
     @objc func toggleBrowserArtworkBackground() {
         WindowManager.shared.showBrowserArtworkBackground.toggle()
+    }
+
+    // MARK: - Sleep Timer
+
+    @objc func startSleepTimerMinutes(_ sender: NSMenuItem) {
+        guard let minutes = sender.representedObject as? Int else { return }
+        if let state = SleepTimerManager.shared.state,
+           state.mode == .timed,
+           let duration = state.originalDuration,
+           Int(duration / 60) == minutes {
+            SleepTimerManager.shared.cancel()
+            return
+        }
+        SleepTimerManager.shared.startTimed(minutes: minutes)
+    }
+
+    @objc func startSleepTimerEndOfTrack() {
+        if SleepTimerManager.shared.state?.mode == .endOfTrack {
+            SleepTimerManager.shared.cancel()
+            return
+        }
+        SleepTimerManager.shared.startEndOfTrack()
+    }
+
+    @objc func startSleepTimerEndOfQueue() {
+        if SleepTimerManager.shared.state?.mode == .endOfQueue {
+            SleepTimerManager.shared.cancel()
+            return
+        }
+        SleepTimerManager.shared.startEndOfQueue()
+    }
+
+    @objc func cancelSleepTimer() {
+        SleepTimerManager.shared.cancel()
     }
 
     // MARK: - Plex Radio History

@@ -35,7 +35,18 @@ extension Notification.Name {
     /// Posted when BPM detection updates
     /// userInfo contains: "bpm" (Int) - 0 means no confident reading
     static let bpmUpdated = Notification.Name("bpmUpdated")
-    
+
+    /// Posted when a track finishes playing naturally (not skipped by user).
+    /// Always delivered on the main thread.
+    /// Fired from `trackDidFinish()` and crossfade-complete paths BEFORE `currentTrack` advances.
+    /// userInfo contains: "track" (Track) - the track that just finished
+    static let audioTrackDidFinishNaturally = Notification.Name("audioTrackDidFinishNaturally")
+
+    /// Posted when the last track in the queue finishes naturally (queue exhausted).
+    /// Always delivered on the main thread.
+    /// Fired from `trackDidFinish()` immediately before `stop()` when no next track exists.
+    static let audioQueueDidExhaust = Notification.Name("audioQueueDidExhaust")
+
 }
 
 /// Audio playback state
@@ -3763,7 +3774,17 @@ class AudioEngine {
             NSLog("trackDidFinish: Ignoring during crossfade")
             return
         }
-        
+
+        // Notify observers that the current track finished naturally BEFORE advancing.
+        // This lets SleepTimerManager distinguish natural completion from user skip.
+        if let finishedTrack = currentTrack {
+            NotificationCenter.default.post(
+                name: .audioTrackDidFinishNaturally,
+                object: self,
+                userInfo: ["track": finishedTrack]
+            )
+        }
+
         // Report track finished to Plex (natural end)
         let finishPosition = duration
         PlexPlaybackReporter.shared.trackDidStop(at: finishPosition, finished: true)
@@ -3927,7 +3948,7 @@ class AudioEngine {
             if shuffleEnabled {
                 // Repeat mode + shuffle: follow the shuffled cycle, reshuffling only after a full pass
                 guard let nextIndex = peekNextShuffleIndexForPlayback() else {
-                    stop()
+                    stopAfterQueueExhausted()
                     return
                 }
                 currentIndex = nextIndex
@@ -3940,7 +3961,7 @@ class AudioEngine {
             // No repeat mode: check if we're at the end of playlist
             if shuffleEnabled {
                 guard let nextIndex = peekNextShuffleIndexForPlayback() else {
-                    stop()
+                    stopAfterQueueExhausted()
                     return
                 }
                 currentIndex = nextIndex
@@ -3951,8 +3972,19 @@ class AudioEngine {
                 advanceToLocalTrackAsync(at: currentIndex)
             } else {
                 // End of playlist, stop playback
-                stop()
+                stopAfterQueueExhausted()
             }
+        }
+    }
+
+    private func stopAfterQueueExhausted() {
+        // Check before posting — the notification is delivered synchronously on the main
+        // thread, so SleepTimerManager.fire() runs before we decide whether to stop().
+        // If it's handling end-of-queue it will call pause() or stop() itself.
+        let sleepTimerHandling = SleepTimerManager.shared.state?.mode == .endOfQueue
+        NotificationCenter.default.post(name: .audioQueueDidExhaust, object: self)
+        if !sleepTimerHandling {
+            stop()
         }
     }
 
@@ -4374,6 +4406,15 @@ class AudioEngine {
             }
         }
 
+        // Notify natural track completion before advancing (allows endOfTrack sleep timer to fire)
+        if let outgoing = currentTrack {
+            NotificationCenter.default.post(
+                name: .audioTrackDidFinishNaturally,
+                object: self,
+                userInfo: ["track": outgoing]
+            )
+        }
+
         // Update state
         audioFile = nextFile
         currentIndex = nextIndex
@@ -4383,11 +4424,11 @@ class AudioEngine {
         lastReportedTime = 0
         playbackStartDate = Date()
         suspendedLocalPlaybackClockForSleep = false
-        
+
         // Reset crossfade state
         isCrossfading = false
         crossfadeTargetIndex = -1
-        
+
         // Notify delegate
         delegate?.audioEngineDidChangeTrack(currentTrack)
         
@@ -4483,6 +4524,15 @@ class AudioEngine {
                         id: eventId, title: track.title, artist: track.artist, album: track.album)
                 }
             }
+        }
+
+        // Notify natural track completion before advancing (allows endOfTrack sleep timer to fire)
+        if let outgoing = currentTrack {
+            NotificationCenter.default.post(
+                name: .audioTrackDidFinishNaturally,
+                object: self,
+                userInfo: ["track": outgoing]
+            )
         }
 
         // Update state

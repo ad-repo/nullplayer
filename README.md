@@ -41,6 +41,7 @@
 - Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (KSPlayer/FFmpeg)
 - Gapless playback for seamless track transitions
 - Sweet Fades (crossfade) with configurable fade duration
+- Sleep Timer — timed (5 min – 12 hr with volume fade-out), end of current track, or end of queue
 - Media Drag and drop support
 - Album/Cover/Movie art browser with visualizations
 - Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
