@@ -141,6 +141,10 @@ class ModernMainWindowView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(playbackOptionsDidChange),
                                                 name: .audioPlaybackOptionsChanged, object: nil)
 
+        // Observe sleep timer state changes to show/hide the Z indicator
+        NotificationCenter.default.addObserver(self, selector: #selector(sleepTimerStateDidChange),
+                                                name: SleepTimerManager.stateDidChangeNotification, object: nil)
+
         // Observe main window vis mode changes from context menu
         NotificationCenter.default.addObserver(self, selector: #selector(mainVisSettingsChanged),
                                                 name: NSNotification.Name("MainWindowVisChanged"), object: nil)
@@ -684,6 +688,15 @@ class ModernMainWindowView: NSView {
                                font: smallFont, color: infoColor, context: context)
         }
         
+        // Sleep timer indicator — "Z" between BPM and stereo when active
+        if SleepTimerManager.shared.isActive {
+            let sleepColor = skin.elementColor(for: "info_sleep_timer", fallback: skin.textColor)
+            renderer.drawLabelWithGlow("Z",
+                                       in: ModernSkinElements.infoSleepTimer.defaultRect,
+                                       font: smallFont, color: sleepColor,
+                                       alignment: .center, context: context)
+        }
+
         // Stereo/Mono -- brighter, with glow
         let isStereo = currentTrack?.channels ?? 2 >= 2
         let stereoLabel = isStereo ? "STEREO" : "MONO"
@@ -992,6 +1005,11 @@ class ModernMainWindowView: NSView {
         guard newBPM != currentBPM else { return }
         currentBPM = newBPM
         // Only invalidate the info panel area where BPM is displayed
+        let infoRect = scaledRect(effectiveMarqueePanelRect)
+        setNeedsDisplay(infoRect)
+    }
+
+    @objc private func sleepTimerStateDidChange() {
         let infoRect = scaledRect(effectiveMarqueePanelRect)
         setNeedsDisplay(infoRect)
     }

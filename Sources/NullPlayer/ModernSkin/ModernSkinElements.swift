@@ -83,16 +83,19 @@ enum ModernSkinElements {
     static let marqueeBackground = Element("marquee_bg", NSRect(x: 93, y: 60, width: 176, height: 34))
     
     /// Info labels row (below marquee text, inside marquee panel)
-    /// Layout: [bitrate] [samplerate] [bpm] [stereo/mono] [casting]
+    /// Layout: [bitrate] [samplerate] [bpm] [z] [stereo/mono] [casting]
     /// Total available width: x:95 to x:267 = 172 units
     static let infoBitrate = Element("info_bitrate", NSRect(x: 95, y: 62, width: 40, height: 9))
     static let infoSampleRate = Element("info_samplerate", NSRect(x: 135, y: 62, width: 30, height: 9))
-    static let infoBPM = Element("info_bpm", NSRect(x: 165, y: 62, width: 30, height: 9))
-    static let infoStereo = Element("info_stereo", NSRect(x: 198, y: 62, width: 32, height: 9),
+    static let infoBPM = Element("info_bpm", NSRect(x: 165, y: 62, width: 26, height: 9))
+    /// Sleep timer active indicator — shows "Z" when sleep timer is running.
+    /// Centered in the 2px gap on each side between infoBPM (right=191) and infoStereo (left=200).
+    static let infoSleepTimer = Element("info_sleep_timer", NSRect(x: 193, y: 62, width: 5, height: 9))
+    static let infoStereo = Element("info_stereo", NSRect(x: 200, y: 62, width: 30, height: 9),
                                     states: ["off", "on"])
-    static let infoMono = Element("info_mono", NSRect(x: 198, y: 62, width: 32, height: 9),
+    static let infoMono = Element("info_mono", NSRect(x: 200, y: 62, width: 30, height: 9),
                                   states: ["off", "on"])
-    static let infoCast = Element("info_cast", NSRect(x: 230, y: 62, width: 34, height: 9),
+    static let infoCast = Element("info_cast", NSRect(x: 232, y: 62, width: 32, height: 9),
                                   states: ["off", "on"])
     
     // MARK: - Status Indicator (left of time display)
@@ -332,7 +335,7 @@ enum ModernSkinElements {
         titleBar, titleBarText, btnClose, btnMinimize, btnShade,
         timeDisplay,
         marqueeBackground,
-        infoBitrate, infoSampleRate, infoBPM, infoStereo, infoMono, infoCast,
+        infoBitrate, infoSampleRate, infoBPM, infoSleepTimer, infoStereo, infoMono, infoCast,
         statusPlay, statusPause, statusStop,
         spectrumArea,
         btn2x, btnEQ, btnPlaylist, btnLibrary, btnProjectM, btnSpectrum,
