@@ -167,21 +167,29 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Reset cast state when starting a new video
     /// This ensures the player doesn't think it's still casting from a previous session
     private func resetCastState() {
-        if isCastingVideo {
-            stopCastUpdateTimer()
-            // Unsubscribe from Chromecast status updates
-            NotificationCenter.default.removeObserver(
-                self,
-                name: ChromecastManager.mediaStatusDidUpdateNotification,
-                object: nil
-            )
-            isCastingVideo = false
-            castTargetDevice = nil
-            castStartPosition = 0
-            castPlaybackStartDate = nil
-            castHasReceivedStatus = false
-            castDuration = 0
-        }
+        guard isCastingVideo else { return }
+        clearVideoCastState()
+    }
+
+    private func clearVideoCastState() {
+        stopCastUpdateTimer()
+        NotificationCenter.default.removeObserver(
+            self,
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil
+        )
+        isCastingVideo = false
+        castTargetDevice = nil
+        castStartPosition = 0
+        castPlaybackStartDate = nil
+        castHasReceivedStatus = false
+        castDuration = 0
+        videoPlayerView.updateCastState(isPlaying: false, deviceName: nil)
+    }
+
+    @objc private func handleCastSessionChange() {
+        guard !CastManager.shared.isVideoCasting else { return }
+        clearVideoCastState()
     }
     
     /// Callback for when video finishes playing (for playlist integration)
@@ -260,6 +268,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         
         setupVideoView()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleCastSessionChange),
+            name: CastManager.sessionDidChangeNotification,
+            object: nil
+        )
         window.delegate = self
     }
     
@@ -1320,7 +1334,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     }
     
     @objc private func castToDevice(_ sender: NSMenuItem) {
-        guard let device = sender.representedObject as? CastDevice else { return }
+        let selectedDevice = sender.representedObject as? CastDevice
+        guard let device = selectedDevice ?? CastManager.shared.preferredVideoCastDevice else { return }
         
         // Prevent dual casting - check if already casting from context menu
         if CastManager.shared.isVideoCasting {
@@ -1335,6 +1350,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         
         Task {
             do {
+                if selectedDevice != nil {
+                    CastManager.shared.setPreferredVideoCastDevice(device.id)
+                }
+
                 // Capture position and duration before pausing local playback
                 let currentPosition = videoPlayerView.currentPlaybackTime
                 let videoDuration = videoPlayerView.totalPlaybackDuration
@@ -1393,6 +1412,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                     alert.informativeText = error.localizedDescription
                     alert.alertStyle = .warning
                     alert.runModal()
+                    self.clearVideoCastState()
                 }
             }
         }
@@ -1406,13 +1426,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             await CastManager.shared.stopCasting()
             
             await MainActor.run {
-                self.stopCastUpdateTimer()
-                self.isCastingVideo = false
-                self.castTargetDevice = nil
-                self.castStartPosition = 0
-                self.castPlaybackStartDate = nil
-                self.castDuration = 0
-                self.videoPlayerView.updateCastState(isPlaying: false, deviceName: nil)
+                self.clearVideoCastState()
                 
                 // Resume local playback from where casting left off
                 if resumePosition > 0 {
@@ -1444,6 +1458,16 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         // Stop cast update timer
         stopCastUpdateTimer()
+        NotificationCenter.default.removeObserver(
+            self,
+            name: CastManager.sessionDidChangeNotification,
+            object: nil
+        )
+        NotificationCenter.default.removeObserver(
+            self,
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil
+        )
         
         // Only do cleanup if not already handled by stop()
         if !isClosing {
@@ -1463,6 +1487,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 castTargetDevice = nil
                 castStartPosition = 0
                 castPlaybackStartDate = nil
+                castHasReceivedStatus = false
                 castDuration = 0
             }
             
@@ -1496,6 +1521,19 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         removeKeyboardMonitor()
         isClosing = false  // Reset for potential reuse
     }
+
+    deinit {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: CastManager.sessionDidChangeNotification,
+            object: nil
+        )
+        NotificationCenter.default.removeObserver(
+            self,
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil
+        )
+    }
     
     func windowDidBecomeKey(_ notification: Notification) {
         videoPlayerView.updateActiveState(true)
@@ -1520,3 +1558,40 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 }
+
+#if DEBUG
+extension VideoPlayerWindowController {
+    struct DebugCastStateSnapshot {
+        let isCastingVideo: Bool
+        let hasTargetDevice: Bool
+        let castStartPosition: TimeInterval
+        let hasPlaybackStartDate: Bool
+        let castHasReceivedStatus: Bool
+        let castDuration: TimeInterval
+    }
+
+    func debugSetCurrentTitleForTesting(_ title: String?) {
+        currentTitle = title
+    }
+
+    func debugSetCastStateForTesting(device: CastDevice, startPosition: TimeInterval, duration: TimeInterval) {
+        castTargetDevice = device
+        castStartPosition = startPosition
+        castPlaybackStartDate = Date()
+        castHasReceivedStatus = true
+        castDuration = duration
+        isCastingVideo = true
+    }
+
+    var debugCastStateSnapshot: DebugCastStateSnapshot {
+        DebugCastStateSnapshot(
+            isCastingVideo: isCastingVideo,
+            hasTargetDevice: castTargetDevice != nil,
+            castStartPosition: castStartPosition,
+            hasPlaybackStartDate: castPlaybackStartDate != nil,
+            castHasReceivedStatus: castHasReceivedStatus,
+            castDuration: castDuration
+        )
+    }
+}
+#endif
