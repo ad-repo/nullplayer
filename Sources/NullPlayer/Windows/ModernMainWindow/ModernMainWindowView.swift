@@ -695,22 +695,20 @@ class ModernMainWindowView: NSView {
                                font: smallFont, color: infoColor, context: context)
         }
 
-        // Stereo/Mono -- brighter, with glow
+        // Stereo/Mono
         let isStereo = currentTrack?.channels ?? 2 >= 2
         let stereoLabel = isStereo ? "STEREO" : "MONO"
-        renderer.drawLabelWithGlow(stereoLabel,
-                                   in: ModernSkinElements.infoStereo.defaultRect,
-                                   font: smallFont, color: skin.textColor,
-                                   alignment: .right, context: context)
-        
-        // Casting indicator -- bright accent when active, hidden when off
-        let isCasting = CastManager.shared.isCasting
-        if isCasting {
-            let castColor = skin.elementColor(for: "info_cast")
-            renderer.drawLabelWithGlow("CASTING",
-                                       in: ModernSkinElements.infoCast.defaultRect,
-                                       font: smallFont, color: castColor,
-                                       alignment: .right, context: context)
+        renderer.drawLabel(stereoLabel,
+                           in: ModernSkinElements.infoStereo.defaultRect,
+                           font: smallFont, color: infoColor,
+                           alignment: .right, context: context)
+
+        // Casting indicator — hidden when off
+        if CastManager.shared.isCasting {
+            renderer.drawLabel("CASTING",
+                               in: ModernSkinElements.infoCast.defaultRect,
+                               font: smallFont, color: infoColor,
+                               alignment: .right, context: context)
         }
     }
     
