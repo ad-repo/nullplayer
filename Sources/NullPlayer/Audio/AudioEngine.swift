@@ -3978,8 +3978,14 @@ class AudioEngine {
     }
 
     private func stopAfterQueueExhausted() {
+        // Check before posting — the notification is delivered synchronously on the main
+        // thread, so SleepTimerManager.fire() runs before we decide whether to stop().
+        // If it's handling end-of-queue it will call pause() or stop() itself.
+        let sleepTimerHandling = SleepTimerManager.shared.state?.mode == .endOfQueue
         NotificationCenter.default.post(name: .audioQueueDidExhaust, object: self)
-        stop()
+        if !sleepTimerHandling {
+            stop()
+        }
     }
 
     /// Advance playback to the track at `index` after a natural EOF.

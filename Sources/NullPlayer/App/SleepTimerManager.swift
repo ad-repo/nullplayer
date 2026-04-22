@@ -222,11 +222,12 @@ final class SleepTimerManager: NSObject {
     }
 
     /// Fired when the queue exhausts naturally (last track finished, no next track).
+    /// Always delivered on the main thread — handle synchronously so fire() runs
+    /// before AudioEngine decides whether to call stop().
     @objc private func queueDidExhaust(_ note: Notification) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let state = self.state, state.mode == .endOfQueue else { return }
-            self.fire()
-        }
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let state, state.mode == .endOfQueue else { return }
+        fire()
     }
 
     // MARK: - Helpers

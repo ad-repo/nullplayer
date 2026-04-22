@@ -33,6 +33,13 @@ class ContextMenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
+        // Sleep Timer submenu
+        let sleepTimerItem = NSMenuItem(title: "Sleep Timer", action: nil, keyEquivalent: "")
+        sleepTimerItem.submenu = buildSleepTimerMenu()
+        if SleepTimerManager.shared.isActive { sleepTimerItem.state = .on }
+        menu.addItem(sleepTimerItem)
+        menu.addItem(NSMenuItem.separator())
+
         // Output Devices submenu
         if includeOutputDevices {
             menu.addItem(buildOutputDevicesMenuItem())
