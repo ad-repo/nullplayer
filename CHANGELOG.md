@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.3
+
+### New Features
+
+- **Sleep Timer** — pause or stop playback automatically via **Playback > Sleep Timer**. Three modes: timed durations (5, 10, 15, 30, 45, 60, 90 minutes, or 2, 5, 8, 12 hours) with a 10-second volume fade-out before firing; end of current track (fires on natural completion, not manual skip, including tracks that end via Sweet Fades crossfade); end of queue (fires when the last track in the playlist finishes). The active preset is shown as a live countdown in the submenu. Selecting the active preset again cancels it. Volume is restored if cancelled mid-fade or if the user adjusts volume during the fade.
+
 ## 0.19.2
 
 ### New Features
