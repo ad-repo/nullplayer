@@ -61,18 +61,18 @@ final class SleepTimerManager {
 
     private init() {
         // Observe natural track completion (fires BEFORE currentTrack advances).
-        // This lets endOfTrack mode distinguish natural completion from user skip.
+        // Used by both endOfTrack and endOfQueue modes.
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(trackDidFinishNaturally),
             name: .audioTrackDidFinishNaturally,
             object: nil
         )
-        // Observe track changes for endOfQueue mode (nil track = queue ended).
+        // Observe queue exhaustion for endOfQueue mode.
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(trackDidChange),
-            name: .audioTrackDidChange,
+            selector: #selector(queueDidExhaust),
+            name: .audioQueueDidExhaust,
             object: nil
         )
     }
@@ -92,12 +92,12 @@ final class SleepTimerManager {
         fadeStartVolume = nil
         lastWrittenVolume = nil
         isFading = false
-        timer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
-            self?.fire()
-        }
-        tickTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.tick()
-        }
+        let t = Timer(timeInterval: duration, repeats: false) { [weak self] _ in self?.fire() }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+        let tt = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(tt, forMode: .common)
+        tickTimer = tt
         notifyChange()
     }
 
@@ -154,6 +154,7 @@ final class SleepTimerManager {
                     isFading = false
                     fadeStartVolume = nil
                     lastWrittenVolume = nil
+                    notifyChange()
                     return
                 }
             }
@@ -207,20 +208,19 @@ final class SleepTimerManager {
     // MARK: - Track Completion Handlers
 
     /// Fired when a track finishes playing naturally (BEFORE currentTrack advances).
-    /// This is the correct signal for endOfTrack mode.
+    /// Handles endOfTrack mode; also fires before crossfade transitions.
     @objc private func trackDidFinishNaturally(_ note: Notification) {
-        dispatchPrecondition(condition: .onQueue(.main))
-        guard let state, state.mode == .endOfTrack else { return }
-        fire()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let state = self.state, state.mode == .endOfTrack else { return }
+            self.fire()
+        }
     }
 
-    /// Fired when currentTrack changes (AFTER advancement).
-    /// Used only for endOfQueue mode: fire when currentTrack becomes nil (queue ended).
-    @objc private func trackDidChange(_ note: Notification) {
-        dispatchPrecondition(condition: .onQueue(.main))
-        guard let state, state.mode == .endOfQueue else { return }
-        if WindowManager.shared.audioEngine.currentTrack == nil {
-            fire()
+    /// Fired when the queue exhausts naturally (last track finished, no next track).
+    @objc private func queueDidExhaust(_ note: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let state = self.state, state.mode == .endOfQueue else { return }
+            self.fire()
         }
     }
 

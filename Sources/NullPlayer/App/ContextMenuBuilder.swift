@@ -224,13 +224,17 @@ class ContextMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
+        let hasActiveTrack = WindowManager.shared.audioEngine.currentTrack != nil
+
         let endOfTrack = NSMenuItem(title: "End of Current Track", action: #selector(MenuActions.startSleepTimerEndOfTrack), keyEquivalent: "")
         endOfTrack.target = MenuActions.shared
+        endOfTrack.isEnabled = hasActiveTrack
         if manager.state?.mode == .endOfTrack { endOfTrack.state = .on }
         menu.addItem(endOfTrack)
 
         let endOfQueue = NSMenuItem(title: "End of Queue", action: #selector(MenuActions.startSleepTimerEndOfQueue), keyEquivalent: "")
         endOfQueue.target = MenuActions.shared
+        endOfQueue.isEnabled = hasActiveTrack
         if manager.state?.mode == .endOfQueue { endOfQueue.state = .on }
         menu.addItem(endOfQueue)
 
