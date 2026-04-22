@@ -35,9 +35,44 @@ class CastManager {
     
     /// Rooms selected for Sonos casting (UDNs) - used before casting starts
     var selectedSonosRooms: Set<String> = []
+
+    /// Preferred Chromecast/DLNA device for video casting (device ID, persisted)
+    var preferredVideoCastDeviceID: String? = UserDefaults.standard.string(forKey: "preferredVideoCastDeviceID")
+
+    /// The preferred video cast device if it is currently discoverable and supports video.
+    /// Falls back to the first available video-capable device if preferred is offline.
+    var preferredVideoCastDevice: CastDevice? {
+        let devices = discoveredDevices.filter { $0.supportsVideo }
+        if let id = preferredVideoCastDeviceID, let match = devices.first(where: { $0.id == id }) {
+            return match
+        }
+        return devices.first
+    }
+
+    /// Set the preferred video device. Ignores discovered devices that don't support video.
+    /// Posts sessionDidChangeNotification so menus refresh.
+    func setPreferredVideoCastDevice(_ deviceID: String?) {
+        if let deviceID,
+           let matchedDevice = discoveredDevices.first(where: { $0.id == deviceID }),
+           !matchedDevice.supportsVideo {
+            return
+        }
+        preferredVideoCastDeviceID = deviceID
+        UserDefaults.standard.set(deviceID, forKey: "preferredVideoCastDeviceID")
+        NotificationCenter.default.post(name: Self.sessionDidChangeNotification, object: nil)
+    }
+
+    #if DEBUG
+    private var _debugDiscoveredDevices: [CastDevice]?
+    #endif
     
     /// All discovered cast devices, grouped by type
     var discoveredDevices: [CastDevice] {
+        #if DEBUG
+        if let _debugDiscoveredDevices {
+            return _debugDiscoveredDevices
+        }
+        #endif
         var all: [CastDevice] = []
         all.append(contentsOf: chromecastManager.devices)
         all.append(contentsOf: upnpManager.devices)
@@ -317,6 +352,9 @@ class CastManager {
     
     /// Whether a refresh is currently in progress
     private(set) var isRefreshing: Bool = false
+
+    /// Prevents simultaneous cast attempts from racing on connect/cast sequences.
+    @MainActor private var isCastingInProgress: Bool = false
     
     // MARK: - Initialization
     
@@ -542,7 +580,20 @@ class CastManager {
     ///   - startPosition: Optional position to start from (for resuming playback)
     func cast(to device: CastDevice, url: URL, metadata: CastMetadata, startPosition: TimeInterval = 0) async throws {
         NSLog("CastManager: Casting to %@ (%@), start position: %.1f", device.name, device.type.displayName, startPosition)
-        
+
+        let alreadyInProgress = await MainActor.run {
+            if self.isCastingInProgress { return true }
+            self.isCastingInProgress = true
+            return false
+        }
+        guard !alreadyInProgress else {
+            NSLog("CastManager: cast() called while already in progress - ignoring")
+            return
+        }
+        defer {
+            Task { @MainActor in self.isCastingInProgress = false }
+        }
+
         // Disconnect from any existing session
         if activeSession != nil {
             await stopCasting()
@@ -1919,6 +1970,19 @@ class CastManager {
         return components.url ?? url
     }
 }
+
+#if DEBUG
+extension CastManager {
+    var debugDiscoveredDevices: [CastDevice]? {
+        get { _debugDiscoveredDevices }
+        set { _debugDiscoveredDevices = newValue }
+    }
+
+    func debugSetVideoCastingStateForTesting(_ isVideoCasting: Bool) {
+        self.isVideoCasting = isVideoCasting
+    }
+}
+#endif
 
 // MARK: - PlexManager Extension for Casting
 
