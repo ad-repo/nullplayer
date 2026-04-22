@@ -47,7 +47,7 @@ Both approaches use the same `skin.json` configuration file. The difference is w
    }
    ```
 
-3. Right-click the player, go to **UI > Modern**, and choose "My First Skin".
+3. Right-click the player, go to **Skins > Modern**, and choose "My First Skin".
 
 That's it. Every button, slider, label, and window border now uses your orange palette.
 
@@ -818,7 +818,7 @@ Place your skin folder in:
 ~/Library/Application Support/NullPlayer/ModernSkins/
 ```
 
-Then right-click the player and select your skin from **UI > Modern**.
+Then right-click the player and select your skin from **Skins > Modern**.
 
 Skin changes take effect immediately -- no restart needed. However, if you're switching from Classic Mode to Modern Mode (or vice versa), NullPlayer will prompt you to restart.
 
@@ -831,7 +831,7 @@ cd MyAwesomeSkin/
 zip -r ../MyAwesomeSkin.nsz .
 ```
 
-Other users can import it with **UI > Modern > Load Skin...** or drop the `.nsz` file into their `ModernSkins/` directory.
+Other users can import it with **Skins > Modern > Load Skin...** or drop the `.nsz` file into their `ModernSkins/` directory.
 
 ### Using Folder-Based Skins (Development)
 

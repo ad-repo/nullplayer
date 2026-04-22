@@ -13,7 +13,7 @@ import NullPlayerCore
 /// - **EQ**: enabled, auto, preamp, active-layout bands (10 classic / 21 modern)
 /// - **Playlist**: all tracks (local, Plex, Subsonic, Jellyfin, radio) with metadata
 /// - **Playback position**: current track index, position in seconds
-/// - **UI**: timeDisplayMode, isAlwaysOnTop, double size mode (modern UI)
+/// - **Skins**: timeDisplayMode, isAlwaysOnTop, double size mode (modern UI)
 /// - **Skin**: classic custom skin path, modern skin name
 /// - **ProjectM**: preset index, fullscreen state
 /// - **Audio output**: selected device UID

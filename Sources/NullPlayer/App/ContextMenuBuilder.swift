@@ -145,7 +145,7 @@ class ContextMenuBuilder {
         return menu
     }
 
-    /// Builds the top-level "UI" menu content for the macOS menu bar.
+    /// Builds the top-level "Skins" menu content for the macOS menu bar.
     static func buildMenuBarUIMenu() -> NSMenu {
         let menu = buildUIMenu()
         menu.autoenablesItems = false

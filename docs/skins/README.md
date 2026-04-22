@@ -1,7 +1,7 @@
 # Skins Visualization Defaults
 
 This document defines how visualization defaults are configured per skin and what is applied automatically for classic `.wsz` skins.
-For modern skin portability, use `.nsz` ZIP bundles (import via **UI > Modern > Load Skin...**).
+For modern skin portability, use `.nsz` ZIP bundles (import via **Skins > Modern > Load Skin...**).
 
 ## `skin.json` `visualization` block (modern skins)
 
