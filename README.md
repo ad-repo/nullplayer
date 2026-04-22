@@ -35,7 +35,7 @@
 - Modern V2 UI skin system, many v2 skins included. Open format, users can easily make new v2 skins via json
 - Original Spenctrum analysis visualization system
 - Album art visualization system with user selected effects
-- Main player, Playlist editor, and 10-band Equalizer windows
+- Modern mode with 21-band EQ implementation, Classic mode with standard 10-band EQ
 - Classic window snapping and docking behavior
 - Audio playback: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
 - Video playback: MKV, MP4, MOV, AVI, WebM, HEVC (KSPlayer/FFmpeg)
