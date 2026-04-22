@@ -91,9 +91,9 @@ enum ModernSkinElements {
     /// Sleep timer active indicator — shows "Zz" when sleep timer is running.
     /// 2px gap on each side between infoBPM (right=191) and infoStereo (left=205).
     static let infoSleepTimer = Element("info_sleep_timer", NSRect(x: 193, y: 62, width: 10, height: 9))
-    static let infoStereo = Element("info_stereo", NSRect(x: 205, y: 62, width: 28, height: 9),
+    static let infoStereo = Element("info_stereo", NSRect(x: 204, y: 62, width: 28, height: 9),
                                     states: ["off", "on"])
-    static let infoMono = Element("info_mono", NSRect(x: 205, y: 62, width: 28, height: 9),
+    static let infoMono = Element("info_mono", NSRect(x: 204, y: 62, width: 28, height: 9),
                                   states: ["off", "on"])
     static let infoCast = Element("info_cast", NSRect(x: 235, y: 62, width: 29, height: 9),
                                   states: ["off", "on"])
