@@ -688,13 +688,11 @@ class ModernMainWindowView: NSView {
                                font: smallFont, color: infoColor, context: context)
         }
         
-        // Sleep timer indicator — "Z" between BPM and stereo when active
+        // Sleep timer indicator — "Zz" between BPM and stereo when active, dim like BPM
         if SleepTimerManager.shared.isActive {
-            let sleepColor = skin.elementColor(for: "info_sleep_timer", fallback: skin.textColor)
-            renderer.drawLabelWithGlow("Z",
-                                       in: ModernSkinElements.infoSleepTimer.defaultRect,
-                                       font: smallFont, color: sleepColor,
-                                       alignment: .center, context: context)
+            renderer.drawLabel("Zz",
+                               in: ModernSkinElements.infoSleepTimer.defaultRect,
+                               font: smallFont, color: infoColor, context: context)
         }
 
         // Stereo/Mono -- brighter, with glow
