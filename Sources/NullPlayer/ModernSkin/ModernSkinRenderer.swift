@@ -620,31 +620,66 @@ class ModernSkinRenderer {
     /// Draw a time digit (0-9, minus, colon) as 7-segment LED display
     func drawTimeDigit(_ character: String, in rect: NSRect, context: CGContext) {
         let scaledR = scaledRect(rect)
-        
-        // Map character to image name
-        let imageName: String
-        switch character {
-        case "0"..."9":
-            imageName = "time_digit_\(character)"
-        case "-":
-            imageName = "time_minus"
-        case ":":
-            imageName = "time_colon"
-        default:
-            return
-        }
-        
+
         // Time digits are text-like content: keep them independent from parent window/content alpha.
         context.saveGState()
         context.setAlpha(skin.textOpacityMultiplier)
-        if let img = skin.image(for: imageName) {
+
+        if let imageName = timeDigitImageName(for: character),
+           let img = skin.image(for: imageName) {
             // Use pixel art rendering for crisp scaling of small digit sprites
             drawPixelArtImage(img, in: scaledR, context: context)
-        } else {
-            // Programmatic 7-segment LED rendering
+        } else if uses7SegmentFallback(for: character) {
             draw7SegmentChar(character, in: scaledR, context: context)
+        } else {
+            drawTimeTextCharacter(character, in: scaledR, context: context)
         }
         context.restoreGState()
+    }
+
+    private func timeDigitImageName(for character: String) -> String? {
+        switch character {
+        case "0"..."9":
+            return "time_digit_\(character)"
+        case "-":
+            return "time_minus"
+        case ":":
+            return "time_colon"
+        default:
+            return nil
+        }
+    }
+
+    private func uses7SegmentFallback(for character: String) -> Bool {
+        switch character {
+        case "0"..."9", "-", ":":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func drawTimeTextCharacter(_ character: String, in rect: NSRect, context: CGContext) {
+        let font = skin.timeDisplayFont()
+        let color = skin.applyTextOpacity(to: skin.timeColor)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color
+        ]
+        let attributed = NSAttributedString(string: character, attributes: attributes)
+        let size = attributed.size()
+        let origin = NSPoint(
+            x: rect.midX - size.width / 2,
+            y: rect.midY - size.height / 2
+        )
+
+        if skin.config.glow.enabled {
+            drawTextWithGlow(attributed, at: origin, glowColor: color, context: context)
+        } else {
+            drawTextUnattenuated(in: context) {
+                attributed.draw(at: origin)
+            }
+        }
     }
     
     /// Draw a character as a 7-segment LED display

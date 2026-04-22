@@ -437,6 +437,72 @@ Side windows scale their width by `sizeMultiplier` and match the vertical stack 
 
 A skin with `"window": { "scale": 1.5 }` sets `baseScaleFactor` to 1.5. In Large UI mode, effective `scaleFactor` becomes 2.25 (1.5 x 1.5).
 
+## Marquee Album Art
+
+The modern main window marquee (`ModernMarqueeLayer`) shows a square album art thumbnail prepended to the scrolling title/artist text. Art and text scroll as a single unit in one seamless loop.
+
+### Layout
+
+- Art square size = `bounds.height` of the marquee layer (fills the full layer height)
+- Art gap = 8 pt between the art square and the text
+- `artScrollOffset = artSize + artGap` (0 when no art)
+- Loop content: `[pad | art | gap | text | scrollGap | pad | art | gap | text | scrollGap]`
+- `loopWidth = artScrollOffset + textWidth + scrollGap`
+
+When no art is present, `artScrollOffset = 0` and the layout is identical to the pre-art behaviour.
+
+### Graceful Entry
+
+Art never pops into a mid-scroll position. When a new image arrives while the marquee is scrolling:
+
+1. The bitmap is re-rendered immediately with the art in the new layout
+2. `scrollOffset` is bumped by `artScrollOffset` so the currently visible text stays at the same screen position
+3. The art sits to the right of the current visible window and scrolls in naturally as the loop progresses
+
+Clearing art (`artworkImage = nil`) is always immediate — stale art never lingers across track changes.
+
+### `artworkImage` property
+
+```swift
+// ModernMarqueeLayer
+var artworkImage: NSImage?   // backed by _artworkImage via scheduleArtwork(_:)
+```
+
+- Setting to `nil`: clears immediately, re-renders
+- Setting to an image while scrolling: compensates `scrollOffset`, re-renders with art entering from right
+- Setting to an image while static: renders immediately
+
+### Artwork Loading in ModernMainWindowView
+
+`ModernMainWindowView` loads artwork itself — it does **not** depend on `NowPlayingManager` or any other window being open.
+
+Loading is triggered from `updateTrackInfo(_ track:)` via a private `loadArtwork(for:)` method:
+
+| Source | Key used | Notes |
+|--------|----------|-------|
+| Plex | `plexRatingKey` | Requires `artworkThumb` for URL |
+| Subsonic | `subsonicId` (as cover art ID) | Does not require `artworkThumb` |
+| Jellyfin | `jellyfinId`, `imageTag: nil` | Server picks image; does not require `artworkThumb` |
+| Emby | `embyId`, `artworkThumb` as imageTag | Falls back gracefully if `artworkThumb` is nil |
+| Local | `track.url` | Extracts from ID3/iTunes/common metadata via `AVURLAsset` |
+
+**Critical**: Subsonic and Jellyfin do not require `artworkThumb` to be set — the loaders fall back to server-side defaults. Using `artworkThumb` as a required guard (as `NowPlayingManager` does) silently skips tracks where the field is absent.
+
+### Caching
+
+`ModernMainWindowView` maintains a private `static let artworkCache = NSCache<NSString, NSImage>()` keyed by source + ID (e.g. `"marquee_plex:{ratingKey}"`). Subsequent plays of the same track are served from cache with no network request.
+
+### Race Condition Prevention
+
+`loadArtwork(for:)` captures `expectedId = track.id` before the async task. The `MainActor.run` block guards `currentTrack?.id == expectedId` before applying the image. Fast track changes (user clicking Next repeatedly) cannot cause stale art from a cancelled/slow load to appear on the new track.
+
+### Key Files
+
+| File | Role |
+|------|------|
+| `ModernSkin/ModernMarqueeLayer.swift` | `artworkImage` property, `scheduleArtwork`, scroll compensation |
+| `Windows/ModernMainWindow/ModernMainWindowView.swift` | `loadArtwork(for:)`, `artworkLoadTask`, `artworkCache`, `skinDidChange` re-apply |
+
 ## Adding a Modern Sub-Window (Developer Guide)
 
 This section documents the repeatable pattern for creating modern-skinned versions of sub-windows.

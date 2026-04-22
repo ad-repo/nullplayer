@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import QuartzCore
 
 /// The main window view for the modern skin system.
@@ -28,6 +29,9 @@ class ModernMainWindowView: NSView {
     
     /// Current track info
     private var currentTrack: Track?
+    private var currentArtworkImage: NSImage?
+    private var artworkLoadTask: Task<Void, Never>?
+    private static let artworkCache = NSCache<NSString, NSImage>()
     
     /// Video title override
     private var videoTitle: String?
@@ -71,6 +75,9 @@ class ModernMainWindowView: NSView {
     
     /// Timer for distinguishing single vs double click on vis area
     private var visClickTimer: Timer?
+
+    /// Timer for distinguishing single vs double click on the time display.
+    private var timeDisplayClickTimer: Timer?
     
     /// Throttle timestamp for CPU-rendered mini spectrum updates (20Hz)
     private var lastMiniSpectrumUpdate: CFAbsoluteTime = 0
@@ -145,6 +152,10 @@ class ModernMainWindowView: NSView {
         NotificationCenter.default.addObserver(self, selector: #selector(sleepTimerStateDidChange),
                                                 name: SleepTimerManager.stateDidChangeNotification, object: nil)
 
+        // Observe time display settings so timer menu changes redraw the clock immediately.
+        NotificationCenter.default.addObserver(self, selector: #selector(timeDisplaySettingsDidChange),
+                                                name: .timeDisplaySettingsDidChange, object: nil)
+
         // Observe main window vis mode changes from context menu
         NotificationCenter.default.addObserver(self, selector: #selector(mainVisSettingsChanged),
                                                 name: NSNotification.Name("MainWindowVisChanged"), object: nil)
@@ -152,7 +163,6 @@ class ModernMainWindowView: NSView {
                                                 name: .visClassicProfileCommand, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                 name: .connectedWindowHighlightDidChange, object: nil)
-
         // Set accessibility
         setAccessibilityIdentifier("ModernMainWindowView")
         setAccessibilityRole(.group)
@@ -164,6 +174,7 @@ class ModernMainWindowView: NSView {
     
     deinit {
         visClickTimer?.invalidate()
+        timeDisplayClickTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -241,6 +252,11 @@ class ModernMainWindowView: NSView {
 
     @objc private func playbackOptionsDidChange() {
         needsDisplay = true
+    }
+
+    @objc private func timeDisplaySettingsDidChange() {
+        let timeRect = scaledRect(effectiveTimeDisplayRect).insetBy(dx: -2, dy: -2)
+        setNeedsDisplay(timeRect)
     }
 
     private func updateCornerMask() {
@@ -507,7 +523,7 @@ class ModernMainWindowView: NSView {
                 }
 
                 // 8. Transport buttons
-                let transportRegion = scaledRect(NSRect(x: 6, y: 3, width: 168, height: 24))
+                let transportRegion = scaledRect(NSRect(x: 6, y: 3, width: 140, height: 24))
                 if dirtyRect.intersects(transportRegion) {
                     drawTransportButtons(context: context)
                 }
@@ -517,7 +533,7 @@ class ModernMainWindowView: NSView {
                 if dirtyRect.intersects(volumeScaled) {
                     // `window.areaOpacity.volumeArea` controls panel + slider content.
                     renderer.drawInsetPanel(
-                        in: NSRect(x: 177, y: 6, width: 92, height: 17),
+                        in: NSRect(x: 152, y: 6, width: 117, height: 17),
                         backgroundOpacity: volumeOpacity.background,
                         borderOpacity: volumeOpacity.border,
                         context: context
@@ -607,35 +623,18 @@ class ModernMainWindowView: NSView {
         let digitWidth = ModernSkinElements.timeDigitSize.width
         let colonWidth = ModernSkinElements.timeColonSize.width
         let digitHeight = ModernSkinElements.timeDigitSize.height
-        
-        let displayTime: TimeInterval
-        let showMinus: Bool
-        
-        let mode = WindowManager.shared.timeDisplayMode
-        if mode == .remaining && duration > 0 {
-            displayTime = duration - currentTime
-            showMinus = true
-        } else {
-            displayTime = currentTime
-            showMinus = false
-        }
-        
-        let totalSeconds = Int(abs(displayTime))
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
-        
-        // Build character sequence: [-]M:SS
-        var chars: [String] = []
-        if showMinus { chars.append("-") }
-        chars.append("\(minutes)")
-        chars.append(":")
-        chars.append(String(format: "%02d", seconds))
-        
+
+        let displayString = TimeDisplayFormatter.string(
+            currentTime: currentTime,
+            duration: duration,
+            mode: WindowManager.shared.timeDisplayMode,
+            numberSystem: WindowManager.shared.timeDisplayNumberSystem
+        )
+
         // Calculate total width to center within time display area
-        let allChars = chars.joined()
         var totalWidth: CGFloat = 0
         let digitGap: CGFloat = 1
-        for char in allChars {
+        for char in displayString {
             totalWidth += (String(char) == ":" ? colonWidth : digitWidth) + digitGap
         }
         totalWidth -= digitGap
@@ -644,7 +643,7 @@ class ModernMainWindowView: NSView {
         var x = timeDisplayRect.minX + (timeDisplayRect.width - totalWidth) / 2
         let y = timeDisplayRect.minY + (timeDisplayRect.height - digitHeight) / 2
         
-        for char in allChars {
+        for char in displayString {
             let charStr = String(char)
             let charWidth = charStr == ":" ? colonWidth : digitWidth
             let rect = NSRect(x: x, y: y, width: charWidth, height: digitHeight)
@@ -754,7 +753,6 @@ class ModernMainWindowView: NSView {
             (ModernSkinElements.btnPause, "btn_pause"),
             (ModernSkinElements.btnStop, "btn_stop"),
             (ModernSkinElements.btnNext, "btn_next"),
-            (ModernSkinElements.btnEject, "btn_eject"),
         ]
         
         for (element, id) in buttons {
@@ -827,8 +825,11 @@ class ModernMainWindowView: NSView {
     }
     
     func updateTrackInfo(_ track: Track?) {
+        currentArtworkImage = nil
+        marqueeLayer.artworkImage = nil
         self.currentTrack = track
         self.videoTitle = nil
+        loadArtwork(for: track)
         self.currentBPM = nil  // Reset BPM for new track
         self.bpmMultiplierState = 2  // Reset multiplier for new track (default to 0.5x)
         refreshMarqueeText()
@@ -897,6 +898,7 @@ class ModernMainWindowView: NSView {
         renderer = ModernSkinRenderer(skin: skin)
         setupGridBackground(skin: skin)
         marqueeLayer.configure(with: skin)
+        marqueeLayer.artworkImage = currentArtworkImage
         updateMarqueeOpacity()
         updateSpectrumOverlayOpacity()
         refreshMarqueeText()
@@ -1027,6 +1029,104 @@ class ModernMainWindowView: NSView {
             edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
+    }
+
+    private func loadArtwork(for track: Track?) {
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+
+        guard let track = track else { return }
+        let expectedId = track.id
+
+        artworkLoadTask = Task { [weak self] in
+            guard let self = self else { return }
+
+            var image: NSImage?
+
+            if let plexRatingKey = track.plexRatingKey {
+                let key = NSString(string: "marquee_plex:\(plexRatingKey)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else if let thumbPath = track.artworkThumb,
+                          let url = PlexManager.shared.artworkURL(thumb: thumbPath, size: 400) {
+                    if let (data, resp) = try? await URLSession.shared.data(from: url),
+                       (resp as? HTTPURLResponse)?.statusCode == 200,
+                       let img = NSImage(data: data) {
+                        Self.artworkCache.setObject(img, forKey: key)
+                        image = img
+                    }
+                }
+            } else if let subsonicId = track.subsonicId {
+                let key = NSString(string: "marquee_subsonic:\(subsonicId)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else if let url = SubsonicManager.shared.coverArtURL(coverArtId: subsonicId, size: 400) {
+                    if let (data, resp) = try? await URLSession.shared.data(from: url),
+                       (resp as? HTTPURLResponse)?.statusCode == 200,
+                       let img = NSImage(data: data) {
+                        Self.artworkCache.setObject(img, forKey: key)
+                        image = img
+                    }
+                }
+            } else if let jellyfinId = track.jellyfinId {
+                let key = NSString(string: "marquee_jellyfin:\(jellyfinId)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else if let url = JellyfinManager.shared.imageURL(itemId: jellyfinId, imageTag: nil, size: 400) {
+                    if let (data, resp) = try? await URLSession.shared.data(from: url),
+                       (resp as? HTTPURLResponse)?.statusCode == 200,
+                       let img = NSImage(data: data) {
+                        Self.artworkCache.setObject(img, forKey: key)
+                        image = img
+                    }
+                }
+            } else if let embyId = track.embyId {
+                let key = NSString(string: "marquee_emby:\(embyId)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else if let url = EmbyManager.shared.imageURL(itemId: embyId, imageTag: track.artworkThumb, size: 400) {
+                    if let (data, resp) = try? await URLSession.shared.data(from: url),
+                       (resp as? HTTPURLResponse)?.statusCode == 200,
+                       let img = NSImage(data: data) {
+                        Self.artworkCache.setObject(img, forKey: key)
+                        image = img
+                    }
+                }
+            } else if track.url.isFileURL {
+                let key = NSString(string: "marquee_local:\(track.url.path)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else {
+                    image = await self.loadLocalArtwork(url: track.url)
+                    if let img = image { Self.artworkCache.setObject(img, forKey: key) }
+                }
+            }
+
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard self.currentTrack?.id == expectedId else { return }
+                self.currentArtworkImage = image
+                self.marqueeLayer.artworkImage = image
+            }
+        }
+    }
+
+    private func loadLocalArtwork(url: URL) async -> NSImage? {
+        guard !Task.isCancelled else { return nil }
+        let asset = AVURLAsset(url: url)
+        do {
+            for format in [try await asset.load(.metadata),
+                           try await asset.loadMetadata(for: .id3Metadata),
+                           try await asset.loadMetadata(for: .iTunesMetadata)] {
+                for item in format {
+                    if item.commonKey == .commonKeyArtwork,
+                       let data = try? await item.load(.dataValue),
+                       let img = NSImage(data: data) { return img }
+                }
+            }
+        } catch {}
+        return nil
     }
 
     @objc private func radioMetadataDidChange() {
@@ -1276,8 +1376,8 @@ class ModernMainWindowView: NSView {
             rect = scaledRect(effectiveMarqueePanelRect)
         case "spectrum_area":
             rect = scaledRect(ModernSkinElements.spectrumArea.defaultRect)
-        case "btn_prev", "btn_play", "btn_pause", "btn_stop", "btn_next", "btn_eject":
-            rect = scaledRect(NSRect(x: 6, y: 3, width: 168, height: 24))
+        case "btn_prev", "btn_play", "btn_pause", "btn_stop", "btn_next":
+            rect = scaledRect(NSRect(x: 6, y: 3, width: 140, height: 24))
         case "btn_close", "btn_minimize", "btn_shade":
             rect = scaledRect(ModernSkinElements.titleBar.defaultRect)
         case let id where id.hasPrefix("btn_"):
@@ -1324,7 +1424,6 @@ class ModernMainWindowView: NSView {
             ("btn_pause", ModernSkinElements.btnPause.defaultRect),
             ("btn_stop", ModernSkinElements.btnStop.defaultRect),
             ("btn_next", ModernSkinElements.btnNext.defaultRect),
-            ("btn_eject", ModernSkinElements.btnEject.defaultRect),
             // Toggle button row (10 buttons aligned with marquee panel x:93–267)
         ])
         do {
@@ -1390,9 +1489,18 @@ class ModernMainWindowView: NSView {
                 isDraggingVolume = true
                 updateVolumePosition(from: point)
             } else if element == "time_display" {
-                // Toggle time display mode
-                let mode = WindowManager.shared.timeDisplayMode
-                WindowManager.shared.timeDisplayMode = (mode == .elapsed) ? .remaining : .elapsed
+                if event.clickCount == 2 {
+                    timeDisplayClickTimer?.invalidate()
+                    timeDisplayClickTimer = nil
+                    cycleTimeDisplayNumberSystem()
+                } else {
+                    timeDisplayClickTimer?.invalidate()
+                    timeDisplayClickTimer = Timer.scheduledTimer(withTimeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
+                        self?.timeDisplayClickTimer = nil
+                        let mode = WindowManager.shared.timeDisplayMode
+                        WindowManager.shared.timeDisplayMode = (mode == .elapsed) ? .remaining : .elapsed
+                    }
+                }
             } else if element == "info_bpm" {
                 if event.clickCount == 2 {
                     // Cycle: normal → 2x → 0.5x → normal
@@ -1431,6 +1539,18 @@ class ModernMainWindowView: NSView {
                 }
             }
         }
+    }
+
+    private func cycleTimeDisplayNumberSystem() {
+        let systems = TimeDisplayNumberSystem.allCases
+        let current = WindowManager.shared.timeDisplayNumberSystem
+        guard let currentIndex = systems.firstIndex(of: current) else {
+            WindowManager.shared.timeDisplayNumberSystem = .modernDefault
+            return
+        }
+
+        let nextIndex = systems.index(after: currentIndex)
+        WindowManager.shared.timeDisplayNumberSystem = nextIndex == systems.endIndex ? systems[systems.startIndex] : systems[nextIndex]
     }
     
     override func mouseDragged(with event: NSEvent) {
@@ -1555,9 +1675,6 @@ class ModernMainWindowView: NSView {
                 audioEngine.next()
             }
             
-        case "btn_eject":
-            openFileDialog()
-            
         case "btn_sk":
             showModernSkinsMenu()
             
@@ -1619,25 +1736,6 @@ class ModernMainWindowView: NSView {
         let btnRect = scaledRect(NSRect(x: 163, y: 42, width: 18, height: 14))
         let menuPoint = NSPoint(x: btnRect.minX, y: btnRect.maxY)
         menu.popUp(positioning: nil, at: menuPoint, in: self)
-    }
-    
-    // MARK: - File Dialog
-    
-    private func openFileDialog() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = true
-        panel.allowedContentTypes = [.audio, .mp3, .mpeg4Audio, .wav, .aiff]
-        
-        panel.begin { [weak self] response in
-            guard response == .OK else { return }
-            LocalFileDiscovery.discoverMediaURLsAsync(from: panel.urls, includeVideo: false) { urls in
-                guard !urls.isEmpty else { return }
-                WindowManager.shared.audioEngine.loadFiles(urls)
-                WindowManager.shared.audioEngine.play()
-            }
-            _ = self
-        }
     }
     
     // MARK: - Keyboard Events

@@ -985,7 +985,7 @@ class AudioEngine {
         playerNode.volume = 1.0
         crossfadePlayerNode.volume = 0  // Still starts silent for crossfade
         
-        // Apply initial volume to mainMixerNode (after EQ/limiter, before output)
+        // Apply initial volume to mainMixerNode (after EQ, before output)
         engine.mainMixerNode.outputVolume = volume
         
         // EQ is disabled (bypassed) by default - user must enable it

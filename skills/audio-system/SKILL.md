@@ -39,7 +39,7 @@ Both pipelines support the active EQ layout for the current UI mode and real-tim
 │  └──────────────┘         │         │              │              │ │
 │                           │         │              ▼              │ │
 │  ┌──────────────┐         │         │  ┌───────────────────────┐  │ │
-│  │crossfadeNode │─────────┼──► mixerNode ─► eqNode ─► limiter   │ │
+│  │crossfadeNode │─────────┼──► mixerNode ─► eqNode ────────────┐ │ │
 │  │ (for Sweet   │         │         │  │ AVAudioUnitEQ         │  │ │
 │  │  Fades)      │         │         │  └───────────┬───────────┘  │ │
 │  └──────────────┘         │         │              │              │ │
@@ -57,12 +57,6 @@ Both pipelines support the active EQ layout for the current UI mode and real-tim
 │                    ┌──────────────┐                                 │
 │                    │ eqNode       │                                 │
 │                    │ (mode EQ)    │                                 │
-│                    └──────┬───────┘                                 │
-│                           │                                         │
-│                           ▼                                         │
-│                    ┌──────────────┐                                 │
-│                    │ limiterNode  │                                 │
-│                    │ (Anti-clip)  │                                 │
 │                    └──────┬───────┘                                 │
 │                           │                                         │
 │                           ▼                                         │
@@ -88,7 +82,6 @@ Main audio controller managing:
 - Shuffle cycle management for non-repeating playback order
 - Track loading (routes to appropriate pipeline)
 - EQ settings (synced to both pipelines)
-- Anti-clipping limiter for EQ protection
 - Gapless playback (optional, local files only)
 - Volume normalization (optional, local files only)
 - Sweet Fades crossfade (both pipelines)
@@ -103,7 +96,6 @@ private let playerNode = AVAudioPlayerNode()
 private let crossfadePlayerNode = AVAudioPlayerNode()
 private let activeEQConfiguration: EQConfiguration
 private let eqNode: AVAudioUnitEQ
-private let limiterNode = AVAudioUnitDynamicsProcessor()
 private var streamingPlayer: StreamingAudioPlayer?
 private var crossfadeStreamingPlayer: StreamingAudioPlayer?
 var gaplessPlaybackEnabled: Bool
@@ -191,7 +183,6 @@ Frequencies: `31.5, 45, 63, 90, 125, 180, 250, 355, 500, 710, 1000, 1400, 2000, 
 - Per-band gain: **-12 dB to +12 dB**
 - Preamp (global gain): **-12 dB to +12 dB**
 - **Disabled by default** to preserve original audio quality
-- Transparent limiter (threshold: -1 dB) prevents clipping
 - Saved EQ arrays are remapped between 10-band and 21-band layouts when restoring across classic/modern mode switches
 
 ### Modern EQ UI Controls

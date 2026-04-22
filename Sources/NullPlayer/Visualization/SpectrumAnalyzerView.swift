@@ -1522,7 +1522,14 @@ class SpectrumAnalyzerView: NSView {
         }
         
         self.displayLink = displayLink
-        
+
+        // Pin to the window's actual display to avoid GPU panics on multi-monitor setups.
+        // CVDisplayLinkCreateWithActiveCGDisplays picks an arbitrary active display; on M-series
+        // Macs with an external monitor this can mismatch the Metal device and trigger a kernel panic.
+        if let screenNumber = window?.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+            CVDisplayLinkSetCurrentCGDisplay(displayLink, screenNumber)
+        }
+
         // Create a retained context wrapper with weak view reference
         // This prevents use-after-free crashes when the view is deallocated
         // while the display link callback is still running on a background thread
@@ -1530,10 +1537,10 @@ class SpectrumAnalyzerView: NSView {
         let retainedContext = Unmanaged.passRetained(context)
         self.displayLinkContextRef = retainedContext
         let callbackPointer = retainedContext.toOpaque()
-        
+
         // Set output callback with safe context
         CVDisplayLinkSetOutputCallback(displayLink, displayLinkCallback, callbackPointer)
-        
+
         // Start the display link
         CVDisplayLinkStart(displayLink)
     }
@@ -3520,12 +3527,37 @@ class SpectrumAnalyzerView: NSView {
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil {
+        if let window = window {
+            // Remove-before-add to avoid duplicate observers if this fires more than once
+            // with a non-nil window (e.g. view re-inserted into hierarchy).
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeScreenNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(handleWindowDidChangeScreen(_:)),
+                name: NSWindow.didChangeScreenNotification, object: window)
+            NotificationCenter.default.addObserver(self, selector: #selector(handleScreenParametersChanged),
+                name: NSApplication.didChangeScreenParametersNotification, object: nil)
             syncMetalLayerScaleAndSize()
             startRendering()
         } else {
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeScreenNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
             // Window closed - stop the display link to release CPU
             stopRendering()
+        }
+    }
+
+    @objc private func handleWindowDidChangeScreen(_ notification: Notification) {
+        guard notification.object as? NSWindow == window else { return }
+        syncMetalLayerScaleAndSize()
+        stopRendering()
+        startRendering()
+    }
+
+    @objc private func handleScreenParametersChanged() {
+        stopRendering()
+        DispatchQueue.main.async { [weak self] in
+            self?.syncMetalLayerScaleAndSize()
+            self?.startRendering()
         }
     }
     

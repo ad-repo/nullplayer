@@ -5,15 +5,72 @@ description: Headless CLI mode for NullPlayer. Use when working on CLI features,
 
 # NullPlayer CLI Mode
 
-NullPlayer supports a `--cli` flag that launches a headless mode for browsing, searching, and playing music from all configured sources via the terminal. The process stays alive during playback with interactive keyboard controls. Query commands (`--list-*`, `--search`) print results and exit immediately.
+NullPlayer supports a `--cli` flag that launches a headless mode for browsing, searching, playing, and routing media from all configured sources via the terminal. Treat this as a first-class command surface, not a debug-only mode. The process stays alive during playback with interactive keyboard controls. Query commands (`--list-*`, `--search`) print results and exit immediately.
+
+## Positioning
+
+The right mental model is:
+
+- `nullplayer` is a scriptable media control command
+- it connects multiple media sources to multiple playback targets
+- it works well inside shell scripts, launchers, shortcuts, and automation pipelines
+
+Be explicit about both sides of the pipeline:
+
+- Sources in: local library, Plex, Subsonic/Navidrome, Jellyfin, Emby, internet radio
+- Targets out: local audio outputs, Sonos, Chromecast, UPnP/DLNA
+
+Do not describe it as a daemon, background control server, or remote-control protocol unless that is separately implemented. It is a command you invoke to query, resolve, start playback, and optionally cast.
 
 ## Launching
 
 ```bash
-NullPlayer --cli [OPTIONS]
+nullplayer --cli [OPTIONS]
 ```
 
 `--cli` and `--ui-testing` are mutually exclusive. In CLI mode the app runs with `.accessory` activation policy — no Dock icon, no menu bar.
+
+If the launcher is not installed, the underlying executable is still:
+
+```bash
+NullPlayer.app/Contents/MacOS/NullPlayer --cli [OPTIONS]
+```
+
+## Automation Use Cases
+
+This CLI is strong when you need one command to:
+
+- query available sources, libraries, outputs, and cast devices
+- resolve media from different backends with one consistent UX
+- start playback on the Mac itself or send it to a network playback target
+- emit machine-friendly query output via `--json`
+
+Typical examples:
+
+```bash
+# Query sources and devices for downstream scripting
+nullplayer --cli --list-sources --json
+nullplayer --cli --list-devices --json
+nullplayer --cli --list-outputs --json
+
+# Start playback from different backends with one command shape
+nullplayer --cli --source local --artist "Aphex Twin"
+nullplayer --cli --source plex --playlist "Dinner"
+nullplayer --cli --source jellyfin --album "Moon Safari"
+
+# Use NullPlayer as a media-routing command
+nullplayer --cli --source radio --station "KEXP" --cast "Living Room" --cast-type sonos
+nullplayer --cli --source local --album "Kid A" --cast "Office TV" --cast-type dlna
+nullplayer --cli --source subsonic --artist "Massive Attack" --cast "Kitchen Speaker" --cast-type chromecast
+```
+
+When documenting or selling the feature, good phrasing is:
+
+- "scriptable media control command"
+- "headless playback and casting command"
+- "automation-friendly CLI for multi-source media routing"
+
+Avoid vague phrasing like "CLI browser" when the real value is orchestration across sources and outputs.
 
 ---
 
@@ -100,10 +157,50 @@ NullPlayer --cli [OPTIONS]
 | `--region <name>` | string | Radio region (with `--folder region`) |
 | `--volume <0-100>` | int | Initial volume (divided by 100 for `AudioEngine.volume`) |
 | `--cast <device>` | string | Cast to named device (case-insensitive match) |
-| `--cast-type <type>` | string | `sonos`, `chromecast`, `dlna` |
+| `--cast-type <type>` | string | `sonos`, `chromecast`, `dlna` (UPnP/DLNA target filter) |
 | `--sonos-rooms <rooms>` | string | Comma-separated Sonos room names for multi-room |
 | `--eq <preset>` | string | EQ preset name (case-insensitive; from `EQPreset.allPresets`) |
 | `--output <device>` | string | Audio output device name (case-insensitive) |
+
+## Multi-Source / Multi-Output Framing
+
+When explaining this subsystem, always make the two-sided model clear:
+
+1. Source selection
+2. Playback routing
+
+Source selection is handled by `--source`, library filters, search filters, playlists, radio modes, and station selection.
+
+Playback routing is handled by:
+
+- default local playback if no routing flag is supplied
+- `--output <device>` for local audio device selection
+- `--cast <device>` with optional `--cast-type` for network playback targets
+- `--sonos-rooms <rooms>` when targeting grouped Sonos playback
+
+That is why "media control command" is more accurate than "terminal player". The command is not limited to local playback; it also chooses where playback goes.
+
+## Query vs Control Behavior
+
+There are two main command shapes:
+
+- Query commands: print results and exit
+- Playback commands: resolve media, start playback, then remain attached for interactive control
+
+This distinction matters for automation guidance:
+
+- Use query commands plus `--json` when NullPlayer is feeding another step in the pipeline
+- Use playback commands when NullPlayer is the execution step that actually starts playback or casting
+
+Good examples:
+
+```bash
+# Query step
+nullplayer --cli --list-playlists --source plex --json
+
+# Execution step
+nullplayer --cli --source plex --playlist "Focus" --cast "Bedroom" --cast-type sonos
+```
 
 ---
 
