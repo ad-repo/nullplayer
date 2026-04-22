@@ -12,6 +12,18 @@ extension Notification.Name {
     static let windowDragDidEnd = Notification.Name("windowDragDidEnd")
 }
 
+#if DEBUG
+extension WindowManager {
+    var debugVideoPlayerWindowControllerForTesting: VideoPlayerWindowController? {
+        videoPlayerWindowController
+    }
+
+    func debugSetVideoPlayerWindowControllerForTesting(_ controller: VideoPlayerWindowController?) {
+        videoPlayerWindowController = controller
+    }
+}
+#endif
+
 // MARK: - Time Display Mode
 
 enum TimeDisplayMode: String {
@@ -1342,6 +1354,18 @@ class WindowManager {
         // A video session is active if the video player is visible AND has a video loaded
         // (indicated by currentTitle being set). This is different from isVideoPlaying
         // which only returns true when actively playing (not paused).
+        guard let controller = videoPlayerWindowController,
+              let window = controller.window,
+              window.isVisible else {
+            return false
+        }
+        return controller.currentTitle != nil
+    }
+
+    /// True if a video is actively loaded in the player window or CastManager is video casting.
+    /// Unlike isVideoActivePlayback, does NOT rely on VideoPlayerWindowController.isCastingVideo.
+    var isVideoContentActive: Bool {
+        if CastManager.shared.isVideoCasting { return true }
         guard let controller = videoPlayerWindowController,
               let window = controller.window,
               window.isVisible else {
