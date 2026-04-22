@@ -48,7 +48,7 @@ final class SleepTimerManager: NSObject {
 
     // MARK: - Config
 
-    static let timedChoicesMinutes: [Int] = [5, 10, 15, 30, 45, 60, 90, 120]
+    static let timedChoicesMinutes: [Int] = [5, 10, 15, 30, 45, 60, 90, 120, 300, 480, 720]
     static let defaultFadeOutSeconds: TimeInterval = 10
 
     // MARK: - Internal
