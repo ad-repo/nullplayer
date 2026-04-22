@@ -185,11 +185,13 @@ class ContextMenuBuilder {
     static func buildSleepTimerMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
+        menu.delegate = SleepTimerManager.shared
 
         let manager = SleepTimerManager.shared
 
         if let description = manager.menuDescription {
             let status = NSMenuItem(title: description, action: nil, keyEquivalent: "")
+            status.tag = SleepTimerManager.menuStatusItemTag
             status.isEnabled = false
             menu.addItem(status)
 

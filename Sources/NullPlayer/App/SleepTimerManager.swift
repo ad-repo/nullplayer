@@ -15,7 +15,7 @@ import AppKit
 // State is session-local (not persisted across launches).
 // =============================================================================
 
-final class SleepTimerManager {
+final class SleepTimerManager: NSObject {
     static let shared = SleepTimerManager()
 
     // MARK: - Notifications
@@ -58,8 +58,13 @@ final class SleepTimerManager {
     private var fadeStartVolume: Float?
     private var lastWrittenVolume: Float?
     private var isFading: Bool = false
+    private var menuUpdateTimer: Timer?
 
-    private init() {
+    // Tag used to locate the status item inside the sleep timer submenu for live updates.
+    static let menuStatusItemTag = 100
+
+    private override init() {
+        super.init()
         // Observe natural track completion (fires BEFORE currentTrack advances).
         // Used by both endOfTrack and endOfQueue modes.
         NotificationCenter.default.addObserver(
@@ -241,5 +246,24 @@ final class SleepTimerManager {
         case .endOfTrack: return "Sleep Timer: End of track"
         case .endOfQueue: return "Sleep Timer: End of queue"
         }
+    }
+}
+
+// MARK: - NSMenuDelegate (live countdown refresh)
+
+extension SleepTimerManager: NSMenuDelegate {
+    func menuWillOpen(_ menu: NSMenu) {
+        guard state?.mode == .timed else { return }
+        let tt = Timer(timeInterval: 1.0, repeats: true) { [weak menu] _ in
+            guard let item = menu?.item(withTag: SleepTimerManager.menuStatusItemTag) else { return }
+            item.title = SleepTimerManager.shared.menuDescription ?? ""
+        }
+        RunLoop.main.add(tt, forMode: .common)
+        menuUpdateTimer = tt
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        menuUpdateTimer?.invalidate()
+        menuUpdateTimer = nil
     }
 }
