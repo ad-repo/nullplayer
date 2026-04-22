@@ -274,7 +274,7 @@ Users place `.nsz` files or folders in:
 
 ### Selecting a Skin
 
-Right-click the player → **UI** → **Modern** → choose from the list (or use **Load Skin...** to import a `.nsz` bundle).
+Right-click the player → **Skins** → **Modern** → choose from the list (or use **Load Skin...** to import a `.nsz` bundle).
 
 Skin changes take effect immediately. Switching between Classic and Modern mode requires a restart.
 

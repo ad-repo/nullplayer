@@ -249,7 +249,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "Quit nullPlayer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         addDynamicTopLevelMenu(title: "Windows", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarWindowsMenu, refreshOnOpen: true)
-        addDynamicTopLevelMenu(title: "UI", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarUIMenu, refreshOnOpen: true)
+        addDynamicTopLevelMenu(title: "Skins", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarUIMenu, refreshOnOpen: true)
         addDynamicTopLevelMenu(title: "Playback", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarPlaybackMenu, refreshOnOpen: true)
         addDynamicTopLevelMenu(title: "Visuals", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarVisualsMenu, refreshOnOpen: true)
         addDynamicTopLevelMenu(title: "Libraries", to: mainMenu, builder: ContextMenuBuilder.buildMenuBarLibrariesMenu, refreshOnOpen: true)
