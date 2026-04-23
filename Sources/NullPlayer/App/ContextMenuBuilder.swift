@@ -2202,7 +2202,8 @@ class ContextMenuBuilder {
         let activeSession = castManager.activeSession
         let activeCastDevice = activeSession?.device
         let activeVideoDevice = castManager.isVideoCasting ? activeSession?.device : nil
-        let isVideoContext = WindowManager.shared.isVideoContentActive
+        // Keep audio casting available when a music track is loaded.
+        let isVideoContext = WindowManager.shared.isVideoContentActive && WindowManager.shared.audioEngine.currentTrack == nil
 
         if !castManager.chromecastDevices.isEmpty {
             outputMenu.addItem(NSMenuItem.separator())
@@ -2441,7 +2442,8 @@ class ContextMenuBuilder {
         let activeSession = castManager.activeSession
         let activeCastDevice = activeSession?.device
         let activeVideoDevice = castManager.isVideoCasting ? activeSession?.device : nil
-        let isVideoContext = WindowManager.shared.isVideoContentActive
+        // Keep audio casting available when a music track is loaded.
+        let isVideoContext = WindowManager.shared.isVideoContentActive && WindowManager.shared.audioEngine.currentTrack == nil
 
         // Chromecast (if any)
         if !chromecastDevices.isEmpty {

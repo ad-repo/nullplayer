@@ -28,10 +28,10 @@ final class CastingTests: XCTestCase {
         castManager.debugSetVideoCastingStateForTesting(false)
 
         if let originalPreferredDeviceID {
-            castManager.preferredVideoCastDeviceID = originalPreferredDeviceID
+            castManager.setPreferredVideoCastDevice(originalPreferredDeviceID)
             UserDefaults.standard.set(originalPreferredDeviceID, forKey: preferredDeviceDefaultsKey)
         } else {
-            castManager.preferredVideoCastDeviceID = nil
+            castManager.setPreferredVideoCastDevice(nil)
             UserDefaults.standard.removeObject(forKey: preferredDeviceDefaultsKey)
         }
 

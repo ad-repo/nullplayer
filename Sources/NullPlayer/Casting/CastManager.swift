@@ -37,7 +37,7 @@ class CastManager {
     var selectedSonosRooms: Set<String> = []
 
     /// Preferred Chromecast/DLNA device for video casting (device ID, persisted)
-    var preferredVideoCastDeviceID: String? = UserDefaults.standard.string(forKey: "preferredVideoCastDeviceID")
+    private(set) var preferredVideoCastDeviceID: String? = UserDefaults.standard.string(forKey: "preferredVideoCastDeviceID")
 
     /// The preferred video cast device if it is currently discoverable and supports video.
     /// Falls back to the first available video-capable device if preferred is offline.
@@ -587,8 +587,8 @@ class CastManager {
             return false
         }
         guard !alreadyInProgress else {
-            NSLog("CastManager: cast() called while already in progress - ignoring")
-            return
+            NSLog("CastManager: cast() called while already in progress - rejecting")
+            throw CastError.operationInProgress
         }
         defer {
             Task { @MainActor in self.isCastingInProgress = false }

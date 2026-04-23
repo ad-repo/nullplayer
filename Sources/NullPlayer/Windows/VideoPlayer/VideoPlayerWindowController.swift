@@ -1350,10 +1350,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         
         Task {
             do {
-                if selectedDevice != nil {
-                    CastManager.shared.setPreferredVideoCastDevice(device.id)
-                }
-
                 // Capture position and duration before pausing local playback
                 let currentPosition = videoPlayerView.currentPlaybackTime
                 let videoDuration = videoPlayerView.totalPlaybackDuration
@@ -1400,6 +1396,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                     )
                     
                     self.startCastUpdateTimer()
+                }
+
+                if selectedDevice != nil {
+                    CastManager.shared.setPreferredVideoCastDevice(device.id)
                 }
                 
                 NSLog("VideoPlayerWindowController: Video cast started to %@ at %.1f / %.1f", device.name, currentPosition, videoDuration)

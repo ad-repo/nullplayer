@@ -220,6 +220,7 @@ enum CastError: Error, LocalizedError {
     case sessionNotActive
     case deviceOffline
     case authenticationRequired
+    case operationInProgress
     
     var errorDescription: String? {
         switch self {
@@ -247,6 +248,8 @@ enum CastError: Error, LocalizedError {
             return "Cast device is offline"
         case .authenticationRequired:
             return "Authentication required for streaming"
+        case .operationInProgress:
+            return "A cast operation is already in progress"
         }
     }
 }
