@@ -332,7 +332,7 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 
 ## Sonos Protocol Quirks
 
-**Content-Type matching:** The content type in DIDL-Lite `protocolInfo` must match the actual HTTP Content-Type header. Use `CastManager.detectAudioContentType(for:)` to detect from file extension.
+**Content-Type matching:** The content type in DIDL-Lite `protocolInfo` must match the actual HTTP Content-Type header. Use `track.contentType` when a backend provides it; otherwise use `CastManager.detectAudioContentType(for:)` to detect from file extension. Extensionless server streams must not fall back to `audio/mpeg` when API metadata says the codec/container is FLAC, WAV, ALAC, etc.
 
 **Content-Length for MP3/OGG:** Sonos closes the connection if Content-Length is missing for MP3 and OGG. Chunked transfer encoding only works for WAV/FLAC.
 
@@ -360,6 +360,8 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 Always-incompatible formats (regardless of sample rate): `alac`, `aiff`, `aif`, `wv` (WavPack), `ape` (Monkey's Audio).
 Lossless formats requiring the sample-rate check: `flac`, `wav` — rejected above 48 kHz.
 
+Format classification uses the URL extension first, then normalized `Track.contentType` when the URL is extensionless. MIME types are normalized case-insensitively and parameters are ignored, so `Audio/X-FLAC; charset=binary` is treated as FLAC. This matters for Plex, Subsonic/Navidrome, Jellyfin, and Emby stream URLs that may not end in `.flac` or `.wav`.
+
 ### Scan Functions Use Permissive Mode
 
 Functions that advance the playlist index use `allowUnknownSampleRate: true` because they run _before_ the sample rate is known:
@@ -371,7 +373,9 @@ Functions that advance the playlist index use `allowUnknownSampleRate: true` bec
 
 ### Cast Functions Are the Final Authority
 
-`castCurrentTrack` and `castNewTrack` in `CastManager.swift` fetch the actual sample rate from the Plex API for lossless tracks with nil SR, then call strict `isSonosCompatible`. If a track fails there, `advanceToFirstSonosCompatibleTrack()` is called again to find the next candidate.
+`castCurrentTrack` and `castNewTrack` in `CastManager.swift` fetch the actual sample rate from the Plex API for lossless tracks with nil SR, then call strict `isSonosCompatible`. The fetch decision must use the same URL-extension-or-content-type classification as `isSonosCompatible`; Plex stream URLs are often extensionless, so `Track.contentType` must identify FLAC/WAV for the fetch to happen. If a track fails there, `advanceToFirstSonosCompatibleTrack()` is called again to find the next candidate.
+
+For non-Plex backends, preserve both `Track.contentType` and sample rate from server metadata. If an extensionless FLAC/WAV track reaches strict mode without sample rate, it is rejected conservatively rather than sent to Sonos.
 
 ### Design Principle
 

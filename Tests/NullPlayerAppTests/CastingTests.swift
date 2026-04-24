@@ -121,4 +121,47 @@ final class CastingTests: XCTestCase {
 
         controller.close()
     }
+
+    func testExtensionlessHighResolutionFlacIsNotSonosCompatible() {
+        let track = Track(
+            url: URL(string: "http://plex.local:32400/library/parts/1/file?X-Plex-Token=token")!,
+            title: "24/192 FLAC",
+            sampleRate: 192_000,
+            contentType: "audio/flac"
+        )
+
+        XCTAssertFalse(CastManager.isSonosCompatible(track))
+    }
+
+    func testSonosCompatibilityNormalizesContentTypeParameters() {
+        let track = Track(
+            url: URL(string: "http://server.local/stream/123")!,
+            title: "High-res FLAC",
+            sampleRate: 96_000,
+            contentType: "Audio/X-FLAC; charset=binary"
+        )
+
+        XCTAssertFalse(CastManager.isSonosCompatible(track))
+    }
+
+    func testPlexContentTypeInferencePreservesLosslessCodecs() {
+        XCTAssertEqual(PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "flac")), "audio/flac")
+        XCTAssertEqual(PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "alac")), "audio/alac")
+    }
+
+    private func makePlexMedia(audioCodec: String? = nil, container: String? = nil) -> PlexMedia {
+        PlexMedia(
+            id: 1,
+            duration: nil,
+            bitrate: nil,
+            audioChannels: nil,
+            audioCodec: audioCodec,
+            videoCodec: nil,
+            videoResolution: nil,
+            width: nil,
+            height: nil,
+            container: container,
+            parts: []
+        )
+    }
 }

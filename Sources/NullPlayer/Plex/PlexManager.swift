@@ -757,6 +757,44 @@ class PlexManager {
         }
         return track.media.first?.audioSampleRate
     }
+
+    static func inferAudioContentType(from media: PlexMedia?) -> String? {
+        let candidates = [
+            media?.audioCodec,
+            media?.container,
+            media?.parts.first?.container
+        ]
+
+        for candidate in candidates {
+            guard let format = candidate?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                  !format.isEmpty else { continue }
+
+            switch format {
+            case "mp3", "mpeg", "mpga":
+                return "audio/mpeg"
+            case "flac":
+                return "audio/flac"
+            case "aac", "m4a", "mp4":
+                return "audio/mp4"
+            case "wav", "wave":
+                return "audio/wav"
+            case "aiff", "aif":
+                return "audio/aiff"
+            case "ogg", "oga", "vorbis":
+                return "audio/ogg"
+            case "opus":
+                return "audio/opus"
+            case "wma":
+                return "audio/x-ms-wma"
+            case "alac":
+                return "audio/alac"
+            default:
+                continue
+            }
+        }
+
+        return nil
+    }
     
     // MARK: - Track Conversion
     
@@ -794,7 +832,8 @@ class PlexManager {
             plexRatingKey: plexTrack.id,  // Store rating key for play tracking
             plexServerId: currentServer?.id,
             artworkThumb: plexTrack.thumb,
-            genre: plexTrack.genre
+            genre: plexTrack.genre,
+            contentType: Self.inferAudioContentType(from: media)
         )
     }
 

@@ -737,8 +737,7 @@ class CastManager {
         if device.type == .sonos {
             var fetchedSR: Int? = nil
             if trackToUse.sampleRate == nil, let rk = trackToUse.plexRatingKey {
-                let ext = trackToUse.url.pathExtension.lowercased()
-                if Self.sonosLosslessExtensions.contains(ext) {
+                if Self.sonosLosslessExtension(for: trackToUse) != nil {
                     fetchedSR = await PlexManager.shared.fetchSampleRate(for: rk)
                     NSLog("CastManager: castCurrentTrack fetched sample rate for '%@': %@",
                           trackToUse.title, fetchedSR.map { "\($0) Hz" } ?? "nil")
@@ -753,8 +752,7 @@ class CastManager {
                 currentPosition = 0
                 fetchedSR = nil
                 if trackToUse.sampleRate == nil, let rk = trackToUse.plexRatingKey {
-                    let ext = trackToUse.url.pathExtension.lowercased()
-                    if Self.sonosLosslessExtensions.contains(ext) {
+                    if Self.sonosLosslessExtension(for: trackToUse) != nil {
                         fetchedSR = await PlexManager.shared.fetchSampleRate(for: rk)
                         NSLog("CastManager: castCurrentTrack fetched sample rate for '%@': %@",
                               trackToUse.title, fetchedSR.map { "\($0) Hz" } ?? "nil")
@@ -866,8 +864,7 @@ class CastManager {
             // Fetch missing sample rate for lossless Plex tracks (Plex API may omit Stream details)
             var fetchedSampleRate: Int? = nil
             if track.sampleRate == nil, let ratingKey = track.plexRatingKey {
-                let ext = track.url.pathExtension.lowercased()
-                if Self.sonosLosslessExtensions.contains(ext) {
+                if Self.sonosLosslessExtension(for: track) != nil {
                     fetchedSampleRate = await PlexManager.shared.fetchSampleRate(for: ratingKey)
                     NSLog("CastManager: castNewTrack fetched sample rate for '%@': %@",
                           track.title, fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
@@ -1910,7 +1907,12 @@ class CastManager {
 
     /// Map common audio MIME types to their extension equivalent for format checking.
     private static func contentTypeToExtension(_ ct: String) -> String {
-        switch ct {
+        let mimeType = ct
+            .split(separator: ";", maxSplits: 1)
+            .first
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() } ?? ""
+
+        switch mimeType {
         case "audio/x-aiff", "audio/aiff":  return "aiff"
         case "audio/alac", "audio/x-alac":  return "alac"
         case "audio/flac", "audio/x-flac":  return "flac"
@@ -1919,16 +1921,23 @@ class CastManager {
         }
     }
 
+    private static func sonosFormatExtension(for track: Track) -> String {
+        let urlExtension = track.url.pathExtension.lowercased()
+        if !urlExtension.isEmpty { return urlExtension }
+        return track.contentType.map(contentTypeToExtension) ?? ""
+    }
+
+    private static func sonosLosslessExtension(for track: Track) -> String? {
+        let ext = sonosFormatExtension(for: track)
+        return sonosLosslessExtensions.contains(ext) ? ext : nil
+    }
+
     /// Returns false if the track format is known to be unsupported by Sonos.
     /// Falls back to `track.contentType` when the URL has no file extension
     /// (e.g. server-streamed tracks from Subsonic/Jellyfin/Emby/Plex).
     static func isSonosCompatible(_ track: Track, sampleRateOverride: Int? = nil,
                                    allowUnknownSampleRate: Bool = false) -> Bool {
-        var ext = track.url.pathExtension.lowercased()
-
-        if ext.isEmpty, let ct = track.contentType {
-            ext = contentTypeToExtension(ct)
-        }
+        let ext = sonosFormatExtension(for: track)
 
         if sonosUnsupportedExtensions.contains(ext) { return false }
 
