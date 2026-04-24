@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import NullPlayerCore
 
 /// Unified manager for all casting functionality
 /// Coordinates Chromecast, Sonos, and DLNA device discovery and playback

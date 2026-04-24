@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 @preconcurrency import KSPlayer
 
 /// Track type for the selection panel

@@ -1,4 +1,5 @@
 import XCTest
+import struct NullPlayerCore.PlexMedia
 @testable import NullPlayer
 
 @MainActor

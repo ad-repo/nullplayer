@@ -1,4 +1,5 @@
 import Foundation
+import NullPlayerCore
 
 /// Radio station configuration - easy to modify thresholds
 enum RadioConfig {

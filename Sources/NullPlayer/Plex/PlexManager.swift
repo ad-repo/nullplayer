@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import NullPlayerCore
 
 /// Singleton managing Plex account linking, server discovery, and state
 class PlexManager {

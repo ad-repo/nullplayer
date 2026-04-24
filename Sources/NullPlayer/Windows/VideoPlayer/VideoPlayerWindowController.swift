@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 @preconcurrency import KSPlayer
 
 /// Window controller for video playback with KSPlayer and skinned UI

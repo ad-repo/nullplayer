@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import CoreAudio
+import NullPlayerCore
 
 /// Builds the shared right-click context menu for all skin windows
 class ContextMenuBuilder {
