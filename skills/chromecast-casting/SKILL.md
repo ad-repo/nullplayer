@@ -219,6 +219,46 @@ Controls must check both: `WindowManager.toggleVideoCastPlayPause()` handles rou
 
 Supported video sources: Plex (`castPlexMovie`, `castPlexEpisode`), Jellyfin (`castJellyfinMovie`, `castJellyfinEpisode`), and Emby (`castEmbyMovie`, `castEmbyEpisode`). All live in `CastManager.swift`.
 
+### Preferred Video Cast Routing
+
+Video playback has a preferred-device auto-route:
+
+- `CastManager.preferredVideoCastDeviceID` is set from explicit video cast device selection.
+- `WindowManager` video entry points (`showVideoPlayer`, `playMovie`, `playEpisode`, Jellyfin/Emby equivalents, and video `Track` playback) call `routeToVideoCastIfNeeded(...)` before creating/loading the local video player.
+- If a video cast is already active, the next selected video is cast to the active session's device.
+- If no video cast is active but a preferred video cast device is configured and currently discoverable, the selected video is cast directly to that device.
+- If the preferred device is offline, `preferredVideoCastDevice` may fall back to another discoverable video-capable device; this is intentional for the current UI behavior.
+
+This direct route prevents the local player from loading a second paused video while Chromecast is already playing. It also helps TV wake behavior: the first playback action for a preferred device is `CastManager.cast(...)`, which runs the normal Chromecast `CONNECT -> LAUNCH -> LOAD` path. Chromecast/TV wake is a side effect of the receiver `LAUNCH`/media `LOAD` sequence and the user's TV HDMI-CEC settings; NullPlayer does not send a separate TV power-on command.
+
+### Active Video Switching
+
+When a video is already casting and the user clicks another video:
+
+1. `WindowManager.routeToVideoCastIfNeeded(...)` selects the active cast session device.
+2. Any stale `VideoPlayerWindowController.isCastingVideo` ownership is cleared with `releaseCastOwnershipToCastManager()` without stopping the Chromecast.
+3. The selected media is cast through `CastManager` (`castPlexMovie`, `castJellyfinEpisode`, `castVideoURL`, etc.).
+4. Main-window controls prefer `CastManager.shared.isVideoCasting` over the video-player window state, so play/pause/seek route to Chromecast after the switch.
+
+Do not reload the selected video into the local player during an active video cast. That creates two playback surfaces: Chromecast continues playing while the local window holds a paused second video, and controls become ambiguous.
+
+### Generic Video URL Casting
+
+`CastManager.castVideoURL(...)` handles generic video URLs used by local-library video entries and video playlist tracks:
+
+- Local files are registered with `LocalMediaServer` and cast via the embedded HTTP server.
+- Remote HTTP(S) URLs are rewritten for casting when needed, including Plex tokenized URLs and localhost-to-LAN-IP replacement.
+- Local file registration must happen after stopping any previous cast because `stopCasting()` unregisters files from `LocalMediaServer`.
+- The method always builds `CastMetadata` with `mediaType: .video`.
+
+### Audio Is Separate
+
+Do not reuse `preferredVideoCastDeviceID` for normal audio playback. Audio casting remains explicit unless an audio cast session is already active:
+
+- If audio is already casting, track changes use `CastManager.castNewTrack(...)` and stay on the active cast target.
+- If audio is not casting, audio playback remains local until the user explicitly chooses a cast device from the cast menu.
+- This avoids surprising behavior where selecting a preferred TV for video would make ordinary audio playback auto-cast to that TV.
+
 ## Debugging
 
 The Chromecast implementation uses Google Cast Protocol v2:

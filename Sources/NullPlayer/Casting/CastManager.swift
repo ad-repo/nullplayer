@@ -419,34 +419,42 @@ class CastManager {
             
             // Update video cast tracking if video casting
             if self.isVideoCasting {
-                // Mark that we've received status from Chromecast (enables UI updates)
-                let isFirstStatus = !self.videoCastHasReceivedStatus
-                self.videoCastHasReceivedStatus = true
-                
                 // Sync position from Chromecast
                 self.videoCastStartPosition = status.currentTime
-                
+
                 if isBuffering {
                     // Pause interpolation during buffering
+                    let isFirstActive = !self.videoCastHasReceivedStatus
+                    self.videoCastHasReceivedStatus = true
                     self.videoCastStartDate = nil
                     self.isVideoCastPlaying = false
+                    if isFirstActive {
+                        WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
+                    }
                 } else if isPlaying {
+                    let isFirstActive = !self.videoCastHasReceivedStatus
+                    self.videoCastHasReceivedStatus = true
                     self.videoCastStartDate = Date()
                     self.isVideoCastPlaying = true
+                    if isFirstActive {
+                        WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
+                    }
                 } else {
                     // Paused or idle
                     self.videoCastStartDate = nil
                     self.isVideoCastPlaying = false
+
+                    // Only treat IDLE as "cast ended" if we've already seen active playback
+                    // (PLAYING or BUFFERING). The Chromecast sends an initial IDLE right after
+                    // connecting — before the LOAD command is processed — which must be ignored.
+                    if status.playerState == .idle && self.videoCastHasReceivedStatus {
+                        Task { await self.stopCasting() }
+                    }
                 }
-                
+
                 // Update duration if provided
                 if let duration = status.duration, duration > 0 {
                     self.videoCastDuration = duration
-                }
-                
-                // On first status, immediately update UI with correct position
-                if isFirstStatus {
-                    WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
                 }
             } else if self.isCasting {
                 // Audio casting - forward position sync to AudioEngine
@@ -1410,6 +1418,55 @@ class CastManager {
         
         NSLog("CastManager: Casting local video '%@' to %@", title, device.name)
         try await cast(to: device, url: serverURL, metadata: metadata, startPosition: startPosition)
+    }
+
+    /// Cast a generic video URL to a video-capable device.
+    /// Handles both local files and already-resolved remote video streams.
+    func castVideoURL(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil, contentType: String? = nil) async throws {
+        guard device.supportsVideo else {
+            throw CastError.unsupportedDevice
+        }
+
+        // Local file registration must happen after stopCasting(), because stopCasting()
+        // unregisters files from the embedded HTTP server.
+        if activeSession != nil {
+            await stopCasting()
+        }
+
+        let castURL: URL
+        if url.isFileURL {
+            if !LocalMediaServer.shared.isRunning {
+                try await LocalMediaServer.shared.start()
+            }
+
+            guard let serverURL = LocalMediaServer.shared.registerFile(url) else {
+                throw CastError.localServerError("Could not register file with local media server")
+            }
+            castURL = serverURL
+        } else if url.scheme == "http" || url.scheme == "https" {
+            if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: url) {
+                castURL = rewriteLocalhostForCasting(tokenizedURL)
+            } else {
+                castURL = rewriteLocalhostForCasting(url)
+            }
+        } else {
+            throw CastError.invalidURL
+        }
+
+        let detected = detectContentType(for: url)
+        let effectiveContentType = contentType ?? (detected.mediaType == .video ? detected.contentType : "video/mp4")
+        let metadata = CastMetadata(
+            title: title,
+            artist: nil,
+            album: nil,
+            artworkURL: nil,
+            duration: duration,
+            contentType: effectiveContentType,
+            mediaType: .video
+        )
+
+        NSLog("CastManager: Casting video URL '%@' to %@", title, device.name)
+        try await cast(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
     }
     
     /// Stop casting and disconnect

@@ -187,6 +187,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         videoPlayerView.updateCastState(isPlaying: false, deviceName: nil)
     }
 
+    /// Clear only this window's cast ownership state without stopping the cast device.
+    /// Used when a new video selection is routed directly through CastManager.
+    func releaseCastOwnershipToCastManager() {
+        clearVideoCastState()
+    }
+
     @objc private func handleCastSessionChange() {
         guard !CastManager.shared.isVideoCasting else { return }
         clearVideoCastState()
@@ -1336,7 +1342,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     @objc private func castToDevice(_ sender: NSMenuItem) {
         let selectedDevice = sender.representedObject as? CastDevice
         guard let device = selectedDevice ?? CastManager.shared.preferredVideoCastDevice else { return }
-        
+
         // Prevent dual casting - check if already casting from context menu
         if CastManager.shared.isVideoCasting {
             NSLog("VideoPlayerWindowController: Cannot cast - already casting from context menu")
@@ -1347,65 +1353,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             alert.runModal()
             return
         }
-        
+
+        let startPosition = videoPlayerView.currentPlaybackTime
         Task {
             do {
-                // Capture position and duration before pausing local playback
-                let currentPosition = videoPlayerView.currentPlaybackTime
-                let videoDuration = videoPlayerView.totalPlaybackDuration
-                
-                // Pause local playback (don't stop - we want to resume later)
-                videoPlayerView.togglePlayPause()  // Will pause if playing
-                
-                // Cast based on content type
-                if let movie = currentPlexMovie {
-                    try await CastManager.shared.castPlexMovie(movie, to: device, startPosition: currentPosition)
-                } else if let episode = currentPlexEpisode {
-                    try await CastManager.shared.castPlexEpisode(episode, to: device, startPosition: currentPosition)
-                } else if let movie = currentJellyfinMovie {
-                    try await CastManager.shared.castJellyfinMovie(movie, to: device, startPosition: currentPosition)
-                } else if let episode = currentJellyfinEpisode {
-                    try await CastManager.shared.castJellyfinEpisode(episode, to: device, startPosition: currentPosition)
-                } else if let movie = currentEmbyMovie {
-                    try await CastManager.shared.castEmbyMovie(movie, to: device, startPosition: currentPosition)
-                } else if let episode = currentEmbyEpisode {
-                    try await CastManager.shared.castEmbyEpisode(episode, to: device, startPosition: currentPosition)
-                } else if let url = currentURL {
-                    // Local video file
-                    try await CastManager.shared.castLocalVideo(url, title: currentTitle ?? "Video", to: device, startPosition: currentPosition)
-                }
-                
-                // Update casting state and time tracking
-                await MainActor.run {
-                    self.isCastingVideo = true
-                    self.castTargetDevice = device
-                    self.isPlaying = true
-                    self.castStartPosition = currentPosition
-                    // Don't set castPlaybackStartDate yet - wait for PLAYING status from Chromecast
-                    self.castPlaybackStartDate = nil
-                    self.castHasReceivedStatus = false
-                    self.castDuration = videoDuration
-                    self.videoPlayerView.updateCastState(isPlaying: true, deviceName: device.name)
-                    
-                    // Subscribe to Chromecast status updates for position syncing
-                    NotificationCenter.default.addObserver(
-                        self,
-                        selector: #selector(self.handleChromecastMediaStatusUpdate),
-                        name: ChromecastManager.mediaStatusDidUpdateNotification,
-                        object: nil
-                    )
-                    
-                    self.startCastUpdateTimer()
-                }
-
-                if selectedDevice != nil {
-                    CastManager.shared.setPreferredVideoCastDevice(device.id)
-                }
-                
-                NSLog("VideoPlayerWindowController: Video cast started to %@ at %.1f / %.1f", device.name, currentPosition, videoDuration)
+                try await performCast(to: device, startPosition: startPosition, savePreference: selectedDevice != nil)
             } catch {
                 NSLog("VideoPlayerWindowController: Video cast failed: %@", error.localizedDescription)
-                // Show error alert
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Cast Failed"
@@ -1414,6 +1368,84 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                     alert.runModal()
                     self.clearVideoCastState()
                 }
+            }
+        }
+    }
+
+    /// Core cast initiation logic shared by manual cast and auto-cast.
+    /// pauseLocal: false when the caller has already stopped local playback (auto-cast path).
+    private func performCast(to device: CastDevice, startPosition: TimeInterval, savePreference: Bool = false, pauseLocal: Bool = true) async throws {
+        let videoDuration = await MainActor.run { videoPlayerView.totalPlaybackDuration }
+
+        // Pause local playback before handing off to Chromecast.
+        // Skip for auto-cast path: the caller already called stop() synchronously.
+        if pauseLocal {
+            await MainActor.run { videoPlayerView.togglePlayPause() }
+        }
+
+        // Route to the appropriate CastManager method based on loaded content
+        if let movie = await MainActor.run(resultType: PlexMovie?.self, body: { self.currentPlexMovie }) {
+            try await CastManager.shared.castPlexMovie(movie, to: device, startPosition: startPosition)
+        } else if let episode = await MainActor.run(resultType: PlexEpisode?.self, body: { self.currentPlexEpisode }) {
+            try await CastManager.shared.castPlexEpisode(episode, to: device, startPosition: startPosition)
+        } else if let movie = await MainActor.run(resultType: JellyfinMovie?.self, body: { self.currentJellyfinMovie }) {
+            try await CastManager.shared.castJellyfinMovie(movie, to: device, startPosition: startPosition)
+        } else if let episode = await MainActor.run(resultType: JellyfinEpisode?.self, body: { self.currentJellyfinEpisode }) {
+            try await CastManager.shared.castJellyfinEpisode(episode, to: device, startPosition: startPosition)
+        } else if let movie = await MainActor.run(resultType: EmbyMovie?.self, body: { self.currentEmbyMovie }) {
+            try await CastManager.shared.castEmbyMovie(movie, to: device, startPosition: startPosition)
+        } else if let episode = await MainActor.run(resultType: EmbyEpisode?.self, body: { self.currentEmbyEpisode }) {
+            try await CastManager.shared.castEmbyEpisode(episode, to: device, startPosition: startPosition)
+        } else if let url = await MainActor.run(resultType: URL?.self, body: { self.currentURL }) {
+            try await CastManager.shared.castLocalVideo(url, title: await MainActor.run { self.currentTitle ?? "Video" }, to: device, startPosition: startPosition)
+        }
+
+        // Update casting state and time tracking
+        await MainActor.run {
+            self.isCastingVideo = true
+            self.castTargetDevice = device
+            self.isPlaying = true
+            self.castStartPosition = startPosition
+            self.castPlaybackStartDate = nil
+            self.castHasReceivedStatus = false
+            self.castDuration = videoDuration
+            self.videoPlayerView.updateCastState(isPlaying: true, deviceName: device.name)
+
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(self.handleChromecastMediaStatusUpdate),
+                name: ChromecastManager.mediaStatusDidUpdateNotification,
+                object: nil
+            )
+
+            self.startCastUpdateTimer()
+        }
+
+        if savePreference {
+            CastManager.shared.setPreferredVideoCastDevice(device.id)
+        }
+
+        NSLog("VideoPlayerWindowController: Video cast started to %@ at %.1f / %.1f", device.name, startPosition, videoDuration)
+    }
+
+    /// Auto-cast to the preferred video cast device when a video starts playing.
+    /// Called from WindowManager.videoPlaybackDidStart() after all content state is set.
+    func performAutoCastIfNeeded() {
+        guard CastManager.shared.preferredVideoCastDeviceID != nil,
+              let device = CastManager.shared.preferredVideoCastDevice,
+              !CastManager.shared.isVideoCasting,
+              !isCastingVideo else { return }
+        // Stop the local player synchronously on the main thread before the async Task runs.
+        // togglePlayPause() would accidentally *start* the video if it hasn't begun playing yet
+        // (loading/buffering state), so we use stop() here instead.
+        videoPlayerView.stop()
+        Task {
+            do {
+                try await performCast(to: device, startPosition: 0, pauseLocal: false)
+            } catch {
+                NSLog("VideoPlayerWindowController: Auto-cast failed: %@", error.localizedDescription)
+                // Restart local playback from the beginning since the cast didn't take over
+                await MainActor.run { self.videoPlayerView.togglePlayPause() }
             }
         }
     }
