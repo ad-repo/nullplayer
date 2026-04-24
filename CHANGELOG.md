@@ -13,12 +13,25 @@
 ### Improvements
 
 - **Modern transport spacing adjusted** — transport layout spacing in the modern main window has been tightened for a cleaner balance around the marquee and playback controls.
+- **Preferred video cast device routing** — video-capable Chromecast and DLNA TV devices can now be selected as the preferred video cast target from video contexts. Starting another video while a video cast is active now routes the new selection directly to the active cast device instead of opening a second paused local player.
+- **Video and audio cast menu behavior separated** — the output menu now treats video casting and audio casting as separate contexts, keeping audio playback explicit while still letting active or preferred video casts continue on the TV.
+- **Plex model sharing consolidated** — Plex models now live in `NullPlayerCore`, with public initializers and smart-playlist content decoding available to the app, CLI, and tests.
 - **CLI launch path clarified** — built-in CLI help and public docs now use the `nullplayer --cli ...` command as the primary entrypoint while still documenting the underlying bundled executable path for fallback use.
 - **Volume control documentation expanded** — the README now calls out `--volume <0-100>` and the live keyboard volume controls explicitly, including the fact that the same control path is used when casting is active.
+
+### Bug Fixes
+
+- **Chromecast video switching fixed** — main-window video controls now prefer `CastManager` video cast state, keeping play/pause, seek, skip, stop, title, duration, and playback state aligned after casting from the context menu or switching videos on an active cast session.
+- **Chromecast startup race hardened** — simultaneous cast attempts are now rejected while a cast operation is already in progress, and the initial Chromecast `IDLE` status after connection is ignored until active playback has been observed.
+- **Generic video URL casting fixed** — local-library video entries and video playlist tracks can now be routed through `CastManager.castVideoURL(...)`, including local-file registration through the embedded media server and remote HTTP(S) cast URL rewriting.
+- **Sonos filtering fixed for extensionless lossless streams** — server streams without file extensions now use `Track.contentType` to identify FLAC/WAV/ALAC/etc., normalize MIME parameters case-insensitively, fetch missing Plex sample rates for lossless tracks, and reject high-resolution or unsupported formats before sending them to Sonos.
+- **Plex stream content type preserved** — Plex tracks now infer audio MIME types from codec/container metadata during normal conversion and restored-track resolution, so extensionless Plex URLs retain enough format information for casting compatibility checks.
+- **Window toggle crash hardening** — Playlist, Equalizer, Spectrum, and Waveform toggles no longer force-unwrap their window frame when hiding visible windows.
 
 ### Documentation
 
 - **Audio system limiter docs corrected** — documentation now reflects the current audio chain after removal of the old limiter path.
+- **Casting docs updated** — Chromecast, Plex, Sonos, and related server integration skills now document preferred video cast routing, generic video URL casting, manager-owned versus player-owned cast state, and extensionless stream compatibility rules.
 - **Timer skill docs updated** — the timer-related skill documentation now matches the current modern timer capabilities and configuration options.
 
 ## 0.19.3
