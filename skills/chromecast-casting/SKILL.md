@@ -99,7 +99,7 @@ let slice = buffer[startIdx..<endIdx]
 
 This caused silent crashes during development until identified with the standalone test script.
 
-## Debugging
+## Protocol Debugging
 
 ### Standalone Test Script
 
@@ -208,14 +208,14 @@ Volume is controlled via the receiver namespace (not media):
 {"type":"SET_VOLUME","volume":{"muted":true},"requestId":N}
 ```
 
-## Video Casting — Two Paths
+## Video Casting Routing
 
-Video casting has two distinct code paths — both must be handled in control logic:
+Video casting has two ownership states that control routing:
 
-- **Player path**: Cast button in video player → `VideoPlayerWindowController.isCastingVideo`
-- **Menu path**: Right-click → Cast to... → `CastManager.shared.isVideoCasting` (no video player window)
+- **Player-owned cast**: Cast button in the video player sets `VideoPlayerWindowController.isCastingVideo`. The player window tracks its own cast UI state, but media loading still goes through `CastManager`.
+- **Manager-owned cast**: Context-menu casts, preferred-device auto-routing, and active-cast video switching use `CastManager.shared.isVideoCasting`.
 
-Controls must check both: `WindowManager.toggleVideoCastPlayPause()` handles routing.
+Main-window controls must prefer `CastManager.shared.isVideoCasting` first, then fall back to `VideoPlayerWindowController.isCastingVideo`, then local playback. This prevents stale player-window state from hijacking controls after a selected video is routed directly through `CastManager`.
 
 Supported video sources: Plex (`castPlexMovie`, `castPlexEpisode`), Jellyfin (`castJellyfinMovie`, `castJellyfinEpisode`), and Emby (`castEmbyMovie`, `castEmbyEpisode`). All live in `CastManager.swift`.
 
@@ -229,7 +229,7 @@ Video playback has a preferred-device auto-route:
 - If no video cast is active but a preferred video cast device is configured and currently discoverable, the selected video is cast directly to that device.
 - If the preferred device is offline, `preferredVideoCastDevice` may fall back to another discoverable video-capable device; this is intentional for the current UI behavior.
 
-This direct route prevents the local player from loading a second paused video while Chromecast is already playing. It also helps TV wake behavior: the first playback action for a preferred device is `CastManager.cast(...)`, which runs the normal Chromecast `CONNECT -> LAUNCH -> LOAD` path. Chromecast/TV wake is a side effect of the receiver `LAUNCH`/media `LOAD` sequence and the user's TV HDMI-CEC settings; NullPlayer does not send a separate TV power-on command.
+This direct route prevents the local player from loading a second paused video while Chromecast is already playing. It also preserves TV wake behavior: the first playback action for a preferred device is `CastManager.cast(...)`, which runs the normal Chromecast `CONNECT -> LAUNCH -> LOAD` path. Chromecast/TV wake is a side effect of the receiver `LAUNCH`/media `LOAD` sequence and the user's TV HDMI-CEC settings; NullPlayer does not send a separate TV power-on command.
 
 ### Active Video Switching
 
@@ -258,22 +258,6 @@ Do not reuse `preferredVideoCastDeviceID` for normal audio playback. Audio casti
 - If audio is already casting, track changes use `CastManager.castNewTrack(...)` and stay on the active cast target.
 - If audio is not casting, audio playback remains local until the user explicitly chooses a cast device from the cast menu.
 - This avoids surprising behavior where selecting a preferred TV for video would make ordinary audio playback auto-cast to that TV.
-
-## Debugging
-
-The Chromecast implementation uses Google Cast Protocol v2:
-- TLS connection to port 8009, self-signed certificate (must accept in verify block)
-- Protobuf-framed messages (4-byte big-endian length prefix)
-- Key namespaces: `connection`, `heartbeat`, `receiver`, `media`
-
-Test with: `swift scripts/test_chromecast.swift`
-
-Common issues:
-- **Silent crash on receive**: Check Data slice indexing (use `startIndex` — see Swift Data slicing pitfall in CLAUDE.md)
-- **Timeout waiting for transportId**: Check receive loop is processing buffer
-- **TLS errors**: Chromecast uses self-signed certs, must accept in verify block
-
-Standalone test scripts are useful for debugging complex protocol integrations — faster iteration, isolated environment, easier to add debug output. Create them under `scripts/` and run with `swift scripts/<name>.swift`.
 
 ## References
 
