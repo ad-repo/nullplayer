@@ -898,12 +898,12 @@ struct SkinElements {
         /// Shade mode height (title bar only)
         static let shadeHeight: CGFloat = 14
         
-        /// Layout constants - playlist style title bar with thin borders
+        /// Layout constants - playlist style title bar with matching side borders
         struct Layout {
-            static let titleBarHeight: CGFloat = 20   // Same as playlist
-            static let leftBorder: CGFloat = 3        // Thin borders
-            static let rightBorder: CGFloat = 3       
-            static let bottomBorder: CGFloat = 3      
+            static let titleBarHeight: CGFloat = 20
+            static let leftBorder: CGFloat = 12
+            static let rightBorder: CGFloat = 12
+            static let bottomBorder: CGFloat = 3
         }
         
         // MARK: - Title Bar (same style as playlist)
@@ -995,8 +995,8 @@ struct SkinElements {
         /// Layout constants (scaled)
         struct Layout {
             static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
-            static let leftBorder: CGFloat = 3 * Skin.scaleFactor
-            static let rightBorder: CGFloat = 3 * Skin.scaleFactor
+            static let leftBorder: CGFloat = 12
+            static let rightBorder: CGFloat = 12
             static let bottomBorder: CGFloat = 3 * Skin.scaleFactor
         }
         
@@ -1028,12 +1028,12 @@ struct SkinElements {
 
         struct Layout {
             static let titleBarHeight: CGFloat = 20 * Skin.scaleFactor
-            static let leftBorder: CGFloat = 3 * Skin.scaleFactor
-            static let rightBorder: CGFloat = 3 * Skin.scaleFactor
+            static let leftBorder: CGFloat = 12
+            static let rightBorder: CGFloat = 12
             static let bottomBorder: CGFloat = 3 * Skin.scaleFactor
         }
     }
-    
+
     // MARK: - GEN.BMP (Generic/AVS/ProjectM window)
     
     /// Sprites from GEN.BMP - used for AVS/ProjectM window chrome

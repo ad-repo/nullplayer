@@ -78,7 +78,7 @@ class PlaylistView: NSView {
         static let bottomBarHeight: CGFloat = 3  // Thin decorative border (no control bar)
         static let scrollbarWidth: CGFloat = 0   // No scrollbar - users scroll with trackpad/wheel
         static let leftBorder: CGFloat = 12
-        static let rightBorder: CGFloat = 2      // Minimal edge (scrollbar track removed)
+        static let rightBorder: CGFloat = 12     // Matches left border width
     }
 
     // MARK: - Initialization
