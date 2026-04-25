@@ -29,6 +29,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Current video title
     private(set) var currentTitle: String?
+
+    /// Lightweight video track used by the main window for artwork lookup.
+    private(set) var currentArtworkTrack: Track?
     
     /// Current Plex movie (if playing Plex content)
     private var currentPlexMovie: PlexMovie?
@@ -586,6 +589,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isFromPlaylist = onVideoFinishedForPlaylist != nil
         
         currentTitle = title
+        currentArtworkTrack = Track(url: url, title: title, mediaType: .video)
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -639,6 +643,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         let headers = PlexManager.shared.streamingHeaders
         
         currentTitle = track.displayTitle
+        currentArtworkTrack = track
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
@@ -697,6 +702,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
         currentTitle = movie.title
+        currentArtworkTrack = PlexManager.shared.convertToTrack(movie)
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
@@ -754,6 +760,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
         currentTitle = title
+        currentArtworkTrack = PlexManager.shared.convertToTrack(episode)
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
@@ -808,6 +815,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil
 
         currentTitle = movie.title
+        currentArtworkTrack = JellyfinManager.shared.convertToTrack(movie)
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -864,6 +872,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil
 
         currentTitle = title
+        currentArtworkTrack = JellyfinManager.shared.convertToTrack(episode)
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -914,6 +923,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil
 
         currentTitle = movie.title
+        currentArtworkTrack = EmbyManager.shared.convertToTrack(movie)
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -970,6 +980,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil
 
         currentTitle = title
+        currentArtworkTrack = EmbyManager.shared.convertToTrack(episode)
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -1021,6 +1032,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
         currentTitle = track.displayTitle
+        currentArtworkTrack = track
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -1071,6 +1083,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
         currentTitle = track.displayTitle
+        currentArtworkTrack = track
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -1129,6 +1142,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         videoPlayerView.stop()
         isPlaying = false
         currentTitle = nil
+        currentArtworkTrack = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
         currentPlexRatingKey = nil
@@ -1429,28 +1443,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         NSLog("VideoPlayerWindowController: Video cast started to %@ at %.1f / %.1f", device.name, startPosition, videoDuration)
     }
 
-    /// Auto-cast to the preferred video cast device when a video starts playing.
-    /// Called from WindowManager.videoPlaybackDidStart() after all content state is set.
-    func performAutoCastIfNeeded() {
-        guard CastManager.shared.preferredVideoCastDeviceID != nil,
-              let device = CastManager.shared.preferredVideoCastDevice,
-              !CastManager.shared.isVideoCasting,
-              !isCastingVideo else { return }
-        // Stop the local player synchronously on the main thread before the async Task runs.
-        // togglePlayPause() would accidentally *start* the video if it hasn't begun playing yet
-        // (loading/buffering state), so we use stop() here instead.
-        videoPlayerView.stop()
-        Task {
-            do {
-                try await performCast(to: device, startPosition: 0, pauseLocal: false)
-            } catch {
-                NSLog("VideoPlayerWindowController: Auto-cast failed: %@", error.localizedDescription)
-                // Restart local playback from the beginning since the cast didn't take over
-                await MainActor.run { self.videoPlayerView.togglePlayPause() }
-            }
-        }
-    }
-    
     @objc private func stopCasting() {
         Task {
             // Capture current cast position before stopping

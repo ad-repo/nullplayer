@@ -1016,18 +1016,16 @@ class WindowManager {
            device.supportsVideo {
             return device
         }
-
-        guard CastManager.shared.preferredVideoCastDeviceID != nil else { return nil }
-        return CastManager.shared.preferredVideoCastDevice
+        return nil
     }
 
-    private func routeToVideoCastIfNeeded(title: String, operation: @escaping (CastDevice) async throws -> Void) -> Bool {
+    private func routeToVideoCastIfNeeded(title: String, artworkTrack: Track?, operation: @escaping (CastDevice) async throws -> Void) -> Bool {
         guard let device = targetVideoCastDevice else { return false }
 
         // Once a library selection replaces the cast media, CastManager owns the cast state.
         videoPlayerWindowController?.releaseCastOwnershipToCastManager()
         videoTitle = title
-        mainWindowController?.updateVideoTrackInfo(title: title)
+        mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: artworkTrack)
         mainWindowController?.updatePlaybackState()
 
         Task {
@@ -1044,7 +1042,8 @@ class WindowManager {
     
     /// Show the video player with a URL and title
     func showVideoPlayer(url: URL, title: String) {
-        if routeToVideoCastIfNeeded(title: title, operation: { device in
+        let artworkTrack = Track(url: url, title: title, mediaType: .video)
+        if routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: { device in
             try await CastManager.shared.castVideoURL(url, title: title, to: device)
         }) {
             return
@@ -1060,7 +1059,7 @@ class WindowManager {
     
     /// Play a Plex movie in the video player
     func playMovie(_ movie: PlexMovie) {
-        if routeToVideoCastIfNeeded(title: movie.title, operation: { device in
+        if routeToVideoCastIfNeeded(title: movie.title, artworkTrack: PlexManager.shared.convertToTrack(movie), operation: { device in
             try await CastManager.shared.castPlexMovie(movie, to: device)
         }) {
             return
@@ -1077,7 +1076,7 @@ class WindowManager {
     /// Play a Plex episode in the video player
     func playEpisode(_ episode: PlexEpisode) {
         let title = episode.grandparentTitle.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        if routeToVideoCastIfNeeded(title: title, operation: { device in
+        if routeToVideoCastIfNeeded(title: title, artworkTrack: PlexManager.shared.convertToTrack(episode), operation: { device in
             try await CastManager.shared.castPlexEpisode(episode, to: device)
         }) {
             return
@@ -1093,7 +1092,7 @@ class WindowManager {
     
     /// Play a Jellyfin movie in the video player
     func playJellyfinMovie(_ movie: JellyfinMovie) {
-        if routeToVideoCastIfNeeded(title: movie.title, operation: { device in
+        if routeToVideoCastIfNeeded(title: movie.title, artworkTrack: JellyfinManager.shared.convertToTrack(movie), operation: { device in
             try await CastManager.shared.castJellyfinMovie(movie, to: device)
         }) {
             return
@@ -1110,7 +1109,7 @@ class WindowManager {
     /// Play a Jellyfin episode in the video player
     func playJellyfinEpisode(_ episode: JellyfinEpisode) {
         let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        if routeToVideoCastIfNeeded(title: title, operation: { device in
+        if routeToVideoCastIfNeeded(title: title, artworkTrack: JellyfinManager.shared.convertToTrack(episode), operation: { device in
             try await CastManager.shared.castJellyfinEpisode(episode, to: device)
         }) {
             return
@@ -1126,7 +1125,7 @@ class WindowManager {
 
     /// Play an Emby movie in the video player
     func playEmbyMovie(_ movie: EmbyMovie) {
-        if routeToVideoCastIfNeeded(title: movie.title, operation: { device in
+        if routeToVideoCastIfNeeded(title: movie.title, artworkTrack: EmbyManager.shared.convertToTrack(movie), operation: { device in
             try await CastManager.shared.castEmbyMovie(movie, to: device)
         }) {
             return
@@ -1143,7 +1142,7 @@ class WindowManager {
     /// Play an Emby episode in the video player
     func playEmbyEpisode(_ episode: EmbyEpisode) {
         let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        if routeToVideoCastIfNeeded(title: title, operation: { device in
+        if routeToVideoCastIfNeeded(title: title, artworkTrack: EmbyManager.shared.convertToTrack(episode), operation: { device in
             try await CastManager.shared.castEmbyEpisode(episode, to: device)
         }) {
             return
@@ -1165,7 +1164,7 @@ class WindowManager {
             return
         }
 
-        if routeToVideoCastIfNeeded(title: track.displayTitle, operation: { device in
+        if routeToVideoCastIfNeeded(title: track.displayTitle, artworkTrack: track, operation: { device in
             try await CastManager.shared.castVideoURL(
                 track.url,
                 title: track.displayTitle,
@@ -1406,11 +1405,9 @@ class WindowManager {
         // Update main window with video title
         if let title = videoPlayerWindowController?.currentTitle {
             videoTitle = title
-            mainWindowController?.updateVideoTrackInfo(title: title)
+            mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: videoPlayerWindowController?.currentArtworkTrack)
         }
         mainWindowController?.updatePlaybackState()
-        // Auto-cast to preferred device if one is set
-        videoPlayerWindowController?.performAutoCastIfNeeded()
     }
     
     /// Called when video playback stops

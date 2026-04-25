@@ -8,6 +8,8 @@
 
 ### Bug Fixes
 
+- **Local video playback restored when a cast device is remembered** — selecting or remembering a video cast device no longer forces every subsequent video to cast. Videos play locally unless video casting is already active or the user explicitly starts casting.
+- **Modern marquee video artwork fixed** — switching from music playback to movies or TV in modern mode now replaces the previous album art with the active video artwork instead of leaving stale music artwork in the main window display.
 - **Classic/Spectrum mode bar jitter fixed** — the Winamp and CPU Spectrum modes no longer stutter or show jerky bar movement at startup or after cycling modes between windows. `AudioEngine` now coalesces spectrum dispatches to the main thread the same way `StreamingAudioPlayer` already did, preventing burst updates from backing up in the queue during busy main-thread periods.
 
 ## 0.20.0

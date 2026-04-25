@@ -219,17 +219,16 @@ Main-window controls must prefer `CastManager.shared.isVideoCasting` first, then
 
 Supported video sources: Plex (`castPlexMovie`, `castPlexEpisode`), Jellyfin (`castJellyfinMovie`, `castJellyfinEpisode`), and Emby (`castEmbyMovie`, `castEmbyEpisode`). All live in `CastManager.swift`.
 
-### Preferred Video Cast Routing
+### Video Cast Routing
 
-Video playback has a preferred-device auto-route:
+Video playback only routes to casting when casting is explicitly active or explicitly requested:
 
 - `CastManager.preferredVideoCastDeviceID` is set from explicit video cast device selection.
 - `WindowManager` video entry points (`showVideoPlayer`, `playMovie`, `playEpisode`, Jellyfin/Emby equivalents, and video `Track` playback) call `routeToVideoCastIfNeeded(...)` before creating/loading the local video player.
 - If a video cast is already active, the next selected video is cast to the active session's device.
-- If no video cast is active but a preferred video cast device is configured and currently discoverable, the selected video is cast directly to that device.
-- If the preferred device is offline, `preferredVideoCastDevice` may fall back to another discoverable video-capable device; this is intentional for the current UI behavior.
+- If no video cast is active, videos load into the local player even when `preferredVideoCastDeviceID` is set. A remembered device is not an implicit "cast enabled" state.
 
-This direct route prevents the local player from loading a second paused video while Chromecast is already playing. It also preserves TV wake behavior: the first playback action for a preferred device is `CastManager.cast(...)`, which runs the normal Chromecast `CONNECT -> LAUNCH -> LOAD` path. Chromecast/TV wake is a side effect of the receiver `LAUNCH`/media `LOAD` sequence and the user's TV HDMI-CEC settings; NullPlayer does not send a separate TV power-on command.
+This active-cast route prevents the local player from loading a second paused video while Chromecast is already playing. TV wake behavior only happens when the user starts casting or switches media while an active cast is already running: `CastManager.cast(...)` runs the normal Chromecast `CONNECT -> LAUNCH -> LOAD` path. Chromecast/TV wake is a side effect of the receiver `LAUNCH`/media `LOAD` sequence and the user's TV HDMI-CEC settings; NullPlayer does not send a separate TV power-on command.
 
 ### Active Video Switching
 

@@ -83,7 +83,7 @@ class MainWindowController: NSWindowController, MainWindowProviding {
         mainView.updateTrackInfo(track)
     }
     
-    func updateVideoTrackInfo(title: String) {
+    func updateVideoTrackInfo(title: String, artworkTrack: Track?) {
         mainView.updateVideoTrackInfo(title: title)
     }
     

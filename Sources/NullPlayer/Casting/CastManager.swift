@@ -677,7 +677,17 @@ class CastManager {
                 self.startVideoCastUpdateTimer()
                 
                 // Update main window with video title (for casts from library browser menu)
-                WindowManager.shared.mainWindowController?.updateVideoTrackInfo(title: metadata.title)
+                let artworkTrack = Track(
+                    url: metadata.artworkURL ?? URL(string: "about:blank")!,
+                    title: metadata.title,
+                    artist: metadata.artist,
+                    album: metadata.album,
+                    duration: metadata.duration,
+                    artworkThumb: metadata.artworkURL?.absoluteString,
+                    mediaType: .video,
+                    contentType: metadata.contentType
+                )
+                WindowManager.shared.mainWindowController?.updateVideoTrackInfo(title: metadata.title, artworkTrack: artworkTrack)
                 
                 NSLog("CastManager: Video cast state initialized - title='%@', duration=%.1f, startPosition=%.1f, hasReceivedStatus=%d", metadata.title, self.videoCastDuration, startPosition, self.videoCastHasReceivedStatus ? 1 : 0)
             } else {

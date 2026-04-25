@@ -21,7 +21,7 @@ protocol MainWindowProviding: AnyObject {
     func updateTrackInfo(_ track: Track?)
     
     /// Update video track info display
-    func updateVideoTrackInfo(title: String)
+    func updateVideoTrackInfo(title: String, artworkTrack: Track?)
     
     /// Clear video track info and revert to audio display
     func clearVideoTrackInfo()
