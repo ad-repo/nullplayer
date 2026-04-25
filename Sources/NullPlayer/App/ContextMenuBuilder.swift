@@ -40,6 +40,11 @@ class ContextMenuBuilder {
         menu.addItem(sleepTimerItem)
         menu.addItem(NSMenuItem.separator())
 
+        let openYouTube = NSMenuItem(title: "Open YouTube Music...", action: #selector(MenuActions.openYouTubeMusicSource), keyEquivalent: "")
+        openYouTube.target = MenuActions.shared
+        menu.addItem(openYouTube)
+        menu.addItem(NSMenuItem.separator())
+
         // Output Devices submenu
         if includeOutputDevices {
             menu.addItem(buildOutputDevicesMenuItem())
@@ -98,6 +103,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
+        menu.addItem(buildWindowItem("YouTube Music", visible: wm.isYouTubeMusicPlayerVisible, action: #selector(MenuActions.toggleYouTubeMusicPlayer)))
         if wm.isRunningModernUI {
             menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
                                          action: #selector(MenuActions.toggleLibraryHistory)))
@@ -175,6 +181,10 @@ class ContextMenuBuilder {
         sleepTimerItem.submenu = buildSleepTimerMenu()
         if SleepTimerManager.shared.isActive { sleepTimerItem.state = .on }
         menu.addItem(sleepTimerItem)
+
+        let openYouTube = NSMenuItem(title: "Open YouTube Music...", action: #selector(MenuActions.openYouTubeMusicSource), keyEquivalent: "")
+        openYouTube.target = MenuActions.shared
+        menu.addItem(openYouTube)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -2651,6 +2661,10 @@ class MenuActions: NSObject {
     @objc func togglePlexBrowser() {
         WindowManager.shared.togglePlexBrowser()
     }
+
+    @objc func toggleYouTubeMusicPlayer() {
+        WindowManager.shared.toggleYouTubeMusicPlayer()
+    }
     
     @objc func toggleProjectM() {
         WindowManager.shared.toggleProjectM()
@@ -4103,30 +4117,58 @@ class MenuActions: NSObject {
     // MARK: - Playback Controls
     
     @objc func previous() {
+        if YouTubeMusicController.shared.isActive {
+            YouTubeMusicController.shared.previous()
+            return
+        }
         WindowManager.shared.audioEngine.previous()
     }
     
     @objc func play() {
+        if YouTubeMusicController.shared.isActive {
+            YouTubeMusicController.shared.play()
+            return
+        }
         WindowManager.shared.audioEngine.play()
     }
     
     @objc func pause() {
+        if YouTubeMusicController.shared.isActive {
+            YouTubeMusicController.shared.pause()
+            return
+        }
         WindowManager.shared.audioEngine.pause()
     }
     
     @objc func stop() {
+        if YouTubeMusicController.shared.isActive {
+            YouTubeMusicController.shared.stop()
+            return
+        }
         WindowManager.shared.audioEngine.stop()
     }
     
     @objc func next() {
+        if YouTubeMusicController.shared.isActive {
+            YouTubeMusicController.shared.next()
+            return
+        }
         WindowManager.shared.audioEngine.next()
     }
     
     @objc func back5Seconds() {
+        if YouTubeMusicController.shared.isActive {
+            YouTubeMusicController.shared.seek(by: -5)
+            return
+        }
         WindowManager.shared.audioEngine.seekBy(seconds: -5)
     }
     
     @objc func fwd5Seconds() {
+        if YouTubeMusicController.shared.isActive {
+            YouTubeMusicController.shared.seek(by: 5)
+            return
+        }
         WindowManager.shared.audioEngine.seekBy(seconds: 5)
     }
     
@@ -5111,5 +5153,22 @@ class MenuActions: NSObject {
     
     @objc func exit() {
         NSApp.terminate(nil)
+    }
+
+    @objc func openYouTubeMusicSource() {
+        let alert = NSAlert()
+        alert.messageText = "Open YouTube Music"
+        alert.informativeText = "Paste a YouTube, YouTube Music, video, playlist, or search."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Play")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 460, height: 24))
+        field.placeholderString = "https://music.youtube.com/playlist?list=..."
+        alert.accessoryView = field
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            WindowManager.shared.playYouTubeMusicSource(field.stringValue)
+        }
     }
 }

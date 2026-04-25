@@ -223,6 +223,7 @@ class AudioEngine {
             // Apply volume with normalization gain for local playback
             applyNormalizationGain()
             streamingPlayer?.volume = volume
+            YouTubeMusicController.shared.setVolume(volume)
             
             // Apply volume to video player
             if !AudioEngine.isHeadless {
@@ -4901,6 +4902,9 @@ class AudioEngine {
     // MARK: - Playlist Management
     
     func clearPlaylist() {
+        if YouTubeMusicController.shared.isActive {
+            YouTubeMusicController.shared.stop()
+        }
         NSLog("clearPlaylist: isStreamingPlayback=%d", isStreamingPlayback)
         placeholderResolutionTasks.values.forEach { $0.cancel() }
         placeholderResolutionTasks.removeAll()
@@ -4978,6 +4982,9 @@ class AudioEngine {
     }
     
     func playTrack(at index: Int) {
+        if YouTubeMusicController.shared.isActive {
+            YouTubeMusicController.shared.stop()
+        }
         // Cancel any in-progress crossfade
         cancelCrossfade()
         

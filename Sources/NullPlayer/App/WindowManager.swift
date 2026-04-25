@@ -349,6 +349,9 @@ class WindowManager {
     
     /// Debug console window controller
     private var debugWindowController: DebugWindowController?
+
+    /// YouTube / YouTube Music embedded player window controller
+    private var youTubeMusicPlayerWindowController: YouTubeMusicPlayerWindowController?
     
     /// Video playback time tracking
     private(set) var videoCurrentTime: TimeInterval = 0
@@ -819,6 +822,10 @@ class WindowManager {
     var isPlexBrowserVisible: Bool {
         plexBrowserWindowController?.window?.isVisible == true
     }
+
+    var isYouTubeMusicPlayerVisible: Bool {
+        youTubeMusicPlayerWindowController?.window?.isVisible == true
+    }
     
     /// Get the Plex Browser window frame if visible (for positioning other windows)
     var plexBrowserWindowFrame: NSRect? {
@@ -854,6 +861,31 @@ class WindowManager {
         }
         postLayoutChangeNotification()
         updateDockedChildWindows()
+    }
+
+    func showYouTubeMusicPlayer() {
+        if youTubeMusicPlayerWindowController == nil {
+            youTubeMusicPlayerWindowController = YouTubeMusicPlayerWindowController()
+        }
+        youTubeMusicPlayerWindowController?.showWindow(nil)
+        youTubeMusicPlayerWindowController?.window?.makeKeyAndOrderFront(nil)
+        applyAlwaysOnTopToWindow(youTubeMusicPlayerWindowController?.window)
+        postLayoutChangeNotification()
+    }
+
+    func toggleYouTubeMusicPlayer() {
+        if isYouTubeMusicPlayerVisible {
+            youTubeMusicPlayerWindowController?.window?.orderOut(nil)
+            postLayoutChangeNotification()
+        } else {
+            showYouTubeMusicPlayer()
+        }
+    }
+
+    func playYouTubeMusicSource(_ rawSource: String) {
+        audioEngine.stop()
+        showYouTubeMusicPlayer()
+        youTubeMusicPlayerWindowController?.load(rawSource: rawSource, autoplay: true)
     }
 
     // MARK: - Library History
@@ -3395,6 +3427,7 @@ class WindowManager {
         if let w = equalizerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = plexBrowserWindowController?.window, w.isVisible { windows.append(w) }
         if let w = videoPlayerWindowController?.window, w.isVisible { windows.append(w) }
+        if let w = youTubeMusicPlayerWindowController?.window, w.isVisible { windows.append(w) }
         if let w = projectMWindowController?.window, w.isVisible { windows.append(w) }
         if let w = spectrumWindowController?.window, w.isVisible { windows.append(w) }
         if let w = waveformWindowController?.window, w.isVisible { windows.append(w) }
