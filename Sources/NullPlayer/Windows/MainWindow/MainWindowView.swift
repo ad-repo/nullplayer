@@ -4,7 +4,6 @@ import AppKit
 enum MainWindowVisMode: String, CaseIterable {
     case spectrum = "Spectrum"       // Classic 19-bar spectrum analyzer (CGContext)
     case visClassicExact = "vis_classic" // Exact vis_classic port (CPU frame in Metal overlay)
-    case punch = "Punch"             // Peak-forward classic coloring (bars-only, no peak markers)
     case fire = "Fire"               // GPU flame simulation (Metal overlay)
     case enhanced = "Enhanced"       // LED matrix with rainbow (Metal overlay)
     case ultra = "Ultra"             // Maximum visual quality (Metal overlay)
@@ -23,7 +22,6 @@ enum MainWindowVisMode: String, CaseIterable {
         switch self {
         case .spectrum: return nil
         case .visClassicExact: return .visClassicExact
-        case .punch: return .punch
         case .fire: return .flame
         case .enhanced: return .enhanced
         case .ultra: return .ultra

@@ -369,6 +369,8 @@ class AudioEngine {
     
     /// Spectrum analyzer data (75 bands for classic skin-style visualization)
     private(set) var spectrumData: [Float] = Array(repeating: 0, count: 75)
+    /// Most recent raw spectrum frame — updated every audio tap; read by coalesced main-thread dispatch
+    private var latestRawSpectrum: [Float] = Array(repeating: 0, count: 75)
     
     /// Running peak averages for adaptive spectrum normalization (per frequency region)
     /// Index 0 = bass (bands 0-24), 1 = mid (bands 25-49), 2 = treble (bands 50-74)
@@ -421,6 +423,10 @@ class AudioEngine {
     
     /// Flag to coalesce main queue PCM dispatches
     private var pendingPcmUpdate = false
+
+    /// Flag to coalesce main queue spectrum dispatches — prevents burst updates
+    /// from backing-up behind main-thread work (mode switches, window ordering, etc.)
+    private var pendingSpectrumUpdate = false
     
     // MARK: - Spectrum Consumer Tracking
 
@@ -1378,25 +1384,30 @@ class AudioEngine {
         // Smooth with previous values (decay) and update on main thread
         // Copy spectrum data to avoid data races since we reuse the buffer
         let spectrumCopy = Array(fftNewSpectrum)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            for i in 0..<bandCount {
-                // Fast attack, smooth decay for all modes
-                if spectrumCopy[i] > self.spectrumData[i] {
-                    self.spectrumData[i] = spectrumCopy[i]
-                } else {
-                    self.spectrumData[i] = self.spectrumData[i] * 0.90 + spectrumCopy[i] * 0.10
+        if !pendingSpectrumUpdate {
+            pendingSpectrumUpdate = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.pendingSpectrumUpdate = false
+                for i in 0..<bandCount {
+                    // Fast attack, smooth decay for all modes
+                    if self.latestRawSpectrum[i] > self.spectrumData[i] {
+                        self.spectrumData[i] = self.latestRawSpectrum[i]
+                    } else {
+                        self.spectrumData[i] = self.spectrumData[i] * 0.90 + self.latestRawSpectrum[i] * 0.10
+                    }
                 }
+                self.delegate?.audioEngineDidUpdateSpectrum(self.spectrumData)
+                NotificationCenter.default.post(
+                    name: .audioSpectrumDataUpdated,
+                    object: self,
+                    userInfo: ["spectrum": self.spectrumData]
+                )
             }
-            self.delegate?.audioEngineDidUpdateSpectrum(self.spectrumData)
-
-            // Post notification for low-latency spectrum updates
-            NotificationCenter.default.post(
-                name: .audioSpectrumDataUpdated,
-                object: self,
-                userInfo: ["spectrum": self.spectrumData]
-            )
         }
+        // Always overwrite with the freshest data so the pending dispatch delivers
+        // the most recent frame rather than a stale one from when it was queued.
+        latestRawSpectrum = spectrumCopy
     }
 
     private func enqueueWaveformSamplesAndPost(

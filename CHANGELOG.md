@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.20.1
+
+### Improvements
+
+- **Removed Punch spectrum mode** — the Punch mode (dominant-frequency spotlight with dynamic bar count) has been removed from both the standalone spectrum window and the main window visualization cycle.
+
+### Bug Fixes
+
+- **Classic/Spectrum mode bar jitter fixed** — the Winamp and CPU Spectrum modes no longer stutter or show jerky bar movement at startup or after cycling modes between windows. `AudioEngine` now coalesces spectrum dispatches to the main thread the same way `StreamingAudioPlayer` already did, preventing burst updates from backing up in the queue during busy main-thread periods.
+
 ## 0.20.0
 
 ### New Features
