@@ -12,6 +12,7 @@
 
 ### Improvements
 
+- **Classic window borders aligned** — the playlist, spectrum analyzer, and waveform windows now all use identical 12 px side borders drawn from the skin's `pledit.bmp` tile sprites, so the windows sit flush with consistent chrome when docked together.
 - **Classic playlist uses system font** — classic mode playlist track rows now render with the system font (matching the library browser) instead of the skin's bitmap font, improving legibility across all skins.
 - **Modern transport spacing adjusted** — transport layout spacing in the modern main window has been tightened for a cleaner balance around the marquee and playback controls.
 - **Preferred video cast device routing** — video-capable Chromecast and DLNA TV devices can now be selected as the preferred video cast target from video contexts. Starting another video while a video cast is active now routes the new selection directly to the active cast device instead of opening a second paused local player.
