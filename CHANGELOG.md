@@ -12,6 +12,7 @@
 
 ### Improvements
 
+- **Classic playlist uses system font** — classic mode playlist track rows now render with the system font (matching the library browser) instead of the skin's bitmap font, improving legibility across all skins.
 - **Modern transport spacing adjusted** — transport layout spacing in the modern main window has been tightened for a cleaner balance around the marquee and playback controls.
 - **Preferred video cast device routing** — video-capable Chromecast and DLNA TV devices can now be selected as the preferred video cast target from video contexts. Starting another video while a video cast is active now routes the new selection directly to the active cast device instead of opening a second paused local player.
 - **Video and audio cast menu behavior separated** — the output menu now treats video casting and audio casting as separate contexts, keeping audio playback explicit while still letting active or preferred video casts continue on the TV.
