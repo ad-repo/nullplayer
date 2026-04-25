@@ -48,15 +48,6 @@ class AppStateManager {
         static let savedAppState = "savedAppState"
     }
 
-    enum PlaylistRestoreMode: Equatable {
-        case resumePlaying
-        case pauseAfterRestore
-
-        static func fromWasPlaying(_ wasPlaying: Bool) -> PlaylistRestoreMode {
-            wasPlaying ? .resumePlaying : .pauseAfterRestore
-        }
-    }
-    
     // MARK: - State Structure
     
     /// Represents a saved track that can be restored
@@ -920,24 +911,10 @@ class AppStateManager {
         let currentIsPlaceholder = adjustedIndex >= 0
             && adjustedIndex < allTracks.count
             && allTracks[adjustedIndex].isStreamingPlaceholder
-        let restoreMode = Self.PlaylistRestoreMode.fromWasPlaying(state.wasPlaying)
-
-        // Select the current track (load it without playing)
+        // Select the current track for display without loading or playing
         if adjustedIndex >= 0 && adjustedIndex < allTracks.count {
-            if currentIsPlaceholder {
-                // Placeholder — show metadata in UI but defer actual load until async fetch replaces it
-                engine.selectTrackForDisplay(at: adjustedIndex)
-                NSLog("AppStateManager: Current track is a streaming placeholder, deferring load")
-            } else {
-                // Local file or radio — restore using the saved playback intent.
-                restoreResolvedTrack(
-                    engine: engine,
-                    at: adjustedIndex,
-                    savedPosition: state.playbackPosition,
-                    restoreMode: restoreMode
-                )
-                NSLog("AppStateManager: Selected track at index %d", adjustedIndex)
-            }
+            engine.selectTrackForDisplay(at: adjustedIndex)
+            NSLog("AppStateManager: Selected track at index %d for display", adjustedIndex)
         }
         
         // Fetch streaming tracks asynchronously and replace placeholders
@@ -966,15 +943,9 @@ class AppStateManager {
                     }
                     NSLog("AppStateManager: Replaced %d streaming track placeholders", resolvedReplacements.count)
                     
-                    // If the current track was a streaming placeholder, reload it
-                    // now that we have the real URL
+                    // If the current track was a streaming placeholder, update display now that we have the real URL
                     if replacedCurrentTrack && savedCurrentIndex >= 0 {
-                        self.restoreResolvedTrack(
-                            engine: engine,
-                            at: savedCurrentIndex,
-                            savedPosition: state.playbackPosition,
-                            restoreMode: restoreMode
-                        )
+                        engine.selectTrackForDisplay(at: savedCurrentIndex)
                     }
                 }
             }
@@ -983,24 +954,6 @@ class AppStateManager {
         NSLog("AppStateManager: Playlist state restoration initiated")
     }
 
-    private func restoreResolvedTrack(
-        engine: AudioEngine,
-        at index: Int,
-        savedPosition: TimeInterval,
-        restoreMode: PlaylistRestoreMode
-    ) {
-        engine.playTrack(at: index)
-        if restoreMode == .pauseAfterRestore {
-            engine.pause()
-        }
-        if savedPosition > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                engine.seek(to: savedPosition)
-                NSLog("AppStateManager: Seeked to saved position: %.1fs", savedPosition)
-            }
-        }
-    }
-    
     /// Apply the restored state to the app (full restore - used by restoreState())
     private func applyState(_ state: AppState) {
         // Apply settings first (skin, volume, EQ, windows, v2 fields)

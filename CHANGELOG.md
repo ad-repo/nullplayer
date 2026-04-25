@@ -21,6 +21,8 @@
 
 ### Bug Fixes
 
+- **Remember State no longer auto-resumes playback on launch** — restoring a saved session now selects the current track for display only; the app starts paused instead of immediately resuming, eliminating the delayed-play appearance that looked like a bug.
+- **Classic playlist scrolling smoothed** — classic mode playlist trackpad scrolling now uses precise deltas and redraws only the list area; overflowing current-track titles use a layer-backed marquee like the main window instead of timer-driven full redraws.
 - **Chromecast video switching fixed** — main-window video controls now prefer `CastManager` video cast state, keeping play/pause, seek, skip, stop, title, duration, and playback state aligned after casting from the context menu or switching videos on an active cast session.
 - **Chromecast startup race hardened** — simultaneous cast attempts are now rejected while a cast operation is already in progress, and the initial Chromecast `IDLE` status after connection is ignored until active playback has been observed.
 - **Generic video URL casting fixed** — local-library video entries and video playlist tracks can now be routed through `CastManager.castVideoURL(...)`, including local-file registration through the embedded media server and remote HTTP(S) cast URL rewriting.
