@@ -22,6 +22,7 @@
 
 ### Bug Fixes
 
+- **Classic stack windows collapse correctly when closed via X** — closing a stacked sub-window (EQ, Playlist, Spectrum, Waveform) using its close button now slides up any windows below it and tightens the stack, matching the behavior of the keyboard/menu toggles.
 - **Remember State no longer auto-resumes playback on launch** — restoring a saved session now selects the current track for display only; the app starts paused instead of immediately resuming, eliminating the delayed-play appearance that looked like a bug.
 - **Classic playlist scrolling smoothed** — classic mode playlist trackpad scrolling now uses precise deltas and redraws only the list area; overflowing current-track titles use a layer-backed marquee like the main window instead of timer-driven full redraws.
 - **Chromecast video switching fixed** — main-window video controls now prefer `CastManager` video cast state, keeping play/pause, seek, skip, stop, title, duration, and playback state aligned after casting from the context menu or switching videos on an active cast session.

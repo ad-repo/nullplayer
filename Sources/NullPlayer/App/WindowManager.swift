@@ -757,6 +757,17 @@ class WindowManager {
         postLayoutChangeNotification()
     }
 
+    /// Call from windowWillClose on classic center-stack windows (EQ, Playlist, Spectrum, Waveform)
+    /// when closed via the X button. Slides up windows below and tightens the stack.
+    func handleCenterStackWindowWillClose(_ window: NSWindow) {
+        guard !isModernUIEnabled else { return }
+        let closingFrame = window.frame
+        slideUpWindowsBelow(closingFrame: closingFrame)
+        _ = tightenClassicCenterStackIfNeeded()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
+    }
+
     /// Show local media library (redirects to unified browser in local mode)
     func showMediaLibrary() {
         // Redirect to unified browser - it handles both Plex and local files
