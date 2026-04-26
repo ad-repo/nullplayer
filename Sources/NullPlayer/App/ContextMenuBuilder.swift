@@ -2204,9 +2204,11 @@ class ContextMenuBuilder {
         let activeCastDevice = activeSession?.device
         let isActiveVideoCast: Bool = { if case .video = castManager.currentCast { return true }; return false }()
         let activeVideoDevice = isActiveVideoCast ? activeSession?.device : nil
-        // Active video casting always wins. Otherwise, keep audio casting available when a music track is loaded.
+        let currentTrackIsVideo = WindowManager.shared.audioEngine.currentTrack?.mediaType == .video
+        // Active or loaded video content wins. Audio casting remains available for music tracks.
         let isVideoContext = isActiveVideoCast
-            || (WindowManager.shared.isVideoContentActive && WindowManager.shared.audioEngine.currentTrack == nil)
+            || WindowManager.shared.isVideoContentActive
+            || currentTrackIsVideo
 
         if !castManager.chromecastDevices.isEmpty {
             outputMenu.addItem(NSMenuItem.separator())
@@ -2446,9 +2448,11 @@ class ContextMenuBuilder {
         let activeCastDevice = activeSession?.device
         let isActiveVideoCast: Bool = { if case .video = castManager.currentCast { return true }; return false }()
         let activeVideoDevice = isActiveVideoCast ? activeSession?.device : nil
-        // Active video casting always wins. Otherwise, keep audio casting available when a music track is loaded.
+        let currentTrackIsVideo = WindowManager.shared.audioEngine.currentTrack?.mediaType == .video
+        // Active or loaded video content wins. Audio casting remains available for music tracks.
         let isVideoContext = isActiveVideoCast
-            || (WindowManager.shared.isVideoContentActive && WindowManager.shared.audioEngine.currentTrack == nil)
+            || WindowManager.shared.isVideoContentActive
+            || currentTrackIsVideo
 
         // Chromecast (if any)
         if !chromecastDevices.isEmpty {

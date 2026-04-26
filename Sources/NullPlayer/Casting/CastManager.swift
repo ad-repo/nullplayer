@@ -1000,38 +1000,62 @@ class CastManager {
                 throw CastError.sessionNotActive
             }
 
-        // For Sonos: if format is unsupported, advance to the next compatible track
+        var trackToCast = track
+
+        // For Sonos: if format is unsupported, advance within this same serialized
+        // operation. Recursing into castNewTrack() from here would enqueue a task
+        // behind the current inflight task and deadlock the cast handoff.
         if session.device.type == .sonos {
-            // Fetch missing sample rate for lossless Plex tracks (Plex API may omit Stream details)
-            var fetchedSampleRate: Int? = nil
-            if track.sampleRate == nil, let ratingKey = track.plexRatingKey {
-                if Self.sonosLosslessExtension(for: track) != nil {
+            let engine = WindowManager.shared.audioEngine
+
+            while true {
+                var fetchedSampleRate: Int? = nil
+                if trackToCast.sampleRate == nil,
+                   let ratingKey = trackToCast.plexRatingKey,
+                   Self.sonosLosslessExtension(for: trackToCast) != nil {
                     fetchedSampleRate = await PlexManager.shared.fetchSampleRate(for: ratingKey)
-                    NSLog("CastManager: castNewTrack fetched sample rate for '%@': %@",
-                          track.title, fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
+                    NSLog("CastManager: castNewTrack Sonos sample-rate check '%@' ratingKey=%@ fetched=%@",
+                          trackToCast.title, ratingKey, fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
                 }
-            }
-            if !Self.isSonosCompatible(track, sampleRateOverride: fetchedSampleRate) {
-                let engine = WindowManager.shared.audioEngine
-                NSLog("CastManager: castNewTrack '%@' (%@) not supported by Sonos — finding next compatible track",
-                      track.title, track.url.pathExtension)
-                let compatible = await MainActor.run { engine.advanceToFirstSonosCompatibleTrack() }
-                guard let compatible else {
+
+                if Self.isSonosCompatible(trackToCast, sampleRateOverride: fetchedSampleRate) {
+                    if trackToCast.id != track.id {
+                        NSLog("CastManager: castNewTrack Sonos using compatible replacement '%@' after skipping '%@'",
+                              trackToCast.title, track.title)
+                    }
+                    break
+                }
+
+                NSLog("CastManager: castNewTrack Sonos rejecting '%@' (ext=%@ contentType=%@ sampleRate=%@ fetchedSampleRate=%@) — finding next compatible track",
+                      trackToCast.title,
+                      Self.sonosFormatExtension(for: trackToCast),
+                      trackToCast.contentType ?? "nil",
+                      trackToCast.sampleRate.map { "\($0) Hz" } ?? "nil",
+                      fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
+
+                guard let compatible = engine.advanceToFirstSonosCompatibleTrack() else {
+                    NSLog("CastManager: castNewTrack Sonos found no compatible replacement after rejecting '%@' — stopping cast",
+                          trackToCast.title)
                     await stopCasting()
                     return
                 }
-                try await castNewTrack(compatible)
-                return
+
+                NSLog("CastManager: castNewTrack Sonos candidate replacement '%@' (ext=%@ contentType=%@ sampleRate=%@)",
+                      compatible.title,
+                      Self.sonosFormatExtension(for: compatible),
+                      compatible.contentType ?? "nil",
+                      compatible.sampleRate.map { "\($0) Hz" } ?? "nil")
+                trackToCast = compatible
             }
         }
 
         // Check if this is a local file (needs loading state due to async registration)
-        let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+        let isLocalFile = trackToCast.url.scheme != "http" && trackToCast.url.scheme != "https"
         
         // Check if Subsonic/Jellyfin/Emby track to Sonos - also needs loading state since we use proxy
-        let needsSubsonicProxy = track.subsonicId != nil && session.device.type == .sonos
-        let needsJellyfinProxy = track.jellyfinId != nil && session.device.type == .sonos
-        let needsEmbyProxy = track.embyId != nil && session.device.type == .sonos
+        let needsSubsonicProxy = trackToCast.subsonicId != nil && session.device.type == .sonos
+        let needsJellyfinProxy = trackToCast.jellyfinId != nil && session.device.type == .sonos
+        let needsEmbyProxy = trackToCast.embyId != nil && session.device.type == .sonos
 
         // Check if this is a radio station to Sonos - needs loading state for click guarding
         let isRadioToSonos = RadioManager.shared.isActive && session.device.type == .sonos
@@ -1047,14 +1071,14 @@ class CastManager {
             // Set loading state for local files and Subsonic->Sonos proxy (they have async registration)
             if needsLoadingState {
                 isCastingTrackChange = true
-                pendingCastTrack = track
-                NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": true, "track": track])
+                pendingCastTrack = trackToCast
+                NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": true, "track": trackToCast])
             }
             
             return castTrackGeneration
         }
         
-        NSLog("CastManager: castNewTrack '%@' starting (generation %d)", track.title, myGeneration)
+        NSLog("CastManager: castNewTrack '%@' starting (generation %d)", trackToCast.title, myGeneration)
         
         // Helper to clear loading state and notify UI
         // Always posts notification to ensure loading overlay is cleared even for non-local failures
@@ -1073,12 +1097,12 @@ class CastManager {
         
         // Get castable URL and effective content type
         let castURL: URL
-        var effectiveContentType: String? = track.contentType
-        if track.url.scheme == "http" || track.url.scheme == "https" {
+        var effectiveContentType: String? = trackToCast.contentType
+        if trackToCast.url.scheme == "http" || trackToCast.url.scheme == "https" {
             if needsSubsonicProxy || needsJellyfinProxy || needsEmbyProxy {
                 // Subsonic/Jellyfin/Emby to Sonos: Use proxy with HEAD-based content type detection
                 do {
-                    let result = try await prepareProxyURL(for: track, device: session.device)
+                    let result = try await prepareProxyURL(for: trackToCast, device: session.device)
                     castURL = result.url
                     effectiveContentType = result.contentType
                     NSLog("CastManager: castNewTrack using proxy for Subsonic/Jellyfin/Emby->Sonos: %@", castURL.redacted)
@@ -1086,10 +1110,10 @@ class CastManager {
                     await clearLoadingState()
                     throw error
                 }
-            } else if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: track.url) {
+            } else if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: trackToCast.url) {
                 castURL = rewriteLocalhostForCasting(tokenizedURL)
             } else {
-                castURL = rewriteLocalhostForCasting(track.url)
+                castURL = rewriteLocalhostForCasting(trackToCast.url)
             }
         } else {
             // Local file - register with HTTP server
@@ -1103,7 +1127,7 @@ class CastManager {
                 }
             }
             
-            guard let serverURL = LocalMediaServer.shared.registerFile(track.url) else {
+            guard let serverURL = LocalMediaServer.shared.registerFile(trackToCast.url) else {
                 await clearLoadingState()
                 throw CastError.localServerError("Could not register file with local media server")
             }
@@ -1113,11 +1137,11 @@ class CastManager {
         // Check if we've been superseded by a newer track change
         let currentGen1 = await MainActor.run { castTrackGeneration }
         guard myGeneration == currentGen1 else {
-            NSLog("CastManager: castNewTrack '%@' abandoned - superseded by generation %d", track.title, currentGen1)
+            NSLog("CastManager: castNewTrack '%@' abandoned - superseded by generation %d", trackToCast.title, currentGen1)
             // Only clear loading state if we OWN it (pendingCastTrack still matches our track)
             // If another track with loading state superseded us, it set its own pendingCastTrack and we shouldn't clear
             await MainActor.run {
-                if needsLoadingState && pendingCastTrack?.id == track.id {
+                if needsLoadingState && pendingCastTrack?.id == trackToCast.id {
                     isCastingTrackChange = false
                     pendingCastTrack = nil
                     NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
@@ -1128,42 +1152,42 @@ class CastManager {
         
         // Get artwork URL if available
         var artworkURL: URL?
-        if let plexTrack = findPlexTrack(matching: track) {
+        if let plexTrack = findPlexTrack(matching: trackToCast) {
             artworkURL = PlexManager.shared.artworkURL(thumb: plexTrack.thumb)
-        } else if track.subsonicId != nil, let coverArtId = track.artworkThumb {
+        } else if trackToCast.subsonicId != nil, let coverArtId = trackToCast.artworkThumb {
             // Subsonic/Navidrome tracks have artwork via coverArt ID
             if let subsonicArtwork = SubsonicManager.shared.coverArtURL(coverArtId: coverArtId) {
                 artworkURL = rewriteLocalhostForCasting(subsonicArtwork)
             }
-        } else if track.jellyfinId != nil, let imageTag = track.artworkThumb {
+        } else if trackToCast.jellyfinId != nil, let imageTag = trackToCast.artworkThumb {
             // Jellyfin track - use server's image URL
-            if let jellyfinArtwork = JellyfinManager.shared.imageURL(itemId: track.jellyfinId!, imageTag: imageTag, size: 300) {
+            if let jellyfinArtwork = JellyfinManager.shared.imageURL(itemId: trackToCast.jellyfinId!, imageTag: imageTag, size: 300) {
                 artworkURL = rewriteLocalhostForCasting(jellyfinArtwork)
             }
-        } else if track.embyId != nil, let imageTag = track.artworkThumb {
+        } else if trackToCast.embyId != nil, let imageTag = trackToCast.artworkThumb {
             // Emby track - use server's image URL
-            if let embyArtwork = EmbyManager.shared.imageURL(itemId: track.embyId!, imageTag: imageTag, size: 300) {
+            if let embyArtwork = EmbyManager.shared.imageURL(itemId: trackToCast.embyId!, imageTag: imageTag, size: 300) {
                 artworkURL = rewriteLocalhostForCasting(embyArtwork)
             }
         }
 
         // Use effective content type (from track or upstream HEAD detection),
         // otherwise fall back to URL extension detection (works for Plex and local files)
-        let contentType = effectiveContentType ?? Self.detectAudioContentType(for: track.url)
+        let contentType = effectiveContentType ?? Self.detectAudioContentType(for: trackToCast.url)
 
         // For radio streams cast to Sonos, use x-rincon-mp3radio:// scheme (Fix 10)
         let finalCastURL = sonosRadioURL(for: castURL, device: session.device)
         
         let metadata = CastMetadata(
-            title: track.title,
-            artist: track.artist,
-            album: track.album,
+            title: trackToCast.title,
+            artist: trackToCast.artist,
+            album: trackToCast.album,
             artworkURL: artworkURL,
-            duration: track.duration,
+            duration: trackToCast.duration,
             contentType: contentType
         )
         
-        NSLog("CastManager: Casting new track '%@' to %@, contentType: %@", track.title, session.device.name, contentType)
+        NSLog("CastManager: Casting new track '%@' to %@, contentType: %@", trackToCast.title, session.device.name, contentType)
 
         // Cast to the existing connected device
         // Wrap in do/catch to ensure loading state is cleared on failure
@@ -1182,7 +1206,7 @@ class CastManager {
                 try await upnpManager.cast(url: finalCastURL, metadata: metadata)
             }
         } catch {
-            NSLog("CastManager: castNewTrack '%@' failed: %@", track.title, error.localizedDescription)
+            NSLog("CastManager: castNewTrack '%@' failed: %@", trackToCast.title, error.localizedDescription)
             await clearLoadingState()
             throw error
         }
@@ -1190,11 +1214,11 @@ class CastManager {
         // Check again after the network call - another track change may have started
         let currentGen2 = await MainActor.run { castTrackGeneration }
         guard myGeneration == currentGen2 else {
-            NSLog("CastManager: castNewTrack '%@' post-cast abandoned - superseded by generation %d", track.title, currentGen2)
+            NSLog("CastManager: castNewTrack '%@' post-cast abandoned - superseded by generation %d", trackToCast.title, currentGen2)
             // Only clear loading state if we OWN it (pendingCastTrack still matches our track)
             // If another track with loading state superseded us, it set its own pendingCastTrack and we shouldn't clear
             await MainActor.run {
-                if needsLoadingState && pendingCastTrack?.id == track.id {
+                if needsLoadingState && pendingCastTrack?.id == trackToCast.id {
                     isCastingTrackChange = false
                     pendingCastTrack = nil
                     NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
@@ -1207,10 +1231,10 @@ class CastManager {
         await MainActor.run {
             // Final check on main thread before updating UI
             guard myGeneration == self.castTrackGeneration else {
-                NSLog("CastManager: castNewTrack '%@' UI update abandoned - superseded", track.title)
+                NSLog("CastManager: castNewTrack '%@' UI update abandoned - superseded", trackToCast.title)
                 // Only clear loading state if we OWN it (pendingCastTrack still matches our track)
                 // If another track with loading state superseded us, it set its own pendingCastTrack and we shouldn't clear
-                if needsLoadingState && self.pendingCastTrack?.id == track.id {
+                if needsLoadingState && self.pendingCastTrack?.id == trackToCast.id {
                     self.isCastingTrackChange = false
                     self.pendingCastTrack = nil
                     NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
