@@ -26,7 +26,20 @@ class CastManager {
     static let playbackStateDidChangeNotification = Notification.Name("CastPlaybackStateDidChange")
     static let trackChangeLoadingNotification = Notification.Name("CastTrackChangeLoading")
     static let errorNotification = Notification.Name("CastError")
-    
+
+    /// Posts a cast notification on the main thread, dispatching asynchronously if called from a background thread.
+    /// ChromecastManager and UPnPManager are not @MainActor, so their notification posts would otherwise
+    /// arrive on background threads and crash any observer that touches AppKit.
+    static func postNotificationOnMain(name: Notification.Name, userInfo: [AnyHashable: Any]? = nil) {
+        if Thread.isMainThread {
+            NotificationCenter.default.post(name: name, object: nil, userInfo: userInfo)
+        } else {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: name, object: nil, userInfo: userInfo)
+            }
+        }
+    }
+
     // MARK: - Sub-managers
     
     private let chromecastManager = ChromecastManager.shared
@@ -60,7 +73,7 @@ class CastManager {
         }
         preferredVideoCastDeviceID = deviceID
         UserDefaults.standard.set(deviceID, forKey: "preferredVideoCastDeviceID")
-        NotificationCenter.default.post(name: Self.sessionDidChangeNotification, object: nil)
+        CastManager.postNotificationOnMain(name: Self.sessionDidChangeNotification)
     }
 
     #if DEBUG
@@ -1946,7 +1959,7 @@ class CastManager {
                     NSLog("CastManager: Sonos reported %@ - playback ended externally", result.state)
                     // Don't auto-disconnect, just update state so UI reflects reality
                     engine.pauseCastPlayback()
-                    NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
+                    CastManager.postNotificationOnMain(name: Self.playbackStateDidChangeNotification)
                 case "TRANSITIONING":
                     // Sonos is loading/buffering - don't change state, just wait
                     break

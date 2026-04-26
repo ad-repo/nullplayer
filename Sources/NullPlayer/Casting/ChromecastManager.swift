@@ -345,12 +345,12 @@ class ChromecastManager: CastSessionControllerDelegate {
         connections[session.device.id]?.cancel()
         connections.removeValue(forKey: session.device.id)
         activeSession = nil
-        
-        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
     }
-    
+
     // MARK: - Playback Control
-    
+
     /// Cast media to the connected device
     func cast(url: URL, metadata: CastMetadata) async throws {
         guard let session = activeSession,
@@ -398,10 +398,10 @@ class ChromecastManager: CastSessionControllerDelegate {
         controller.startStatusPolling(interval: 1.0)
         
         NSLog("ChromecastManager: Successfully started casting to %@", session.device.name)
-        
-        NotificationCenter.default.post(name: CastManager.playbackStateDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.playbackStateDidChangeNotification)
     }
-    
+
     /// Stop casting
     func stop() {
         guard let session = activeSession else { return }
@@ -418,10 +418,10 @@ class ChromecastManager: CastSessionControllerDelegate {
         session.state = .connected
         session.currentURL = nil
         session.metadata = nil
-        
-        NotificationCenter.default.post(name: CastManager.playbackStateDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.playbackStateDidChangeNotification)
     }
-    
+
     /// Pause playback
     func pause() {
         guard let session = activeSession else { return }
@@ -487,7 +487,7 @@ class ChromecastManager: CastSessionControllerDelegate {
             session.currentURL = nil
             session.metadata = nil
         }
-        
-        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
     }
 }

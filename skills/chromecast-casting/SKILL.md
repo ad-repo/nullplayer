@@ -129,6 +129,22 @@ This applies to both `CastManager.cast()` (full connect+cast path) and `CastMana
 
 UI timers in `CastManager` and `VideoPlayerWindowController` skip updates while `activeSession.state == .loaded` to prevent showing stale time before the receiver has confirmed position.
 
+## Notification Thread Safety
+
+`ChromecastManager` and `UPnPManager` are not `@MainActor`. Their callbacks (NWConnection receive, async HTTP tasks) run on background threads. **Never call `NotificationCenter.default.post` directly from these classes** — observers that touch AppKit will crash with `NSWindow geometry should only be modified on the main thread`.
+
+Use `CastManager.postNotificationOnMain(name:userInfo:)` for all cast notifications from these classes:
+
+```swift
+// WRONG — may be on background thread:
+NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+
+// CORRECT — guaranteed to arrive on main:
+CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
+```
+
+`postNotificationOnMain` dispatches asynchronously if called off main, synchronously if already on main. Posts inside `await MainActor.run {}` or `DispatchQueue.main.async {}` blocks are already safe and can use `NotificationCenter.default.post` directly.
+
 ## Cast Architecture — Single Owner Model
 
 `CastManager.activeSession` is the single authoritative description of the active cast. Every other component reads from `activeSession` and subscribes to `CastManager.sessionDidChangeNotification` for updates.
@@ -292,6 +308,7 @@ swift scripts/test_chromecast.swift
 | Second cast fails with immediate IDLE teardown | `chromecastHasSeenActivePlayback` not reset | Reset flag **before** calling `chromecastManager.cast()`, also in `stopCasting()` |
 | Audio cast play controls do nothing | Session still in `.loaded` state | Use `currentCast == .audio` not `isCasting` to detect audio |
 | Seek bar progresses while paused | `playbackStartDate` not cleared on pause | Set `playbackStartDate = nil` when not PLAYING |
+| `NSWindow geometry should only be modified on the main thread` crash | Posting cast notification directly from `ChromecastManager` or `UPnPManager` off-main | Use `CastManager.postNotificationOnMain(name:)` instead of `NotificationCenter.default.post` |
 | Stop leaves video paused on TV | STOP delivered to media but app still running | Call `stopApp()` after `stop()`; add 200ms delay before `disconnect()` |
 | Stop command not delivered | Socket closed before bytes flush | Sleep 200ms between `stop()` and `disconnect()` |
 | `clearVideoTrackInfo()` not called | `wasVideoCast` captured after `activeSession` set to nil | Capture `wasVideoCast = currentCast == .video` **before** disconnect |
