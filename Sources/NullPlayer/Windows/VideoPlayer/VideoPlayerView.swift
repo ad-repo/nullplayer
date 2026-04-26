@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 @preconcurrency import KSPlayer
 
 /// Video player view using KSPlayer with FFmpeg backend, skinned title bar, and controls

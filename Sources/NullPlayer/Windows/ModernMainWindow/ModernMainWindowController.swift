@@ -80,8 +80,8 @@ class ModernMainWindowController: NSWindowController, MainWindowProviding {
         modernView.updateTrackInfo(track)
     }
     
-    func updateVideoTrackInfo(title: String) {
-        modernView.updateVideoTrackInfo(title: title)
+    func updateVideoTrackInfo(title: String, artworkTrack: Track?) {
+        modernView.updateVideoTrackInfo(title: title, artworkTrack: artworkTrack)
     }
     
     func clearVideoTrackInfo() {

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import SwiftUI
+import NullPlayerCore
 
 // =============================================================================
 // MODERN LIBRARY BROWSER VIEW - Library browser with modern skin chrome

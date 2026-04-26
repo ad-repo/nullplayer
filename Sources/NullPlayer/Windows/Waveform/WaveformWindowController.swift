@@ -120,6 +120,7 @@ extension WaveformWindowController: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         shouldResetFrameOnNextShow = true
         stopLoadingForHide()
+        if let window { WindowManager.shared.handleCenterStackWindowWillClose(window) }
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }
 

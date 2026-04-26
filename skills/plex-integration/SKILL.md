@@ -257,6 +257,17 @@ Example:
 http://192.168.0.102:32400/library/parts/653835/1723508508/file.flac?X-Plex-Token=TOKEN
 ```
 
+## Sonos Casting Metadata
+
+Plex stream URLs can be extensionless or otherwise not reliable for format detection. When converting `PlexTrack` to `Track`, preserve Plex audio format metadata in `Track.contentType` using codec/container fields (`audioCodec`, `Media.container`, then `Part.container`). This keeps the existing Sonos compatibility path working for extensionless streams.
+
+Important cases:
+- `flac` -> `audio/flac`; extensionless 24/96 or 24/192 FLAC must be identified as FLAC so `CastManager.isSonosCompatible` applies the 48 kHz Sonos limit.
+- `alac` -> `audio/alac`; do not flatten ALAC to `audio/mp4`, because Sonos compatibility treats ALAC as always unsupported.
+- Restored Plex tracks from `StreamingTrackResolver` must populate `contentType` the same way as `PlexManager.convertToTrack`.
+
+For lossless Plex tracks with nil `sampleRate`, `castCurrentTrack` and `castNewTrack` fetch the sample rate from Plex by rating key before making the final strict Sonos compatibility decision. That fetch must be triggered from URL extension or `Track.contentType`, because Plex stream URLs may not have `.flac` or `.wav` extensions.
+
 ## Requirements
 
 - **Plex Pass** subscription (for sonic analysis)

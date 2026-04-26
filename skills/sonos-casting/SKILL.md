@@ -141,7 +141,7 @@ While casting is active:
 - **Uncheck the coordinator room (with other rooms still checked)** → Playback transfers to the next remaining room, which becomes the new coordinator. Brief (~1-2s) playback interruption during transfer. Menu closes to refresh state.
 - **Uncheck the coordinator room (only room in group)** → Casting stops entirely
 
-**Coordinator transfer implementation**: `CastManager.transferSonosCast()` saves session state, stops the old coordinator, casts to the new coordinator, and re-joins other rooms. Uses `UPnPManager.disconnectSession()` to clear the session without sending Stop (old coordinator is already standalone after leaving). `stopCasting()` ungroups all member rooms before stopping to prevent stale group topology.
+**Coordinator transfer implementation**: `CastManager.transferSonosCast()` saves session state, stops the old coordinator, casts to the new coordinator, and re-joins other rooms. Uses `UPnPManager.disconnectSession()` to clear the session without sending Stop (old coordinator is already standalone after leaving). `stopCasting()` ungroups all member rooms **before** stopping the coordinator to prevent stale group topology on subsequent casts. Polling is also stopped at the top of `stopCasting()` before any ungrouping SOAP calls.
 
 ### Stopping a Cast
 
@@ -199,8 +199,8 @@ This is handled in `UPnPManager.setVolume(_:)`, `getVolume()`, and `setMute(_:)`
 ### Playback State Monitoring
 
 NullPlayer polls Sonos every 5 seconds during casting:
-- `GetTransportInfo` - Returns transport state (PLAYING, PAUSED_PLAYBACK, STOPPED, etc.)
-- `GetPositionInfo` - Returns current position and duration
+- `GetTransportInfo` — Returns transport state (PLAYING, PAUSED_PLAYBACK, STOPPED, etc.)
+- `GetPositionInfo` — Returns current position and duration
 
 **What polling detects:**
 - Sonos stopped externally (paused via Sonos app, speaker went to sleep)
@@ -208,9 +208,13 @@ NullPlayer polls Sonos every 5 seconds during casting:
 - Device unreachable (SOAP timeout)
 
 **Polling lifecycle:**
-- Started when Sonos casting begins
-- Stopped when casting ends
+- Started (`startSonosPolling`) when Sonos casting begins
+- Stopped (`stopSonosPolling`) at the top of `stopCasting()`, before ungrouping rooms
 - Also runs post-wake check after Mac sleep
+
+**Position sync:** Each PLAYING poll updates `activeSession.position` and sets `activeSession.playbackStartDate = Date()`. On PAUSED_PLAYBACK, `playbackStartDate` is set to `nil` so the timer freezes. `CastManager.currentTime` interpolates `session.position + elapsed(since: playbackStartDate)` — the same pattern used for Chromecast.
+
+**Poll failure logging:** `pollSonosPlaybackState()` logs explicitly when it returns `nil` due to no session, failed `GetTransportInfo`, or failed `GetPositionInfo`, so silent poll failures are visible in Console.
 
 ### Resilience and Recovery
 
@@ -332,7 +336,7 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 
 ## Sonos Protocol Quirks
 
-**Content-Type matching:** The content type in DIDL-Lite `protocolInfo` must match the actual HTTP Content-Type header. Use `CastManager.detectAudioContentType(for:)` to detect from file extension.
+**Content-Type matching:** The content type in DIDL-Lite `protocolInfo` must match the actual HTTP Content-Type header. Use `track.contentType` when a backend provides it; otherwise use `CastManager.detectAudioContentType(for:)` to detect from file extension. Extensionless server streams must not fall back to `audio/mpeg` when API metadata says the codec/container is FLAC, WAV, ALAC, etc.
 
 **Content-Length for MP3/OGG:** Sonos closes the connection if Content-Length is missing for MP3 and OGG. Chunked transfer encoding only works for WAV/FLAC.
 
@@ -360,6 +364,8 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 Always-incompatible formats (regardless of sample rate): `alac`, `aiff`, `aif`, `wv` (WavPack), `ape` (Monkey's Audio).
 Lossless formats requiring the sample-rate check: `flac`, `wav` — rejected above 48 kHz.
 
+Format classification uses the URL extension first, then normalized `Track.contentType` when the URL is extensionless. MIME types are normalized case-insensitively and parameters are ignored, so `Audio/X-FLAC; charset=binary` is treated as FLAC. This matters for Plex, Subsonic/Navidrome, Jellyfin, and Emby stream URLs that may not end in `.flac` or `.wav`.
+
 ### Scan Functions Use Permissive Mode
 
 Functions that advance the playlist index use `allowUnknownSampleRate: true` because they run _before_ the sample rate is known:
@@ -371,7 +377,9 @@ Functions that advance the playlist index use `allowUnknownSampleRate: true` bec
 
 ### Cast Functions Are the Final Authority
 
-`castCurrentTrack` and `castNewTrack` in `CastManager.swift` fetch the actual sample rate from the Plex API for lossless tracks with nil SR, then call strict `isSonosCompatible`. If a track fails there, `advanceToFirstSonosCompatibleTrack()` is called again to find the next candidate.
+`castCurrentTrack` and `castNewTrack` in `CastManager.swift` fetch the actual sample rate from the Plex API for lossless tracks with nil SR, then call strict `isSonosCompatible`. The fetch decision must use the same URL-extension-or-content-type classification as `isSonosCompatible`; Plex stream URLs are often extensionless, so `Track.contentType` must identify FLAC/WAV for the fetch to happen. If a track fails there, `advanceToFirstSonosCompatibleTrack()` is called again to find the next candidate.
+
+For non-Plex backends, preserve both `Track.contentType` and sample rate from server metadata. If an extensionless FLAC/WAV track reaches strict mode without sample rate, it is rejected conservatively rather than sent to Sonos.
 
 ### Design Principle
 
@@ -402,6 +410,14 @@ If you see "Sonos rejected the command":
 2. Ensure firewall allows incoming connections on port 8765
 3. Verify Sonos speakers are on same network
 4. Check Console.app for "LocalMediaServer" log messages
+
+### Seek Bar Stuck at 0 / Position Not Updating
+- Root cause: `activeSession.position` and `activeSession.playbackStartDate` not set at cast start.
+- At Sonos cast start, `activeSession.position = startPosition` and `activeSession.playbackStartDate = Date()` must both be set immediately (Sonos has no status updates to set them later).
+- Each PLAYING poll must update both fields. Check `CastManager: Sonos poll — state=PLAYING` logs.
+
+### Stop Button Doesn't End Cast
+- `handleStopForActiveDevice` must call `await stopCasting()` for all device types. If it only calls `stopPlayback()`, the session stays alive.
 
 ### Casting Stops Unexpectedly
 1. Check if Sonos speaker went to sleep (idle timeout)

@@ -30,7 +30,16 @@ class MarqueeLayer: CALayer {
             }
         }
     }
-    
+
+    /// When true, always render with system font instead of skin bitmap font
+    var useSystemFont: Bool = false
+
+    /// Font size used when useSystemFont is true
+    var systemFontSize: CGFloat = SkinElements.TextFont.charHeight
+
+    /// Text color used when useSystemFont is true
+    var systemFontColor: NSColor = .green
+
     /// Scroll speed in pixels per second (default: 24 = 3px at 8Hz equivalent)
     var scrollSpeed: CGFloat = 24
     
@@ -127,13 +136,12 @@ class MarqueeLayer: CALayer {
             stopScrollAnimation()
             return
         }
-        
+
         // Text dimensions in base coordinates (matching the bounds)
-        let textWidth = CGFloat(text.count) * charWidth
+        let textWidth = measureTextWidth(text)
         // Available scroll width = full marquee width minus small edge padding
         let availableWidth = bounds.width - (edgePadding * 2)
-        
-        
+
         // Capture values for async rendering
         let currentText = text
         let currentSeparator = separator
@@ -143,19 +151,25 @@ class MarqueeLayer: CALayer {
         let currentCharWidth = charWidth
         let currentCharHeight = charHeight
         let currentEdgePadding = edgePadding
-        
+        let currentUseSystemFont = useSystemFont
+        let currentSystemFontSize = systemFontSize
+        let currentSystemFontColor = systemFontColor
+
         if textWidth <= availableWidth {
             // Text fits - render once, no scrolling, left-aligned
             needsScrolling = false
             cycleWidth = textWidth
-            
+
             // Render on background queue to avoid NSGraphicsContext interference
             Self.sharedRenderQueue.async { [weak self] in
                 // Render at full bounds height so text is centered and not stretched
-                let image = self?.renderTextToImageSync(currentText, width: textWidth, 
+                let image = self?.renderTextToImageSync(currentText, width: textWidth,
                                                         skinCGImage: currentSkinCGImage, scale: currentScale,
                                                         charWidth: currentCharWidth, charHeight: currentCharHeight,
-                                                        boundsHeight: currentBoundsHeight)
+                                                        boundsHeight: currentBoundsHeight,
+                                                        useSystemFont: currentUseSystemFont,
+                                                        systemFontSize: currentSystemFontSize,
+                                                        systemFontColor: currentSystemFontColor)
                 DispatchQueue.main.async {
                     guard let self = self else { return }
                     // Use explicit CATransaction to prevent interference from other view updates
@@ -173,21 +187,24 @@ class MarqueeLayer: CALayer {
         } else {
             // Text overflows - render text + separator twice for seamless loop
             needsScrolling = true
-            let separatorWidth = CGFloat(currentSeparator.count) * currentCharWidth
+            let separatorWidth = measureTextWidth(currentSeparator)
             cycleWidth = textWidth + separatorWidth
-            
+
             // Render two copies for seamless scrolling
             let fullText = currentText + currentSeparator + currentText + currentSeparator
             let totalWidth = cycleWidth * 2
             let finalCycleWidth = cycleWidth
-            
+
             // Render on background queue to avoid NSGraphicsContext interference
             Self.sharedRenderQueue.async { [weak self] in
                 // Render at full bounds height so text is centered and not stretched
                 let image = self?.renderTextToImageSync(fullText, width: totalWidth,
                                                         skinCGImage: currentSkinCGImage, scale: currentScale,
                                                         charWidth: currentCharWidth, charHeight: currentCharHeight,
-                                                        boundsHeight: currentBoundsHeight)
+                                                        boundsHeight: currentBoundsHeight,
+                                                        useSystemFont: currentUseSystemFont,
+                                                        systemFontSize: currentSystemFontSize,
+                                                        systemFontColor: currentSystemFontColor)
                 DispatchQueue.main.async {
                     guard let self = self else { return }
                     // Use explicit CATransaction to prevent interference from other view updates
@@ -205,18 +222,28 @@ class MarqueeLayer: CALayer {
             }
         }
     }
+
+    private func measureTextWidth(_ text: String) -> CGFloat {
+        if useSystemFont {
+            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: systemFontSize)]
+            return text.size(withAttributes: attrs).width
+        }
+        return CGFloat(text.count) * charWidth
+    }
     
     /// Render text string to a CGImage using bitmap font sprites (thread-safe version)
     /// Uses pre-cached CGImage to avoid NSImage operations that can cause cross-window interference
-    private func renderTextToImageSync(_ string: String, width: CGFloat, skinCGImage: CGImage?, 
+    private func renderTextToImageSync(_ string: String, width: CGFloat, skinCGImage: CGImage?,
                                        scale: CGFloat, charWidth: CGFloat, charHeight: CGFloat,
-                                       boundsHeight: CGFloat) -> CGImage? {
-        // Check for system font fallback (non-Latin characters or no skin image)
-        if skinCGImage == nil || containsNonLatinCharacters(string) {
-            return renderSystemFontToImageSync(string, width: width, scale: scale, charHeight: charHeight, boundsHeight: boundsHeight)
+                                       boundsHeight: CGFloat, useSystemFont: Bool = false,
+                                       systemFontSize: CGFloat = 6, systemFontColor: NSColor = .green) -> CGImage? {
+        if useSystemFont || skinCGImage == nil || containsNonLatinCharacters(string) {
+            return renderSystemFontToImageSync(string, width: width, scale: scale,
+                                               fontSize: systemFontSize, color: systemFontColor,
+                                               boundsHeight: boundsHeight)
         }
-        
-        return renderBitmapFontToImageSync(string, width: width, skinCGImage: skinCGImage!, 
+
+        return renderBitmapFontToImageSync(string, width: width, skinCGImage: skinCGImage!,
                                            scale: scale, charWidth: charWidth, charHeight: charHeight, boundsHeight: boundsHeight)
     }
     
@@ -295,16 +322,15 @@ class MarqueeLayer: CALayer {
         return bitmapRep.cgImage
     }
     
-    /// Render using system font (for Unicode characters) - thread-safe version
-    private func renderSystemFontToImageSync(_ string: String, width: CGFloat, scale: CGFloat, charHeight: CGFloat, boundsHeight: CGFloat) -> CGImage? {
-        // Render at full bounds height
+    /// Render using system font (for Unicode characters or when useSystemFont is set) - thread-safe version
+    private func renderSystemFontToImageSync(_ string: String, width: CGFloat, scale: CGFloat,
+                                             fontSize: CGFloat, color: NSColor, boundsHeight: CGFloat) -> CGImage? {
         let height = boundsHeight
         let pixelWidth = Int(ceil(width * scale))
         let pixelHeight = Int(ceil(height * scale))
-        
+
         guard pixelWidth > 0, pixelHeight > 0 else { return nil }
-        
-        // Create bitmap image rep at exact pixel dimensions
+
         guard let bitmapRep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: pixelWidth,
@@ -317,25 +343,24 @@ class MarqueeLayer: CALayer {
             bytesPerRow: 0,
             bitsPerPixel: 32
         ) else { return nil }
-        
+
         bitmapRep.size = NSSize(width: width, height: height)
-        
+
         guard let context = NSGraphicsContext(bitmapImageRep: bitmapRep) else { return nil }
-        
+
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
-        
+
         let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.green,
-            .font: NSFont.systemFont(ofSize: 8, weight: .regular)
+            .foregroundColor: color,
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .regular)
         ]
-        
-        // Center vertically
-        let yOffset = (boundsHeight - charHeight) / 2
+
+        let yOffset = (boundsHeight - fontSize) / 2
         string.draw(at: NSPoint(x: 0, y: yOffset), withAttributes: attrs)
-        
+
         NSGraphicsContext.restoreGraphicsState()
-        
+
         return bitmapRep.cgImage
     }
     

@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import NullPlayerCore
 
 /// Unified manager for all casting functionality
 /// Coordinates Chromecast, Sonos, and DLNA device discovery and playback
@@ -25,7 +26,20 @@ class CastManager {
     static let playbackStateDidChangeNotification = Notification.Name("CastPlaybackStateDidChange")
     static let trackChangeLoadingNotification = Notification.Name("CastTrackChangeLoading")
     static let errorNotification = Notification.Name("CastError")
-    
+
+    /// Posts a cast notification on the main thread, dispatching asynchronously if called from a background thread.
+    /// ChromecastManager and UPnPManager are not @MainActor, so their notification posts would otherwise
+    /// arrive on background threads and crash any observer that touches AppKit.
+    static func postNotificationOnMain(name: Notification.Name, userInfo: [AnyHashable: Any]? = nil) {
+        if Thread.isMainThread {
+            NotificationCenter.default.post(name: name, object: nil, userInfo: userInfo)
+        } else {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: name, object: nil, userInfo: userInfo)
+            }
+        }
+    }
+
     // MARK: - Sub-managers
     
     private let chromecastManager = ChromecastManager.shared
@@ -35,9 +49,45 @@ class CastManager {
     
     /// Rooms selected for Sonos casting (UDNs) - used before casting starts
     var selectedSonosRooms: Set<String> = []
+
+    /// Preferred Chromecast/DLNA device for video casting (device ID, persisted)
+    private(set) var preferredVideoCastDeviceID: String? = UserDefaults.standard.string(forKey: "preferredVideoCastDeviceID")
+
+    /// The preferred video cast device if it is currently discoverable and supports video.
+    /// Falls back to the first available video-capable device if preferred is offline.
+    var preferredVideoCastDevice: CastDevice? {
+        let devices = discoveredDevices.filter { $0.supportsVideo }
+        if let id = preferredVideoCastDeviceID, let match = devices.first(where: { $0.id == id }) {
+            return match
+        }
+        return devices.first
+    }
+
+    /// Set the preferred video device. Ignores discovered devices that don't support video.
+    /// Posts sessionDidChangeNotification so menus refresh.
+    func setPreferredVideoCastDevice(_ deviceID: String?) {
+        if let deviceID,
+           let matchedDevice = discoveredDevices.first(where: { $0.id == deviceID }),
+           !matchedDevice.supportsVideo {
+            return
+        }
+        preferredVideoCastDeviceID = deviceID
+        UserDefaults.standard.set(deviceID, forKey: "preferredVideoCastDeviceID")
+        CastManager.postNotificationOnMain(name: Self.sessionDidChangeNotification)
+    }
+
+    #if DEBUG
+    private var _debugDiscoveredDevices: [CastDevice]?
+    private var _debugActiveSession: CastSession?
+    #endif
     
     /// All discovered cast devices, grouped by type
     var discoveredDevices: [CastDevice] {
+        #if DEBUG
+        if let _debugDiscoveredDevices {
+            return _debugDiscoveredDevices
+        }
+        #endif
         var all: [CastDevice] = []
         all.append(contentsOf: chromecastManager.devices)
         all.append(contentsOf: upnpManager.devices)
@@ -205,6 +255,11 @@ class CastManager {
     
     /// Current active cast session (if any)
     var activeSession: CastSession? {
+        #if DEBUG
+        if let session = _debugActiveSession {
+            return session
+        }
+        #endif
         if let session = chromecastManager.activeSession, session.state != .idle {
             return session
         }
@@ -223,40 +278,41 @@ class CastManager {
     var isCastingToSonos: Bool {
         activeSession?.device.type == .sonos
     }
-    
-    /// Whether video casting is currently active (as opposed to audio casting)
-    private(set) var isVideoCasting: Bool = false
-    
+
+    /// Current cast target (audio, video, or none)
+    var currentCast: CurrentCast {
+        guard let session = activeSession else { return .none }
+        return session.metadata?.mediaType == .video ? .video : .audio
+    }
+
     /// Title of the video being cast (for main window display when casting from menu)
     private(set) var videoCastTitle: String?
     
     /// Duration of the video being cast (for seek calculations)
     private(set) var videoCastDuration: TimeInterval = 0
-    
-    /// Video cast position tracking
-    private var videoCastStartPosition: TimeInterval = 0
-    private var videoCastStartDate: Date?
-    
-    /// Whether we've received the first status update from Chromecast (prevents UI flash before sync)
-    private var videoCastHasReceivedStatus: Bool = false
-    
+
     /// Current video cast playback time (interpolated)
     var videoCastCurrentTime: TimeInterval {
-        guard isVideoCasting else { return 0 }
-        if let startDate = videoCastStartDate {
+        guard case .video = currentCast, let session = activeSession else { return 0 }
+        if let startDate = session.playbackStartDate {
             let elapsed = Date().timeIntervalSince(startDate)
-            let current = videoCastStartPosition + elapsed
+            let current = session.position + elapsed
             // Only clamp if we have a known duration (prevents returning 0 for unknown durations)
             if videoCastDuration > 0 {
                 return min(current, videoCastDuration)
             }
             return current
         }
-        return videoCastStartPosition
+        return session.position
     }
     
     /// Whether video cast is playing (not paused)
     private(set) var isVideoCastPlaying: Bool = false
+
+    /// Set to true when the Chromecast reports its first PLAYING or BUFFERING status.
+    /// Guards the IDLE → stopCasting path so the initial post-connect IDLE (which arrives
+    /// before the LOAD command is processed) doesn't trigger a premature teardown.
+    private var chromecastHasSeenActivePlayback: Bool = false
     
     /// Timer for updating main window with video cast progress
     private var videoCastUpdateTimer: Timer?
@@ -266,10 +322,10 @@ class CastManager {
     private func startVideoCastUpdateTimer() {
         videoCastUpdateTimer?.invalidate()
         videoCastUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            guard let self = self, self.isVideoCasting else { return }
+            guard let self = self, case .video = self.currentCast else { return }
             // Don't update UI until we've received first status from Chromecast
             // This prevents showing stale/incorrect time before sync
-            guard self.videoCastHasReceivedStatus else { return }
+            guard self.activeSession?.state != .loaded else { return }
             let current = self.videoCastCurrentTime
             let duration = self.videoCastDuration
             WindowManager.shared.videoDidUpdateTime(current: current, duration: duration)
@@ -317,7 +373,10 @@ class CastManager {
     
     /// Whether a refresh is currently in progress
     private(set) var isRefreshing: Bool = false
-    
+
+    /// Inflight task chain for serializing cast operations
+    @MainActor private var inflight: Task<Void, Error>? = nil
+
     // MARK: - Initialization
     
     /// Timer for polling Sonos playback state during active casting
@@ -372,46 +431,118 @@ class CastManager {
         // Dispatch to main thread for thread safety - NotificationCenter may deliver off main thread
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            
+
             // Only process if we're actively casting
-            guard self.isCasting || self.isVideoCasting else { return }
-            
+            guard self.currentCast != .none else { return }
+
             let isPlaying = status.playerState == .playing
             let isBuffering = status.playerState == .buffering
-            
+            NSLog("CastManager: Chromecast status — state=%@ t=%.1f currentCast=%@",
+                  String(describing: status.playerState), status.currentTime,
+                  String(describing: self.currentCast))
+
             // Update video cast tracking if video casting
-            if self.isVideoCasting {
-                // Mark that we've received status from Chromecast (enables UI updates)
-                let isFirstStatus = !self.videoCastHasReceivedStatus
-                self.videoCastHasReceivedStatus = true
-                
+            if case .video = self.currentCast {
                 // Sync position from Chromecast
-                self.videoCastStartPosition = status.currentTime
-                
+                self.activeSession?.position = status.currentTime
+
                 if isBuffering {
-                    // Pause interpolation during buffering
-                    self.videoCastStartDate = nil
+                    let isFirstActive = !self.chromecastHasSeenActivePlayback
+                    NSLog("CastManager: Chromecast video BUFFERING — hasSeenActive=%@ isFirstActive=%@",
+                          self.chromecastHasSeenActivePlayback ? "true" : "false",
+                          isFirstActive ? "true" : "false")
+                    self.chromecastHasSeenActivePlayback = true
+                    self.activeSession?.state = .casting
+                    self.activeSession?.playbackStartDate = nil
+                    self.activeSession?.isPlaying = false
                     self.isVideoCastPlaying = false
+                    if isFirstActive {
+                        WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
+                    }
                 } else if isPlaying {
-                    self.videoCastStartDate = Date()
+                    let isFirstActive = !self.chromecastHasSeenActivePlayback
+                    NSLog("CastManager: Chromecast video PLAYING — hasSeenActive=%@ isFirstActive=%@",
+                          self.chromecastHasSeenActivePlayback ? "true" : "false",
+                          isFirstActive ? "true" : "false")
+                    self.chromecastHasSeenActivePlayback = true
+                    self.activeSession?.state = .casting
+                    self.activeSession?.playbackStartDate = Date()
+                    self.activeSession?.isPlaying = true
                     self.isVideoCastPlaying = true
+                    if isFirstActive {
+                        WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
+                    }
                 } else {
-                    // Paused or idle
-                    self.videoCastStartDate = nil
+                    self.activeSession?.playbackStartDate = nil
+                    self.activeSession?.isPlaying = false
                     self.isVideoCastPlaying = false
+
+                    // Only treat IDLE as "cast ended" after we've seen at least one PLAYING or
+                    // BUFFERING status. The Chromecast sends an initial IDLE immediately after
+                    // connecting, before the LOAD command is processed — that must be ignored.
+                    if status.playerState == .idle && self.chromecastHasSeenActivePlayback {
+                        NSLog("CastManager: Chromecast video IDLE after active playback — stopping cast (hasSeenActive=true)")
+                        self.chromecastHasSeenActivePlayback = false
+                        Task { await self.stopCasting() }
+                    } else if status.playerState == .idle {
+                        NSLog("CastManager: Chromecast video IDLE ignored — hasSeenActive=false (pre-load IDLE)")
+                    } else {
+                        NSLog("CastManager: Chromecast video state=%@ — not PLAYING/BUFFERING/IDLE, hasSeenActive=%@",
+                              String(describing: status.playerState),
+                              self.chromecastHasSeenActivePlayback ? "true" : "false")
+                    }
                 }
-                
+
                 // Update duration if provided
                 if let duration = status.duration, duration > 0 {
                     self.videoCastDuration = duration
                 }
-                
-                // On first status, immediately update UI with correct position
-                if isFirstStatus {
-                    WindowManager.shared.videoDidUpdateTime(current: self.videoCastCurrentTime, duration: self.videoCastDuration)
-                }
-            } else if self.isCasting {
+            } else if self.currentCast == .audio {
                 // Audio casting - forward position sync to AudioEngine
+                // Use currentCast (not isCasting) so we handle the .loaded phase too:
+                // isCasting requires .casting state, but audio starts in .loaded
+                let isFirstAudioStatus = self.activeSession?.state == .loaded
+                if isFirstAudioStatus {
+                    NSLog("CastManager: first audio status - transitioning .loaded → .casting")
+                    self.activeSession?.state = .casting
+                }
+
+                // Update session position (mirrors what video branch does) so currentTime
+                // getter can interpolate correctly from session.position + playbackStartDate
+                self.activeSession?.position = status.currentTime
+                if isPlaying && !isBuffering {
+                    if self.activeSession?.isPlaying != true {
+                        NSLog("CastManager: Chromecast audio → PLAYING t=%.1f hasSeenActive=%@",
+                              status.currentTime, self.chromecastHasSeenActivePlayback ? "true" : "false")
+                    }
+                    self.chromecastHasSeenActivePlayback = true
+                    self.activeSession?.playbackStartDate = Date()
+                    self.activeSession?.isPlaying = true
+                } else if isBuffering {
+                    if self.activeSession?.isPlaying != false {
+                        NSLog("CastManager: Chromecast audio → BUFFERING t=%.1f hasSeenActive=%@",
+                              status.currentTime, self.chromecastHasSeenActivePlayback ? "true" : "false")
+                    }
+                    self.chromecastHasSeenActivePlayback = true
+                    self.activeSession?.playbackStartDate = nil
+                    self.activeSession?.isPlaying = false
+                } else if status.playerState == .idle {
+                    NSLog("CastManager: Chromecast audio IDLE — hasSeenActive=%@",
+                          self.chromecastHasSeenActivePlayback ? "true" : "false")
+                    self.activeSession?.playbackStartDate = nil
+                    self.activeSession?.isPlaying = false
+                    if self.chromecastHasSeenActivePlayback {
+                        NSLog("CastManager: Chromecast audio IDLE after active playback — stopping cast")
+                        self.chromecastHasSeenActivePlayback = false
+                        Task { await self.stopCasting() }
+                    } else {
+                        NSLog("CastManager: Chromecast audio IDLE ignored — hasSeenActive=false (pre-load IDLE)")
+                    }
+                } else {
+                    self.activeSession?.playbackStartDate = nil
+                    self.activeSession?.isPlaying = false
+                }
+
                 self.resolvedAudioEngine.updateCastPosition(
                     currentTime: status.currentTime,
                     isPlaying: isPlaying,
@@ -542,11 +673,22 @@ class CastManager {
     ///   - startPosition: Optional position to start from (for resuming playback)
     func cast(to device: CastDevice, url: URL, metadata: CastMetadata, startPosition: TimeInterval = 0) async throws {
         NSLog("CastManager: Casting to %@ (%@), start position: %.1f", device.name, device.type.displayName, startPosition)
-        
-        // Disconnect from any existing session
-        if activeSession != nil {
-            await stopCasting()
-        }
+
+        let prev = await MainActor.run { inflight }
+        let task = Task { @MainActor () -> Void in
+            try? await prev?.value
+
+            // If media type changed (audio to video or vice versa), do clean teardown
+            if let session = self.activeSession, session.metadata?.mediaType != metadata.mediaType {
+                NSLog("CastManager: Media type mismatch - current: %@, incoming: %@; performing teardown",
+                      session.metadata?.mediaType.rawValue ?? "nil", metadata.mediaType.rawValue)
+                await self.stopCastingAndAwaitTeardown()
+            }
+
+            // Disconnect from any remaining existing session
+            if self.activeSession != nil {
+                await self.stopCasting()
+            }
         
         // Pause local playback before casting
         await MainActor.run {
@@ -560,6 +702,10 @@ class CastManager {
             do {
                 try await chromecastManager.connect(to: device)
                 NSLog("CastManager: Connected to Chromecast, now casting...")
+                // Reset before cast so the IDLE Chromecast sends when loadMedia is issued
+                // is treated as pre-playback and not mistaken for end-of-stream.
+                NSLog("CastManager: cast() Chromecast — resetting chromecastHasSeenActivePlayback to false")
+                chromecastHasSeenActivePlayback = false
                 try await chromecastManager.cast(url: url, metadata: metadata)
                 NSLog("CastManager: Cast started successfully")
             } catch {
@@ -596,30 +742,48 @@ class CastManager {
         // This prevents clock sync issues when buffering (especially for 4K on slow networks)
         let isVideo = metadata.mediaType == .video
         await MainActor.run {
+            let sessionDuration = metadata.duration ?? 0
+            self.activeSession?.duration = sessionDuration
+            NSLog("CastManager: Cast session timing initialized - mediaType=%@ duration=%.1f startPosition=%.1f",
+                  metadata.mediaType.rawValue, sessionDuration, startPosition)
+
             if isVideo {
-                self.isVideoCasting = true
                 self.videoCastTitle = metadata.title
                 self.videoCastDuration = metadata.duration ?? 0
-                self.videoCastStartPosition = startPosition
-                
+                self.activeSession?.position = startPosition
+
                 if device.type == .chromecast {
                     // Chromecast: Wait for PLAYING status update before updating UI
                     // This prevents clock sync issues when buffering (especially for 4K on slow networks)
-                    self.videoCastStartDate = nil
+                    self.activeSession?.playbackStartDate = nil
+                    self.activeSession?.isPlaying = false
                     self.isVideoCastPlaying = false
-                    self.videoCastHasReceivedStatus = false
+                    self.activeSession?.state = .loaded
+                    NSLog("CastManager: Video cast start — resetting chromecastHasSeenActivePlayback to false")
+                    self.chromecastHasSeenActivePlayback = false
                 } else {
                     // DLNA/UPnP: No status updates, start timer immediately
-                    self.videoCastStartDate = Date()
+                    self.activeSession?.playbackStartDate = Date()
+                    self.activeSession?.isPlaying = true
                     self.isVideoCastPlaying = true
-                    self.videoCastHasReceivedStatus = true
+                    self.activeSession?.state = .casting
                 }
                 self.startVideoCastUpdateTimer()
                 
                 // Update main window with video title (for casts from library browser menu)
-                WindowManager.shared.mainWindowController?.updateVideoTrackInfo(title: metadata.title)
+                let artworkTrack = Track(
+                    url: metadata.artworkURL ?? URL(string: "about:blank")!,
+                    title: metadata.title,
+                    artist: metadata.artist,
+                    album: metadata.album,
+                    duration: metadata.duration,
+                    artworkThumb: metadata.artworkURL?.absoluteString,
+                    mediaType: .video,
+                    contentType: metadata.contentType
+                )
+                WindowManager.shared.mainWindowController?.updateVideoTrackInfo(title: metadata.title, artworkTrack: artworkTrack)
                 
-                NSLog("CastManager: Video cast state initialized - title='%@', duration=%.1f, startPosition=%.1f, hasReceivedStatus=%d", metadata.title, self.videoCastDuration, startPosition, self.videoCastHasReceivedStatus ? 1 : 0)
+                NSLog("CastManager: Video cast state initialized - title='%@', duration=%.1f, startPosition=%.1f, state=%@", metadata.title, self.videoCastDuration, startPosition, String(describing: self.activeSession?.state))
             } else {
                 // Audio casting - use different tracking based on device type
                 
@@ -634,9 +798,18 @@ class CastManager {
                 if device.type == .chromecast {
                     // Chromecast provides status updates - wait for PLAYING status to start timer
                     // This prevents clock sync issues when buffering on slow networks
+                    self.activeSession?.state = .loaded
+                    NSLog("CastManager: Audio cast start — resetting chromecastHasSeenActivePlayback to false")
+                    self.chromecastHasSeenActivePlayback = false
                     resolvedAudioEngine.initializeCastPlayback(from: trackingPosition)
                 } else {
                     // Sonos/DLNA don't provide status updates - start timer immediately
+                    // Set session position and playbackStartDate so currentTime interpolates correctly
+                    NSLog("CastManager: Sonos/DLNA audio cast start — position=%.1f state=.casting", trackingPosition)
+                    self.activeSession?.position = trackingPosition
+                    self.activeSession?.playbackStartDate = Date()
+                    self.activeSession?.isPlaying = true
+                    self.activeSession?.state = .casting
                     resolvedAudioEngine.startCastPlayback(from: trackingPosition)
                 }
                 
@@ -645,12 +818,21 @@ class CastManager {
                     self.startSonosPolling()
                     self.startTopologyRefresh()
                 }
+
+                // Close the video player if it was open (video cast was torn down by stopCastingAndAwaitTeardown
+                // before this point, so isCastingVideo is already false — WindowManager checks visibility).
+                NSLog("CastManager: cast() audio — closing video player if visible (superseded by audio cast)")
+                WindowManager.shared.closeVideoPlayerForCastTransition()
             }
             NotificationCenter.default.post(name: Self.sessionDidChangeNotification, object: nil)
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
         }
+        }
+
+        await MainActor.run { self.inflight = task }
+        try await task.value
     }
-    
+
     /// Stop local audio playback (called when casting starts)
     /// Must fully stop (not just pause) streaming playback to release the connection
     /// This is especially important for Subsonic/Navidrome which limits concurrent streams per user
@@ -678,8 +860,7 @@ class CastManager {
         if device.type == .sonos {
             var fetchedSR: Int? = nil
             if trackToUse.sampleRate == nil, let rk = trackToUse.plexRatingKey {
-                let ext = trackToUse.url.pathExtension.lowercased()
-                if Self.sonosLosslessExtensions.contains(ext) {
+                if Self.sonosLosslessExtension(for: trackToUse) != nil {
                     fetchedSR = await PlexManager.shared.fetchSampleRate(for: rk)
                     NSLog("CastManager: castCurrentTrack fetched sample rate for '%@': %@",
                           trackToUse.title, fetchedSR.map { "\($0) Hz" } ?? "nil")
@@ -694,8 +875,7 @@ class CastManager {
                 currentPosition = 0
                 fetchedSR = nil
                 if trackToUse.sampleRate == nil, let rk = trackToUse.plexRatingKey {
-                    let ext = trackToUse.url.pathExtension.lowercased()
-                    if Self.sonosLosslessExtensions.contains(ext) {
+                    if Self.sonosLosslessExtension(for: trackToUse) != nil {
                         fetchedSR = await PlexManager.shared.fetchSampleRate(for: rk)
                         NSLog("CastManager: castCurrentTrack fetched sample rate for '%@': %@",
                               trackToUse.title, fetchedSR.map { "\($0) Hz" } ?? "nil")
@@ -798,43 +978,84 @@ class CastManager {
     
     /// Cast a new track to the already connected device (for next/previous)
     func castNewTrack(_ track: Track) async throws {
-        guard let session = activeSession else {
-            throw CastError.sessionNotActive
+        NSLog("CastManager: castNewTrack '%@' (mediaType=%@, currentCast=%@)",
+              track.title, track.mediaType.rawValue, String(describing: currentCast))
+        // Video tracks in an audio playlist dispatch to the video cast path.
+        // castVideoURL calls cast() which has its own inflight serialization.
+        if track.mediaType == .video {
+            guard let device = activeSession?.device, device.supportsVideo else {
+                NSLog("CastManager: castNewTrack skipping video track '%@' — no video-capable session", track.title)
+                return
+            }
+            try await castVideoURL(track.url, title: track.title, to: device,
+                                   duration: track.duration, contentType: track.contentType)
+            return
         }
 
-        // For Sonos: if format is unsupported, advance to the next compatible track
-        if session.device.type == .sonos {
-            // Fetch missing sample rate for lossless Plex tracks (Plex API may omit Stream details)
-            var fetchedSampleRate: Int? = nil
-            if track.sampleRate == nil, let ratingKey = track.plexRatingKey {
-                let ext = track.url.pathExtension.lowercased()
-                if Self.sonosLosslessExtensions.contains(ext) {
-                    fetchedSampleRate = await PlexManager.shared.fetchSampleRate(for: ratingKey)
-                    NSLog("CastManager: castNewTrack fetched sample rate for '%@': %@",
-                          track.title, fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
-                }
+        let prev = await MainActor.run { inflight }
+        let task = Task { @MainActor () -> Void in
+            try? await prev?.value
+
+            guard let session = self.activeSession else {
+                throw CastError.sessionNotActive
             }
-            if !Self.isSonosCompatible(track, sampleRateOverride: fetchedSampleRate) {
-                let engine = WindowManager.shared.audioEngine
-                NSLog("CastManager: castNewTrack '%@' (%@) not supported by Sonos — finding next compatible track",
-                      track.title, track.url.pathExtension)
-                let compatible = await MainActor.run { engine.advanceToFirstSonosCompatibleTrack() }
-                guard let compatible else {
+
+        var trackToCast = track
+
+        // For Sonos: if format is unsupported, advance within this same serialized
+        // operation. Recursing into castNewTrack() from here would enqueue a task
+        // behind the current inflight task and deadlock the cast handoff.
+        if session.device.type == .sonos {
+            let engine = WindowManager.shared.audioEngine
+
+            while true {
+                var fetchedSampleRate: Int? = nil
+                if trackToCast.sampleRate == nil,
+                   let ratingKey = trackToCast.plexRatingKey,
+                   Self.sonosLosslessExtension(for: trackToCast) != nil {
+                    fetchedSampleRate = await PlexManager.shared.fetchSampleRate(for: ratingKey)
+                    NSLog("CastManager: castNewTrack Sonos sample-rate check '%@' ratingKey=%@ fetched=%@",
+                          trackToCast.title, ratingKey, fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
+                }
+
+                if Self.isSonosCompatible(trackToCast, sampleRateOverride: fetchedSampleRate) {
+                    if trackToCast.id != track.id {
+                        NSLog("CastManager: castNewTrack Sonos using compatible replacement '%@' after skipping '%@'",
+                              trackToCast.title, track.title)
+                    }
+                    break
+                }
+
+                NSLog("CastManager: castNewTrack Sonos rejecting '%@' (ext=%@ contentType=%@ sampleRate=%@ fetchedSampleRate=%@) — finding next compatible track",
+                      trackToCast.title,
+                      Self.sonosFormatExtension(for: trackToCast),
+                      trackToCast.contentType ?? "nil",
+                      trackToCast.sampleRate.map { "\($0) Hz" } ?? "nil",
+                      fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
+
+                guard let compatible = engine.advanceToFirstSonosCompatibleTrack() else {
+                    NSLog("CastManager: castNewTrack Sonos found no compatible replacement after rejecting '%@' — stopping cast",
+                          trackToCast.title)
                     await stopCasting()
                     return
                 }
-                try await castNewTrack(compatible)
-                return
+
+                NSLog("CastManager: castNewTrack Sonos candidate replacement '%@' (ext=%@ contentType=%@ sampleRate=%@)",
+                      compatible.title,
+                      Self.sonosFormatExtension(for: compatible),
+                      compatible.contentType ?? "nil",
+                      compatible.sampleRate.map { "\($0) Hz" } ?? "nil")
+                trackToCast = compatible
             }
         }
 
         // Check if this is a local file (needs loading state due to async registration)
-        let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+        let isLocalFile = trackToCast.url.scheme != "http" && trackToCast.url.scheme != "https"
         
         // Check if Subsonic/Jellyfin/Emby track to Sonos - also needs loading state since we use proxy
-        let needsSubsonicProxy = track.subsonicId != nil && session.device.type == .sonos
-        let needsJellyfinProxy = track.jellyfinId != nil && session.device.type == .sonos
-        let needsEmbyProxy = track.embyId != nil && session.device.type == .sonos
+        let needsSubsonicProxy = trackToCast.subsonicId != nil && session.device.type == .sonos
+        let needsJellyfinProxy = trackToCast.jellyfinId != nil && session.device.type == .sonos
+        let needsEmbyProxy = trackToCast.embyId != nil && session.device.type == .sonos
 
         // Check if this is a radio station to Sonos - needs loading state for click guarding
         let isRadioToSonos = RadioManager.shared.isActive && session.device.type == .sonos
@@ -850,14 +1071,14 @@ class CastManager {
             // Set loading state for local files and Subsonic->Sonos proxy (they have async registration)
             if needsLoadingState {
                 isCastingTrackChange = true
-                pendingCastTrack = track
-                NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": true, "track": track])
+                pendingCastTrack = trackToCast
+                NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": true, "track": trackToCast])
             }
             
             return castTrackGeneration
         }
         
-        NSLog("CastManager: castNewTrack '%@' starting (generation %d)", track.title, myGeneration)
+        NSLog("CastManager: castNewTrack '%@' starting (generation %d)", trackToCast.title, myGeneration)
         
         // Helper to clear loading state and notify UI
         // Always posts notification to ensure loading overlay is cleared even for non-local failures
@@ -876,12 +1097,12 @@ class CastManager {
         
         // Get castable URL and effective content type
         let castURL: URL
-        var effectiveContentType: String? = track.contentType
-        if track.url.scheme == "http" || track.url.scheme == "https" {
+        var effectiveContentType: String? = trackToCast.contentType
+        if trackToCast.url.scheme == "http" || trackToCast.url.scheme == "https" {
             if needsSubsonicProxy || needsJellyfinProxy || needsEmbyProxy {
                 // Subsonic/Jellyfin/Emby to Sonos: Use proxy with HEAD-based content type detection
                 do {
-                    let result = try await prepareProxyURL(for: track, device: session.device)
+                    let result = try await prepareProxyURL(for: trackToCast, device: session.device)
                     castURL = result.url
                     effectiveContentType = result.contentType
                     NSLog("CastManager: castNewTrack using proxy for Subsonic/Jellyfin/Emby->Sonos: %@", castURL.redacted)
@@ -889,10 +1110,10 @@ class CastManager {
                     await clearLoadingState()
                     throw error
                 }
-            } else if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: track.url) {
+            } else if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: trackToCast.url) {
                 castURL = rewriteLocalhostForCasting(tokenizedURL)
             } else {
-                castURL = rewriteLocalhostForCasting(track.url)
+                castURL = rewriteLocalhostForCasting(trackToCast.url)
             }
         } else {
             // Local file - register with HTTP server
@@ -906,7 +1127,7 @@ class CastManager {
                 }
             }
             
-            guard let serverURL = LocalMediaServer.shared.registerFile(track.url) else {
+            guard let serverURL = LocalMediaServer.shared.registerFile(trackToCast.url) else {
                 await clearLoadingState()
                 throw CastError.localServerError("Could not register file with local media server")
             }
@@ -916,11 +1137,11 @@ class CastManager {
         // Check if we've been superseded by a newer track change
         let currentGen1 = await MainActor.run { castTrackGeneration }
         guard myGeneration == currentGen1 else {
-            NSLog("CastManager: castNewTrack '%@' abandoned - superseded by generation %d", track.title, currentGen1)
+            NSLog("CastManager: castNewTrack '%@' abandoned - superseded by generation %d", trackToCast.title, currentGen1)
             // Only clear loading state if we OWN it (pendingCastTrack still matches our track)
             // If another track with loading state superseded us, it set its own pendingCastTrack and we shouldn't clear
             await MainActor.run {
-                if needsLoadingState && pendingCastTrack?.id == track.id {
+                if needsLoadingState && pendingCastTrack?.id == trackToCast.id {
                     isCastingTrackChange = false
                     pendingCastTrack = nil
                     NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
@@ -931,55 +1152,61 @@ class CastManager {
         
         // Get artwork URL if available
         var artworkURL: URL?
-        if let plexTrack = findPlexTrack(matching: track) {
+        if let plexTrack = findPlexTrack(matching: trackToCast) {
             artworkURL = PlexManager.shared.artworkURL(thumb: plexTrack.thumb)
-        } else if track.subsonicId != nil, let coverArtId = track.artworkThumb {
+        } else if trackToCast.subsonicId != nil, let coverArtId = trackToCast.artworkThumb {
             // Subsonic/Navidrome tracks have artwork via coverArt ID
             if let subsonicArtwork = SubsonicManager.shared.coverArtURL(coverArtId: coverArtId) {
                 artworkURL = rewriteLocalhostForCasting(subsonicArtwork)
             }
-        } else if track.jellyfinId != nil, let imageTag = track.artworkThumb {
+        } else if trackToCast.jellyfinId != nil, let imageTag = trackToCast.artworkThumb {
             // Jellyfin track - use server's image URL
-            if let jellyfinArtwork = JellyfinManager.shared.imageURL(itemId: track.jellyfinId!, imageTag: imageTag, size: 300) {
+            if let jellyfinArtwork = JellyfinManager.shared.imageURL(itemId: trackToCast.jellyfinId!, imageTag: imageTag, size: 300) {
                 artworkURL = rewriteLocalhostForCasting(jellyfinArtwork)
             }
-        } else if track.embyId != nil, let imageTag = track.artworkThumb {
+        } else if trackToCast.embyId != nil, let imageTag = trackToCast.artworkThumb {
             // Emby track - use server's image URL
-            if let embyArtwork = EmbyManager.shared.imageURL(itemId: track.embyId!, imageTag: imageTag, size: 300) {
+            if let embyArtwork = EmbyManager.shared.imageURL(itemId: trackToCast.embyId!, imageTag: imageTag, size: 300) {
                 artworkURL = rewriteLocalhostForCasting(embyArtwork)
             }
         }
 
         // Use effective content type (from track or upstream HEAD detection),
         // otherwise fall back to URL extension detection (works for Plex and local files)
-        let contentType = effectiveContentType ?? Self.detectAudioContentType(for: track.url)
+        let contentType = effectiveContentType ?? Self.detectAudioContentType(for: trackToCast.url)
 
         // For radio streams cast to Sonos, use x-rincon-mp3radio:// scheme (Fix 10)
         let finalCastURL = sonosRadioURL(for: castURL, device: session.device)
         
         let metadata = CastMetadata(
-            title: track.title,
-            artist: track.artist,
-            album: track.album,
+            title: trackToCast.title,
+            artist: trackToCast.artist,
+            album: trackToCast.album,
             artworkURL: artworkURL,
-            duration: track.duration,
+            duration: trackToCast.duration,
             contentType: contentType
         )
         
-        NSLog("CastManager: Casting new track '%@' to %@, contentType: %@", track.title, session.device.name, contentType)
-        
+        NSLog("CastManager: Casting new track '%@' to %@, contentType: %@", trackToCast.title, session.device.name, contentType)
+
         // Cast to the existing connected device
         // Wrap in do/catch to ensure loading state is cleared on failure
         do {
             switch session.device.type {
             case .chromecast:
+                // Reset flag before issuing loadMedia so the IDLE that Chromecast sends
+                // when a new track replaces the current one is treated as pre-playback.
+                await MainActor.run {
+                    NSLog("CastManager: castNewTrack Chromecast — resetting chromecastHasSeenActivePlayback to false")
+                    self.chromecastHasSeenActivePlayback = false
+                }
                 try await chromecastManager.cast(url: finalCastURL, metadata: metadata)
                 
             case .sonos, .dlnaTV:
                 try await upnpManager.cast(url: finalCastURL, metadata: metadata)
             }
         } catch {
-            NSLog("CastManager: castNewTrack '%@' failed: %@", track.title, error.localizedDescription)
+            NSLog("CastManager: castNewTrack '%@' failed: %@", trackToCast.title, error.localizedDescription)
             await clearLoadingState()
             throw error
         }
@@ -987,11 +1214,11 @@ class CastManager {
         // Check again after the network call - another track change may have started
         let currentGen2 = await MainActor.run { castTrackGeneration }
         guard myGeneration == currentGen2 else {
-            NSLog("CastManager: castNewTrack '%@' post-cast abandoned - superseded by generation %d", track.title, currentGen2)
+            NSLog("CastManager: castNewTrack '%@' post-cast abandoned - superseded by generation %d", trackToCast.title, currentGen2)
             // Only clear loading state if we OWN it (pendingCastTrack still matches our track)
             // If another track with loading state superseded us, it set its own pendingCastTrack and we shouldn't clear
             await MainActor.run {
-                if needsLoadingState && pendingCastTrack?.id == track.id {
+                if needsLoadingState && pendingCastTrack?.id == trackToCast.id {
                     isCastingTrackChange = false
                     pendingCastTrack = nil
                     NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
@@ -1004,10 +1231,10 @@ class CastManager {
         await MainActor.run {
             // Final check on main thread before updating UI
             guard myGeneration == self.castTrackGeneration else {
-                NSLog("CastManager: castNewTrack '%@' UI update abandoned - superseded", track.title)
+                NSLog("CastManager: castNewTrack '%@' UI update abandoned - superseded", trackToCast.title)
                 // Only clear loading state if we OWN it (pendingCastTrack still matches our track)
                 // If another track with loading state superseded us, it set its own pendingCastTrack and we shouldn't clear
-                if needsLoadingState && self.pendingCastTrack?.id == track.id {
+                if needsLoadingState && self.pendingCastTrack?.id == trackToCast.id {
                     self.isCastingTrackChange = false
                     self.pendingCastTrack = nil
                     NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": false])
@@ -1033,9 +1260,17 @@ class CastManager {
                 resolvedAudioEngine.startCastPlayback(from: 0)
             }
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
+
+            // Close the video player if it was showing a video cast that this audio cast supersedes.
+            NSLog("CastManager: castNewTrack audio succeeded — closing video player if casting video")
+            WindowManager.shared.closeVideoPlayerForCastTransition()
         }
+        }
+
+        await MainActor.run { self.inflight = task }
+        try await task.value
     }
-    
+
     // MARK: - Video Casting
     
     /// Get video-capable cast devices (excludes Sonos which is audio-only)
@@ -1325,7 +1560,7 @@ class CastManager {
     ///   - title: Display title
     ///   - device: Target cast device (must support video)
     ///   - startPosition: Optional position to resume from (seconds)
-    func castLocalVideo(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0) async throws {
+    func castLocalVideo(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil) async throws {
         guard device.supportsVideo else {
             throw CastError.unsupportedDevice
         }
@@ -1352,7 +1587,7 @@ class CastManager {
             artist: nil,
             album: nil,
             artworkURL: nil,
-            duration: nil,  // Could extract with AVAsset if needed
+            duration: duration,
             contentType: contentType,
             mediaType: mediaType
         )
@@ -1360,11 +1595,68 @@ class CastManager {
         NSLog("CastManager: Casting local video '%@' to %@", title, device.name)
         try await cast(to: device, url: serverURL, metadata: metadata, startPosition: startPosition)
     }
+
+    /// Cast a generic video URL to a video-capable device.
+    /// Handles both local files and already-resolved remote video streams.
+    func castVideoURL(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil, contentType: String? = nil) async throws {
+        guard device.supportsVideo else {
+            throw CastError.unsupportedDevice
+        }
+
+        // Local file registration must happen after teardown, because stopCasting()
+        // unregisters files from the embedded HTTP server. Use stopCastingAndAwaitTeardown()
+        // so the session is fully gone before cast() runs — prevents double-teardown.
+        if activeSession != nil {
+            await stopCastingAndAwaitTeardown()
+        }
+
+        let castURL: URL
+        if url.isFileURL {
+            if !LocalMediaServer.shared.isRunning {
+                try await LocalMediaServer.shared.start()
+            }
+
+            guard let serverURL = LocalMediaServer.shared.registerFile(url) else {
+                throw CastError.localServerError("Could not register file with local media server")
+            }
+            castURL = serverURL
+        } else if url.scheme == "http" || url.scheme == "https" {
+            if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: url) {
+                castURL = rewriteLocalhostForCasting(tokenizedURL)
+            } else {
+                castURL = rewriteLocalhostForCasting(url)
+            }
+        } else {
+            throw CastError.invalidURL
+        }
+
+        let detected = detectContentType(for: url)
+        let effectiveContentType = contentType ?? (detected.mediaType == .video ? detected.contentType : "video/mp4")
+        let metadata = CastMetadata(
+            title: title,
+            artist: nil,
+            album: nil,
+            artworkURL: nil,
+            duration: duration,
+            contentType: effectiveContentType,
+            mediaType: .video
+        )
+
+        NSLog("CastManager: Casting video URL '%@' to %@", title, device.name)
+        try await cast(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
+    }
     
     /// Stop casting and disconnect
     func stopCasting() async {
-        NSLog("CastManager: Stopping casting")
-        
+        NSLog("CastManager: stopCasting — currentCast=%@ chromecastSession=%@ upnpSession=%@",
+              String(describing: currentCast),
+              chromecastManager.activeSession.map { $0.device.name } ?? "nil",
+              upnpManager.activeSession.map { $0.device.name } ?? "nil")
+
+        // Reset flag so the next cast's initial IDLE is treated as pre-playback
+        NSLog("CastManager: stopCasting — resetting chromecastHasSeenActivePlayback to false")
+        chromecastHasSeenActivePlayback = false
+
         // Stop Sonos polling and topology refresh
         stopSonosPolling()
         stopTopologyRefresh()
@@ -1385,38 +1677,45 @@ class CastManager {
             }
         }
         
+        // Capture media type NOW before disconnect sets activeSession = nil.
+        // The cleanup block below needs this — currentCast returns .none after disconnect.
+        let wasVideoCast = currentCast == .video
+
         if chromecastManager.activeSession != nil {
             chromecastManager.stop()
+            // Brief pause so the STOP command is delivered before the socket is closed.
+            // Without this, connection.cancel() races with the outbound STOP bytes and
+            // the Chromecast never processes the command (leaves video paused on screen).
+            try? await Task.sleep(nanoseconds: 200_000_000)
             chromecastManager.disconnect()
         }
-        
+
         if upnpManager.activeSession != nil {
             try? await upnpManager.stop()
             await upnpManager.disconnect()
         }
-        
+
         // Clear Sonos room selection
         selectedSonosRooms.removeAll()
-        
+
         // Unregister all files from local media server
         LocalMediaServer.shared.unregisterAll()
-        
+
         // Clear casting state
         await MainActor.run {
             // Stop video cast update timer
             self.stopVideoCastUpdateTimer()
-            
-            // Only clear video-specific state if we were video casting
-            if self.isVideoCasting {
+
+            // Use wasVideoCast (captured before disconnect) — currentCast is .none by now
+            if wasVideoCast {
                 // Clear video cast state
-                self.isVideoCasting = false
                 self.videoCastTitle = nil
                 self.videoCastDuration = 0
-                self.videoCastStartPosition = 0
-                self.videoCastStartDate = nil
+                self.activeSession?.position = 0
+                self.activeSession?.playbackStartDate = nil
+                self.activeSession?.isPlaying = false
                 self.isVideoCastPlaying = false
-                self.videoCastHasReceivedStatus = false
-                
+
                 // Clear video title from main window
                 WindowManager.shared.mainWindowController?.clearVideoTrackInfo()
             }
@@ -1426,7 +1725,35 @@ class CastManager {
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
         }
     }
-    
+
+    /// Stop casting and wait for the session to be fully torn down
+    /// Used to ensure clean state transitions when switching media types
+    func stopCastingAndAwaitTeardown() async {
+        NSLog("CastManager: stopCastingAndAwaitTeardown - waiting for session nil (currentCast=%@)",
+              String(describing: currentCast))
+        await stopCasting()
+
+        // Wait for activeSession to become nil
+        var attempts = 0
+        let maxAttempts = 100  // 5 seconds max (100 * 50ms)
+        while activeSession != nil && attempts < maxAttempts {
+            try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms
+            attempts += 1
+        }
+
+        if activeSession != nil {
+            NSLog("CastManager: stopCastingAndAwaitTeardown timeout after %dms - session still active", attempts * 50)
+        } else {
+            NSLog("CastManager: stopCastingAndAwaitTeardown complete after %dms", attempts * 50)
+        }
+
+        // Brief delay for Chromecast to fully close the previous session.
+        // Without this, a rapid reconnect may reuse the same transport and skip CEC wake.
+        if chromecastManager.activeSession == nil && upnpManager.activeSession == nil {
+            try? await Task.sleep(nanoseconds: 400_000_000)  // 400ms
+        }
+    }
+
     /// Synchronous stop for app termination - stops cast devices without MainActor work
     /// This avoids deadlock when called from applicationWillTerminate on the main thread
     func stopCastingSync() {
@@ -1457,20 +1784,9 @@ class CastManager {
         // Skip MainActor state cleanup - app is terminating anyway
     }
     
-    /// Handle stop button based on active device type
-    /// - Sonos/DLNA: Stop keeps session active (can play another track)
-    /// - Chromecast: Stop disconnects completely
+    /// Handle stop button — always ends the cast session for all device types
     func handleStopForActiveDevice() async {
-        if let session = activeSession {
-            switch session.device.type {
-            case .sonos, .dlnaTV:
-                // Sonos/DLNA: Stop but keep session active
-                try? await stopPlayback()
-            case .chromecast:
-                // Chromecast: Full disconnect on stop
-                await stopCasting()
-            }
-        }
+        await stopCasting()
     }
     
     /// Stop playback on the cast device but keep the session active
@@ -1486,9 +1802,10 @@ class CastManager {
         
         // Reset time to 0 but keep cast session active
         await MainActor.run {
-            if self.isVideoCasting {
-                self.videoCastStartPosition = 0
-                self.videoCastStartDate = nil
+            if case .video = self.currentCast {
+                self.activeSession?.position = 0
+                self.activeSession?.playbackStartDate = nil
+                self.activeSession?.isPlaying = false
                 self.isVideoCastPlaying = false
             } else {
                 // Reset time to 0 but keep cast session active
@@ -1510,12 +1827,13 @@ class CastManager {
         
         // Update local time tracking
         await MainActor.run {
-            if self.isVideoCasting {
+            if case .video = self.currentCast {
                 // Save current position before pausing
-                if let startDate = self.videoCastStartDate {
-                    self.videoCastStartPosition += Date().timeIntervalSince(startDate)
+                if let startDate = self.activeSession?.playbackStartDate {
+                    self.activeSession?.position += Date().timeIntervalSince(startDate)
                 }
-                self.videoCastStartDate = nil
+                self.activeSession?.playbackStartDate = nil
+                self.activeSession?.isPlaying = false
                 self.isVideoCastPlaying = false
             } else {
                 WindowManager.shared.audioEngine.pauseCastPlayback()
@@ -1535,8 +1853,9 @@ class CastManager {
         
         // Update local time tracking
         await MainActor.run {
-            if self.isVideoCasting {
-                self.videoCastStartDate = Date()
+            if case .video = self.currentCast {
+                self.activeSession?.playbackStartDate = Date()
+                self.activeSession?.isPlaying = true
                 self.isVideoCastPlaying = true
             } else {
                 WindowManager.shared.audioEngine.resumeCastPlayback()
@@ -1556,10 +1875,10 @@ class CastManager {
         
         // Update video cast tracking
         await MainActor.run {
-            if self.isVideoCasting {
-                self.videoCastStartPosition = time
-                if self.isVideoCastPlaying {
-                    self.videoCastStartDate = Date()
+            if case .video = self.currentCast {
+                self.activeSession?.position = time
+                if self.activeSession?.isPlaying == true {
+                    self.activeSession?.playbackStartDate = Date()
                 }
             }
         }
@@ -1607,6 +1926,7 @@ class CastManager {
     
     /// Start polling Sonos for playback state and position
     private func startSonosPolling() {
+        NSLog("CastManager: Starting Sonos polling (5s interval)")
         stopSonosPolling()
         DispatchQueue.main.async {
             self.sonosPollingTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
@@ -1615,9 +1935,12 @@ class CastManager {
             RunLoop.main.add(self.sonosPollingTimer!, forMode: .common)
         }
     }
-    
+
     /// Stop Sonos playback state polling
     private func stopSonosPolling() {
+        if sonosPollingTimer != nil {
+            NSLog("CastManager: Stopping Sonos polling")
+        }
         sonosPollingTimer?.invalidate()
         sonosPollingTimer = nil
     }
@@ -1625,21 +1948,33 @@ class CastManager {
     /// Poll Sonos transport state and sync position with AudioEngine
     private func pollSonosState() {
         Task {
-            guard let result = await upnpManager.pollSonosPlaybackState() else { return }
-            
+            guard let result = await upnpManager.pollSonosPlaybackState() else {
+                NSLog("CastManager: Sonos poll failed — no result")
+                return
+            }
+
             await MainActor.run {
                 let engine = WindowManager.shared.audioEngine
-                guard engine.isCastingActive else { return }
+                guard engine.isCastingActive else {
+                    NSLog("CastManager: Sonos poll result ignored — isCastingActive=false")
+                    return
+                }
+                NSLog("CastManager: Sonos poll — state=%@ t=%.1f", result.state, result.position)
                 
                 switch result.state {
                 case "PLAYING":
-                    // Sync position with actual Sonos position to prevent drift
+                    // Sync position from Sonos and reset playbackStartDate so currentTime interpolates
+                    self.activeSession?.position = result.position
+                    self.activeSession?.playbackStartDate = Date()
+                    self.activeSession?.isPlaying = true
                     engine.updateCastPosition(
                         currentTime: result.position,
                         isPlaying: true,
                         isBuffering: false
                     )
                 case "PAUSED_PLAYBACK":
+                    self.activeSession?.playbackStartDate = nil
+                    self.activeSession?.isPlaying = false
                     if engine.state == .playing {
                         engine.pauseCastPlayback()
                         NSLog("CastManager: Sonos reported PAUSED (external pause detected)")
@@ -1648,7 +1983,7 @@ class CastManager {
                     NSLog("CastManager: Sonos reported %@ - playback ended externally", result.state)
                     // Don't auto-disconnect, just update state so UI reflects reality
                     engine.pauseCastPlayback()
-                    NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
+                    CastManager.postNotificationOnMain(name: Self.playbackStateDidChangeNotification)
                 case "TRANSITIONING":
                     // Sonos is loading/buffering - don't change state, just wait
                     break
@@ -1802,7 +2137,12 @@ class CastManager {
 
     /// Map common audio MIME types to their extension equivalent for format checking.
     private static func contentTypeToExtension(_ ct: String) -> String {
-        switch ct {
+        let mimeType = ct
+            .split(separator: ";", maxSplits: 1)
+            .first
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() } ?? ""
+
+        switch mimeType {
         case "audio/x-aiff", "audio/aiff":  return "aiff"
         case "audio/alac", "audio/x-alac":  return "alac"
         case "audio/flac", "audio/x-flac":  return "flac"
@@ -1811,16 +2151,23 @@ class CastManager {
         }
     }
 
+    private static func sonosFormatExtension(for track: Track) -> String {
+        let urlExtension = track.url.pathExtension.lowercased()
+        if !urlExtension.isEmpty { return urlExtension }
+        return track.contentType.map(contentTypeToExtension) ?? ""
+    }
+
+    private static func sonosLosslessExtension(for track: Track) -> String? {
+        let ext = sonosFormatExtension(for: track)
+        return sonosLosslessExtensions.contains(ext) ? ext : nil
+    }
+
     /// Returns false if the track format is known to be unsupported by Sonos.
     /// Falls back to `track.contentType` when the URL has no file extension
     /// (e.g. server-streamed tracks from Subsonic/Jellyfin/Emby/Plex).
     static func isSonosCompatible(_ track: Track, sampleRateOverride: Int? = nil,
                                    allowUnknownSampleRate: Bool = false) -> Bool {
-        var ext = track.url.pathExtension.lowercased()
-
-        if ext.isEmpty, let ct = track.contentType {
-            ext = contentTypeToExtension(ct)
-        }
+        let ext = sonosFormatExtension(for: track)
 
         if sonosUnsupportedExtensions.contains(ext) { return false }
 
@@ -1919,6 +2266,54 @@ class CastManager {
         return components.url ?? url
     }
 }
+
+#if DEBUG
+extension CastManager {
+    var debugDiscoveredDevices: [CastDevice]? {
+        get { _debugDiscoveredDevices }
+        set { _debugDiscoveredDevices = newValue }
+    }
+
+    func debugSetVideoCastingStateForTesting(_ isVideoCasting: Bool) {
+        if isVideoCasting {
+            if _debugActiveSession == nil {
+                let dummyDevice = CastDevice(id: "debug-device", name: "Test TV",
+                                            type: .chromecast, address: "127.0.0.1", port: 8009)
+                let session = CastSession(device: dummyDevice)
+                session.state = .casting
+                _debugActiveSession = session
+            }
+            _debugActiveSession?.metadata = CastMetadata(
+                title: _debugActiveSession?.metadata?.title ?? "Test Video",
+                mediaType: .video
+            )
+        } else {
+            _debugActiveSession = nil
+        }
+    }
+
+    func debugSetActiveCastSessionForTesting(device: CastDevice, startPosition: TimeInterval, duration: TimeInterval) {
+        let session = CastSession(device: device)
+        session.state = .casting
+        session.position = startPosition
+        session.duration = duration
+        session.playbackStartDate = Date()
+        session.metadata = CastMetadata(title: "Test Video", mediaType: .video)
+        _debugActiveSession = session
+    }
+
+    func debugSetAudioCastSessionForTesting(device: CastDevice) {
+        let session = CastSession(device: device)
+        session.state = .casting
+        session.metadata = CastMetadata(title: "Test Audio Track", mediaType: .audio)
+        _debugActiveSession = session
+    }
+
+    func debugSetActiveSessionStateForTesting(_ state: CastState) {
+        _debugActiveSession?.state = state
+    }
+}
+#endif
 
 // MARK: - PlexManager Extension for Casting
 

@@ -63,7 +63,8 @@ enum StreamingTrackResolver {
                 plexRatingKey: plexTrack.id,
                 plexServerId: serverId ?? PlexManager.shared.currentServer?.id,
                 artworkThumb: plexTrack.thumb,
-                genre: plexTrack.genre
+                genre: plexTrack.genre,
+                contentType: PlexManager.inferAudioContentType(from: media)
             )
         } catch {
             NSLog("StreamingTrackResolver: failed Plex track refresh %@: %@", ratingKey, error.localizedDescription)

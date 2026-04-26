@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import NullPlayerCore
 
 /// Handles PIN-based authentication with plex.tv
 class PlexAuthClient {

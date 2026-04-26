@@ -1262,10 +1262,10 @@ class UPnPManager {
         
         activeSession = CastSession(device: device)
         activeSession?.state = .connected
-        
-        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
     }
-    
+
     /// Disconnect from current device (async - waits for stop to complete)
     func disconnect() async {
         guard let session = activeSession else { return }
@@ -1276,26 +1276,26 @@ class UPnPManager {
         try? await stop()
         
         activeSession = nil
-        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+        CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
     }
-    
+
     /// Synchronous disconnect for app termination (skips stop command to avoid blocking)
     func disconnectSync() {
         guard activeSession != nil else { return }
         NSLog("UPnPManager: Disconnecting (sync for termination)")
         activeSession = nil
-        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+        CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
     }
-    
+
     /// Clear the active session without sending transport commands.
     /// Used during coordinator transfer where the old device is already standalone.
     func disconnectSession() {
         guard activeSession != nil else { return }
         NSLog("UPnPManager: Clearing session (no stop command)")
         activeSession = nil
-        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+        CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
     }
-    
+
     /// Cast media to the connected device
     func cast(url: URL, metadata: CastMetadata) async throws {
         guard let session = activeSession,
@@ -1334,11 +1334,11 @@ class UPnPManager {
         session.state = .casting
         session.currentURL = url
         session.metadata = metadata
-        
-        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
-        NotificationCenter.default.post(name: CastManager.playbackStateDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
+        CastManager.postNotificationOnMain(name: CastManager.playbackStateDidChangeNotification)
     }
-    
+
     /// Stop playback (keeps session in casting state for easy resume)
     func stop() async throws {
         guard let session = activeSession,
@@ -1356,8 +1356,8 @@ class UPnPManager {
         
         // Keep session in .casting state so user can play another track
         // Don't clear currentURL/metadata - they stay until a new track is cast
-        
-        NotificationCenter.default.post(name: CastManager.playbackStateDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.playbackStateDidChangeNotification)
     }
     
     /// Pause playback (fire-and-forget for Sonos, blocking for DLNA TVs)
@@ -1546,8 +1546,16 @@ class UPnPManager {
     /// Poll Sonos transport state and position (called periodically during Sonos casting)
     /// Returns (transportState, position, duration) or nil if not connected
     func pollSonosPlaybackState() async -> (state: String, position: TimeInterval, duration: TimeInterval)? {
-        guard let transportState = try? await getTransportState() else { return nil }
+        guard let session = activeSession else {
+            NSLog("UPnPManager: pollSonosPlaybackState — no active session")
+            return nil
+        }
+        guard let transportState = try? await getTransportState() else {
+            NSLog("UPnPManager: pollSonosPlaybackState — getTransportState failed for %@", session.device.name)
+            return nil
+        }
         guard let posInfo = try? await getPositionInfo() else {
+            NSLog("UPnPManager: pollSonosPlaybackState — getPositionInfo failed for %@, returning state only", session.device.name)
             return (state: transportState, position: 0, duration: 0)
         }
         return (state: transportState, position: posInfo.position, duration: posInfo.duration)

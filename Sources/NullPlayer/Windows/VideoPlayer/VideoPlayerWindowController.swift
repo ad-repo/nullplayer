@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 @preconcurrency import KSPlayer
 
 /// Window controller for video playback with KSPlayer and skinned UI
@@ -28,6 +29,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Current video title
     private(set) var currentTitle: String?
+
+    /// Lightweight video track used by the main window for artwork lookup.
+    private(set) var currentArtworkTrack: Track?
     
     /// Current Plex movie (if playing Plex content)
     private var currentPlexMovie: PlexMovie?
@@ -76,30 +80,29 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Whether we're actively casting video from this player
     private(set) var isCastingVideo: Bool = false
-    
-    /// The device we're casting to (if any)
-    private var castTargetDevice: CastDevice?
-    
-    /// Cast playback position tracking
-    private var castStartPosition: TimeInterval = 0
-    private var castPlaybackStartDate: Date?
-    
-    /// Duration of the video being cast (stored from local player before casting)
-    private(set) var castDuration: TimeInterval = 0
-    
+
+    /// True only when THIS window initiated the current cast (not a library-menu cast)
+    private var didInitiateCast: Bool = false
+
     /// Timer for updating main window with cast progress
     private var castUpdateTimer: Timer?
-    
-    /// Whether we've received the first status update from Chromecast (prevents UI flash before sync)
-    private var castHasReceivedStatus: Bool = false
-    
+
+    /// Duration of the video being cast (read from activeSession)
+    var castDuration: TimeInterval {
+        CastManager.shared.activeSession?.duration ?? 0
+    }
+
     /// Current cast playback time (interpolated from start position)
     var castCurrentTime: TimeInterval {
-        if let startDate = castPlaybackStartDate {
-            let elapsed = Date().timeIntervalSince(startDate)
-            return min(castStartPosition + elapsed, castDuration)
+        guard let session = CastManager.shared.activeSession else {
+            return 0
         }
-        return castStartPosition
+        if let startDate = session.playbackStartDate {
+            let elapsed = Date().timeIntervalSince(startDate)
+            let current = session.position + elapsed
+            return session.duration > 0 ? min(current, session.duration) : current
+        }
+        return session.position
     }
     
     /// Start the cast update timer (updates main window with progress)
@@ -110,9 +113,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             guard let self = self, self.isCastingVideo else { return }
             // Don't update UI until we've received first status from Chromecast
             // This prevents showing stale/incorrect time before sync (especially for 4K on slow networks)
-            guard self.castHasReceivedStatus else { return }
+            guard CastManager.shared.activeSession?.state != .loaded else { return }
             let current = self.castCurrentTime
-            let duration = self.castDuration
+            let duration = CastManager.shared.activeSession?.duration ?? 0
             WindowManager.shared.videoDidUpdateTime(current: current, duration: duration)
         }
         // Don't fire immediately - wait for first Chromecast status update
@@ -124,64 +127,76 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         castUpdateTimer = nil
     }
     
-    /// Handle Chromecast media status updates for position syncing
+    /// Handle Chromecast media status updates for playback analytics
     @objc private func handleChromecastMediaStatusUpdate(_ notification: Notification) {
         guard isCastingVideo else { return }
         guard let status = notification.userInfo?["status"] as? CastMediaStatus else { return }
-        
+
         let isPlaying = status.playerState == .playing
         let isBuffering = status.playerState == .buffering
-        
-        // Mark that we've received status from Chromecast (enables UI updates)
-        let isFirstStatus = !castHasReceivedStatus
-        castHasReceivedStatus = true
-        
-        // Sync position from Chromecast
-        castStartPosition = status.currentTime
-        
+
+        // CastManager handles all session state and first-status UI updates.
+        // VPWC only drives playback analytics.
         if isBuffering {
-            // Pause interpolation during buffering
-            castPlaybackStartDate = nil
             pausePlaybackAnalytics()
         } else if isPlaying {
-            // Playing - start/restart interpolation from this position
-            castPlaybackStartDate = Date()
             resumePlaybackAnalytics()
         } else {
-            // Paused or idle
-            castPlaybackStartDate = nil
             pausePlaybackAnalytics()
-        }
-        
-        // Update duration if provided
-        if let duration = status.duration, duration > 0 {
-            castDuration = duration
-        }
-        
-        // On first status, immediately update UI with correct position
-        if isFirstStatus {
-            WindowManager.shared.videoDidUpdateTime(current: castCurrentTime, duration: castDuration)
         }
     }
     
     /// Reset cast state when starting a new video
     /// This ensures the player doesn't think it's still casting from a previous session
     private func resetCastState() {
-        if isCastingVideo {
-            stopCastUpdateTimer()
-            // Unsubscribe from Chromecast status updates
-            NotificationCenter.default.removeObserver(
-                self,
-                name: ChromecastManager.mediaStatusDidUpdateNotification,
-                object: nil
-            )
-            isCastingVideo = false
-            castTargetDevice = nil
-            castStartPosition = 0
-            castPlaybackStartDate = nil
-            castHasReceivedStatus = false
-            castDuration = 0
-        }
+        guard isCastingVideo else { return }
+        clearVideoCastState()
+    }
+
+    private func clearVideoCastState() {
+        stopCastUpdateTimer()
+        NotificationCenter.default.removeObserver(
+            self,
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil
+        )
+        isCastingVideo = false
+        didInitiateCast = false
+        videoPlayerView.updateCastState(isPlaying: false, deviceName: nil)
+    }
+
+    /// Close the video player window when an audio cast supersedes an active video cast.
+    /// Does NOT call CastManager.stopCasting() — the audio cast is already running.
+    func closeForCastTransition() {
+        NSLog("VideoPlayerWindowController: closeForCastTransition — closing video player (superseded by audio cast)")
+        guard !isClosing else { return }
+        isClosing = true
+
+        // Clear cast flags before close() so windowWillClose skips the cast-stop block
+        stopCastUpdateTimer()
+        isCastingVideo = false
+        didInitiateCast = false
+
+        // Stop local KSPlayer and clear content state
+        videoPlayerView.stop()
+        isPlaying = false
+        currentTitle = nil
+        currentArtworkTrack = nil
+        currentPlexMovie = nil
+        currentPlexEpisode = nil
+        currentPlexRatingKey = nil
+        currentJellyfinMovie = nil
+        currentJellyfinEpisode = nil
+        currentEmbyMovie = nil
+        currentEmbyEpisode = nil
+
+        WindowManager.shared.videoPlaybackDidStop()
+        close()
+    }
+
+    @objc private func handleCastSessionChange() {
+        guard case .none = CastManager.shared.currentCast else { return }
+        clearVideoCastState()
     }
     
     /// Callback for when video finishes playing (for playlist integration)
@@ -260,6 +275,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         
         setupVideoView()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleCastSessionChange),
+            name: CastManager.sessionDidChangeNotification,
+            object: nil
+        )
         window.delegate = self
     }
     
@@ -565,6 +586,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isFromPlaylist = onVideoFinishedForPlaylist != nil
         
         currentTitle = title
+        currentArtworkTrack = Track(url: url, title: title, mediaType: .video)
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -618,6 +640,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         let headers = PlexManager.shared.streamingHeaders
         
         currentTitle = track.displayTitle
+        currentArtworkTrack = track
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
@@ -676,6 +699,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
         currentTitle = movie.title
+        currentArtworkTrack = PlexManager.shared.convertToTrack(movie)
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
@@ -733,6 +757,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil  // Clear local URL when playing Plex content
 
         currentTitle = title
+        currentArtworkTrack = PlexManager.shared.convertToTrack(episode)
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: true, plexHeaders: headers)
         showWindow(nil)
@@ -787,6 +812,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil
 
         currentTitle = movie.title
+        currentArtworkTrack = JellyfinManager.shared.convertToTrack(movie)
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -843,6 +869,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil
 
         currentTitle = title
+        currentArtworkTrack = JellyfinManager.shared.convertToTrack(episode)
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -893,6 +920,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil
 
         currentTitle = movie.title
+        currentArtworkTrack = EmbyManager.shared.convertToTrack(movie)
         window?.title = movie.title
         videoPlayerView.play(url: url, title: movie.title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -949,6 +977,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         currentLocalURL = nil
 
         currentTitle = title
+        currentArtworkTrack = EmbyManager.shared.convertToTrack(episode)
         window?.title = title
         videoPlayerView.play(url: url, title: title, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -1000,6 +1029,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
         currentTitle = track.displayTitle
+        currentArtworkTrack = track
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -1050,6 +1080,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isFromPlaylist = onVideoFinishedForPlaylist != nil
 
         currentTitle = track.displayTitle
+        currentArtworkTrack = track
         window?.title = track.displayTitle
         videoPlayerView.play(url: track.url, title: track.displayTitle, isPlexURL: false, plexHeaders: nil)
         showWindow(nil)
@@ -1063,6 +1094,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Stop playback
     func stop() {
+        NSLog("VideoPlayerWindowController: stop() — isCastingVideo=%d isClosing=%d", isCastingVideo ? 1 : 0, isClosing ? 1 : 0)
         guard !isClosing else { return }
         isClosing = true
         
@@ -1081,15 +1113,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             }
             // Wait up to 2 seconds for cast to stop
             _ = semaphore.wait(timeout: .now() + 2.0)
-            
+
             stopCastUpdateTimer()
             isCastingVideo = false
-            castTargetDevice = nil
-            castStartPosition = 0
-            castPlaybackStartDate = nil
-            castDuration = 0
+            didInitiateCast = false
         }
-        
+
         // Report stop to Plex/Jellyfin/Emby if playing server content
         if isPlexContent {
             let position = wasCasting ? castPosition : videoPlayerView.currentPlaybackTime
@@ -1108,6 +1137,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         videoPlayerView.stop()
         isPlaying = false
         currentTitle = nil
+        currentArtworkTrack = nil
         currentPlexMovie = nil
         currentPlexEpisode = nil
         currentPlexRatingKey = nil
@@ -1121,24 +1151,27 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Toggle play/pause
     func togglePlayPause() {
+        NSLog("VideoPlayerWindowController: togglePlayPause — isCastingVideo=%d", isCastingVideo ? 1 : 0)
         if isCastingVideo {
             toggleCastPlayPause()
         } else {
             videoPlayerView.togglePlayPause()
         }
     }
-    
+
     /// Skip forward
     func skipForward(_ seconds: TimeInterval = 10) {
+        NSLog("VideoPlayerWindowController: skipForward %.0fs — isCastingVideo=%d", seconds, isCastingVideo ? 1 : 0)
         if isCastingVideo {
             seekCastRelative(seconds)
         } else {
             videoPlayerView.skipForward(seconds)
         }
     }
-    
+
     /// Skip backward
     func skipBackward(_ seconds: TimeInterval = 10) {
+        NSLog("VideoPlayerWindowController: skipBackward %.0fs — isCastingVideo=%d", seconds, isCastingVideo ? 1 : 0)
         if isCastingVideo {
             seekCastRelative(-seconds)
         } else {
@@ -1172,29 +1205,32 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     /// Toggle play/pause on the cast device
     private func toggleCastPlayPause() {
+        NSLog("VideoPlayerWindowController: toggleCastPlayPause — isPlaying=%d sessionState=%@",
+              isPlaying ? 1 : 0,
+              String(describing: CastManager.shared.activeSession?.state))
         Task {
             do {
                 if CastManager.shared.activeSession?.state == .casting {
                     if isPlaying {
+                        NSLog("VideoPlayerWindowController: Sending cast pause")
                         try await CastManager.shared.pause()
                         await MainActor.run {
-                            // Save current position before pausing
-                            if let startDate = castPlaybackStartDate {
-                                castStartPosition += Date().timeIntervalSince(startDate)
-                            }
-                            castPlaybackStartDate = nil
                             isPlaying = false
-                            videoPlayerView.updateCastState(isPlaying: false, deviceName: castTargetDevice?.name)
+                            let device = CastManager.shared.activeSession?.device
+                            videoPlayerView.updateCastState(isPlaying: false, deviceName: device?.name)
                         }
                     } else {
+                        NSLog("VideoPlayerWindowController: Sending cast resume")
                         try await CastManager.shared.resume()
                         await MainActor.run {
-                            // Resume time tracking
-                            castPlaybackStartDate = Date()
                             isPlaying = true
-                            videoPlayerView.updateCastState(isPlaying: true, deviceName: castTargetDevice?.name)
+                            let device = CastManager.shared.activeSession?.device
+                            videoPlayerView.updateCastState(isPlaying: true, deviceName: device?.name)
                         }
                     }
+                } else {
+                    NSLog("VideoPlayerWindowController: toggleCastPlayPause skipped — sessionState=%@",
+                          String(describing: CastManager.shared.activeSession?.state))
                 }
             } catch {
                 NSLog("VideoPlayerWindowController: Cast toggle failed: %@", error.localizedDescription)
@@ -1206,15 +1242,14 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     private func seekCastRelative(_ seconds: TimeInterval) {
         Task {
             do {
-                let newPosition = max(0, min(castCurrentTime + seconds, castDuration))
-                try await CastManager.shared.seek(to: newPosition)
-                
-                // Update local tracking
-                await MainActor.run {
-                    castStartPosition = newPosition
-                    castPlaybackStartDate = isPlaying ? Date() : nil
+                let duration = CastManager.shared.activeSession?.duration ?? 0
+                let requestedPosition = max(0, castCurrentTime + seconds)
+                let newPosition = duration > 0 ? min(requestedPosition, duration) : requestedPosition
+                if duration <= 0 {
+                    NSLog("VideoPlayerWindowController: Cast relative seek without known duration (requested %.1f)", requestedPosition)
                 }
-                
+                try await CastManager.shared.seek(to: newPosition)
+                // CastManager has updated activeSession with new position
                 NSLog("VideoPlayerWindowController: Cast seek to %.1f (relative %.1f)", newPosition, seconds)
             } catch {
                 NSLog("VideoPlayerWindowController: Cast seek failed: %@", error.localizedDescription)
@@ -1226,15 +1261,14 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     private func seekCast(to time: TimeInterval) {
         Task {
             do {
-                let clampedTime = max(0, min(time, castDuration))
-                try await CastManager.shared.seek(to: clampedTime)
-                
-                // Update local tracking
-                await MainActor.run {
-                    castStartPosition = clampedTime
-                    castPlaybackStartDate = isPlaying ? Date() : nil
+                let duration = CastManager.shared.activeSession?.duration ?? 0
+                let requestedTime = max(0, time)
+                let clampedTime = duration > 0 ? min(requestedTime, duration) : requestedTime
+                if duration <= 0 {
+                    NSLog("VideoPlayerWindowController: Cast seek without known duration (requested %.1f)", requestedTime)
                 }
-                
+                try await CastManager.shared.seek(to: clampedTime)
+                // CastManager has updated activeSession with new position
                 NSLog("VideoPlayerWindowController: Cast seek to %.1f", clampedTime)
             } catch {
                 NSLog("VideoPlayerWindowController: Cast seek failed: %@", error.localizedDescription)
@@ -1254,7 +1288,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         let menu = NSMenu()
         
         // If currently casting, show stop option first
-        if isCastingVideo, let device = castTargetDevice {
+        if isCastingVideo, let device = CastManager.shared.activeSession?.device {
             let castingItem = NSMenuItem(title: "Casting to \(device.name)", action: nil, keyEquivalent: "")
             castingItem.isEnabled = false
             menu.addItem(castingItem)
@@ -1283,12 +1317,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 headerItem.isEnabled = false
                 menu.addItem(headerItem)
                 for device in chromecasts {
-                    let title = device.id == castTargetDevice?.id ? "  ✓ \(device.name)" : "  \(device.name)"
+                    let activeId = CastManager.shared.activeSession?.device.id
+                    let title = device.id == activeId ? "  ✓ \(device.name)" : "  \(device.name)"
                     let item = NSMenuItem(title: title, action: #selector(castToDevice(_:)), keyEquivalent: "")
                     item.target = self
                     item.representedObject = device
                     // Disable if already casting to this device
-                    item.isEnabled = device.id != castTargetDevice?.id
+                    item.isEnabled = device.id != activeId
                     menu.addItem(item)
                 }
             }
@@ -1299,12 +1334,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 headerItem.isEnabled = false
                 menu.addItem(headerItem)
                 for device in dlnaTVs {
-                    let title = device.id == castTargetDevice?.id ? "  ✓ \(device.name)" : "  \(device.name)"
+                    let activeId = CastManager.shared.activeSession?.device.id
+                    let title = device.id == activeId ? "  ✓ \(device.name)" : "  \(device.name)"
                     let item = NSMenuItem(title: title, action: #selector(castToDevice(_:)), keyEquivalent: "")
                     item.target = self
                     item.representedObject = device
                     // Disable if already casting to this device
-                    item.isEnabled = device.id != castTargetDevice?.id
+                    item.isEnabled = device.id != activeId
                     menu.addItem(item)
                 }
             }
@@ -1320,10 +1356,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     }
     
     @objc private func castToDevice(_ sender: NSMenuItem) {
-        guard let device = sender.representedObject as? CastDevice else { return }
-        
+        let selectedDevice = sender.representedObject as? CastDevice
+        guard let device = selectedDevice ?? CastManager.shared.preferredVideoCastDevice else { return }
+
         // Prevent dual casting - check if already casting from context menu
-        if CastManager.shared.isVideoCasting {
+        if case .video = CastManager.shared.currentCast, !isCastingVideo {
             NSLog("VideoPlayerWindowController: Cannot cast - already casting from context menu")
             let alert = NSAlert()
             alert.messageText = "Already Casting"
@@ -1332,72 +1369,83 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             alert.runModal()
             return
         }
-        
+
+        let startPosition = videoPlayerView.currentPlaybackTime
         Task {
             do {
-                // Capture position and duration before pausing local playback
-                let currentPosition = videoPlayerView.currentPlaybackTime
-                let videoDuration = videoPlayerView.totalPlaybackDuration
-                
-                // Pause local playback (don't stop - we want to resume later)
-                videoPlayerView.togglePlayPause()  // Will pause if playing
-                
-                // Cast based on content type
-                if let movie = currentPlexMovie {
-                    try await CastManager.shared.castPlexMovie(movie, to: device, startPosition: currentPosition)
-                } else if let episode = currentPlexEpisode {
-                    try await CastManager.shared.castPlexEpisode(episode, to: device, startPosition: currentPosition)
-                } else if let movie = currentJellyfinMovie {
-                    try await CastManager.shared.castJellyfinMovie(movie, to: device, startPosition: currentPosition)
-                } else if let episode = currentJellyfinEpisode {
-                    try await CastManager.shared.castJellyfinEpisode(episode, to: device, startPosition: currentPosition)
-                } else if let movie = currentEmbyMovie {
-                    try await CastManager.shared.castEmbyMovie(movie, to: device, startPosition: currentPosition)
-                } else if let episode = currentEmbyEpisode {
-                    try await CastManager.shared.castEmbyEpisode(episode, to: device, startPosition: currentPosition)
-                } else if let url = currentURL {
-                    // Local video file
-                    try await CastManager.shared.castLocalVideo(url, title: currentTitle ?? "Video", to: device, startPosition: currentPosition)
-                }
-                
-                // Update casting state and time tracking
-                await MainActor.run {
-                    self.isCastingVideo = true
-                    self.castTargetDevice = device
-                    self.isPlaying = true
-                    self.castStartPosition = currentPosition
-                    // Don't set castPlaybackStartDate yet - wait for PLAYING status from Chromecast
-                    self.castPlaybackStartDate = nil
-                    self.castHasReceivedStatus = false
-                    self.castDuration = videoDuration
-                    self.videoPlayerView.updateCastState(isPlaying: true, deviceName: device.name)
-                    
-                    // Subscribe to Chromecast status updates for position syncing
-                    NotificationCenter.default.addObserver(
-                        self,
-                        selector: #selector(self.handleChromecastMediaStatusUpdate),
-                        name: ChromecastManager.mediaStatusDidUpdateNotification,
-                        object: nil
-                    )
-                    
-                    self.startCastUpdateTimer()
-                }
-                
-                NSLog("VideoPlayerWindowController: Video cast started to %@ at %.1f / %.1f", device.name, currentPosition, videoDuration)
+                try await performCast(to: device, startPosition: startPosition, savePreference: selectedDevice != nil)
             } catch {
                 NSLog("VideoPlayerWindowController: Video cast failed: %@", error.localizedDescription)
-                // Show error alert
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Cast Failed"
                     alert.informativeText = error.localizedDescription
                     alert.alertStyle = .warning
                     alert.runModal()
+                    self.clearVideoCastState()
                 }
             }
         }
     }
-    
+
+    /// Core cast initiation logic shared by manual cast and auto-cast.
+    /// pauseLocal: false when the caller has already stopped local playback (auto-cast path).
+    private func performCast(to device: CastDevice, startPosition: TimeInterval, savePreference: Bool = false, pauseLocal: Bool = true) async throws {
+        let videoDuration = await MainActor.run { videoPlayerView.totalPlaybackDuration }
+
+        // Pause local playback before handing off to Chromecast.
+        // Skip for auto-cast path: the caller already called stop() synchronously.
+        if pauseLocal {
+            await MainActor.run { videoPlayerView.togglePlayPause() }
+        }
+
+        // Route to the appropriate CastManager method based on loaded content
+        if let movie = await MainActor.run(resultType: PlexMovie?.self, body: { self.currentPlexMovie }) {
+            try await CastManager.shared.castPlexMovie(movie, to: device, startPosition: startPosition)
+        } else if let episode = await MainActor.run(resultType: PlexEpisode?.self, body: { self.currentPlexEpisode }) {
+            try await CastManager.shared.castPlexEpisode(episode, to: device, startPosition: startPosition)
+        } else if let movie = await MainActor.run(resultType: JellyfinMovie?.self, body: { self.currentJellyfinMovie }) {
+            try await CastManager.shared.castJellyfinMovie(movie, to: device, startPosition: startPosition)
+        } else if let episode = await MainActor.run(resultType: JellyfinEpisode?.self, body: { self.currentJellyfinEpisode }) {
+            try await CastManager.shared.castJellyfinEpisode(episode, to: device, startPosition: startPosition)
+        } else if let movie = await MainActor.run(resultType: EmbyMovie?.self, body: { self.currentEmbyMovie }) {
+            try await CastManager.shared.castEmbyMovie(movie, to: device, startPosition: startPosition)
+        } else if let episode = await MainActor.run(resultType: EmbyEpisode?.self, body: { self.currentEmbyEpisode }) {
+            try await CastManager.shared.castEmbyEpisode(episode, to: device, startPosition: startPosition)
+        } else if let url = await MainActor.run(resultType: URL?.self, body: { self.currentURL }) {
+            try await CastManager.shared.castLocalVideo(
+                url,
+                title: await MainActor.run { self.currentTitle ?? "Video" },
+                to: device,
+                startPosition: startPosition,
+                duration: videoDuration > 0 ? videoDuration : nil
+            )
+        }
+
+        // Update casting state and time tracking
+        await MainActor.run {
+            self.isCastingVideo = true
+            self.didInitiateCast = true
+            self.isPlaying = true
+            self.videoPlayerView.updateCastState(isPlaying: true, deviceName: device.name)
+
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(self.handleChromecastMediaStatusUpdate),
+                name: ChromecastManager.mediaStatusDidUpdateNotification,
+                object: nil
+            )
+
+            self.startCastUpdateTimer()
+        }
+
+        if savePreference {
+            CastManager.shared.setPreferredVideoCastDevice(device.id)
+        }
+
+        NSLog("VideoPlayerWindowController: Video cast started to %@ at %.1f / %.1f", device.name, startPosition, videoDuration)
+    }
+
     @objc private func stopCasting() {
         Task {
             // Capture current cast position before stopping
@@ -1406,13 +1454,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             await CastManager.shared.stopCasting()
             
             await MainActor.run {
-                self.stopCastUpdateTimer()
-                self.isCastingVideo = false
-                self.castTargetDevice = nil
-                self.castStartPosition = 0
-                self.castPlaybackStartDate = nil
-                self.castDuration = 0
-                self.videoPlayerView.updateCastState(isPlaying: false, deviceName: nil)
+                self.clearVideoCastState()
                 
                 // Resume local playback from where casting left off
                 if resumePosition > 0 {
@@ -1444,12 +1486,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         // Stop cast update timer
         stopCastUpdateTimer()
+        // sessionDidChangeNotification is intentionally NOT removed here.
+        // WindowManager reuses this controller, so removing it on close would leave
+        // handleCastSessionChange() unregistered for subsequent cast sessions.
+        // deinit removes it when the controller is finally deallocated.
+        NSLog("VideoPlayerWindowController: windowWillClose — keeping sessionDidChangeNotification observer (controller reused)")
+        NotificationCenter.default.removeObserver(
+            self,
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil
+        )
         
         // Only do cleanup if not already handled by stop()
         if !isClosing {
-            // Stop casting if active (exit movie on TV)
-            // Use semaphore to wait for cast stop to complete
-            if isCastingVideo {
+            // Stop casting only if this window initiated the cast.
+            // Casts launched from a library context menu are owned by CastManager; closing an
+            // unrelated player window must not interrupt them.
+            if case .video = CastManager.shared.currentCast, didInitiateCast {
                 let semaphore = DispatchSemaphore(value: 0)
                 Task {
                     await CastManager.shared.stopCasting()
@@ -1458,12 +1511,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 }
                 // Wait up to 2 seconds for cast to stop
                 _ = semaphore.wait(timeout: .now() + 2.0)
-                
+
                 isCastingVideo = false
-                castTargetDevice = nil
-                castStartPosition = 0
-                castPlaybackStartDate = nil
-                castDuration = 0
+                didInitiateCast = false
             }
             
             // Report stop to Plex/Jellyfin/Emby if playing server content
@@ -1496,6 +1546,19 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         removeKeyboardMonitor()
         isClosing = false  // Reset for potential reuse
     }
+
+    deinit {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: CastManager.sessionDidChangeNotification,
+            object: nil
+        )
+        NotificationCenter.default.removeObserver(
+            self,
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil
+        )
+    }
     
     func windowDidBecomeKey(_ notification: Notification) {
         videoPlayerView.updateActiveState(true)
@@ -1520,3 +1583,44 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 }
+
+#if DEBUG
+extension VideoPlayerWindowController {
+    struct DebugCastStateSnapshot {
+        let isCastingVideo: Bool
+        let hasTargetDevice: Bool
+        let castStartPosition: TimeInterval
+        let hasPlaybackStartDate: Bool
+        let castState: CastState
+        let castDuration: TimeInterval
+    }
+
+    func debugSetCurrentTitleForTesting(_ title: String?) {
+        currentTitle = title
+    }
+
+    func debugSetCastStateForTesting(device: CastDevice, startPosition: TimeInterval, duration: TimeInterval) {
+        // For testing, set up the cast session in CastManager and mark this controller as casting
+        CastManager.shared.debugSetActiveCastSessionForTesting(device: device, startPosition: startPosition, duration: duration)
+        isCastingVideo = true
+    }
+
+    func debugSetDidInitiateCastForTesting(_ value: Bool) {
+        didInitiateCast = value
+    }
+
+    var debugDidInitiateCast: Bool { didInitiateCast }
+
+    var debugCastStateSnapshot: DebugCastStateSnapshot {
+        let session = CastManager.shared.activeSession
+        return DebugCastStateSnapshot(
+            isCastingVideo: isCastingVideo,
+            hasTargetDevice: session?.device != nil,
+            castStartPosition: session?.position ?? 0,
+            hasPlaybackStartDate: session?.playbackStartDate != nil,
+            castState: session?.state ?? .idle,
+            castDuration: session?.duration ?? 0
+        )
+    }
+}
+#endif

@@ -1,4 +1,5 @@
 import Foundation
+import NullPlayerCore
 
 enum CLISourceError: LocalizedError {
     case noSource(String? = nil)
