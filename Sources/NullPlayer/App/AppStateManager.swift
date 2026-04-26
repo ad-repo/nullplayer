@@ -12,7 +12,7 @@ import NullPlayerCore
 /// - **Sweet Fades**: enabled, duration
 /// - **EQ**: enabled, auto, preamp, active-layout bands (10 classic / 21 modern)
 /// - **Playlist**: all tracks (local, Plex, Subsonic, Jellyfin, radio) with metadata
-/// - **Playback position**: current track index, position in seconds
+/// - **Playback state**: playlist only; the current track is intentionally not saved
 /// - **Skins**: timeDisplayMode, isAlwaysOnTop, double size mode (modern UI)
 /// - **Skin**: classic custom skin path, modern skin name
 /// - **ProjectM**: preset index, fullscreen state
@@ -514,13 +514,15 @@ class AppStateManager {
             eqPreamp: engine.getPreamp(),
             eqBands: (0..<engine.eqConfiguration.bandCount).map { engine.getEQBand($0) },
             
-            // Playback state - save all tracks with metadata for restoration
+            // Playback state - save all tracks with metadata for restoration,
+            // but do not save the selected/current track. Setting the index to -1
+            // keeps startup from loading a track solely because state was restored.
             playlistTracks: engine.playlist.map { track in
                 SavedTrack.from(track)
             },
-            currentTrackIndex: engine.currentIndex,
-            playbackPosition: engine.currentTime,
-            wasPlaying: engine.state == .playing,
+            currentTrackIndex: -1,
+            playbackPosition: 0,
+            wasPlaying: false,
             
             // UI preferences
             timeDisplayMode: wm.timeDisplayMode.rawValue,
@@ -793,8 +795,8 @@ class AppStateManager {
             return
         }
         
-        NSLog("AppStateManager: Restoring playlist state - %d tracks, trackIndex: %d, position: %.1fs",
-              state.playlistTracks.count, state.currentTrackIndex, state.playbackPosition)
+        NSLog("AppStateManager: Restoring playlist state - %d tracks, trackIndex: %d",
+              state.playlistTracks.count, state.currentTrackIndex)
         
         // Build the complete track list in original order.
         // Local and radio tracks are fully resolved immediately.
@@ -899,27 +901,12 @@ class AppStateManager {
         engine.setPlaylistTracks(allTracks)
         NSLog("AppStateManager: Set playlist with %d tracks (%d skipped)", allTracks.count, skippedIndices.count)
         
-        // Adjust current track index to account for any skipped tracks
-        var adjustedIndex = state.currentTrackIndex
-        if !skippedIndices.isEmpty {
-            // Count how many tracks before the saved index were skipped
-            let skippedBefore = skippedIndices.filter { $0 < state.currentTrackIndex }.count
-            adjustedIndex -= skippedBefore
-        }
-        
-        // Determine if the current track is a streaming placeholder (real URL not yet available)
-        let currentIsPlaceholder = adjustedIndex >= 0
-            && adjustedIndex < allTracks.count
-            && allTracks[adjustedIndex].isStreamingPlaceholder
-        // Select the current track for display without loading or playing
-        if adjustedIndex >= 0 && adjustedIndex < allTracks.count {
-            engine.selectTrackForDisplay(at: adjustedIndex)
-            NSLog("AppStateManager: Selected track at index %d for display", adjustedIndex)
-        }
+        // Do not restore a current track. Even selecting a track for display updates
+        // audioEngine.currentTrack, which causes observers like the waveform window
+        // to load that song on startup.
         
         // Fetch streaming tracks asynchronously and replace placeholders
         if !placeholderIndicesToResolve.isEmpty {
-            let savedCurrentIndex = adjustedIndex
             Task {
                 var replacements: [(Track, Int)] = []  // (realTrack, playlistIndex)
                 for playlistIndex in placeholderIndicesToResolve {
@@ -934,19 +921,10 @@ class AppStateManager {
 
                 // Replace placeholder tracks with real ones on the main thread
                 await MainActor.run {
-                    var replacedCurrentTrack = false
                     for (realTrack, playlistIndex) in resolvedReplacements {
                         engine.replaceTrack(at: playlistIndex, with: realTrack)
-                        if playlistIndex == savedCurrentIndex {
-                            replacedCurrentTrack = true
-                        }
                     }
                     NSLog("AppStateManager: Replaced %d streaming track placeholders", resolvedReplacements.count)
-                    
-                    // If the current track was a streaming placeholder, update display now that we have the real URL
-                    if replacedCurrentTrack && savedCurrentIndex >= 0 {
-                        engine.selectTrackForDisplay(at: savedCurrentIndex)
-                    }
                 }
             }
         }
