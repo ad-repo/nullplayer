@@ -407,11 +407,14 @@ class ChromecastManager: CastSessionControllerDelegate {
         guard let session = activeSession else { return }
         
         NSLog("ChromecastManager: Stopping playback on %@", session.device.name)
-        
-        // Stop status polling
+
+        // Stop status polling, stop media, then close the receiver app.
+        // stopApp() sends STOP to receiver-0 which closes the Default Media Receiver
+        // and triggers HDMI-CEC to dismiss the cast from the TV screen.
         sessionController?.stopStatusPolling()
         sessionController?.stop()
-        
+        sessionController?.stopApp()
+
         session.state = .connected
         session.currentURL = nil
         session.metadata = nil

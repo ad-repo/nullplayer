@@ -106,7 +106,7 @@ final class CastingTests: XCTestCase {
         XCTAssertTrue(before.hasTargetDevice)
         XCTAssertGreaterThan(before.castStartPosition, 0)
         XCTAssertTrue(before.hasPlaybackStartDate)
-        XCTAssertTrue(before.castHasReceivedStatus)
+        XCTAssertEqual(before.castState, .casting)
         XCTAssertGreaterThan(before.castDuration, 0)
 
         CastManager.shared.debugSetVideoCastingStateForTesting(false)
@@ -117,10 +117,126 @@ final class CastingTests: XCTestCase {
         XCTAssertFalse(after.hasTargetDevice)
         XCTAssertEqual(after.castStartPosition, 0)
         XCTAssertFalse(after.hasPlaybackStartDate)
-        XCTAssertFalse(after.castHasReceivedStatus)
+        XCTAssertEqual(after.castState, .idle)
         XCTAssertEqual(after.castDuration, 0)
 
         controller.close()
+    }
+
+    // MARK: - currentCast enum
+
+    func testCurrentCastIsNoneWhenNoActiveSession() {
+        CastManager.shared.debugSetVideoCastingStateForTesting(false)
+        if case .none = CastManager.shared.currentCast { } else {
+            XCTFail("Expected currentCast == .none when no active session")
+        }
+    }
+
+    func testCurrentCastIsVideoWhenSessionHasVideoMediaType() {
+        CastManager.shared.debugSetVideoCastingStateForTesting(true)
+        if case .video = CastManager.shared.currentCast { } else {
+            XCTFail("Expected currentCast == .video for video session")
+        }
+    }
+
+    func testCurrentCastIsAudioWhenSessionHasAudioMediaType() {
+        let device = CastDevice(id: "audio-device", name: "Kitchen Sonos", type: .sonos, address: "192.168.1.5", port: 1400)
+        CastManager.shared.debugSetAudioCastSessionForTesting(device: device)
+        if case .audio = CastManager.shared.currentCast { } else {
+            XCTFail("Expected currentCast == .audio for audio session")
+        }
+    }
+
+    func testCurrentCastSwitchesToNoneAfterSessionCleared() {
+        CastManager.shared.debugSetVideoCastingStateForTesting(true)
+        if case .video = CastManager.shared.currentCast { } else {
+            XCTFail("Expected .video before clear")
+        }
+
+        CastManager.shared.debugSetVideoCastingStateForTesting(false)
+        if case .none = CastManager.shared.currentCast { } else {
+            XCTFail("Expected .none after clear")
+        }
+    }
+
+    // MARK: - .loaded state semantics
+
+    func testLoadedStateIsDistinctFromCastingAndIdle() {
+        XCTAssertNotEqual(CastState.loaded, CastState.casting)
+        XCTAssertNotEqual(CastState.loaded, CastState.idle)
+    }
+
+    func testSessionInLoadedStateIsRecognizedAsNotYetReceivingStatus() {
+        let device = CastDevice(id: "cc-device", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetActiveCastSessionForTesting(device: device, startPosition: 0, duration: 120)
+        CastManager.shared.debugSetActiveSessionStateForTesting(.loaded)
+
+        XCTAssertEqual(CastManager.shared.activeSession?.state, .loaded,
+                       "Session should remain in .loaded state until first status update")
+    }
+
+    func testSessionTransitionsFromLoadedToCastingAfterFirstStatus() {
+        let device = CastDevice(id: "cc-device", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetActiveCastSessionForTesting(device: device, startPosition: 0, duration: 120)
+        CastManager.shared.debugSetActiveSessionStateForTesting(.loaded)
+
+        XCTAssertEqual(CastManager.shared.activeSession?.state, .loaded)
+
+        // Simulate state transition (as handleChromecastMediaStatusUpdate does on first status)
+        CastManager.shared.debugSetActiveSessionStateForTesting(.casting)
+        XCTAssertEqual(CastManager.shared.activeSession?.state, .casting)
+    }
+
+    // MARK: - Session notification
+
+    func testSessionDidChangeNotificationFiresOnDebugStateChange() {
+        let expectation = expectation(description: "sessionDidChange posted")
+        let observer = NotificationCenter.default.addObserver(
+            forName: CastManager.sessionDidChangeNotification,
+            object: nil,
+            queue: nil
+        ) { _ in expectation.fulfill() }
+
+        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+
+        wait(for: [expectation], timeout: 1.0)
+        NotificationCenter.default.removeObserver(observer)
+    }
+
+    // MARK: - windowWillClose ownership
+
+    func testVPWCDidInitiateCastFlagIsSetWhenCastStateIsConfigured() {
+        let device = CastDevice(id: "tv", name: "TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        let controller = VideoPlayerWindowController()
+
+        // debugSetCastStateForTesting sets isCastingVideo but NOT didInitiateCast (library-menu path)
+        controller.debugSetCastStateForTesting(device: device, startPosition: 0, duration: 120)
+        XCTAssertFalse(controller.debugDidInitiateCast,
+                       "Library-menu casts must not set didInitiateCast on the player window")
+
+        // Explicitly marking this window as the initiator simulates the player-window cast path
+        controller.debugSetDidInitiateCastForTesting(true)
+        XCTAssertTrue(controller.debugDidInitiateCast)
+
+        controller.close()
+    }
+
+    func testVPWCWithDidInitiateCastFalseSessionRemainsAfterWindowClose() {
+        let castManager = CastManager.shared
+        let device = CastDevice(id: "tv", name: "TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        castManager.debugSetActiveCastSessionForTesting(device: device, startPosition: 0, duration: 120)
+
+        let controller = VideoPlayerWindowController()
+        // isCastingVideo NOT set — controller did not initiate this cast
+        controller.debugSetDidInitiateCastForTesting(false)
+
+        XCTAssertFalse(controller.debugDidInitiateCast)
+        XCTAssertNotNil(castManager.activeSession)
+
+        controller.close()
+
+        // Session should remain alive — this controller didn't initiate it
+        XCTAssertNotNil(castManager.activeSession)
     }
 
     func testExtensionlessHighResolutionFlacIsNotSonosCompatible() {

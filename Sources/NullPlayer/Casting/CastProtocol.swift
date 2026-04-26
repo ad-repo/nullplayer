@@ -395,7 +395,7 @@ class CastSessionController {
     
     func stop() {
         let (tid, msid) = withLock { (transportId, mediaSessionId) }
-        
+
         guard let tid = tid else {
             NSLog("CastSessionController: stop() - no transportId, cannot send STOP command")
             return
@@ -404,13 +404,24 @@ class CastSessionController {
             NSLog("CastSessionController: stop() - no mediaSessionId, cannot send STOP command")
             return
         }
-        
+
         NSLog("CastSessionController: Sending STOP command with mediaSessionId: %d", msid)
         sendMessage(namespace: .media, payload: [
             "type": "STOP",
             "mediaSessionId": msid,
             "requestId": nextRequestId()
         ], to: tid)
+    }
+
+    /// Close the receiver app on the Chromecast, dismissing it from the TV screen.
+    /// Sends STOP to receiver-0 (not the media session) which causes the Default Media
+    /// Receiver to exit and the TV to switch away from the Chromecast input via HDMI-CEC.
+    func stopApp() {
+        NSLog("CastSessionController: Sending STOP to receiver-0 (closing app)")
+        sendMessage(namespace: .receiver, payload: [
+            "type": "STOP",
+            "requestId": nextRequestId()
+        ], to: "receiver-0")
     }
     
     func seek(to time: TimeInterval) {
@@ -590,20 +601,21 @@ class CastSessionController {
             break
             
         case "RECEIVER_STATUS":
-            if let status = json["status"] as? [String: Any],
-               let apps = status["applications"] as? [[String: Any]],
-               let app = apps.first,
-               let tid = app["transportId"] as? String {
-                
-                let handler = withLock { () -> ((String?) -> Void)? in
-                    self.transportId = tid
-                    let h = self.transportIdCompletion
-                    self.transportIdCompletion = nil
-                    return h
+            if let status = json["status"] as? [String: Any] {
+                let apps = status["applications"] as? [[String: Any]] ?? []
+                if let app = apps.first, let tid = app["transportId"] as? String {
+                    let handler = withLock { () -> ((String?) -> Void)? in
+                        self.transportId = tid
+                        let h = self.transportIdCompletion
+                        self.transportIdCompletion = nil
+                        return h
+                    }
+                    NSLog("CastSessionController: Got transportId: %@", tid)
+                    handler?(tid)
+                } else {
+                    // No applications running — receiver app was closed (response to stopApp())
+                    NSLog("CastSessionController: RECEIVER_STATUS — no applications running (app closed)")
                 }
-                
-                NSLog("CastSessionController: Got transportId: %@", tid)
-                handler?(tid)
             }
             
         case "MEDIA_STATUS":

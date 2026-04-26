@@ -1546,8 +1546,16 @@ class UPnPManager {
     /// Poll Sonos transport state and position (called periodically during Sonos casting)
     /// Returns (transportState, position, duration) or nil if not connected
     func pollSonosPlaybackState() async -> (state: String, position: TimeInterval, duration: TimeInterval)? {
-        guard let transportState = try? await getTransportState() else { return nil }
+        guard let session = activeSession else {
+            NSLog("UPnPManager: pollSonosPlaybackState — no active session")
+            return nil
+        }
+        guard let transportState = try? await getTransportState() else {
+            NSLog("UPnPManager: pollSonosPlaybackState — getTransportState failed for %@", session.device.name)
+            return nil
+        }
         guard let posInfo = try? await getPositionInfo() else {
+            NSLog("UPnPManager: pollSonosPlaybackState — getPositionInfo failed for %@, returning state only", session.device.name)
             return (state: transportState, position: 0, duration: 0)
         }
         return (state: transportState, position: posInfo.position, duration: posInfo.duration)

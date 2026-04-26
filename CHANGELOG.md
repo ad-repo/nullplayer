@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.20.2
+
+### Bug Fixes — Casting
+
+#### Chromecast
+
+- **Second cast no longer fails after a normal stop** — `chromecastHasSeenActivePlayback` was not reset in `stopCasting()`, so the initial IDLE that Chromecast sends when a new media session is created was misread as "media ended" on any cast after the first. The flag is now reset at the top of `stopCasting()` as well as at every cast start.
+- **`chromecastHasSeenActivePlayback` reset moved before `LOAD`** — the flag reset now happens before `chromecastManager.cast()` is called in both `CastManager.cast()` and `CastManager.castNewTrack()`, eliminating a race where the initial IDLE could arrive and be processed before the MainActor reset block executed.
+- **Audio cast play controls now work** — the `handleChromecastMediaStatusUpdate` handler was gated on `isCasting` (requires `.casting` state), but Chromecast audio casts start in `.loaded` state and only transition on the first status update. The gate now checks `currentCast == .audio` so controls respond immediately.
+- **Audio cast seek bar and position tracking fixed** — `activeSession.position` and `activeSession.playbackStartDate` were never set for audio casts. Both are now updated on each status update (PLAYING sets `playbackStartDate = Date()`, PAUSED/BUFFERING clears it), matching the video cast tracking pattern.
+- **Seek bar no longer advances while audio cast is paused** — `playbackStartDate` is now cleared when the Chromecast reports a non-PLAYING state, freezing the interpolation timer.
+- **Audio IDLE guard added** — the audio status handler now has the same IDLE guard as the video handler: IDLE is ignored until `chromecastHasSeenActivePlayback` is true, and treated as "cast ended" only after active playback has been observed.
+- **Stop clears cast from TV screen** — `ChromecastManager.stop()` now calls `stopApp()` after stopping the media session. `stopApp()` sends STOP to `receiver-0` on the receiver namespace, closing the Default Media Receiver app and triggering HDMI-CEC to dismiss the cast overlay from the TV.
+- **STOP command reliably delivered before disconnect** — a 200ms sleep is now inserted between `chromecastManager.stop()` and `chromecastManager.disconnect()` in `stopCasting()`. Without it, `connection.cancel()` raced with the outbound STOP bytes and the Chromecast never processed the command, leaving video paused on screen.
+- **Video cast cleanup (`clearVideoTrackInfo`) now always runs** — `wasVideoCast` was captured after `activeSession` was set to nil, so `currentCast` returned `.none` by the time the cleanup block checked it. The flag is now captured before disconnect.
+- **Video player closes automatically when switching to audio cast** — when `castNewTrack` or `cast()` successfully starts an audio cast while the video player window is open from a video cast, the video player now closes via `closeForCastTransition()`. This prevents stale video controls from being usable after the video session has ended. The video player is closed without calling `CastManager.stopCasting()`.
+
+#### Sonos / All Devices
+
+- **Sonos seek bar and position tracking fixed** — `activeSession.position` and `activeSession.playbackStartDate` were not set at Sonos cast start or updated during polling. Both are now initialized at cast start and updated on each PLAYING poll, enabling correct time interpolation in the main window.
+- **Sonos seek bar no longer advances while paused** — `playbackStartDate` is now cleared when the poll reports `PAUSED_PLAYBACK`.
+- **Stop button ends the cast session** — `handleStopForActiveDevice` now calls `await stopCasting()` for all device types. Previously Sonos only called `stopPlayback()`, leaving the session alive and keeping the cast UI active.
+
+### Improvements — Casting
+
+- **Comprehensive debug logging added to all casting paths** — `CastManager`, `ChromecastManager`, `UPnPManager`, `AudioEngine`, `VideoPlayerWindowController`, and `MainWindowView` all log entry, state, and decision points for cast-related operations. Every transition of `chromecastHasSeenActivePlayback` is logged. Sonos poll failures log the specific failure reason (no session, transport state fetch failure, position info failure) instead of silently returning nil.
+
 ## 0.20.1
 
 ### Improvements
