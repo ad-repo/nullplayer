@@ -210,30 +210,27 @@ class PlaylistView: NSView {
             return
         }
 
-        guard isShadeMode || playlistMarqueeLayer == nil else {
-            stopDisplayTimer()
-            return
-        }
-
         let engine = WindowManager.shared.audioEngine
         let currentIndex = engine.currentIndex
 
-        // Check if current track changed - reset marquee if so
-        if currentIndex != lastCurrentIndex {
-            lastCurrentIndex = currentIndex
-            marqueeOffset = 0
-            updateCurrentTrackTextWidth()
-        }
-
-        // Advance marquee offset if text needs scrolling
-        // Scroll speed: ~24 pixels per second at 8Hz = 3 pixels per tick
-        let cycleWidth = currentTrackTextWidth + marqueeSeparatorWidth
-        if currentTrackTextWidth > 0 && cycleWidth > 0 {
-            marqueeOffset += 3
-            if marqueeOffset >= cycleWidth {
+        if isShadeMode || playlistMarqueeLayer == nil {
+            // Check if current track changed - reset marquee if so
+            if currentIndex != lastCurrentIndex {
+                lastCurrentIndex = currentIndex
                 marqueeOffset = 0
+                updateCurrentTrackTextWidth()
             }
-            setNeedsDisplayForListArea()
+
+            // Advance marquee offset if text needs scrolling
+            // Scroll speed: ~24 pixels per second at 8Hz = 3 pixels per tick
+            let cycleWidth = currentTrackTextWidth + marqueeSeparatorWidth
+            if currentTrackTextWidth > 0 && cycleWidth > 0 {
+                marqueeOffset += 3
+                if marqueeOffset >= cycleWidth {
+                    marqueeOffset = 0
+                }
+                setNeedsDisplayForListArea()
+            }
         }
 
         // Redraw for time updates if playing, otherwise stop timer to save CPU
@@ -241,6 +238,7 @@ class PlaylistView: NSView {
             setNeedsDisplayForListArea()
         } else if currentIndex < 0 || currentIndex >= engine.playlist.count {
             // No current track and not playing - stop the timer to save CPU
+            NSLog("PlaylistView: stopping display timer - no current track and no active playback")
             stopDisplayTimer()
         }
     }

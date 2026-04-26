@@ -729,6 +729,11 @@ class CastManager {
         // This prevents clock sync issues when buffering (especially for 4K on slow networks)
         let isVideo = metadata.mediaType == .video
         await MainActor.run {
+            let sessionDuration = metadata.duration ?? 0
+            self.activeSession?.duration = sessionDuration
+            NSLog("CastManager: Cast session timing initialized - mediaType=%@ duration=%.1f startPosition=%.1f",
+                  metadata.mediaType.rawValue, sessionDuration, startPosition)
+
             if isVideo {
                 self.videoCastTitle = metadata.title
                 self.videoCastDuration = metadata.duration ?? 0
@@ -1518,7 +1523,7 @@ class CastManager {
     ///   - title: Display title
     ///   - device: Target cast device (must support video)
     ///   - startPosition: Optional position to resume from (seconds)
-    func castLocalVideo(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0) async throws {
+    func castLocalVideo(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil) async throws {
         guard device.supportsVideo else {
             throw CastError.unsupportedDevice
         }
@@ -1545,7 +1550,7 @@ class CastManager {
             artist: nil,
             album: nil,
             artworkURL: nil,
-            duration: nil,  // Could extract with AVAsset if needed
+            duration: duration,
             contentType: contentType,
             mediaType: mediaType
         )

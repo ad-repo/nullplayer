@@ -175,6 +175,25 @@ final class CastingTests: XCTestCase {
                        "Session should remain in .loaded state until first status update")
     }
 
+    func testLoadedAudioCastCountsAsActiveForTrackRouting() {
+        let device = CastDevice(id: "cc-audio", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetAudioCastSessionForTesting(device: device)
+        CastManager.shared.debugSetActiveSessionStateForTesting(.loaded)
+
+        XCTAssertFalse(WindowManager.shared.audioEngine.isCastingActive)
+        XCTAssertTrue(WindowManager.shared.audioEngine.isAudioCastRoutingActive)
+        XCTAssertTrue(WindowManager.shared.audioEngine.isAnyCastingActive)
+    }
+
+    func testIdleAudioCastDoesNotCountAsActiveForTrackRouting() {
+        let device = CastDevice(id: "cc-audio", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetAudioCastSessionForTesting(device: device)
+        CastManager.shared.debugSetActiveSessionStateForTesting(.idle)
+
+        XCTAssertFalse(WindowManager.shared.audioEngine.isAudioCastRoutingActive)
+        XCTAssertFalse(WindowManager.shared.audioEngine.isAnyCastingActive)
+    }
+
     func testSessionTransitionsFromLoadedToCastingAfterFirstStatus() {
         let device = CastDevice(id: "cc-device", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
         CastManager.shared.debugSetActiveCastSessionForTesting(device: device, startPosition: 0, duration: 120)
@@ -217,6 +236,16 @@ final class CastingTests: XCTestCase {
         // Explicitly marking this window as the initiator simulates the player-window cast path
         controller.debugSetDidInitiateCastForTesting(true)
         XCTAssertTrue(controller.debugDidInitiateCast)
+
+        controller.close()
+    }
+
+    func testVideoCastCurrentTimeDoesNotClampToZeroWhenDurationUnknown() {
+        let device = CastDevice(id: "tv", name: "TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        let controller = VideoPlayerWindowController()
+        controller.debugSetCastStateForTesting(device: device, startPosition: 12.5, duration: 0)
+
+        XCTAssertGreaterThanOrEqual(controller.castCurrentTime, 12.5)
 
         controller.close()
     }

@@ -542,10 +542,18 @@ class AudioEngine {
         if AudioEngine.isHeadless { return false }
         return WindowManager.shared.isVideoCastingActive
     }
+
+    /// Whether an audio cast session should receive track changes.
+    /// Chromecast starts in .loaded before the first status promotes it to .casting.
+    var isAudioCastRoutingActive: Bool {
+        guard CastManager.shared.currentCast == .audio,
+              let state = CastManager.shared.activeSession?.state else { return false }
+        return state == .loaded || state == .casting
+    }
     
     /// Whether any casting (audio or video) is active
     var isAnyCastingActive: Bool {
-        isCastingActive || isVideoCastingActive
+        isAudioCastRoutingActive || isVideoCastingActive
     }
     
     // MARK: - Initialization
@@ -4966,8 +4974,9 @@ class AudioEngine {
         }
         
         // When casting local files, block rapid clicks - only accept if not already casting
-        if isCastingActive && CastManager.shared.isLocalFileCastInProgress() {
-            NSLog("AudioEngine: playTrack() blocked - local file cast in progress")
+        if isAudioCastRoutingActive && CastManager.shared.isLocalFileCastInProgress() {
+            NSLog("AudioEngine: playTrack() blocked - local file cast in progress (sessionState=%@)",
+                  String(describing: CastManager.shared.activeSession?.state))
             return
         }
         
@@ -4978,6 +4987,9 @@ class AudioEngine {
         // Use isAnyCastingActive so video-cast→audio-track routes through castNewTrack
         // (isCastingActive misses the .loaded phase where state != .casting yet)
         let wasCasting = isAnyCastingActive
+        if wasCasting && !isCastingActive && CastManager.shared.currentCast == .audio {
+            NSLog("AudioEngine: playTrack() routing through loaded audio cast session")
+        }
         
         currentIndex = index
         if shuffleEnabled {

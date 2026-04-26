@@ -99,7 +99,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
         if let startDate = session.playbackStartDate {
             let elapsed = Date().timeIntervalSince(startDate)
-            return min(session.position + elapsed, session.duration)
+            let current = session.position + elapsed
+            return session.duration > 0 ? min(current, session.duration) : current
         }
         return session.position
     }
@@ -1242,7 +1243,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         Task {
             do {
                 let duration = CastManager.shared.activeSession?.duration ?? 0
-                let newPosition = max(0, min(castCurrentTime + seconds, duration))
+                let requestedPosition = max(0, castCurrentTime + seconds)
+                let newPosition = duration > 0 ? min(requestedPosition, duration) : requestedPosition
+                if duration <= 0 {
+                    NSLog("VideoPlayerWindowController: Cast relative seek without known duration (requested %.1f)", requestedPosition)
+                }
                 try await CastManager.shared.seek(to: newPosition)
                 // CastManager has updated activeSession with new position
                 NSLog("VideoPlayerWindowController: Cast seek to %.1f (relative %.1f)", newPosition, seconds)
@@ -1257,7 +1262,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         Task {
             do {
                 let duration = CastManager.shared.activeSession?.duration ?? 0
-                let clampedTime = max(0, min(time, duration))
+                let requestedTime = max(0, time)
+                let clampedTime = duration > 0 ? min(requestedTime, duration) : requestedTime
+                if duration <= 0 {
+                    NSLog("VideoPlayerWindowController: Cast seek without known duration (requested %.1f)", requestedTime)
+                }
                 try await CastManager.shared.seek(to: clampedTime)
                 // CastManager has updated activeSession with new position
                 NSLog("VideoPlayerWindowController: Cast seek to %.1f", clampedTime)
@@ -1404,7 +1413,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         } else if let episode = await MainActor.run(resultType: EmbyEpisode?.self, body: { self.currentEmbyEpisode }) {
             try await CastManager.shared.castEmbyEpisode(episode, to: device, startPosition: startPosition)
         } else if let url = await MainActor.run(resultType: URL?.self, body: { self.currentURL }) {
-            try await CastManager.shared.castLocalVideo(url, title: await MainActor.run { self.currentTitle ?? "Video" }, to: device, startPosition: startPosition)
+            try await CastManager.shared.castLocalVideo(
+                url,
+                title: await MainActor.run { self.currentTitle ?? "Video" },
+                to: device,
+                startPosition: startPosition,
+                duration: videoDuration > 0 ? videoDuration : nil
+            )
         }
 
         // Update casting state and time tracking
