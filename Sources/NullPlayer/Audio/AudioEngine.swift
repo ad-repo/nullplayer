@@ -1656,8 +1656,12 @@ class AudioEngine {
             return
         }
 
-        // If audio casting is active, forward command to CastManager
-        if isCastingActive {
+        // If audio casting is active, forward command to CastManager.
+        // Use isAudioCastRoutingActive so the .loaded phase (before first status) is included.
+        if isAudioCastRoutingActive {
+            if !isCastingActive {
+                NSLog("AudioEngine.pause() - routing through .loaded audio cast session")
+            }
             NSLog("AudioEngine.pause() - forwarding to CastManager")
             Task {
                 do {
@@ -1859,17 +1863,18 @@ class AudioEngine {
             currentIndex = (currentIndex - 1 + playlist.count) % playlist.count
         }
         
-        // When casting, cast the new track instead of playing locally
-        if isCastingActive {
+        // When casting, cast the new track instead of playing locally.
+        // Use isAudioCastRoutingActive so the .loaded phase is included.
+        if isAudioCastRoutingActive {
             let track = playlist[currentIndex]
             let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
-            
+
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay
             if !isLocalFile {
                 currentTrack = track
             }
-            
+
             Task {
                 do {
                     try await CastManager.shared.castNewTrack(track)
@@ -1921,17 +1926,18 @@ class AudioEngine {
             currentIndex = (currentIndex + 1) % playlist.count
         }
         
-        // When casting, cast the new track instead of playing locally
-        if isCastingActive {
+        // When casting, cast the new track instead of playing locally.
+        // Use isAudioCastRoutingActive so the .loaded phase is included.
+        if isAudioCastRoutingActive {
             let track = playlist[currentIndex]
             let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
-            
+
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay
             if !isLocalFile {
                 currentTrack = track
             }
-            
+
             Task {
                 do {
                     try await CastManager.shared.castNewTrack(track)
@@ -2000,11 +2006,12 @@ class AudioEngine {
         
         currentIndex = newIndex
         
-        // When casting, cast the new track instead of playing locally
-        if isCastingActive {
+        // When casting, cast the new track instead of playing locally.
+        // Use isAudioCastRoutingActive so the .loaded phase is included.
+        if isAudioCastRoutingActive {
             let track = playlist[currentIndex]
             let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
-            
+
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay
             if !isLocalFile {

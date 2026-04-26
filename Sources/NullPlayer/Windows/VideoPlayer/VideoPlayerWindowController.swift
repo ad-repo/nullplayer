@@ -1486,11 +1486,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         // Stop cast update timer
         stopCastUpdateTimer()
-        NotificationCenter.default.removeObserver(
-            self,
-            name: CastManager.sessionDidChangeNotification,
-            object: nil
-        )
+        // sessionDidChangeNotification is intentionally NOT removed here.
+        // WindowManager reuses this controller, so removing it on close would leave
+        // handleCastSessionChange() unregistered for subsequent cast sessions.
+        // deinit removes it when the controller is finally deallocated.
+        NSLog("VideoPlayerWindowController: windowWillClose — keeping sessionDidChangeNotification observer (controller reused)")
         NotificationCenter.default.removeObserver(
             self,
             name: ChromecastManager.mediaStatusDidUpdateNotification,
