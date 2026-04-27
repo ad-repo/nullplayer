@@ -75,7 +75,7 @@ When the user stops casting Chromecast:
 
 1. `ChromecastManager.stop()` sends `STOP` to the **media session** — stops media but leaves the Default Media Receiver app running on the TV.
 2. `ChromecastManager.stopApp()` sends `STOP` to **`receiver-0`** (receiver namespace) — closes the Default Media Receiver app entirely, triggering HDMI-CEC to dismiss the cast overlay from the TV screen.
-3. A **200ms sleep** between `stop()` and `disconnect()` ensures STOP bytes flush before the socket is cancelled. Without this, `connection.cancel()` races with the outbound STOP bytes and the Chromecast never processes the command, leaving the video paused on screen.
+3. A **200 ms sleep** between `stop()` and `disconnect()` ensures STOP bytes flush before the socket is cancelled. Without this, `connection.cancel()` races with the outbound STOP bytes and the Chromecast never processes the command, leaving the video paused on screen.
 
 ```swift
 // In ChromecastManager.stop():
@@ -84,7 +84,7 @@ sessionController?.stopApp()   // STOP to receiver-0
 
 // In CastManager.stopCasting():
 chromecastManager.stop()
-try? await Task.sleep(nanoseconds: 200_000_000)  // 200ms flush delay
+try? await Task.sleep(nanoseconds: 200_000_000)  // 200 ms flush delay
 chromecastManager.disconnect()
 ```
 
@@ -160,7 +160,7 @@ public enum CurrentCast: Sendable { case none; case audio; case video }
 - `.audio` — `activeSession.metadata?.mediaType == .audio` (or nil)
 - `.video` — `activeSession.metadata?.mediaType == .video`
 
-Use `currentCast` — not `isCastingVideo` or any window flag — to branch on what is casting. All `WindowManager`, `ContextMenuBuilder`, and `VideoPlayerWindowController` branches use `CastManager.shared.currentCast`.
+Use `currentCast` for the overall audio/video branch. Video controls still need to account for both initiation paths: the player-window path uses `VideoPlayerWindowController.isCastingVideo`, while library/menu casts may have no player window and should route through `CastManager.shared.isVideoCasting` / `currentCast == .video`.
 
 ### Inflight Task Serialization
 
@@ -309,8 +309,8 @@ swift scripts/test_chromecast.swift
 | Audio cast play controls do nothing | Session still in `.loaded` state | Use `currentCast == .audio` not `isCasting` to detect audio |
 | Seek bar progresses while paused | `playbackStartDate` not cleared on pause | Set `playbackStartDate = nil` when not PLAYING |
 | `NSWindow geometry should only be modified on the main thread` crash | Posting cast notification directly from `ChromecastManager` or `UPnPManager` off-main | Use `CastManager.postNotificationOnMain(name:)` instead of `NotificationCenter.default.post` |
-| Stop leaves video paused on TV | STOP delivered to media but app still running | Call `stopApp()` after `stop()`; add 200ms delay before `disconnect()` |
-| Stop command not delivered | Socket closed before bytes flush | Sleep 200ms between `stop()` and `disconnect()` |
+| Stop leaves video paused on TV | STOP delivered to media but app still running | Call `stopApp()` after `stop()`; add 200 ms delay before `disconnect()` |
+| Stop command not delivered | Socket closed before bytes flush | Sleep 200 ms between `stop()` and `disconnect()` |
 | `clearVideoTrackInfo()` not called | `wasVideoCast` captured after `activeSession` set to nil | Capture `wasVideoCast = currentCast == .video` **before** disconnect |
 | Video player stays open after switching to audio cast | Not calling `closeForCastTransition()` | Call `WindowManager.closeVideoPlayerForCastTransition()` after audio cast succeeds |
 | Timer drifts during buffering | Not pausing interpolation on BUFFERING | Set `playbackStartDate = nil` on BUFFERING; resume on PLAYING |

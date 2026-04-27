@@ -2426,7 +2426,7 @@ class SkinRenderer {
                                             size: CGSize(width: w, height: bottomHeight)),
                           to: NSRect(x: tileX, y: borderY, width: w, height: bottomHeight),
                           in: context)
-                tileX += SkinElements.Playlist.bottomTile.width
+                tileX += w
             }
             // Right corner slice
             if rightW > 0 {
@@ -2554,12 +2554,6 @@ class SkinRenderer {
         let contentBottom = bounds.height - bottomHeight
         let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
 
-        if backingScale < 1.5 {
-            NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1.0).setFill()
-            context.fill(NSRect(x: 0, y: contentTop, width: sideW, height: contentBottom - contentTop))
-            context.fill(NSRect(x: bounds.width - sideW, y: contentTop, width: sideW, height: contentBottom - contentTop))
-        }
-
         guard let pleditImage = skin.pledit else {
             NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1.0).setFill()
             context.fill(NSRect(x: 0, y: contentTop, width: sideW, height: contentBottom - contentTop))
@@ -2567,8 +2561,14 @@ class SkinRenderer {
             return
         }
 
+        if backingScale < 1.5 {
+            NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1.0).setFill()
+            context.fill(NSRect(x: 0, y: contentTop, width: sideW, height: contentBottom - contentTop))
+            context.fill(NSRect(x: bounds.width - sideW, y: contentTop, width: sideW, height: contentBottom - contentTop))
+        }
+
         var y = contentBottom - tileH
-        while y >= contentTop - tileH {
+        while y > contentTop - tileH {
             let drawY = max(contentTop, y)
             let h = min(tileH, contentBottom - drawY)
             if h > 0 {

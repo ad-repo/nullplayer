@@ -1023,6 +1023,11 @@ class WindowManager {
                 try await operation(device)
             } catch {
                 NSLog("WindowManager: Failed to route video '%@' to active cast device %@: %@", title, device.name, error.localizedDescription)
+                await MainActor.run {
+                    self.videoTitle = nil
+                    self.mainWindowController?.clearVideoTrackInfo()
+                    self.mainWindowController?.updatePlaybackState()
+                }
                 CastManager.shared.postError(.playbackFailed("Could not play '\(title)' on \(device.name): \(error.localizedDescription)"))
             }
         }
@@ -1367,13 +1372,14 @@ class WindowManager {
     /// Called when video playback stops
     /// Close the video player window when an audio cast supersedes an active video cast.
     /// Called from CastManager when castNewTrack or cast() transitions video→audio.
-    func closeVideoPlayerForCastTransition() {
+    func closeVideoPlayerForCastTransition(wasVideoCast: Bool = false) {
         if let vpc = videoPlayerWindowController, vpc.isCastingVideo {
             // castNewTrack path: isCastingVideo still true
             vpc.closeForCastTransition()
-        } else if let vpc = videoPlayerWindowController, vpc.window?.isVisible == true {
+        } else if let vpc = videoPlayerWindowController,
+                  wasVideoCast || CastManager.shared.isVideoCasting || CastManager.shared.currentCast == .video {
             // cast() path: isCastingVideo already cleared by stopCastingAndAwaitTeardown,
-            // use window visibility as the signal instead
+            // so use CastManager's explicit video-cast state instead of window visibility.
             vpc.closeForCastTransition()
         }
     }

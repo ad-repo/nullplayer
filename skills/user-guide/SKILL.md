@@ -205,7 +205,7 @@ Import discovery is now unified across classic + modern entry points (main windo
 - **Gapless Playback**: Seamless track transitions (local files)
 - **Sweet Fades**: Crossfade between tracks (1-10s duration)
 - **Volume Normalization**: Consistent loudness (-14dB target)
-- **Remember State on Quit**: Restore settings, windows, and playlist on launch without selecting or loading the last song
+- **Remember State on Quit**: `AppStateManager.restorePlaylistState` restores the playlist, ordering, selected track, and saved seek position; launch stays paused and does not auto-play
 
 ### Sleep Timer
 Accessible via **Playback > Sleep Timer** (or the right-click context menu).

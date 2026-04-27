@@ -96,7 +96,7 @@ class CastSession {
     var position: TimeInterval = 0
     var duration: TimeInterval = 0
     var volume: Float = 1.0
-    var playbackStartDate: Date? = nil
+    var playbackStartDate: Date?
     var isPlaying: Bool = false
 
     init(device: CastDevice) {

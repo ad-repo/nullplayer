@@ -1392,11 +1392,11 @@ class AudioEngine {
         // Smooth with previous values (decay) and update on main thread
         // Copy spectrum data to avoid data races since we reuse the buffer
         let spectrumCopy = Array(fftNewSpectrum)
-        if !pendingSpectrumUpdate {
-            pendingSpectrumUpdate = true
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.pendingSpectrumUpdate = false
+        DispatchQueue.main.async { [weak self, spectrumCopy] in
+            guard let self = self else { return }
+            self.latestRawSpectrum = spectrumCopy
+            if !self.pendingSpectrumUpdate {
+                self.pendingSpectrumUpdate = true
                 for i in 0..<bandCount {
                     // Fast attack, smooth decay for all modes
                     if self.latestRawSpectrum[i] > self.spectrumData[i] {
@@ -1405,6 +1405,7 @@ class AudioEngine {
                         self.spectrumData[i] = self.spectrumData[i] * 0.90 + self.latestRawSpectrum[i] * 0.10
                     }
                 }
+                self.pendingSpectrumUpdate = false
                 self.delegate?.audioEngineDidUpdateSpectrum(self.spectrumData)
                 NotificationCenter.default.post(
                     name: .audioSpectrumDataUpdated,
@@ -1413,9 +1414,6 @@ class AudioEngine {
                 )
             }
         }
-        // Always overwrite with the freshest data so the pending dispatch delivers
-        // the most recent frame rather than a stale one from when it was queued.
-        latestRawSpectrum = spectrumCopy
     }
 
     private func enqueueWaveformSamplesAndPost(

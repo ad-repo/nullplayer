@@ -177,6 +177,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isCastingVideo = false
         didInitiateCast = false
 
+        // Record analytics before clearing state, matching stop() and windowWillClose.
+        recordVideoPlayEvent()
+
         // Stop local KSPlayer and clear content state
         videoPlayerView.stop()
         isPlaying = false
@@ -1370,6 +1373,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
 
+        let wasPlaying = videoPlayerView.isPlaying
         let startPosition = videoPlayerView.currentPlaybackTime
         Task {
             do {
@@ -1383,6 +1387,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                     alert.alertStyle = .warning
                     alert.runModal()
                     self.clearVideoCastState()
+                    if wasPlaying && !self.videoPlayerView.isPlaying {
+                        self.videoPlayerView.togglePlayPause()
+                    }
                 }
             }
         }
@@ -1396,7 +1403,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Pause local playback before handing off to Chromecast.
         // Skip for auto-cast path: the caller already called stop() synchronously.
         if pauseLocal {
-            await MainActor.run { videoPlayerView.togglePlayPause() }
+            await MainActor.run {
+                if videoPlayerView.isPlaying {
+                    videoPlayerView.togglePlayPause()
+                }
+            }
         }
 
         // Route to the appropriate CastManager method based on loaded content
@@ -1420,6 +1431,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 startPosition: startPosition,
                 duration: videoDuration > 0 ? videoDuration : nil
             )
+        } else {
+            throw CastError.playbackFailed("No castable content loaded")
         }
 
         // Update casting state and time tracking
@@ -1534,6 +1547,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             videoPlayerView.stop()
             isPlaying = false
             currentTitle = nil
+            currentArtworkTrack = nil
             currentPlexMovie = nil
             currentPlexEpisode = nil
             currentPlexRatingKey = nil

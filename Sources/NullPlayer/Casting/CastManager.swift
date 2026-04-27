@@ -285,6 +285,11 @@ class CastManager {
         return session.metadata?.mediaType == .video ? .video : .audio
     }
 
+    var isVideoCasting: Bool {
+        if case .video = currentCast { return true }
+        return false
+    }
+
     /// Title of the video being cast (for main window display when casting from menu)
     private(set) var videoCastTitle: String?
     
@@ -376,6 +381,17 @@ class CastManager {
 
     /// Inflight task chain for serializing cast operations
     @MainActor private var inflight: Task<Void, Error>? = nil
+
+    @MainActor
+    private func enqueueInflight(_ operation: @escaping @MainActor () async throws -> Void) -> Task<Void, Error> {
+        let previous = inflight
+        let task = Task { @MainActor () throws -> Void in
+            try? await previous?.value
+            try await operation()
+        }
+        inflight = task
+        return task
+    }
 
     // MARK: - Initialization
     
@@ -674,14 +690,14 @@ class CastManager {
     func cast(to device: CastDevice, url: URL, metadata: CastMetadata, startPosition: TimeInterval = 0) async throws {
         NSLog("CastManager: Casting to %@ (%@), start position: %.1f", device.name, device.type.displayName, startPosition)
 
-        let prev = await MainActor.run { inflight }
-        let task = Task { @MainActor () -> Void in
-            try? await prev?.value
+        let task = await enqueueInflight { [self] in
+            var supersededVideoCast = false
 
             // If media type changed (audio to video or vice versa), do clean teardown
             if let session = self.activeSession, session.metadata?.mediaType != metadata.mediaType {
                 NSLog("CastManager: Media type mismatch - current: %@, incoming: %@; performing teardown",
                       session.metadata?.mediaType.rawValue ?? "nil", metadata.mediaType.rawValue)
+                supersededVideoCast = session.metadata?.mediaType == .video
                 await self.stopCastingAndAwaitTeardown()
             }
 
@@ -819,17 +835,15 @@ class CastManager {
                     self.startTopologyRefresh()
                 }
 
-                // Close the video player if it was open (video cast was torn down by stopCastingAndAwaitTeardown
-                // before this point, so isCastingVideo is already false — WindowManager checks visibility).
-                NSLog("CastManager: cast() audio — closing video player if visible (superseded by audio cast)")
-                WindowManager.shared.closeVideoPlayerForCastTransition()
+                // Close the video player only when this audio cast superseded a video cast.
+                NSLog("CastManager: cast() audio — closing video player if video cast was superseded")
+                WindowManager.shared.closeVideoPlayerForCastTransition(wasVideoCast: supersededVideoCast)
             }
             NotificationCenter.default.post(name: Self.sessionDidChangeNotification, object: nil)
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
         }
         }
 
-        await MainActor.run { self.inflight = task }
         try await task.value
     }
 
@@ -981,24 +995,31 @@ class CastManager {
         NSLog("CastManager: castNewTrack '%@' (mediaType=%@, currentCast=%@)",
               track.title, track.mediaType.rawValue, String(describing: currentCast))
         // Video tracks in an audio playlist dispatch to the video cast path.
-        // castVideoURL calls cast() which has its own inflight serialization.
+        // Keep the teardown performed by castVideoURL serialized with audio track changes.
         if track.mediaType == .video {
             guard let device = activeSession?.device, device.supportsVideo else {
                 NSLog("CastManager: castNewTrack skipping video track '%@' — no video-capable session", track.title)
                 return
             }
-            try await castVideoURL(track.url, title: track.title, to: device,
-                                   duration: track.duration, contentType: track.contentType)
+            let task = await enqueueInflight { [self] in
+                try await self.castVideoURL(
+                    track.url,
+                    title: track.title,
+                    to: device,
+                    duration: track.duration,
+                    contentType: track.contentType
+                )
+            }
+            try await task.value
             return
         }
 
-        let prev = await MainActor.run { inflight }
-        let task = Task { @MainActor () -> Void in
-            try? await prev?.value
+        let task = await enqueueInflight { [self] in
 
             guard let session = self.activeSession else {
                 throw CastError.sessionNotActive
             }
+            let supersededVideoCast = session.metadata?.mediaType == .video
 
         var trackToCast = track
 
@@ -1107,7 +1128,7 @@ class CastManager {
                     effectiveContentType = result.contentType
                     NSLog("CastManager: castNewTrack using proxy for Subsonic/Jellyfin/Emby->Sonos: %@", castURL.redacted)
                 } catch {
-                    await clearLoadingState()
+                    clearLoadingState()
                     throw error
                 }
             } else if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: trackToCast.url) {
@@ -1122,13 +1143,13 @@ class CastManager {
                 do {
                     try await LocalMediaServer.shared.start()
                 } catch {
-                    await clearLoadingState()
+                    clearLoadingState()
                     throw CastError.localServerError("Could not start local media server: \(error.localizedDescription)")
                 }
             }
             
             guard let serverURL = LocalMediaServer.shared.registerFile(trackToCast.url) else {
-                await clearLoadingState()
+                clearLoadingState()
                 throw CastError.localServerError("Could not register file with local media server")
             }
             castURL = serverURL
@@ -1207,7 +1228,7 @@ class CastManager {
             }
         } catch {
             NSLog("CastManager: castNewTrack '%@' failed: %@", trackToCast.title, error.localizedDescription)
-            await clearLoadingState()
+            clearLoadingState()
             throw error
         }
         
@@ -1263,11 +1284,10 @@ class CastManager {
 
             // Close the video player if it was showing a video cast that this audio cast supersedes.
             NSLog("CastManager: castNewTrack audio succeeded — closing video player if casting video")
-            WindowManager.shared.closeVideoPlayerForCastTransition()
+            WindowManager.shared.closeVideoPlayerForCastTransition(wasVideoCast: supersededVideoCast)
         }
         }
 
-        await MainActor.run { self.inflight = task }
         try await task.value
     }
 
@@ -2311,6 +2331,7 @@ extension CastManager {
 
     func debugSetActiveSessionStateForTesting(_ state: CastState) {
         _debugActiveSession?.state = state
+        CastManager.postNotificationOnMain(name: Self.sessionDidChangeNotification)
     }
 }
 #endif

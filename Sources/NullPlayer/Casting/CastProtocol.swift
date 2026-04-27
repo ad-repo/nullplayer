@@ -613,6 +613,10 @@ class CastSessionController {
                     NSLog("CastSessionController: Got transportId: %@", tid)
                     handler?(tid)
                 } else {
+                    withLock {
+                        self.transportId = nil
+                        self.mediaSessionId = nil
+                    }
                     // No applications running — receiver app was closed (response to stopApp())
                     NSLog("CastSessionController: RECEIVER_STATUS — no applications running (app closed)")
                 }

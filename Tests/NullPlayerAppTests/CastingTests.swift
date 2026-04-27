@@ -201,22 +201,40 @@ final class CastingTests: XCTestCase {
 
         XCTAssertEqual(CastManager.shared.activeSession?.state, .loaded)
 
-        // Simulate state transition (as handleChromecastMediaStatusUpdate does on first status)
-        CastManager.shared.debugSetActiveSessionStateForTesting(.casting)
+        let expectation = expectation(description: "first Chromecast status transitions loaded session")
+        var status = CastMediaStatus()
+        status.currentTime = 1.5
+        status.duration = 120
+        status.playerState = .playing
+        status.mediaSessionId = 1
+
+        NotificationCenter.default.post(
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil,
+            userInfo: ["status": status]
+        )
+
+        DispatchQueue.main.async {
+            XCTAssertEqual(CastManager.shared.activeSession?.state, .casting)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
         XCTAssertEqual(CastManager.shared.activeSession?.state, .casting)
     }
 
     // MARK: - Session notification
 
-    func testSessionDidChangeNotificationFiresOnDebugStateChange() {
+    func testSessionDidChangeNotificationFiresOnStateChange() {
         let expectation = expectation(description: "sessionDidChange posted")
+        let device = CastDevice(id: "notify-device", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetActiveCastSessionForTesting(device: device, startPosition: 0, duration: 120)
         let observer = NotificationCenter.default.addObserver(
             forName: CastManager.sessionDidChangeNotification,
             object: nil,
             queue: nil
         ) { _ in expectation.fulfill() }
 
-        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+        CastManager.shared.debugSetActiveSessionStateForTesting(.loaded)
 
         wait(for: [expectation], timeout: 1.0)
         NotificationCenter.default.removeObserver(observer)
@@ -292,7 +310,7 @@ final class CastingTests: XCTestCase {
 
     func testPlexContentTypeInferencePreservesLosslessCodecs() {
         XCTAssertEqual(PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "flac")), "audio/flac")
-        XCTAssertEqual(PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "alac")), "audio/alac")
+        XCTAssertEqual(PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "alac")), "audio/mp4")
     }
 
     private func makePlexMedia(audioCodec: String? = nil, container: String? = nil) -> PlexMedia {

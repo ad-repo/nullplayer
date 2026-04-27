@@ -842,8 +842,9 @@ class ModernMainWindowView: NSView {
             clearArtwork()
             currentArtworkTrackId = artworkTrack.id
             loadArtwork(for: artworkTrack)
-        } else if videoTitle != title {
+        } else {
             clearArtwork()
+            currentArtworkTrackId = nil
         }
         self.videoTitle = title
         refreshMarqueeText()
@@ -1080,10 +1081,15 @@ class ModernMainWindowView: NSView {
                     }
                 }
             } else if let jellyfinId = track.jellyfinId {
-                let key = NSString(string: "marquee_jellyfin:\(jellyfinId)")
+                let imageTag = track.artworkThumb ?? ""
+                let key = NSString(string: "marquee_jellyfin:\(jellyfinId):\(imageTag)")
                 if let cached = Self.artworkCache.object(forKey: key) {
                     image = cached
-                } else if let url = JellyfinManager.shared.imageURL(itemId: jellyfinId, imageTag: track.artworkThumb, size: 400) {
+                } else if let url = JellyfinManager.shared.imageURL(
+                    itemId: jellyfinId,
+                    imageTag: imageTag.isEmpty ? nil : imageTag,
+                    size: 400
+                ) {
                     if let (data, resp) = try? await URLSession.shared.data(from: url),
                        (resp as? HTTPURLResponse)?.statusCode == 200,
                        let img = NSImage(data: data) {

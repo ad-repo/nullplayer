@@ -263,7 +263,7 @@ Plex stream URLs can be extensionless or otherwise not reliable for format detec
 
 Important cases:
 - `flac` -> `audio/flac`; extensionless 24/96 or 24/192 FLAC must be identified as FLAC so `CastManager.isSonosCompatible` applies the 48 kHz Sonos limit.
-- `alac` -> `audio/alac`; do not flatten ALAC to `audio/mp4`, because Sonos compatibility treats ALAC as always unsupported.
+- `alac` -> `audio/mp4`, matching the shared cast content-type mapping used for Apple Lossless in MP4 containers.
 - Restored Plex tracks from `StreamingTrackResolver` must populate `contentType` the same way as `PlexManager.convertToTrack`.
 
 For lossless Plex tracks with nil `sampleRate`, `castCurrentTrack` and `castNewTrack` fetch the sample rate from Plex by rating key before making the final strict Sonos compatibility decision. That fetch must be triggered from URL extension or `Track.contentType`, because Plex stream URLs may not have `.flac` or `.wav` extensions.

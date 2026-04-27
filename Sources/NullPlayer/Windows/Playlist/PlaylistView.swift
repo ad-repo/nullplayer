@@ -213,22 +213,23 @@ class PlaylistView: NSView {
         let engine = WindowManager.shared.audioEngine
         let currentIndex = engine.currentIndex
 
-        if isShadeMode || playlistMarqueeLayer == nil {
-            // Check if current track changed - reset marquee if so
-            if currentIndex != lastCurrentIndex {
-                lastCurrentIndex = currentIndex
-                marqueeOffset = 0
-                updateCurrentTrackTextWidth()
-            }
+        // Check if current track changed - reset marquee if so
+        if currentIndex != lastCurrentIndex {
+            lastCurrentIndex = currentIndex
+            marqueeOffset = 0
+            updateCurrentTrackTextWidth()
+        }
 
-            // Advance marquee offset if text needs scrolling
-            // Scroll speed: ~24 pixels per second at 8Hz = 3 pixels per tick
-            let cycleWidth = currentTrackTextWidth + marqueeSeparatorWidth
-            if currentTrackTextWidth > 0 && cycleWidth > 0 {
-                marqueeOffset += 3
-                if marqueeOffset >= cycleWidth {
-                    marqueeOffset = 0
-                }
+        // Advance marquee offset if text needs scrolling.
+        // The layer-backed path ignores this, but draw(_:) uses it as fallback
+        // when a current-track row is partially clipped.
+        let cycleWidth = currentTrackTextWidth + marqueeSeparatorWidth
+        if currentTrackTextWidth > 0 && cycleWidth > 0 {
+            marqueeOffset += 3
+            if marqueeOffset >= cycleWidth {
+                marqueeOffset = 0
+            }
+            if isShadeMode || playlistMarqueeLayer == nil {
                 setNeedsDisplayForListArea()
             }
         }
@@ -297,11 +298,6 @@ class PlaylistView: NSView {
             let charWidth = SkinElements.TextFont.charWidth
             currentTrackTextWidth = CGFloat(titleText.count) * charWidth
         }
-    }
-
-    /// No longer needed - marquee handled in draw cycle
-    private func updateMarqueeLayerFrame() {
-        // Marquee now handled in draw cycle with bitmap font
     }
 
     private func setupPlaylistMarqueeLayer() {
@@ -596,7 +592,8 @@ class PlaylistView: NSView {
 
         let titleWidth = systemFontTextWidth(titleText)
 
-        if isCurrentTrack && titleWidth > titleMaxWidth && configurePlaylistMarqueeLayer(text: titleText, titleX: titleX, titleMaxWidth: titleMaxWidth, rowRect: rect, color: color) {
+        let effectiveTitleColor: NSColor = isSelected ? .white : color
+        if isCurrentTrack && titleWidth > titleMaxWidth && configurePlaylistMarqueeLayer(text: titleText, titleX: titleX, titleMaxWidth: titleMaxWidth, rowRect: rect, color: effectiveTitleColor) {
             // The layer-backed marquee draws this title smoothly; duration stays in CGContext.
         } else if isCurrentTrack && titleWidth > titleMaxWidth {
             // Current track with long title - draw with marquee scrolling
@@ -1240,7 +1237,6 @@ class PlaylistView: NSView {
                 let trackRange = listHeight - 18  // Thumb height
                 let scrollDelta = (deltaY / trackRange) * scrollRange
                 scrollOffset = max(0, min(scrollRange, scrollbarDragStartOffset + scrollDelta))
-                updateMarqueeLayerFrame()  // Update marquee position after scroll
                 needsDisplay = true
             }
             return
@@ -1442,7 +1438,6 @@ class PlaylistView: NSView {
 
         if totalHeight > listHeight {
             scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - verticalScrollDelta(from: event)))
-            updateMarqueeLayerFrame()  // Update marquee position after scroll
             setNeedsDisplayForListArea()
         }
     }

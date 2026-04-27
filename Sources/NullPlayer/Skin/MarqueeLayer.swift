@@ -32,13 +32,19 @@ class MarqueeLayer: CALayer {
     }
 
     /// When true, always render with system font instead of skin bitmap font
-    var useSystemFont: Bool = false
+    var useSystemFont: Bool = false {
+        didSet { if useSystemFont != oldValue { renderText() } }
+    }
 
     /// Font size used when useSystemFont is true
-    var systemFontSize: CGFloat = SkinElements.TextFont.charHeight
+    var systemFontSize: CGFloat = SkinElements.TextFont.charHeight {
+        didSet { if systemFontSize != oldValue { renderText() } }
+    }
 
     /// Text color used when useSystemFont is true
-    var systemFontColor: NSColor = .green
+    var systemFontColor: NSColor = .green {
+        didSet { if systemFontColor != oldValue { renderText() } }
+    }
 
     /// Scroll speed in pixels per second (default: 24 = 3px at 8Hz equivalent)
     var scrollSpeed: CGFloat = 24
@@ -94,7 +100,7 @@ class MarqueeLayer: CALayer {
         backgroundColor = CGColor.clear
         
         // Disable implicit animations on this layer to prevent unexpected changes
-        actions = ["bounds": NSNull(), "position": NSNull(), "contents": NSNull()]
+        actions = ["bounds": NSNull(), "position": NSNull(), "contents": NSNull(), "hidden": NSNull()]
         
         // Create content sublayer for the scrolling text
         contentLayer = CALayer()
