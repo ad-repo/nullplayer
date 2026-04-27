@@ -14,7 +14,7 @@ class MarqueeLayer: CALayer {
     var text: String = "" {
         didSet {
             if text != oldValue {
-                renderText()
+                scheduleRenderText()
             }
         }
     }
@@ -26,24 +26,24 @@ class MarqueeLayer: CALayer {
                 // Cache CGImage immediately when skin changes (NOT during render)
                 // This prevents cross-window interference from NSImage operations
                 cacheSkinCGImage()
-                renderText()
+                scheduleRenderText()
             }
         }
     }
 
     /// When true, always render with system font instead of skin bitmap font
     var useSystemFont: Bool = false {
-        didSet { if useSystemFont != oldValue { renderText() } }
+        didSet { if useSystemFont != oldValue { scheduleRenderText() } }
     }
 
     /// Font size used when useSystemFont is true
-    var systemFontSize: CGFloat = SkinElements.TextFont.charHeight {
-        didSet { if systemFontSize != oldValue { renderText() } }
+    var systemFontSize: CGFloat = NSFont.systemFontSize {
+        didSet { if systemFontSize != oldValue { scheduleRenderText() } }
     }
 
     /// Text color used when useSystemFont is true
     var systemFontColor: NSColor = .green {
-        didSet { if systemFontColor != oldValue { renderText() } }
+        didSet { if systemFontColor != oldValue { scheduleRenderText() } }
     }
 
     /// Scroll speed in pixels per second (default: 24 = 3px at 8Hz equivalent)
@@ -65,6 +65,10 @@ class MarqueeLayer: CALayer {
     
     /// Whether the text currently needs scrolling
     private var needsScrolling: Bool = false
+
+    /// Coalesces multiple property changes into one render on the main queue.
+    private var renderScheduled = false
+    private var needsRender = false
     
     // MARK: - Constants (from SkinElements.TextFont)
     
@@ -86,6 +90,9 @@ class MarqueeLayer: CALayer {
         if let other = layer as? MarqueeLayer {
             self.text = other.text
             self.skinTextImage = other.skinTextImage
+            self.useSystemFont = other.useSystemFont
+            self.systemFontSize = other.systemFontSize
+            self.systemFontColor = other.systemFontColor
             self.scrollSpeed = other.scrollSpeed
         }
     }
@@ -242,7 +249,7 @@ class MarqueeLayer: CALayer {
     private func renderTextToImageSync(_ string: String, width: CGFloat, skinCGImage: CGImage?,
                                        scale: CGFloat, charWidth: CGFloat, charHeight: CGFloat,
                                        boundsHeight: CGFloat, useSystemFont: Bool = false,
-                                       systemFontSize: CGFloat = 6, systemFontColor: NSColor = .green) -> CGImage? {
+                                       systemFontSize: CGFloat = NSFont.systemFontSize, systemFontColor: NSColor = .green) -> CGImage? {
         if useSystemFont || skinCGImage == nil || containsNonLatinCharacters(string) {
             return renderSystemFontToImageSync(string, width: width, scale: scale,
                                                fontSize: systemFontSize, color: systemFontColor,
@@ -454,7 +461,7 @@ class MarqueeLayer: CALayer {
         // Skip if bounds is zero (not yet configured)
         guard bounds.width > 0, bounds.height > 0, bounds != lastLayoutBounds else { return }
         lastLayoutBounds = bounds
-        renderText()
+        scheduleRenderText()
     }
     
     /// Update the contents scale (call when moving between displays)
@@ -462,6 +469,29 @@ class MarqueeLayer: CALayer {
         guard contentsScale != scale else { return }
         contentsScale = scale
         contentLayer?.contentsScale = scale
-        renderText()
+        scheduleRenderText()
+    }
+
+    private func scheduleRenderText() {
+        if Thread.isMainThread {
+            scheduleRenderTextOnMain()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.scheduleRenderTextOnMain()
+            }
+        }
+    }
+
+    private func scheduleRenderTextOnMain() {
+        needsRender = true
+        guard !renderScheduled else { return }
+        renderScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.renderScheduled = false
+            guard self.needsRender else { return }
+            self.needsRender = false
+            self.renderText()
+        }
     }
 }

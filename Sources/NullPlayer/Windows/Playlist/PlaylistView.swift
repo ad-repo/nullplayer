@@ -70,6 +70,12 @@ class PlaylistView: NSView {
 
     /// Layer-backed marquee for the current track title in normal playlist mode.
     private var playlistMarqueeLayer: MarqueeLayer?
+    private var lastMarqueeText: String?
+    private var lastMarqueeColor: NSColor?
+    private var lastMarqueeFontSize: CGFloat?
+    private var lastMarqueeBounds: CGRect?
+    private var lastMarqueePosition: CGPoint?
+    private var lastMarqueeScale: CGFloat?
 
     // MARK: - Layout Constants
 
@@ -99,7 +105,6 @@ class PlaylistView: NSView {
         // Only redraw when explicitly requested via setNeedsDisplay
         // This allows macOS to cache the layer contents between updates
         layerContentsRedrawPolicy = .onSetNeedsDisplay
-        setupPlaylistMarqueeLayer()
 
         // Register for drag and drop
         registerForDraggedTypes([.fileURL])
@@ -133,6 +138,9 @@ class PlaylistView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if window != nil && playlistMarqueeLayer == nil {
+            setupPlaylistMarqueeLayer()
+        }
         // Pre-cache TEXT.BMP CGImage when view is added to window
         cacheTextBitmapCGImage()
         updateCurrentTrackTextWidth()
@@ -301,13 +309,18 @@ class PlaylistView: NSView {
     }
 
     private func setupPlaylistMarqueeLayer() {
-        playlistMarqueeLayer = MarqueeLayer()
-        playlistMarqueeLayer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
-        playlistMarqueeLayer?.anchorPoint = CGPoint(x: 0, y: 0)
-        playlistMarqueeLayer?.separator = String(repeating: " ", count: 5)
-        playlistMarqueeLayer?.scrollSpeed = 24
-        playlistMarqueeLayer?.isHidden = true
-        layer?.addSublayer(playlistMarqueeLayer!)
+        guard playlistMarqueeLayer == nil else { return }
+        wantsLayer = true
+        guard let hostLayer = layer else { return }
+
+        let marqueeLayer = MarqueeLayer()
+        marqueeLayer.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+        marqueeLayer.anchorPoint = CGPoint(x: 0, y: 0)
+        marqueeLayer.separator = String(repeating: " ", count: 5)
+        marqueeLayer.scrollSpeed = 24
+        marqueeLayer.isHidden = true
+        hostLayer.addSublayer(marqueeLayer)
+        playlistMarqueeLayer = marqueeLayer
     }
 
     @objc private func windowDidChangeBackingProperties(_ notification: Notification) {
@@ -327,19 +340,53 @@ class PlaylistView: NSView {
         let hiddenTitleOffset = WindowManager.shared.hideTitleBars ? Layout.titleBarHeight : 0
         let adjustedRowY = rowRect.minY - hiddenTitleOffset
         let layerY = bounds.height - ((adjustedRowY + rowRect.height) * scale)
+        let targetBounds = CGRect(x: 0, y: 0, width: titleMaxWidth, height: rowRect.height)
+        let targetPosition = CGPoint(x: titleX * scale, y: layerY)
+        let colorMatches = lastMarqueeColor?.isEqual(color) == true
+
+        if marqueeLayer.isHidden == false,
+           lastMarqueeText == text,
+           colorMatches,
+           lastMarqueeFontSize == playlistFontSize,
+           lastMarqueeBounds == targetBounds,
+           lastMarqueePosition == targetPosition,
+           lastMarqueeScale == scale {
+            return true
+        }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         marqueeLayer.isHidden = false
-        marqueeLayer.bounds = CGRect(x: 0, y: 0, width: titleMaxWidth, height: rowRect.height)
+        if lastMarqueeBounds != targetBounds {
+            marqueeLayer.bounds = targetBounds
+        }
         marqueeLayer.anchorPoint = CGPoint(x: 0, y: 0)
-        marqueeLayer.position = CGPoint(x: titleX * scale, y: layerY)
-        marqueeLayer.transform = CATransform3DMakeScale(scale, scale, 1)
-        marqueeLayer.useSystemFont = true
-        marqueeLayer.systemFontSize = playlistFontSize
-        marqueeLayer.systemFontColor = color
-        marqueeLayer.text = text
+        if lastMarqueePosition != targetPosition {
+            marqueeLayer.position = targetPosition
+        }
+        if lastMarqueeScale != scale {
+            marqueeLayer.transform = CATransform3DMakeScale(scale, scale, 1)
+        }
+        if marqueeLayer.useSystemFont != true {
+            marqueeLayer.useSystemFont = true
+        }
+        if lastMarqueeFontSize != playlistFontSize {
+            marqueeLayer.systemFontSize = playlistFontSize
+        }
+        if !colorMatches {
+            marqueeLayer.systemFontColor = color
+        }
+        if lastMarqueeText != text {
+            marqueeLayer.text = text
+        }
         CATransaction.commit()
+
+        lastMarqueeText = text
+        lastMarqueeColor = color
+        lastMarqueeFontSize = playlistFontSize
+        lastMarqueeBounds = targetBounds
+        lastMarqueePosition = targetPosition
+        lastMarqueeScale = scale
 
         return true
     }

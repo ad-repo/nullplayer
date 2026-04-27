@@ -1314,19 +1314,19 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             // Group by type
             let chromecasts = devices.filter { $0.type == .chromecast }
             let dlnaTVs = devices.filter { $0.type == .dlnaTV }
+            let activeVideoId = CastManager.shared.currentCast == .video ? CastManager.shared.activeSession?.device.id : nil
             
             if !chromecasts.isEmpty {
                 let headerItem = NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: "")
                 headerItem.isEnabled = false
                 menu.addItem(headerItem)
                 for device in chromecasts {
-                    let activeId = CastManager.shared.activeSession?.device.id
-                    let title = device.id == activeId ? "  ✓ \(device.name)" : "  \(device.name)"
+                    let title = device.id == activeVideoId ? "  ✓ \(device.name)" : "  \(device.name)"
                     let item = NSMenuItem(title: title, action: #selector(castToDevice(_:)), keyEquivalent: "")
                     item.target = self
                     item.representedObject = device
                     // Disable if already casting to this device
-                    item.isEnabled = device.id != activeId
+                    item.isEnabled = device.id != activeVideoId
                     menu.addItem(item)
                 }
             }
@@ -1337,13 +1337,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 headerItem.isEnabled = false
                 menu.addItem(headerItem)
                 for device in dlnaTVs {
-                    let activeId = CastManager.shared.activeSession?.device.id
-                    let title = device.id == activeId ? "  ✓ \(device.name)" : "  \(device.name)"
+                    let title = device.id == activeVideoId ? "  ✓ \(device.name)" : "  \(device.name)"
                     let item = NSMenuItem(title: title, action: #selector(castToDevice(_:)), keyEquivalent: "")
                     item.target = self
                     item.representedObject = device
                     // Disable if already casting to this device
-                    item.isEnabled = device.id != activeId
+                    item.isEnabled = device.id != activeVideoId
                     menu.addItem(item)
                 }
             }
@@ -1423,6 +1422,16 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             try await CastManager.shared.castEmbyMovie(movie, to: device, startPosition: startPosition)
         } else if let episode = await MainActor.run(resultType: EmbyEpisode?.self, body: { self.currentEmbyEpisode }) {
             try await CastManager.shared.castEmbyEpisode(episode, to: device, startPosition: startPosition)
+        } else if let track = await MainActor.run(resultType: Track?.self, body: { self.currentArtworkTrack }),
+                  track.mediaType == .video {
+            try await CastManager.shared.castVideoURL(
+                track.url,
+                title: track.displayTitle,
+                to: device,
+                startPosition: startPosition,
+                duration: videoDuration > 0 ? videoDuration : track.duration,
+                contentType: track.contentType
+            )
         } else if let url = await MainActor.run(resultType: URL?.self, body: { self.currentURL }) {
             try await CastManager.shared.castLocalVideo(
                 url,

@@ -844,7 +844,6 @@ class ModernMainWindowView: NSView {
             loadArtwork(for: artworkTrack)
         } else {
             clearArtwork()
-            currentArtworkTrackId = nil
         }
         self.videoTitle = title
         refreshMarqueeText()

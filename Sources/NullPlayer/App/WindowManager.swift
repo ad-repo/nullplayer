@@ -1006,9 +1006,15 @@ class WindowManager {
     // MARK: - Video Player Window
 
     private var targetVideoCastDevice: CastDevice? {
-        guard let device = CastManager.shared.activeSession?.device,
-              device.supportsVideo else { return nil }
-        return device
+        if let activeDevice = CastManager.shared.activeSession?.device,
+           activeDevice.supportsVideo {
+            return activeDevice
+        }
+        if let preferredDevice = CastManager.shared.preferredVideoCastDevice,
+           preferredDevice.supportsVideo {
+            return preferredDevice
+        }
+        return nil
     }
 
     private func routeToVideoCastIfNeeded(title: String, artworkTrack: Track?, operation: @escaping (CastDevice) async throws -> Void) -> Bool {

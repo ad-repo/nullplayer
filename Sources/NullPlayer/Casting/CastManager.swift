@@ -731,7 +731,9 @@ class CastManager {
                 // Reset before cast so the IDLE Chromecast sends when loadMedia is issued
                 // is treated as pre-playback and not mistaken for end-of-stream.
                 NSLog("CastManager: cast() Chromecast — resetting chromecastHasSeenActivePlayback to false")
-                chromecastHasSeenActivePlayback = false
+                await MainActor.run {
+                    chromecastHasSeenActivePlayback = false
+                }
                 try await chromecastManager.cast(url: url, metadata: metadata)
                 NSLog("CastManager: Cast started successfully")
             } catch {
@@ -1104,6 +1106,14 @@ class CastManager {
             }
             
             return castTrackGeneration
+        }
+
+        await MainActor.run {
+            session.state = .loaded
+            session.position = 0
+            session.duration = trackToCast.duration ?? 0
+            session.playbackStartDate = nil
+            session.isPlaying = false
         }
         
         NSLog("CastManager: castNewTrack '%@' starting (generation %d)", trackToCast.title, myGeneration)
@@ -1698,7 +1708,9 @@ class CastManager {
 
         // Reset flag so the next cast's initial IDLE is treated as pre-playback
         NSLog("CastManager: stopCasting — resetting chromecastHasSeenActivePlayback to false")
-        chromecastHasSeenActivePlayback = false
+        await MainActor.run {
+            chromecastHasSeenActivePlayback = false
+        }
 
         // Stop Sonos polling and topology refresh
         stopSonosPolling()
@@ -1754,9 +1766,6 @@ class CastManager {
                 // Clear video cast state
                 self.videoCastTitle = nil
                 self.videoCastDuration = 0
-                self.activeSession?.position = 0
-                self.activeSession?.playbackStartDate = nil
-                self.activeSession?.isPlaying = false
                 self.isVideoCastPlaying = false
 
                 // Clear video title from main window

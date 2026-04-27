@@ -613,12 +613,16 @@ class CastSessionController {
                     NSLog("CastSessionController: Got transportId: %@", tid)
                     handler?(tid)
                 } else {
-                    withLock {
+                    let pendingHandler = withLock { () -> ((String?) -> Void)? in
                         self.transportId = nil
                         self.mediaSessionId = nil
+                        let h = self.transportIdCompletion
+                        self.transportIdCompletion = nil
+                        return h
                     }
                     // No applications running — receiver app was closed (response to stopApp())
                     NSLog("CastSessionController: RECEIVER_STATUS — no applications running (app closed)")
+                    pendingHandler?(nil)
                 }
             }
             

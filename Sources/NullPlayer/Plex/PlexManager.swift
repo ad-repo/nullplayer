@@ -796,7 +796,7 @@ class PlexManager {
             case "wma":
                 return "audio/x-ms-wma"
             case "alac":
-                return "audio/mp4"
+                return "audio/alac"
             default:
                 continue
             }

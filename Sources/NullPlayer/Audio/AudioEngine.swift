@@ -422,9 +422,11 @@ class AudioEngine {
     /// Flag to coalesce main queue PCM dispatches
     private var pendingPcmUpdate = false
 
-    /// Flag to coalesce main queue spectrum dispatches — prevents burst updates
-    /// from backing-up behind main-thread work (mode switches, window ordering, etc.)
-    private var pendingSpectrumUpdate = false
+    /// Latest spectrum frame waiting for the main queue. Protected because FFT runs
+    /// off-main while UI consumers read on main.
+    private let spectrumUpdateLock = NSLock()
+    private var pendingSpectrumFrame: [Float]?
+    private var spectrumUpdateScheduled = false
     
     // MARK: - Spectrum Consumer Tracking
 
@@ -534,6 +536,11 @@ class AudioEngine {
     var isCastingActive: Bool {
         CastManager.shared.isCasting
     }
+
+    /// True while natural cast auto-advance is handing a new track to the cast device.
+    /// Prevents the time-update timer from reusing the previous track's near-end clock
+    /// against the next track's duration during the async Sonos/DLNA handoff.
+    private var isAdvancingCastTrack = false
     
     /// Whether video casting is active (from video player)
     var isVideoCastingActive: Bool {
@@ -1388,19 +1395,33 @@ class AudioEngine {
         }
         
         // Smooth with previous values (decay) and update on main thread.
-        // Gate before dispatch so busy main-thread periods cannot accumulate stale closures.
-        if !pendingSpectrumUpdate {
-            pendingSpectrumUpdate = true
-            let spectrumCopy = Array(fftNewSpectrum)
+        // Keep only the latest frame while one main-queue update is pending.
+        let spectrumCopy = Array(fftNewSpectrum)
+        var shouldScheduleSpectrumUpdate = false
+        spectrumUpdateLock.lock()
+        pendingSpectrumFrame = spectrumCopy
+        if !spectrumUpdateScheduled {
+            spectrumUpdateScheduled = true
+            shouldScheduleSpectrumUpdate = true
+        }
+        spectrumUpdateLock.unlock()
+
+        if shouldScheduleSpectrumUpdate {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
-                self.pendingSpectrumUpdate = false
+                self.spectrumUpdateLock.lock()
+                let spectrumFrame = self.pendingSpectrumFrame
+                self.pendingSpectrumFrame = nil
+                self.spectrumUpdateScheduled = false
+                self.spectrumUpdateLock.unlock()
+
+                guard let spectrumFrame else { return }
                 for i in 0..<bandCount {
                     // Fast attack, smooth decay for all modes
-                    if spectrumCopy[i] > self.spectrumData[i] {
-                        self.spectrumData[i] = spectrumCopy[i]
+                    if spectrumFrame[i] > self.spectrumData[i] {
+                        self.spectrumData[i] = spectrumFrame[i]
                     } else {
-                        self.spectrumData[i] = self.spectrumData[i] * 0.90 + spectrumCopy[i] * 0.10
+                        self.spectrumData[i] = self.spectrumData[i] * 0.90 + spectrumFrame[i] * 0.10
                     }
                 }
                 self.delegate?.audioEngineDidUpdateSpectrum(self.spectrumData)
@@ -2429,7 +2450,8 @@ class AudioEngine {
             
             // When casting, skip time updates until we've received first status from Chromecast
             // This prevents showing stale/incorrect time before sync (flash issue on slow networks)
-            if self.isCastingActive && CastManager.shared.activeSession?.state == .loaded {
+            if self.isAdvancingCastTrack ||
+               (self.isCastingActive && CastManager.shared.activeSession?.state == .loaded) {
                 return
             }
             
@@ -2507,6 +2529,9 @@ class AudioEngine {
     
     /// Handle cast track completion - advance to next track
     private func castTrackDidFinish() {
+        guard !isAdvancingCastTrack else { return }
+        isAdvancingCastTrack = true
+
         // Report track finished to Plex (natural end)
         PlexPlaybackReporter.shared.trackDidStop(at: duration, finished: true)
 
@@ -2565,7 +2590,10 @@ class AudioEngine {
                           playlist[nextIndex].url.pathExtension)
                 }
                 if !foundCompatibleTrack {
-                    Task { await CastManager.shared.stopCasting() }
+                    Task {
+                        await CastManager.shared.stopCasting()
+                        await MainActor.run { self.isAdvancingCastTrack = false }
+                    }
                     return
                 }
             }
@@ -2594,6 +2622,7 @@ class AudioEngine {
                         self.restoreShufflePlaybackState(shuffleSnapshot)
                     }
                 }
+                await MainActor.run { self.isAdvancingCastTrack = false }
             }
         } else if !playlist.isEmpty {
             if shuffleEnabled {
@@ -2611,7 +2640,10 @@ class AudioEngine {
                           playlist[nextIndex].url.pathExtension)
                 }
                 if !foundCompatibleTrack {
-                    Task { await CastManager.shared.stopCasting() }
+                    Task {
+                        await CastManager.shared.stopCasting()
+                        await MainActor.run { self.isAdvancingCastTrack = false }
+                    }
                     return
                 }
                 let track = playlist[currentIndex]
@@ -2638,6 +2670,7 @@ class AudioEngine {
                             self.restoreShufflePlaybackState(shuffleSnapshot)
                         }
                     }
+                    await MainActor.run { self.isAdvancingCastTrack = false }
                 }
             } else if currentIndex < playlist.count - 1 {
                 // More tracks to play — advance, skipping Sonos-incompatible formats
@@ -2651,7 +2684,10 @@ class AudioEngine {
                     currentIndex += 1
                 }
                 guard currentIndex < playlist.count else {
-                    Task { await CastManager.shared.stopCasting() }
+                    Task {
+                        await CastManager.shared.stopCasting()
+                        await MainActor.run { self.isAdvancingCastTrack = false }
+                    }
                     return
                 }
                 let track = playlist[currentIndex]
@@ -2678,13 +2714,17 @@ class AudioEngine {
                             self.restoreShufflePlaybackState(shuffleSnapshot)
                         }
                     }
+                    await MainActor.run { self.isAdvancingCastTrack = false }
                 }
             } else {
                 // End of playlist - stop casting
                 Task {
                     await CastManager.shared.stopCasting()
+                    await MainActor.run { self.isAdvancingCastTrack = false }
                 }
             }
+        } else {
+            isAdvancingCastTrack = false
         }
     }
     

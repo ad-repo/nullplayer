@@ -1149,9 +1149,12 @@ class PlexServerClient {
         
         let response: PlexResponse<PlexGenreResponse> = try await performRequest(request)
         let genres = response.mediaContainer.directory?.compactMap { $0.title } ?? []
+        NSLog("PlexServerClient: Found %d genres for library %@", genres.count, libraryID)
+#if DEBUG
         let hasJazz = genres.contains { $0.localizedCaseInsensitiveCompare("Jazz") == .orderedSame }
-        NSLog("PlexServerClient: Found %d genres for library %@; contains Jazz=%@; genres=%@",
-              genres.count, libraryID, hasJazz ? "yes" : "no", genres.joined(separator: ", "))
+        NSLog("PlexServerClient: Genres for library %@; contains Jazz=%@; genres=%@",
+              libraryID, hasJazz ? "yes" : "no", genres.joined(separator: ", "))
+#endif
         return genres
     }
     

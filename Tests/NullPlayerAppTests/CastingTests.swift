@@ -310,7 +310,18 @@ final class CastingTests: XCTestCase {
 
     func testPlexContentTypeInferencePreservesLosslessCodecs() {
         XCTAssertEqual(PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "flac")), "audio/flac")
-        XCTAssertEqual(PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "alac")), "audio/mp4")
+        XCTAssertEqual(PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "alac")), "audio/alac")
+    }
+
+    func testPlexAlacTracksAreRejectedForSonos() {
+        let track = Track(
+            url: URL(string: "http://plex.local:32400/library/parts/1/file?X-Plex-Token=token")!,
+            title: "ALAC Track",
+            sampleRate: 44_100,
+            contentType: PlexManager.inferAudioContentType(from: makePlexMedia(audioCodec: "alac"))
+        )
+
+        XCTAssertFalse(CastManager.isSonosCompatible(track))
     }
 
     private func makePlexMedia(audioCodec: String? = nil, container: String? = nil) -> PlexMedia {

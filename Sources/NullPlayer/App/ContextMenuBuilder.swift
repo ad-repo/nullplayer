@@ -2208,6 +2208,7 @@ class ContextMenuBuilder {
         // Active or loaded video content wins. Audio casting remains available for music tracks.
         let isVideoContext = isActiveVideoCast
             || WindowManager.shared.isVideoContentActive
+            || WindowManager.shared.currentVideoTitle != nil
             || currentTrackIsVideo
 
         if !castManager.chromecastDevices.isEmpty {
@@ -2220,6 +2221,10 @@ class ContextMenuBuilder {
                 deviceItem.representedObject = device
                 if isVideoContext {
                     deviceItem.action = #selector(MenuActions.setPreferredVideoCastDevice(_:))
+                    if !device.supportsVideo {
+                        deviceItem.isEnabled = false
+                        deviceItem.action = nil
+                    }
                     if isActiveVideoCast && activeVideoDevice?.id == device.id {
                         deviceItem.state = .on
                     } else if castManager.preferredVideoCastDeviceID == device.id {
@@ -2452,6 +2457,7 @@ class ContextMenuBuilder {
         // Active or loaded video content wins. Audio casting remains available for music tracks.
         let isVideoContext = isActiveVideoCast
             || WindowManager.shared.isVideoContentActive
+            || WindowManager.shared.currentVideoTitle != nil
             || currentTrackIsVideo
 
         // Chromecast (if any)
@@ -2466,6 +2472,10 @@ class ContextMenuBuilder {
                 deviceItem.representedObject = device
                 if isVideoContext {
                     deviceItem.action = #selector(MenuActions.setPreferredVideoCastDevice(_:))
+                    if !device.supportsVideo {
+                        deviceItem.isEnabled = false
+                        deviceItem.action = nil
+                    }
                     if isActiveVideoCast && activeVideoDevice?.id == device.id {
                         deviceItem.state = .on
                     } else if castManager.preferredVideoCastDeviceID == device.id {

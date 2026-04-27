@@ -1334,6 +1334,10 @@ class UPnPManager {
         session.state = .casting
         session.currentURL = url
         session.metadata = metadata
+        session.position = 0
+        session.duration = metadata.duration ?? 0
+        session.playbackStartDate = Date()
+        session.isPlaying = true
 
         CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
         CastManager.postNotificationOnMain(name: CastManager.playbackStateDidChangeNotification)
