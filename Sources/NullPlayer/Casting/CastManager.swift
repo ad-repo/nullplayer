@@ -691,21 +691,31 @@ class CastManager {
         NSLog("CastManager: Casting to %@ (%@), start position: %.1f", device.name, device.type.displayName, startPosition)
 
         let task = await enqueueInflight { [self] in
-            var supersededVideoCast = false
+            try await self._castCore(to: device, url: url, metadata: metadata, startPosition: startPosition)
+        }
 
-            // If media type changed (audio to video or vice versa), do clean teardown
-            if let session = self.activeSession, session.metadata?.mediaType != metadata.mediaType {
-                NSLog("CastManager: Media type mismatch - current: %@, incoming: %@; performing teardown",
-                      session.metadata?.mediaType.rawValue ?? "nil", metadata.mediaType.rawValue)
-                supersededVideoCast = session.metadata?.mediaType == .video
-                await self.stopCastingAndAwaitTeardown()
-            }
+        try await task.value
+    }
 
-            // Disconnect from any remaining existing session
-            if self.activeSession != nil {
-                await self.stopCasting()
-            }
-        
+    /// Core cast implementation. Call only from inside an already serialized inflight operation.
+    private func _castCore(to device: CastDevice, url: URL, metadata: CastMetadata, startPosition: TimeInterval = 0) async throws {
+        let supersededVideoCast: Bool
+
+        // If media type changed (audio to video or vice versa), do clean teardown
+        if let session = activeSession, session.metadata?.mediaType != metadata.mediaType {
+            NSLog("CastManager: Media type mismatch - current: %@, incoming: %@; performing teardown",
+                  session.metadata?.mediaType.rawValue ?? "nil", metadata.mediaType.rawValue)
+            supersededVideoCast = session.metadata?.mediaType == .video
+            await stopCastingAndAwaitTeardown()
+        } else {
+            supersededVideoCast = false
+        }
+
+        // Disconnect from any remaining existing session
+        if activeSession != nil {
+            await stopCasting()
+        }
+
         // Pause local playback before casting
         await MainActor.run {
             pauseLocalPlayback()
@@ -842,9 +852,6 @@ class CastManager {
             NotificationCenter.default.post(name: Self.sessionDidChangeNotification, object: nil)
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
         }
-        }
-
-        try await task.value
     }
 
     /// Stop local audio playback (called when casting starts)
@@ -1002,7 +1009,7 @@ class CastManager {
                 return
             }
             let task = await enqueueInflight { [self] in
-                try await self.castVideoURL(
+                try await self._castVideoURLCore(
                     track.url,
                     title: track.title,
                     to: device,
@@ -1619,6 +1626,22 @@ class CastManager {
     /// Cast a generic video URL to a video-capable device.
     /// Handles both local files and already-resolved remote video streams.
     func castVideoURL(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil, contentType: String? = nil) async throws {
+        let task = await enqueueInflight { [self] in
+            try await self._castVideoURLCore(
+                url,
+                title: title,
+                to: device,
+                startPosition: startPosition,
+                duration: duration,
+                contentType: contentType
+            )
+        }
+
+        try await task.value
+    }
+
+    /// Core video URL cast implementation. Call only from inside an already serialized inflight operation.
+    private func _castVideoURLCore(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil, contentType: String? = nil) async throws {
         guard device.supportsVideo else {
             throw CastError.unsupportedDevice
         }
@@ -1663,7 +1686,7 @@ class CastManager {
         )
 
         NSLog("CastManager: Casting video URL '%@' to %@", title, device.name)
-        try await cast(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
+        try await _castCore(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
     }
     
     /// Stop casting and disconnect
