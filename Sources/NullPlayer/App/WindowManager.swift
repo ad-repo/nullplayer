@@ -1020,13 +1020,18 @@ class WindowManager {
     private func routeToVideoCastIfNeeded(title: String, artworkTrack: Track?, operation: @escaping (CastDevice) async throws -> Void) -> Bool {
         guard let device = targetVideoCastDevice else { return false }
 
-        // Stop any running local video session before routing to cast.
+        // If a video cast is already active, close it now — two simultaneous casts aren't possible.
+        // Local video teardown is deferred until the cast succeeds so playback isn't lost on failure.
+        let hasLocalVideoRunning: Bool
         if let vpc = videoPlayerWindowController, vpc.currentTitle != nil {
             if vpc.isCastingVideo {
                 vpc.closeForCastTransition()
+                hasLocalVideoRunning = false
             } else {
-                vpc.stop()
+                hasLocalVideoRunning = true
             }
+        } else {
+            hasLocalVideoRunning = false
         }
 
         videoTitle = title
@@ -1036,6 +1041,12 @@ class WindowManager {
         Task {
             do {
                 try await operation(device)
+                // Cast succeeded — safe to stop any local video that was running
+                if hasLocalVideoRunning {
+                    await MainActor.run {
+                        self.videoPlayerWindowController?.stop()
+                    }
+                }
             } catch {
                 NSLog("WindowManager: Failed to route video '%@' to active cast device %@: %@", title, device.name, error.localizedDescription)
                 await MainActor.run {
