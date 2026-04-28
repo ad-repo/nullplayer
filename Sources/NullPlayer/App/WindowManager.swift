@@ -1045,6 +1045,9 @@ class WindowManager {
                 if hasLocalVideoRunning {
                     await MainActor.run {
                         self.videoPlayerWindowController?.stop()
+                        self.videoTitle = title
+                        self.mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: artworkTrack)
+                        self.mainWindowController?.updatePlaybackState()
                     }
                 }
             } catch {

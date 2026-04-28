@@ -87,6 +87,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Timer for updating main window with cast progress
     private var castUpdateTimer: Timer?
 
+    /// Last video-cast position observed before CastManager replaces or clears its session.
+    private var lastKnownVideoCastPosition: TimeInterval = 0
+
     /// Duration of the video being cast (read from activeSession)
     var castDuration: TimeInterval {
         CastManager.shared.activeSession?.duration ?? 0
@@ -94,8 +97,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Current cast playback time (interpolated from start position)
     var castCurrentTime: TimeInterval {
-        guard let session = CastManager.shared.activeSession else {
-            return 0
+        guard let session = CastManager.shared.activeSession,
+              session.metadata?.mediaType == .video else {
+            return lastKnownVideoCastPosition
         }
         if let startDate = session.playbackStartDate {
             let elapsed = Date().timeIntervalSince(startDate)
@@ -103,6 +107,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return session.duration > 0 ? min(current, session.duration) : current
         }
         return session.position
+    }
+
+    @discardableResult
+    private func cacheLastKnownVideoCastPosition() -> TimeInterval {
+        let position = castCurrentTime
+        lastKnownVideoCastPosition = position
+        return position
     }
     
     /// Start the cast update timer (updates main window with progress)
@@ -115,6 +126,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             // This prevents showing stale/incorrect time before sync (especially for 4K on slow networks)
             guard CastManager.shared.activeSession?.state != .loaded else { return }
             let current = self.castCurrentTime
+            self.lastKnownVideoCastPosition = current
             let duration = CastManager.shared.activeSession?.duration ?? 0
             WindowManager.shared.videoDidUpdateTime(current: current, duration: duration)
         }
@@ -134,6 +146,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
         let isPlaying = status.playerState == .playing
         let isBuffering = status.playerState == .buffering
+        lastKnownVideoCastPosition = status.currentTime
 
         // CastManager handles all session state and first-status UI updates.
         // VPWC only drives playback analytics.
@@ -185,7 +198,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         guard !isClosing else { return }
         isClosing = true
 
-        reportCurrentServerVideoStop(position: castCurrentTime, finished: false)
+        reportCurrentServerVideoStop(position: cacheLastKnownVideoCastPosition(), finished: false)
 
         // Clear cast flags before close() so windowWillClose skips the cast-stop block
         stopCastUpdateTimer()
@@ -207,7 +220,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     @objc private func handleCastSessionChange() {
         guard case .none = CastManager.shared.currentCast else { return }
         if isCastingVideo || didInitiateCast {
-            reportCurrentServerVideoStop(position: castCurrentTime, finished: false)
+            reportCurrentServerVideoStop(position: cacheLastKnownVideoCastPosition(), finished: false)
             recordVideoPlayEvent()
             videoPlayerView.stop()
             isPlaying = false
@@ -1128,7 +1141,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         
         // Capture cast position before stopping (for Plex reporting)
         let wasCasting = isCastingVideo
-        let castPosition = wasCasting ? castCurrentTime : 0
+        let castPosition = wasCasting ? cacheLastKnownVideoCastPosition() : 0
         
         // Stop casting if active (this will exit the movie on the TV)
         // Use semaphore to wait for cast stop to complete before closing
@@ -1465,6 +1478,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             self.isCastingVideo = true
             self.didInitiateCast = true
             self.isPlaying = true
+            self.lastKnownVideoCastPosition = startPosition
             self.videoPlayerView.updateCastState(isPlaying: true, deviceName: device.name)
 
             NotificationCenter.default.addObserver(
@@ -1487,7 +1501,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     @objc private func stopCasting() {
         Task {
             // Capture current cast position before stopping
-            let resumePosition = await MainActor.run { self.castCurrentTime }
+            let resumePosition = await MainActor.run { self.cacheLastKnownVideoCastPosition() }
             
             await CastManager.shared.stopCasting()
             
