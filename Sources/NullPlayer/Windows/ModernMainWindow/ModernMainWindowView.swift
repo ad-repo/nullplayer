@@ -1097,10 +1097,15 @@ class ModernMainWindowView: NSView {
                     }
                 }
             } else if let embyId = track.embyId {
-                let key = NSString(string: "marquee_emby:\(embyId)")
+                let imageTag = track.artworkThumb ?? ""
+                let key = NSString(string: "marquee_emby:\(embyId):\(imageTag)")
                 if let cached = Self.artworkCache.object(forKey: key) {
                     image = cached
-                } else if let url = EmbyManager.shared.imageURL(itemId: embyId, imageTag: track.artworkThumb, size: 400) {
+                } else if let url = EmbyManager.shared.imageURL(
+                    itemId: embyId,
+                    imageTag: imageTag.isEmpty ? nil : imageTag,
+                    size: 400
+                ) {
                     if let (data, resp) = try? await URLSession.shared.data(from: url),
                        (resp as? HTTPURLResponse)?.statusCode == 200,
                        let img = NSImage(data: data) {

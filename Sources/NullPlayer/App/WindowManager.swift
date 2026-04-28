@@ -1021,7 +1021,7 @@ class WindowManager {
         guard let device = targetVideoCastDevice else { return false }
 
         // Stop any running local video session before routing to cast.
-        if let vpc = videoPlayerWindowController, vpc.isPlaying {
+        if let vpc = videoPlayerWindowController, vpc.currentTitle != nil {
             if vpc.isCastingVideo {
                 vpc.closeForCastTransition()
             } else {

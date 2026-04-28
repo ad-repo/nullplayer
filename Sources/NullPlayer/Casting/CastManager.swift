@@ -1598,39 +1598,24 @@ class CastManager {
     ///   - device: Target cast device (must support video)
     ///   - startPosition: Optional position to resume from (seconds)
     func castLocalVideo(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil) async throws {
-        guard device.supportsVideo else {
-            throw CastError.unsupportedDevice
-        }
-        
         guard url.isFileURL else {
             throw CastError.invalidURL
         }
-        
-        // Ensure LocalMediaServer is running
-        if !LocalMediaServer.shared.isRunning {
-            try await LocalMediaServer.shared.start()
-        }
-        
-        // Register file and get HTTP URL
-        guard let serverURL = LocalMediaServer.shared.registerFile(url) else {
-            throw CastError.localServerError("Could not register file with local media server")
-        }
-        
-        // Detect content type
+
         let (contentType, mediaType) = detectContentType(for: url)
-        
-        let metadata = CastMetadata(
-            title: title,
-            artist: nil,
-            album: nil,
-            artworkURL: nil,
-            duration: duration,
-            contentType: contentType,
-            mediaType: mediaType
-        )
-        
+        guard mediaType == .video else {
+            throw CastError.invalidURL
+        }
+
         NSLog("CastManager: Casting local video '%@' to %@", title, device.name)
-        try await cast(to: device, url: serverURL, metadata: metadata, startPosition: startPosition)
+        try await castVideoURL(
+            url,
+            title: title,
+            to: device,
+            startPosition: startPosition,
+            duration: duration,
+            contentType: contentType
+        )
     }
 
     /// Cast a generic video URL to a video-capable device.

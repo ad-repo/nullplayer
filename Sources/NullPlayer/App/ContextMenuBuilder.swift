@@ -2764,16 +2764,15 @@ class MenuActions: NSObject {
         let wm = WindowManager.shared
         
         // Check for video first (takes priority if both audio and video are active)
-        // Path 1: Video player window is active (local playback or cast from player)
+        if case .video = CastManager.shared.currentCast {
+            showVideoCastInfo()
+            return
+        }
+
+        // Video player window is active for local playback.
         if let videoController = wm.currentVideoPlayerController,
            wm.isVideoActivePlayback {
             showVideoInfo(videoController)
-            return
-        }
-        
-        // Path 2: Video casting from menu (no video player window)
-        if case .video = CastManager.shared.currentCast {
-            showVideoCastInfo()
             return
         }
         
