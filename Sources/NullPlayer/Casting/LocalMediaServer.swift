@@ -560,6 +560,8 @@ class LocalMediaServer {
         ]
         if let upstreamLength = await fetchUpstreamContentLength(url) {
             headers[HTTPHeader("Content-Length")] = String(upstreamLength)
+        } else if let localLength = localFileContentLength(for: url) {
+            headers[HTTPHeader("Content-Length")] = String(localLength)
         }
 
         return HTTPResponse(
@@ -586,6 +588,15 @@ class LocalMediaServer {
         }
 
         return length
+    }
+
+    private func localFileContentLength(for url: URL) -> Int? {
+        guard url.isFileURL,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let fileSize = attrs[.size] as? NSNumber else {
+            return nil
+        }
+        return fileSize.intValue
     }
     
     // MARK: - Private Methods

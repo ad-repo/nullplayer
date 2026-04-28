@@ -1026,7 +1026,8 @@ class CastManager {
                     title: track.title,
                     to: device,
                     duration: track.duration,
-                    contentType: track.contentType
+                    contentType: track.contentType,
+                    sourceTrack: track
                 )
             }
             try await task.value
@@ -1650,8 +1651,29 @@ class CastManager {
         try await task.value
     }
 
+    /// Cast a video playlist track, preserving server identity so authenticated/proxied URLs are used.
+    func castVideoTrack(_ track: Track, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil) async throws {
+        guard track.mediaType == .video else {
+            throw CastError.invalidURL
+        }
+
+        let task = await enqueueInflight { [self] in
+            try await self._castVideoURLCore(
+                track.url,
+                title: track.displayTitle,
+                to: device,
+                startPosition: startPosition,
+                duration: duration ?? track.duration,
+                contentType: track.contentType,
+                sourceTrack: track
+            )
+        }
+
+        try await task.value
+    }
+
     /// Core video URL cast implementation. Call only from inside an already serialized inflight operation.
-    private func _castVideoURLCore(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil, contentType: String? = nil) async throws {
+    private func _castVideoURLCore(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil, contentType: String? = nil, sourceTrack: Track? = nil) async throws {
         guard device.supportsVideo else {
             throw CastError.unsupportedDevice
         }
@@ -1662,6 +1684,9 @@ class CastManager {
         if activeSession != nil {
             await stopCastingAndAwaitTeardown()
         }
+
+        let detected = detectContentType(for: url)
+        let effectiveContentType = contentType ?? sourceTrack?.contentType ?? (detected.mediaType == .video ? detected.contentType : "video/mp4")
 
         let castURL: URL
         if url.isFileURL {
@@ -1674,7 +1699,12 @@ class CastManager {
             }
             castURL = serverURL
         } else if url.scheme == "http" || url.scheme == "https" {
-            if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: url) {
+            if let track = sourceTrack,
+               track.plexRatingKey == nil,
+               (track.subsonicId != nil || track.jellyfinId != nil || track.embyId != nil) {
+                let result = try await prepareProxyURL(for: track, device: device, contentTypeOverride: effectiveContentType)
+                castURL = result.url
+            } else if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: url) {
                 castURL = rewriteLocalhostForCasting(tokenizedURL)
             } else {
                 castURL = rewriteLocalhostForCasting(url)
@@ -1683,8 +1713,6 @@ class CastManager {
             throw CastError.invalidURL
         }
 
-        let detected = detectContentType(for: url)
-        let effectiveContentType = contentType ?? (detected.mediaType == .video ? detected.contentType : "video/mp4")
         let metadata = CastMetadata(
             title: title,
             artist: nil,
@@ -2110,7 +2138,7 @@ class CastManager {
     /// Starts LocalMediaServer if needed, rewrites localhost URLs, detects content type
     /// via upstream HEAD request when track.contentType is nil, and registers the proxy.
     /// Returns the proxy URL and the effective content type for DIDL-Lite metadata.
-    private func prepareProxyURL(for track: Track, device: CastDevice) async throws -> (url: URL, contentType: String?) {
+    private func prepareProxyURL(for track: Track, device: CastDevice, contentTypeOverride: String? = nil) async throws -> (url: URL, contentType: String?) {
         if !LocalMediaServer.shared.isRunning {
             do {
                 try await LocalMediaServer.shared.start()
@@ -2122,7 +2150,7 @@ class CastManager {
         let rewrittenURL = rewriteLocalhostForCasting(track.url)
         
         // Detect content type from upstream if track doesn't have it
-        var effectiveContentType = track.contentType
+        var effectiveContentType = contentTypeOverride ?? track.contentType
         if effectiveContentType == nil {
             effectiveContentType = await detectUpstreamContentType(rewrittenURL)
             NSLog("CastManager: Detected upstream content type: %@", effectiveContentType ?? "nil")
@@ -2144,8 +2172,8 @@ class CastManager {
         guard let (_, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse,
               let ct = http.value(forHTTPHeaderField: "Content-Type"),
-              ct.hasPrefix("audio/") else {
-            NSLog("CastManager: HEAD content type detection failed or returned non-audio for %@", url.host ?? "unknown")
+              (ct.hasPrefix("audio/") || ct.hasPrefix("video/")) else {
+            NSLog("CastManager: HEAD content type detection failed or returned unsupported media for %@", url.host ?? "unknown")
             return nil
         }
         NSLog("CastManager: HEAD response Content-Type: %@", ct)

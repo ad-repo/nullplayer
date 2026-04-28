@@ -185,6 +185,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         guard !isClosing else { return }
         isClosing = true
 
+        reportCurrentServerVideoStop(position: castCurrentTime, finished: false)
+
         // Clear cast flags before close() so windowWillClose skips the cast-stop block
         stopCastUpdateTimer()
         isCastingVideo = false
@@ -205,6 +207,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     @objc private func handleCastSessionChange() {
         guard case .none = CastManager.shared.currentCast else { return }
         if isCastingVideo || didInitiateCast {
+            reportCurrentServerVideoStop(position: castCurrentTime, finished: false)
             recordVideoPlayEvent()
             videoPlayerView.stop()
             isPlaying = false
@@ -434,6 +437,16 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Whether current content is from Emby
     private var isEmbyContent: Bool {
         currentEmbyMovie != nil || currentEmbyEpisode != nil
+    }
+
+    private func reportCurrentServerVideoStop(position: TimeInterval, finished: Bool) {
+        if isPlexContent {
+            PlexVideoPlaybackReporter.shared.videoDidStop(at: position, finished: finished)
+        } else if isJellyfinContent {
+            JellyfinVideoPlaybackReporter.shared.videoDidStop(at: position, finished: finished)
+        } else if isEmbyContent {
+            EmbyVideoPlaybackReporter.shared.videoDidStop(at: position, finished: finished)
+        }
     }
 
     // MARK: - Playback Analytics
@@ -1218,7 +1231,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         Task {
             do {
                 if CastManager.shared.activeSession?.state == .casting {
-                    if isPlaying {
+                    let receiverPlaying = CastManager.shared.activeSession?.isPlaying ?? isPlaying
+                    if receiverPlaying {
                         NSLog("VideoPlayerWindowController: Sending cast pause")
                         try await CastManager.shared.pause()
                         await MainActor.run {
@@ -1428,13 +1442,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             try await CastManager.shared.castEmbyEpisode(episode, to: device, startPosition: startPosition)
         } else if let track = await MainActor.run(resultType: Track?.self, body: { self.currentArtworkTrack }),
                   track.mediaType == .video {
-            try await CastManager.shared.castVideoURL(
-                track.url,
-                title: track.displayTitle,
+            try await CastManager.shared.castVideoTrack(
+                track,
                 to: device,
                 startPosition: startPosition,
-                duration: videoDuration > 0 ? videoDuration : track.duration,
-                contentType: track.contentType
+                duration: videoDuration > 0 ? videoDuration : track.duration
             )
         } else if let url = await MainActor.run(resultType: URL?.self, body: { self.currentURL }) {
             try await CastManager.shared.castLocalVideo(

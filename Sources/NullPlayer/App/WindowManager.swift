@@ -1050,8 +1050,18 @@ class WindowManager {
             } catch {
                 NSLog("WindowManager: Failed to route video '%@' to active cast device %@: %@", title, device.name, error.localizedDescription)
                 await MainActor.run {
-                    self.videoTitle = nil
-                    self.mainWindowController?.clearVideoTrackInfo()
+                    if hasLocalVideoRunning,
+                       let localController = self.videoPlayerWindowController,
+                       let localTitle = localController.currentTitle {
+                        self.videoTitle = localTitle
+                        self.mainWindowController?.updateVideoTrackInfo(
+                            title: localTitle,
+                            artworkTrack: localController.currentArtworkTrack
+                        )
+                    } else {
+                        self.videoTitle = nil
+                        self.mainWindowController?.clearVideoTrackInfo()
+                    }
                     self.mainWindowController?.updatePlaybackState()
                 }
                 CastManager.shared.postError(.playbackFailed("Could not play '\(title)' on \(device.name): \(error.localizedDescription)"))
@@ -1332,7 +1342,9 @@ class WindowManager {
     func seekVideoCast(position: Double) {
         switch CastManager.shared.currentCast {
         case .video:
-            let time = position * CastManager.shared.videoCastDuration
+            let duration = CastManager.shared.videoCastDuration
+            guard duration > 0 else { return }
+            let time = position * duration
             Task {
                 try? await CastManager.shared.seek(to: time)
             }
@@ -1348,7 +1360,9 @@ class WindowManager {
     func skipVideoForward(_ seconds: TimeInterval = 10) {
         switch CastManager.shared.currentCast {
         case .video:
-            let newTime = min(CastManager.shared.videoCastCurrentTime + seconds, CastManager.shared.videoCastDuration)
+            let duration = CastManager.shared.videoCastDuration
+            let requestedTime = CastManager.shared.videoCastCurrentTime + seconds
+            let newTime = duration > 0 ? min(requestedTime, duration) : requestedTime
             Task {
                 try? await CastManager.shared.seek(to: newTime)
             }

@@ -2771,7 +2771,7 @@ class MenuActions: NSObject {
 
         // Video player window is active for local playback.
         if let videoController = wm.currentVideoPlayerController,
-           wm.isVideoActivePlayback {
+           (wm.currentVideoTitle != nil || wm.isVideoActivePlayback) {
             showVideoInfo(videoController)
             return
         }

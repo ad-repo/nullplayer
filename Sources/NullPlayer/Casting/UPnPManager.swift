@@ -1360,6 +1360,8 @@ class UPnPManager {
         
         // Keep session in .casting state so user can play another track
         // Don't clear currentURL/metadata - they stay until a new track is cast
+        session.isPlaying = false
+        session.playbackStartDate = nil
 
         CastManager.postNotificationOnMain(name: CastManager.playbackStateDidChangeNotification)
     }
