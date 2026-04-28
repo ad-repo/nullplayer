@@ -318,6 +318,14 @@ class CastManager {
     /// Guards the IDLE → stopCasting path so the initial post-connect IDLE (which arrives
     /// before the LOAD command is processed) doesn't trigger a premature teardown.
     private var chromecastHasSeenActivePlayback: Bool = false
+
+    /// Set to true when Sonos reports PLAYING for the current track.
+    /// Startup can legitimately report TRANSITIONING and even STOPPED at t=0 while it is
+    /// opening the proxy URL, so do not treat STOPPED as an external end until playback
+    /// has been observed or the startup grace has elapsed.
+    private var sonosHasSeenActivePlayback: Bool = false
+    private var sonosTrackStartDate: Date?
+    private let sonosStartupStopGraceInterval: TimeInterval = 25.0
     
     /// Timer for updating main window with video cast progress
     private var videoCastUpdateTimer: Timer?
@@ -714,14 +722,14 @@ class CastManager {
             NSLog("CastManager: Media type mismatch - current: %@, incoming: %@; performing teardown",
                   session.metadata?.mediaType.rawValue ?? "nil", metadata.mediaType.rawValue)
             supersededVideoCast = session.metadata?.mediaType == .video
-            await stopCastingAndAwaitTeardown()
+            await _stopCastingAndAwaitTeardownCore()
         } else {
             supersededVideoCast = false
         }
 
         // Disconnect from any remaining existing session
         if activeSession != nil {
-            await stopCasting()
+            await _stopCastingCore()
         }
 
         // Pause local playback before casting
@@ -754,6 +762,12 @@ class CastManager {
             do {
                 try await upnpManager.connect(to: device)
                 NSLog("CastManager: Connected to %@, now casting...", device.type.displayName)
+                if device.type == .sonos {
+                    await MainActor.run {
+                        sonosHasSeenActivePlayback = false
+                        sonosTrackStartDate = Date()
+                    }
+                }
                 try await upnpManager.cast(url: url, metadata: metadata)
                 NSLog("CastManager: Cast started successfully")
             } catch {
@@ -1013,6 +1027,11 @@ class CastManager {
     func castNewTrack(_ track: Track) async throws {
         NSLog("CastManager: castNewTrack '%@' (mediaType=%@, currentCast=%@)",
               track.title, track.mediaType.rawValue, String(describing: currentCast))
+        let requestedGeneration = await MainActor.run {
+            castTrackGeneration += 1
+            return castTrackGeneration
+        }
+
         // Video tracks in an audio playlist dispatch to the video cast path.
         // Keep the teardown performed by castVideoURL serialized with audio track changes.
         if track.mediaType == .video {
@@ -1021,6 +1040,11 @@ class CastManager {
                 return
             }
             let task = await enqueueInflight { [self] in
+                guard requestedGeneration == self.castTrackGeneration else {
+                    NSLog("CastManager: castNewTrack video '%@' abandoned before cast - superseded by generation %d",
+                          track.title, self.castTrackGeneration)
+                    return
+                }
                 try await self._castVideoURLCore(
                     track.url,
                     title: track.title,
@@ -1039,59 +1063,64 @@ class CastManager {
             guard let session = self.activeSession else {
                 throw CastError.sessionNotActive
             }
+            guard requestedGeneration == self.castTrackGeneration else {
+                NSLog("CastManager: castNewTrack '%@' abandoned before setup - superseded by generation %d",
+                      track.title, self.castTrackGeneration)
+                return
+            }
             let supersededVideoCast = session.metadata?.mediaType == .video
 
-        var trackToCast = track
+            var trackToCast = track
 
-        // For Sonos: if format is unsupported, advance within this same serialized
-        // operation. Recursing into castNewTrack() from here would enqueue a task
-        // behind the current inflight task and deadlock the cast handoff.
-        if session.device.type == .sonos {
-            let engine = WindowManager.shared.audioEngine
+            // For Sonos: if format is unsupported, advance within this same serialized
+            // operation. Recursing into castNewTrack() from here would enqueue a task
+            // behind the current inflight task and deadlock the cast handoff.
+            if session.device.type == .sonos {
+                let engine = WindowManager.shared.audioEngine
 
-            while true {
-                var fetchedSampleRate: Int? = nil
-                if trackToCast.sampleRate == nil,
-                   let ratingKey = trackToCast.plexRatingKey,
-                   Self.sonosLosslessExtension(for: trackToCast) != nil {
-                    fetchedSampleRate = await PlexManager.shared.fetchSampleRate(for: ratingKey)
-                    NSLog("CastManager: castNewTrack Sonos sample-rate check '%@' ratingKey=%@ fetched=%@",
-                          trackToCast.title, ratingKey, fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
-                }
-
-                if Self.isSonosCompatible(trackToCast, sampleRateOverride: fetchedSampleRate) {
-                    if trackToCast.id != track.id {
-                        NSLog("CastManager: castNewTrack Sonos using compatible replacement '%@' after skipping '%@'",
-                              trackToCast.title, track.title)
+                while true {
+                    var fetchedSampleRate: Int? = nil
+                    if trackToCast.sampleRate == nil,
+                       let ratingKey = trackToCast.plexRatingKey,
+                       Self.sonosLosslessExtension(for: trackToCast) != nil {
+                        fetchedSampleRate = await PlexManager.shared.fetchSampleRate(for: ratingKey)
+                        NSLog("CastManager: castNewTrack Sonos sample-rate check '%@' ratingKey=%@ fetched=%@",
+                              trackToCast.title, ratingKey, fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
                     }
-                    break
+
+                    if Self.isSonosCompatible(trackToCast, sampleRateOverride: fetchedSampleRate) {
+                        if trackToCast.id != track.id {
+                            NSLog("CastManager: castNewTrack Sonos using compatible replacement '%@' after skipping '%@'",
+                                  trackToCast.title, track.title)
+                        }
+                        break
+                    }
+
+                    NSLog("CastManager: castNewTrack Sonos rejecting '%@' (ext=%@ contentType=%@ sampleRate=%@ fetchedSampleRate=%@) — finding next compatible track",
+                          trackToCast.title,
+                          Self.sonosFormatExtension(for: trackToCast),
+                          trackToCast.contentType ?? "nil",
+                          trackToCast.sampleRate.map { "\($0) Hz" } ?? "nil",
+                          fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
+
+                    guard let compatible = engine.advanceToFirstSonosCompatibleTrack() else {
+                        NSLog("CastManager: castNewTrack Sonos found no compatible replacement after rejecting '%@' — stopping cast",
+                              trackToCast.title)
+                        await _stopCastingCore()
+                        return
+                    }
+
+                    NSLog("CastManager: castNewTrack Sonos candidate replacement '%@' (ext=%@ contentType=%@ sampleRate=%@)",
+                          compatible.title,
+                          Self.sonosFormatExtension(for: compatible),
+                          compatible.contentType ?? "nil",
+                          compatible.sampleRate.map { "\($0) Hz" } ?? "nil")
+                    trackToCast = compatible
                 }
-
-                NSLog("CastManager: castNewTrack Sonos rejecting '%@' (ext=%@ contentType=%@ sampleRate=%@ fetchedSampleRate=%@) — finding next compatible track",
-                      trackToCast.title,
-                      Self.sonosFormatExtension(for: trackToCast),
-                      trackToCast.contentType ?? "nil",
-                      trackToCast.sampleRate.map { "\($0) Hz" } ?? "nil",
-                      fetchedSampleRate.map { "\($0) Hz" } ?? "nil")
-
-                guard let compatible = engine.advanceToFirstSonosCompatibleTrack() else {
-                    NSLog("CastManager: castNewTrack Sonos found no compatible replacement after rejecting '%@' — stopping cast",
-                          trackToCast.title)
-                    await stopCasting()
-                    return
-                }
-
-                NSLog("CastManager: castNewTrack Sonos candidate replacement '%@' (ext=%@ contentType=%@ sampleRate=%@)",
-                      compatible.title,
-                      Self.sonosFormatExtension(for: compatible),
-                      compatible.contentType ?? "nil",
-                      compatible.sampleRate.map { "\($0) Hz" } ?? "nil")
-                trackToCast = compatible
             }
-        }
 
-        // Check if this is a local file (needs loading state due to async registration)
-        let isLocalFile = trackToCast.url.scheme != "http" && trackToCast.url.scheme != "https"
+            // Check if this is a local file (needs loading state due to async registration)
+            let isLocalFile = trackToCast.url.scheme != "http" && trackToCast.url.scheme != "https"
         
         // Check if Subsonic/Jellyfin/Emby track to Sonos - also needs loading state since we use proxy
         let needsSubsonicProxy = trackToCast.subsonicId != nil && session.device.type == .sonos
@@ -1103,12 +1132,9 @@ class CastManager {
 
         let needsLoadingState = isLocalFile || needsSubsonicProxy || needsJellyfinProxy || needsEmbyProxy || isRadioToSonos
         
-        // Increment generation to invalidate any in-flight cast operations
-        // This prevents race conditions when user rapidly clicks through tracks
-        // Must be done on MainActor for thread safety
+        // Use the generation captured before this operation entered the serialized queue,
+        // so newer requests can invalidate older queued work before it casts.
         let myGeneration = await MainActor.run {
-            castTrackGeneration += 1
-            
             // Set loading state for local files and Subsonic->Sonos proxy (they have async registration)
             if needsLoadingState {
                 isCastingTrackChange = true
@@ -1116,7 +1142,7 @@ class CastManager {
                 NotificationCenter.default.post(name: Self.trackChangeLoadingNotification, object: nil, userInfo: ["isLoading": true, "track": trackToCast])
             }
             
-            return castTrackGeneration
+            return requestedGeneration
         }
 
         await MainActor.run {
@@ -1257,6 +1283,12 @@ class CastManager {
                 }
                 
             case .sonos, .dlnaTV:
+                if session.device.type == .sonos {
+                    await MainActor.run {
+                        self.sonosHasSeenActivePlayback = false
+                        self.sonosTrackStartDate = Date()
+                    }
+                }
                 try await upnpManager.cast(url: finalCastURL, metadata: metadata)
             }
         } catch {
@@ -1682,7 +1714,7 @@ class CastManager {
         // unregisters files from the embedded HTTP server. Use stopCastingAndAwaitTeardown()
         // so the session is fully gone before cast() runs — prevents double-teardown.
         if activeSession != nil {
-            await stopCastingAndAwaitTeardown()
+            await _stopCastingAndAwaitTeardownCore()
         }
 
         let detected = detectContentType(for: url)
@@ -1701,9 +1733,16 @@ class CastManager {
         } else if url.scheme == "http" || url.scheme == "https" {
             if let track = sourceTrack,
                track.plexRatingKey == nil,
+               Self.isAudioContentType(effectiveContentType),
                (track.subsonicId != nil || track.jellyfinId != nil || track.embyId != nil) {
                 let result = try await prepareProxyURL(for: track, device: device, contentTypeOverride: effectiveContentType)
                 castURL = result.url
+            } else if let track = sourceTrack,
+                      track.plexRatingKey == nil,
+                      (track.subsonicId != nil || track.jellyfinId != nil || track.embyId != nil) {
+                // The Sonos proxy path is for audio metadata/content-type handling;
+                // remote video streams can be cast directly.
+                castURL = rewriteLocalhostForCasting(url)
             } else if let tokenizedURL = PlexManager.shared.getCastableStreamURL(for: url) {
                 castURL = rewriteLocalhostForCasting(tokenizedURL)
             } else {
@@ -1729,6 +1768,17 @@ class CastManager {
     
     /// Stop casting and disconnect
     func stopCasting() async {
+        await MainActor.run {
+            castTrackGeneration += 1
+        }
+        let task = await enqueueInflight { [self] in
+            await self._stopCastingCore()
+        }
+        try? await task.value
+    }
+
+    /// Stop casting and disconnect. Call directly only from an already-serialized inflight operation.
+    private func _stopCastingCore() async {
         NSLog("CastManager: stopCasting — currentCast=%@ chromecastSession=%@ upnpSession=%@",
               String(describing: currentCast),
               chromecastManager.activeSession.map { $0.device.name } ?? "nil",
@@ -1738,6 +1788,8 @@ class CastManager {
         NSLog("CastManager: stopCasting — resetting chromecastHasSeenActivePlayback to false")
         await MainActor.run {
             chromecastHasSeenActivePlayback = false
+            sonosHasSeenActivePlayback = false
+            sonosTrackStartDate = nil
         }
 
         // Stop Sonos polling and topology refresh
@@ -1809,9 +1861,20 @@ class CastManager {
     /// Stop casting and wait for the session to be fully torn down
     /// Used to ensure clean state transitions when switching media types
     func stopCastingAndAwaitTeardown() async {
+        await MainActor.run {
+            castTrackGeneration += 1
+        }
+        let task = await enqueueInflight { [self] in
+            await self._stopCastingAndAwaitTeardownCore()
+        }
+        try? await task.value
+    }
+
+    /// Stop casting and wait for teardown. Call directly only from an already-serialized inflight operation.
+    private func _stopCastingAndAwaitTeardownCore() async {
         NSLog("CastManager: stopCastingAndAwaitTeardown - waiting for session nil (currentCast=%@)",
               String(describing: currentCast))
-        await stopCasting()
+        await _stopCastingCore()
 
         // Wait for activeSession to become nil
         var attempts = 0
@@ -2035,14 +2098,30 @@ class CastManager {
 
             await MainActor.run {
                 let engine = WindowManager.shared.audioEngine
-                guard engine.isCastingActive else {
-                    NSLog("CastManager: Sonos poll result ignored — isCastingActive=false")
+                guard engine.isAudioCastRoutingActive else {
+                    NSLog("CastManager: Sonos poll result ignored — audio cast routing inactive")
                     return
                 }
-                NSLog("CastManager: Sonos poll — state=%@ t=%.1f", result.state, result.position)
+                let track = engine.currentTrack
+                let session = self.activeSession
+                let startupElapsed = self.sonosTrackStartDate.map { Date().timeIntervalSince($0) } ?? .infinity
+                NSLog("CastManager: Sonos poll — state=%@ t=%.1f dur=%.1f sessionT=%.1f sessionDur=%.1f engineT=%.1f engineState=%@ seen=%d startup=%.1f url=%@ track='%@' subsonic=%@",
+                      result.state,
+                      result.position,
+                      result.duration,
+                      session?.position ?? -1,
+                      session?.duration ?? -1,
+                      engine.currentTime,
+                      String(describing: engine.state),
+                      self.sonosHasSeenActivePlayback ? 1 : 0,
+                      startupElapsed.isFinite ? startupElapsed : -1,
+                      session?.currentURL?.redacted ?? "nil",
+                      track?.title ?? "nil",
+                      track?.subsonicId ?? "nil")
                 
                 switch result.state {
                 case "PLAYING":
+                    self.sonosHasSeenActivePlayback = true
                     // Sync position from Sonos and reset playbackStartDate so currentTime interpolates
                     self.activeSession?.position = result.position
                     self.activeSession?.playbackStartDate = Date()
@@ -2060,9 +2139,24 @@ class CastManager {
                         NSLog("CastManager: Sonos reported PAUSED (external pause detected)")
                     }
                 case "STOPPED", "NO_MEDIA_PRESENT":
+                    if !self.sonosHasSeenActivePlayback,
+                       result.position <= 0.5,
+                       startupElapsed < self.sonosStartupStopGraceInterval {
+                        NSLog("CastManager: Sonos reported %@ at startup t=%.1f after %.1fs — waiting for playback",
+                              result.state, result.position, startupElapsed)
+                        return
+                    }
                     self.activeSession?.playbackStartDate = nil
                     self.activeSession?.isPlaying = false
-                    NSLog("CastManager: Sonos reported %@ - playback ended externally", result.state)
+                    NSLog("CastManager: Sonos reported %@ - playback ended externally (track='%@' subsonic=%@ sonosT=%.1f engineT=%.1f sessionT=%.1f url=%@ seen=%d)",
+                          result.state,
+                          track?.title ?? "nil",
+                          track?.subsonicId ?? "nil",
+                          result.position,
+                          engine.currentTime,
+                          session?.position ?? -1,
+                          session?.currentURL?.redacted ?? "nil",
+                          self.sonosHasSeenActivePlayback ? 1 : 0)
                     // Don't auto-disconnect, just update state so UI reflects reality
                     engine.pauseCastPlayback()
                     CastManager.postNotificationOnMain(name: Self.playbackStateDidChangeNotification)
@@ -2156,7 +2250,8 @@ class CastManager {
             NSLog("CastManager: Detected upstream content type: %@", effectiveContentType ?? "nil")
         }
         
-        guard let proxyURL = LocalMediaServer.shared.registerStreamURL(rewrittenURL, contentType: effectiveContentType) else {
+        let debugLabel = "\(track.title) [subsonic=\(track.subsonicId ?? "nil") jellyfin=\(track.jellyfinId ?? "nil") emby=\(track.embyId ?? "nil")]"
+        guard let proxyURL = LocalMediaServer.shared.registerStreamURL(rewrittenURL, contentType: effectiveContentType, debugLabel: debugLabel) else {
             throw CastError.localServerError("Could not register stream with local media server")
         }
         
@@ -2201,6 +2296,17 @@ class CastManager {
     /// Detect audio content type from URL path extension
     static func detectAudioContentType(for url: URL) -> String {
         detectAudioContentType(forExtension: url.pathExtension)
+    }
+
+    private static func isAudioContentType(_ contentType: String?) -> Bool {
+        guard let mimeType = contentType?
+            .split(separator: ";", maxSplits: 1)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() else {
+            return false
+        }
+        return mimeType.hasPrefix("audio/")
     }
 
     // MARK: - Sonos Format Compatibility
