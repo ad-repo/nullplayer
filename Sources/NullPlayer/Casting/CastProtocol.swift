@@ -302,6 +302,8 @@ class CastSessionController {
         // Set up completion handler for when we get transportId
         withLock {
             self.launchInFlight = true
+            self.transportId = nil
+            self.mediaSessionId = nil
             self.transportIdCompletion = { [weak self] tid in
                 guard let self = self else { return }
                 
@@ -315,30 +317,29 @@ class CastSessionController {
                 }
             }
         }
-        
+
         sendMessage(namespace: .receiver, payload: [
             "type": "LAUNCH",
             "appId": "CC1AD845",
             "requestId": rid
         ], to: "receiver-0")
-        
+
         // Set up timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
             guard let self = self else { return }
             let handler = self.withLock { () -> ((String?) -> Void)? in
+                guard self.launchInFlight, self.transportId == nil else {
+                    return nil
+                }
                 let h = self.transportIdCompletion
                 self.transportIdCompletion = nil
                 self.launchInFlight = false
                 return h
             }
-            
-            // Only call if we haven't already received transportId
-            if self.withLock({ self.transportId }) == nil {
-                handler?(nil)
-            }
+            handler?(nil)
         }
     }
-    
+
     /// Load media to play
     func loadMedia(url: URL, contentType: String, title: String?, artist: String?, completion: @escaping (Result<Void, Error>) -> Void) {
         guard let tid = withLock({ transportId }) else {

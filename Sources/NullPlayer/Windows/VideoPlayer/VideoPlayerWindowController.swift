@@ -208,6 +208,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             recordVideoPlayEvent()
             videoPlayerView.stop()
             isPlaying = false
+            clearLoadedContentState()
             WindowManager.shared.videoPlaybackDidStop()
         }
         clearVideoCastState()

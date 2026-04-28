@@ -755,7 +755,7 @@ class WindowManager {
     /// Call from windowWillClose on classic center-stack windows (EQ, Playlist, Spectrum, Waveform)
     /// when closed via the X button. Slides up windows below and tightens the stack.
     func handleCenterStackWindowWillClose(_ window: NSWindow) {
-        guard !isModernUIEnabled else { return }
+        guard !isRunningModernUI else { return }
         let closingFrame = window.frame
         slideUpWindowsBelow(closingFrame: closingFrame)
         _ = tightenClassicCenterStackIfNeeded()
