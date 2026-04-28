@@ -194,6 +194,7 @@ class CastSessionController {
     private var isConnected = false
     private var heartbeatTimer: Timer?
     private var statusPollTimer: Timer?
+    private var launchInFlight = false
     
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "com.nullplayer.castcontroller")
@@ -297,14 +298,10 @@ class CastSessionController {
         NSLog("CastSessionController: Launching media receiver app")
         
         let rid = nextRequestId()
-        sendMessage(namespace: .receiver, payload: [
-            "type": "LAUNCH",
-            "appId": "CC1AD845",
-            "requestId": rid
-        ], to: "receiver-0")
-        
+
         // Set up completion handler for when we get transportId
         withLock {
+            self.launchInFlight = true
             self.transportIdCompletion = { [weak self] tid in
                 guard let self = self else { return }
                 
@@ -319,12 +316,19 @@ class CastSessionController {
             }
         }
         
+        sendMessage(namespace: .receiver, payload: [
+            "type": "LAUNCH",
+            "appId": "CC1AD845",
+            "requestId": rid
+        ], to: "receiver-0")
+        
         // Set up timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
             guard let self = self else { return }
             let handler = self.withLock { () -> ((String?) -> Void)? in
                 let h = self.transportIdCompletion
                 self.transportIdCompletion = nil
+                self.launchInFlight = false
                 return h
             }
             
@@ -606,6 +610,7 @@ class CastSessionController {
                 if let app = apps.first, let tid = app["transportId"] as? String {
                     let handler = withLock { () -> ((String?) -> Void)? in
                         self.transportId = tid
+                        self.launchInFlight = false
                         let h = self.transportIdCompletion
                         self.transportIdCompletion = nil
                         return h
@@ -613,12 +618,19 @@ class CastSessionController {
                     NSLog("CastSessionController: Got transportId: %@", tid)
                     handler?(tid)
                 } else {
-                    let pendingHandler = withLock { () -> ((String?) -> Void)? in
+                    let (pendingHandler, ignoredDuringLaunch) = withLock { () -> (((String?) -> Void)?, Bool) in
+                        if self.launchInFlight {
+                            return (nil, true)
+                        }
                         self.transportId = nil
                         self.mediaSessionId = nil
                         let h = self.transportIdCompletion
                         self.transportIdCompletion = nil
-                        return h
+                        return (h, false)
+                    }
+                    if ignoredDuringLaunch {
+                        NSLog("CastSessionController: RECEIVER_STATUS — no applications running during launch, ignoring")
+                        return
                     }
                     // No applications running — receiver app was closed (response to stopApp())
                     NSLog("CastSessionController: RECEIVER_STATUS — no applications running (app closed)")

@@ -8,6 +8,7 @@ final class CastingTests: XCTestCase {
 
     private var originalPreferredDeviceID: String?
     private var originalDebugDiscoveredDevices: [CastDevice]?
+    private var originalDebugActiveSession: CastSession?
     private var originalVideoPlayerController: VideoPlayerWindowController?
 
     override func setUp() {
@@ -15,9 +16,11 @@ final class CastingTests: XCTestCase {
         let castManager = CastManager.shared
         originalPreferredDeviceID = UserDefaults.standard.string(forKey: preferredDeviceDefaultsKey)
         originalDebugDiscoveredDevices = castManager.debugDiscoveredDevices
+        originalDebugActiveSession = castManager.debugActiveSessionForTesting
         originalVideoPlayerController = WindowManager.shared.debugVideoPlayerWindowControllerForTesting
 
         castManager.debugDiscoveredDevices = nil
+        castManager.debugActiveSessionForTesting = nil
         castManager.debugSetVideoCastingStateForTesting(false)
         castManager.setPreferredVideoCastDevice(nil)
         WindowManager.shared.debugSetVideoPlayerWindowControllerForTesting(nil)
@@ -26,7 +29,7 @@ final class CastingTests: XCTestCase {
     override func tearDown() {
         let castManager = CastManager.shared
         castManager.debugDiscoveredDevices = originalDebugDiscoveredDevices
-        castManager.debugSetVideoCastingStateForTesting(false)
+        castManager.debugActiveSessionForTesting = originalDebugActiveSession
 
         if let originalPreferredDeviceID {
             castManager.setPreferredVideoCastDevice(originalPreferredDeviceID)

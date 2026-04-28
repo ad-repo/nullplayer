@@ -1559,8 +1559,8 @@ class UPnPManager {
             return nil
         }
         guard let posInfo = try? await getPositionInfo() else {
-            NSLog("UPnPManager: pollSonosPlaybackState — getPositionInfo failed for %@, returning state only", session.device.name)
-            return (state: transportState, position: 0, duration: 0)
+            NSLog("UPnPManager: pollSonosPlaybackState — getPositionInfo failed, returning nil")
+            return nil
         }
         return (state: transportState, position: posInfo.position, duration: posInfo.duration)
     }

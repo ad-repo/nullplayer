@@ -15,9 +15,10 @@ class ContextMenuBuilder {
         // Now Playing
         let aboutPlaying = NSMenuItem(title: "Now Playing…", action: #selector(MenuActions.showAboutPlaying), keyEquivalent: "")
         aboutPlaying.target = MenuActions.shared
-        let hasAudioContent = wm.audioEngine.currentTrack != nil
-        let hasVideoContent = wm.currentVideoTitle != nil
-        aboutPlaying.isEnabled = hasAudioContent || hasVideoContent
+        let hasPlayableInfo = wm.audioEngine.currentTrack != nil
+            || wm.currentVideoTitle != nil
+            || CastManager.shared.currentCast == .video
+        aboutPlaying.isEnabled = hasPlayableInfo
         menu.addItem(aboutPlaying)
         menu.addItem(NSMenuItem.separator())
 
@@ -160,9 +161,10 @@ class ContextMenuBuilder {
 
         let aboutPlaying = NSMenuItem(title: "About Playing", action: #selector(MenuActions.showAboutPlaying), keyEquivalent: "")
         aboutPlaying.target = MenuActions.shared
-        let hasAudioContent = wm.audioEngine.currentTrack != nil
-        let hasVideoContent = wm.currentVideoTitle != nil
-        aboutPlaying.isEnabled = hasAudioContent || hasVideoContent
+        let hasPlayableInfo = wm.audioEngine.currentTrack != nil
+            || wm.currentVideoTitle != nil
+            || CastManager.shared.currentCast == .video
+        aboutPlaying.isEnabled = hasPlayableInfo
         menu.addItem(aboutPlaying)
         menu.addItem(NSMenuItem.separator())
 

@@ -1020,6 +1020,15 @@ class WindowManager {
     private func routeToVideoCastIfNeeded(title: String, artworkTrack: Track?, operation: @escaping (CastDevice) async throws -> Void) -> Bool {
         guard let device = targetVideoCastDevice else { return false }
 
+        // Stop any running local video session before routing to cast.
+        if let vpc = videoPlayerWindowController, vpc.isPlaying {
+            if vpc.isCastingVideo {
+                vpc.closeForCastTransition()
+            } else {
+                vpc.stop()
+            }
+        }
+
         videoTitle = title
         mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: artworkTrack)
         mainWindowController?.updatePlaybackState()

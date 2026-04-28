@@ -37,7 +37,7 @@ class MarqueeLayer: CALayer {
     }
 
     /// Font size used when useSystemFont is true
-    var systemFontSize: CGFloat = NSFont.systemFontSize {
+    var systemFontSize: CGFloat = SkinElements.TextFont.charHeight {
         didSet { if systemFontSize != oldValue { scheduleRenderText() } }
     }
 
@@ -150,11 +150,6 @@ class MarqueeLayer: CALayer {
             return
         }
 
-        // Text dimensions in base coordinates (matching the bounds)
-        let textWidth = measureTextWidth(text)
-        // Available scroll width = full marquee width minus small edge padding
-        let availableWidth = bounds.width - (edgePadding * 2)
-
         // Capture values for async rendering
         let currentText = text
         let currentSeparator = separator
@@ -167,6 +162,11 @@ class MarqueeLayer: CALayer {
         let currentUseSystemFont = useSystemFont
         let currentSystemFontSize = systemFontSize
         let currentSystemFontColor = systemFontColor
+
+        // Text dimensions in base coordinates (matching the bounds)
+        let textWidth = measureTextWidth(currentText, skinCGImage: currentSkinCGImage)
+        // Available scroll width = full marquee width minus small edge padding
+        let availableWidth = bounds.width - (edgePadding * 2)
 
         if textWidth <= availableWidth {
             // Text fits - render once, no scrolling, left-aligned
@@ -200,7 +200,7 @@ class MarqueeLayer: CALayer {
         } else {
             // Text overflows - render text + separator twice for seamless loop
             needsScrolling = true
-            let separatorWidth = measureTextWidth(currentSeparator)
+            let separatorWidth = measureTextWidth(currentSeparator, skinCGImage: currentSkinCGImage)
             cycleWidth = textWidth + separatorWidth
 
             // Render two copies for seamless scrolling
@@ -236,8 +236,12 @@ class MarqueeLayer: CALayer {
         }
     }
 
-    private func measureTextWidth(_ text: String) -> CGFloat {
-        if useSystemFont {
+    private func shouldUseSystemFont(for text: String, skinCGImage: CGImage?) -> Bool {
+        useSystemFont || skinCGImage == nil || containsNonLatinCharacters(text)
+    }
+
+    private func measureTextWidth(_ text: String, skinCGImage: CGImage?) -> CGFloat {
+        if shouldUseSystemFont(for: text, skinCGImage: skinCGImage) {
             let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: systemFontSize)]
             return text.size(withAttributes: attrs).width
         }
@@ -250,7 +254,8 @@ class MarqueeLayer: CALayer {
                                        scale: CGFloat, charWidth: CGFloat, charHeight: CGFloat,
                                        boundsHeight: CGFloat, useSystemFont: Bool = false,
                                        systemFontSize: CGFloat = NSFont.systemFontSize, systemFontColor: NSColor = .green) -> CGImage? {
-        if useSystemFont || skinCGImage == nil || containsNonLatinCharacters(string) {
+        let shouldUseSystemFont = useSystemFont || skinCGImage == nil || containsNonLatinCharacters(string)
+        if shouldUseSystemFont {
             return renderSystemFontToImageSync(string, width: width, scale: scale,
                                                fontSize: systemFontSize, color: systemFontColor,
                                                boundsHeight: boundsHeight)

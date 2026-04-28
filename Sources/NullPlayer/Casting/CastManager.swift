@@ -2326,6 +2326,11 @@ extension CastManager {
         set { _debugDiscoveredDevices = newValue }
     }
 
+    var debugActiveSessionForTesting: CastSession? {
+        get { _debugActiveSession }
+        set { _debugActiveSession = newValue }
+    }
+
     func debugSetVideoCastingStateForTesting(_ isVideoCasting: Bool) {
         if isVideoCasting {
             if _debugActiveSession == nil {

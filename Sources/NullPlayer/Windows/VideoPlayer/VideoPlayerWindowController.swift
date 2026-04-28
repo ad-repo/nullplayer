@@ -165,6 +165,19 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         videoPlayerView.updateCastState(isPlaying: false, deviceName: nil)
     }
 
+    private func clearLoadedContentState() {
+        currentTitle = nil
+        currentArtworkTrack = nil
+        currentPlexMovie = nil
+        currentPlexEpisode = nil
+        currentPlexRatingKey = nil
+        currentJellyfinMovie = nil
+        currentJellyfinEpisode = nil
+        currentEmbyMovie = nil
+        currentEmbyEpisode = nil
+        currentLocalURL = nil
+    }
+
     /// Close the video player window when an audio cast supersedes an active video cast.
     /// Does NOT call CastManager.stopCasting() — the audio cast is already running.
     func closeForCastTransition() {
@@ -183,15 +196,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Stop local KSPlayer and clear content state
         videoPlayerView.stop()
         isPlaying = false
-        currentTitle = nil
-        currentArtworkTrack = nil
-        currentPlexMovie = nil
-        currentPlexEpisode = nil
-        currentPlexRatingKey = nil
-        currentJellyfinMovie = nil
-        currentJellyfinEpisode = nil
-        currentEmbyMovie = nil
-        currentEmbyEpisode = nil
+        clearLoadedContentState()
 
         WindowManager.shared.videoPlaybackDidStop()
         close()
@@ -199,6 +204,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func handleCastSessionChange() {
         guard case .none = CastManager.shared.currentCast else { return }
+        if isCastingVideo || didInitiateCast {
+            recordVideoPlayEvent()
+            videoPlayerView.stop()
+            isPlaying = false
+            WindowManager.shared.videoPlaybackDidStop()
+        }
         clearVideoCastState()
     }
     
@@ -1139,15 +1150,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
         videoPlayerView.stop()
         isPlaying = false
-        currentTitle = nil
-        currentArtworkTrack = nil
-        currentPlexMovie = nil
-        currentPlexEpisode = nil
-        currentPlexRatingKey = nil
-        currentJellyfinMovie = nil
-        currentJellyfinEpisode = nil
-        currentEmbyMovie = nil
-        currentEmbyEpisode = nil
+        clearLoadedContentState()
         WindowManager.shared.videoPlaybackDidStop()
         close()
     }
@@ -1555,15 +1558,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
             videoPlayerView.stop()
             isPlaying = false
-            currentTitle = nil
-            currentArtworkTrack = nil
-            currentPlexMovie = nil
-            currentPlexEpisode = nil
-            currentPlexRatingKey = nil
-            currentJellyfinMovie = nil
-            currentJellyfinEpisode = nil
-            currentEmbyMovie = nil
-            currentEmbyEpisode = nil
+            clearLoadedContentState()
             WindowManager.shared.videoPlaybackDidStop()
         }
         removeKeyboardMonitor()
