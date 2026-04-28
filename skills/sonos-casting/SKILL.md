@@ -149,7 +149,7 @@ Click **🔴 Stop Casting** to:
 - Ungroup all member rooms (each becomes standalone)
 - Stop playback on the coordinator
 - Clear all room selections
-- Return to local playback (if audio was playing)
+- Return to local control (stopped; use the play button to resume)
 
 ## Casting Protocol
 

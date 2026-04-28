@@ -439,6 +439,12 @@ class CastManager {
     }
     
     // MARK: - Chromecast Status Updates
+
+    @MainActor
+    private func restoreChromecastLoadedStateAfterLoad(_ session: CastSession) {
+        guard !chromecastHasSeenActivePlayback else { return }
+        session.state = .loaded
+    }
     
     /// Handle media status updates from Chromecast for position syncing
     @objc private func handleChromecastMediaStatusUpdate(_ notification: Notification) {
@@ -517,12 +523,6 @@ class CastManager {
                 // Audio casting - forward position sync to AudioEngine
                 // Use currentCast (not isCasting) so we handle the .loaded phase too:
                 // isCasting requires .casting state, but audio starts in .loaded
-                let isFirstAudioStatus = self.activeSession?.state == .loaded
-                if isFirstAudioStatus {
-                    NSLog("CastManager: first audio status - transitioning .loaded → .casting")
-                    self.activeSession?.state = .casting
-                }
-
                 // Update session position (mirrors what video branch does) so currentTime
                 // getter can interpolate correctly from session.position + playbackStartDate
                 self.activeSession?.position = status.currentTime
@@ -532,6 +532,10 @@ class CastManager {
                               status.currentTime, self.chromecastHasSeenActivePlayback ? "true" : "false")
                     }
                     self.chromecastHasSeenActivePlayback = true
+                    if self.activeSession?.state == .loaded {
+                        NSLog("CastManager: first Chromecast audio PLAYING status - transitioning .loaded → .casting")
+                    }
+                    self.activeSession?.state = .casting
                     self.activeSession?.playbackStartDate = Date()
                     self.activeSession?.isPlaying = true
                 } else if isBuffering {
@@ -540,6 +544,10 @@ class CastManager {
                               status.currentTime, self.chromecastHasSeenActivePlayback ? "true" : "false")
                     }
                     self.chromecastHasSeenActivePlayback = true
+                    if self.activeSession?.state == .loaded {
+                        NSLog("CastManager: first Chromecast audio BUFFERING status - transitioning .loaded → .casting")
+                    }
+                    self.activeSession?.state = .casting
                     self.activeSession?.playbackStartDate = nil
                     self.activeSession?.isPlaying = false
                 } else if status.playerState == .idle {
@@ -786,9 +794,10 @@ class CastManager {
                     self.activeSession?.playbackStartDate = nil
                     self.activeSession?.isPlaying = false
                     self.isVideoCastPlaying = false
-                    self.activeSession?.state = .loaded
-                    NSLog("CastManager: Video cast start — resetting chromecastHasSeenActivePlayback to false")
-                    self.chromecastHasSeenActivePlayback = false
+                    if let session = self.activeSession {
+                        self.restoreChromecastLoadedStateAfterLoad(session)
+                    }
+                    NSLog("CastManager: Video cast start — waiting for first Chromecast status")
                 } else {
                     // DLNA/UPnP: No status updates, start timer immediately
                     self.activeSession?.playbackStartDate = Date()
@@ -826,9 +835,10 @@ class CastManager {
                 if device.type == .chromecast {
                     // Chromecast provides status updates - wait for PLAYING status to start timer
                     // This prevents clock sync issues when buffering on slow networks
-                    self.activeSession?.state = .loaded
-                    NSLog("CastManager: Audio cast start — resetting chromecastHasSeenActivePlayback to false")
-                    self.chromecastHasSeenActivePlayback = false
+                    if let session = self.activeSession {
+                        self.restoreChromecastLoadedStateAfterLoad(session)
+                    }
+                    NSLog("CastManager: Audio cast start — waiting for first Chromecast status")
                     resolvedAudioEngine.initializeCastPlayback(from: trackingPosition)
                 } else {
                     // Sonos/DLNA don't provide status updates - start timer immediately
@@ -1239,6 +1249,11 @@ class CastManager {
                     self.chromecastHasSeenActivePlayback = false
                 }
                 try await chromecastManager.cast(url: finalCastURL, metadata: metadata)
+                // Restore .loaded — ChromecastManager sets .casting internally when loadMedia ACKs,
+                // but UI state should stay .loaded until Chromecast sends PLAYING or BUFFERING.
+                await MainActor.run {
+                    self.restoreChromecastLoadedStateAfterLoad(session)
+                }
                 
             case .sonos, .dlnaTV:
                 try await upnpManager.cast(url: finalCastURL, metadata: metadata)
@@ -2017,6 +2032,8 @@ class CastManager {
                         NSLog("CastManager: Sonos reported PAUSED (external pause detected)")
                     }
                 case "STOPPED", "NO_MEDIA_PRESENT":
+                    self.activeSession?.playbackStartDate = nil
+                    self.activeSession?.isPlaying = false
                     NSLog("CastManager: Sonos reported %@ - playback ended externally", result.state)
                     // Don't auto-disconnect, just update state so UI reflects reality
                     engine.pauseCastPlayback()
@@ -2354,6 +2371,16 @@ extension CastManager {
     func debugSetActiveSessionStateForTesting(_ state: CastState) {
         _debugActiveSession?.state = state
         CastManager.postNotificationOnMain(name: Self.sessionDidChangeNotification)
+    }
+
+    @MainActor
+    func debugRestoreChromecastLoadedStateAfterLoadForTesting() {
+        guard let session = _debugActiveSession else { return }
+        restoreChromecastLoadedStateAfterLoad(session)
+    }
+
+    func debugSetChromecastHasSeenActivePlaybackForTesting(_ value: Bool) {
+        chromecastHasSeenActivePlayback = value
     }
 }
 #endif

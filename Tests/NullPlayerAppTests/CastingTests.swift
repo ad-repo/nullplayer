@@ -22,6 +22,7 @@ final class CastingTests: XCTestCase {
         castManager.debugDiscoveredDevices = nil
         castManager.debugActiveSessionForTesting = nil
         castManager.debugSetVideoCastingStateForTesting(false)
+        castManager.debugSetChromecastHasSeenActivePlaybackForTesting(false)
         castManager.setPreferredVideoCastDevice(nil)
         WindowManager.shared.debugSetVideoPlayerWindowControllerForTesting(nil)
     }
@@ -178,6 +179,28 @@ final class CastingTests: XCTestCase {
                        "Session should remain in .loaded state until first status update")
     }
 
+    func testChromecastLoadAckRestoreLeavesAudioSessionLoadedBeforeStatus() {
+        let device = CastDevice(id: "cc-audio", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetAudioCastSessionForTesting(device: device)
+
+        // Simulate ChromecastManager.cast() marking the session as .casting when LOAD is sent.
+        CastManager.shared.debugSetActiveSessionStateForTesting(.casting)
+        CastManager.shared.debugRestoreChromecastLoadedStateAfterLoadForTesting()
+
+        XCTAssertEqual(CastManager.shared.activeSession?.state, .loaded)
+    }
+
+    func testChromecastLoadAckRestoreDoesNotOverwriteActiveStatus() {
+        let device = CastDevice(id: "cc-audio", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetAudioCastSessionForTesting(device: device)
+
+        CastManager.shared.debugSetActiveSessionStateForTesting(.casting)
+        CastManager.shared.debugSetChromecastHasSeenActivePlaybackForTesting(true)
+        CastManager.shared.debugRestoreChromecastLoadedStateAfterLoadForTesting()
+
+        XCTAssertEqual(CastManager.shared.activeSession?.state, .casting)
+    }
+
     func testLoadedAudioCastCountsAsActiveForTrackRouting() {
         let device = CastDevice(id: "cc-audio", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
         CastManager.shared.debugSetAudioCastSessionForTesting(device: device)
@@ -223,6 +246,85 @@ final class CastingTests: XCTestCase {
         }
         wait(for: [expectation], timeout: 1.0)
         XCTAssertEqual(CastManager.shared.activeSession?.state, .casting)
+    }
+
+    func testInitialChromecastAudioIdleStatusIsIgnored() {
+        let device = CastDevice(id: "cc-audio", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetAudioCastSessionForTesting(device: device)
+        CastManager.shared.debugSetActiveSessionStateForTesting(.loaded)
+
+        let expectation = expectation(description: "initial Chromecast audio IDLE ignored")
+        var status = CastMediaStatus()
+        status.currentTime = 0
+        status.playerState = .idle
+        status.mediaSessionId = 1
+
+        NotificationCenter.default.post(
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil,
+            userInfo: ["status": status]
+        )
+
+        DispatchQueue.main.async {
+            XCTAssertEqual(CastManager.shared.activeSession?.state, .loaded)
+            XCTAssertNotNil(CastManager.shared.activeSession)
+            XCTAssertNil(CastManager.shared.activeSession?.playbackStartDate)
+            XCTAssertFalse(CastManager.shared.activeSession?.isPlaying ?? true)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
+    }
+
+    func testChromecastAudioBufferingPromotesLoadedToCasting() {
+        let device = CastDevice(id: "cc-audio", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetAudioCastSessionForTesting(device: device)
+        CastManager.shared.debugSetActiveSessionStateForTesting(.loaded)
+
+        let expectation = expectation(description: "Chromecast audio BUFFERING promotes loaded session")
+        var status = CastMediaStatus()
+        status.currentTime = 2.0
+        status.playerState = .buffering
+        status.mediaSessionId = 1
+
+        NotificationCenter.default.post(
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil,
+            userInfo: ["status": status]
+        )
+
+        DispatchQueue.main.async {
+            XCTAssertEqual(CastManager.shared.activeSession?.state, .casting)
+            XCTAssertNil(CastManager.shared.activeSession?.playbackStartDate)
+            XCTAssertFalse(CastManager.shared.activeSession?.isPlaying ?? true)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
+    }
+
+    func testChromecastAudioPlayingPromotesLoadedToCastingAndStartsClock() {
+        let device = CastDevice(id: "cc-audio", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetAudioCastSessionForTesting(device: device)
+        CastManager.shared.debugSetActiveSessionStateForTesting(.loaded)
+
+        let expectation = expectation(description: "Chromecast audio PLAYING promotes loaded session")
+        var status = CastMediaStatus()
+        status.currentTime = 2.0
+        status.playerState = .playing
+        status.mediaSessionId = 1
+
+        NotificationCenter.default.post(
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil,
+            userInfo: ["status": status]
+        )
+
+        DispatchQueue.main.async {
+            XCTAssertEqual(CastManager.shared.activeSession?.state, .casting)
+            XCTAssertNotNil(CastManager.shared.activeSession?.playbackStartDate)
+            XCTAssertTrue(CastManager.shared.activeSession?.isPlaying ?? false)
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 1.0)
     }
 
     // MARK: - Session notification

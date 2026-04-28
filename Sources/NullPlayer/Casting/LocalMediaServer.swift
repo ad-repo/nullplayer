@@ -553,14 +553,39 @@ class LocalMediaServer {
         // otherwise fall back to URL extension detection
         let contentType = storedContentType ?? CastManager.detectAudioContentType(for: url)
         NSLog("LocalMediaServer: HEAD /stream/ - token %@, contentType=%@", token, contentType)
+
+        var headers: [HTTPHeader: String] = [
+            HTTPHeader("Content-Type"): contentType,
+            HTTPHeader("Accept-Ranges"): "bytes"
+        ]
+        if let upstreamLength = await fetchUpstreamContentLength(url) {
+            headers[HTTPHeader("Content-Length")] = String(upstreamLength)
+        }
+
         return HTTPResponse(
             statusCode: .ok,
-            headers: [
-                HTTPHeader("Content-Type"): contentType,
-                HTTPHeader("Accept-Ranges"): "bytes"
-            ],
+            headers: headers,
             body: Data()
         )
+    }
+
+    /// Best-effort upstream HEAD probe for proxied streams. Some Sonos codecs
+    /// require Content-Length in the preflight HEAD response; live/chunked
+    /// streams may legitimately omit it.
+    private func fetchUpstreamContentLength(_ url: URL) async -> Int? {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let httpResponse = response as? HTTPURLResponse,
+              (200..<400).contains(httpResponse.statusCode),
+              let rawLength = httpResponse.value(forHTTPHeaderField: "Content-Length"),
+              let length = Int(rawLength) else {
+            return nil
+        }
+
+        return length
     }
     
     // MARK: - Private Methods
