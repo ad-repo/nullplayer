@@ -999,7 +999,7 @@ struct SkinElements {
             static let rightBorder: CGFloat = 12
             static let bottomBorder: CGFloat = 3 * Skin.scaleFactor
         }
-        
+
         /// Window control button positions in title bar (scaled)
         struct TitleBarButtons {
             // Relative to right edge of window (same as ProjectM)

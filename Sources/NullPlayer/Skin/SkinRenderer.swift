@@ -2546,7 +2546,9 @@ class SkinRenderer {
         }
     }
     
-    /// Draw left and right side borders using leftSideTile sprites (shared by playlist, spectrum, waveform, projectM)
+    /// Draw left and right side borders (shared by playlist, spectrum, waveform, projectM).
+    /// Both borders use the same leftSideTile sprite; the right border is drawn horizontally
+    /// mirrored so both sides appear identical.
     private func drawPlaylistStyleSideBorders(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, bottomHeight: CGFloat) {
         let sideW: CGFloat = 12
         let tileH: CGFloat = 29
@@ -2572,10 +2574,18 @@ class SkinRenderer {
             let drawY = max(contentTop, y)
             let h = min(tileH, contentBottom - drawY)
             if h > 0 {
+                let leftDest = NSRect(x: 0, y: drawY, width: sideW, height: h)
+                let rightDest = NSRect(x: bounds.width - sideW, y: drawY, width: sideW, height: h)
                 drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.leftSideTile,
-                          to: NSRect(x: 0, y: drawY, width: sideW, height: h), in: context)
+                          to: leftDest, in: context)
+                // Mirror the left tile horizontally so both sides are visually identical
+                context.saveGState()
+                context.translateBy(x: rightDest.midX, y: 0)
+                context.scaleBy(x: -1, y: 1)
+                context.translateBy(x: -rightDest.midX, y: 0)
                 drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.leftSideTile,
-                          to: NSRect(x: bounds.width - sideW, y: drawY, width: sideW, height: h), in: context)
+                          to: rightDest, in: context)
+                context.restoreGState()
             }
             y -= tileH
         }
