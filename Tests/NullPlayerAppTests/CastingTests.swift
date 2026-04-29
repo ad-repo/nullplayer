@@ -127,6 +127,24 @@ final class CastingTests: XCTestCase {
         controller.close()
     }
 
+    func testSessionDidChangeIgnoresNoneWhileControllerStopsOwnCast() {
+        let controller = VideoPlayerWindowController()
+        let device = CastDevice(id: "cast-device", name: "TV", type: .chromecast, address: "192.168.1.30", port: 8009)
+        controller.debugSetCastStateForTesting(device: device, startPosition: 12.5, duration: 245.0)
+        controller.debugSetDidInitiateCastForTesting(true)
+        controller.debugSetStoppingOwnCastForTesting(true)
+
+        CastManager.shared.debugSetVideoCastingStateForTesting(false)
+        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+
+        let after = controller.debugCastStateSnapshot
+        XCTAssertTrue(after.isCastingVideo)
+        XCTAssertTrue(controller.debugDidInitiateCast)
+
+        controller.debugSetStoppingOwnCastForTesting(false)
+        controller.close()
+    }
+
     // MARK: - currentCast enum
 
     func testCurrentCastIsNoneWhenNoActiveSession() {

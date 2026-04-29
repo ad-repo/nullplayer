@@ -93,6 +93,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Whether local playback should resume when this controller stops its video cast.
     private var shouldResumeLocalPlaybackAfterCast = false
 
+    /// Suppresses session-change teardown while stopCasting() handles its own cleanup/resume flow.
+    private var isStoppingOwnCast = false
+
     /// Duration of the video being cast (read from activeSession)
     var castDuration: TimeInterval {
         CastManager.shared.activeSession?.duration ?? 0
@@ -222,6 +225,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func handleCastSessionChange() {
         guard case .none = CastManager.shared.currentCast else { return }
+        guard !isStoppingOwnCast else {
+            NSLog("VideoPlayerWindowController: Ignoring cast session .none during local stopCasting() cleanup")
+            return
+        }
         if isCastingVideo || didInitiateCast {
             reportCurrentServerVideoStop(position: cacheLastKnownVideoCastPosition(), finished: false)
             recordVideoPlayEvent()
@@ -1510,7 +1517,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     @objc private func stopCasting() {
         Task {
             // Capture current cast position before stopping
-            let resumePosition = await MainActor.run { self.cacheLastKnownVideoCastPosition() }
+            let resumePosition = await MainActor.run {
+                self.isStoppingOwnCast = true
+                return self.cacheLastKnownVideoCastPosition()
+            }
             
             await CastManager.shared.stopCasting()
             
@@ -1526,6 +1536,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                     self.isPlaying = true
                 }
                 self.shouldResumeLocalPlaybackAfterCast = false
+                self.isStoppingOwnCast = false
             }
             
             NSLog("VideoPlayerWindowController: Video casting stopped")
@@ -1666,6 +1677,10 @@ extension VideoPlayerWindowController {
     }
 
     var debugDidInitiateCast: Bool { didInitiateCast }
+
+    func debugSetStoppingOwnCastForTesting(_ value: Bool) {
+        isStoppingOwnCast = value
+    }
 
     var debugCastStateSnapshot: DebugCastStateSnapshot {
         let session = CastManager.shared.activeSession
