@@ -447,12 +447,12 @@ final class CastingTests: XCTestCase {
     func testSonosCompatibilityNormalizesContentTypeParameters() {
         let track = Track(
             url: URL(string: "http://server.local/stream/123")!,
-            title: "High-res FLAC",
-            sampleRate: 96_000,
+            title: "FLAC Track",
+            sampleRate: 44_100,
             contentType: "Audio/X-FLAC; charset=binary"
         )
 
-        XCTAssertFalse(CastManager.isSonosCompatible(track))
+        XCTAssertTrue(CastManager.isSonosCompatible(track))
     }
 
     func testPlexContentTypeInferencePreservesLosslessCodecs() {

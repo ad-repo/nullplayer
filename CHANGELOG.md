@@ -4,7 +4,7 @@
 
 ### New Features
 
-- **Sleep Timer** — pause or stop playback automatically via **Playback > Sleep Timer**. Three modes: timed durations (5, 10, 15, 30, 45, 60, 90 minutes, or 2, 5, 8, 12 hours) with a 10-second volume fade-out before firing; end of current track; end of queue. The active preset shows a live countdown in the submenu. Selecting it again cancels. Volume is restored if cancelled mid-fade.
+- **Sleep Timer** — stop playback automatically via **Playback > Sleep Timer**. Three modes: timed durations (5, 10, 15, 30, 45, 60, 90 minutes, or 2, 5, 8, 12 hours) with a 10-second volume fade-out before firing; end of current track; end of queue. The active preset shows a live countdown in the submenu. Selecting it again cancels. Volume is restored if cancelled mid-fade.
 - **Modern marquee album art** — the modern main window marquee now shows album artwork alongside scrolling track metadata.
 - **Installable `nullplayer` CLI launcher** — releases now include a `nullplayer` launcher script, an installer, and a double-click `.command` helper for installing it into `/usr/local/bin`.
 - **Modern timer number system options** — the modern UI timer supports additional number system styles for its time display.
