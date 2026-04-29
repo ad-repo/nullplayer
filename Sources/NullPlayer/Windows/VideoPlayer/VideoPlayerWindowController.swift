@@ -90,6 +90,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Last video-cast position observed before CastManager replaces or clears its session.
     private var lastKnownVideoCastPosition: TimeInterval = 0
 
+    /// Whether local playback should resume when this controller stops its video cast.
+    private var shouldResumeLocalPlaybackAfterCast = false
+
     /// Duration of the video being cast (read from activeSession)
     var castDuration: TimeInterval {
         CastManager.shared.activeSession?.duration ?? 0
@@ -1417,6 +1420,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                     alert.alertStyle = .warning
                     alert.runModal()
                     self.clearVideoCastState()
+                    self.shouldResumeLocalPlaybackAfterCast = false
                     if wasPlaying && !self.videoPlayerView.isPlaying {
                         self.videoPlayerView.togglePlayPause()
                     }
@@ -1434,9 +1438,14 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Skip for auto-cast path: the caller already called stop() synchronously.
         if pauseLocal {
             await MainActor.run {
-                if videoPlayerView.isPlaying {
+                self.shouldResumeLocalPlaybackAfterCast = videoPlayerView.isPlaying
+                if self.shouldResumeLocalPlaybackAfterCast {
                     videoPlayerView.togglePlayPause()
                 }
+            }
+        } else {
+            await MainActor.run {
+                self.shouldResumeLocalPlaybackAfterCast = false
             }
         }
 
@@ -1506,15 +1515,17 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             await CastManager.shared.stopCasting()
             
             await MainActor.run {
+                let shouldResumeLocalPlayback = self.shouldResumeLocalPlaybackAfterCast
                 self.clearVideoCastState()
                 
                 // Resume local playback from where casting left off
-                if resumePosition > 0 {
+                if shouldResumeLocalPlayback {
                     NSLog("VideoPlayerWindowController: Resuming local playback at %.1f", resumePosition)
                     self.videoPlayerView.seek(to: resumePosition)
                     self.videoPlayerView.togglePlayPause()  // Start playback
                     self.isPlaying = true
                 }
+                self.shouldResumeLocalPlaybackAfterCast = false
             }
             
             NSLog("VideoPlayerWindowController: Video casting stopped")
