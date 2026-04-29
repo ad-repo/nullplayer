@@ -78,6 +78,30 @@ final class CastingTests: XCTestCase {
         NotificationCenter.default.removeObserver(observer)
     }
 
+    func testChromecastDeviceIDUsesStableTxtRecordID() {
+        let serviceName = "Chromecast-Ultra-91a086b76d0c422dd9dd9cda078e4911"
+
+        let id = ChromecastManager.debugChromecastDeviceIDForTesting(
+            serviceName: serviceName,
+            txtRecordID: " 91A086B76D0C422DD9DD9CDA078E4911 "
+        )
+
+        XCTAssertEqual(id, "chromecast:91a086b76d0c422dd9dd9cda078e4911")
+    }
+
+    func testChromecastDeviceIDFallsBackToServiceNameNotResolvedAddress() {
+        let serviceName = "Chromecast-Ultra-91a086b76d0c422dd9dd9cda078e4911"
+
+        let id = ChromecastManager.debugChromecastDeviceIDForTesting(
+            serviceName: serviceName,
+            txtRecordID: nil
+        )
+
+        XCTAssertEqual(id, "chromecast:\(serviceName)")
+        XCTAssertFalse(id.contains("192.168.0.199"))
+        XCTAssertFalse(id.contains("8009"))
+    }
+
     func testIsVideoContentActiveUsesWindowVisibilityAndVideoCastingState() {
         let windowManager = WindowManager.shared
         let castManager = CastManager.shared

@@ -23,6 +23,7 @@ Chromecast devices are discovered via mDNS (Bonjour):
 - Domain: `local.`
 - Uses `NWBrowser` for discovery
 - Resolves to IP:port (default port 8009)
+- Device identity must use the stable Cast TXT `id` record when available, falling back to the Bonjour service instance name. Do not key Chromecast devices by resolved IP/port: different Macs can resolve the same service via different address forms, which creates duplicate menu entries during refresh because refresh keeps existing devices visible.
 
 ## Protocol Overview
 
