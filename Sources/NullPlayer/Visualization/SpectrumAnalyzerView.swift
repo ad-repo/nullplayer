@@ -29,7 +29,6 @@ extension Notification.Name {
 /// Quality mode for spectrum analyzer rendering
 enum SpectrumQualityMode: String, CaseIterable {
     case classic = "Classic"     // Discrete colors, pixel-art aesthetic
-    case punch = "Punch"         // Peak-forward metal spectrum (15-25 bars, bars-only)
     case enhanced = "Enhanced"   // LED matrix with rainbow
     case ultra = "Ultra"         // Maximum visual quality with effects
     case flame = "Fire"          // GPU fire simulation driven by audio
@@ -45,7 +44,7 @@ enum SpectrumQualityMode: String, CaseIterable {
     /// Returns nil if the mode shares a shader already checked by another mode.
     var requiredShaderFile: String {
         switch self {
-        case .classic, .punch, .enhanced, .ultra: return "SpectrumShaders"
+        case .classic, .enhanced, .ultra: return "SpectrumShaders"
         case .flame: return "FlameShaders"
         case .cosmic: return "CosmicShaders"
         case .electricity: return "ElectricityShaders"
@@ -340,7 +339,7 @@ class SpectrumAnalyzerView: NSView {
     /// Only valid after setupMetal() has run. Use isShaderAvailable() for pre-init checks.
     private func isPipelineAvailable(for mode: SpectrumQualityMode) -> Bool {
         switch mode {
-        case .classic, .punch: return barPipelineState != nil
+        case .classic: return barPipelineState != nil
         case .enhanced: return ledPipelineState != nil
         case .ultra: return ultraPipelineState != nil
         case .flame: return flamePropPipeline != nil && flameBlurHPipeline != nil && flameRenderPipeline != nil
@@ -383,8 +382,6 @@ class SpectrumAnalyzerView: NSView {
                 self?.syncMetalLayerScaleAndSize()
             }
 
-            // Keep Punch mode's dynamic bar layout in sync when mode changes.
-            applyModeDrivenBarLayoutIfNeeded()
             updateWaveformConsumerRegistration()
             DispatchQueue.main.async { [weak self] in
                 self?.applyVisClassicOpacity()
@@ -402,45 +399,6 @@ class SpectrumAnalyzerView: NSView {
         return Double(time.timeScale) / Double(time.timeValue)
     }
 
-    private let punchMinBarCount = 15
-    private let punchMaxBarCount = 25
-    private let punchBarTargetWidth: CGFloat = 12.0
-
-    private func recommendedPunchBarCount(for viewWidth: CGFloat) -> Int {
-        let width = max(1.0, viewWidth)
-        let estimated = Int((width / punchBarTargetWidth).rounded())
-        return max(punchMinBarCount, min(punchMaxBarCount, estimated))
-    }
-
-    private func applyModeDrivenBarLayoutIfNeeded() {
-        guard !isApplyingModeDrivenBarLayout else { return }
-        isApplyingModeDrivenBarLayout = true
-        defer { isApplyingModeDrivenBarLayout = false }
-
-        if qualityMode == .punch {
-            if !hasConfiguredBarLayoutBaseline {
-                configuredBarCount = barCount
-                configuredBarWidth = barWidth
-                configuredBarSpacing = barSpacing
-                hasConfiguredBarLayoutBaseline = true
-            }
-
-            let spacing = configuredBarSpacing
-            let count = recommendedPunchBarCount(for: bounds.width)
-            let totalSpacing = CGFloat(max(0, count - 1)) * spacing
-            let usableWidth = max(0, bounds.width - totalSpacing)
-            let width = max(2.0, floor(usableWidth / CGFloat(max(1, count))))
-
-            barCount = count
-            barWidth = width
-            barSpacing = spacing
-        } else {
-            barCount = configuredBarCount
-            barWidth = configuredBarWidth
-            barSpacing = configuredBarSpacing
-        }
-    }
-    
     /// Decay/responsiveness mode
     var decayMode: SpectrumDecayMode = .snappy {
         didSet {
@@ -457,47 +415,25 @@ class SpectrumAnalyzerView: NSView {
     /// Number of bars to display
     var barCount: Int = 19 {
         didSet {
-            if !isApplyingModeDrivenBarLayout && qualityMode != .punch {
-                configuredBarCount = barCount
-                hasConfiguredBarLayoutBaseline = true
-            }
             let count = barCount
             dataLock.withLock {
                 renderBarCount = count
             }
         }
     }
-    
+
     /// Bar width in pixels (scaled in shader)
     var barWidth: CGFloat = 3.0 {
         didSet {
-            if !isApplyingModeDrivenBarLayout && qualityMode != .punch {
-                configuredBarWidth = barWidth
-                hasConfiguredBarLayoutBaseline = true
-            }
             let width = barWidth
             dataLock.withLock {
                 renderBarWidth = width
             }
         }
     }
-    
-    /// Spacing between bars
-    var barSpacing: CGFloat = 1.0 {
-        didSet {
-            if !isApplyingModeDrivenBarLayout && qualityMode != .punch {
-                configuredBarSpacing = barSpacing
-                hasConfiguredBarLayoutBaseline = true
-            }
-        }
-    }
 
-    /// Last non-punch bar layout requested by host views; restored when leaving punch mode.
-    private var configuredBarCount: Int = 19
-    private var configuredBarWidth: CGFloat = 3.0
-    private var configuredBarSpacing: CGFloat = 1.0
-    private var hasConfiguredBarLayoutBaseline = false
-    private var isApplyingModeDrivenBarLayout = false
+    /// Spacing between bars
+    var barSpacing: CGFloat = 1.0
     
     /// Glow intensity for enhanced mode (0-1)
     var glowIntensity: Float = 0.5
@@ -844,8 +780,6 @@ class SpectrumAnalyzerView: NSView {
             applyVisClassicOpacity()
         }
 
-        applyModeDrivenBarLayoutIfNeeded()
-        
         // Load colors from current skin
         updateColorsFromSkin()
         
@@ -1243,7 +1177,7 @@ class SpectrumAnalyzerView: NSView {
             
             // Keep pipelineState for backward compatibility (points to current mode)
             switch qualityMode {
-            case .classic, .punch:
+            case .classic:
                 pipelineState = barPipelineState
             case .enhanced:
                 pipelineState = ledPipelineState
@@ -1606,8 +1540,6 @@ class SpectrumAnalyzerView: NSView {
         switch modeForPacing {
         case .visClassicExact:
             minFrameIntervalNs = isEmbedded ? 30_000_000 : 20_000_000
-        case .punch:
-            minFrameIntervalNs = 0
         default:
             minFrameIntervalNs = 14_000_000
         }
@@ -1731,7 +1663,7 @@ class SpectrumAnalyzerView: NSView {
         
         let activePipeline: MTLRenderPipelineState?
         switch currentMode {
-        case .classic, .punch:
+        case .classic:
             activePipeline = barPipelineState
         case .enhanced:
             activePipeline = ledPipelineState
@@ -1816,7 +1748,7 @@ class SpectrumAnalyzerView: NSView {
             let vertexCount = ultraBarCount * ultraLedRowCount * 6
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertexCount)
             
-        case .classic, .punch:
+        case .classic:
             // Classic bar mode - bind bar buffers
             if let buffer = heightBuffer {
                 encoder.setVertexBuffer(buffer, offset: 0, index: 0)
@@ -2560,8 +2492,7 @@ class SpectrumAnalyzerView: NSView {
         let decay = renderDecayFactor
         let outputCount = renderBarCount
         let ultraOutputCount = ultraBarCount
-        let isPunchMode = renderQualityMode == .punch
-        let effectiveDecay: Float = isPunchMode ? 0.0 : decay
+        let effectiveDecay: Float = decay
         
         // Check normalization mode - Accurate uses full height for max dynamic range
         let isAccurateMode = cachedIsAccurateNormalization
@@ -2603,106 +2534,8 @@ class SpectrumAnalyzerView: NSView {
                 ultraDisplaySpectrum = Array(repeating: 0, count: ultraOutputCount)
             }
             
-            // Update standard display spectrum (for Enhanced/Classic/Punch)
-            if isPunchMode {
-                // Punch mode: follow dominant frequencies only.
-                // 1) Peak-map to bars, 2) compute dominance focus, 3) suppress non-dominant bars.
-                var mapped = Array(repeating: Float(0), count: outputCount)
-                let denom = Float(max(outputCount - 1, 1))
-
-                if inputCount >= outputCount {
-                    let bandsPerBar = inputCount / outputCount
-                    for barIndex in 0..<outputCount {
-                        let start = barIndex * bandsPerBar
-                        let end = min(start + bandsPerBar, inputCount)
-                        var peak: Float = 0
-                        for i in start..<end {
-                            peak = max(peak, rawSpectrum[i])
-                        }
-                        let normPos = Float(barIndex) / denom
-                        let highTilt = 1.02 + 0.34 * pow(normPos, 0.70)
-                        let bassLift = 1.0 + 0.24 * exp(-pow(normPos / 0.16, 2.0))
-                        let lowMidNotch = 1.0 - 0.05 * exp(-pow((normPos - 0.18) / 0.07, 2.0))
-                        mapped[barIndex] = peak * displayScale * highTilt * bassLift * lowMidNotch
-                    }
-                } else {
-                    for barIndex in 0..<outputCount {
-                        let sourceIndex = Float(barIndex) * Float(inputCount - 1) / Float(outputCount - 1)
-                        let lowerIndex = Int(sourceIndex)
-                        let upperIndex = min(lowerIndex + 1, inputCount - 1)
-                        let fraction = sourceIndex - Float(lowerIndex)
-                        let normPos = Float(barIndex) / denom
-                        let highTilt = 1.02 + 0.34 * pow(normPos, 0.70)
-                        let bassLift = 1.0 + 0.24 * exp(-pow(normPos / 0.16, 2.0))
-                        let lowMidNotch = 1.0 - 0.05 * exp(-pow((normPos - 0.18) / 0.07, 2.0))
-                        let v = (rawSpectrum[lowerIndex] * (1 - fraction) + rawSpectrum[upperIndex] * fraction) * displayScale
-                        mapped[barIndex] = v * highTilt * bassLift * lowMidNotch
-                    }
-                }
-
-                // Light spatial smoothing removes single-bin flicker/artifacts
-                // while keeping the dominant-frequency focus intact.
-                if outputCount >= 3 {
-                    var smoothed = mapped
-                    for barIndex in 0..<outputCount {
-                        let left = mapped[max(0, barIndex - 1)]
-                        let center = mapped[barIndex]
-                        let right = mapped[min(outputCount - 1, barIndex + 1)]
-                        let neighborhood = (left + center + right) / 3.0
-                        smoothed[barIndex] = center * 0.66 + neighborhood * 0.34
-                    }
-                    mapped = smoothed
-                }
-
-                var framePeak: Float = 0
-                var frameSum: Float = 0
-                for v in mapped {
-                    framePeak = max(framePeak, v)
-                    frameSum += v
-                }
-
-                let frameMean = frameSum / Float(max(1, outputCount))
-                let floor = frameMean * 0.9
-                let span = max(0.0001, framePeak - floor)
-                let peakDenom = max(0.0001, framePeak)
-                let dominant = mapped.enumerated().sorted { $0.element > $1.element }.prefix(3)
-
-                // Narrow focus width keeps the "spotlight" on dominant regions.
-                let sigma = max(1.0, Float(outputCount) * 0.11)
-                let twoSigmaSq = 2.0 * sigma * sigma
-
-                for barIndex in 0..<outputCount {
-                    let prominence = max(0, mapped[barIndex] - floor) / span
-                    let curved = pow(prominence, 1.95)
-
-                    var focus: Float = 0
-                    for dom in dominant {
-                        let domWeight = dom.element / peakDenom
-                        if domWeight <= 0.001 { continue }
-                        let distance = Float(abs(barIndex - dom.offset))
-                        let gaussian = exp(-(distance * distance) / twoSigmaSq)
-                        focus = max(focus, gaussian * domWeight)
-                    }
-
-                    let focusGain = max(0.08, min(1.0, focus))
-                    let normPos = Float(barIndex) / denom
-                    let extraHighBias = 1.00 + 0.18 * pow(normPos, 0.75)
-                    let lowMidSuppress = 1.0 - (0.04 * exp(-pow((normPos - 0.18) / 0.08, 2.0)) * (1.0 - focusGain))
-                    let bassPostLift = 1.0 + 0.12 * exp(-pow(normPos / 0.18, 2.0))
-                    let suppressionMix = max(0.40, (0.08 + 0.92 * focusGain) * lowMidSuppress)
-                    let target = min(0.98, curved * suppressionMix * extraHighBias * bassPostLift)
-
-                    // Keep response very fast but less twitchy than pure frame-to-frame assignment.
-                    let previous = displaySpectrum[barIndex]
-                    let response: Float = target >= previous ? 0.82 : 0.88
-                    let newValue = max(0, min(0.98, previous + (target - previous) * response))
-                    displaySpectrum[barIndex] = newValue
-
-                    if newValue > 0.01 {
-                        hasData = true
-                    }
-                }
-            } else if inputCount >= outputCount {
+            // Update standard display spectrum (for Enhanced/Classic modes)
+            if inputCount >= outputCount {
                 let bandsPerBar = inputCount / outputCount
                 for barIndex in 0..<outputCount {
                     let start = barIndex * bandsPerBar
@@ -2769,8 +2602,6 @@ class SpectrumAnalyzerView: NSView {
             updateUltraMatrixState()
         case .classic:
             updateClassicPeakState()
-        case .punch:
-            break  // Punch mode is bars-only (no peak-hold indicators)
         case .flame:
             break  // Flame handles its own state in renderFlame()
         case .cosmic:
@@ -3113,14 +2944,11 @@ class SpectrumAnalyzerView: NSView {
                 }
             }
             
-        case .classic, .punch:
+        case .classic:
             let cellSpacing: Float = 1.0 * Float(scale)
             let totalSpacing = Float(max(0, localBarCount - 1)) * cellSpacing
             let cellHeight = (scaledHeight - Float(ledRowCount - 1) * cellSpacing) / Float(ledRowCount)
-            // Punch fills the full viewport width; Classic respects the user-configured bar width.
-            let cellWidth: Float = localQualityMode == .punch
-                ? max(1.0, (scaledWidth - totalSpacing) / Float(max(1, localBarCount)))
-                : max(1.0, Float(renderBarWidth) * Float(scale))
+            let cellWidth: Float = max(1.0, (scaledWidth - totalSpacing) / Float(max(1, localBarCount)))
             
             // Update params buffer for Classic
             if let buffer = paramsBuffer {
@@ -3150,15 +2978,11 @@ class SpectrumAnalyzerView: NSView {
                 }
             }
             
-            // Update peak positions buffer (Punch disables these markers)
+            // Update peak positions buffer
             if let buffer = peakPositionsBuffer {
                 let ptr = buffer.contents().bindMemory(to: Float.self, capacity: localBarCount)
                 for col in 0..<localBarCount {
-                    if localQualityMode == .punch {
-                        ptr[col] = 0  // Punch: bars-only, no peak indicators
-                    } else {
-                        ptr[col] = col < localPeakPositions.count ? localPeakPositions[col] : 0
-                    }
+                    ptr[col] = col < localPeakPositions.count ? localPeakPositions[col] : 0
                 }
             }
             
@@ -3520,7 +3344,6 @@ class SpectrumAnalyzerView: NSView {
     
     override func layout() {
         super.layout()
-        applyModeDrivenBarLayoutIfNeeded()
         metalLayer?.frame = bounds
         syncMetalLayerScaleAndSize()
     }

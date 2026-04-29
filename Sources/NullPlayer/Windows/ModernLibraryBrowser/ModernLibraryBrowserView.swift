@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import SwiftUI
+import NullPlayerCore
 
 // =============================================================================
 // MODERN LIBRARY BROWSER VIEW - Library browser with modern skin chrome
@@ -8796,6 +8797,12 @@ class ModernLibraryBrowserView: NSView {
 
     private func buildPlexRadioStationItems(genres: [String]) {
         displayItems.removeAll()
+        NSLog("ModernLibraryBrowserView: Building Plex radio station list with %d genres", genres.count)
+#if DEBUG
+        let hasJazz = genres.contains { $0.localizedCaseInsensitiveCompare("Jazz") == .orderedSame }
+        NSLog("ModernLibraryBrowserView: Plex radio station genres contain Jazz=%@; genres=%@",
+              hasJazz ? "yes" : "no", genres.joined(separator: ", "))
+#endif
         // Library Radio
         displayItems.append(ModernDisplayItem(id: "plex-radio-library", title: "Library Radio", info: "Library", indentLevel: 0, hasChildren: false, type: .plexRadioStation(.libraryRadio)))
         displayItems.append(ModernDisplayItem(id: "plex-radio-library-sonic", title: "Library Radio (Sonic)", info: "Library", indentLevel: 0, hasChildren: false, type: .plexRadioStation(.libraryRadioSonic)))

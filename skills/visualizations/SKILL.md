@@ -514,3 +514,13 @@ Fire mode uses 3 Metal passes: (1) compute `propagate_fire` (128×96 grid), (2) 
 ### Spectrum Shader Availability
 
 Use `SpectrumAnalyzerView.isShaderAvailable(for:)` to check if a mode's shader file exists before switching to it. This static method works without a view instance and should be used when restoring modes from UserDefaults and when building menus. The instance method `isPipelineAvailable(for:)` checks the actual compiled pipeline and is used after `setupMetal()`.
+
+### Spectrum Jitter / Bar Stuttering
+
+**Symptom**: Classic and CPU Spectrum modes show jerky bar movement at startup or after cycling modes between windows.
+
+**Root cause**: `AudioEngine` dispatched a new `DispatchQueue.main.async` block every audio tap (~60Hz). During busy main-thread periods (mode switching, window ordering, UserDefaults writes), these backed up in the queue. When the backlog cleared, multiple blocks fired in rapid succession, causing bars to jump.
+
+**Fix**: `AudioEngine` now uses the same coalescing pattern as `StreamingAudioPlayer` — a `pendingSpectrumUpdate` flag ensures at most one dispatch is ever queued, while `latestRawSpectrum` always holds the freshest frame so data is never lost. On the main thread the pending block reads `latestRawSpectrum` and posts the notification once, then clears the flag.
+
+**Why Classic/Spectrum are more sensitive**: The LED attack rate in Enhanced mode (`cellAttackRate = 0.5`) absorbs rapid-fire updates visually. Classic and CPU-Spectrum have no equivalent damping, so burst updates are directly visible as bar jumps.

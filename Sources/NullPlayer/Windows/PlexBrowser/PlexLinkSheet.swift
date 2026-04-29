@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 /// Sheet for PIN-based Plex account linking
 class PlexLinkSheet: NSWindow {

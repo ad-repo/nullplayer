@@ -158,6 +158,7 @@ extension EQWindowController: NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        if let window { WindowManager.shared.handleCenterStackWindowWillClose(window) }
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }
 }

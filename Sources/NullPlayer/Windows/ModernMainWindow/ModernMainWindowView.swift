@@ -30,6 +30,7 @@ class ModernMainWindowView: NSView {
     /// Current track info
     private var currentTrack: Track?
     private var currentArtworkImage: NSImage?
+    private var currentArtworkTrackId: UUID?
     private var artworkLoadTask: Task<Void, Never>?
     private static let artworkCache = NSCache<NSString, NSImage>()
     
@@ -825,8 +826,8 @@ class ModernMainWindowView: NSView {
     }
     
     func updateTrackInfo(_ track: Track?) {
-        currentArtworkImage = nil
-        marqueeLayer.artworkImage = nil
+        clearArtwork()
+        currentArtworkTrackId = track?.id
         self.currentTrack = track
         self.videoTitle = nil
         loadArtwork(for: track)
@@ -836,7 +837,14 @@ class ModernMainWindowView: NSView {
         needsDisplay = true
     }
     
-    func updateVideoTrackInfo(title: String) {
+    func updateVideoTrackInfo(title: String, artworkTrack: Track?) {
+        if let artworkTrack {
+            clearArtwork()
+            currentArtworkTrackId = artworkTrack.id
+            loadArtwork(for: artworkTrack)
+        } else {
+            clearArtwork()
+        }
         self.videoTitle = title
         refreshMarqueeText()
         needsDisplay = true
@@ -844,6 +852,9 @@ class ModernMainWindowView: NSView {
     
     func clearVideoTrackInfo() {
         self.videoTitle = nil
+        clearArtwork()
+        currentArtworkTrackId = currentTrack?.id
+        loadArtwork(for: currentTrack)
         refreshMarqueeText()
         needsDisplay = true
     }
@@ -1069,10 +1080,15 @@ class ModernMainWindowView: NSView {
                     }
                 }
             } else if let jellyfinId = track.jellyfinId {
-                let key = NSString(string: "marquee_jellyfin:\(jellyfinId)")
+                let imageTag = track.artworkThumb ?? ""
+                let key = NSString(string: "marquee_jellyfin:\(jellyfinId):\(imageTag)")
                 if let cached = Self.artworkCache.object(forKey: key) {
                     image = cached
-                } else if let url = JellyfinManager.shared.imageURL(itemId: jellyfinId, imageTag: nil, size: 400) {
+                } else if let url = JellyfinManager.shared.imageURL(
+                    itemId: jellyfinId,
+                    imageTag: imageTag.isEmpty ? nil : imageTag,
+                    size: 400
+                ) {
                     if let (data, resp) = try? await URLSession.shared.data(from: url),
                        (resp as? HTTPURLResponse)?.statusCode == 200,
                        let img = NSImage(data: data) {
@@ -1081,10 +1097,15 @@ class ModernMainWindowView: NSView {
                     }
                 }
             } else if let embyId = track.embyId {
-                let key = NSString(string: "marquee_emby:\(embyId)")
+                let imageTag = track.artworkThumb ?? ""
+                let key = NSString(string: "marquee_emby:\(embyId):\(imageTag)")
                 if let cached = Self.artworkCache.object(forKey: key) {
                     image = cached
-                } else if let url = EmbyManager.shared.imageURL(itemId: embyId, imageTag: track.artworkThumb, size: 400) {
+                } else if let url = EmbyManager.shared.imageURL(
+                    itemId: embyId,
+                    imageTag: imageTag.isEmpty ? nil : imageTag,
+                    size: 400
+                ) {
                     if let (data, resp) = try? await URLSession.shared.data(from: url),
                        (resp as? HTTPURLResponse)?.statusCode == 200,
                        let img = NSImage(data: data) {
@@ -1100,16 +1121,36 @@ class ModernMainWindowView: NSView {
                     image = await self.loadLocalArtwork(url: track.url)
                     if let img = image { Self.artworkCache.setObject(img, forKey: key) }
                 }
+            } else if let artworkThumb = track.artworkThumb,
+                      let url = URL(string: artworkThumb),
+                      ["http", "https"].contains(url.scheme?.lowercased()) {
+                let key = NSString(string: "marquee_url:\(artworkThumb)")
+                if let cached = Self.artworkCache.object(forKey: key) {
+                    image = cached
+                } else if let (data, resp) = try? await URLSession.shared.data(from: url),
+                          (resp as? HTTPURLResponse)?.statusCode == 200,
+                          let img = NSImage(data: data) {
+                    Self.artworkCache.setObject(img, forKey: key)
+                    image = img
+                }
             }
 
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
-                guard self.currentTrack?.id == expectedId else { return }
+                guard self.currentArtworkTrackId == expectedId else { return }
                 self.currentArtworkImage = image
                 self.marqueeLayer.artworkImage = image
             }
         }
+    }
+
+    private func clearArtwork() {
+        artworkLoadTask?.cancel()
+        artworkLoadTask = nil
+        currentArtworkImage = nil
+        currentArtworkTrackId = nil
+        marqueeLayer.artworkImage = nil
     }
 
     private func loadLocalArtwork(url: URL) async -> NSImage? {

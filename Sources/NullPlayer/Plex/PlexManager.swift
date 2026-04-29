@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import NullPlayerCore
 
 /// Singleton managing Plex account linking, server discovery, and state
 class PlexManager {
@@ -61,6 +62,11 @@ class PlexManager {
         didSet {
             // Clear cached content when library changes
             if oldValue?.id != currentLibrary?.id {
+                NSLog("PlexManager: Library changed from %@ (%@) to %@ (%@) — clearing cached content",
+                      oldValue?.title ?? "nil",
+                      oldValue?.id ?? "nil",
+                      currentLibrary?.title ?? "nil",
+                      currentLibrary?.id ?? "nil")
                 clearCachedContent()
             }
             NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: self)
@@ -403,12 +409,15 @@ class PlexManager {
     
     /// Clear cached library content (called when library or server changes, or on refresh)
     func clearCachedContent() {
+        let cachedGenreCount = cachedGenres.count
         cachedArtists = []
         cachedAlbums = []
         cachedMovies = []
         cachedShows = []
         cachedPlaylists = []
+        cachedGenres = []
         isContentPreloaded = false
+        NSLog("PlexManager: Cleared cached library content (including %d cached genres)", cachedGenreCount)
     }
     
     /// Connect to a specific server
@@ -757,6 +766,44 @@ class PlexManager {
         }
         return track.media.first?.audioSampleRate
     }
+
+    static func inferAudioContentType(from media: PlexMedia?) -> String? {
+        let candidates = [
+            media?.audioCodec,
+            media?.container,
+            media?.parts.first?.container
+        ]
+
+        for candidate in candidates {
+            guard let format = candidate?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                  !format.isEmpty else { continue }
+
+            switch format {
+            case "mp3", "mpeg", "mpga":
+                return "audio/mpeg"
+            case "flac":
+                return "audio/flac"
+            case "aac", "m4a", "mp4":
+                return "audio/mp4"
+            case "wav", "wave":
+                return "audio/wav"
+            case "aiff", "aif":
+                return "audio/aiff"
+            case "ogg", "oga", "vorbis":
+                return "audio/ogg"
+            case "opus":
+                return "audio/opus"
+            case "wma":
+                return "audio/x-ms-wma"
+            case "alac":
+                return "audio/alac"
+            default:
+                continue
+            }
+        }
+
+        return nil
+    }
     
     // MARK: - Track Conversion
     
@@ -794,7 +841,8 @@ class PlexManager {
             plexRatingKey: plexTrack.id,  // Store rating key for play tracking
             plexServerId: currentServer?.id,
             artworkThumb: plexTrack.thumb,
-            genre: plexTrack.genre
+            genre: plexTrack.genre,
+            contentType: Self.inferAudioContentType(from: media)
         )
     }
 
@@ -968,8 +1016,13 @@ class PlexManager {
         }
         
         do {
+            NSLog("PlexManager: Fetching genres for library '%@' (id=%@ type=%@)",
+                  library.title, library.id, library.type)
             let genres = try await client.fetchGenres(libraryID: library.id)
             cachedGenres = genres
+            let hasJazz = genres.contains { $0.localizedCaseInsensitiveCompare("Jazz") == .orderedSame }
+            NSLog("PlexManager: Cached %d genres for library '%@' (id=%@); contains Jazz=%@; genres=%@",
+                  genres.count, library.title, library.id, hasJazz ? "yes" : "no", genres.joined(separator: ", "))
             return genres
         } catch {
             NSLog("PlexManager: Failed to fetch genres: %@, using fallback", error.localizedDescription)
@@ -980,8 +1033,18 @@ class PlexManager {
     /// Get cached genres or fetch if empty
     func getGenres() async -> [String] {
         if !cachedGenres.isEmpty {
+            let hasJazz = cachedGenres.contains { $0.localizedCaseInsensitiveCompare("Jazz") == .orderedSame }
+            NSLog("PlexManager: Returning %d cached genres for library '%@' (id=%@); contains Jazz=%@; genres=%@",
+                  cachedGenres.count,
+                  currentLibrary?.title ?? "nil",
+                  currentLibrary?.id ?? "nil",
+                  hasJazz ? "yes" : "no",
+                  cachedGenres.joined(separator: ", "))
             return cachedGenres
         }
+        NSLog("PlexManager: Genre cache empty for library '%@' (id=%@); fetching",
+              currentLibrary?.title ?? "nil",
+              currentLibrary?.id ?? "nil")
         return await fetchGenres()
     }
 

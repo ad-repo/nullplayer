@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import NullPlayerCore
 
 /// Source for browsing content
 enum BrowserSource: Equatable, Codable {
@@ -13156,6 +13157,9 @@ class PlexBrowserView: NSView {
     /// Build display items for Plex Radio stations
     private func buildPlexRadioStationItems(genres: [String]) {
         displayItems.removeAll()
+        let hasJazz = genres.contains { $0.localizedCaseInsensitiveCompare("Jazz") == .orderedSame }
+        NSLog("PlexBrowserView: Building Plex radio station list with %d genres; contains Jazz=%@; genres=%@",
+              genres.count, hasJazz ? "yes" : "no", genres.joined(separator: ", "))
         
         // Library Radio
         displayItems.append(PlexDisplayItem(

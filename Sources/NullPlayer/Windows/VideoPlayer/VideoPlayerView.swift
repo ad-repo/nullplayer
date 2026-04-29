@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 @preconcurrency import KSPlayer
 
 /// Video player view using KSPlayer with FFmpeg backend, skinned title bar, and controls
@@ -62,6 +63,7 @@ class VideoPlayerView: NSView {
     /// Public accessors for playback time
     var currentPlaybackTime: TimeInterval { currentTime }
     var totalPlaybackDuration: TimeInterval { totalDuration }
+    var isPlaying: Bool { playerLayer?.state.isPlaying == true }
     
     /// Volume level (0.0 - 1.0)
     var volume: Float = 1.0 {

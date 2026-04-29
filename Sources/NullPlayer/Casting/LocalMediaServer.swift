@@ -27,6 +27,7 @@ class LocalMediaServer {
     private var registeredFiles: [String: URL] = [:]  // token -> file URL
     private var registeredStreams: [String: URL] = [:]  // token -> stream URL (for Subsonic/Jellyfin proxy)
     private var registeredStreamContentTypes: [String: String] = [:]  // token -> MIME content type hint
+    private var registeredStreamDebugLabels: [String: String] = [:]  // token -> human-readable track/source label
     static let httpPort: UInt16 = 8765
     private var port: UInt16 { Self.httpPort }
     private(set) var isRunning: Bool = false
@@ -50,6 +51,134 @@ class LocalMediaServer {
     
     /// Health check timer (Fix 5)
     private var healthCheckTimer: Timer?
+
+    private struct URLSessionByteStream: AsyncBufferedSequence, @unchecked Sendable {
+        typealias Element = UInt8
+
+        let bytes: URLSession.AsyncBytes
+        let token: String
+        let debugLabel: String
+        let expectedLength: Int?
+        let rangeHeader: String?
+        let startedAt = Date()
+
+        func makeAsyncIterator() -> Iterator {
+            Iterator(
+                iterator: bytes.makeAsyncIterator(),
+                token: token,
+                debugLabel: debugLabel,
+                expectedLength: expectedLength,
+                rangeHeader: rangeHeader,
+                startedAt: startedAt
+            )
+        }
+
+        struct Iterator: AsyncBufferedIteratorProtocol {
+            private var iterator: URLSession.AsyncBytes.Iterator
+            private let token: String
+            private let debugLabel: String
+            private let expectedLength: Int?
+            private let rangeHeader: String?
+            private let startedAt: Date
+            private var bytesSent: Int64 = 0
+            private var nextProgressLogBytes: Int64 = 5 * 1024 * 1024
+            private var didLogCompletion = false
+
+            init(
+                iterator: URLSession.AsyncBytes.Iterator,
+                token: String,
+                debugLabel: String,
+                expectedLength: Int?,
+                rangeHeader: String?,
+                startedAt: Date
+            ) {
+                self.iterator = iterator
+                self.token = token
+                self.debugLabel = debugLabel
+                self.expectedLength = expectedLength
+                self.rangeHeader = rangeHeader
+                self.startedAt = startedAt
+            }
+
+            mutating func next() async throws -> UInt8? {
+                do {
+                    guard let byte = try await iterator.next() else {
+                        logCompletionIfNeeded()
+                        return nil
+                    }
+                    bytesSent += 1
+                    logProgressIfNeeded()
+                    return byte
+                } catch {
+                    logStreamError(error)
+                    throw error
+                }
+            }
+
+            mutating func nextBuffer(suggested count: Int) async throws -> [UInt8]? {
+                let byteCount = Swift.max(1, Swift.min(count, 64 * 1024))
+                var buffer: [UInt8] = []
+                buffer.reserveCapacity(byteCount)
+
+                do {
+                    while buffer.count < byteCount {
+                        guard let byte = try await iterator.next() else { break }
+                        buffer.append(byte)
+                    }
+                } catch {
+                    logStreamError(error)
+                    throw error
+                }
+
+                if buffer.isEmpty {
+                    logCompletionIfNeeded()
+                    return nil
+                }
+
+                bytesSent += Int64(buffer.count)
+                logProgressIfNeeded()
+                return buffer
+            }
+
+            private mutating func logProgressIfNeeded() {
+                guard bytesSent >= nextProgressLogBytes else { return }
+                NSLog("LocalMediaServer: Stream %@ sent %lld bytes (expected=%@, range=%@, label=%@)",
+                      token,
+                      bytesSent,
+                      expectedLength.map(String.init) ?? "unknown",
+                      rangeHeader ?? "none",
+                      debugLabel)
+                while bytesSent >= nextProgressLogBytes {
+                    nextProgressLogBytes += 5 * 1024 * 1024
+                }
+            }
+
+            private mutating func logCompletionIfNeeded() {
+                guard !didLogCompletion else { return }
+                didLogCompletion = true
+                let elapsed = Date().timeIntervalSince(startedAt)
+                NSLog("LocalMediaServer: Stream %@ completed after %.1fs, sent=%lld expected=%@ range=%@ label=%@",
+                      token,
+                      elapsed,
+                      bytesSent,
+                      expectedLength.map(String.init) ?? "unknown",
+                      rangeHeader ?? "none",
+                      debugLabel)
+            }
+
+            private func logStreamError(_ error: Error) {
+                let elapsed = Date().timeIntervalSince(startedAt)
+                NSLog("LocalMediaServer: Stream %@ ended with error after %.1fs, sent=%lld expected=%@ range=%@ label=%@ error=%@",
+                      token,
+                      elapsed,
+                      bytesSent,
+                      expectedLength.map(String.init) ?? "unknown",
+                      rangeHeader ?? "none",
+                      debugLabel,
+                      error.localizedDescription)
+            }
+        }
+    }
     
     // MARK: - Initialization
     
@@ -345,6 +474,7 @@ class LocalMediaServer {
             self?.registeredFiles.removeAll()
             self?.registeredStreams.removeAll()
             self?.registeredStreamContentTypes.removeAll()
+            self?.registeredStreamDebugLabels.removeAll()
             NSLog("LocalMediaServer: Unregistered all files and streams")
         }
     }
@@ -357,7 +487,7 @@ class LocalMediaServer {
     ///   - contentType: Optional MIME type hint (e.g. "audio/flac"). Used for HEAD responses when
     ///     the original URL has no file extension (Subsonic/Jellyfin streaming endpoints).
     /// Note: Prefer calling start() explicitly before this method in async contexts.
-    func registerStreamURL(_ url: URL, contentType: String? = nil) -> URL? {
+    func registerStreamURL(_ url: URL, contentType: String? = nil, debugLabel: String? = nil) -> URL? {
         // Ensure server is running
         if !isRunning {
             let semaphore = DispatchSemaphore(value: 0)
@@ -396,13 +526,21 @@ class LocalMediaServer {
             if let contentType = contentType {
                 self?.registeredStreamContentTypes[tokenString] = contentType
             }
+            if let debugLabel = debugLabel {
+                self?.registeredStreamDebugLabels[tokenString] = debugLabel
+            }
         }
         
         // Return simple HTTP URL without query strings: http://192.168.x.x:8765/stream/token
         // Don't use file extension - let Content-Type header indicate format
         let httpURL = URL(string: "http://\(ip):\(port)/stream/\(tokenString)")
         
-        NSLog("LocalMediaServer: Registered stream proxy '%@' as %@, contentType=%@", url.host ?? "unknown", httpURL?.absoluteString ?? "nil", contentType ?? "auto-detect")
+        NSLog("LocalMediaServer: Registered stream proxy token=%@ host=%@ as %@, contentType=%@, label=%@",
+              tokenString,
+              url.host ?? "unknown",
+              httpURL?.absoluteString ?? "nil",
+              contentType ?? "auto-detect",
+              debugLabel ?? "nil")
         
         return httpURL
     }
@@ -415,6 +553,7 @@ class LocalMediaServer {
             if let token = tokenToRemove {
                 self.registeredStreams.removeValue(forKey: token)
                 self.registeredStreamContentTypes.removeValue(forKey: token)
+                self.registeredStreamDebugLabels.removeValue(forKey: token)
                 NSLog("LocalMediaServer: Unregistered stream '%@'", url.host ?? "unknown")
             }
         }
@@ -540,9 +679,11 @@ class LocalMediaServer {
         
         var streamURL: URL?
         var storedContentType: String?
+        var debugLabel: String?
         queue.sync {
             streamURL = registeredStreams[token]
             storedContentType = registeredStreamContentTypes[token]
+            debugLabel = registeredStreamDebugLabels[token]
         }
         
         guard let url = streamURL else {
@@ -552,15 +693,52 @@ class LocalMediaServer {
         // Use stored content type hint if available (Subsonic/Jellyfin URLs have no extension),
         // otherwise fall back to URL extension detection
         let contentType = storedContentType ?? CastManager.detectAudioContentType(for: url)
-        NSLog("LocalMediaServer: HEAD /stream/ - token %@, contentType=%@", token, contentType)
+        NSLog("LocalMediaServer: HEAD /stream/%@ contentType=%@ label=%@",
+              token, contentType, debugLabel ?? "nil")
+
+        var headers: [HTTPHeader: String] = [
+            HTTPHeader("Content-Type"): contentType,
+            HTTPHeader("Accept-Ranges"): "bytes"
+        ]
+        if let upstreamLength = await fetchUpstreamContentLength(url) {
+            headers[HTTPHeader("Content-Length")] = String(upstreamLength)
+        } else if let localLength = localFileContentLength(for: url) {
+            headers[HTTPHeader("Content-Length")] = String(localLength)
+        }
+
         return HTTPResponse(
             statusCode: .ok,
-            headers: [
-                HTTPHeader("Content-Type"): contentType,
-                HTTPHeader("Accept-Ranges"): "bytes"
-            ],
+            headers: headers,
             body: Data()
         )
+    }
+
+    /// Best-effort upstream HEAD probe for proxied streams. Some Sonos codecs
+    /// require Content-Length in the preflight HEAD response; live/chunked
+    /// streams may legitimately omit it.
+    private func fetchUpstreamContentLength(_ url: URL) async -> Int? {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let httpResponse = response as? HTTPURLResponse,
+              (200..<400).contains(httpResponse.statusCode),
+              let rawLength = httpResponse.value(forHTTPHeaderField: "Content-Length"),
+              let length = Int(rawLength) else {
+            return nil
+        }
+
+        return length
+    }
+
+    private func localFileContentLength(for url: URL) -> Int? {
+        guard url.isFileURL,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let fileSize = attrs[.size] as? NSNumber else {
+            return nil
+        }
+        return fileSize.intValue
     }
     
     // MARK: - Private Methods
@@ -734,9 +912,11 @@ class LocalMediaServer {
         // Thread-safe lookup
         var streamURL: URL?
         var storedContentType: String?
+        var debugLabel: String?
         queue.sync {
             streamURL = registeredStreams[token]
             storedContentType = registeredStreamContentTypes[token]
+            debugLabel = registeredStreamDebugLabels[token]
         }
         
         guard let originalURL = streamURL else {
@@ -744,22 +924,31 @@ class LocalMediaServer {
             return HTTPResponse(statusCode: .notFound)
         }
         
-        NSLog("LocalMediaServer: Proxying stream from %@", originalURL.host ?? "unknown")
+        let rangeHeader = request.headers[HTTPHeader("Range")]
+        NSLog("LocalMediaServer: Proxying stream token=%@ from host=%@ remote=%@ range=%@ label=%@",
+              token,
+              originalURL.host ?? "unknown",
+              remoteDescription(for: request),
+              rangeHeader ?? "none",
+              debugLabel ?? "nil")
         
         // Build the request to the original server
         var urlRequest = URLRequest(url: originalURL)
         urlRequest.httpMethod = "GET"
         urlRequest.timeoutInterval = 30
+        urlRequest.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         
         // Pass through Range header if present (for seeking)
-        if let rangeHeader = request.headers[HTTPHeader("Range")] {
+        if let rangeHeader {
             urlRequest.setValue(rangeHeader, forHTTPHeaderField: "Range")
             NSLog("LocalMediaServer: Passing through Range header: %@", rangeHeader)
         }
         
-        // Fetch from the original server
+        // Fetch from the original server and stream bytes through to Sonos as
+        // they arrive. Buffering the full FLAC/MP3 body here makes Sonos time
+        // out between tracks before the proxy sends the first byte.
         do {
-            let (data, response) = try await URLSession.shared.data(for: urlRequest)
+            let (bytes, response) = try await URLSession.shared.bytes(for: urlRequest)
             
             guard let httpResponse = response as? HTTPURLResponse else {
                 NSLog("LocalMediaServer: Invalid response from upstream server")
@@ -770,8 +959,14 @@ class LocalMediaServer {
                 ?? storedContentType
                 ?? "audio/mpeg"
             let upstreamContentLength = httpResponse.value(forHTTPHeaderField: "Content-Length")
-            NSLog("LocalMediaServer: Upstream returned status %d, %d bytes, type=%@, length=%@", 
-                  httpResponse.statusCode, data.count, upstreamContentType, upstreamContentLength ?? "nil")
+            NSLog("LocalMediaServer: Upstream streaming token=%@ status=%d type=%@ length=%@ acceptRanges=%@ contentRange=%@ label=%@",
+                  token,
+                  httpResponse.statusCode,
+                  upstreamContentType,
+                  upstreamContentLength ?? "nil",
+                  httpResponse.value(forHTTPHeaderField: "Accept-Ranges") ?? "nil",
+                  httpResponse.value(forHTTPHeaderField: "Content-Range") ?? "nil",
+                  debugLabel ?? "nil")
             
             // Build response headers
             var headers: [HTTPHeader: String] = [:]
@@ -779,8 +974,9 @@ class LocalMediaServer {
             // Pass through actual content type - Sonos supports FLAC, MP3, etc. natively
             headers[HTTPHeader("Content-Type")] = upstreamContentType
             
-            // Always set Content-Length from actual data size (critical for Sonos)
-            headers[HTTPHeader("Content-Length")] = String(data.count)
+            if let upstreamContentLength {
+                headers[HTTPHeader("Content-Length")] = upstreamContentLength
+            }
             
             if let contentRange = httpResponse.value(forHTTPHeaderField: "Content-Range") {
                 headers[HTTPHeader("Content-Range")] = contentRange
@@ -804,11 +1000,39 @@ class LocalMediaServer {
                 statusCode = httpResponse.statusCode >= 400 ? .badGateway : .ok
             }
             
-            return HTTPResponse(statusCode: statusCode, headers: headers, body: data)
+            let contentLength = upstreamContentLength.flatMap(Int.init)
+            let stream = URLSessionByteStream(
+                bytes: bytes,
+                token: token,
+                debugLabel: debugLabel ?? "nil",
+                expectedLength: contentLength,
+                rangeHeader: rangeHeader
+            )
+            let body: HTTPBodySequence
+            if let contentLength {
+                body = HTTPBodySequence(from: stream, count: contentLength)
+            } else {
+                body = HTTPBodySequence(from: stream)
+            }
+
+            return HTTPResponse(statusCode: statusCode, headers: headers, body: body)
             
         } catch {
             NSLog("LocalMediaServer: Failed to fetch from upstream: %@", error.localizedDescription)
             return HTTPResponse(statusCode: .badGateway)
+        }
+    }
+
+    private func remoteDescription(for request: HTTPRequest) -> String {
+        switch request.remoteAddress {
+        case .ip4(let ip, let port):
+            return "\(ip):\(port)"
+        case .ip6(let ip, let port):
+            return "[\(ip)]:\(port)"
+        case .unix:
+            return "unix"
+        case .none:
+            return "unknown"
         }
     }
     

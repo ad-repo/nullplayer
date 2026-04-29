@@ -25,6 +25,7 @@ enum CastState: String, Equatable {
     case idle
     case connecting
     case connected
+    case loaded
     case casting
     case error
 }
@@ -95,7 +96,9 @@ class CastSession {
     var position: TimeInterval = 0
     var duration: TimeInterval = 0
     var volume: Float = 1.0
-    
+    var playbackStartDate: Date?
+    var isPlaying: Bool = false
+
     init(device: CastDevice) {
         self.device = device
     }
@@ -220,7 +223,9 @@ enum CastError: Error, LocalizedError {
     case sessionNotActive
     case deviceOffline
     case authenticationRequired
-    
+    case operationInProgress
+    case contentTypeConflict(String)
+
     var errorDescription: String? {
         switch self {
         case .deviceNotFound:
@@ -247,6 +252,10 @@ enum CastError: Error, LocalizedError {
             return "Cast device is offline"
         case .authenticationRequired:
             return "Authentication required for streaming"
+        case .operationInProgress:
+            return "A cast operation is already in progress"
+        case .contentTypeConflict(let reason):
+            return "Content type conflict: \(reason)"
         }
     }
 }

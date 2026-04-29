@@ -4,22 +4,49 @@
 
 ### New Features
 
-- **Sleep Timer** — pause or stop playback automatically via **Playback > Sleep Timer**. Three modes: timed durations (5, 10, 15, 30, 45, 60, 90 minutes, or 2, 5, 8, 12 hours) with a 10-second volume fade-out before firing; end of current track (fires on natural completion, not manual skip, including tracks that end via Sweet Fades crossfade); end of queue (fires when the last track in the playlist finishes). The active preset is shown as a live countdown in the submenu. Selecting the active preset again cancels it. Volume is restored if cancelled mid-fade or if the user adjusts volume during the fade.
-- **Modern marquee album art** — the modern main window marquee can now show album artwork alongside scrolling track metadata, making the modern transport feel more like a compact now-playing display instead of text-only chrome.
-- **Installable `nullplayer` launcher** — the bundled CLI is now easier to run from Terminal without digging through `NullPlayer.app/Contents/MacOS`. Releases now include a `nullplayer` launcher, an installer script, and a double-click `.command` helper for installing the launcher into `/usr/local/bin`.
-- **Automation-first CLI positioning** — the README and CLI skill docs now present the headless CLI as a first-class feature for automation pipelines, multi-source playback, and routing to local outputs, Sonos, Chromecast, and UPnP/DLNA devices.
-- **Modern timer number system options** — the modern UI timer now supports additional number system options for its time display styling.
+- **Sleep Timer** — stop playback automatically via **Playback > Sleep Timer**. Three modes: timed durations (5, 10, 15, 30, 45, 60, 90 minutes, or 2, 5, 8, 12 hours) with a 10-second volume fade-out before firing; end of current track; end of queue. The active preset shows a live countdown in the submenu. Selecting it again cancels. Volume is restored if cancelled mid-fade.
+- **Modern marquee album art** — the modern main window marquee now shows album artwork alongside scrolling track metadata.
+- **Installable `nullplayer` CLI launcher** — releases now include a `nullplayer` launcher script, an installer, and a double-click `.command` helper for installing it into `/usr/local/bin`.
+- **Modern timer number system options** — the modern UI timer supports additional number system styles for its time display.
 
 ### Improvements
 
-- **Modern transport spacing adjusted** — transport layout spacing in the modern main window has been tightened for a cleaner balance around the marquee and playback controls.
-- **CLI launch path clarified** — built-in CLI help and public docs now use the `nullplayer --cli ...` command as the primary entrypoint while still documenting the underlying bundled executable path for fallback use.
-- **Volume control documentation expanded** — the README now calls out `--volume <0-100>` and the live keyboard volume controls explicitly, including the fact that the same control path is used when casting is active.
+- **Classic window borders aligned** — the playlist, spectrum analyzer, and waveform windows use identical 12 px side borders from the skin's `pledit.bmp` tile sprites, so windows sit flush when docked.
+- **Classic playlist uses system font** — classic playlist rows now render with the system font instead of the skin bitmap font, improving legibility across all skins.
+- **Classic playlist scrolling smoothed** — trackpad scrolling uses precise deltas and redraws only the list area; overflowing track titles use a layer-backed marquee instead of timer-driven full redraws.
+- **Preferred video cast device routing** — video-capable Chromecast and DLNA TV devices can be set as the preferred video cast target. Starting another video while a cast is active routes it to the active device; selecting a device in a non-video context no longer forces subsequent videos to cast.
+- **Video and audio cast menus separated** — the output menu treats video and audio casting as independent contexts, keeping audio playback explicit while letting active video casts continue on the TV.
+- **Spectrum bar jitter removed** — Classic and CPU Spectrum modes no longer stutter at startup or when cycling modes. `AudioEngine` now coalesces spectrum dispatches to the main thread the same way `StreamingAudioPlayer` already did.
+- **Punch spectrum mode removed** — the Punch mode has been removed from both the spectrum window and the main window visualization cycle.
+- **Plex models consolidated into core** — Plex models now live in `NullPlayerCore` with public initializers and smart-playlist content decoding, shared across the app, CLI, and tests.
 
-### Documentation
+### Bug Fixes
 
-- **Audio system limiter docs corrected** — documentation now reflects the current audio chain after removal of the old limiter path.
-- **Timer skill docs updated** — the timer-related skill documentation now matches the current modern timer capabilities and configuration options.
+#### Casting — Chromecast
+
+- **Cast notifications always delivered on main thread** — `ChromecastManager` and `UPnPManager` are not `@MainActor`, so their notification posts arrived on background threads. Any observer touching AppKit would crash (`NSWindow geometry should only be modified on the main thread`). All cast notifications (`sessionDidChange`, `playbackStateDidChange`, `devicesDidChange`) now post through `CastManager.postNotificationOnMain`, which dispatches asynchronously when called off main.
+- **Chromecast IDLE race hardened** — the initial IDLE that Chromecast sends when a new media session is created is now ignored until active playback (`PLAYING` or `BUFFERING`) has been observed. The guard flag is reset before each `LOAD` call and at the top of `stopCasting()`, eliminating failures on second and subsequent casts and across video→audio transitions.
+- **Duplicate Chromecast devices removed** — Chromecast discovery now keys devices by the stable Cast TXT `id` record, falling back to the Bonjour service name, and updates existing entries when the resolved address changes. This prevents refresh from showing the same device twice on Macs that resolve it through different address forms.
+- **Audio cast controls and seek bar fixed** — play/pause/stop controls and seek bar position now work correctly during audio casts. The status handler was gated on `.casting` state but audio starts in `.loaded`; it now branches on `currentCast == .audio`. Position interpolation uses `activeSession.position` and `activeSession.playbackStartDate` updated from each status message, matching the video tracking pattern. The seek bar freezes correctly when paused or buffering.
+- **Stop dismisses the cast from the TV screen** — stopping a cast now closes the Default Media Receiver app on the Chromecast (sends STOP to `receiver-0`), triggering HDMI-CEC to clear the cast overlay from the TV. A 200 ms flush delay between the media STOP and socket disconnect ensures the command is delivered before the connection closes.
+- **Video cast cleanup always runs on stop** — `wasVideoCast` is now captured before `activeSession` is cleared, so `clearVideoTrackInfo()` on the main window fires reliably when stopping a video cast.
+- **Video player closes automatically when switching to audio cast** — when casting audio while the video player is open from a video cast, the video player window closes without interrupting the new audio session. This prevents stale video controls from remaining active.
+- **Chromecast video cast controls fixed** — main-window video controls (play/pause, seek, skip, stop, title, duration, playback state) now correctly follow `CastManager` video cast state when casting from the context menu or switching videos on an active session.
+- **Generic video URL casting fixed** — local-library video entries and video playlist tracks now cast correctly through `CastManager.castVideoURL(...)`, including local-file registration through the embedded media server.
+
+#### Casting — Sonos
+
+- **Sonos seek bar and position tracking fixed** — `activeSession.position` and `activeSession.playbackStartDate` are now initialized at cast start and updated on each PLAYING poll, enabling correct time interpolation. The seek bar freezes correctly when paused.
+- **Stop button ends the Sonos cast session** — the stop handler now calls `stopCasting()` for all device types; previously Sonos only called `stopPlayback()`, leaving the session alive.
+- **Sonos format filtering fixed for extensionless streams** — streams without file extensions now use `Track.contentType` for format identification, normalize MIME parameters case-insensitively, fetch missing Plex sample rates for lossless tracks, and reject unsupported or high-resolution formats before sending them to Sonos.
+- **Plex stream content type preserved** — Plex tracks retain enough MIME information on extensionless URLs for Sonos casting compatibility checks.
+
+#### Windows and UI
+
+- **Classic stack windows collapse when closed via X** — closing a stacked sub-window (EQ, Playlist, Spectrum, Waveform) using its close button now slides up windows below it and tightens the stack.
+- **Remember State no longer auto-resumes on launch** — restoring a saved session selects the current track for display only; the app starts paused instead of immediately resuming.
+- **Modern marquee video artwork fixed** — switching from music to movies or TV in modern mode now replaces stale music artwork with the active video artwork.
+- **Window toggle crash fixed** — Playlist, Equalizer, Spectrum, and Waveform toggles no longer force-unwrap window frames when hiding visible windows.
 
 ## 0.19.3
 

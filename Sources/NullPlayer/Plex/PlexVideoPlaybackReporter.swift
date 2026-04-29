@@ -1,4 +1,5 @@
 import Foundation
+import NullPlayerCore
 
 /// Manages reporting video playback state and scrobbling to Plex
 /// Handles periodic timeline updates and automatic scrobbling when videos finish

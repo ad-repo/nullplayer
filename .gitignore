@@ -71,3 +71,4 @@ libaubio-macos.tar.gz
 Frameworks/libprojectM-4.4.dylib
 
 .claude/
+.claude/worktrees/

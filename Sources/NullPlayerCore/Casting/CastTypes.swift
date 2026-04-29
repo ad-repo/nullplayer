@@ -25,8 +25,17 @@ public enum CastState: String, Equatable, Sendable {
     case idle
     case connecting
     case connected
+    case loaded
     case casting
     case error
+}
+
+/// Current cast target (audio, video, or none)
+/// Note: Does not carry the session object to avoid cross-module type issues
+public enum CurrentCast: Sendable {
+    case none
+    case audio
+    case video
 }
 
 // MARK: - Cast Device
@@ -95,7 +104,9 @@ public final class CastSession: @unchecked Sendable {
     public var position: TimeInterval = 0
     public var duration: TimeInterval = 0
     public var volume: Float = 1.0
-    
+    public var playbackStartDate: Date? = nil
+    public var isPlaying: Bool = false
+
     public init(device: CastDevice) {
         self.device = device
     }
@@ -220,7 +231,9 @@ public enum CastError: Error, LocalizedError, Sendable {
     case sessionNotActive
     case deviceOffline
     case authenticationRequired
-    
+    case operationInProgress
+    case contentTypeConflict(String)
+
     public var errorDescription: String? {
         switch self {
         case .deviceNotFound:
@@ -247,6 +260,10 @@ public enum CastError: Error, LocalizedError, Sendable {
             return "Cast device is offline"
         case .authenticationRequired:
             return "Authentication required for streaming"
+        case .operationInProgress:
+            return "A cast operation is already in progress"
+        case .contentTypeConflict(let reason):
+            return "Content type conflict: \(reason)"
         }
     }
 }

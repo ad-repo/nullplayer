@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import CoreAudio
+import NullPlayerCore
 
 /// Builds the shared right-click context menu for all skin windows
 class ContextMenuBuilder {
@@ -14,9 +15,10 @@ class ContextMenuBuilder {
         // Now Playing
         let aboutPlaying = NSMenuItem(title: "Now Playing…", action: #selector(MenuActions.showAboutPlaying), keyEquivalent: "")
         aboutPlaying.target = MenuActions.shared
-        let hasAudioContent = wm.audioEngine.currentTrack != nil
-        let hasVideoContent = wm.currentVideoTitle != nil
-        aboutPlaying.isEnabled = hasAudioContent || hasVideoContent
+        let hasPlayableInfo = wm.audioEngine.currentTrack != nil
+            || wm.currentVideoTitle != nil
+            || CastManager.shared.currentCast == .video
+        aboutPlaying.isEnabled = hasPlayableInfo
         menu.addItem(aboutPlaying)
         menu.addItem(NSMenuItem.separator())
 
@@ -159,9 +161,10 @@ class ContextMenuBuilder {
 
         let aboutPlaying = NSMenuItem(title: "About Playing", action: #selector(MenuActions.showAboutPlaying), keyEquivalent: "")
         aboutPlaying.target = MenuActions.shared
-        let hasAudioContent = wm.audioEngine.currentTrack != nil
-        let hasVideoContent = wm.currentVideoTitle != nil
-        aboutPlaying.isEnabled = hasAudioContent || hasVideoContent
+        let hasPlayableInfo = wm.audioEngine.currentTrack != nil
+            || wm.currentVideoTitle != nil
+            || CastManager.shared.currentCast == .video
+        aboutPlaying.isEnabled = hasPlayableInfo
         menu.addItem(aboutPlaying)
         menu.addItem(NSMenuItem.separator())
 
@@ -2200,35 +2203,66 @@ class ContextMenuBuilder {
 
         // Other cast devices
         let activeSession = castManager.activeSession
+        let activeCastDevice = activeSession?.device
+        let isActiveVideoCast: Bool = { if case .video = castManager.currentCast { return true }; return false }()
+        let activeVideoDevice = isActiveVideoCast ? activeSession?.device : nil
+        let currentTrackIsVideo = WindowManager.shared.audioEngine.currentTrack?.mediaType == .video
+        // Active or loaded video content wins. Audio casting remains available for music tracks.
+        let isVideoContext = isActiveVideoCast
+            || WindowManager.shared.isVideoContentActive
+            || WindowManager.shared.currentVideoTitle != nil
+            || currentTrackIsVideo
 
         if !castManager.chromecastDevices.isEmpty {
             outputMenu.addItem(NSMenuItem.separator())
             outputMenu.addItem(NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: ""))
 
             for device in castManager.chromecastDevices {
-                let deviceItem = NSMenuItem(title: device.name, action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                let deviceItem = NSMenuItem(title: "  \(device.name)", action: nil, keyEquivalent: "")
                 deviceItem.target = MenuActions.shared
                 deviceItem.representedObject = device
-                deviceItem.state = activeSession?.device.id == device.id ? .on : .off
+                if isVideoContext {
+                    deviceItem.action = #selector(MenuActions.setPreferredVideoCastDevice(_:))
+                    if !device.supportsVideo {
+                        deviceItem.isEnabled = false
+                        deviceItem.action = nil
+                    }
+                    if isActiveVideoCast && activeVideoDevice?.id == device.id {
+                        deviceItem.state = .on
+                    } else if castManager.preferredVideoCastDeviceID == device.id {
+                        deviceItem.state = .mixed
+                    } else {
+                        deviceItem.state = .off
+                    }
+                } else {
+                    deviceItem.action = #selector(MenuActions.castToDevice(_:))
+                    deviceItem.state = activeCastDevice?.id == device.id ? .on : .off
+                }
                 outputMenu.addItem(deviceItem)
             }
         }
 
-        if !castManager.dlnaTVDevices.isEmpty {
+        if !castManager.dlnaTVDevices.isEmpty && isVideoContext {
             outputMenu.addItem(NSMenuItem.separator())
             outputMenu.addItem(NSMenuItem(title: "TVs (DLNA)", action: nil, keyEquivalent: ""))
 
             for device in castManager.dlnaTVDevices {
                 let displayName = device.manufacturer != nil ? "\(device.name) [\(device.manufacturer!)]" : device.name
-                let deviceItem = NSMenuItem(title: displayName, action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                let deviceItem = NSMenuItem(title: "  \(displayName)", action: #selector(MenuActions.setPreferredVideoCastDevice(_:)), keyEquivalent: "")
                 deviceItem.target = MenuActions.shared
                 deviceItem.representedObject = device
-                deviceItem.state = activeSession?.device.id == device.id ? .on : .off
+                if isActiveVideoCast && activeVideoDevice?.id == device.id {
+                    deviceItem.state = .on
+                } else if castManager.preferredVideoCastDeviceID == device.id {
+                    deviceItem.state = .mixed
+                } else {
+                    deviceItem.state = .off
+                }
                 outputMenu.addItem(deviceItem)
             }
         }
 
-        if !castManager.chromecastDevices.isEmpty || !castManager.dlnaTVDevices.isEmpty {
+        if !castManager.chromecastDevices.isEmpty || (isVideoContext && !castManager.dlnaTVDevices.isEmpty) {
             outputMenu.addItem(NSMenuItem.separator())
 
             if let activeDevice = activeSession?.device {
@@ -2418,34 +2452,65 @@ class ContextMenuBuilder {
         let chromecastDevices = castManager.chromecastDevices
         let tvDevices = castManager.dlnaTVDevices
         let activeSession = castManager.activeSession
-        
+        let activeCastDevice = activeSession?.device
+        let isActiveVideoCast: Bool = { if case .video = castManager.currentCast { return true }; return false }()
+        let activeVideoDevice = isActiveVideoCast ? activeSession?.device : nil
+        let currentTrackIsVideo = WindowManager.shared.audioEngine.currentTrack?.mediaType == .video
+        // Active or loaded video content wins. Audio casting remains available for music tracks.
+        let isVideoContext = isActiveVideoCast
+            || WindowManager.shared.isVideoContentActive
+            || WindowManager.shared.currentVideoTitle != nil
+            || currentTrackIsVideo
+
         // Chromecast (if any)
         if !chromecastDevices.isEmpty {
             outputMenu.addItem(NSMenuItem.separator())
             let chromecastHeader = NSMenuItem(title: "Chromecast", action: nil, keyEquivalent: "")
             outputMenu.addItem(chromecastHeader)
-            
+
             for device in chromecastDevices {
-                let deviceItem = NSMenuItem(title: "  \(device.name)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                let deviceItem = NSMenuItem(title: "  \(device.name)", action: nil, keyEquivalent: "")
                 deviceItem.target = MenuActions.shared
                 deviceItem.representedObject = device
-                deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
+                if isVideoContext {
+                    deviceItem.action = #selector(MenuActions.setPreferredVideoCastDevice(_:))
+                    if !device.supportsVideo {
+                        deviceItem.isEnabled = false
+                        deviceItem.action = nil
+                    }
+                    if isActiveVideoCast && activeVideoDevice?.id == device.id {
+                        deviceItem.state = .on
+                    } else if castManager.preferredVideoCastDeviceID == device.id {
+                        deviceItem.state = .mixed
+                    } else {
+                        deviceItem.state = .off
+                    }
+                } else {
+                    deviceItem.action = #selector(MenuActions.castToDevice(_:))
+                    deviceItem.state = activeCastDevice?.id == device.id ? .on : .off
+                }
                 outputMenu.addItem(deviceItem)
             }
         }
-        
+
         // DLNA TVs (if any)
-        if !tvDevices.isEmpty {
+        if !tvDevices.isEmpty && isVideoContext {
             outputMenu.addItem(NSMenuItem.separator())
             let tvHeader = NSMenuItem(title: "TVs (DLNA)", action: nil, keyEquivalent: "")
             outputMenu.addItem(tvHeader)
-            
+
             for device in tvDevices {
                 let displayName = device.manufacturer != nil ? "\(device.name) [\(device.manufacturer!)]" : device.name
-                let deviceItem = NSMenuItem(title: "  \(displayName)", action: #selector(MenuActions.castToDevice(_:)), keyEquivalent: "")
+                let deviceItem = NSMenuItem(title: "  \(displayName)", action: #selector(MenuActions.setPreferredVideoCastDevice(_:)), keyEquivalent: "")
                 deviceItem.target = MenuActions.shared
                 deviceItem.representedObject = device
-                deviceItem.state = (activeSession?.device.id == device.id) ? .on : .off
+                if isActiveVideoCast && activeVideoDevice?.id == device.id {
+                    deviceItem.state = .on
+                } else if castManager.preferredVideoCastDeviceID == device.id {
+                    deviceItem.state = .mixed
+                } else {
+                    deviceItem.state = .off
+                }
                 outputMenu.addItem(deviceItem)
             }
         }
@@ -2699,16 +2764,15 @@ class MenuActions: NSObject {
         let wm = WindowManager.shared
         
         // Check for video first (takes priority if both audio and video are active)
-        // Path 1: Video player window is active (local playback or cast from player)
-        if let videoController = wm.currentVideoPlayerController,
-           wm.isVideoActivePlayback {
-            showVideoInfo(videoController)
+        if case .video = CastManager.shared.currentCast {
+            showVideoCastInfo()
             return
         }
-        
-        // Path 2: Video casting from menu (no video player window)
-        if CastManager.shared.isVideoCasting {
-            showVideoCastInfo()
+
+        // Video player window is active for local playback.
+        if let videoController = wm.currentVideoPlayerController,
+           (wm.currentVideoTitle != nil || wm.isVideoActivePlayback) {
+            showVideoInfo(videoController)
             return
         }
         
@@ -4464,6 +4528,11 @@ class MenuActions: NSObject {
                 }
             }
         }
+    }
+
+    @objc func setPreferredVideoCastDevice(_ sender: NSMenuItem) {
+        guard let device = sender.representedObject as? CastDevice else { return }
+        CastManager.shared.setPreferredVideoCastDevice(device.id)
     }
     
     @objc func stopCasting() {

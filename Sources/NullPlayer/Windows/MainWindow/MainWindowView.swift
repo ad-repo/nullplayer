@@ -4,7 +4,6 @@ import AppKit
 enum MainWindowVisMode: String, CaseIterable {
     case spectrum = "Spectrum"       // Classic 19-bar spectrum analyzer (CGContext)
     case visClassicExact = "vis_classic" // Exact vis_classic port (CPU frame in Metal overlay)
-    case punch = "Punch"             // Peak-forward classic coloring (bars-only, no peak markers)
     case fire = "Fire"               // GPU flame simulation (Metal overlay)
     case enhanced = "Enhanced"       // LED matrix with rainbow (Metal overlay)
     case ultra = "Ultra"             // Maximum visual quality (Metal overlay)
@@ -23,7 +22,6 @@ enum MainWindowVisMode: String, CaseIterable {
         switch self {
         case .spectrum: return nil
         case .visClassicExact: return .visClassicExact
-        case .punch: return .punch
         case .fire: return .flame
         case .enhanced: return .enhanced
         case .ultra: return .ultra
@@ -1810,6 +1808,7 @@ class MainWindowView: NSView {
                 engine.previous()
             }
         case .play:
+            NSLog("MainWindowView: Play button pressed (isVideoActive=%d)", isVideoActive ? 1 : 0)
             if isVideoActive {
                 WindowManager.shared.toggleVideoPlayPause()
             } else {
@@ -1823,6 +1822,7 @@ class MainWindowView: NSView {
                 engine.pause()
             }
         case .stop:
+            NSLog("MainWindowView: Stop button pressed (isVideoActive=%d)", isVideoActive ? 1 : 0)
             if isVideoActive {
                 WindowManager.shared.stopVideo()
             } else {
@@ -1910,6 +1910,7 @@ class MainWindowView: NSView {
         
         switch event.keyCode {
         case 49: // Space - Play/Pause
+            NSLog("MainWindowView: Space key (isVideoActive=%d, engineState=%@)", isVideoActive ? 1 : 0, String(describing: engine.state))
             if isVideoActive {
                 WindowManager.shared.toggleVideoPlayPause()
             } else if engine.state == .playing {
@@ -1918,18 +1919,21 @@ class MainWindowView: NSView {
                 engine.play()
             }
         case 7: // X - Play
+            NSLog("MainWindowView: X key play (isVideoActive=%d)", isVideoActive ? 1 : 0)
             if isVideoActive {
                 WindowManager.shared.toggleVideoPlayPause()
             } else {
                 engine.play()
             }
         case 9: // V - Stop
+            NSLog("MainWindowView: V key stop (isVideoActive=%d)", isVideoActive ? 1 : 0)
             if isVideoActive {
                 WindowManager.shared.stopVideo()
             } else {
                 engine.stop()
             }
         case 8: // C - Pause
+            NSLog("MainWindowView: C key pause (isVideoActive=%d)", isVideoActive ? 1 : 0)
             if isVideoActive {
                 WindowManager.shared.toggleVideoPlayPause()
             } else {

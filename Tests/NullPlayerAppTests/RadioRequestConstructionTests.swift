@@ -1,4 +1,6 @@
 import XCTest
+import struct NullPlayerCore.PlexConnection
+import struct NullPlayerCore.PlexServer
 @testable import NullPlayer
 
 final class RadioRequestConstructionTests: XCTestCase {

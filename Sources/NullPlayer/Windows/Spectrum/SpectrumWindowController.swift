@@ -244,6 +244,7 @@ extension SpectrumWindowController: NSWindowDelegate {
         
         // Stop rendering when window closes
         spectrumView.stopRendering()
+        if let window { WindowManager.shared.handleCenterStackWindowWillClose(window) }
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }
     

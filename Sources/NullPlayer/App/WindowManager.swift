@@ -1,4 +1,5 @@
 import AppKit
+import NullPlayerCore
 
 // MARK: - Notifications
 
@@ -11,6 +12,18 @@ extension Notification.Name {
     static let windowDragDidBegin = Notification.Name("windowDragDidBegin")
     static let windowDragDidEnd = Notification.Name("windowDragDidEnd")
 }
+
+#if DEBUG
+extension WindowManager {
+    var debugVideoPlayerWindowControllerForTesting: VideoPlayerWindowController? {
+        videoPlayerWindowController
+    }
+
+    func debugSetVideoPlayerWindowControllerForTesting(_ controller: VideoPlayerWindowController?) {
+        videoPlayerWindowController = controller
+    }
+}
+#endif
 
 // MARK: - Time Display Mode
 
@@ -358,15 +371,8 @@ class WindowManager {
     /// Video duration - returns cast duration when video casting is active
     var videoDuration: TimeInterval {
         get {
-            if isVideoCastingActive {
-                // First check VideoPlayerWindowController (for casts from video player)
-                if let controller = videoPlayerWindowController, controller.isCastingVideo {
-                    return controller.castDuration
-                }
-                // Then check CastManager (for casts from context menu)
-                if CastManager.shared.isVideoCasting {
-                    return CastManager.shared.videoCastDuration
-                }
+            if case .video = CastManager.shared.currentCast {
+                return CastManager.shared.videoCastDuration
             }
             return _videoDuration
         }
@@ -580,9 +586,11 @@ class WindowManager {
     }
     
     func togglePlaylist() {
-        if let controller = playlistWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
-            controller.window?.orderOut(nil)
+        if let controller = playlistWindowController,
+           let window = controller.window,
+           window.isVisible {
+            let closingFrame = window.frame
+            window.orderOut(nil)
             slideUpWindowsBelow(closingFrame: closingFrame)
         } else {
             showPlaylist()
@@ -627,9 +635,11 @@ class WindowManager {
     }
     
     func toggleEqualizer() {
-        if let controller = equalizerWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
-            controller.window?.orderOut(nil)
+        if let controller = equalizerWindowController,
+           let window = controller.window,
+           window.isVisible {
+            let closingFrame = window.frame
+            window.orderOut(nil)
             slideUpWindowsBelow(closingFrame: closingFrame)
         } else {
             showEqualizer()
@@ -740,6 +750,17 @@ class WindowManager {
         }
 
         postLayoutChangeNotification()
+    }
+
+    /// Call from windowWillClose on classic center-stack windows (EQ, Playlist, Spectrum, Waveform)
+    /// when closed via the X button. Slides up windows below and tightens the stack.
+    func handleCenterStackWindowWillClose(_ window: NSWindow) {
+        guard !isRunningModernUI else { return }
+        let closingFrame = window.frame
+        slideUpWindowsBelow(closingFrame: closingFrame)
+        _ = tightenClassicCenterStackIfNeeded()
+        postLayoutChangeNotification()
+        updateDockedChildWindows()
     }
 
     /// Show local media library (redirects to unified browser in local mode)
@@ -983,9 +1004,85 @@ class WindowManager {
     }
 
     // MARK: - Video Player Window
+
+    private var targetVideoCastDevice: CastDevice? {
+        if let activeDevice = CastManager.shared.activeSession?.device,
+           activeDevice.supportsVideo {
+            return activeDevice
+        }
+        if let preferredDevice = CastManager.shared.preferredVideoCastDevice,
+           preferredDevice.supportsVideo {
+            return preferredDevice
+        }
+        return nil
+    }
+
+    private func routeToVideoCastIfNeeded(title: String, artworkTrack: Track?, operation: @escaping (CastDevice) async throws -> Void) -> Bool {
+        guard let device = targetVideoCastDevice else { return false }
+
+        // If a video cast is already active, close it now — two simultaneous casts aren't possible.
+        // Local video teardown is deferred until the cast succeeds so playback isn't lost on failure.
+        let hasLocalVideoRunning: Bool
+        if let vpc = videoPlayerWindowController, vpc.currentTitle != nil {
+            if vpc.isCastingVideo {
+                vpc.closeForCastTransition()
+                hasLocalVideoRunning = false
+            } else {
+                hasLocalVideoRunning = true
+            }
+        } else {
+            hasLocalVideoRunning = false
+        }
+
+        videoTitle = title
+        mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: artworkTrack)
+        mainWindowController?.updatePlaybackState()
+
+        Task {
+            do {
+                try await operation(device)
+                // Cast succeeded — safe to stop any local video that was running
+                if hasLocalVideoRunning {
+                    await MainActor.run {
+                        self.videoPlayerWindowController?.stop()
+                        self.videoTitle = title
+                        self.mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: artworkTrack)
+                        self.mainWindowController?.updatePlaybackState()
+                    }
+                }
+            } catch {
+                NSLog("WindowManager: Failed to route video '%@' to active cast device %@: %@", title, device.name, error.localizedDescription)
+                await MainActor.run {
+                    if hasLocalVideoRunning,
+                       let localController = self.videoPlayerWindowController,
+                       let localTitle = localController.currentTitle {
+                        self.videoTitle = localTitle
+                        self.mainWindowController?.updateVideoTrackInfo(
+                            title: localTitle,
+                            artworkTrack: localController.currentArtworkTrack
+                        )
+                    } else {
+                        self.videoTitle = nil
+                        self.mainWindowController?.clearVideoTrackInfo()
+                    }
+                    self.mainWindowController?.updatePlaybackState()
+                }
+                CastManager.shared.postError(.playbackFailed("Could not play '\(title)' on \(device.name): \(error.localizedDescription)"))
+            }
+        }
+
+        return true
+    }
     
     /// Show the video player with a URL and title
     func showVideoPlayer(url: URL, title: String) {
+        let artworkTrack = Track(url: url, title: title, mediaType: .video)
+        if routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: { device in
+            try await CastManager.shared.castVideoURL(url, title: title, to: device)
+        }) {
+            return
+        }
+
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
@@ -996,6 +1093,12 @@ class WindowManager {
     
     /// Play a Plex movie in the video player
     func playMovie(_ movie: PlexMovie) {
+        if routeToVideoCastIfNeeded(title: movie.title, artworkTrack: PlexManager.shared.convertToTrack(movie), operation: { device in
+            try await CastManager.shared.castPlexMovie(movie, to: device)
+        }) {
+            return
+        }
+
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
@@ -1006,6 +1109,13 @@ class WindowManager {
     
     /// Play a Plex episode in the video player
     func playEpisode(_ episode: PlexEpisode) {
+        let title = episode.grandparentTitle.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
+        if routeToVideoCastIfNeeded(title: title, artworkTrack: PlexManager.shared.convertToTrack(episode), operation: { device in
+            try await CastManager.shared.castPlexEpisode(episode, to: device)
+        }) {
+            return
+        }
+
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
@@ -1016,6 +1126,12 @@ class WindowManager {
     
     /// Play a Jellyfin movie in the video player
     func playJellyfinMovie(_ movie: JellyfinMovie) {
+        if routeToVideoCastIfNeeded(title: movie.title, artworkTrack: JellyfinManager.shared.convertToTrack(movie), operation: { device in
+            try await CastManager.shared.castJellyfinMovie(movie, to: device)
+        }) {
+            return
+        }
+
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
@@ -1026,6 +1142,13 @@ class WindowManager {
     
     /// Play a Jellyfin episode in the video player
     func playJellyfinEpisode(_ episode: JellyfinEpisode) {
+        let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
+        if routeToVideoCastIfNeeded(title: title, artworkTrack: JellyfinManager.shared.convertToTrack(episode), operation: { device in
+            try await CastManager.shared.castJellyfinEpisode(episode, to: device)
+        }) {
+            return
+        }
+
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
@@ -1036,6 +1159,12 @@ class WindowManager {
 
     /// Play an Emby movie in the video player
     func playEmbyMovie(_ movie: EmbyMovie) {
+        if routeToVideoCastIfNeeded(title: movie.title, artworkTrack: EmbyManager.shared.convertToTrack(movie), operation: { device in
+            try await CastManager.shared.castEmbyMovie(movie, to: device)
+        }) {
+            return
+        }
+
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
@@ -1046,6 +1175,13 @@ class WindowManager {
 
     /// Play an Emby episode in the video player
     func playEmbyEpisode(_ episode: EmbyEpisode) {
+        let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
+        if routeToVideoCastIfNeeded(title: title, artworkTrack: EmbyManager.shared.convertToTrack(episode), operation: { device in
+            try await CastManager.shared.castEmbyEpisode(episode, to: device)
+        }) {
+            return
+        }
+
         if videoPlayerWindowController == nil {
             videoPlayerWindowController = VideoPlayerWindowController()
         }
@@ -1059,6 +1195,18 @@ class WindowManager {
     func playVideoTrack(_ track: Track) {
         guard track.mediaType == .video else {
             NSLog("WindowManager: playVideoTrack called with non-video track")
+            return
+        }
+
+        if routeToVideoCastIfNeeded(title: track.displayTitle, artworkTrack: track, operation: { device in
+            try await CastManager.shared.castVideoURL(
+                track.url,
+                title: track.displayTitle,
+                to: device,
+                duration: track.duration,
+                contentType: track.contentType
+            )
+        }) {
             return
         }
         
@@ -1100,20 +1248,18 @@ class WindowManager {
     
     /// Whether video is currently playing
     var isVideoPlaying: Bool {
-        videoPlayerWindowController?.isPlaying ?? false
+        if case .video = CastManager.shared.currentCast {
+            return CastManager.shared.isVideoCastPlaying
+        }
+        return videoPlayerWindowController?.isPlaying ?? false
     }
     
     /// Current video title (if playing)
     var currentVideoTitle: String? {
-        // First check video player window (for local playback or casts from player)
-        if let title = videoPlayerWindowController?.currentTitle {
-            return title
-        }
-        // Then check CastManager (for video casts from library browser menu)
-        if CastManager.shared.isVideoCasting {
+        if case .video = CastManager.shared.currentCast {
             return CastManager.shared.videoCastTitle
         }
-        return nil
+        return videoPlayerWindowController?.currentTitle
     }
     
     /// Public access to video player controller (for About Playing feature)
@@ -1131,14 +1277,8 @@ class WindowManager {
     
     /// Toggle video play/pause
     func toggleVideoPlayPause() {
-        // Path 1: Casting from video player window
-        if let controller = videoPlayerWindowController, controller.isCastingVideo {
-            controller.togglePlayPause()
-            return
-        }
-        
-        // Path 2: Casting from menu (no video player window)
-        if CastManager.shared.isVideoCasting {
+        switch CastManager.shared.currentCast {
+        case .video:
             Task {
                 if CastManager.shared.isVideoCastPlaying {
                     try? await CastManager.shared.pause()
@@ -1146,34 +1286,24 @@ class WindowManager {
                     try? await CastManager.shared.resume()
                 }
             }
-            return
+        default:
+            videoPlayerWindowController?.togglePlayPause()
         }
-        
-        // Local video player (not casting)
-        videoPlayerWindowController?.togglePlayPause()
     }
-    
+
     /// Stop video playback
     func stopVideo() {
-        // Path 1: Casting from video player window
-        if let controller = videoPlayerWindowController, controller.isCastingVideo {
-            controller.stop()
-            return
-        }
-        
-        // Path 2: Casting from menu (no video player window)
-        if CastManager.shared.isVideoCasting {
+        switch CastManager.shared.currentCast {
+        case .video:
             Task {
                 await CastManager.shared.stopCasting()
                 await MainActor.run {
                     WindowManager.shared.videoPlaybackDidStop()
                 }
             }
-            return
+        default:
+            videoPlayerWindowController?.stop()
         }
-        
-        // Local video player (not casting)
-        videoPlayerWindowController?.stop()
     }
     
     /// Set video player volume
@@ -1183,11 +1313,10 @@ class WindowManager {
     
     /// Whether video casting is currently active
     var isVideoCastingActive: Bool {
-        // Check both VideoPlayerWindowController (for casts initiated from video player)
-        // and CastManager (for casts initiated from context menu)
-        (videoPlayerWindowController?.isCastingVideo ?? false) || CastManager.shared.isVideoCasting
+        if case .video = CastManager.shared.currentCast { return true }
+        return false
     }
-    
+
     /// Set volume on video cast device
     func setVideoCastVolume(_ volume: Float) {
         guard isVideoCastingActive else { return }
@@ -1195,17 +1324,11 @@ class WindowManager {
             try? await CastManager.shared.setVolume(volume)
         }
     }
-    
+
     /// Toggle play/pause on video cast
     func toggleVideoCastPlayPause() {
-        // Path 1: Casting from video player window
-        if let controller = videoPlayerWindowController, controller.isCastingVideo {
-            controller.togglePlayPause()
-            return
-        }
-        
-        // Path 2: Casting from menu (no video player window)
-        if CastManager.shared.isVideoCasting {
+        switch CastManager.shared.currentCast {
+        case .video:
             Task {
                 if CastManager.shared.isVideoCastPlaying {
                     try? await CastManager.shared.pause()
@@ -1213,87 +1336,67 @@ class WindowManager {
                     try? await CastManager.shared.resume()
                 }
             }
+        default:
+            videoPlayerWindowController?.togglePlayPause()
         }
     }
-    
+
     /// Seek video cast (normalized 0-1 position)
     func seekVideoCast(position: Double) {
-        // Path 1: Casting from video player window
-        if let controller = videoPlayerWindowController, controller.isCastingVideo {
-            let time = position * controller.duration
-            controller.seek(to: time)
-            return
-        }
-        
-        // Path 2: Casting from menu (no video player window)
-        if CastManager.shared.isVideoCasting {
-            let time = position * CastManager.shared.videoCastDuration
+        switch CastManager.shared.currentCast {
+        case .video:
+            let duration = CastManager.shared.videoCastDuration
+            guard duration > 0 else { return }
+            let time = position * duration
             Task {
                 try? await CastManager.shared.seek(to: time)
             }
+        default:
+            if let controller = videoPlayerWindowController {
+                let time = position * controller.duration
+                controller.seek(to: time)
+            }
         }
     }
-    
+
     /// Skip video forward
     func skipVideoForward(_ seconds: TimeInterval = 10) {
-        // Path 1: Casting from video player window
-        if let controller = videoPlayerWindowController, controller.isCastingVideo {
-            controller.skipForward(seconds)
-            return
-        }
-        
-        // Path 2: Casting from menu (no video player window)
-        if CastManager.shared.isVideoCasting {
-            let newTime = min(CastManager.shared.videoCastCurrentTime + seconds, CastManager.shared.videoCastDuration)
+        switch CastManager.shared.currentCast {
+        case .video:
+            let duration = CastManager.shared.videoCastDuration
+            let requestedTime = CastManager.shared.videoCastCurrentTime + seconds
+            let newTime = duration > 0 ? min(requestedTime, duration) : requestedTime
             Task {
                 try? await CastManager.shared.seek(to: newTime)
             }
-            return
+        default:
+            videoPlayerWindowController?.skipForward(seconds)
         }
-        
-        // Local video player (not casting)
-        videoPlayerWindowController?.skipForward(seconds)
     }
-    
+
     /// Skip video backward
     func skipVideoBackward(_ seconds: TimeInterval = 10) {
-        // Path 1: Casting from video player window
-        if let controller = videoPlayerWindowController, controller.isCastingVideo {
-            controller.skipBackward(seconds)
-            return
-        }
-        
-        // Path 2: Casting from menu (no video player window)
-        if CastManager.shared.isVideoCasting {
+        switch CastManager.shared.currentCast {
+        case .video:
             let newTime = max(CastManager.shared.videoCastCurrentTime - seconds, 0)
             Task {
                 try? await CastManager.shared.seek(to: newTime)
             }
-            return
+        default:
+            videoPlayerWindowController?.skipBackward(seconds)
         }
-        
-        // Local video player (not casting)
-        videoPlayerWindowController?.skipBackward(seconds)
     }
-    
+
     /// Seek video to specific time
     func seekVideo(to time: TimeInterval) {
-        // Path 1: Casting from video player window
-        if let controller = videoPlayerWindowController, controller.isCastingVideo {
-            controller.seek(to: time)
-            return
-        }
-        
-        // Path 2: Casting from menu (no video player window)
-        if CastManager.shared.isVideoCasting {
+        switch CastManager.shared.currentCast {
+        case .video:
             Task {
                 try? await CastManager.shared.seek(to: time)
             }
-            return
+        default:
+            videoPlayerWindowController?.seek(to: time)
         }
-        
-        // Local video player (not casting)
-        videoPlayerWindowController?.seek(to: time)
     }
     
     /// Called when video playback starts - pause audio
@@ -1304,12 +1407,26 @@ class WindowManager {
         // Update main window with video title
         if let title = videoPlayerWindowController?.currentTitle {
             videoTitle = title
-            mainWindowController?.updateVideoTrackInfo(title: title)
+            mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: videoPlayerWindowController?.currentArtworkTrack)
         }
         mainWindowController?.updatePlaybackState()
     }
     
     /// Called when video playback stops
+    /// Close the video player window when an audio cast supersedes an active video cast.
+    /// Called from CastManager when castNewTrack or cast() transitions video→audio.
+    func closeVideoPlayerForCastTransition(wasVideoCast: Bool = false) {
+        if let vpc = videoPlayerWindowController, vpc.isCastingVideo {
+            // castNewTrack path: isCastingVideo still true
+            vpc.closeForCastTransition()
+        } else if let vpc = videoPlayerWindowController,
+                  wasVideoCast || CastManager.shared.isVideoCasting || CastManager.shared.currentCast == .video {
+            // cast() path: isCastingVideo already cleared by stopCastingAndAwaitTeardown,
+            // so use CastManager's explicit video-cast state instead of window visibility.
+            vpc.closeForCastTransition()
+        }
+    }
+
     func videoPlaybackDidStop() {
         videoCurrentTime = 0
         videoDuration = 0
@@ -1349,9 +1466,24 @@ class WindowManager {
         }
         return controller.currentTitle != nil
     }
-    
+
+    /// True if a video is actively loaded in the player window or CastManager is video casting.
+    /// Unlike isVideoActivePlayback, does NOT rely on VideoPlayerWindowController.isCastingVideo.
+    var isVideoContentActive: Bool {
+        if case .video = CastManager.shared.currentCast { return true }
+        guard let controller = videoPlayerWindowController,
+              let window = controller.window,
+              window.isVisible else {
+            return false
+        }
+        return controller.currentTitle != nil
+    }
+
     /// Get current video playback state for main window display
     var videoPlaybackState: PlaybackState {
+        if case .video = CastManager.shared.currentCast {
+            return CastManager.shared.isVideoCastPlaying ? .playing : .paused
+        }
         guard let controller = videoPlayerWindowController else { return .stopped }
         return controller.isPlaying ? .playing : .paused
     }
@@ -1493,11 +1625,13 @@ class WindowManager {
     }
     
     func toggleSpectrum() {
-        if let controller = spectrumWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
+        if let controller = spectrumWindowController,
+           let window = controller.window,
+           window.isVisible {
+            let closingFrame = window.frame
             // Stop rendering before hiding to save CPU (orderOut doesn't trigger windowWillClose)
             controller.stopRenderingForHide()
-            controller.window?.orderOut(nil)
+            window.orderOut(nil)
             slideUpWindowsBelow(closingFrame: closingFrame)
         } else {
             showSpectrum()
@@ -1563,10 +1697,12 @@ class WindowManager {
     }
 
     func toggleWaveform() {
-        if let controller = waveformWindowController, controller.window?.isVisible == true {
-            let closingFrame = controller.window!.frame
+        if let controller = waveformWindowController,
+           let window = controller.window,
+           window.isVisible {
+            let closingFrame = window.frame
             controller.stopLoadingForHide()
-            controller.window?.orderOut(nil)
+            window.orderOut(nil)
             slideUpWindowsBelow(closingFrame: closingFrame)
         } else {
             showWaveform()

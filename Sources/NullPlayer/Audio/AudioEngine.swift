@@ -421,6 +421,12 @@ class AudioEngine {
     
     /// Flag to coalesce main queue PCM dispatches
     private var pendingPcmUpdate = false
+
+    /// Latest spectrum frame waiting for the main queue. Protected because FFT runs
+    /// off-main while UI consumers read on main.
+    private let spectrumUpdateLock = NSLock()
+    private var pendingSpectrumFrame: [Float]?
+    private var spectrumUpdateScheduled = false
     
     // MARK: - Spectrum Consumer Tracking
 
@@ -530,16 +536,29 @@ class AudioEngine {
     var isCastingActive: Bool {
         CastManager.shared.isCasting
     }
+
+    /// True while natural cast auto-advance is handing a new track to the cast device.
+    /// Prevents the time-update timer from reusing the previous track's near-end clock
+    /// against the next track's duration during the async Sonos/DLNA handoff.
+    private var isAdvancingCastTrack = false
     
     /// Whether video casting is active (from video player)
     var isVideoCastingActive: Bool {
         if AudioEngine.isHeadless { return false }
         return WindowManager.shared.isVideoCastingActive
     }
+
+    /// Whether an audio cast session should receive track changes.
+    /// Chromecast starts in .loaded before the first status promotes it to .casting.
+    var isAudioCastRoutingActive: Bool {
+        guard CastManager.shared.currentCast == .audio,
+              let state = CastManager.shared.activeSession?.state else { return false }
+        return state == .loaded || state == .casting
+    }
     
     /// Whether any casting (audio or video) is active
     var isAnyCastingActive: Bool {
-        isCastingActive || isVideoCastingActive
+        isAudioCastRoutingActive || isVideoCastingActive
     }
     
     // MARK: - Initialization
@@ -1375,27 +1394,43 @@ class AudioEngine {
             }
         }
         
-        // Smooth with previous values (decay) and update on main thread
-        // Copy spectrum data to avoid data races since we reuse the buffer
+        // Smooth with previous values (decay) and update on main thread.
+        // Keep only the latest frame while one main-queue update is pending.
         let spectrumCopy = Array(fftNewSpectrum)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            for i in 0..<bandCount {
-                // Fast attack, smooth decay for all modes
-                if spectrumCopy[i] > self.spectrumData[i] {
-                    self.spectrumData[i] = spectrumCopy[i]
-                } else {
-                    self.spectrumData[i] = self.spectrumData[i] * 0.90 + spectrumCopy[i] * 0.10
-                }
-            }
-            self.delegate?.audioEngineDidUpdateSpectrum(self.spectrumData)
+        var shouldScheduleSpectrumUpdate = false
+        spectrumUpdateLock.lock()
+        pendingSpectrumFrame = spectrumCopy
+        if !spectrumUpdateScheduled {
+            spectrumUpdateScheduled = true
+            shouldScheduleSpectrumUpdate = true
+        }
+        spectrumUpdateLock.unlock()
 
-            // Post notification for low-latency spectrum updates
-            NotificationCenter.default.post(
-                name: .audioSpectrumDataUpdated,
-                object: self,
-                userInfo: ["spectrum": self.spectrumData]
-            )
+        if shouldScheduleSpectrumUpdate {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.spectrumUpdateLock.lock()
+                let spectrumFrame = self.pendingSpectrumFrame
+                self.pendingSpectrumFrame = nil
+                self.spectrumUpdateScheduled = false
+                self.spectrumUpdateLock.unlock()
+
+                guard let spectrumFrame else { return }
+                for i in 0..<bandCount {
+                    // Fast attack, smooth decay for all modes
+                    if spectrumFrame[i] > self.spectrumData[i] {
+                        self.spectrumData[i] = spectrumFrame[i]
+                    } else {
+                        self.spectrumData[i] = self.spectrumData[i] * 0.90 + spectrumFrame[i] * 0.10
+                    }
+                }
+                self.delegate?.audioEngineDidUpdateSpectrum(self.spectrumData)
+                NotificationCenter.default.post(
+                    name: .audioSpectrumDataUpdated,
+                    object: self,
+                    userInfo: ["spectrum": self.spectrumData]
+                )
+            }
         }
     }
 
@@ -1637,8 +1672,12 @@ class AudioEngine {
             return
         }
 
-        // If audio casting is active, forward command to CastManager
-        if isCastingActive {
+        // If audio casting is active, forward command to CastManager.
+        // Use isAudioCastRoutingActive so the .loaded phase (before first status) is included.
+        if isAudioCastRoutingActive {
+            if !isCastingActive {
+                NSLog("AudioEngine.pause() - routing through .loaded audio cast session")
+            }
             NSLog("AudioEngine.pause() - forwarding to CastManager")
             Task {
                 do {
@@ -1697,10 +1736,17 @@ class AudioEngine {
             RadioManager.shared.stop()
         }
         
-        // If casting is active, handle stop based on device type
-        if isCastingActive {
+        // If casting is active (or in .loaded pre-cast phase), end the cast session
+        let castSession = CastManager.shared.activeSession
+        NSLog("AudioEngine.stop(): isCastingActive=%d, activeSession=%@, currentCast=%@",
+              isCastingActive ? 1 : 0,
+              castSession.map { $0.device.name } ?? "nil",
+              String(describing: CastManager.shared.currentCast))
+        if isCastingActive || castSession != nil {
             Task {
+                NSLog("AudioEngine.stop(): calling handleStopForActiveDevice")
                 await CastManager.shared.handleStopForActiveDevice()
+                NSLog("AudioEngine.stop(): handleStopForActiveDevice completed")
             }
         }
         
@@ -1833,17 +1879,18 @@ class AudioEngine {
             currentIndex = (currentIndex - 1 + playlist.count) % playlist.count
         }
         
-        // When casting, cast the new track instead of playing locally
-        if isCastingActive {
+        // When casting, cast the new track instead of playing locally.
+        // Use isAudioCastRoutingActive so the .loaded phase is included.
+        if isAudioCastRoutingActive {
             let track = playlist[currentIndex]
             let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
-            
+
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay
             if !isLocalFile {
                 currentTrack = track
             }
-            
+
             Task {
                 do {
                     try await CastManager.shared.castNewTrack(track)
@@ -1895,17 +1942,18 @@ class AudioEngine {
             currentIndex = (currentIndex + 1) % playlist.count
         }
         
-        // When casting, cast the new track instead of playing locally
-        if isCastingActive {
+        // When casting, cast the new track instead of playing locally.
+        // Use isAudioCastRoutingActive so the .loaded phase is included.
+        if isAudioCastRoutingActive {
             let track = playlist[currentIndex]
             let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
-            
+
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay
             if !isLocalFile {
                 currentTrack = track
             }
-            
+
             Task {
                 do {
                     try await CastManager.shared.castNewTrack(track)
@@ -1974,11 +2022,12 @@ class AudioEngine {
         
         currentIndex = newIndex
         
-        // When casting, cast the new track instead of playing locally
-        if isCastingActive {
+        // When casting, cast the new track instead of playing locally.
+        // Use isAudioCastRoutingActive so the .loaded phase is included.
+        if isAudioCastRoutingActive {
             let track = playlist[currentIndex]
             let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
-            
+
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay
             if !isLocalFile {
@@ -2020,15 +2069,13 @@ class AudioEngine {
     func seek(to time: TimeInterval) {
         // Cancel any in-progress crossfade
         cancelCrossfade()
-        
+
         // If casting is active, forward command to CastManager
         if isCastingActive {
-            // Update local tracking immediately for responsive UI
-            castStartPosition = time
-            castPlaybackStartDate = Date()  // Reset interpolation from seek position
+            // CastManager will update activeSession position and playbackStartDate
             _currentTime = time
             lastReportedTime = time
-            
+
             Task {
                 try? await CastManager.shared.seek(to: time)
             }
@@ -2156,27 +2203,23 @@ class AudioEngine {
     }
     
     // MARK: - Time Updates
-    
-    /// Timestamp when cast playback started (for time interpolation)
-    private var castPlaybackStartDate: Date?
-    /// Position when cast playback started
-    private var castStartPosition: TimeInterval = 0
-    /// Whether we've received the first status update from Chromecast (prevents UI flash before sync)
-    private var castHasReceivedStatus: Bool = false
-    
+
     var currentTime: TimeInterval {
         // When casting, interpolate from start position
         if isCastingActive {
+            guard let session = CastManager.shared.activeSession else {
+                return 0
+            }
             // If cast playback is active (startDate is set), interpolate
-            if let startDate = castPlaybackStartDate {
+            if let startDate = session.playbackStartDate {
                 let elapsed = Date().timeIntervalSince(startDate)
-                let interpolated = castStartPosition + elapsed
+                let interpolated = session.position + elapsed
                 let trackDuration = currentTrack?.duration ?? 0
                 // Don't exceed duration
                 return trackDuration > 0 ? min(interpolated, trackDuration) : interpolated
             }
             // Cast is paused - return the last saved position
-            return castStartPosition
+            return session.position
         }
         
         if isStreamingPlayback {
@@ -2230,22 +2273,21 @@ class AudioEngine {
     }
 
     func startCastPlayback(from position: TimeInterval = 0) {
-        castStartPosition = position
-        castPlaybackStartDate = Date()
-        castHasReceivedStatus = true  // Immediate start means we skip waiting for status
+        NSLog("AudioEngine: startCastPlayback from=%.1f track='%@'", position, currentTrack?.title ?? "nil")
+        // CastManager has already updated activeSession with position and playbackStartDate
         _currentTime = position
         lastReportedTime = position
         suspendedLocalPlaybackClockForSleep = false
-        
+
         // Update playback state and start UI updates
         state = .playing
         startTimeUpdates()
-        
+
         // Report cast playback start to Plex (for dashboard "Now Playing" and scrobbling)
         if let track = currentTrack {
             PlexPlaybackReporter.shared.trackDidStart(track, at: position)
         }
-        
+
         // Notify delegate of track change
         delegate?.audioEngineDidChangeTrack(currentTrack)
         delegate?.audioEngineDidUpdateTime(current: position, duration: duration)
@@ -2255,19 +2297,16 @@ class AudioEngine {
     /// Called when casting starts - actual playback timer begins when Chromecast reports PLAYING state
     /// This prevents clock sync issues when buffering (especially for 4K on slow networks)
     func initializeCastPlayback(from position: TimeInterval = 0) {
-        castStartPosition = position
-        // Don't set castPlaybackStartDate yet - wait for PLAYING status from Chromecast
-        castPlaybackStartDate = nil
-        // Reset status flag - UI won't update time until we receive first Chromecast status
-        castHasReceivedStatus = false
+        NSLog("AudioEngine: initializeCastPlayback from=%.1f track='%@'", position, currentTrack?.title ?? "nil")
+        // CastManager has already set activeSession position to 0 and playbackStartDate to nil
         _currentTime = position
         lastReportedTime = position
         suspendedLocalPlaybackClockForSleep = false
-        
+
         // Set state to playing so UI shows cast mode, but timer won't advance until we get PLAYING status
         state = .playing
         startTimeUpdates()
-        
+
         // Report cast playback start to Plex (for dashboard "Now Playing" and scrobbling)
         if let track = currentTrack {
             PlexPlaybackReporter.shared.trackDidStart(track, at: position)
@@ -2279,76 +2318,60 @@ class AudioEngine {
     
     /// Pause cast playback time tracking
     func pauseCastPlayback() {
-        // Save current interpolated position
-        if let startDate = castPlaybackStartDate {
-            castStartPosition += Date().timeIntervalSince(startDate)
-        }
-        castPlaybackStartDate = nil
-        
-        // Report pause to Plex
+        let castStartPosition = CastManager.shared.activeSession?.position ?? 0
+        NSLog("AudioEngine: pauseCastPlayback at=%.1f", castStartPosition)
         PlexPlaybackReporter.shared.trackDidPause(at: castStartPosition)
-        
-        // Update state
         state = .paused
     }
     
     /// Reset cast time to 0 but keep cast session active
     /// Used when user presses stop - allows playing another track without re-selecting device
     func resetCastTime() {
-        // Report stop to Plex before resetting position
+        // Get current position from activeSession and report to Plex
+        let castStartPosition = CastManager.shared.activeSession?.position ?? 0
         PlexPlaybackReporter.shared.trackDidStop(at: castStartPosition, finished: false)
-        
-        castStartPosition = 0
-        castPlaybackStartDate = nil
-        // Keep castHasReceivedStatus true so UI updates work when playing again
+
         state = .stopped
     }
     
     /// Resume cast playback time tracking
     func resumeCastPlayback() {
-        castPlaybackStartDate = Date()
-        
-        // Report resume to Plex
+        let castStartPosition = CastManager.shared.activeSession?.position ?? 0
+        NSLog("AudioEngine: resumeCastPlayback at=%.1f", castStartPosition)
         PlexPlaybackReporter.shared.trackDidResume(at: castStartPosition)
-        
-        // Update state
         state = .playing
     }
     
     /// Update cast position from Chromecast status updates
     /// This syncs the local time tracking with the actual position from the cast device
     func updateCastPosition(currentTime: TimeInterval, isPlaying: Bool, isBuffering: Bool) {
-        guard isCastingActive else { return }
-        
-        // Mark that we've received status from Chromecast (enables UI time updates)
-        let isFirstStatus = !castHasReceivedStatus
-        castHasReceivedStatus = true
-        
-        // Sync position from Chromecast
-        castStartPosition = currentTime
-        
+        guard isCastingActive else {
+            NSLog("AudioEngine: updateCastPosition called but isCastingActive=false (state=%@) — ignoring",
+                  String(describing: CastManager.shared.activeSession?.state))
+            return
+        }
+
+        let prevState = state
+        let isFirstStatus = CastManager.shared.activeSession?.state == .loaded
+
         if isBuffering {
-            // During buffering, pause interpolation to prevent drift
-            // This is critical for 4K on slow networks where buffering can take a long time
-            castPlaybackStartDate = nil
-            // Keep state as .playing so UI shows cast mode, but timer won't advance
+            state = .playing
         } else if isPlaying {
-            // Playing - start/restart interpolation from this position
-            // This is when we actually start the timer (may be first time after buffering completes)
-            castPlaybackStartDate = Date()
             state = .playing
         } else {
-            // Paused - stop interpolation
-            castPlaybackStartDate = nil
             state = .paused
         }
-        
-        // Update reported time for UI sync
+
+        if prevState != state || isFirstStatus {
+            NSLog("AudioEngine: updateCastPosition t=%.1f playing=%d buffering=%d → state=%@ (firstStatus=%d)",
+                  currentTime, isPlaying ? 1 : 0, isBuffering ? 1 : 0,
+                  String(describing: state), isFirstStatus ? 1 : 0)
+        }
+
         _currentTime = currentTime
         lastReportedTime = currentTime
         suspendedLocalPlaybackClockForSleep = false
-        
-        // On first status, immediately update delegate with correct position
+
         if isFirstStatus {
             delegate?.audioEngineDidUpdateTime(current: currentTime, duration: duration)
         }
@@ -2357,37 +2380,24 @@ class AudioEngine {
     /// Stop cast playback and resume local playback at current position
     /// - Parameter resumeLocally: If true, resume local playback from current cast position
     func stopCastPlayback(resumeLocally: Bool = false) {
-        // Stop timer FIRST to prevent any flashing during state transition
+        let currentPosition = currentTime
+        NSLog("AudioEngine: stopCastPlayback resumeLocally=%d at=%.1f track='%@'",
+              resumeLocally ? 1 : 0, currentPosition, currentTrack?.title ?? "nil")
         stopTimeUpdates()
-        
-        // Save current position before clearing cast state
-        let currentPosition = castStartPosition
-        if let startDate = castPlaybackStartDate {
-            // Add elapsed time since last position update
-            let elapsed = Date().timeIntervalSince(startDate)
-            let position = currentPosition + elapsed
-            
-            if resumeLocally, let track = currentTrack {
-                // Resume local playback from current position
-                castPlaybackStartDate = nil
-                castStartPosition = 0
-                castHasReceivedStatus = false
-                
-                // Load and seek to position
-                if let index = playlist.firstIndex(where: { $0.id == track.id }) {
-                    currentIndex = index
-                    loadTrack(at: index)
-                    seek(to: position)
-                    play()
-                    return
-                }
+
+        if resumeLocally, let track = currentTrack {
+            // Resume local playback from current position
+            // Load and seek to position
+            if let index = playlist.firstIndex(where: { $0.id == track.id }) {
+                currentIndex = index
+                loadTrack(at: index)
+                seek(to: currentPosition)
+                play()
+                return
             }
         }
-        
+
         // Default behavior - just stop
-        castPlaybackStartDate = nil
-        castStartPosition = 0
-        castHasReceivedStatus = false
         state = .stopped
     }
     
@@ -2440,7 +2450,8 @@ class AudioEngine {
             
             // When casting, skip time updates until we've received first status from Chromecast
             // This prevents showing stale/incorrect time before sync (flash issue on slow networks)
-            if self.isCastingActive && !self.castHasReceivedStatus {
+            if self.isAdvancingCastTrack ||
+               (self.isCastingActive && CastManager.shared.activeSession?.state == .loaded) {
                 return
             }
             
@@ -2502,8 +2513,9 @@ class AudioEngine {
             }
             
             // When casting, check if track has finished and auto-advance
-            if self.isCastingActive, 
-               self.castPlaybackStartDate != nil,  // Casting is playing (not paused)
+            let isCastPlaying = CastManager.shared.activeSession?.playbackStartDate != nil
+            if self.isCastingActive,
+               isCastPlaying,  // Casting is playing (not paused)
                trackDuration > 0,
                current >= trackDuration - 0.5 {  // Within 0.5s of end
                 NSLog("AudioEngine: Cast track finished, advancing to next")
@@ -2517,6 +2529,9 @@ class AudioEngine {
     
     /// Handle cast track completion - advance to next track
     private func castTrackDidFinish() {
+        guard !isAdvancingCastTrack else { return }
+        isAdvancingCastTrack = true
+
         // Report track finished to Plex (natural end)
         PlexPlaybackReporter.shared.trackDidStop(at: duration, finished: true)
 
@@ -2554,9 +2569,6 @@ class AudioEngine {
             }
         }
 
-        // Prevent multiple calls
-        castPlaybackStartDate = nil
-        
         // Capture previous index before any changes (for rollback on cast failure)
         let previousIndex = currentIndex
         let previousTrack = currentTrack
@@ -2578,7 +2590,10 @@ class AudioEngine {
                           playlist[nextIndex].url.pathExtension)
                 }
                 if !foundCompatibleTrack {
-                    Task { await CastManager.shared.stopCasting() }
+                    Task {
+                        await CastManager.shared.stopCasting()
+                        await MainActor.run { self.isAdvancingCastTrack = false }
+                    }
                     return
                 }
             }
@@ -2607,6 +2622,7 @@ class AudioEngine {
                         self.restoreShufflePlaybackState(shuffleSnapshot)
                     }
                 }
+                await MainActor.run { self.isAdvancingCastTrack = false }
             }
         } else if !playlist.isEmpty {
             if shuffleEnabled {
@@ -2624,7 +2640,10 @@ class AudioEngine {
                           playlist[nextIndex].url.pathExtension)
                 }
                 if !foundCompatibleTrack {
-                    Task { await CastManager.shared.stopCasting() }
+                    Task {
+                        await CastManager.shared.stopCasting()
+                        await MainActor.run { self.isAdvancingCastTrack = false }
+                    }
                     return
                 }
                 let track = playlist[currentIndex]
@@ -2651,6 +2670,7 @@ class AudioEngine {
                             self.restoreShufflePlaybackState(shuffleSnapshot)
                         }
                     }
+                    await MainActor.run { self.isAdvancingCastTrack = false }
                 }
             } else if currentIndex < playlist.count - 1 {
                 // More tracks to play — advance, skipping Sonos-incompatible formats
@@ -2664,7 +2684,10 @@ class AudioEngine {
                     currentIndex += 1
                 }
                 guard currentIndex < playlist.count else {
-                    Task { await CastManager.shared.stopCasting() }
+                    Task {
+                        await CastManager.shared.stopCasting()
+                        await MainActor.run { self.isAdvancingCastTrack = false }
+                    }
                     return
                 }
                 let track = playlist[currentIndex]
@@ -2691,13 +2714,17 @@ class AudioEngine {
                             self.restoreShufflePlaybackState(shuffleSnapshot)
                         }
                     }
+                    await MainActor.run { self.isAdvancingCastTrack = false }
                 }
             } else {
                 // End of playlist - stop casting
                 Task {
                     await CastManager.shared.stopCasting()
+                    await MainActor.run { self.isAdvancingCastTrack = false }
                 }
             }
+        } else {
+            isAdvancingCastTrack = false
         }
     }
     
@@ -3346,13 +3373,14 @@ class AudioEngine {
             return
         }
 
-        // Stop video playback before loading audio track
-        // This ensures the user's intent to play audio takes precedence
-        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback {
+        // Stop local video playback before loading audio track.
+        // Skip when casting — cast() handles video→audio teardown via mismatch check,
+        // so calling stopVideo() here would race with castNewTrack.
+        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback && !isAnyCastingActive {
             NSLog("loadTrack: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
         }
-        
+
         // Check if this is a remote URL (streaming)
         if track.url.scheme == "http" || track.url.scheme == "https" {
             loadStreamingTrack(track)
@@ -3383,8 +3411,9 @@ class AudioEngine {
         playbackGeneration += 1
         let currentGeneration = playbackGeneration
 
-        // Stop video playback before loading audio track.
-        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback {
+        // Stop local video playback before loading audio track.
+        // Skip when casting — cast() handles video→audio teardown via mismatch check.
+        if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback && !isAnyCastingActive {
             NSLog("loadLocalTrackForImmediatePlayback: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
         }
@@ -4987,15 +5016,22 @@ class AudioEngine {
         }
         
         // When casting local files, block rapid clicks - only accept if not already casting
-        if isCastingActive && CastManager.shared.isLocalFileCastInProgress() {
-            NSLog("AudioEngine: playTrack() blocked - local file cast in progress")
+        if isAudioCastRoutingActive && CastManager.shared.isLocalFileCastInProgress() {
+            NSLog("AudioEngine: playTrack() blocked - local file cast in progress (sessionState=%@)",
+                  String(describing: CastManager.shared.activeSession?.state))
             return
         }
         
-        NSLog("playTrack: playing track at index %d", index)
-        
-        // Check if we're currently casting
-        let wasCasting = isCastingActive
+        NSLog("playTrack: playing track at index %d — isCastingActive=%d isVideoCastingActive=%d currentCast=%@",
+              index, isCastingActive ? 1 : 0, isVideoCastingActive ? 1 : 0,
+              String(describing: CastManager.shared.currentCast))
+
+        // Use isAnyCastingActive so video-cast→audio-track routes through castNewTrack
+        // (isCastingActive misses the .loaded phase where state != .casting yet)
+        let wasCasting = isAnyCastingActive
+        if wasCasting && !isCastingActive && CastManager.shared.currentCast == .audio {
+            NSLog("AudioEngine: playTrack() routing through loaded audio cast session")
+        }
         
         currentIndex = index
         if shuffleEnabled {

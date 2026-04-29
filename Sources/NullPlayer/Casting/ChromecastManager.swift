@@ -127,7 +127,14 @@ class ChromecastManager: CastSessionControllerDelegate {
                     if let device = device {
                         DispatchQueue.main.async { [weak self] in
                             guard let self = self else { return }
-                            if !self.devices.contains(where: { $0.id == device.id }) {
+                            if let existingIndex = self.devices.firstIndex(where: { $0.id == device.id }) {
+                                let existing = self.devices[existingIndex]
+                                guard !self.hasSameDeviceDetails(existing, device) else { return }
+
+                                self.devices[existingIndex] = device
+                                NSLog("ChromecastManager: Updated device: %@ at %@:%d", device.name, device.address, device.port)
+                                NotificationCenter.default.post(name: CastManager.devicesDidChangeNotification, object: nil)
+                            } else {
                                 self.devices.append(device)
                                 NSLog("ChromecastManager: Added device: %@ at %@:%d", device.name, device.address, device.port)
                                 NotificationCenter.default.post(name: CastManager.devicesDidChangeNotification, object: nil)
@@ -270,18 +277,23 @@ class ChromecastManager: CastSessionControllerDelegate {
         guard let deviceAddress = address else { return nil }
         
         // Parse TXT record metadata if available
+        var txtRecordDeviceID: String?
+        var friendlyName: String?
         var modelName: String?
         if case let .bonjour(txtRecord) = metadata {
-            // Chromecast TXT records contain model name (md), friendly name (fn), etc.
+            // Chromecast TXT records contain stable id (id), friendly name (fn), model name (md), etc.
             // NWTXTRecord values are already strings
+            txtRecordDeviceID = txtRecord["id"]
+            friendlyName = txtRecord["fn"]
             modelName = txtRecord["md"]
         }
         
-        let deviceID = "chromecast:\(deviceAddress):\(port)"
+        let deviceID = Self.chromecastDeviceID(serviceName: name, txtRecordID: txtRecordDeviceID)
+        let displayName = Self.nonEmptyTrimmed(friendlyName) ?? name
         
         return CastDevice(
             id: deviceID,
-            name: name,
+            name: displayName,
             type: .chromecast,
             address: deviceAddress,
             port: port,
@@ -289,6 +301,32 @@ class ChromecastManager: CastSessionControllerDelegate {
             modelName: modelName
         )
     }
+
+    private func hasSameDeviceDetails(_ lhs: CastDevice, _ rhs: CastDevice) -> Bool {
+        lhs.name == rhs.name &&
+        lhs.address == rhs.address &&
+        lhs.port == rhs.port &&
+        lhs.manufacturer == rhs.manufacturer &&
+        lhs.modelName == rhs.modelName &&
+        lhs.supportsVideo == rhs.supportsVideo
+    }
+
+    private static func chromecastDeviceID(serviceName: String, txtRecordID: String?) -> String {
+        let stableID = nonEmptyTrimmed(txtRecordID)?.lowercased() ?? serviceName
+        return "chromecast:\(stableID)"
+    }
+
+    private static func nonEmptyTrimmed(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    #if DEBUG
+    static func debugChromecastDeviceIDForTesting(serviceName: String, txtRecordID: String?) -> String {
+        chromecastDeviceID(serviceName: serviceName, txtRecordID: txtRecordID)
+    }
+    #endif
     
     /// Remove all discovered devices
     func clearDevices() {
@@ -345,12 +383,12 @@ class ChromecastManager: CastSessionControllerDelegate {
         connections[session.device.id]?.cancel()
         connections.removeValue(forKey: session.device.id)
         activeSession = nil
-        
-        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
     }
-    
+
     // MARK: - Playback Control
-    
+
     /// Cast media to the connected device
     func cast(url: URL, metadata: CastMetadata) async throws {
         guard let session = activeSession,
@@ -398,27 +436,30 @@ class ChromecastManager: CastSessionControllerDelegate {
         controller.startStatusPolling(interval: 1.0)
         
         NSLog("ChromecastManager: Successfully started casting to %@", session.device.name)
-        
-        NotificationCenter.default.post(name: CastManager.playbackStateDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.playbackStateDidChangeNotification)
     }
-    
+
     /// Stop casting
     func stop() {
         guard let session = activeSession else { return }
         
         NSLog("ChromecastManager: Stopping playback on %@", session.device.name)
-        
-        // Stop status polling
+
+        // Stop status polling, stop media, then close the receiver app.
+        // stopApp() sends STOP to receiver-0 which closes the Default Media Receiver
+        // and triggers HDMI-CEC to dismiss the cast from the TV screen.
         sessionController?.stopStatusPolling()
         sessionController?.stop()
-        
+        sessionController?.stopApp()
+
         session.state = .connected
         session.currentURL = nil
         session.metadata = nil
-        
-        NotificationCenter.default.post(name: CastManager.playbackStateDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.playbackStateDidChangeNotification)
     }
-    
+
     /// Pause playback
     func pause() {
         guard let session = activeSession else { return }
@@ -484,7 +525,7 @@ class ChromecastManager: CastSessionControllerDelegate {
             session.currentURL = nil
             session.metadata = nil
         }
-        
-        NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+
+        CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
     }
 }

@@ -1501,22 +1501,15 @@ class SkinRenderer {
         context.fill(bounds)
         
         let titleHeight = SkinElements.Playlist.titleHeight  // 20px like playlist
-        let borderWidth = SkinElements.ProjectM.Layout.leftBorder
         let bottomHeight = SkinElements.ProjectM.Layout.bottomBorder
-        
-        // Draw dark borders
-        let borderColor = NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0)
-        borderColor.setFill()
-        
-        // Left border
-        context.fill(NSRect(x: 0, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
-        
-        // Right border  
-        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
-        
-        // Bottom bar
+
+        // Left/right side borders using the same leftSideTile sprite as the playlist
+        drawPlaylistStyleSideBorders(in: context, bounds: bounds, titleHeight: titleHeight, bottomHeight: bottomHeight)
+
+        // Bottom bar solid fill
+        NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0).setFill()
         context.fill(NSRect(x: 0, y: bounds.height - bottomHeight, width: bounds.width, height: bottomHeight))
-        
+
         // Draw title bar using PLEDIT.BMP sprites (without custom text)
         drawProjectMTitleBarFromPledit(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
     }
@@ -1685,22 +1678,15 @@ class SkinRenderer {
         context.fill(bounds)
         
         let titleHeight = SkinElements.Playlist.titleHeight  // 20px like playlist
-        let borderWidth = SkinElements.ProjectM.Layout.leftBorder
         let bottomHeight = SkinElements.ProjectM.Layout.bottomBorder
-        
-        // Draw dark borders
-        let borderColor = NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0)
-        borderColor.setFill()
-        
-        // Left border
-        context.fill(NSRect(x: 0, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
-        
-        // Right border  
-        context.fill(NSRect(x: bounds.width - borderWidth, y: titleHeight, width: borderWidth, height: bounds.height - titleHeight))
-        
-        // Bottom bar
+
+        // Left/right side borders using the same leftSideTile sprite as the playlist
+        drawPlaylistStyleSideBorders(in: context, bounds: bounds, titleHeight: titleHeight, bottomHeight: bottomHeight)
+
+        // Bottom bar solid fill
+        NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.12, alpha: 1.0).setFill()
         context.fill(NSRect(x: 0, y: bounds.height - bottomHeight, width: bounds.width, height: bottomHeight))
-        
+
         // Draw title bar using PLEDIT.BMP sprites (without custom text)
         drawSpectrumAnalyzerTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: pressedButton)
     }
@@ -2419,10 +2405,41 @@ class SkinRenderer {
         // Draw side borders
         drawPlaylistSideBorders(in: context, bounds: bounds)
         
-        // Draw thin bottom border (matching library window style)
+        // Draw thin bottom border using top slice of pledit bottom bar sprites
         let borderY = bounds.height - bottomHeight
-        NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0).setFill()
-        context.fill(NSRect(x: 0, y: borderY, width: bounds.width, height: bottomHeight))
+        if let pleditImage = skin.pledit {
+            // Left corner slice
+            let leftW = min(SkinElements.Playlist.bottomLeftCorner.width, bounds.width)
+            drawSprite(from: pleditImage,
+                      sourceRect: NSRect(origin: SkinElements.Playlist.bottomLeftCorner.origin,
+                                        size: CGSize(width: leftW, height: bottomHeight)),
+                      to: NSRect(x: 0, y: borderY, width: leftW, height: bottomHeight),
+                      in: context)
+            // Tile middle if wide enough
+            let rightW = min(SkinElements.Playlist.bottomRightCorner.width, bounds.width - leftW)
+            var tileX = leftW
+            let tileEnd = bounds.width - rightW
+            while tileX < tileEnd {
+                let w = min(SkinElements.Playlist.bottomTile.width, tileEnd - tileX)
+                drawSprite(from: pleditImage,
+                          sourceRect: NSRect(origin: SkinElements.Playlist.bottomTile.origin,
+                                            size: CGSize(width: w, height: bottomHeight)),
+                          to: NSRect(x: tileX, y: borderY, width: w, height: bottomHeight),
+                          in: context)
+                tileX += w
+            }
+            // Right corner slice
+            if rightW > 0 {
+                drawSprite(from: pleditImage,
+                          sourceRect: NSRect(origin: SkinElements.Playlist.bottomRightCorner.origin,
+                                            size: CGSize(width: rightW, height: bottomHeight)),
+                          to: NSRect(x: bounds.width - rightW, y: borderY, width: rightW, height: bottomHeight),
+                          in: context)
+            }
+        } else {
+            NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.18, alpha: 1.0).setFill()
+            context.fill(NSRect(x: 0, y: borderY, width: bounds.width, height: bottomHeight))
+        }
         
         // Scrollbar removed - users scroll with trackpad/wheel
     }
@@ -2529,42 +2546,56 @@ class SkinRenderer {
         }
     }
     
-    /// Draw playlist side borders
-    private func drawPlaylistSideBorders(in context: CGContext, bounds: NSRect) {
-        guard let pleditImage = skin.pledit else { return }
-        
-        let titleHeight = SkinElements.Playlist.titleHeight
-        let bottomHeight = SkinElements.Playlist.bottomHeight
-        let tileHeight: CGFloat = 29
-        let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
-        
-        // On non-Retina, fill solid background first to cover any gaps
-        if backingScale < 1.5 {
-            // Use a dark color matching the border edge
-            NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1.0).setFill()
-            context.fill(NSRect(x: 0, y: titleHeight, width: 12, height: bounds.height - titleHeight - bottomHeight))
-            context.fill(NSRect(x: bounds.width - 2, y: titleHeight, width: 2, height: bounds.height - titleHeight - bottomHeight))
-        }
-        
-        // Draw tiles from BOTTOM to TOP so any partial tile is at top (under title bar)
+    /// Draw left and right side borders (shared by playlist, spectrum, waveform, projectM).
+    /// Both borders use the same leftSideTile sprite; the right border is drawn horizontally
+    /// mirrored so both sides appear identical.
+    private func drawPlaylistStyleSideBorders(in context: CGContext, bounds: NSRect, titleHeight: CGFloat, bottomHeight: CGFloat) {
+        let sideW: CGFloat = 12
+        let tileH: CGFloat = 29
         let contentTop = titleHeight
         let contentBottom = bounds.height - bottomHeight
-        
-        // Left side border - start from bottom, work up
-        var y: CGFloat = contentBottom - tileHeight
-        while y >= contentTop - tileHeight {
-            let drawY = max(contentTop, y)
-            let h = min(tileHeight, contentBottom - drawY)
-            if h > 0 {
-                drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.leftSideTile,
-                          to: NSRect(x: 0, y: drawY, width: 12, height: h), in: context)
-            }
-            y -= tileHeight
+        let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
+
+        guard let pleditImage = skin.pledit else {
+            NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1.0).setFill()
+            context.fill(NSRect(x: 0, y: contentTop, width: sideW, height: contentBottom - contentTop))
+            context.fill(NSRect(x: bounds.width - sideW, y: contentTop, width: sideW, height: contentBottom - contentTop))
+            return
         }
-        
-        // Right edge - thin solid border (scrollbar track sprite removed)
-        NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1.0).setFill()
-        context.fill(NSRect(x: bounds.width - 2, y: contentTop, width: 2, height: contentBottom - contentTop))
+
+        if backingScale < 1.5 {
+            NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1.0).setFill()
+            context.fill(NSRect(x: 0, y: contentTop, width: sideW, height: contentBottom - contentTop))
+            context.fill(NSRect(x: bounds.width - sideW, y: contentTop, width: sideW, height: contentBottom - contentTop))
+        }
+
+        var y = contentBottom - tileH
+        while y > contentTop - tileH {
+            let drawY = max(contentTop, y)
+            let h = min(tileH, contentBottom - drawY)
+            if h > 0 {
+                let leftDest = NSRect(x: 0, y: drawY, width: sideW, height: h)
+                let rightDest = NSRect(x: bounds.width - sideW, y: drawY, width: sideW, height: h)
+                drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.leftSideTile,
+                          to: leftDest, in: context)
+                // Mirror the left tile horizontally so both sides are visually identical
+                context.saveGState()
+                context.translateBy(x: rightDest.midX, y: 0)
+                context.scaleBy(x: -1, y: 1)
+                context.translateBy(x: -rightDest.midX, y: 0)
+                drawSprite(from: pleditImage, sourceRect: SkinElements.Playlist.leftSideTile,
+                          to: rightDest, in: context)
+                context.restoreGState()
+            }
+            y -= tileH
+        }
+    }
+
+    /// Draw playlist side borders
+    private func drawPlaylistSideBorders(in context: CGContext, bounds: NSRect) {
+        drawPlaylistStyleSideBorders(in: context, bounds: bounds,
+                                     titleHeight: SkinElements.Playlist.titleHeight,
+                                     bottomHeight: SkinElements.Playlist.bottomHeight)
     }
     
     // MARK: - Playlist Fallback Rendering

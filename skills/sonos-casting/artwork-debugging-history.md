@@ -1,5 +1,11 @@
 # Sonos Artwork Debugging - Attempted Approaches
 
+> **STALE - historical only.** Symbols like `registerRemoteArtwork` and
+> `directArtworkURL` no longer exist. Current artwork lookup uses
+> `PlexManager.artworkURL(...)` and equivalent server-manager artwork helpers.
+> Do not apply any "should be reverted" instructions in this file; they no
+> longer describe the finalized codebase.
+
 This document describes all approaches tried to fix Sonos artwork display when casting from NullPlayer. None of these approaches worked.
 
 ## Problem Statement
