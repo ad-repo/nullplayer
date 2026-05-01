@@ -102,9 +102,10 @@ mkdir -p "$MACOS_DIR"
 mkdir -p "$FRAMEWORKS_DIR"
 mkdir -p "$RESOURCES_DIR"
 
-# Step 4: Copy executable
+# Step 4: Copy executable and write PkgInfo
 log_info "Copying executable..."
 cp "$BUILD_DIR/NullPlayer" "$MACOS_DIR/"
+printf 'APPL????' > "$CONTENTS_DIR/PkgInfo"
 
 # Step 5: Copy frameworks
 log_info "Copying frameworks..."
