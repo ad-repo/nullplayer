@@ -57,6 +57,7 @@ class ModernMarqueeLayer: CALayer {
     private var scrollOffset: CGFloat = 0
     private var artScrollOffset: CGFloat = 0
     private var textWidth: CGFloat = 0
+    private var cachedLoopWidth: CGFloat = 0
     private var scrollTimer: Timer?
     private var isPaused = false
     private var needsTextRender = true
@@ -138,11 +139,13 @@ class ModernMarqueeLayer: CALayer {
 
         // Art geometry
         let artSize: CGFloat = _artworkImage != nil ? bounds.height : 0
-        let artGap: CGFloat = _artworkImage != nil ? 8.0 : 0
+        let artGap: CGFloat = _artworkImage != nil ? 12.0 : 0
         artScrollOffset = artSize + artGap
 
         let needsScroll = (artScrollOffset + textWidth) > bounds.width
-        let loopWidth = artScrollOffset + textWidth + scrollGap
+        let endGap = _artworkImage != nil ? artGap : scrollGap
+        let loopWidth = artScrollOffset + textWidth + endGap
+        cachedLoopWidth = loopWidth
 
         // Calculate total content width
         let contentWidth: CGFloat
@@ -233,7 +236,7 @@ class ModernMarqueeLayer: CALayer {
 
         let timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             guard let self = self, !self.isPaused else { return }
-            let loopWidth = self.artScrollOffset + self.textWidth + self.scrollGap
+            let loopWidth = self.cachedLoopWidth
             guard loopWidth > 0 else { return }
             self.scrollOffset += self.scrollSpeed / 30.0
             self.scrollOffset = self.scrollOffset.truncatingRemainder(dividingBy: loopWidth)
