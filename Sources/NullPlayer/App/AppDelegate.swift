@@ -220,10 +220,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Dock Icon Setup
     
     private func setupDockIcon() {
-        // Load the app icon from the Resources bundle
-        // Use BundleHelper to work in both SPM development and standalone app bundle
+        // In a proper .app bundle, CFBundleIconFile in Info.plist registers AppIcon.icns
+        // automatically — setting applicationIconImage would override it with a plain PNG
+        // and produce a mis-sized dock icon. Only set it in SPM dev builds (bare executable)
+        // where no .icns exists in the bundle.
+        guard Bundle.main.url(forResource: "AppIcon", withExtension: "icns") == nil else { return }
         if let iconURL = BundleHelper.url(forResource: "AppIcon", withExtension: "png"),
            let iconImage = NSImage(contentsOf: iconURL) {
+            iconImage.size = NSSize(width: 128, height: 128)
             NSApplication.shared.applicationIconImage = iconImage
         }
     }
