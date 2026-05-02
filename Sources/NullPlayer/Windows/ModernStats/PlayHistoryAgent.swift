@@ -45,6 +45,8 @@ final class PlayHistoryAgent: ObservableObject {
     @Published var topArtists:     [TopDimensionRow] = []
     @Published var topMovies:      [TopDimensionRow] = []
     @Published var topTVShows:     [TopDimensionRow] = []
+    @Published var topRadioStations: [TopDimensionRow] = []
+    @Published var radioListenSeconds: Double = 0
     @Published var timeSeries:     [TimeSeriesRow]   = []
     @Published var genreBreakdown: [TopDimensionRow] = []
     @Published var sourceBreakdown: [TopDimensionRow] = []
@@ -70,6 +72,8 @@ final class PlayHistoryAgent: ObservableObject {
     private var cachedTopArtists:     [TopDimensionRow]?
     private var cachedTopMovies:      [TopDimensionRow]?
     private var cachedTopTVShows:     [TopDimensionRow]?
+    private var cachedTopRadioStations: [TopDimensionRow]?
+    private var cachedRadioListenSeconds: Double?
     private var cachedTimeSeries:     [TimeSeriesRow]?
     private var cachedGenreBreakdown: [TopDimensionRow]?
     private var cachedSourceBreakdown: [TopDimensionRow]?
@@ -83,7 +87,8 @@ final class PlayHistoryAgent: ObservableObject {
     func selectArtist(_ name: String?)  { filter.selectedArtist = name }
     func selectAlbum(_ name: String?)   { filter.selectedAlbum  = name }
     func selectGenre(_ name: String?)   { filter.selectedGenre  = name }
-    func selectSource(_ s: String?)     { filter.selectedSource = s }
+    // Internet radio is presented in its own section; music/video source filtering ignores it.
+    func selectSource(_ s: String?)     { filter.selectedSource = s == PlayHistorySource.radio.rawValue ? nil : s }
     func selectContentType(_ s: String?) { filter.selectedContentType = s }
     func selectOutputDevice(_ s: String?) { filter.selectedOutputDevice = s }
     func clearAllFilters()              { filter = StatsFilterState() }
@@ -115,6 +120,7 @@ final class PlayHistoryAgent: ObservableObject {
     private func invalidateCache() {
         cachedPlayTimeSummaries = nil; cachedTopArtists = nil
         cachedTopMovies = nil; cachedTopTVShows = nil
+        cachedTopRadioStations = nil; cachedRadioListenSeconds = nil
         cachedTimeSeries = nil; cachedGenreBreakdown = nil
         cachedSourceBreakdown = nil; cachedContentTypeBreakdown = nil
         cachedOutputDeviceBreakdown = nil
@@ -142,6 +148,10 @@ final class PlayHistoryAgent: ObservableObject {
                 try Task.checkCancellation()
                 let tv = try store.fetchTopTVShows(filter: currentFilter)
                 try Task.checkCancellation()
+                let radioStations = try store.fetchTopRadioStations(filter: currentFilter)
+                try Task.checkCancellation()
+                let radioSeconds = try store.fetchRadioListenSeconds(filter: currentFilter)
+                try Task.checkCancellation()
                 let s = try store.fetchTimeSeries(filter: currentFilter, granularity: currentGranularity)
                 try Task.checkCancellation()
                 let g = try store.fetchGenreBreakdown(filter: currentFilter)
@@ -153,16 +163,17 @@ final class PlayHistoryAgent: ObservableObject {
                 let d = try store.fetchTopDimension(dimension: .outputDevice, filter: currentFilter)
                 try Task.checkCancellation()
                 let r = try store.fetchRecentEvents(filter: currentFilter)
-                return (p, a, m, tv, s, g, o, c, d, r)
+                return (p, a, m, tv, radioStations, radioSeconds, s, g, o, c, d, r)
             }.value
             try Task.checkCancellation()
-            (playTimeSummaries, topArtists, topMovies, topTVShows, timeSeries, genreBreakdown, sourceBreakdown, contentTypeBreakdown, outputDeviceBreakdown, recentEvents) = result
+            (playTimeSummaries, topArtists, topMovies, topTVShows, topRadioStations, radioListenSeconds, timeSeries, genreBreakdown, sourceBreakdown, contentTypeBreakdown, outputDeviceBreakdown, recentEvents) = result
             cachedPlayTimeSummaries = result.0; cachedTopArtists = result.1
             cachedTopMovies = result.2; cachedTopTVShows = result.3
-            cachedTimeSeries = result.4; cachedGenreBreakdown = result.5
-            cachedSourceBreakdown = result.6; cachedContentTypeBreakdown = result.7
-            cachedOutputDeviceBreakdown = result.8
-            cachedRecentEvents = result.9
+            cachedTopRadioStations = result.4; cachedRadioListenSeconds = result.5
+            cachedTimeSeries = result.6; cachedGenreBreakdown = result.7
+            cachedSourceBreakdown = result.8; cachedContentTypeBreakdown = result.9
+            cachedOutputDeviceBreakdown = result.10
+            cachedRecentEvents = result.11
         } catch is CancellationError {
             // Refresh was superseded by a newer request — discard results silently
         } catch {
