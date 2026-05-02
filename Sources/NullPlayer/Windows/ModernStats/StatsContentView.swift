@@ -101,6 +101,8 @@ struct FilterChip: View {
 struct StatsOverviewView: View {
     @ObservedObject var agent: PlayHistoryAgent
     var skinTextColor: Color = .primary
+    @State private var selectedMovie: String?
+    @State private var selectedTVShow: String?
 
     var body: some View {
         ScrollView(.vertical) {
@@ -117,6 +119,22 @@ struct StatsOverviewView: View {
                     )
                 )
                 .frame(height: 220)
+
+                TopDimensionChartView(
+                    title: "Top Movies",
+                    rows: agent.topMovies,
+                    skinTextColor: skinTextColor,
+                    selected: $selectedMovie
+                )
+                .frame(height: 180)
+
+                TopDimensionChartView(
+                    title: "Top TV Shows",
+                    rows: agent.topTVShows,
+                    skinTextColor: skinTextColor,
+                    selected: $selectedTVShow
+                )
+                .frame(height: 180)
 
                 GenreChartView(
                     rows: agent.genreBreakdown,
