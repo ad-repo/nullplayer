@@ -526,7 +526,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             source: source,
             skipped: false,
             contentType: contentType,
-            outputDevice: AudioOutputManager.shared.currentDeviceDisplayName)
+            outputDevice: CastManager.currentPlaybackDeviceName)
 
         playbackStartTime = nil
         accumulatedPlaybackDuration = 0

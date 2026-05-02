@@ -57,6 +57,9 @@ struct StatsHeaderView: View {
             if let contentType = agent.filter.selectedContentType {
                 FilterChip(label: PlayHistoryContentType.displayName(for: contentType)) { agent.selectContentType(nil) }
             }
+            if let device = agent.filter.selectedOutputDevice {
+                FilterChip(label: device) { agent.selectOutputDevice(nil) }
+            }
             if agent.isLoading {
                 ProgressView().controlSize(.small)
             }

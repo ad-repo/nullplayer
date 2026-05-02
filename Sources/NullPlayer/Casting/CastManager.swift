@@ -253,6 +253,15 @@ class CastManager {
         NSLog("CastManager: Transfer complete")
     }
     
+    /// Resolved output device name for play-history recording: the active cast
+    /// target when casting, otherwise the local CoreAudio output.
+    static var currentPlaybackDeviceName: String {
+        if let name = CastManager.shared.activeSession?.device.name {
+            return name
+        }
+        return AudioOutputManager.shared.currentDeviceDisplayName
+    }
+
     /// Current active cast session (if any)
     var activeSession: CastSession? {
         #if DEBUG
