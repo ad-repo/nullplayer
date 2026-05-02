@@ -519,8 +519,8 @@ private let outputDevicePalette: [Color] = [
 private func outputDeviceColor(for name: String) -> Color {
     var hasher = Hasher()
     hasher.combine(name)
-    let h = abs(hasher.finalize())
-    return outputDevicePalette[h % outputDevicePalette.count]
+    let h = UInt(bitPattern: hasher.finalize())
+    return outputDevicePalette[Int(h % UInt(outputDevicePalette.count))]
 }
 
 struct OutputDeviceChartView: View {

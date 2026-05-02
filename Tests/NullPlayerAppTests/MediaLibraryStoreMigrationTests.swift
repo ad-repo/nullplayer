@@ -82,6 +82,30 @@ final class MediaLibraryStoreMigrationTests: XCTestCase {
         XCTAssertEqual(rows[1].1, "movie")
     }
 
+    func testV6ToV7MigrationAddsOutputDeviceColumn() throws {
+        let dbURL = tempDirectoryURL.appendingPathComponent("library-v6.sqlite")
+
+        do {
+            let seedConnection = try Connection(dbURL.path)
+            try seedConnection.execute("""
+                CREATE TABLE play_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source TEXT NOT NULL,
+                    content_type TEXT
+                );
+                """)
+            try seedConnection.run("PRAGMA user_version = 6")
+            try seedConnection.run("INSERT INTO play_events (source, content_type) VALUES (?, ?)",
+                                   ["local" as Binding, "music" as Binding])
+        }
+
+        store.open(at: dbURL)
+        let db = try XCTUnwrap(store.testDB)
+
+        XCTAssertEqual(try db.scalar("PRAGMA user_version") as? Int64, 7)
+        XCTAssertTrue(try table("play_events", hasColumn: "output_device", in: db))
+    }
+
     private func seedLegacyPlayEventsTable(at dbURL: URL, withContentTypeColumn: Bool) throws {
         let db = try Connection(dbURL.path)
 
