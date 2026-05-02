@@ -100,9 +100,15 @@ final class PlayHistoryStore: Sendable {
             dimensionExpr = "COALESCE(NULLIF(trim(pe.event_genre), ''), 'Unknown')"
         case .source:
             dimensionExpr = "pe.source"
+        case .outputDevice:
+            dimensionExpr = "COALESCE(NULLIF(trim(pe.output_device), ''), 'Unknown')"
         }
         let limit = dimension == .artist ? 250 : 25
-        let (whereStr, params) = whereClause(for: filter)
+        var (whereStr, params) = whereClause(for: filter)
+        if dimension == .outputDevice {
+            let extra = "NULLIF(trim(pe.output_device), '') IS NOT NULL"
+            whereStr = whereStr.isEmpty ? "WHERE \(extra)" : "\(whereStr) AND \(extra)"
+        }
         let sql = """
             SELECT \(dimensionExpr), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
             \(historyFromClause)
@@ -344,6 +350,10 @@ final class PlayHistoryStore: Sendable {
         if let contentType = filter.selectedContentType {
             conditions.append("COALESCE(pe.content_type, 'music') = ?")
             params.append(contentType)
+        }
+        if let device = filter.selectedOutputDevice {
+            conditions.append("COALESCE(NULLIF(trim(pe.output_device), ''), 'Unknown') = ?")
+            params.append(device)
         }
         if filter.excludeSkipped {
             conditions.append("pe.skipped = 0")

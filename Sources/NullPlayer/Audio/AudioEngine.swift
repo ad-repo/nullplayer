@@ -2560,7 +2560,8 @@ class AudioEngine {
                 playedAt: Date(),
                 durationListened: finishedTrack.duration ?? 0,
                 source: finishedTrack.playHistorySource.rawValue,
-                skipped: false)
+                skipped: false,
+                outputDevice: AudioOutputManager.shared.currentDeviceDisplayName)
             if let eventId, finishedTrack.genre == nil || finishedTrack.genre?.isEmpty == true {
                 Task.detached(priority: .utility) { [track = finishedTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
@@ -3852,7 +3853,8 @@ class AudioEngine {
                 playedAt: Date(),
                 durationListened: finishedTrack.duration ?? 0,
                 source: finishedTrack.playHistorySource.rawValue,
-                skipped: false)
+                skipped: false,
+                outputDevice: AudioOutputManager.shared.currentDeviceDisplayName)
             if let eventId, finishedTrack.genre == nil || finishedTrack.genre?.isEmpty == true {
                 Task.detached(priority: .utility) { [track = finishedTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
@@ -4426,7 +4428,8 @@ class AudioEngine {
                 playedAt: Date(),
                 durationListened: outgoingTrack.duration ?? 0,
                 source: outgoingTrack.playHistorySource.rawValue,
-                skipped: false)
+                skipped: false,
+                outputDevice: AudioOutputManager.shared.currentDeviceDisplayName)
             if let eventId, outgoingTrack.genre == nil || outgoingTrack.genre?.isEmpty == true {
                 Task.detached(priority: .utility) { [track = outgoingTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(
@@ -4546,7 +4549,8 @@ class AudioEngine {
                 playedAt: Date(),
                 durationListened: outgoingTrack.duration ?? 0,
                 source: outgoingTrack.playHistorySource.rawValue,
-                skipped: false)
+                skipped: false,
+                outputDevice: AudioOutputManager.shared.currentDeviceDisplayName)
             if let eventId, outgoingTrack.genre == nil || outgoingTrack.genre?.isEmpty == true {
                 Task.detached(priority: .utility) { [track = outgoingTrack] in
                     await GenreDiscoveryService.shared.enrichPlayEvent(

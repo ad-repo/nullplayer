@@ -40,7 +40,7 @@ final class MediaLibraryStoreMigrationTests: XCTestCase {
         store.open(at: dbURL)
         let db = try XCTUnwrap(store.testDB)
 
-        XCTAssertEqual(try db.scalar("PRAGMA user_version") as? Int64, 6)
+        XCTAssertEqual(try db.scalar("PRAGMA user_version") as? Int64, 7)
         XCTAssertTrue(try table("play_events", hasColumn: "content_type", in: db))
 
         let rows = try db.prepare("SELECT source, content_type FROM play_events ORDER BY id").map {
@@ -69,7 +69,7 @@ final class MediaLibraryStoreMigrationTests: XCTestCase {
         store.open(at: dbURL)
         let db = try XCTUnwrap(store.testDB)
 
-        XCTAssertEqual(try db.scalar("PRAGMA user_version") as? Int64, 6)
+        XCTAssertEqual(try db.scalar("PRAGMA user_version") as? Int64, 7)
 
         let rows = try db.prepare("SELECT source, content_type FROM play_events ORDER BY id").map {
             (($0[0] as? String) ?? "", ($0[1] as? String) ?? "")
