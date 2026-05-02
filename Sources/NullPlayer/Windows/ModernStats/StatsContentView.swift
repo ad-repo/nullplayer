@@ -101,8 +101,6 @@ struct FilterChip: View {
 struct StatsOverviewView: View {
     @ObservedObject var agent: PlayHistoryAgent
     var skinTextColor: Color = .primary
-    @State private var selectedMovie: String?
-    @State private var selectedTVShow: String?
 
     var body: some View {
         ScrollView(.vertical) {
@@ -124,7 +122,7 @@ struct StatsOverviewView: View {
                     title: "Top Movies",
                     rows: agent.topMovies,
                     skinTextColor: skinTextColor,
-                    selected: $selectedMovie
+                    selected: .constant(nil)
                 )
                 .frame(height: 180)
 
@@ -132,7 +130,7 @@ struct StatsOverviewView: View {
                     title: "Top TV Shows",
                     rows: agent.topTVShows,
                     skinTextColor: skinTextColor,
-                    selected: $selectedTVShow
+                    selected: .constant(nil)
                 )
                 .frame(height: 180)
 
@@ -349,7 +347,7 @@ struct InternetRadioSection: View {
     var skinTextColor: Color = .primary
 
     private var stationCountLabel: String {
-        rows.count == 1 ? "1 station" : "\(rows.count) stations"
+        rows.count == 1 ? "Top 1 station" : "Top \(rows.count) stations"
     }
 
     var body: some View {

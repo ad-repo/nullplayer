@@ -145,14 +145,13 @@ final class PlayHistoryStore: Sendable {
         let limit = dimension == .artist ? 250 : 25
         var (whereStr, params) = whereClause(for: filter)
         switch dimension {
-        case .source, .album, .genre:
+        case .source, .album, .genre, .artist:
             addCondition("COALESCE(pe.content_type, 'music') <> 'radio'", to: &whereStr)
-        case .artist, .outputDevice:
+        case .outputDevice:
             break
         }
         if dimension == .outputDevice {
-            let extra = "NULLIF(trim(pe.output_device), '') IS NOT NULL"
-            whereStr = whereStr.isEmpty ? "WHERE \(extra)" : "\(whereStr) AND \(extra)"
+            addCondition("NULLIF(trim(pe.output_device), '') IS NOT NULL", to: &whereStr)
         }
         let sql = """
             SELECT \(dimensionExpr), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
@@ -477,43 +476,12 @@ final class PlayHistoryStore: Sendable {
     }
 
     private func whereClause(forRadio filter: StatsFilterState) -> (String, [Binding?]) {
-        var conditions: [String] = []
-        var params: [Binding?] = []
-
-        let now = Date().timeIntervalSince1970
-        switch filter.timeRange {
-        case .last7Days:
-            conditions.append("pe.played_at >= ?")
-            params.append(now - 7 * 86400)
-        case .last30Days:
-            conditions.append("pe.played_at >= ?")
-            params.append(now - 30 * 86400)
-        case .last90Days:
-            conditions.append("pe.played_at >= ?")
-            params.append(now - 90 * 86400)
-        case .last365Days:
-            conditions.append("pe.played_at >= ?")
-            params.append(now - 365 * 86400)
-        case .allTime:
-            break
-        case .custom(let start, let end):
-            conditions.append("pe.played_at >= ?")
-            params.append(start.timeIntervalSince1970)
-            conditions.append("pe.played_at <= ?")
-            params.append(end.timeIntervalSince1970)
-        }
-
-        if let device = filter.selectedOutputDevice {
-            conditions.append("COALESCE(NULLIF(trim(pe.output_device), ''), 'Unknown') = ?")
-            params.append(device)
-        }
-        if filter.excludeSkipped {
-            conditions.append("pe.skipped = 0")
-        }
-
-        if conditions.isEmpty {
-            return ("", params)
-        }
-        return ("WHERE " + conditions.joined(separator: " AND "), params)
+        // Radio stats only respect time range, output device, and skip filter —
+        // artist/album/genre/source/contentType dimensions don't apply to radio.
+        var stripped = StatsFilterState()
+        stripped.timeRange = filter.timeRange
+        stripped.selectedOutputDevice = filter.selectedOutputDevice
+        stripped.excludeSkipped = filter.excludeSkipped
+        return whereClause(for: stripped)
     }
 }
