@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import NullPlayerCore
+import SwiftUI
 
 /// Source for browsing content
 enum BrowserSource: Equatable, Codable {
@@ -140,6 +141,7 @@ enum PlexBrowseMode: Int, CaseIterable {
     case shows = 5
     case search = 6
     case radio = 7
+    case history = 8
 
     var title: String {
         switch self {
@@ -150,6 +152,7 @@ enum PlexBrowseMode: Int, CaseIterable {
         case .shows: return "Shows"
         case .search: return "Search"
         case .radio: return "Radio"
+        case .history: return "Data"
         }
     }
 
@@ -163,6 +166,10 @@ enum PlexBrowseMode: Int, CaseIterable {
 
     var isRadioMode: Bool {
         self == .radio
+    }
+
+    var isHistoryMode: Bool {
+        self == .history
     }
 }
 
@@ -242,7 +249,20 @@ class PlexBrowserView: NSView {
     private var pendingSourceRestore: BrowserSource?
     
     /// Current browse mode
-    private var browseMode: PlexBrowseMode = .artists
+    private var browseMode: PlexBrowseMode = .artists {
+        didSet {
+            guard browseMode != oldValue else { return }
+            if browseMode.isHistoryMode {
+                isArtOnlyMode = false
+                if isRatingOverlayVisible {
+                    hideRatingOverlay()
+                }
+                historyAgent.scheduleRefresh()
+            }
+            updateHistoryHostingVisibility()
+            needsDisplay = true
+        }
+    }
     
     /// Expose browse mode for state save/restore
     var browseModeRawValue: Int {
@@ -253,6 +273,7 @@ class PlexBrowserView: NSView {
                 selectedIndices.removeAll()
                 scrollOffset = 0
                 reloadData()
+                updateHistoryHostingVisibility()
             }
         }
     }
@@ -721,6 +742,9 @@ class PlexBrowserView: NSView {
     private var radioPlayTask: Task<Void, Never>?
     private var loadGeneration: Int = 0
 
+    private let historyAgent = PlayHistoryAgent()
+    private var historyHostingView: NSHostingView<StatsContentView>?
+
     private struct RadioFolderMembershipAction {
         let station: RadioStation
         let folderID: UUID
@@ -785,6 +809,7 @@ class PlexBrowserView: NSView {
     /// Art-only mode - hides tabs and list, shows just album art (session only, not persisted)
     private var isArtOnlyMode: Bool = false {
         didSet {
+            updateHistoryHostingVisibility()
             needsDisplay = true
             if isArtOnlyMode {
                 // Fetch current track rating when entering art mode
@@ -1122,6 +1147,12 @@ class PlexBrowserView: NSView {
             name: RadioManager.stationsDidChangeNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(playHistoryDidChange),
+            name: MediaLibraryStore.playHistoryDidChangeNotification,
+            object: nil
+        )
         
         // Observe track changes for artwork background
         NotificationCenter.default.addObserver(
@@ -1155,6 +1186,7 @@ class PlexBrowserView: NSView {
         
         // Set up accessibility identifiers for UI testing
         setupAccessibility()
+        updateHistoryHostingVisibility()
         
         // Observe window visibility changes to pause/resume visualizer timer for CPU efficiency
         NotificationCenter.default.addObserver(self, selector: #selector(plexWindowDidMiniaturize),
@@ -1325,7 +1357,7 @@ class PlexBrowserView: NSView {
     
     /// Toggle visualization mode
     func toggleVisualization() {
-        guard isArtOnlyMode && currentArtwork != nil else { return }
+        guard !browseMode.isHistoryMode, isArtOnlyMode, currentArtwork != nil else { return }
         isVisualizingArt.toggle()
     }
     
@@ -1606,11 +1638,11 @@ class PlexBrowserView: NSView {
     @objc private func mediaLibraryDidChange() {
         // Only reload if we're showing local content (not on radio tab)
         guard case .local = currentSource else { return }
-        guard browseMode != .radio else { return }
+        guard !browseMode.isRadioMode, !browseMode.isHistoryMode else { return }
 
         localLibraryReloadWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self, self.browseMode != .radio else { return }
+            guard let self = self, !self.browseMode.isRadioMode, !self.browseMode.isHistoryMode else { return }
             self.loadLocalData()
             self.needsDisplay = true
         }
@@ -1636,6 +1668,12 @@ class PlexBrowserView: NSView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         startServerNameScroll()
+        updateHistoryHostingFrame()
+    }
+
+    override func layout() {
+        super.layout()
+        updateHistoryHostingFrame()
     }
 
     // MARK: - Scaling Support
@@ -1662,6 +1700,73 @@ class PlexBrowserView: NSView {
             // Normal mode: no scaling, UI stays at fixed pixel size
             return 1.0
         }
+    }
+
+    private func currentPlaylistColors() -> PlaylistColors {
+        let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
+        return skin.playlistColors
+    }
+
+    private func classicAppearance(for background: NSColor) -> NSAppearance? {
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        background.usingColorSpace(.deviceRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let brightness = 0.299 * r + 0.587 * g + 0.114 * b
+        return NSAppearance(named: brightness < 0.5 ? .darkAqua : .aqua)
+    }
+
+    private func makeHistoryHostingView() -> NSHostingView<StatsContentView> {
+        let colors = currentPlaylistColors()
+        let rootView = StatsContentView(agent: historyAgent,
+                                        skinTextColor: Color(nsColor: colors.normalText),
+                                        headerTitle: "Library Data")
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = colors.normalBackground.cgColor
+        hostingView.layer?.isOpaque = true
+        hostingView.appearance = classicAppearance(for: colors.normalBackground)
+        hostingView.setAccessibilityIdentifier("plexBrowser.data")
+        hostingView.setAccessibilityLabel("Library Data")
+        return hostingView
+    }
+
+    private func ensureHistoryHostingView() {
+        guard historyHostingView == nil else { return }
+        let hostingView = makeHistoryHostingView()
+        addSubview(hostingView)
+        historyHostingView = hostingView
+        updateHistoryHostingFrame()
+    }
+
+    private func updateHistoryHostingVisibility() {
+        if browseMode.isHistoryMode {
+            ensureHistoryHostingView()
+        }
+        let isVisible = browseMode.isHistoryMode && !isShadeMode && !isArtOnlyMode
+        historyHostingView?.isHidden = !isVisible
+        updateHistoryHostingFrame()
+    }
+
+    private func updateHistoryHostingFrame() {
+        guard let hostingView = historyHostingView else { return }
+        guard !isShadeMode else {
+            hostingView.frame = .zero
+            return
+        }
+
+        let scale = scaleFactor
+        let hiddenTitleBarOffset = WindowManager.shared.hideTitleBars ? Layout.titleBarHeight : 0
+        let topInset = (Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight - hiddenTitleBarOffset) * scale
+        let bottomInset = Layout.statusBarHeight * scale
+        let horizontalInset = (Layout.leftBorder + Layout.rightBorder) * scale
+        hostingView.frame = NSRect(
+            x: Layout.leftBorder * scale,
+            y: bottomInset,
+            width: max(0, bounds.width - horizontalInset),
+            height: max(0, bounds.height - topInset - bottomInset)
+        )
     }
     
     /// Convert a point from view coordinates to skin coordinates (top-left origin)
@@ -1782,17 +1887,23 @@ class PlexBrowserView: NSView {
                             drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                         }
 
-                        // Draw list area or connection status
-                        // Only check Plex link status if using Plex source
-                        let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
-                        if needsPlexLink {
-                            drawNotLinkedState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
-                        } else if isLoading {
-                            drawLoadingState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
-                        } else if let error = errorMessage {
-                            drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors, renderer: renderer)
+                        updateHistoryHostingVisibility()
+
+                        if browseMode.isHistoryMode {
+                            // SwiftUI-hosted history content is rendered via an embedded subview.
                         } else {
-                            drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
+                            // Draw list area or connection status
+                            // Only check Plex link status if using Plex source
+                            let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
+                            if needsPlexLink {
+                                drawNotLinkedState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                            } else if isLoading {
+                                drawLoadingState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                            } else if let error = errorMessage {
+                                drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors, renderer: renderer)
+                            } else {
+                                drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
+                            }
                         }
 
                         // Draw status bar text
@@ -1974,7 +2085,7 @@ class PlexBrowserView: NSView {
             let visWidth = CGFloat(visText.count) * scaledCharWidth
             var visX = artX - visWidth - artModeVisSpacing
             
-            if currentArtwork != nil {
+            if !browseMode.isHistoryMode && currentArtwork != nil {
                 if isArtOnlyMode {
                     drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                     // Show VIS button in art-only mode (white when active, green when inactive)
@@ -1994,7 +2105,8 @@ class PlexBrowserView: NSView {
             }
             
             // Star rating (art-only mode) or item count (list mode)
-            if isArtOnlyMode,
+            if !browseMode.isHistoryMode,
+               isArtOnlyMode,
                let currentTrack = WindowManager.shared.audioEngine.currentTrack,
                canRateTrack(currentTrack) {
                 let starSize: CGFloat = 12
@@ -2136,7 +2248,7 @@ class PlexBrowserView: NSView {
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
                 var visX = artX - visWidth - artModeVisSpacing
                 
-                if currentArtwork != nil {
+                if !browseMode.isHistoryMode && currentArtwork != nil {
                     if isArtOnlyMode {
                         drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                         // Show VIS button in art-only mode (white when active, green when inactive)
@@ -2156,7 +2268,8 @@ class PlexBrowserView: NSView {
                 }
                 
                 // Star rating (art-only mode) or item count (list mode)
-                if isArtOnlyMode,
+                if !browseMode.isHistoryMode,
+                   isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
                    canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
@@ -2281,7 +2394,7 @@ class PlexBrowserView: NSView {
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
                 var visX = artX - visWidth - 16
                 
-                if currentArtwork != nil {
+                if !browseMode.isHistoryMode && currentArtwork != nil {
                     if isArtOnlyMode {
                         drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                         if isVisualizingArt {
@@ -2299,7 +2412,8 @@ class PlexBrowserView: NSView {
                 }
                 
                 // Star rating (art-only mode) or item count (list mode)
-                if isArtOnlyMode,
+                if !browseMode.isHistoryMode,
+                   isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
                    canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
@@ -2399,7 +2513,7 @@ class PlexBrowserView: NSView {
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
                 var visX = artX - visWidth - 16
                 
-                if currentArtwork != nil {
+                if !browseMode.isHistoryMode && currentArtwork != nil {
                     if isArtOnlyMode {
                         drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                         if isVisualizingArt {
@@ -2416,7 +2530,8 @@ class PlexBrowserView: NSView {
                     visX = artX
                 }
                 
-                if isArtOnlyMode,
+                if !browseMode.isHistoryMode,
+                   isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
                    canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
@@ -2511,7 +2626,7 @@ class PlexBrowserView: NSView {
                 let visWidth = CGFloat(visText.count) * scaledCharWidth
                 var visX = artX - visWidth - 16
 
-                if currentArtwork != nil {
+                if !browseMode.isHistoryMode && currentArtwork != nil {
                     if isArtOnlyMode {
                         drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
                         if isVisualizingArt {
@@ -2528,7 +2643,8 @@ class PlexBrowserView: NSView {
                     visX = artX
                 }
 
-                if isArtOnlyMode,
+                if !browseMode.isHistoryMode,
+                   isArtOnlyMode,
                    let currentTrack = WindowManager.shared.audioEngine.currentTrack,
                    canRateTrack(currentTrack) {
                     let starSize: CGFloat = 12
@@ -2663,7 +2779,7 @@ class PlexBrowserView: NSView {
         
         // Calculate sort indicator width (on the right)
         let sortText = "Sort"
-        let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
+        let sortWidth = browseMode.isHistoryMode ? 0 : CGFloat(sortText.count) * scaledCharWidth + 8
         let tabLeftInset = tabItemHorizontalEdgePadding
         let tabRightInset = tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
         let tabsStartX = tabBarRect.minX + tabLeftInset
@@ -2692,12 +2808,14 @@ class PlexBrowserView: NSView {
             }
         }
         
-        // Draw sort indicator on the right
-        let rawSortX = tabBarRect.maxX - tabRightInset - sortWidth + 4
-        let rawSortY = tabBarY + (Layout.tabBarHeight - scaledCharHeight) / 2
-        let sortX = shouldRound ? round(rawSortX) : rawSortX
-        let sortY = shouldRound ? round(rawSortY) : rawSortY
-        drawScaledSkinText(sortText, at: NSPoint(x: sortX, y: sortY), scale: textScale, renderer: renderer, in: context)
+        if !browseMode.isHistoryMode {
+            // Draw sort indicator on the right
+            let rawSortX = tabBarRect.maxX - tabRightInset - sortWidth + 4
+            let rawSortY = tabBarY + (Layout.tabBarHeight - scaledCharHeight) / 2
+            let sortX = shouldRound ? round(rawSortX) : rawSortX
+            let sortY = shouldRound ? round(rawSortY) : rawSortY
+            drawScaledSkinText(sortText, at: NSPoint(x: sortX, y: sortY), scale: textScale, renderer: renderer, in: context)
+        }
     }
     
     private func drawSearchBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
@@ -2875,6 +2993,8 @@ class PlexBrowserView: NSView {
             message = searchQuery.isEmpty ? "Type to search" : "No results found"
         case .radio:
             message = "No radio stations found"
+        case .history:
+            return
         }
         
         // Draw using green skin text, centered
@@ -5329,12 +5449,27 @@ class PlexBrowserView: NSView {
     }
     
     func skinDidChange() {
+        let colors = currentPlaylistColors()
+        historyHostingView?.rootView = StatsContentView(agent: historyAgent,
+                                                        skinTextColor: Color(nsColor: colors.normalText),
+                                                        headerTitle: "Library Data")
+        historyHostingView?.layer?.backgroundColor = colors.normalBackground.cgColor
+        historyHostingView?.appearance = classicAppearance(for: colors.normalBackground)
+        updateHistoryHostingFrame()
         needsDisplay = true
+    }
+
+    @objc private func playHistoryDidChange() {
+        Task { @MainActor [weak self] in
+            guard let self, self.browseMode.isHistoryMode else { return }
+            self.historyAgent.scheduleRefresh()
+        }
     }
     
     /// Set shade mode externally (e.g., from controller)
     func setShadeMode(_ enabled: Bool) {
         isShadeMode = enabled
+        updateHistoryHostingVisibility()
         needsDisplay = true
     }
     
@@ -6461,7 +6596,7 @@ class PlexBrowserView: NSView {
         let textScale: CGFloat = 1.5
         let scaledCharWidth = charWidth * textScale
         let sortText = "Sort"
-        let sortWidth = CGFloat(sortText.count) * scaledCharWidth + 8
+        let sortWidth = browseMode.isHistoryMode ? 0 : CGFloat(sortText.count) * scaledCharWidth + 8
         let tabLeftInset = tabItemHorizontalEdgePadding
         let tabRightInset = tabItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
 
@@ -6479,6 +6614,7 @@ class PlexBrowserView: NSView {
     
     /// Check if point is in sort indicator area
     private func hitTestSortIndicator(at skinPoint: NSPoint) -> Bool {
+        guard !browseMode.isHistoryMode else { return false }
         let tabY = Layout.titleBarHeight + Layout.serverBarHeight
         guard skinPoint.y >= tabY && skinPoint.y < tabY + Layout.tabBarHeight else { return false }
         
@@ -6503,6 +6639,7 @@ class PlexBrowserView: NSView {
     
     /// Check if point is in alphabet index
     private func hitTestAlphabetIndex(at skinPoint: NSPoint) -> Bool {
+        guard !browseMode.isHistoryMode else { return false }
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
         if browseMode == .search {
             listY += Layout.searchBarHeight
@@ -6516,6 +6653,7 @@ class PlexBrowserView: NSView {
     
     /// Check if point is in list area and return item index
     private func hitTestListArea(at skinPoint: NSPoint) -> Int? {
+        guard !browseMode.isHistoryMode else { return nil }
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
         if browseMode == .search {
             listY += Layout.searchBarHeight
@@ -6551,6 +6689,7 @@ class PlexBrowserView: NSView {
     }
 
     private func hitTestInternetRadioRating(at skinPoint: NSPoint, itemIndex: Int) -> Int? {
+        guard !browseMode.isHistoryMode else { return nil }
         guard hasInternetRadioColumns, itemIndex >= 0, itemIndex < displayItems.count else { return nil }
         let item = displayItems[itemIndex]
         guard case .radioStation = item.type, let columns = columnsForItem(item) else { return nil }
@@ -6599,6 +6738,7 @@ class PlexBrowserView: NSView {
     
     /// Check if point hits a column resize handle (returns column id to resize)
     private func hitTestColumnResize(at skinPoint: NSPoint) -> String? {
+        guard !browseMode.isHistoryMode else { return nil }
         if hasInternetRadioColumns { return nil }
         // Only applies when columns are shown
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
@@ -6639,6 +6779,7 @@ class PlexBrowserView: NSView {
     
     /// Check if point hits a column header (returns column id for sorting)
     private func hitTestColumnHeader(at skinPoint: NSPoint) -> String? {
+        guard !browseMode.isHistoryMode else { return nil }
         // Only applies when columns are shown
         let hasColumns = displayItems.contains { columnsForItem($0) != nil }
         guard hasColumns else { return nil }
@@ -6734,7 +6875,7 @@ class PlexBrowserView: NSView {
         }
         
         // Check list area for item context menu
-        if !isArtOnlyMode, let clickedIndex = hitTestListArea(at: skinPoint) {
+        if !isArtOnlyMode, !browseMode.isHistoryMode, let clickedIndex = hitTestListArea(at: skinPoint) {
             // Select the clicked item if not already selected
             if !selectedIndices.contains(clickedIndex) {
                 selectedIndices = [clickedIndex]
@@ -6750,7 +6891,7 @@ class PlexBrowserView: NSView {
         }
         
         // Local library empty-space right-click: show Manage Folders
-        if case .local = currentSource {
+        if !browseMode.isHistoryMode, case .local = currentSource {
             let menu = NSMenu()
             let manageFoldersItem = NSMenuItem(title: "Manage Folders...", action: #selector(manageWatchFolders), keyEquivalent: "")
             manageFoldersItem.target = self
@@ -7259,13 +7400,13 @@ class PlexBrowserView: NSView {
         if relativeX >= refreshZoneStart {
             // Refresh icon click
             handleRefreshClick()
-        } else if currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
+        } else if !browseMode.isHistoryMode && currentArtwork != nil && relativeX >= artZoneStart && relativeX <= artZoneEnd {
             // ART toggle click (only if artwork available)
             isArtOnlyMode.toggle()
-        } else if isArtOnlyMode && currentArtwork != nil && relativeX >= visZoneStart && relativeX <= visZoneEnd {
+        } else if !browseMode.isHistoryMode && isArtOnlyMode && currentArtwork != nil && relativeX >= visZoneStart && relativeX <= visZoneEnd {
             // VIS button click (only in art-only mode with artwork)
             toggleVisualization()
-        } else if !rateButtonRect.isEmpty {
+        } else if !browseMode.isHistoryMode && !rateButtonRect.isEmpty {
             let rateRelativeStart = rateButtonRect.minX - Layout.leftBorder
             let rateRelativeEnd = rateButtonRect.maxX - Layout.leftBorder
             if relativeX >= rateRelativeStart && relativeX <= rateRelativeEnd {
@@ -8533,6 +8674,10 @@ class PlexBrowserView: NSView {
     }
     
     override func scrollWheel(with event: NSEvent) {
+        guard !browseMode.isHistoryMode else {
+            super.scrollWheel(with: event)
+            return
+        }
         var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
         if browseMode == .search {
             listY += Layout.searchBarHeight
@@ -11810,7 +11955,8 @@ class PlexBrowserView: NSView {
             (library.isMusicLibrary && !browseMode.isVideoMode) ||
             browseMode == .plists ||
             browseMode == .radio ||
-            browseMode == .search
+            browseMode == .search ||
+            browseMode == .history
 
         if !shouldKeepCurrentMode {
             if library.isMusicLibrary {
@@ -12049,6 +12195,11 @@ class PlexBrowserView: NSView {
             isArtOnlyMode = false
             return
         }
+
+        if browseMode.isHistoryMode {
+            super.keyDown(with: event)
+            return
+        }
         
         switch event.keyCode {
         case 36: // Enter
@@ -12137,6 +12288,20 @@ class PlexBrowserView: NSView {
     
     private func loadDataForCurrentMode(generation: Int? = nil) {
         let generation = generation ?? loadGeneration
+
+        if browseMode.isHistoryMode {
+            invalidateActiveLoads()
+            displayItems = []
+            selectedIndices.removeAll()
+            scrollOffset = 0
+            isLoading = false
+            errorMessage = nil
+            stopLoadingAnimation()
+            historyAgent.scheduleRefresh()
+            updateHistoryHostingVisibility()
+            needsDisplay = true
+            return
+        }
         
         if case .radio = currentSource {
             if browseMode == .radio {
@@ -12312,6 +12477,8 @@ class PlexBrowserView: NSView {
                 case .radio:
                     self.loadPlexRadioStations(generation: generation)
                     return
+                case .history:
+                    self.displayItems = []
                 }
                 
                 self.finishLoadIfActive(generation: generation, source: expectedSource)
@@ -12909,6 +13076,8 @@ class PlexBrowserView: NSView {
             buildLocalShowItems()
         case .radio:
             break
+        case .history:
+            displayItems = []
         }
 
         // Load artwork from browsed content
@@ -13637,6 +13806,8 @@ class PlexBrowserView: NSView {
                 case .radio:
                     self.loadSubsonicRadioStations(generation: generation)
                     return
+                case .history:
+                    self.displayItems = []
                 }
                 
                 self.finishLoadIfActive(generation: generation, source: expectedSource)
@@ -13882,6 +14053,8 @@ class PlexBrowserView: NSView {
                 case .radio:
                     self.loadEmbyRadioStations(generation: generation)
                     return
+                case .history:
+                    self.displayItems = []
                 }
 
                 self.finishLoadIfActive(generation: generation, source: expectedSource)
@@ -14011,6 +14184,8 @@ class PlexBrowserView: NSView {
                 case .radio:
                     self.loadJellyfinRadioStations(generation: generation)
                     return
+                case .history:
+                    self.displayItems = []
                 }
                 
                 self.finishLoadIfActive(generation: generation, source: expectedSource)
@@ -14942,6 +15117,8 @@ class PlexBrowserView: NSView {
         // Check source type
         if case .local = currentSource {
             switch browseMode {
+            case .history:
+                displayItems = []
             case .artists:
                 buildLocalArtistItems()
             case .albums:
@@ -14962,6 +15139,8 @@ class PlexBrowserView: NSView {
             }
         } else if case .subsonic = currentSource {
             switch browseMode {
+            case .history:
+                displayItems = []
             case .artists:
                 buildSubsonicArtistItems()
             case .albums:
@@ -14978,6 +15157,8 @@ class PlexBrowserView: NSView {
             }
         } else if case .jellyfin = currentSource {
             switch browseMode {
+            case .history:
+                displayItems = []
             case .artists:
                 buildJellyfinArtistItems()
             case .albums:
@@ -14995,6 +15176,8 @@ class PlexBrowserView: NSView {
             }
         } else if case .emby = currentSource {
             switch browseMode {
+            case .history:
+                displayItems = []
             case .artists:
                 buildEmbyArtistItems()
             case .albums:
@@ -15012,6 +15195,8 @@ class PlexBrowserView: NSView {
             }
         } else {
             switch browseMode {
+            case .history:
+                displayItems = []
             case .artists:
                 buildArtistItems()
             case .albums:
