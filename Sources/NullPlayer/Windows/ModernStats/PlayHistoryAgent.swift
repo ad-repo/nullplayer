@@ -43,6 +43,8 @@ struct StatsFilterState: Equatable {
 final class PlayHistoryAgent: ObservableObject {
     @Published var playTimeSummaries: [PlayTimeSummaryRow] = []
     @Published var topArtists:     [TopDimensionRow] = []
+    @Published var topMovies:      [TopDimensionRow] = []
+    @Published var topTVShows:     [TopDimensionRow] = []
     @Published var timeSeries:     [TimeSeriesRow]   = []
     @Published var genreBreakdown: [TopDimensionRow] = []
     @Published var sourceBreakdown: [TopDimensionRow] = []
@@ -66,6 +68,8 @@ final class PlayHistoryAgent: ObservableObject {
     private var backfillTask: Task<Void, Never>?
     private var cachedPlayTimeSummaries: [PlayTimeSummaryRow]?
     private var cachedTopArtists:     [TopDimensionRow]?
+    private var cachedTopMovies:      [TopDimensionRow]?
+    private var cachedTopTVShows:     [TopDimensionRow]?
     private var cachedTimeSeries:     [TimeSeriesRow]?
     private var cachedGenreBreakdown: [TopDimensionRow]?
     private var cachedSourceBreakdown: [TopDimensionRow]?
@@ -110,6 +114,7 @@ final class PlayHistoryAgent: ObservableObject {
 
     private func invalidateCache() {
         cachedPlayTimeSummaries = nil; cachedTopArtists = nil
+        cachedTopMovies = nil; cachedTopTVShows = nil
         cachedTimeSeries = nil; cachedGenreBreakdown = nil
         cachedSourceBreakdown = nil; cachedContentTypeBreakdown = nil
         cachedOutputDeviceBreakdown = nil
@@ -131,7 +136,11 @@ final class PlayHistoryAgent: ObservableObject {
                 try Task.checkCancellation()
                 let p = try store.fetchPlayTimeSummaries(filter: currentFilter)
                 try Task.checkCancellation()
-                let a = try store.fetchTopDimension(dimension: .artist, filter: currentFilter)
+                let a = try store.fetchTopArtists(filter: currentFilter)
+                try Task.checkCancellation()
+                let m = try store.fetchTopMovies(filter: currentFilter)
+                try Task.checkCancellation()
+                let tv = try store.fetchTopTVShows(filter: currentFilter)
                 try Task.checkCancellation()
                 let s = try store.fetchTimeSeries(filter: currentFilter, granularity: currentGranularity)
                 try Task.checkCancellation()
@@ -144,15 +153,16 @@ final class PlayHistoryAgent: ObservableObject {
                 let d = try store.fetchTopDimension(dimension: .outputDevice, filter: currentFilter)
                 try Task.checkCancellation()
                 let r = try store.fetchRecentEvents(filter: currentFilter)
-                return (p, a, s, g, o, c, d, r)
+                return (p, a, m, tv, s, g, o, c, d, r)
             }.value
             try Task.checkCancellation()
-            (playTimeSummaries, topArtists, timeSeries, genreBreakdown, sourceBreakdown, contentTypeBreakdown, outputDeviceBreakdown, recentEvents) = result
+            (playTimeSummaries, topArtists, topMovies, topTVShows, timeSeries, genreBreakdown, sourceBreakdown, contentTypeBreakdown, outputDeviceBreakdown, recentEvents) = result
             cachedPlayTimeSummaries = result.0; cachedTopArtists = result.1
-            cachedTimeSeries = result.2; cachedGenreBreakdown = result.3
-            cachedSourceBreakdown = result.4; cachedContentTypeBreakdown = result.5
-            cachedOutputDeviceBreakdown = result.6
-            cachedRecentEvents = result.7
+            cachedTopMovies = result.2; cachedTopTVShows = result.3
+            cachedTimeSeries = result.4; cachedGenreBreakdown = result.5
+            cachedSourceBreakdown = result.6; cachedContentTypeBreakdown = result.7
+            cachedOutputDeviceBreakdown = result.8
+            cachedRecentEvents = result.9
         } catch is CancellationError {
             // Refresh was superseded by a newer request — discard results silently
         } catch {

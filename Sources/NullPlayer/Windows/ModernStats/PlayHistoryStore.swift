@@ -89,6 +89,45 @@ final class PlayHistoryStore: Sendable {
         """
     }
 
+    private var resolvedTVShowExpression: String {
+        """
+        COALESCE(
+            NULLIF(trim(pe.event_artist), ''),
+            NULLIF(trim(
+                CASE
+                    WHEN instr(pe.event_title, ' - S') > 0
+                    THEN substr(pe.event_title, 1, instr(pe.event_title, ' - S') - 1)
+                    ELSE pe.event_title
+                END
+            ), ''),
+            'Unknown'
+        )
+        """
+    }
+
+    func fetchTopArtists(filter: StatsFilterState) throws -> [TopDimensionRow] {
+        var (whereStr, params) = whereClause(for: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'music'", to: &whereStr)
+        return try fetchTopRows(expression: resolvedArtistExpression, whereStr: whereStr, params: params, limit: 250)
+    }
+
+    func fetchTopMovies(filter: StatsFilterState) throws -> [TopDimensionRow] {
+        var (whereStr, params) = whereClause(for: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'movie'", to: &whereStr)
+        return try fetchTopRows(
+            expression: "COALESCE(NULLIF(trim(pe.event_title), ''), 'Unknown')",
+            whereStr: whereStr,
+            params: params,
+            limit: 25
+        )
+    }
+
+    func fetchTopTVShows(filter: StatsFilterState) throws -> [TopDimensionRow] {
+        var (whereStr, params) = whereClause(for: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'tv'", to: &whereStr)
+        return try fetchTopRows(expression: resolvedTVShowExpression, whereStr: whereStr, params: params, limit: 25)
+    }
+
     func fetchTopDimension(dimension: StatsDimension, filter: StatsFilterState) throws -> [TopDimensionRow] {
         let dimensionExpr: String
         switch dimension {
@@ -125,6 +164,25 @@ final class PlayHistoryStore: Sendable {
             let mins = row[2] as? Double ?? 0
             let displayName = dimension == .source ? PlayHistorySource.displayName(for: name) : name
             return TopDimensionRow(id: name, displayName: displayName, playCount: count, totalMinutes: mins)
+        }
+    }
+
+    private func fetchTopRows(expression: String, whereStr: String, params: [Binding?], limit: Int) throws -> [TopDimensionRow] {
+        let sql = """
+            SELECT \(expression), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
+            \(whereStr)
+            GROUP BY 1
+            ORDER BY 2 DESC
+            LIMIT \(limit)
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
+        let stmt = try db.prepare(sql, params)
+        return stmt.map { row in
+            let name = row[0] as? String ?? "Unknown"
+            let count = Int(row[1] as? Int64 ?? 0)
+            let mins = row[2] as? Double ?? 0
+            return TopDimensionRow(id: name, displayName: name, playCount: count, totalMinutes: mins)
         }
     }
 
@@ -303,6 +361,10 @@ final class PlayHistoryStore: Sendable {
     }
 
     // MARK: - WHERE clause builder
+
+    private func addCondition(_ condition: String, to whereStr: inout String) {
+        whereStr = whereStr.isEmpty ? "WHERE \(condition)" : "\(whereStr) AND \(condition)"
+    }
 
     private func whereClause(for filter: StatsFilterState) -> (String, [Binding?]) {
         var conditions: [String] = []
