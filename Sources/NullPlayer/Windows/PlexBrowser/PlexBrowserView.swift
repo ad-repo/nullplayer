@@ -1603,19 +1603,21 @@ class PlexBrowserView: NSView {
         isLoading = false
         stopLoadingAnimation()
         
-        // Sync browse mode with radio source
-        if case .radio = currentSource {
-            // When switching to Internet Radio source, automatically switch to radio tab
-            browseMode = .radio
-        } else if browseMode == .radio, case .local = currentSource {
-            // When switching sources from radio tab, default back to artists for non-Plex.
-            browseMode = .artists
-        } else if browseMode == .radio, case .subsonic = currentSource {
-            browseMode = .artists
-        } else if browseMode == .radio, case .jellyfin = currentSource {
-            browseMode = .artists
-        } else if browseMode == .radio, case .emby = currentSource {
-            browseMode = .artists
+        // Sync browse mode with radio source while preserving global Data mode.
+        if !browseMode.isHistoryMode {
+            if case .radio = currentSource {
+                // When switching to Internet Radio source, automatically switch to radio tab
+                browseMode = .radio
+            } else if browseMode == .radio, case .local = currentSource {
+                // When switching sources from radio tab, default back to artists for non-Plex.
+                browseMode = .artists
+            } else if browseMode == .radio, case .subsonic = currentSource {
+                browseMode = .artists
+            } else if browseMode == .radio, case .jellyfin = currentSource {
+                browseMode = .artists
+            } else if browseMode == .radio, case .emby = currentSource {
+                browseMode = .artists
+            }
         }
         
         // Reload data for new source
@@ -7533,6 +7535,11 @@ class PlexBrowserView: NSView {
     
     /// Handle refresh button click based on current source
     private func handleRefreshClick() {
+        if browseMode.isHistoryMode {
+            historyAgent.scheduleRefresh()
+            return
+        }
+
         // Radio source (Internet Radio) supports refresh in radio and search tabs.
         if case .radio = currentSource {
             if browseMode == .radio {
