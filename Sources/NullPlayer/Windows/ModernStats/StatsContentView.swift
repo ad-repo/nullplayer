@@ -173,6 +173,12 @@ struct StatsOverviewView: View {
                 )
                 .frame(height: 220)
 
+                InternetRadioSection(
+                    rows: agent.topRadioStations,
+                    totalSeconds: agent.radioListenSeconds,
+                    skinTextColor: skinTextColor
+                )
+
                 TimeSeriesChartView(agent: agent, skinTextColor: skinTextColor)
                     .frame(height: 220)
             }
@@ -307,22 +313,7 @@ struct PlayTimeSummarySection: View {
     }
 
     private func formatPlayTime(_ duration: Double) -> String {
-        let totalSeconds = max(0, Int(duration.rounded()))
-        if totalSeconds == 0 { return "0m" }
-        let days = totalSeconds / 86_400
-        let hours = (totalSeconds % 86_400) / 3_600
-        let minutes = (totalSeconds % 3_600) / 60
-
-        if days > 0 {
-            return hours > 0 ? "\(days)d \(hours)h" : "\(days)d"
-        }
-        if hours > 0 {
-            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
-        }
-        if minutes > 0 {
-            return "\(minutes)m"
-        }
-        return "<1m"
+        formatStatsPlayTime(duration)
     }
 
     private func shortLabel(for title: String) -> String {
@@ -333,11 +324,74 @@ struct PlayTimeSummarySection: View {
     }
 }
 
+private func formatStatsPlayTime(_ duration: Double) -> String {
+    let totalSeconds = max(0, Int(duration.rounded()))
+    if totalSeconds == 0 { return "0m" }
+    let days = totalSeconds / 86_400
+    let hours = (totalSeconds % 86_400) / 3_600
+    let minutes = (totalSeconds % 3_600) / 60
+
+    if days > 0 {
+        return hours > 0 ? "\(days)d \(hours)h" : "\(days)d"
+    }
+    if hours > 0 {
+        return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+    }
+    if minutes > 0 {
+        return "\(minutes)m"
+    }
+    return "<1m"
+}
+
+struct InternetRadioSection: View {
+    let rows: [TopDimensionRow]
+    let totalSeconds: Double
+    var skinTextColor: Color = .primary
+
+    private var stationCountLabel: String {
+        rows.count == 1 ? "1 station" : "\(rows.count) stations"
+    }
+
+    var body: some View {
+        if !rows.isEmpty || totalSeconds > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Internet Radio")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Spacer()
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(formatStatsPlayTime(totalSeconds))
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundColor(skinTextColor)
+                    Text("\(stationCountLabel) - Listen time tracked from this version onward.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                TopDimensionChartView(
+                    title: "Top Stations",
+                    rows: rows,
+                    skinTextColor: skinTextColor,
+                    selected: .constant(nil),
+                    showsTotalMinutes: true
+                )
+                .frame(height: 180)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 struct TopDimensionChartView: View {
     let title: String
     let rows: [TopDimensionRow]
     var skinTextColor: Color = .primary
     @Binding var selected: String?
+    var showsTotalMinutes: Bool = false
     private let labelColumnWidth: CGFloat = 150
 
     var body: some View {
@@ -364,10 +418,10 @@ struct TopDimensionChartView: View {
                                             .frame(width: max(2, geo.size.width * fraction), height: 10)
                                             .frame(maxHeight: .infinity, alignment: .center)
                                     }
-                                    Text("\(row.playCount)")
+                                    Text(rowValueText(for: row))
                                         .font(.caption2)
                                         .foregroundColor(skinTextColor.opacity(0.7))
-                                        .frame(width: 24, alignment: .leading)
+                                        .frame(width: showsTotalMinutes ? 76 : 24, alignment: .leading)
                                 }
                                 .frame(height: 18)
                             }
@@ -379,6 +433,11 @@ struct TopDimensionChartView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func rowValueText(for row: TopDimensionRow) -> String {
+        guard showsTotalMinutes else { return "\(row.playCount)" }
+        return "\(row.playCount) / \(formatStatsPlayTime(row.totalMinutes * 60))"
     }
 }
 
@@ -524,6 +583,9 @@ struct SourceChartView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
+                Text("Music and video sources only - see Internet Radio below.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
             }
         }
         .frame(maxWidth: .infinity)

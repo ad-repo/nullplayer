@@ -144,6 +144,12 @@ final class PlayHistoryStore: Sendable {
         }
         let limit = dimension == .artist ? 250 : 25
         var (whereStr, params) = whereClause(for: filter)
+        switch dimension {
+        case .source, .album, .genre:
+            addCondition("COALESCE(pe.content_type, 'music') <> 'radio'", to: &whereStr)
+        case .artist, .outputDevice:
+            break
+        }
         if dimension == .outputDevice {
             let extra = "NULLIF(trim(pe.output_device), '') IS NOT NULL"
             whereStr = whereStr.isEmpty ? "WHERE \(extra)" : "\(whereStr) AND \(extra)"
@@ -184,6 +190,48 @@ final class PlayHistoryStore: Sendable {
             let mins = row[2] as? Double ?? 0
             return TopDimensionRow(id: name, displayName: name, playCount: count, totalMinutes: mins)
         }
+    }
+
+    func fetchTopRadioStations(filter: StatsFilterState) throws -> [TopDimensionRow] {
+        var (whereStr, params) = whereClause(forRadio: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'radio'", to: &whereStr)
+
+        let groupExpr = "COALESCE(NULLIF(pe.track_url, ''), pe.event_title)"
+        let displayExpr = "COALESCE(NULLIF(trim(pe.event_title), ''), 'Unknown Station')"
+        let sql = """
+            SELECT \(groupExpr) AS gk,
+                   MAX(\(displayExpr)) AS name,
+                   COUNT(*),
+                   COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
+            \(whereStr)
+            GROUP BY gk
+            ORDER BY 3 DESC
+            LIMIT 50
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
+        let stmt = try db.prepare(sql, params)
+        return stmt.map { row in
+            let key = row[0] as? String ?? "Unknown Station"
+            let name = row[1] as? String ?? "Unknown Station"
+            let count = Int(row[2] as? Int64 ?? 0)
+            let mins = row[3] as? Double ?? 0
+            return TopDimensionRow(id: key, displayName: name, playCount: count, totalMinutes: mins)
+        }
+    }
+
+    func fetchRadioListenSeconds(filter: StatsFilterState) throws -> Double {
+        var (whereStr, params) = whereClause(forRadio: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'radio'", to: &whereStr)
+
+        let sql = """
+            SELECT COALESCE(SUM(pe.duration_listened), 0.0)
+            \(historyFromClause)
+            \(whereStr)
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return 0 }
+        let stmt = try db.prepare(sql, params)
+        return stmt.makeIterator().next()?[0] as? Double ?? 0
     }
 
     func fetchTimeSeries(filter: StatsFilterState, granularity: StatsGranularity) throws -> [TimeSeriesRow] {
@@ -240,7 +288,8 @@ final class PlayHistoryStore: Sendable {
     }
 
     func fetchGenreBreakdown(filter: StatsFilterState) throws -> [TopDimensionRow] {
-        let (whereStr, params) = whereClause(for: filter)
+        var (whereStr, params) = whereClause(for: filter)
+        addCondition("COALESCE(pe.content_type, 'music') <> 'radio'", to: &whereStr)
         let sql = """
             SELECT COALESCE(NULLIF(trim(pe.event_genre), ''), 'Unknown'), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
             \(historyFromClause)
@@ -413,6 +462,47 @@ final class PlayHistoryStore: Sendable {
             conditions.append("COALESCE(pe.content_type, 'music') = ?")
             params.append(contentType)
         }
+        if let device = filter.selectedOutputDevice {
+            conditions.append("COALESCE(NULLIF(trim(pe.output_device), ''), 'Unknown') = ?")
+            params.append(device)
+        }
+        if filter.excludeSkipped {
+            conditions.append("pe.skipped = 0")
+        }
+
+        if conditions.isEmpty {
+            return ("", params)
+        }
+        return ("WHERE " + conditions.joined(separator: " AND "), params)
+    }
+
+    private func whereClause(forRadio filter: StatsFilterState) -> (String, [Binding?]) {
+        var conditions: [String] = []
+        var params: [Binding?] = []
+
+        let now = Date().timeIntervalSince1970
+        switch filter.timeRange {
+        case .last7Days:
+            conditions.append("pe.played_at >= ?")
+            params.append(now - 7 * 86400)
+        case .last30Days:
+            conditions.append("pe.played_at >= ?")
+            params.append(now - 30 * 86400)
+        case .last90Days:
+            conditions.append("pe.played_at >= ?")
+            params.append(now - 90 * 86400)
+        case .last365Days:
+            conditions.append("pe.played_at >= ?")
+            params.append(now - 365 * 86400)
+        case .allTime:
+            break
+        case .custom(let start, let end):
+            conditions.append("pe.played_at >= ?")
+            params.append(start.timeIntervalSince1970)
+            conditions.append("pe.played_at <= ?")
+            params.append(end.timeIntervalSince1970)
+        }
+
         if let device = filter.selectedOutputDevice {
             conditions.append("COALESCE(NULLIF(trim(pe.output_device), ''), 'Unknown') = ?")
             params.append(device)
