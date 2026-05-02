@@ -1889,8 +1889,6 @@ class PlexBrowserView: NSView {
                             drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                         }
 
-                        updateHistoryHostingVisibility()
-
                         if browseMode.isHistoryMode {
                             // SwiftUI-hosted history content is rendered via an embedded subview.
                         } else {
