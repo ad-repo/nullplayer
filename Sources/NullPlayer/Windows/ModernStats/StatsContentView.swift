@@ -122,7 +122,8 @@ struct StatsOverviewView: View {
                     title: "Top Movies",
                     rows: agent.topMovies,
                     skinTextColor: skinTextColor,
-                    selected: .constant(nil)
+                    selected: .constant(nil),
+                    allowsSelection: false
                 )
                 .frame(height: 180)
 
@@ -130,7 +131,8 @@ struct StatsOverviewView: View {
                     title: "Top TV Shows",
                     rows: agent.topTVShows,
                     skinTextColor: skinTextColor,
-                    selected: .constant(nil)
+                    selected: .constant(nil),
+                    allowsSelection: false
                 )
                 .frame(height: 180)
 
@@ -375,6 +377,7 @@ struct InternetRadioSection: View {
                     rows: rows,
                     skinTextColor: skinTextColor,
                     selected: .constant(nil),
+                    allowsSelection: false,
                     showsTotalMinutes: true
                 )
                 .frame(height: 180)
@@ -389,6 +392,7 @@ struct TopDimensionChartView: View {
     let rows: [TopDimensionRow]
     var skinTextColor: Color = .primary
     @Binding var selected: String?
+    var allowsSelection: Bool = true
     var showsTotalMinutes: Bool = false
     private let labelColumnWidth: CGFloat = 150
 
@@ -402,28 +406,16 @@ struct TopDimensionChartView: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(spacing: 3) {
                         ForEach(rows) { row in
-                            Button { selected = (selected == row.id) ? nil : row.id } label: {
-                                HStack(spacing: 6) {
-                                    Text(row.displayName)
-                                        .font(.caption2)
-                                        .foregroundColor(row.id == selected ? Color.accentColor : skinTextColor)
-                                        .lineLimit(1)
-                                        .frame(width: labelColumnWidth, alignment: .trailing)
-                                    GeometryReader { geo in
-                                        let fraction = CGFloat(row.playCount) / CGFloat(maxCount)
-                                        Capsule()
-                                            .fill(row.id == selected ? Color.accentColor : Color.accentColor.opacity(0.55))
-                                            .frame(width: max(2, geo.size.width * fraction), height: 10)
-                                            .frame(maxHeight: .infinity, alignment: .center)
-                                    }
-                                    Text(rowValueText(for: row))
-                                        .font(.caption2)
-                                        .foregroundColor(skinTextColor.opacity(0.7))
-                                        .frame(width: showsTotalMinutes ? 76 : 24, alignment: .leading)
+                            if allowsSelection {
+                                Button {
+                                    selected = (selected == row.id) ? nil : row.id
+                                } label: {
+                                    rowContent(row, maxCount: maxCount)
                                 }
-                                .frame(height: 18)
+                                .buttonStyle(.plain)
+                            } else {
+                                rowContent(row, maxCount: maxCount)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.vertical, 2)
@@ -436,6 +428,28 @@ struct TopDimensionChartView: View {
     private func rowValueText(for row: TopDimensionRow) -> String {
         guard showsTotalMinutes else { return "\(row.playCount)" }
         return "\(row.playCount) / \(formatStatsPlayTime(row.totalMinutes * 60))"
+    }
+
+    private func rowContent(_ row: TopDimensionRow, maxCount: Int) -> some View {
+        HStack(spacing: 6) {
+            Text(row.displayName)
+                .font(.caption2)
+                .foregroundColor(row.id == selected ? Color.accentColor : skinTextColor)
+                .lineLimit(1)
+                .frame(width: labelColumnWidth, alignment: .trailing)
+            GeometryReader { geo in
+                let fraction = CGFloat(row.playCount) / CGFloat(maxCount)
+                Capsule()
+                    .fill(row.id == selected ? Color.accentColor : Color.accentColor.opacity(0.55))
+                    .frame(width: max(2, geo.size.width * fraction), height: 10)
+                    .frame(maxHeight: .infinity, alignment: .center)
+            }
+            Text(rowValueText(for: row))
+                .font(.caption2)
+                .foregroundColor(skinTextColor.opacity(0.7))
+                .frame(width: showsTotalMinutes ? 76 : 24, alignment: .leading)
+        }
+        .frame(height: 18)
     }
 }
 
@@ -581,7 +595,7 @@ struct SourceChartView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
-                Text("Music and video sources only - see Internet Radio below.")
+                Text("Music and video sources only. Internet Radio appears in a separate section when available.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }

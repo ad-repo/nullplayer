@@ -1,9 +1,9 @@
 import Foundation
 import Combine
 
-enum StatsDimension { case artist, album, genre, source, outputDevice }
-enum StatsGranularity { case day, week, month }
-enum StatsTimeRange: Equatable, Hashable {
+enum StatsDimension: Sendable { case artist, album, genre, source, outputDevice }
+enum StatsGranularity: Sendable { case day, week, month }
+enum StatsTimeRange: Equatable, Hashable, Sendable {
     case last7Days, last30Days, last90Days, last365Days, allTime
     case custom(Date, Date)
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -28,7 +28,7 @@ enum StatsTimeRange: Equatable, Hashable {
     }
 }
 
-struct StatsFilterState: Equatable {
+struct StatsFilterState: Equatable, Sendable {
     var timeRange: StatsTimeRange = .last30Days
     var selectedArtist: String? = nil
     var selectedAlbum:  String? = nil
@@ -138,7 +138,7 @@ final class PlayHistoryAgent: ObservableObject {
         isLoading = true
         error = nil
         do {
-            let result = try await Task(priority: .userInitiated) { [store, currentFilter, currentGranularity] in
+            let result = try await Task.detached(priority: .userInitiated) { [store, currentFilter, currentGranularity] in
                 try Task.checkCancellation()
                 let p = try store.fetchPlayTimeSummaries(filter: currentFilter)
                 try Task.checkCancellation()
