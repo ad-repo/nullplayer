@@ -57,6 +57,9 @@ struct StatsHeaderView: View {
             if let contentType = agent.filter.selectedContentType {
                 FilterChip(label: PlayHistoryContentType.displayName(for: contentType)) { agent.selectContentType(nil) }
             }
+            if let device = agent.filter.selectedOutputDevice {
+                FilterChip(label: device) { agent.selectOutputDevice(nil) }
+            }
             if agent.isLoading {
                 ProgressView().controlSize(.small)
             }
@@ -130,6 +133,15 @@ struct StatsOverviewView: View {
                     selected: Binding(
                         get: { agent.filter.selectedSource },
                         set: { (v: String?) in agent.selectSource(v) }
+                    )
+                )
+                .frame(height: 220)
+
+                OutputDeviceChartView(
+                    rows: agent.outputDeviceBreakdown,
+                    selected: Binding(
+                        get: { agent.filter.selectedOutputDevice },
+                        set: { (v: String?) in agent.selectOutputDevice(v) }
                     )
                 )
                 .frame(height: 220)
@@ -500,6 +512,79 @@ struct SourceChartView: View {
     }
 }
 
+private let outputDevicePalette: [Color] = [
+    .blue, .orange, .green, .purple, .red, .pink, .teal, .indigo, .yellow, .mint, .cyan, .brown
+]
+
+private func outputDeviceColor(for name: String) -> Color {
+    var hasher = Hasher()
+    hasher.combine(name)
+    let h = UInt(bitPattern: hasher.finalize())
+    return outputDevicePalette[Int(h % UInt(outputDevicePalette.count))]
+}
+
+struct OutputDeviceChartView: View {
+    let rows: [TopDimensionRow]
+    @Binding var selected: String?
+    private let chartSize: CGFloat = 156
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Output Devices").font(.subheadline).fontWeight(.medium)
+            if rows.isEmpty {
+                Text("No data").foregroundColor(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    Chart(rows) { row in
+                        SectorMark(
+                            angle: .value("Plays", row.playCount),
+                            innerRadius: .ratio(0.5)
+                        )
+                        .foregroundStyle(outputDeviceColor(for: row.displayName))
+                        .opacity(selected == nil || selected == row.id ? 1.0 : 0.4)
+                    }
+                    .chartLegend(.hidden)
+                    .frame(width: chartSize, height: chartSize)
+                    .onTapGesture { selected = nil }
+
+                    ScrollView(.vertical, showsIndicators: true) {
+                        VStack(spacing: 3) {
+                            ForEach(rows) { row in
+                                Button {
+                                    selected = (selected == row.id) ? nil : row.id
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(outputDeviceColor(for: row.displayName))
+                                            .frame(width: 8, height: 8)
+                                        Text(row.displayName)
+                                            .font(.caption2)
+                                            .foregroundColor(row.id == selected ? .accentColor : .primary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 0)
+                                        Text("\(row.playCount)")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .monospacedDigit()
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .opacity(selected == nil || selected == row.id ? 1.0 : 0.5)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                        .padding(.trailing, 12)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 private let contentTypeColorScale: KeyValuePairs<String, Color> = [
     "Music": .blue,
     "Movies": .orange,
@@ -632,7 +717,7 @@ struct TimeSeriesChartView: View {
                 .chartForegroundStyleScale(sourceColorScale)
                 .chartLegend(.hidden)
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: calendarUnit, count: axisStrideCount)) { value in
+                    AxisMarks(values: .automatic(desiredCount: 6)) { value in
                         AxisGridLine().foregroundStyle(skinTextColor.opacity(0.15))
                         if let date = value.as(Date.self) {
                             AxisValueLabel {

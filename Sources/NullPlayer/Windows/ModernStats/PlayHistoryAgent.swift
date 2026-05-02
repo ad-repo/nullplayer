@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-enum StatsDimension { case artist, album, genre, source }
+enum StatsDimension { case artist, album, genre, source, outputDevice }
 enum StatsGranularity { case day, week, month }
 enum StatsTimeRange: Equatable, Hashable {
     case last7Days, last30Days, last90Days, last365Days, allTime
@@ -35,6 +35,7 @@ struct StatsFilterState: Equatable {
     var selectedGenre:  String? = nil
     var selectedSource: String? = nil
     var selectedContentType: String? = nil
+    var selectedOutputDevice: String? = nil
     var excludeSkipped: Bool = true
 }
 
@@ -46,6 +47,7 @@ final class PlayHistoryAgent: ObservableObject {
     @Published var genreBreakdown: [TopDimensionRow] = []
     @Published var sourceBreakdown: [TopDimensionRow] = []
     @Published var contentTypeBreakdown: [TopDimensionRow] = []
+    @Published var outputDeviceBreakdown: [TopDimensionRow] = []
     @Published var recentEvents:   [RecentEventRow]  = []
     @Published var isLoading: Bool = false
     @Published var error: String? = nil
@@ -68,6 +70,7 @@ final class PlayHistoryAgent: ObservableObject {
     private var cachedGenreBreakdown: [TopDimensionRow]?
     private var cachedSourceBreakdown: [TopDimensionRow]?
     private var cachedContentTypeBreakdown: [TopDimensionRow]?
+    private var cachedOutputDeviceBreakdown: [TopDimensionRow]?
     private var cachedRecentEvents:   [RecentEventRow]?
 
     private let store = PlayHistoryStore()
@@ -78,6 +81,7 @@ final class PlayHistoryAgent: ObservableObject {
     func selectGenre(_ name: String?)   { filter.selectedGenre  = name }
     func selectSource(_ s: String?)     { filter.selectedSource = s }
     func selectContentType(_ s: String?) { filter.selectedContentType = s }
+    func selectOutputDevice(_ s: String?) { filter.selectedOutputDevice = s }
     func clearAllFilters()              { filter = StatsFilterState() }
     func clearVisibleFilters() {
         filter = StatsFilterState(
@@ -87,6 +91,7 @@ final class PlayHistoryAgent: ObservableObject {
             selectedGenre: nil,
             selectedSource: nil,
             selectedContentType: nil,
+            selectedOutputDevice: nil,
             excludeSkipped: true
         )
     }
@@ -99,6 +104,7 @@ final class PlayHistoryAgent: ObservableObject {
         filter.selectedGenre != nil ||
         filter.selectedSource != nil ||
         filter.selectedContentType != nil ||
+        filter.selectedOutputDevice != nil ||
         filter.excludeSkipped != true
     }
 
@@ -106,6 +112,7 @@ final class PlayHistoryAgent: ObservableObject {
         cachedPlayTimeSummaries = nil; cachedTopArtists = nil
         cachedTimeSeries = nil; cachedGenreBreakdown = nil
         cachedSourceBreakdown = nil; cachedContentTypeBreakdown = nil
+        cachedOutputDeviceBreakdown = nil
         cachedRecentEvents = nil
     }
 
@@ -134,15 +141,18 @@ final class PlayHistoryAgent: ObservableObject {
                 try Task.checkCancellation()
                 let c = try store.fetchContentTypeBreakdown(filter: currentFilter)
                 try Task.checkCancellation()
+                let d = try store.fetchTopDimension(dimension: .outputDevice, filter: currentFilter)
+                try Task.checkCancellation()
                 let r = try store.fetchRecentEvents(filter: currentFilter)
-                return (p, a, s, g, o, c, r)
+                return (p, a, s, g, o, c, d, r)
             }.value
             try Task.checkCancellation()
-            (playTimeSummaries, topArtists, timeSeries, genreBreakdown, sourceBreakdown, contentTypeBreakdown, recentEvents) = result
+            (playTimeSummaries, topArtists, timeSeries, genreBreakdown, sourceBreakdown, contentTypeBreakdown, outputDeviceBreakdown, recentEvents) = result
             cachedPlayTimeSummaries = result.0; cachedTopArtists = result.1
             cachedTimeSeries = result.2; cachedGenreBreakdown = result.3
             cachedSourceBreakdown = result.4; cachedContentTypeBreakdown = result.5
-            cachedRecentEvents = result.6
+            cachedOutputDeviceBreakdown = result.6
+            cachedRecentEvents = result.7
         } catch is CancellationError {
             // Refresh was superseded by a newer request — discard results silently
         } catch {

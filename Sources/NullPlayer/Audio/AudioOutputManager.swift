@@ -494,6 +494,24 @@ class AudioOutputManager {
         return status == noErr ? deviceID : nil
     }
     
+    /// Resolved display name for the currently active output device.
+    /// Falls back to the system default device's name when no explicit selection is set.
+    var currentDeviceDisplayName: String {
+        if let id = currentDeviceID,
+           let device = outputDevices.first(where: { $0.id == id }) {
+            return device.name
+        }
+        if let defaultID = getDefaultOutputDeviceID() {
+            if let device = outputDevices.first(where: { $0.id == defaultID }) {
+                return device.name
+            }
+            if let name = getDeviceName(deviceID: defaultID) {
+                return name
+            }
+        }
+        return "System Default"
+    }
+
     // MARK: - Device Selection
     
     /// Select an output device by ID

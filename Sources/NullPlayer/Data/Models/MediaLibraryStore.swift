@@ -199,6 +199,11 @@ final class MediaLibraryStore {
         if currentVersion == 5 {
             try migrateToV6(connection)
             try connection.run("PRAGMA user_version = 6")
+            currentVersion = 6
+        }
+        if currentVersion == 6 {
+            try migrateToV7(connection)
+            try connection.run("PRAGMA user_version = 7")
         }
     }
 
@@ -261,6 +266,21 @@ final class MediaLibraryStore {
             SET content_type = CASE WHEN source = 'radio' THEN 'radio' ELSE 'music' END
             WHERE content_type IS NULL
             """)
+    }
+
+    private func migrateToV7(_ connection: Connection) throws {
+        // Add output_device column to play_events
+        let pragmaSQL = "PRAGMA table_info(play_events)"
+        var hasColumn = false
+        for row in try connection.prepare(pragmaSQL) {
+            if let existingName = row[1] as? String, existingName == "output_device" {
+                hasColumn = true
+                break
+            }
+        }
+        if !hasColumn {
+            try connection.execute("ALTER TABLE play_events ADD COLUMN output_device TEXT")
+        }
     }
 
     private func addTrackColumnIfMissing(_ connection: Connection, name: String, sqlType: String) throws {
@@ -1235,7 +1255,8 @@ final class MediaLibraryStore {
     func insertPlayEvent(trackId: String?, trackURL: String?, title: String?, artist: String?,
                          album: String?, genre: String?, playedAt: Date,
                          durationListened: Double, source: String, skipped: Bool,
-                         contentType: String = "music") -> Int64? {
+                         contentType: String = "music",
+                         outputDevice: String? = nil) -> Int64? {
         guard let db = db else { return nil }
         do {
             let bindings: [Binding?] = [
@@ -1249,13 +1270,14 @@ final class MediaLibraryStore {
                 durationListened as Binding,
                 source as Binding,
                 (skipped ? 1 : 0) as Binding,
-                contentType as Binding
+                contentType as Binding,
+                outputDevice as Binding?
             ]
             try db.run("""
                 INSERT INTO play_events
                   (track_id, track_url, event_title, event_artist, event_album, event_genre,
-                   played_at, duration_listened, source, skipped, content_type)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                   played_at, duration_listened, source, skipped, content_type, output_device)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                 """, bindings)
             NotificationCenter.default.post(name: Self.playHistoryDidChangeNotification, object: nil)
             return db.lastInsertRowid
