@@ -5399,6 +5399,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                 RadioManager.shared.streamDidConnect()
             }
         case .paused:
+            streamingPlaybackConfirmed = false
             self.state = .paused
         case .stopped:
             guard !isLoadingNewStreamingTrack else {
