@@ -144,7 +144,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationWillTerminate(_ notification: Notification) {
-        windowManager.audioEngine.flushActiveRadioSessionIfAny()
+        windowManager.audioEngine.flushActiveRadioSession()
 
         // Stop any active casting (video or audio)
         // Use sync version to avoid deadlock - async stopCasting() uses MainActor.run

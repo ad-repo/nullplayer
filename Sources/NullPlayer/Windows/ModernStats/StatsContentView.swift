@@ -349,7 +349,11 @@ struct InternetRadioSection: View {
     var skinTextColor: Color = .primary
 
     private var stationCountLabel: String {
-        rows.count == 1 ? "Top 1 station" : "Top \(rows.count) stations"
+        switch rows.count {
+        case 0:  return "No stations recorded yet"
+        case 1:  return "Top 1 station"
+        default: return "Top \(rows.count) stations"
+        }
     }
 
     var body: some View {
@@ -431,16 +435,17 @@ struct TopDimensionChartView: View {
     }
 
     private func rowContent(_ row: TopDimensionRow, maxCount: Int) -> some View {
-        HStack(spacing: 6) {
+        let isSelected = allowsSelection && row.id == selected
+        return HStack(spacing: 6) {
             Text(row.displayName)
                 .font(.caption2)
-                .foregroundColor(row.id == selected ? Color.accentColor : skinTextColor)
+                .foregroundColor(isSelected ? Color.accentColor : skinTextColor)
                 .lineLimit(1)
                 .frame(width: labelColumnWidth, alignment: .trailing)
             GeometryReader { geo in
                 let fraction = CGFloat(row.playCount) / CGFloat(maxCount)
                 Capsule()
-                    .fill(row.id == selected ? Color.accentColor : Color.accentColor.opacity(0.55))
+                    .fill(isSelected ? Color.accentColor : Color.accentColor.opacity(0.55))
                     .frame(width: max(2, geo.size.width * fraction), height: 10)
                     .frame(maxHeight: .infinity, alignment: .center)
             }

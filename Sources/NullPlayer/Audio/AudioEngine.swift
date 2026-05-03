@@ -2541,10 +2541,6 @@ class AudioEngine {
         timeUpdateTimer = timer
     }
 
-    func flushActiveRadioSessionIfAny() {
-        flushActiveRadioSession()
-    }
-
     private func handleRadioSessionPlaybackStateChange(from oldState: PlaybackState, to newState: PlaybackState) {
         switch newState {
         case .playing:
@@ -2631,7 +2627,7 @@ class AudioEngine {
         )
     }
 
-    private func flushActiveRadioSession(skipped: Bool = false) {
+    func flushActiveRadioSession(skipped: Bool = false) {
         guard var session = activeRadioSession else { return }
 
         let now = Date()

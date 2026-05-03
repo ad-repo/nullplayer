@@ -39,6 +39,21 @@ struct StatsFilterState: Equatable, Sendable {
     var excludeSkipped: Bool = true
 }
 
+private struct StatsRefreshResult {
+    var playTimeSummaries: [PlayTimeSummaryRow]
+    var topArtists: [TopDimensionRow]
+    var topMovies: [TopDimensionRow]
+    var topTVShows: [TopDimensionRow]
+    var topRadioStations: [TopDimensionRow]
+    var radioListenSeconds: Double
+    var timeSeries: [TimeSeriesRow]
+    var genreBreakdown: [TopDimensionRow]
+    var sourceBreakdown: [TopDimensionRow]
+    var contentTypeBreakdown: [TopDimensionRow]
+    var outputDeviceBreakdown: [TopDimensionRow]
+    var recentEvents: [RecentEventRow]
+}
+
 @MainActor
 final class PlayHistoryAgent: ObservableObject {
     @Published var playTimeSummaries: [PlayTimeSummaryRow] = []
@@ -140,40 +155,69 @@ final class PlayHistoryAgent: ObservableObject {
         do {
             let result = try await Task.detached(priority: .userInitiated) { [store, currentFilter, currentGranularity] in
                 try Task.checkCancellation()
-                let p = try store.fetchPlayTimeSummaries(filter: currentFilter)
+                let playTimeSummaries = try store.fetchPlayTimeSummaries(filter: currentFilter)
                 try Task.checkCancellation()
-                let a = try store.fetchTopArtists(filter: currentFilter)
+                let topArtists = try store.fetchTopArtists(filter: currentFilter)
                 try Task.checkCancellation()
-                let m = try store.fetchTopMovies(filter: currentFilter)
+                let topMovies = try store.fetchTopMovies(filter: currentFilter)
                 try Task.checkCancellation()
-                let tv = try store.fetchTopTVShows(filter: currentFilter)
+                let topTVShows = try store.fetchTopTVShows(filter: currentFilter)
                 try Task.checkCancellation()
-                let radioStations = try store.fetchTopRadioStations(filter: currentFilter)
+                let topRadioStations = try store.fetchTopRadioStations(filter: currentFilter)
                 try Task.checkCancellation()
-                let radioSeconds = try store.fetchRadioListenSeconds(filter: currentFilter)
+                let radioListenSeconds = try store.fetchRadioListenSeconds(filter: currentFilter)
                 try Task.checkCancellation()
-                let s = try store.fetchTimeSeries(filter: currentFilter, granularity: currentGranularity)
+                let timeSeries = try store.fetchTimeSeries(filter: currentFilter, granularity: currentGranularity)
                 try Task.checkCancellation()
-                let g = try store.fetchGenreBreakdown(filter: currentFilter)
+                let genreBreakdown = try store.fetchGenreBreakdown(filter: currentFilter)
                 try Task.checkCancellation()
-                let o = try store.fetchTopDimension(dimension: .source, filter: currentFilter)
+                let sourceBreakdown = try store.fetchTopDimension(dimension: .source, filter: currentFilter)
                 try Task.checkCancellation()
-                let c = try store.fetchContentTypeBreakdown(filter: currentFilter)
+                let contentTypeBreakdown = try store.fetchContentTypeBreakdown(filter: currentFilter)
                 try Task.checkCancellation()
-                let d = try store.fetchTopDimension(dimension: .outputDevice, filter: currentFilter)
+                let outputDeviceBreakdown = try store.fetchTopDimension(dimension: .outputDevice, filter: currentFilter)
                 try Task.checkCancellation()
-                let r = try store.fetchRecentEvents(filter: currentFilter)
-                return (p, a, m, tv, radioStations, radioSeconds, s, g, o, c, d, r)
+                let recentEvents = try store.fetchRecentEvents(filter: currentFilter)
+                return StatsRefreshResult(
+                    playTimeSummaries: playTimeSummaries,
+                    topArtists: topArtists,
+                    topMovies: topMovies,
+                    topTVShows: topTVShows,
+                    topRadioStations: topRadioStations,
+                    radioListenSeconds: radioListenSeconds,
+                    timeSeries: timeSeries,
+                    genreBreakdown: genreBreakdown,
+                    sourceBreakdown: sourceBreakdown,
+                    contentTypeBreakdown: contentTypeBreakdown,
+                    outputDeviceBreakdown: outputDeviceBreakdown,
+                    recentEvents: recentEvents
+                )
             }.value
             try Task.checkCancellation()
-            (playTimeSummaries, topArtists, topMovies, topTVShows, topRadioStations, radioListenSeconds, timeSeries, genreBreakdown, sourceBreakdown, contentTypeBreakdown, outputDeviceBreakdown, recentEvents) = result
-            cachedPlayTimeSummaries = result.0; cachedTopArtists = result.1
-            cachedTopMovies = result.2; cachedTopTVShows = result.3
-            cachedTopRadioStations = result.4; cachedRadioListenSeconds = result.5
-            cachedTimeSeries = result.6; cachedGenreBreakdown = result.7
-            cachedSourceBreakdown = result.8; cachedContentTypeBreakdown = result.9
-            cachedOutputDeviceBreakdown = result.10
-            cachedRecentEvents = result.11
+            playTimeSummaries = result.playTimeSummaries
+            topArtists = result.topArtists
+            topMovies = result.topMovies
+            topTVShows = result.topTVShows
+            topRadioStations = result.topRadioStations
+            radioListenSeconds = result.radioListenSeconds
+            timeSeries = result.timeSeries
+            genreBreakdown = result.genreBreakdown
+            sourceBreakdown = result.sourceBreakdown
+            contentTypeBreakdown = result.contentTypeBreakdown
+            outputDeviceBreakdown = result.outputDeviceBreakdown
+            recentEvents = result.recentEvents
+            cachedPlayTimeSummaries = result.playTimeSummaries
+            cachedTopArtists = result.topArtists
+            cachedTopMovies = result.topMovies
+            cachedTopTVShows = result.topTVShows
+            cachedTopRadioStations = result.topRadioStations
+            cachedRadioListenSeconds = result.radioListenSeconds
+            cachedTimeSeries = result.timeSeries
+            cachedGenreBreakdown = result.genreBreakdown
+            cachedSourceBreakdown = result.sourceBreakdown
+            cachedContentTypeBreakdown = result.contentTypeBreakdown
+            cachedOutputDeviceBreakdown = result.outputDeviceBreakdown
+            cachedRecentEvents = result.recentEvents
         } catch is CancellationError {
             // Refresh was superseded by a newer request — discard results silently
         } catch {
