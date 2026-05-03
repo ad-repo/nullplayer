@@ -13,11 +13,13 @@
 ### Improvements
 
 - **Modern marquee art padding balanced** — album artwork in the modern main window marquee now has equal padding on both sides.
+- **Data tab section order refined** — the dedicated Internet Radio section now appears directly below Top TV Shows in both classic and modern library browsers.
 
 ### Bug Fixes
 
 - **Dock icon size fixed** — the app icon is now correctly sized in the Dock, matching the visual weight of neighboring icons. The symbol cutout renders correctly on dark backgrounds.
 - **Output device color overflow fixed** — the hash function used to assign colors to output devices no longer traps on `Int.min` overflow.
+- **Classic ProjectM fullscreen fixed** — the classic ProjectM visualizer no longer snaps down below the notch/menu-bar safe area shortly after entering fullscreen.
 
 ## 0.20.0
 
