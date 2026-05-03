@@ -813,12 +813,11 @@ class WindowManager {
                 if stackBounds != .zero && stackHasMultipleWindows {
                     // Match stack height when multiple windows are stacked
                     // No adjustWindowForHiddenTitleBars needed - stack height already accounts for it
-                    let bottomOverlap = classicSideWindowBottomVisualOverlap
                     let newFrame = NSRect(
                         x: rightEdgeX,
-                        y: stackBounds.minY - bottomOverlap,
+                        y: stackBounds.minY,
                         width: sideWidth,
-                        height: stackBounds.height + bottomOverlap
+                        height: stackBounds.height
                     )
                     window.setFrame(newFrame, display: true)
                 } else if let mainWindow = mainWindow {
@@ -1521,12 +1520,11 @@ class WindowManager {
                 if stackBounds != .zero && stackHasMultipleWindows {
                     // Match stack height when multiple windows are stacked
                     // No adjustWindowForHiddenTitleBars needed - stack height already accounts for it
-                    let bottomOverlap = classicSideWindowBottomVisualOverlap
                     let newFrame = NSRect(
                         x: leftEdgeX - window.frame.width,
-                        y: stackBounds.minY - bottomOverlap,
+                        y: stackBounds.minY,
                         width: window.frame.width,
-                        height: stackBounds.height + bottomOverlap
+                        height: stackBounds.height
                     )
                     window.setFrame(newFrame, display: true)
                 } else if let mainWindow = mainWindow {
@@ -2466,13 +2464,6 @@ class WindowManager {
     private func defaultSideWindowHeight(mainFrame: NSRect) -> CGFloat {
         guard isRunningModernUI else { return mainFrame.height * 4 }
         return expectedMainHeightForCurrentHT(mainWindowController?.window) * 4
-    }
-
-    /// Classic center-stack bottom chrome can read past the raw frame bounds
-    /// by the bottom-border depth on some skins. Side windows keep their top
-    /// edge aligned, then include this overhang so bottom borders line up.
-    private var classicSideWindowBottomVisualOverlap: CGFloat {
-        isRunningModernUI ? 0 : SkinElements.Playlist.bottomHeight * classicScaleMultiplier
     }
 
     /// Classic-only runtime self-heal for near-docked center-stack gaps/width drift.
