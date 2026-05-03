@@ -203,18 +203,34 @@ if [[ -f "$APP_ICON_PNG" ]]; then
     ICONSET_DIR="$DIST_DIR/AppIcon.iconset"
     rm -rf "$ICONSET_DIR"
     mkdir -p "$ICONSET_DIR"
-    
+
+    # Use magick to produce a full-bleed square icon (no transparent corners).
+    # macOS Big Sur+ applies its own squircle mask; pre-rounded icons with transparent
+    # corners show the Dock background as a grey border. We fix this by:
+    #   1. Trimming the transparent canvas padding
+    #   2. Blurring a copy to spread the gradient colors into the rounded corners
+    #   3. Compositing the original over that filled background (DstOver)
+    # Result: solid square with the gradient naturally filling the corners.
+    resize_icon() {
+        local size=$1
+        local out=$2
+        magick "$APP_ICON_PNG" -trim +repage \
+            \( +clone -blur 0x200 -alpha off \) \
+            -compose DstOver -composite \
+            -resize "${size}x${size}" "$out"
+    }
+
     # Generate all required icon sizes
-    sips -z 16 16     "$APP_ICON_PNG" --out "$ICONSET_DIR/icon_16x16.png" >/dev/null
-    sips -z 32 32     "$APP_ICON_PNG" --out "$ICONSET_DIR/icon_16x16@2x.png" >/dev/null
-    sips -z 32 32     "$APP_ICON_PNG" --out "$ICONSET_DIR/icon_32x32.png" >/dev/null
-    sips -z 64 64     "$APP_ICON_PNG" --out "$ICONSET_DIR/icon_32x32@2x.png" >/dev/null
-    sips -z 128 128   "$APP_ICON_PNG" --out "$ICONSET_DIR/icon_128x128.png" >/dev/null
-    sips -z 256 256   "$APP_ICON_PNG" --out "$ICONSET_DIR/icon_128x128@2x.png" >/dev/null
-    sips -z 256 256   "$APP_ICON_PNG" --out "$ICONSET_DIR/icon_256x256.png" >/dev/null
-    sips -z 512 512   "$APP_ICON_PNG" --out "$ICONSET_DIR/icon_256x256@2x.png" >/dev/null
-    sips -z 512 512   "$APP_ICON_PNG" --out "$ICONSET_DIR/icon_512x512.png" >/dev/null
-    sips -z 1024 1024 "$APP_ICON_PNG" --out "$ICONSET_DIR/icon_512x512@2x.png" >/dev/null
+    resize_icon 16   "$ICONSET_DIR/icon_16x16.png"
+    resize_icon 32   "$ICONSET_DIR/icon_16x16@2x.png"
+    resize_icon 32   "$ICONSET_DIR/icon_32x32.png"
+    resize_icon 64   "$ICONSET_DIR/icon_32x32@2x.png"
+    resize_icon 128  "$ICONSET_DIR/icon_128x128.png"
+    resize_icon 256  "$ICONSET_DIR/icon_128x128@2x.png"
+    resize_icon 256  "$ICONSET_DIR/icon_256x256.png"
+    resize_icon 512  "$ICONSET_DIR/icon_256x256@2x.png"
+    resize_icon 512  "$ICONSET_DIR/icon_512x512.png"
+    resize_icon 1024 "$ICONSET_DIR/icon_512x512@2x.png"
     
     # Create .icns file
     iconutil -c icns "$ICONSET_DIR" -o "$RESOURCES_DIR/AppIcon.icns"
