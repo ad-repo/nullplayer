@@ -357,6 +357,8 @@ struct UltraParams {
 // MARK: - Spectrum Analyzer View
 
 private let spectrumAnalyzerEKGSharedClockStart = CACurrentMediaTime()
+private let EKG_SCREEN_SECONDS: Float = 5.6   // seconds of trace history visible on screen (matches Metal constant)
+private let EKG_SCAN_HEAD_X: Float = 0.965    // normalized x position of the scan head (matches Metal constant)
 
 /// Metal-based spectrum analyzer visualization view
 class SpectrumAnalyzerView: NSView {
@@ -818,7 +820,6 @@ class SpectrumAnalyzerView: NSView {
            let style = EKGStyle(rawValue: saved) {
             ekgStyle = style
         }
-        renderEKGStyle = ekgStyle
         
         // Initialize display spectrum and sync to render-safe variables
         // Use max size to avoid any resizing during mode switches
@@ -2601,7 +2602,7 @@ class SpectrumAnalyzerView: NSView {
                 bpm: detectedBPM,
                 beatPhase: ekgBeatPhase,
                 amplitude: ekgAmplitudeLevel,
-                scrollDelta: frameDelta / 5.6 * 0.965,
+                scrollDelta: frameDelta / EKG_SCREEN_SECONDS * EKG_SCAN_HEAD_X,
                 noise: ekgNoiseLevel,
                 style: renderEKGStyle
             )
