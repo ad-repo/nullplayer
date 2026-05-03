@@ -18,6 +18,7 @@
 ### Bug Fixes
 
 - **Dock icon size fixed** — the app icon is now correctly sized in the Dock, matching the visual weight of neighboring icons. The symbol cutout renders correctly on dark backgrounds.
+- **Classic auxiliary window borders fixed** — the library browser now uses matching ProjectM-style side borders without reserving scrollbar space, its title bar border remains continuous with visible window controls, and the playlist bottom border matches the waveform, spectrum, ProjectM, and library windows.
 - **Output device color overflow fixed** — the hash function used to assign colors to output devices no longer traps on `Int.min` overflow.
 - **Classic ProjectM fullscreen fixed** — the classic ProjectM visualizer no longer snaps down below the notch/menu-bar safe area shortly after entering fullscreen.
 
