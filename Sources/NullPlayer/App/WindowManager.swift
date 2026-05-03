@@ -2468,11 +2468,11 @@ class WindowManager {
         return expectedMainHeightForCurrentHT(mainWindowController?.window) * 4
     }
 
-    /// Classic center-stack bottom chrome visually extends slightly beyond the
-    /// raw frame bounds used for side-window sizing. Side windows keep their top
+    /// Classic center-stack bottom chrome can read past the raw frame bounds
+    /// by the bottom-border depth on some skins. Side windows keep their top
     /// edge aligned, then include this overhang so bottom borders line up.
     private var classicSideWindowBottomVisualOverlap: CGFloat {
-        isRunningModernUI ? 0 : 2 * classicScaleMultiplier
+        isRunningModernUI ? 0 : SkinElements.Playlist.bottomHeight * classicScaleMultiplier
     }
 
     /// Classic-only runtime self-heal for near-docked center-stack gaps/width drift.
