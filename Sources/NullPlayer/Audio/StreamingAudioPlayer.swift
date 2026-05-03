@@ -451,12 +451,10 @@ class StreamingAudioPlayer {
         guard shouldUpdate else { return }
         lastSpectrumUpdateTime = now
         
-        // Feed BPM detector with raw mono samples (before windowing) — modern UI only
-        if isModernUIEnabled {
-            fftSamples.withUnsafeBufferPointer { ptr in
-                if let base = ptr.baseAddress {
-                    bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
-                }
+        // Feed BPM detector with raw mono samples before windowing.
+        fftSamples.withUnsafeBufferPointer { ptr in
+            if let base = ptr.baseAddress {
+                bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
             }
         }
         

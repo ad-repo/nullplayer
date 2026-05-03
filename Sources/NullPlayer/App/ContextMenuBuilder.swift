@@ -1097,6 +1097,27 @@ class ContextMenuBuilder {
             visMenu.addItem(matrixIntensityItem)
         }
 
+        // EKG Style submenu (only when EKG mode active)
+        if currentMode == .ekg {
+            let ekgStyleItem = NSMenuItem(title: "EKG Style", action: nil, keyEquivalent: "")
+            let ekgStyleMenu = NSMenu()
+            ekgStyleMenu.autoenablesItems = false
+
+            let currentStyle = UserDefaults.standard.string(forKey: "mainWindowEKGStyle")
+                .flatMap { EKGStyle(rawValue: $0) } ?? .clinical
+
+            for style in EKGStyle.allCases {
+                let item = NSMenuItem(title: style.displayName, action: #selector(MenuActions.setMainVisEKGStyle(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = style
+                item.state = (currentStyle == style) ? .on : .off
+                ekgStyleMenu.addItem(item)
+            }
+
+            ekgStyleItem.submenu = ekgStyleMenu
+            visMenu.addItem(ekgStyleItem)
+        }
+
         // vis_classic profile controls (only when vis_classic mode active)
         if currentMode == .visClassicExact {
             let profilesMenuItem = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
@@ -1346,6 +1367,27 @@ class ContextMenuBuilder {
             
             matrixIntensityItem.submenu = matrixIntensityMenu
             spectrumWindowMenu.addItem(matrixIntensityItem)
+        }
+
+        // EKG Style submenu (only when EKG mode active)
+        if currentQuality == .ekg {
+            let ekgStyleItem = NSMenuItem(title: "EKG Style", action: nil, keyEquivalent: "")
+            let ekgStyleMenu = NSMenu()
+            ekgStyleMenu.autoenablesItems = false
+
+            let currentStyle = UserDefaults.standard.string(forKey: "ekgStyle")
+                .flatMap { EKGStyle(rawValue: $0) } ?? .clinical
+
+            for style in EKGStyle.allCases {
+                let item = NSMenuItem(title: style.displayName, action: #selector(MenuActions.setSpectrumEKGStyle(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = style
+                item.state = (currentStyle == style) ? .on : .off
+                ekgStyleMenu.addItem(item)
+            }
+
+            ekgStyleItem.submenu = ekgStyleMenu
+            spectrumWindowMenu.addItem(ekgStyleItem)
         }
 
         // vis_classic profile controls (only when vis_classic mode active)
@@ -3931,6 +3973,12 @@ class MenuActions: NSObject {
         UserDefaults.standard.set(intensity.rawValue, forKey: "matrixIntensity")
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
+
+    @objc func setSpectrumEKGStyle(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? EKGStyle else { return }
+        UserDefaults.standard.set(style.rawValue, forKey: "ekgStyle")
+        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
+    }
     
     @objc func setMainVisFlameIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? FlameIntensity else { return }
@@ -3953,6 +4001,12 @@ class MenuActions: NSObject {
     @objc func setMainVisMatrixIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? MatrixIntensity else { return }
         UserDefaults.standard.set(intensity.rawValue, forKey: "mainWindowMatrixIntensity")
+        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
+    }
+
+    @objc func setMainVisEKGStyle(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? EKGStyle else { return }
+        UserDefaults.standard.set(style.rawValue, forKey: "mainWindowEKGStyle")
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
     

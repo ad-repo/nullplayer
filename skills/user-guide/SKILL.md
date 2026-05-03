@@ -25,7 +25,18 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **ProjectM** | Real-time audio visualizations | Menu button or context menu |
 
-In modern UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab shows play-time summaries, top artists, a time-series chart, genre breakdown, source breakdown, a **Content Types** donut chart (Music / Movies / TV Shows / Radio / Video), and a recent events list. All charts are interactive filters — clicking a segment narrows all other charts to that slice. The **Now Playing…** context menu item shows rich track info (album artist, year, track number, genre, play count, rating, file path, etc.) fetched live from the server for Plex/Subsonic/Jellyfin/Emby tracks.
+In modern UI, **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab is also available in the classic library browser. The Data tab shows:
+- **Play Time** summary (day/week/month/year/all-time)
+- **Top Artists** (music only)
+- **Top Movies** and **Top TV Shows** (separate sections; TV groups by show name)
+- **Genre** breakdown (music and video; excludes radio)
+- **Sources** breakdown (music and video; excludes radio — a note directs to the Internet Radio section below)
+- **Output Devices** breakdown (which speaker/cast device was active; cast sessions record Chromecast/Sonos/DLNA device name)
+- **Content Types** donut chart (Music / Movies / TV Shows / Radio / Video)
+- **Internet Radio** section — total listen time + Top Stations ranked by play count and listen duration
+- **Plays Over Time** time series
+
+All charts are interactive filters — clicking a segment narrows all other charts to that slice. The **Now Playing…** context menu item shows rich track info (album artist, year, track number, genre, play count, rating, file path, etc.) fetched live from the server for Plex/Subsonic/Jellyfin/Emby tracks.
 
 ### Top Menu Bar
 
@@ -134,6 +145,7 @@ Modern UI adds: **HT** (Hide Title Bars), **CA** (Cast), **pM** (ProjectM), **SP
 - Internet-radio-only folder organization (smart folders + custom folders)
 - 5-star station ratings (persisted per station URL)
 - Casting to Sonos
+- **Play history tracking** — listen sessions are recorded with pause-aware duration; visible in the Data tab Internet Radio section (total listen time + top stations). Sessions shorter than 1 second are discarded. Long sessions checkpoint every 30 minutes.
 - Playback Options now groups all source histories under a single **Radio History** submenu
 
 ### Local Files
@@ -156,6 +168,8 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 - Progress updates are throttled/coarse during large imports to keep UI responsive
 
 **Tabs:** Artists, Albums, Playlists (`Plists` in the UI), Movies, Shows, Search, Radio, Data
+
+The **Data tab** is present in both the modern Library Browser and the classic library browser (`PlexBrowserView`). It shows play-history analytics for all sources (see the Data tab description at the top of this section).
 
 ### Drag/Drop + Folder Import Behavior (Local/NAS)
 

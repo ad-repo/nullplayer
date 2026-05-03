@@ -36,6 +36,7 @@ enum SpectrumQualityMode: String, CaseIterable {
     case electricity = "Lightning" // GPU lightning storm driven by peak frequencies
     case matrix = "Matrix"           // Falling digital rain driven by spectrum
     case snow = "Snow"               // Audio-reactive snowfall driven by spectrum density
+    case ekg = "EKG"                 // Beat-synced electrocardiogram monitor driven by BPM and waveform amplitude
     case visClassicExact = "vis_classic" // Exact-port vis_classic analyzer core (CPU frame path)
     
     var displayName: String { rawValue }
@@ -50,6 +51,7 @@ enum SpectrumQualityMode: String, CaseIterable {
         case .electricity: return "ElectricityShaders"
         case .matrix: return "MatrixShaders"
         case .snow: return "SnowShaders"
+        case .ekg: return "EKGShaders"
         case .visClassicExact: return "SpectrumShaders" // Always bundled; keeps mode enabled in menus
         }
     }
@@ -213,6 +215,28 @@ enum MatrixIntensity: String, CaseIterable {
     }
 }
 
+/// Color/style presets for EKG mode
+enum EKGStyle: String, CaseIterable {
+    case clinical = "Clinical"
+    case cyan = "Cyan"
+    case amber = "Amber"
+    case neon = "Neon"
+    case crimson = "Crimson"
+    case ice = "Ice"
+
+    var displayName: String { rawValue }
+    var colorScheme: Int32 {
+        switch self {
+        case .clinical: return 0
+        case .cyan: return 1
+        case .amber: return 2
+        case .neon: return 3
+        case .crimson: return 4
+        case .ice: return 5
+        }
+    }
+}
+
 /// Parameters for Matrix Metal shaders (must match Metal MatrixParams struct)
 struct MatrixParams {
     var viewportSize: SIMD2<Float>  // 8 bytes (offset 0)
@@ -242,6 +266,20 @@ struct SnowParams {
     var windPhase: Float             // 4 bytes (offset 36)
     var density: Float               // 4 bytes (offset 40)
     var brightnessBoost: Float = 1.0 // 4 bytes (offset 44) → total 48
+}
+
+/// Parameters for EKG Metal shaders (must match Metal EKGParams struct)
+struct EKGParams {
+    var viewportSize: SIMD2<Float>  // 8 bytes (offset 0)
+    var time: Float                  // 4 bytes (offset 8)
+    var bpm: Float                   // 4 bytes (offset 12)
+    var beatPhase: Float             // 4 bytes (offset 16)
+    var amplitudeLevel: Float        // 4 bytes (offset 20)
+    var noiseLevel: Float            // 4 bytes (offset 24)
+    var scrollDelta: Float           // 4 bytes (offset 28)
+    var brightnessBoost: Float = 1.0 // 4 bytes (offset 32)
+    var colorScheme: Int32 = 0       // 4 bytes (offset 36)
+    var _padding: SIMD2<Float> = .zero // 8 bytes (offset 40), total 48
 }
 
 /// Decay mode controlling how quickly bars fall
@@ -318,8 +356,13 @@ struct UltraParams {
 
 // MARK: - Spectrum Analyzer View
 
+private let spectrumAnalyzerEKGSharedClockStart = CACurrentMediaTime()
+
 /// Metal-based spectrum analyzer visualization view
 class SpectrumAnalyzerView: NSView {
+    nonisolated(unsafe) private static var ekgSharedBPM: Float = 0
+    nonisolated(unsafe) private static var ekgSharedAmplitudeTarget: Float = 0.5
+
     private let waveformConsumerID = "visClassicWaveform.\(UUID().uuidString)"
 
     private var visClassicPreferenceScope: VisClassicBridge.PreferenceScope {
@@ -347,6 +390,7 @@ class SpectrumAnalyzerView: NSView {
         case .electricity: return electricityRenderPipeline != nil
         case .matrix: return matrixRenderPipeline != nil
         case .snow: return snowRenderPipeline != nil
+        case .ekg: return ekgUpdatePipeline != nil && ekgRenderPipeline != nil
         case .visClassicExact: return true
         }
     }
@@ -500,6 +544,20 @@ class SpectrumAnalyzerView: NSView {
             dataLock.withLock { renderFlameIntensity = intensity }
         }
     }
+
+    /// Current EKG color/style preset (only used when qualityMode == .ekg)
+    var ekgStyle: EKGStyle = .clinical {
+        didSet {
+            if !isEmbedded {
+                UserDefaults.standard.set(ekgStyle.rawValue, forKey: "ekgStyle")
+            }
+            let style = ekgStyle
+            dataLock.withLock {
+                renderEKGStyle = style
+                ekgTraceNeedsClear = true
+            }
+        }
+    }
     
     // MARK: - Metal Resources
     
@@ -542,6 +600,16 @@ class SpectrumAnalyzerView: NSView {
     // Snow mode resources
     private var snowRenderPipeline: MTLRenderPipelineState?
     private var snowParamsBuffer: MTLBuffer?
+
+    // EKG mode resources
+    private var ekgUpdatePipeline: MTLRenderPipelineState?
+    private var ekgRenderPipeline: MTLRenderPipelineState?
+    private var ekgParamsBuffer: MTLBuffer?
+    private var ekgTraceTextureA: MTLTexture?
+    private var ekgTraceTextureB: MTLTexture?
+    private var ekgTraceLastDrawableSize: CGSize = .zero
+    private var ekgTraceSourceIsA = true
+    nonisolated(unsafe) private var ekgTraceNeedsClear = true
 
     // vis_classic exact mode resources (CPU-rendered frame uploaded to a Metal texture)
     private var visClassicBridge: VisClassicBridge?
@@ -654,6 +722,15 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var snowWindPhase: Float = 0
     nonisolated(unsafe) private var snowDensity: Float = 0.2
 
+    // EKG mode state
+    nonisolated(unsafe) private var ekgBeatPhase: Float = 0
+    nonisolated(unsafe) private var ekgAmplitudeLevel: Float = 0.5
+    nonisolated(unsafe) private var ekgTargetAmplitudeLevel: Float = 0.5
+    nonisolated(unsafe) private var ekgNoiseLevel: Float = 0.04
+    nonisolated(unsafe) private var ekgCurrentBPM: Float = 0
+    nonisolated(unsafe) private var ekgLastRenderTime: Float = 0
+    nonisolated(unsafe) private var renderEKGStyle: EKGStyle = .clinical
+
     // vis_classic waveform state (latest 576-sample stereo frame)
     nonisolated(unsafe) private var visClassicWaveLeft: [UInt8] = Array(repeating: 128, count: 576)
     nonisolated(unsafe) private var visClassicWaveRight: [UInt8] = Array(repeating: 128, count: 576)
@@ -736,6 +813,12 @@ class SpectrumAnalyzerView: NSView {
             matrixIntensity = intensity
         }
         renderMatrixIntensity = matrixIntensity
+
+        if let saved = UserDefaults.standard.string(forKey: "ekgStyle"),
+           let style = EKGStyle(rawValue: saved) {
+            ekgStyle = style
+        }
+        renderEKGStyle = ekgStyle
         
         // Initialize display spectrum and sync to render-safe variables
         // Use max size to avoid any resizing during mode switches
@@ -803,6 +886,14 @@ class SpectrumAnalyzerView: NSView {
         // Observe playback state changes to ensure display link restarts when playback begins
         NotificationCenter.default.addObserver(self, selector: #selector(handlePlaybackStateChange),
                                                name: .audioPlaybackStateChanged, object: nil)
+
+        // Observe BPM detection updates for EKG mode's cardiac timing.
+        NotificationCenter.default.addObserver(self, selector: #selector(handleBPMUpdate(_:)),
+                                               name: .bpmUpdated, object: nil)
+
+        // Observe raw PCM amplitude for EKG peak height. This intentionally avoids frequency-band energy.
+        NotificationCenter.default.addObserver(self, selector: #selector(handlePCMAmplitudeUpdate(_:)),
+                                               name: .audioPCMDataUpdated, object: nil)
 
         // Observe 576-sample stereo waveform updates for vis_classic exact mode
         NotificationCenter.default.addObserver(self, selector: #selector(handleWaveform576Update(_:)),
@@ -901,6 +992,10 @@ class SpectrumAnalyzerView: NSView {
             if let savedMatIntensity = UserDefaults.standard.string(forKey: "matrixIntensity"),
                let matIntensity = MatrixIntensity(rawValue: savedMatIntensity) {
                 matrixIntensity = matIntensity
+            }
+            if let savedEKGStyle = UserDefaults.standard.string(forKey: "ekgStyle"),
+               let style = EKGStyle(rawValue: savedEKGStyle) {
+                ekgStyle = style
             }
         }
         
@@ -1012,6 +1107,45 @@ class SpectrumAnalyzerView: NSView {
             renderBlackFrame()
         }
     }
+
+    @objc private func handleBPMUpdate(_ notification: Notification) {
+        guard let bpm = notification.userInfo?["bpm"] as? Int else { return }
+        let foldedBPM = bpm > 0 ? Self.foldEKGBPM(Float(bpm)) : 0
+        Self.ekgSharedBPM = foldedBPM
+        dataLock.withLock {
+            ekgCurrentBPM = foldedBPM
+        }
+    }
+
+    private static func foldEKGBPM(_ bpm: Float) -> Float {
+        var folded = bpm
+        while folded > 100.0 {
+            folded *= 0.5
+        }
+        while folded > 0.0 && folded < 40.0 {
+            folded *= 2.0
+        }
+        return min(max(folded, 40.0), 100.0)
+    }
+
+    @objc private func handlePCMAmplitudeUpdate(_ notification: Notification) {
+        guard let pcm = notification.userInfo?["pcm"] as? [Float], !pcm.isEmpty else { return }
+
+        var sumSquares: Float = 0
+        var peak: Float = 0
+        for sample in pcm {
+            let magnitude = abs(sample)
+            peak = max(peak, magnitude)
+            sumSquares += sample * sample
+        }
+
+        let rms = sqrt(sumSquares / Float(pcm.count))
+        let level = min(max(pow(min(max(rms * 7.0 + peak * 0.45, 0.0), 1.0), 0.58), 0.0), 1.0)
+        Self.ekgSharedAmplitudeTarget = level
+        dataLock.withLock {
+            ekgTargetAmplitudeLevel = level
+        }
+    }
     
     // MARK: - Metal Setup
     
@@ -1054,6 +1188,7 @@ class SpectrumAnalyzerView: NSView {
         setupElectricityPipelines()
         setupMatrixPipelines()
         setupSnowPipelines()
+        setupEKGPipelines()
         
         // Create buffers
         setupBuffers()
@@ -1085,7 +1220,7 @@ class SpectrumAnalyzerView: NSView {
         case .electricity:
             // Lightning is fragment-heavy at fullscreen sizes.
             return 1.0
-        case .cosmic, .matrix, .snow:
+        case .cosmic, .matrix, .snow, .ekg:
             // Slight cap keeps these smooth while preserving detail.
             return min(baseScale, 1.25)
         default:
@@ -1193,6 +1328,8 @@ class SpectrumAnalyzerView: NSView {
                 pipelineState = matrixRenderPipeline
             case .snow:
                 pipelineState = snowRenderPipeline
+            case .ekg:
+                pipelineState = ekgRenderPipeline
             case .visClassicExact:
                 pipelineState = nil
             }
@@ -1270,6 +1407,9 @@ class SpectrumAnalyzerView: NSView {
         
         // Snow mode buffers
         snowParamsBuffer = device.makeBuffer(length: MemoryLayout<SnowParams>.stride, options: .storageModeShared)
+
+        // EKG mode buffers
+        ekgParamsBuffer = device.makeBuffer(length: MemoryLayout<EKGParams>.stride, options: .storageModeShared)
     }
     
     /// Set up flame compute and render pipelines
@@ -1418,6 +1558,37 @@ class SpectrumAnalyzerView: NSView {
             NSLog("SpectrumAnalyzerView: Snow pipeline created")
         } catch {
             NSLog("SpectrumAnalyzerView: Snow shader error: \(error)")
+        }
+    }
+
+    /// Set up EKG mode render pipeline
+    private func setupEKGPipelines() {
+        guard let device = device else { return }
+        guard let url = BundleHelper.url(forResource: "EKGShaders", withExtension: "metal"),
+              let src = try? String(contentsOf: url, encoding: .utf8) else {
+            NSLog("SpectrumAnalyzerView: EKGShaders.metal not found")
+            return
+        }
+        do {
+            let lib = try device.makeLibrary(source: src, options: nil)
+            if let vf = lib.makeFunction(name: "ekg_vertex"),
+               let updateFF = lib.makeFunction(name: "ekg_update_fragment"),
+               let compositeFF = lib.makeFunction(name: "ekg_composite_fragment") {
+                let updateDescriptor = MTLRenderPipelineDescriptor()
+                updateDescriptor.vertexFunction = vf
+                updateDescriptor.fragmentFunction = updateFF
+                updateDescriptor.colorAttachments[0].pixelFormat = .rgba16Float
+                ekgUpdatePipeline = try device.makeRenderPipelineState(descriptor: updateDescriptor)
+
+                let compositeDescriptor = MTLRenderPipelineDescriptor()
+                compositeDescriptor.vertexFunction = vf
+                compositeDescriptor.fragmentFunction = compositeFF
+                compositeDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+                ekgRenderPipeline = try device.makeRenderPipelineState(descriptor: compositeDescriptor)
+            }
+            NSLog("SpectrumAnalyzerView: EKG pipeline created")
+        } catch {
+            NSLog("SpectrumAnalyzerView: EKG shader error: \(error)")
         }
     }
 
@@ -1656,6 +1827,10 @@ class SpectrumAnalyzerView: NSView {
             renderSnow(drawable: drawable)
             return
         }
+        if currentMode == .ekg {
+            renderEKG(drawable: drawable)
+            return
+        }
         if currentMode == .visClassicExact {
             renderVisClassicExact(drawable: drawable)
             return
@@ -1679,6 +1854,8 @@ class SpectrumAnalyzerView: NSView {
             activePipeline = nil  // Handled by renderMatrix() above
         case .snow:
             activePipeline = nil  // Handled by renderSnow() above
+        case .ekg:
+            activePipeline = nil  // Handled by renderEKG() above
         case .visClassicExact:
             activePipeline = nil  // Handled by renderVisClassicExact() above
         }
@@ -1780,6 +1957,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Handled by renderMatrix() above
         case .snow:
             break  // Handled by renderSnow() above
+        case .ekg:
+            break  // Handled by renderEKG() above
         case .visClassicExact:
             break  // Handled by renderVisClassicExact() above
         }
@@ -2380,6 +2559,146 @@ class SpectrumAnalyzerView: NSView {
         cb.commit()
     }
 
+    /// Render EKG mode: BPM-clocked ECG trace with no frequency-energy input
+    private func renderEKG(drawable: CAMetalDrawable) {
+        guard let cb = commandQueue?.makeCommandBuffer(),
+              let updatePL = ekgUpdatePipeline,
+              let renderPL = ekgRenderPipeline else {
+            inFlightSemaphore.signal(); return
+        }
+
+        let state = dataLock.withLock { () -> (
+            time: Float,
+            bpm: Float,
+            beatPhase: Float,
+            amplitude: Float,
+            scrollDelta: Float,
+            noise: Float,
+            style: EKGStyle
+        ) in
+            let localTime = Float(CACurrentMediaTime() - spectrumAnalyzerEKGSharedClockStart)
+            animationTime = localTime
+            let frameDelta = ekgLastRenderTime > 0 ? min(max(localTime - ekgLastRenderTime, 1.0 / 120.0), 1.0 / 20.0) : 1.0 / 60.0
+            ekgLastRenderTime = localTime
+
+            ekgCurrentBPM = Self.ekgSharedBPM
+            ekgTargetAmplitudeLevel = Self.ekgSharedAmplitudeTarget
+
+            let detectedBPM = ekgCurrentBPM > 0 ? ekgCurrentBPM : 80.0
+            let tempoHz = detectedBPM / 60.0
+            let beatClock = localTime * tempoHz
+            ekgBeatPhase = beatClock - floor(beatClock)
+
+            let phaseDistance = min(ekgBeatPhase, 1.0 - ekgBeatPhase)
+            let qrsPulse = exp(-pow(phaseDistance / 0.075, 2.0))
+            let targetNoise = 0.025 + qrsPulse * 0.025
+            ekgNoiseLevel += (targetNoise - ekgNoiseLevel) * 0.12
+            let amplitudeRate: Float = ekgTargetAmplitudeLevel > ekgAmplitudeLevel ? 0.28 : 0.075
+            ekgAmplitudeLevel += (ekgTargetAmplitudeLevel - ekgAmplitudeLevel) * amplitudeRate
+
+            return (
+                time: localTime,
+                bpm: detectedBPM,
+                beatPhase: ekgBeatPhase,
+                amplitude: ekgAmplitudeLevel,
+                scrollDelta: frameDelta / 5.6 * 0.965,
+                noise: ekgNoiseLevel,
+                style: renderEKGStyle
+            )
+        }
+
+        let viewport = drawableViewportSize(drawable)
+        guard let (sourceTrace, destinationTrace) = ensureEKGTraceTextures(
+            width: drawable.texture.width,
+            height: drawable.texture.height
+        ) else {
+            inFlightSemaphore.signal(); return
+        }
+
+        if let buf = ekgParamsBuffer {
+            let p = buf.contents().bindMemory(to: EKGParams.self, capacity: 1)
+            p.pointee = EKGParams(
+                viewportSize: viewport,
+                time: state.time,
+                bpm: state.bpm,
+                beatPhase: state.beatPhase,
+                amplitudeLevel: state.amplitude,
+                noiseLevel: state.noise,
+                scrollDelta: state.scrollDelta,
+                brightnessBoost: brightnessBoost,
+                colorScheme: state.style.colorScheme
+            )
+        }
+
+        if ekgTraceNeedsClear {
+            let clearPass = MTLRenderPassDescriptor()
+            clearPass.colorAttachments[0].texture = sourceTrace
+            clearPass.colorAttachments[0].loadAction = .clear
+            clearPass.colorAttachments[0].storeAction = .store
+            clearPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+            if let enc = cb.makeRenderCommandEncoder(descriptor: clearPass) {
+                enc.endEncoding()
+            }
+            ekgTraceNeedsClear = false
+        }
+
+        let updatePass = MTLRenderPassDescriptor()
+        updatePass.colorAttachments[0].texture = destinationTrace
+        updatePass.colorAttachments[0].loadAction = .clear
+        updatePass.colorAttachments[0].storeAction = .store
+        updatePass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+
+        if let enc = cb.makeRenderCommandEncoder(descriptor: updatePass) {
+            enc.setRenderPipelineState(updatePL)
+            enc.setFragmentBuffer(ekgParamsBuffer, offset: 0, index: 0)
+            enc.setFragmentTexture(sourceTrace, index: 0)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+            enc.endEncoding()
+        }
+
+        let rpd = MTLRenderPassDescriptor()
+        rpd.colorAttachments[0].texture = drawable.texture
+        rpd.colorAttachments[0].loadAction = .clear
+        rpd.colorAttachments[0].storeAction = .store
+        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.015, blue: 0.012, alpha: 1)
+
+        if let enc = cb.makeRenderCommandEncoder(descriptor: rpd) {
+            enc.setRenderPipelineState(renderPL)
+            enc.setFragmentBuffer(ekgParamsBuffer, offset: 0, index: 0)
+            enc.setFragmentTexture(destinationTrace, index: 0)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+            enc.endEncoding()
+        }
+
+        ekgTraceSourceIsA.toggle()
+        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
+        cb.present(drawable)
+        cb.commit()
+    }
+
+    private func ensureEKGTraceTextures(width: Int, height: Int) -> (MTLTexture, MTLTexture)? {
+        guard let device = device, width > 0, height > 0 else { return nil }
+        let size = CGSize(width: width, height: height)
+        if ekgTraceTextureA == nil || ekgTraceTextureB == nil || ekgTraceLastDrawableSize != size {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .rgba16Float,
+                width: width,
+                height: height,
+                mipmapped: false
+            )
+            descriptor.usage = [.renderTarget, .shaderRead]
+            descriptor.storageMode = .private
+            ekgTraceTextureA = device.makeTexture(descriptor: descriptor)
+            ekgTraceTextureB = device.makeTexture(descriptor: descriptor)
+            ekgTraceLastDrawableSize = size
+            ekgTraceSourceIsA = true
+            ekgTraceNeedsClear = true
+        }
+
+        guard let a = ekgTraceTextureA, let b = ekgTraceTextureB else { return nil }
+        return ekgTraceSourceIsA ? (a, b) : (b, a)
+    }
+
     /// Render vis_classic exact mode: CPU frame generation in C++ core, then blit to drawable.
     private func renderVisClassicExact(drawable: CAMetalDrawable) {
         guard let device = device,
@@ -2612,6 +2931,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Matrix handles its own state in renderMatrix()
         case .snow:
             break  // Snow handles its own state in renderSnow()
+        case .ekg:
+            break  // EKG handles its own state in renderEKG()
         case .visClassicExact:
             break  // vis_classic exact mode renders from CPU frame output
         }
@@ -3004,6 +3325,8 @@ class SpectrumAnalyzerView: NSView {
             break  // Matrix updates its own buffers in renderMatrix()
         case .snow:
             break  // Snow updates its own buffers in renderSnow()
+        case .ekg:
+            break  // EKG updates its own buffers in renderEKG()
         case .visClassicExact:
             break  // vis_classic exact mode does not use shader parameter buffers
         }
@@ -3100,6 +3423,13 @@ class SpectrumAnalyzerView: NSView {
 
             visClassicWaveLeft = Array(repeating: 128, count: 576)
             visClassicWaveRight = Array(repeating: 128, count: 576)
+
+            ekgBeatPhase = 0
+            ekgAmplitudeLevel = 0.5
+            ekgTargetAmplitudeLevel = 0.5
+            ekgNoiseLevel = 0.04
+            ekgLastRenderTime = 0
+            ekgTraceNeedsClear = true
         }
         NSLog("SpectrumAnalyzerView: State reset")
     }

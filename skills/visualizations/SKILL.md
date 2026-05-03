@@ -11,7 +11,7 @@ Related but separate from the visualization stack is the standalone waveform win
 
 ## Main Window Visualization
 
-The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports nine rendering modes.
+The main window's built-in visualization area (76x16 pixels in Winamp coordinates) supports ten rendering modes.
 
 ### Modes
 
@@ -26,6 +26,7 @@ The main window's built-in visualization area (76x16 pixels in Winamp coordinate
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks |
 | **Matrix** | Falling digital rain with procedural glyphs mapped to spectrum bands |
 | **Snow** | Audio-reactive snowfall with flurry-to-blizzard intensity and bass-driven wind gusts |
+| **EKG** | Realistic high-resolution ECG monitor trace synchronized to detected BPM and waveform amplitude, with selectable monitor palettes |
 
 ### Switching Modes
 
@@ -253,6 +254,7 @@ Participates in docking system with Main, EQ, and Playlist:
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks (8 color schemes) |
 | **Matrix** | Falling digital rain with procedural glyphs (5 color schemes, 2 intensity presets) |
 | **Snow** | Layered procedural snowfall with spectrum-shaped density, gusting drift, and soft atmospheric haze |
+| **EKG** | Beat-synced ECG monitor with phosphor trace, medical grid, scan glow, BPM-driven QRS pulses, PCM amplitude-driven peak height, and selectable palettes |
 
 ### Switching Modes
 
@@ -359,6 +361,32 @@ Iconic falling digital rain from The Matrix.
 
 **Technical**: Single render pass with hash-based segment patterns, multi-stream rain simulation. Phosphor glow samples 8 neighbors (glowRange capped to 1 for both Subtle and Intense). 60 FPS.
 
+### EKG Mode Details
+
+Realistic electrocardiogram monitor visualization.
+
+**Visual Elements:**
+- Procedural P-QRS-T ECG waveform with smooth antialiasing
+- Medical monitor grid with fine and major subdivisions
+- Green phosphor trace, glow, scan head, scanlines, vignette, and analog monitor noise
+- QRS timing pulses from the BPM clock
+- R-peaks are placed on a fixed seconds-wide monitor timebase, so faster BPM produces closer peak spacing
+- Peak height follows smoothed raw PCM amplitude without using frequency energy
+- Persistent ping-pong trace texture preserves already-drawn history; only the scan-head region is redrawn
+- Larger vertical scale and lower baseline use more of the monitor area
+- Selectable styles: Clinical, Cyan, Amber, Neon, Crimson, Ice
+- Subtle per-beat procedural variance keeps the trace alive without fighting amplitude response
+
+**Audio Reactivity:**
+- Detected BPM drives the cardiac clock when available, folded into a 40-100 BPM display range
+- Fast tempos are halved until they fit the EKG range; unusually slow readings are doubled
+- Smoothed raw PCM amplitude controls QRS/R-peak height
+- No spectrum or frequency-band energy is sampled in this mode
+- Defaults to 80 BPM when no confident BPM has been detected yet
+- EKG Style is available in the spectrum window context menu and the main-window Visuals menu when EKG is active
+
+**Technical**: Two-pass Metal path: an update pass scrolls/preserves the persistent trace texture and draws only the scan-head band; a composite pass renders the monitor grid, glow, and stored trace. Uses `.bpmUpdated` notifications for timing and `.audioPCMDataUpdated` for raw-amplitude scaling. 60 FPS.
+
 ### Responsiveness Modes
 
 Controls how quickly bars fall:
@@ -374,8 +402,8 @@ Controls how quickly bars fall:
 
 | Feature | Album Art | ProjectM/MilkDrop | Spectrum Analyzer |
 |---------|-----------|-------------------|-------------------|
-| **Visual Style** | Transformed artwork | Procedural graphics | Frequency bars/vis_classic/Fire/JWST/Lightning/Matrix/Snow |
-| **Effect Count** | 30 built-in | 100s of presets | 9 modes |
+| **Visual Style** | Transformed artwork | Procedural graphics | Frequency bars/vis_classic/Fire/JWST/Lightning/Matrix/Snow/EKG |
+| **Effect Count** | 30 built-in | 100s of presets | 10 modes |
 | **Customization** | Intensity adjustment | Full preset ecosystem | Mode + decay + style presets |
 | **GPU Tech** | Core Image (Metal) | OpenGL shaders | Metal shaders + compute |
 | **Audio Response** | Spectrum bands | PCM waveform + beats | 75-band spectrum / energy-driven |
@@ -403,7 +431,7 @@ Controls how quickly bars fall:
 - Monitoring audio levels
 - Classic Winamp spectrum aesthetic
 - Larger display complements main window
-- Fire/JWST/Lightning/Matrix modes for ambient visuals
+- Fire/JWST/Lightning/Matrix/EKG modes for ambient visuals
 
 ## Key Files
 
@@ -436,6 +464,7 @@ Controls how quickly bars fall:
 - `Visualization/ElectricityShaders.metal` - Lightning mode fragment shaders
 - `Visualization/MatrixShaders.metal` - Matrix mode fragment shaders
 - `Visualization/SnowShaders.metal` - Snow mode fragment shaders
+- `Visualization/EKGShaders.metal` - EKG mode fragment shaders
 - `Sources/CVisClassicCore/` - Portable C/C++ vis_classic core implementation and C API
 - `App/SpectrumWindowProviding.swift` - Protocol abstracting classic/modern
 
