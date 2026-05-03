@@ -136,6 +136,12 @@ struct StatsOverviewView: View {
                 )
                 .frame(height: 180)
 
+                InternetRadioSection(
+                    rows: agent.topRadioStations,
+                    totalSeconds: agent.radioListenSeconds,
+                    skinTextColor: skinTextColor
+                )
+
                 GenreChartView(
                     rows: agent.genreBreakdown,
                     selected: Binding(
@@ -172,12 +178,6 @@ struct StatsOverviewView: View {
                     )
                 )
                 .frame(height: 220)
-
-                InternetRadioSection(
-                    rows: agent.topRadioStations,
-                    totalSeconds: agent.radioListenSeconds,
-                    skinTextColor: skinTextColor
-                )
 
                 TimeSeriesChartView(agent: agent, skinTextColor: skinTextColor)
                     .frame(height: 220)
