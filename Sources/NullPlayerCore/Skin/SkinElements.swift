@@ -721,10 +721,10 @@ public struct SkinElements {
             public static let serverBarHeight: CGFloat = 24
             public static let searchBarHeight: CGFloat = 26
             public static let statusBarHeight: CGFloat = 6  // Bottom padding
-            public static let scrollbarWidth: CGFloat = 10
+            public static let scrollbarWidth: CGFloat = 0
             public static let alphabetWidth: CGFloat = 16
-            public static let leftBorder: CGFloat = 6
-            public static let rightBorder: CGFloat = 6
+            public static let leftBorder: CGFloat = 12
+            public static let rightBorder: CGFloat = 12
             public static let padding: CGFloat = 3
         }
         

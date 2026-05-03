@@ -768,8 +768,8 @@ struct SkinElements {
             static let statusBarHeight: CGFloat = 6  // Bottom padding
             static let scrollbarWidth: CGFloat = 0   // No scrollbar - users scroll with trackpad/wheel
             static let alphabetWidth: CGFloat = 16
-            static let leftBorder: CGFloat = 6
-            static let rightBorder: CGFloat = 6
+            static let leftBorder: CGFloat = 12
+            static let rightBorder: CGFloat = 12
             static let padding: CGFloat = 3
         }
         
