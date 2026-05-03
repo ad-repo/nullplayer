@@ -2645,20 +2645,21 @@ class SkinRenderer {
                                pressedButton: PlexBrowserButtonType?, scrollPosition: CGFloat) {
         let layout = SkinElements.PlexBrowser.Layout.self
         let titleHeight = layout.titleBarHeight  // 20px
-        let borderWidth: CGFloat = 3
+        let leftBorder = layout.leftBorder
+        let rightBorder = layout.rightBorder
         let statusHeight = layout.statusBarHeight
-        
+
         // Fill background with black first (like ProjectM does)
         // This ensures any gaps between sprites show black, not skin colors
         NSColor.black.setFill()
         context.fill(bounds)
-        
+
         // Fill only the CONTENT area with playlist background (not title bar or borders)
         // This prevents skin color from showing through sprite gaps
         let contentArea = NSRect(
-            x: borderWidth,
+            x: leftBorder,
             y: titleHeight,
-            width: bounds.width - borderWidth * 2,
+            width: bounds.width - leftBorder - rightBorder,
             height: bounds.height - titleHeight - statusHeight
         )
         skin.playlistColors.normalBackground.setFill()
