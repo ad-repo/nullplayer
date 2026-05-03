@@ -312,6 +312,7 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
 extension ProjectMWindowController: NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         guard let window = window else { return }
+        if isCustomFullscreen { return }
         let newOrigin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: newOrigin)
     }
@@ -335,7 +336,9 @@ extension ProjectMWindowController: NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
         projectMView.needsDisplay = true
         // Bring all app windows to front when this window gets focus
-        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
+        if !isCustomFullscreen {
+            WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
+        }
     }
     
     func windowDidResignKey(_ notification: Notification) {

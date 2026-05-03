@@ -83,6 +83,14 @@ class AudioEngine {
         let pendingRepeatOrder: [Int]?
     }
 
+    private struct RadioSession {
+        let track: Track
+        let stationURL: URL
+        var startedAt: Date
+        var pausedAccumulator: TimeInterval
+        var lastPauseStartedAt: Date?
+    }
+
     static func freezeLocalPlaybackClockForSleep(
         currentTime: TimeInterval,
         playbackStartDate: Date,
@@ -142,6 +150,7 @@ class AudioEngine {
     /// This routes audio through AVAudioEngine so EQ affects streaming audio
     private var streamingPlayer: StreamingAudioPlayer?
     private var isStreamingPlayback: Bool = false
+    private var streamingPlaybackConfirmed: Bool = false
     private var isLoadingNewStreamingTrack: Bool = false
     
     /// Guard against concurrent loadTrack() calls which can cause both local and streaming players to be active
@@ -188,6 +197,7 @@ class AudioEngine {
                 object: self,
                 userInfo: ["state": state]
             )
+            handleRadioSessionPlaybackStateChange(from: oldValue, to: state)
         }
     }
     
@@ -366,6 +376,9 @@ class AudioEngine {
     
     /// Timer for time updates
     private var timeUpdateTimer: Timer?
+
+    private let radioSessionCheckpointInterval: TimeInterval = 30 * 60
+    private var activeRadioSession: RadioSession?
     
     /// Spectrum analyzer data (75 bands for classic skin-style visualization)
     private(set) var spectrumData: [Float] = Array(repeating: 0, count: 75)
@@ -2457,6 +2470,7 @@ class AudioEngine {
             let trackDuration = self.duration
             self.lastReportedTime = current
             self.delegate?.audioEngineDidUpdateTime(current: current, duration: trackDuration)
+            self.checkpointActiveRadioSessionIfNeeded()
             
             // Update Plex playback position (for scrobble threshold detection)
             PlexPlaybackReporter.shared.updatePosition(current)
@@ -2523,6 +2537,125 @@ class AudioEngine {
         // Add to common modes so it runs during menu tracking and other modal states
         RunLoop.main.add(timer, forMode: .common)
         timeUpdateTimer = timer
+    }
+
+    private func handleRadioSessionPlaybackStateChange(from oldState: PlaybackState, to newState: PlaybackState) {
+        switch newState {
+        case .playing:
+            startOrResumeActiveRadioSessionIfNeeded()
+        case .paused:
+            if oldState == .playing {
+                pauseActiveRadioSessionIfNeeded()
+            }
+        case .stopped:
+            flushActiveRadioSession()
+        }
+    }
+
+    private func startOrResumeActiveRadioSessionIfNeeded() {
+        guard let track = currentTrack, track.playHistorySource == .radio else {
+            flushActiveRadioSession()
+            return
+        }
+        guard isRadioPlaybackAudibleNow else {
+            pauseActiveRadioSessionIfNeeded()
+            return
+        }
+
+        let now = Date()
+        if let existing = activeRadioSession {
+            guard existing.stationURL == track.url else {
+                flushActiveRadioSession()
+                activeRadioSession = RadioSession(
+                    track: track,
+                    stationURL: track.url,
+                    startedAt: now,
+                    pausedAccumulator: 0,
+                    lastPauseStartedAt: nil
+                )
+                return
+            }
+
+            if let pauseStartedAt = existing.lastPauseStartedAt {
+                activeRadioSession?.pausedAccumulator += now.timeIntervalSince(pauseStartedAt)
+                activeRadioSession?.lastPauseStartedAt = nil
+            }
+            return
+        }
+
+        activeRadioSession = RadioSession(
+            track: track,
+            stationURL: track.url,
+            startedAt: now,
+            pausedAccumulator: 0,
+            lastPauseStartedAt: nil
+        )
+    }
+
+    private func pauseActiveRadioSessionIfNeeded() {
+        guard activeRadioSession != nil,
+              activeRadioSession?.lastPauseStartedAt == nil else { return }
+        activeRadioSession?.lastPauseStartedAt = Date()
+    }
+
+    private var isRadioPlaybackAudibleNow: Bool {
+        if let session = CastManager.shared.activeSession,
+           CastManager.shared.currentCast == .audio {
+            return session.playbackStartDate != nil
+        }
+        return !isStreamingPlayback || streamingPlaybackConfirmed
+    }
+
+    private func checkpointActiveRadioSessionIfNeeded() {
+        guard state == .playing,
+              let session = activeRadioSession,
+              session.lastPauseStartedAt == nil else { return }
+
+        let now = Date()
+        let listened = max(0, now.timeIntervalSince(session.startedAt) - session.pausedAccumulator)
+        guard listened >= radioSessionCheckpointInterval else { return }
+
+        recordRadioPlayEvent(for: session, listened: listened, playedAt: now, skipped: false)
+        activeRadioSession = RadioSession(
+            track: session.track,
+            stationURL: session.stationURL,
+            startedAt: now,
+            pausedAccumulator: 0,
+            lastPauseStartedAt: nil
+        )
+    }
+
+    func flushActiveRadioSession(skipped: Bool = false) {
+        guard var session = activeRadioSession else { return }
+
+        let now = Date()
+        if let pauseStartedAt = session.lastPauseStartedAt {
+            session.pausedAccumulator += now.timeIntervalSince(pauseStartedAt)
+            session.lastPauseStartedAt = nil
+        }
+
+        let listened = max(0, now.timeIntervalSince(session.startedAt) - session.pausedAccumulator)
+        activeRadioSession = nil
+        guard listened >= 1.0 else { return }
+
+        recordRadioPlayEvent(for: session, listened: listened, playedAt: now, skipped: skipped)
+    }
+
+    private func recordRadioPlayEvent(for session: RadioSession, listened: TimeInterval, playedAt: Date, skipped: Bool) {
+        _ = MediaLibraryStore.shared.insertPlayEvent(
+            trackId: nil,
+            trackURL: session.stationURL.absoluteString,
+            title: session.track.title,
+            artist: nil,
+            album: nil,
+            genre: session.track.genre,
+            playedAt: playedAt,
+            durationListened: listened,
+            source: PlayHistorySource.radio.rawValue,
+            skipped: skipped,
+            contentType: "radio",
+            outputDevice: CastManager.currentPlaybackDeviceName
+        )
     }
     
     /// Handle cast track completion - advance to next track
@@ -3686,6 +3819,7 @@ class AudioEngine {
         mixerNode.removeTap(onBus: 0)  // Critical: remove local spectrum tap
         audioFile = nil
         isStreamingPlayback = true
+        streamingPlaybackConfirmed = false
         
         // Reset spectrum analyzer state when switching sources
         NotificationCenter.default.post(name: NSNotification.Name("ResetSpectrumState"), object: nil)
@@ -5248,6 +5382,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // Map AudioStreaming state to our PlaybackState
         switch state {
         case .playing:
+            streamingPlaybackConfirmed = true
             self.state = .playing
             playbackStartDate = Date()
             suspendedLocalPlaybackClockForSleep = false
@@ -5258,8 +5393,14 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                 RadioManager.shared.streamDidConnect()
             }
         case .paused:
+            streamingPlaybackConfirmed = false
             self.state = .paused
         case .stopped:
+            guard !isLoadingNewStreamingTrack else {
+                NSLog("AudioEngine: Ignoring streaming stopped state during track switch")
+                return
+            }
+            streamingPlaybackConfirmed = false
             self.state = .stopped
             isSeekingStreaming = false
             // Cancel any pending reset work item
@@ -5267,6 +5408,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
             streamingSeekResetWorkItem = nil
         case .error:
             NSLog("AudioEngine: Streaming player entered error state")
+            streamingPlaybackConfirmed = false
             self.state = .stopped
             isSeekingStreaming = false
             // Cancel any pending seeks and reset work items

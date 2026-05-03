@@ -89,6 +89,45 @@ final class PlayHistoryStore: Sendable {
         """
     }
 
+    private var resolvedTVShowExpression: String {
+        """
+        COALESCE(
+            NULLIF(trim(pe.event_artist), ''),
+            NULLIF(trim(
+                CASE
+                    WHEN instr(pe.event_title, ' - S') > 0
+                    THEN substr(pe.event_title, 1, instr(pe.event_title, ' - S') - 1)
+                    ELSE pe.event_title
+                END
+            ), ''),
+            'Unknown'
+        )
+        """
+    }
+
+    func fetchTopArtists(filter: StatsFilterState) throws -> [TopDimensionRow] {
+        var (whereStr, params) = whereClause(for: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'music'", to: &whereStr)
+        return try fetchTopRows(expression: resolvedArtistExpression, whereStr: whereStr, params: params, limit: 250)
+    }
+
+    func fetchTopMovies(filter: StatsFilterState) throws -> [TopDimensionRow] {
+        var (whereStr, params) = whereClause(for: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'movie'", to: &whereStr)
+        return try fetchTopRows(
+            expression: "COALESCE(NULLIF(trim(pe.event_title), ''), 'Unknown')",
+            whereStr: whereStr,
+            params: params,
+            limit: 25
+        )
+    }
+
+    func fetchTopTVShows(filter: StatsFilterState) throws -> [TopDimensionRow] {
+        var (whereStr, params) = whereClause(for: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'tv'", to: &whereStr)
+        return try fetchTopRows(expression: resolvedTVShowExpression, whereStr: whereStr, params: params, limit: 25)
+    }
+
     func fetchTopDimension(dimension: StatsDimension, filter: StatsFilterState) throws -> [TopDimensionRow] {
         let dimensionExpr: String
         switch dimension {
@@ -105,9 +144,14 @@ final class PlayHistoryStore: Sendable {
         }
         let limit = dimension == .artist ? 250 : 25
         var (whereStr, params) = whereClause(for: filter)
+        switch dimension {
+        case .source, .album, .genre, .artist:
+            addCondition("COALESCE(pe.content_type, 'music') <> 'radio'", to: &whereStr)
+        case .outputDevice:
+            break
+        }
         if dimension == .outputDevice {
-            let extra = "NULLIF(trim(pe.output_device), '') IS NOT NULL"
-            whereStr = whereStr.isEmpty ? "WHERE \(extra)" : "\(whereStr) AND \(extra)"
+            addCondition("NULLIF(trim(pe.output_device), '') IS NOT NULL", to: &whereStr)
         }
         let sql = """
             SELECT \(dimensionExpr), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
@@ -126,6 +170,67 @@ final class PlayHistoryStore: Sendable {
             let displayName = dimension == .source ? PlayHistorySource.displayName(for: name) : name
             return TopDimensionRow(id: name, displayName: displayName, playCount: count, totalMinutes: mins)
         }
+    }
+
+    private func fetchTopRows(expression: String, whereStr: String, params: [Binding?], limit: Int) throws -> [TopDimensionRow] {
+        let sql = """
+            SELECT \(expression), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
+            \(whereStr)
+            GROUP BY 1
+            ORDER BY 2 DESC
+            LIMIT \(limit)
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
+        let stmt = try db.prepare(sql, params)
+        return stmt.map { row in
+            let name = row[0] as? String ?? "Unknown"
+            let count = Int(row[1] as? Int64 ?? 0)
+            let mins = row[2] as? Double ?? 0
+            return TopDimensionRow(id: name, displayName: name, playCount: count, totalMinutes: mins)
+        }
+    }
+
+    func fetchTopRadioStations(filter: StatsFilterState) throws -> [TopDimensionRow] {
+        var (whereStr, params) = whereClause(forRadio: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'radio'", to: &whereStr)
+
+        let groupExpr = "COALESCE(NULLIF(pe.track_url, ''), pe.event_title)"
+        let displayExpr = "COALESCE(NULLIF(trim(pe.event_title), ''), 'Unknown Station')"
+        let sql = """
+            SELECT \(groupExpr) AS gk,
+                   MAX(\(displayExpr)) AS name,
+                   COUNT(*),
+                   COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
+            \(historyFromClause)
+            \(whereStr)
+            GROUP BY gk
+            ORDER BY 3 DESC
+            LIMIT 50
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
+        let stmt = try db.prepare(sql, params)
+        return stmt.map { row in
+            let key = row[0] as? String ?? "Unknown Station"
+            let name = row[1] as? String ?? "Unknown Station"
+            let count = Int(row[2] as? Int64 ?? 0)
+            let mins = row[3] as? Double ?? 0
+            return TopDimensionRow(id: key, displayName: name, playCount: count, totalMinutes: mins)
+        }
+    }
+
+    func fetchRadioListenSeconds(filter: StatsFilterState) throws -> Double {
+        var (whereStr, params) = whereClause(forRadio: filter)
+        addCondition("COALESCE(pe.content_type, 'music') = 'radio'", to: &whereStr)
+
+        let sql = """
+            SELECT COALESCE(SUM(pe.duration_listened), 0.0)
+            \(historyFromClause)
+            \(whereStr)
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return 0 }
+        let stmt = try db.prepare(sql, params)
+        return stmt.makeIterator().next()?[0] as? Double ?? 0
     }
 
     func fetchTimeSeries(filter: StatsFilterState, granularity: StatsGranularity) throws -> [TimeSeriesRow] {
@@ -182,7 +287,8 @@ final class PlayHistoryStore: Sendable {
     }
 
     func fetchGenreBreakdown(filter: StatsFilterState) throws -> [TopDimensionRow] {
-        let (whereStr, params) = whereClause(for: filter)
+        var (whereStr, params) = whereClause(for: filter)
+        addCondition("COALESCE(pe.content_type, 'music') <> 'radio'", to: &whereStr)
         let sql = """
             SELECT COALESCE(NULLIF(trim(pe.event_genre), ''), 'Unknown'), COUNT(*), COALESCE(SUM(pe.duration_listened), 0.0) / 60.0
             \(historyFromClause)
@@ -304,6 +410,10 @@ final class PlayHistoryStore: Sendable {
 
     // MARK: - WHERE clause builder
 
+    private func addCondition(_ condition: String, to whereStr: inout String) {
+        whereStr = whereStr.isEmpty ? "WHERE \(condition)" : "\(whereStr) AND \(condition)"
+    }
+
     private func whereClause(for filter: StatsFilterState) -> (String, [Binding?]) {
         var conditions: [String] = []
         var params: [Binding?] = []
@@ -363,5 +473,15 @@ final class PlayHistoryStore: Sendable {
             return ("", params)
         }
         return ("WHERE " + conditions.joined(separator: " AND "), params)
+    }
+
+    private func whereClause(forRadio filter: StatsFilterState) -> (String, [Binding?]) {
+        // Radio stats only respect time range, output device, and skip filter —
+        // artist/album/genre/source/contentType dimensions don't apply to radio.
+        var stripped = StatsFilterState()
+        stripped.timeRange = filter.timeRange
+        stripped.selectedOutputDevice = filter.selectedOutputDevice
+        stripped.excludeSkipped = filter.excludeSkipped
+        return whereClause(for: stripped)
     }
 }

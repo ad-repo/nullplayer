@@ -1,9 +1,9 @@
 import Foundation
 import Combine
 
-enum StatsDimension { case artist, album, genre, source, outputDevice }
-enum StatsGranularity { case day, week, month }
-enum StatsTimeRange: Equatable, Hashable {
+enum StatsDimension: Sendable { case artist, album, genre, source, outputDevice }
+enum StatsGranularity: Sendable { case day, week, month }
+enum StatsTimeRange: Equatable, Hashable, Sendable {
     case last7Days, last30Days, last90Days, last365Days, allTime
     case custom(Date, Date)
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -28,7 +28,7 @@ enum StatsTimeRange: Equatable, Hashable {
     }
 }
 
-struct StatsFilterState: Equatable {
+struct StatsFilterState: Equatable, Sendable {
     var timeRange: StatsTimeRange = .last30Days
     var selectedArtist: String? = nil
     var selectedAlbum:  String? = nil
@@ -39,10 +39,29 @@ struct StatsFilterState: Equatable {
     var excludeSkipped: Bool = true
 }
 
+private struct StatsRefreshResult {
+    var playTimeSummaries: [PlayTimeSummaryRow]
+    var topArtists: [TopDimensionRow]
+    var topMovies: [TopDimensionRow]
+    var topTVShows: [TopDimensionRow]
+    var topRadioStations: [TopDimensionRow]
+    var radioListenSeconds: Double
+    var timeSeries: [TimeSeriesRow]
+    var genreBreakdown: [TopDimensionRow]
+    var sourceBreakdown: [TopDimensionRow]
+    var contentTypeBreakdown: [TopDimensionRow]
+    var outputDeviceBreakdown: [TopDimensionRow]
+    var recentEvents: [RecentEventRow]
+}
+
 @MainActor
 final class PlayHistoryAgent: ObservableObject {
     @Published var playTimeSummaries: [PlayTimeSummaryRow] = []
     @Published var topArtists:     [TopDimensionRow] = []
+    @Published var topMovies:      [TopDimensionRow] = []
+    @Published var topTVShows:     [TopDimensionRow] = []
+    @Published var topRadioStations: [TopDimensionRow] = []
+    @Published var radioListenSeconds: Double = 0
     @Published var timeSeries:     [TimeSeriesRow]   = []
     @Published var genreBreakdown: [TopDimensionRow] = []
     @Published var sourceBreakdown: [TopDimensionRow] = []
@@ -66,6 +85,10 @@ final class PlayHistoryAgent: ObservableObject {
     private var backfillTask: Task<Void, Never>?
     private var cachedPlayTimeSummaries: [PlayTimeSummaryRow]?
     private var cachedTopArtists:     [TopDimensionRow]?
+    private var cachedTopMovies:      [TopDimensionRow]?
+    private var cachedTopTVShows:     [TopDimensionRow]?
+    private var cachedTopRadioStations: [TopDimensionRow]?
+    private var cachedRadioListenSeconds: Double?
     private var cachedTimeSeries:     [TimeSeriesRow]?
     private var cachedGenreBreakdown: [TopDimensionRow]?
     private var cachedSourceBreakdown: [TopDimensionRow]?
@@ -79,7 +102,8 @@ final class PlayHistoryAgent: ObservableObject {
     func selectArtist(_ name: String?)  { filter.selectedArtist = name }
     func selectAlbum(_ name: String?)   { filter.selectedAlbum  = name }
     func selectGenre(_ name: String?)   { filter.selectedGenre  = name }
-    func selectSource(_ s: String?)     { filter.selectedSource = s }
+    // Internet radio is presented in its own section; music/video source filtering ignores it.
+    func selectSource(_ s: String?)     { filter.selectedSource = s == PlayHistorySource.radio.rawValue ? nil : s }
     func selectContentType(_ s: String?) { filter.selectedContentType = s }
     func selectOutputDevice(_ s: String?) { filter.selectedOutputDevice = s }
     func clearAllFilters()              { filter = StatsFilterState() }
@@ -110,6 +134,8 @@ final class PlayHistoryAgent: ObservableObject {
 
     private func invalidateCache() {
         cachedPlayTimeSummaries = nil; cachedTopArtists = nil
+        cachedTopMovies = nil; cachedTopTVShows = nil
+        cachedTopRadioStations = nil; cachedRadioListenSeconds = nil
         cachedTimeSeries = nil; cachedGenreBreakdown = nil
         cachedSourceBreakdown = nil; cachedContentTypeBreakdown = nil
         cachedOutputDeviceBreakdown = nil
@@ -127,32 +153,71 @@ final class PlayHistoryAgent: ObservableObject {
         isLoading = true
         error = nil
         do {
-            let result = try await Task(priority: .userInitiated) { [store, currentFilter, currentGranularity] in
+            let result = try await Task.detached(priority: .userInitiated) { [store, currentFilter, currentGranularity] in
                 try Task.checkCancellation()
-                let p = try store.fetchPlayTimeSummaries(filter: currentFilter)
+                let playTimeSummaries = try store.fetchPlayTimeSummaries(filter: currentFilter)
                 try Task.checkCancellation()
-                let a = try store.fetchTopDimension(dimension: .artist, filter: currentFilter)
+                let topArtists = try store.fetchTopArtists(filter: currentFilter)
                 try Task.checkCancellation()
-                let s = try store.fetchTimeSeries(filter: currentFilter, granularity: currentGranularity)
+                let topMovies = try store.fetchTopMovies(filter: currentFilter)
                 try Task.checkCancellation()
-                let g = try store.fetchGenreBreakdown(filter: currentFilter)
+                let topTVShows = try store.fetchTopTVShows(filter: currentFilter)
                 try Task.checkCancellation()
-                let o = try store.fetchTopDimension(dimension: .source, filter: currentFilter)
+                let topRadioStations = try store.fetchTopRadioStations(filter: currentFilter)
                 try Task.checkCancellation()
-                let c = try store.fetchContentTypeBreakdown(filter: currentFilter)
+                let radioListenSeconds = try store.fetchRadioListenSeconds(filter: currentFilter)
                 try Task.checkCancellation()
-                let d = try store.fetchTopDimension(dimension: .outputDevice, filter: currentFilter)
+                let timeSeries = try store.fetchTimeSeries(filter: currentFilter, granularity: currentGranularity)
                 try Task.checkCancellation()
-                let r = try store.fetchRecentEvents(filter: currentFilter)
-                return (p, a, s, g, o, c, d, r)
+                let genreBreakdown = try store.fetchGenreBreakdown(filter: currentFilter)
+                try Task.checkCancellation()
+                let sourceBreakdown = try store.fetchTopDimension(dimension: .source, filter: currentFilter)
+                try Task.checkCancellation()
+                let contentTypeBreakdown = try store.fetchContentTypeBreakdown(filter: currentFilter)
+                try Task.checkCancellation()
+                let outputDeviceBreakdown = try store.fetchTopDimension(dimension: .outputDevice, filter: currentFilter)
+                try Task.checkCancellation()
+                let recentEvents = try store.fetchRecentEvents(filter: currentFilter)
+                return StatsRefreshResult(
+                    playTimeSummaries: playTimeSummaries,
+                    topArtists: topArtists,
+                    topMovies: topMovies,
+                    topTVShows: topTVShows,
+                    topRadioStations: topRadioStations,
+                    radioListenSeconds: radioListenSeconds,
+                    timeSeries: timeSeries,
+                    genreBreakdown: genreBreakdown,
+                    sourceBreakdown: sourceBreakdown,
+                    contentTypeBreakdown: contentTypeBreakdown,
+                    outputDeviceBreakdown: outputDeviceBreakdown,
+                    recentEvents: recentEvents
+                )
             }.value
             try Task.checkCancellation()
-            (playTimeSummaries, topArtists, timeSeries, genreBreakdown, sourceBreakdown, contentTypeBreakdown, outputDeviceBreakdown, recentEvents) = result
-            cachedPlayTimeSummaries = result.0; cachedTopArtists = result.1
-            cachedTimeSeries = result.2; cachedGenreBreakdown = result.3
-            cachedSourceBreakdown = result.4; cachedContentTypeBreakdown = result.5
-            cachedOutputDeviceBreakdown = result.6
-            cachedRecentEvents = result.7
+            playTimeSummaries = result.playTimeSummaries
+            topArtists = result.topArtists
+            topMovies = result.topMovies
+            topTVShows = result.topTVShows
+            topRadioStations = result.topRadioStations
+            radioListenSeconds = result.radioListenSeconds
+            timeSeries = result.timeSeries
+            genreBreakdown = result.genreBreakdown
+            sourceBreakdown = result.sourceBreakdown
+            contentTypeBreakdown = result.contentTypeBreakdown
+            outputDeviceBreakdown = result.outputDeviceBreakdown
+            recentEvents = result.recentEvents
+            cachedPlayTimeSummaries = result.playTimeSummaries
+            cachedTopArtists = result.topArtists
+            cachedTopMovies = result.topMovies
+            cachedTopTVShows = result.topTVShows
+            cachedTopRadioStations = result.topRadioStations
+            cachedRadioListenSeconds = result.radioListenSeconds
+            cachedTimeSeries = result.timeSeries
+            cachedGenreBreakdown = result.genreBreakdown
+            cachedSourceBreakdown = result.sourceBreakdown
+            cachedContentTypeBreakdown = result.contentTypeBreakdown
+            cachedOutputDeviceBreakdown = result.outputDeviceBreakdown
+            cachedRecentEvents = result.recentEvents
         } catch is CancellationError {
             // Refresh was superseded by a newer request — discard results silently
         } catch {
