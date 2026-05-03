@@ -11,6 +11,7 @@ enum MainWindowVisMode: String, CaseIterable {
     case electricity = "Lightning"   // GPU lightning storm (Metal overlay)
     case matrix = "Matrix"           // Falling digital rain (Metal overlay)
     case snow = "Snow"               // Audio-reactive snowfall (Metal overlay)
+    case ekg = "EKG"                 // BPM-synced ECG monitor (Metal overlay)
     
     var displayName: String { rawValue }
     
@@ -29,6 +30,7 @@ enum MainWindowVisMode: String, CaseIterable {
         case .electricity: return .electricity
         case .matrix: return .matrix
         case .snow: return .snow
+        case .ekg: return .ekg
         }
     }
 }
@@ -373,6 +375,10 @@ class MainWindowView: NSView {
            let intensity = MatrixIntensity(rawValue: savedIntensity) {
             overlay.matrixIntensity = intensity
         }
+        if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowEKGStyle"),
+           let style = EKGStyle(rawValue: savedStyle) {
+            overlay.ekgStyle = style
+        }
         if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),
            let mode = SpectrumDecayMode(rawValue: savedDecay) {
             overlay.decayMode = mode
@@ -517,6 +523,11 @@ class MainWindowView: NSView {
             if let savedIntensity = UserDefaults.standard.string(forKey: "mainWindowMatrixIntensity"),
                let intensity = MatrixIntensity(rawValue: savedIntensity) {
                 overlay.matrixIntensity = intensity
+            }
+            // EKG settings
+            if let savedStyle = UserDefaults.standard.string(forKey: "mainWindowEKGStyle"),
+               let style = EKGStyle(rawValue: savedStyle) {
+                overlay.ekgStyle = style
             }
             // Decay/responsiveness
             if let savedDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode"),

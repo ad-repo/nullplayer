@@ -81,6 +81,7 @@ let package = Package(
                 .copy("Visualization/ElectricityShaders.metal"),
                 .copy("Visualization/MatrixShaders.metal"),
                 .copy("Visualization/SnowShaders.metal"),
+                .copy("Visualization/EKGShaders.metal"),
                 .copy("ModernSkin/BloomShader.metal")
             ],
             linkerSettings: [

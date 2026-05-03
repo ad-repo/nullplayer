@@ -12,7 +12,7 @@ Reference for local media library: scanning, persistence, NAS responsiveness, an
 | File discovery | `Utilities/LocalFileDiscovery.swift` |
 | Audio engine (NAS paths) | `Audio/AudioEngine.swift` |
 | Waveform (cue-sheet) | `Waveform/BaseWaveformView.swift` |
-| Play history (Data tab) | `Windows/ModernStats/PlayHistoryStore.swift`, `Windows/ModernStats/PlayHistoryAgent.swift` |
+| Play history (Data tab) | `Windows/ModernStats/PlayHistoryStore.swift`, `Windows/ModernStats/PlayHistoryAgent.swift`, `Windows/ModernStats/StatsContentView.swift` |
 
 ## Database Schema
 
@@ -30,6 +30,7 @@ Reference for local media library: scanning, persistence, NAS responsiveness, an
 - v3 → v4: migration adds extended metadata columns (`composer`, `comment`, `grouping`, `bpm`, `musical_key`, `isrc`, `copyright`, `musicbrainz_recording_id`, `musicbrainz_release_id`, `discogs_*`, `artwork_url`) via `ALTER TABLE … ADD COLUMN`.
 - v4 → v5: migration adds `play_events` table and indexes (see Tables below).
 - v5 → v6: migration adds `content_type` column to `play_events` (TEXT, nullable); backfills `'radio'` for source=radio rows, `'music'` for everything else.
+- v6 → v7: migration adds `output_device` column to `play_events` (TEXT, nullable). Records the active CoreAudio output device name, or the cast target name (Chromecast/Sonos/DLNA device) when a cast session is active. NULL for legacy rows. Supplied via `CastManager.currentPlaybackDeviceName` at call sites in `AudioEngine` and `VideoPlayerWindowController`.
 
 ### Tables
 
@@ -99,10 +100,11 @@ PK: `(track_url, artist_name, role)`. Indexes: `idx_track_artists_name`, `idx_tr
 | `source` | TEXT | `'local'`, `'plex'`, `'subsonic'`, `'jellyfin'`, `'emby'`, or `'radio'` |
 | `skipped` | INTEGER | 0/1, NOT NULL, default 0 |
 | `content_type` | TEXT? | Added v6. Values: `'music'`, `'movie'`, `'tv'`, `'radio'`, `'video'`. NULL treated as `'music'` in queries. Derived from `Track.playHistoryContentType`; video playback records from `VideoPlayerWindowController` set this explicitly via `beginPlaybackAnalyticsSession(contentType:)`. |
+| `output_device` | TEXT? | Added v7. Name of active audio output device (CoreAudio) or cast target device. NULL for legacy rows. |
 Indexes: `idx_play_events_played_at`, `idx_play_events_track_id`, `idx_play_events_source_time`.
-Queried by `PlayHistoryStore` (in `Windows/ModernStats/`) to power the Data tab in the Library Browser.
+Queried by `PlayHistoryStore` (in `Windows/ModernStats/`) to power the Data tab in both the modern Library Browser and the classic `PlexBrowserView`.
 
-**`insertPlayEvent` signature** (in `MediaLibraryStore`): takes `contentType: String = "music"` as a trailing parameter — defaults to music so all existing callers work unchanged. Pass `track.playHistoryContentType` at call sites that know the content type. `VideoPlayerWindowController` passes the content type explicitly.
+**`insertPlayEvent` signature** (in `MediaLibraryStore`): takes `contentType: String = "music"` and `outputDevice: String? = nil` as trailing parameters — both default so all existing callers work unchanged. Pass `track.playHistoryContentType` and `CastManager.currentPlaybackDeviceName` at call sites. Internet radio sessions pass `outputDevice` from `CastManager.currentPlaybackDeviceName` at the time the event is recorded.
 
 ### Key API Methods (MediaLibraryStore)
 
@@ -183,6 +185,33 @@ Reference pattern: `watchFolderSummaries()` in `MediaLibrary.swift`.
 
 ### Fast-track scan signatures
 `makeFastTrack` does **not** persist a scan signature. The signature (`scan_file_size`, `scan_mod_date`) is written only after metadata enrichment completes. This is intentional: if enrichment is interrupted, the file will be re-enriched on next scan.
+
+## Data Tab (Play History Analytics)
+
+Both `ModernLibraryBrowserView` and `PlexBrowserView` (classic) embed a Data tab backed by `PlayHistoryAgent` + `StatsContentView`.
+
+In `PlexBrowserView`, the tab is the `.history` case (displayed as "Data"). It is implemented via an `NSHostingView<StatsContentView>` created in `makeHistoryHostingView()` and reused across tab switches. The agent is a private `let historyAgent = PlayHistoryAgent()` instance on the view. Skin text color is forwarded on tab selection and on skin reload.
+
+**Charts in the Data tab overview:**
+- Play Time summary (day/week/month/year/all-time)
+- Top Artists (music only — excludes radio)
+- Top Movies / Top TV Shows (content-type specific)
+- Genre breakdown (excludes radio)
+- Sources breakdown (excludes radio; shows note directing to Internet Radio section)
+- Output Devices breakdown (filterable; NULL/empty device rows excluded)
+- Content Types donut
+- Internet Radio section (total listen time + Top Stations by play count/duration)
+- Plays Over Time time series
+
+**Output Devices chart** (`OutputDeviceChartView`): groups `play_events` by `COALESCE(NULLIF(trim(output_device), ''), 'Unknown')`, filtering out NULL/empty rows. Color assignment uses a deterministic hash of the device name mapped into a 12-color palette. Cast sessions record the Chromecast/Sonos/DLNA device name via `CastManager.currentPlaybackDeviceName`.
+
+**`PlayHistoryStore` query isolation:**
+- `fetchTopArtists` — music only (`content_type = 'music'`)
+- `fetchTopMovies` — movie only
+- `fetchTopTVShows` — tv only; extracts show name from `event_artist` first, falls back to parsing `"Show Name - S01E02"` title pattern
+- `fetchTopRadioStations` / `fetchRadioListenSeconds` — radio only; use `whereClause(forRadio:)` which only applies time range, output device, and skip filters
+- `fetchTopDimension(.artist/.source/.album/.genre)` — all exclude radio via `content_type <> 'radio'`
+- `fetchGenreBreakdown` — excludes radio
 
 ## Testing
 

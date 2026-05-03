@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.21.0
+
+### New Features
+
+- **Output device analytics** — play events now record which audio output device (or cast target) was active. A new Output Devices breakdown chart appears in the Data tab with the same filter-and-chip interaction as Source and Genre. Cast sessions record the Chromecast, Sonos, or DLNA device name instead of the local CoreAudio output.
+- **EKG visualization mode** — the main window and spectrum window now include a BPM-synced EKG mode in both classic and modern UI paths. The persistent Metal trace preserves already-drawn history while the scan head renders new beats, peak height follows raw PCM amplitude, and EKG Style menus offer Clinical, Cyan, Amber, Neon, Crimson, and Ice palettes.
+- **Classic library Data tab** — the classic library browser now has a Data tab with the same play-history analytics available in the modern UI, including time-range filtering and source/genre breakdowns.
+- **Media-specific Data tab charts** — the Data tab overview now shows separate Top Movies and Top TV Shows sections alongside Top Artists. TV episode events are grouped by show name. Internet radio listen sessions appear in a dedicated Internet Radio section ranked by station plays and total listen time.
+- **Internet radio play history** — internet radio sessions are now recorded in play history with pause-aware duration tracking, 30-minute checkpoints for long sessions, and app-quit flushing.
+
+### Improvements
+
+- **Modern marquee art padding balanced** — album artwork in the modern main window marquee now has equal padding on both sides.
+
+### Bug Fixes
+
+- **Dock icon size fixed** — the app icon is now correctly sized in the Dock, matching the visual weight of neighboring icons. The symbol cutout renders correctly on dark backgrounds.
+- **Output device color overflow fixed** — the hash function used to assign colors to output devices no longer traps on `Int.min` overflow.
+
 ## 0.20.0
 
 ### New Features

@@ -527,6 +527,8 @@ class ModernSpectrumView: NSView {
                 cycleLightningStyle(forward: false)
             } else if spectrumAnalyzerView?.qualityMode == .matrix {
                 cycleMatrixColor(forward: false)
+            } else if spectrumAnalyzerView?.qualityMode == .ekg {
+                cycleEKGStyle(forward: false)
             } else if spectrumAnalyzerView?.qualityMode == .visClassicExact {
                 _ = spectrumAnalyzerView?.loadPreviousVisClassicProfile()
             } else { super.keyDown(with: event) }
@@ -537,6 +539,8 @@ class ModernSpectrumView: NSView {
                 cycleLightningStyle(forward: true)
             } else if spectrumAnalyzerView?.qualityMode == .matrix {
                 cycleMatrixColor(forward: true)
+            } else if spectrumAnalyzerView?.qualityMode == .ekg {
+                cycleEKGStyle(forward: true)
             } else if spectrumAnalyzerView?.qualityMode == .visClassicExact {
                 _ = spectrumAnalyzerView?.loadNextVisClassicProfile()
             } else { super.keyDown(with: event) }
@@ -580,6 +584,13 @@ class ModernSpectrumView: NSView {
         guard let idx = schemes.firstIndex(of: spectrumAnalyzerView?.matrixColorScheme ?? .classic) else { return }
         let newIdx = forward ? (idx + 1) % schemes.count : (idx - 1 + schemes.count) % schemes.count
         spectrumAnalyzerView?.matrixColorScheme = schemes[newIdx]
+    }
+
+    private func cycleEKGStyle(forward: Bool) {
+        let styles = EKGStyle.allCases
+        guard let idx = styles.firstIndex(of: spectrumAnalyzerView?.ekgStyle ?? .clinical) else { return }
+        let newIdx = forward ? (idx + 1) % styles.count : (idx - 1 + styles.count) % styles.count
+        spectrumAnalyzerView?.ekgStyle = styles[newIdx]
     }
     
     // MARK: - Context Menu
@@ -706,6 +717,22 @@ class ModernSpectrumView: NSView {
             menu.addItem(matrixIntensityMenuItem)
         }
 
+        // EKG Style submenu (only when EKG mode active)
+        if spectrumAnalyzerView?.qualityMode == .ekg {
+            let ekgMenu = NSMenu()
+            let curStyle = spectrumAnalyzerView?.ekgStyle ?? .clinical
+            for style in EKGStyle.allCases {
+                let item = NSMenuItem(title: style.displayName, action: #selector(setEKGStyle(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = style
+                item.state = (curStyle == style) ? .on : .off
+                ekgMenu.addItem(item)
+            }
+            let ekgMenuItem = NSMenuItem(title: "EKG Style", action: nil, keyEquivalent: "")
+            ekgMenuItem.submenu = ekgMenu
+            menu.addItem(ekgMenuItem)
+        }
+
         // vis_classic profile controls (only when vis_classic mode is active)
         if spectrumAnalyzerView?.qualityMode == .visClassicExact {
             let profilesMenu = NSMenu()
@@ -826,6 +853,11 @@ class ModernSpectrumView: NSView {
     @objc private func setMatrixIntensity(_ sender: NSMenuItem) {
         guard let intensity = sender.representedObject as? MatrixIntensity else { return }
         spectrumAnalyzerView?.matrixIntensity = intensity
+    }
+
+    @objc private func setEKGStyle(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? EKGStyle else { return }
+        spectrumAnalyzerView?.ekgStyle = style
     }
 
     @objc private func setVisClassicProfile(_ sender: NSMenuItem) {

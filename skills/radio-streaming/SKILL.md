@@ -186,6 +186,93 @@ Key behavior:
 
 ---
 
+## 3. Internet Radio Play History
+
+Internet radio listen sessions are recorded in the shared `play_events` table (see local-library skill for schema). This is distinct from the per-source radio history databases used for playlist deduplication.
+
+### Session Tracking (AudioEngine)
+
+`AudioEngine` maintains an `activeRadioSession: RadioSession?` private struct:
+
+```swift
+private struct RadioSession {
+    let track: Track
+    let stationURL: URL
+    var startedAt: Date
+    var pausedAccumulator: TimeInterval    // total paused seconds
+    var lastPauseStartedAt: Date?          // non-nil while paused
+}
+```
+
+State transitions are driven by `handleRadioSessionPlaybackStateChange(from:to:)` called from the `state` property observer:
+
+| Transition | Action |
+|-----------|--------|
+| → `.playing` | `startOrResumeActiveRadioSessionIfNeeded()` |
+| `.playing` → `.paused` | `pauseActiveRadioSessionIfNeeded()` — records pause start |
+| → `.stopped` | `flushActiveRadioSession()` — writes event and nils session |
+
+**Station switches**: if the playing track's URL differs from `activeRadioSession.stationURL`, the old session is flushed and a new one starts.
+
+**Non-radio tracks**: if the track's `playHistorySource != .radio`, any active session is flushed immediately.
+
+### Audibility Guard (`isRadioPlaybackAudibleNow`)
+
+Sessions are only started/resumed when audio is actually being delivered. The guard checks:
+- For audio casts: `CastManager.shared.activeSession.playbackStartDate != nil`
+- For local streaming: `!isStreamingPlayback || streamingPlaybackConfirmed`
+
+`streamingPlaybackConfirmed` is set to `true` when `StreamingAudioPlayerDelegate` fires `.playing` state, and reset to `false` when streaming starts loading a new track or enters stopped/error state. This prevents recording time during buffering.
+
+### Long-Session Checkpoints
+
+A 30-minute checkpoint fires from the timer tick path (`checkpointActiveRadioSessionIfNeeded`). When `listened >= 30 * 60` and not paused:
+1. Writes a play event for the elapsed 30 minutes
+2. Resets `startedAt` to now with zero `pausedAccumulator`
+
+This prevents a single very long session from being lost if the app crashes before the station is stopped.
+
+### App-Quit Flush
+
+`AppDelegate.applicationWillTerminate` calls `audioEngine.flushActiveRadioSessionIfAny()` before any other teardown. This ensures in-progress sessions are recorded even when the user quits while radio is playing.
+
+### Play Event Schema
+
+Radio sessions write to `play_events` with:
+
+| Column | Value |
+|--------|-------|
+| `track_id` | `nil` |
+| `track_url` | Station stream URL (absolute string) |
+| `event_title` | Station name (`track.title`) |
+| `event_artist` | `nil` |
+| `event_genre` | Station genre if set |
+| `source` | `PlayHistorySource.radio.rawValue` (`"radio"`) |
+| `content_type` | `"radio"` |
+| `duration_listened` | Actual listen seconds (elapsed minus paused) |
+| `skipped` | `false` for normal stop/switch; `true` if skipped |
+| `output_device` | Active output or cast device name |
+
+Minimum threshold: sessions shorter than **1 second** are discarded.
+
+### Data Tab — Internet Radio Section
+
+`PlayHistoryStore` exposes two radio-specific queries:
+- `fetchTopRadioStations(filter:)` — groups by station URL (uses URL as id, title as display name), returns top 50 by play count
+- `fetchRadioListenSeconds(filter:)` — total `SUM(duration_listened)` for radio events
+
+Both use `whereClause(forRadio:)` which respects only time range, output device, and skip filters (artist/album/genre/source/content type don't apply to radio).
+
+`PlayHistoryAgent` publishes `topRadioStations: [TopDimensionRow]` and `radioListenSeconds: Double`.
+
+`InternetRadioSection` in `StatsContentView.swift` renders the section only when `!rows.isEmpty || totalSeconds > 0`. It shows total formatted listen time, a "Top N stations" label, and a `TopDimensionChartView` with `showsTotalMinutes: true` (displays `"plays / duration"` per row).
+
+Radio events are **excluded** from music/video charts: `fetchTopArtists`, `fetchGenreBreakdown`, and source/album/genre dimensions in `fetchTopDimension` all add `COALESCE(pe.content_type, 'music') <> 'radio'` conditions.
+
+The source filter UI silently drops any selection of the radio source (`selectSource(_:)` in `PlayHistoryAgent` maps `PlayHistorySource.radio.rawValue` → `nil`), since radio is presented separately.
+
+---
+
 ## 2. Library Radio
 
 Library Radio generates smart playlists from server/local sources with play-history deduplication.
