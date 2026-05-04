@@ -1060,7 +1060,7 @@ class AudioEngine {
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
 
-                guard CastManager.shared.activeSession == nil else {
+                guard CastManager.shared.activeSession == nil, !self.isAnyCastingActive else {
                     self.audioGraphRebuildDeferredForCast = true
                     NSLog("AudioEngine: Deferring graph rebuild while cast routing is active")
                     return
@@ -1074,12 +1074,16 @@ class AudioEngine {
         }
     }
 
-    private func rebuildAudioGraphIfDeferredAfterCast() {
-        guard audioGraphRebuildDeferredForCast else { return }
-        guard CastManager.shared.activeSession == nil else { return }
+    /// Applies a deferred local graph rebuild once cast routing has fully cleared.
+    /// Returns false when callers should avoid starting or scheduling playback.
+    @discardableResult
+    private func rebuildAudioGraphIfDeferredAfterCast() -> Bool {
+        guard audioGraphRebuildDeferredForCast else { return true }
+        guard CastManager.shared.activeSession == nil, !isAnyCastingActive else { return false }
 
         NSLog("AudioEngine: Applying deferred graph rebuild before local playback")
         rebuildAudioGraph()
+        return !audioGraphRebuildDeferredForCast
     }
     
     /// Rebuild the audio graph with the new output format
@@ -1612,6 +1616,7 @@ class AudioEngine {
         }
         
         guard currentTrack != nil || !playlist.isEmpty else { return }
+        guard rebuildAudioGraphIfDeferredAfterCast() else { return }
         
         if currentTrack == nil && !playlist.isEmpty {
             if shuffleEnabled {
@@ -1679,6 +1684,8 @@ class AudioEngine {
         
         if isStreamingPlayback {
             // Streaming playback via AudioStreaming (with EQ support)
+            guard rebuildAudioGraphIfDeferredAfterCast() else { return }
+
             NSLog("play(): Starting streaming playback via AudioStreaming (state: %@)", String(describing: streamingPlayer?.state ?? .stopped))
             
             // If streaming player is stopped (not paused), we need to reload the URL
@@ -1714,7 +1721,7 @@ class AudioEngine {
             EmbyPlaybackReporter.shared.trackResumed()
         } else {
             // Local file playback via AVAudioEngine
-            rebuildAudioGraphIfDeferredAfterCast()
+            guard rebuildAudioGraphIfDeferredAfterCast() else { return }
 
             // Ensure we have a valid audio file loaded before attempting to play
             guard audioFile != nil else {
@@ -3596,6 +3603,8 @@ class AudioEngine {
             WindowManager.shared.stopVideo()
         }
 
+        guard rebuildAudioGraphIfDeferredAfterCast() else { return }
+
         // Check if this is a remote URL (streaming)
         if track.url.scheme == "http" || track.url.scheme == "https" {
             loadStreamingTrack(track)
@@ -3633,6 +3642,8 @@ class AudioEngine {
             WindowManager.shared.stopVideo()
         }
 
+        guard rebuildAudioGraphIfDeferredAfterCast() else { return }
+
         currentTrack = track
         _currentTime = 0
         lastReportedTime = 0
@@ -3640,7 +3651,6 @@ class AudioEngine {
         stopTimeUpdates()
 
         prepareForLocalTrackLoad()
-        rebuildAudioGraphIfDeferredAfterCast()
 
         let openStart = CFAbsoluteTimeGetCurrent()
         deferredIOQueue.async { [weak self] in
@@ -3734,7 +3744,6 @@ class AudioEngine {
         let currentGeneration = playbackGeneration
 
         prepareForLocalTrackLoad()
-        rebuildAudioGraphIfDeferredAfterCast()
 
         do {
             let openStart = CFAbsoluteTimeGetCurrent()
@@ -3898,6 +3907,7 @@ class AudioEngine {
     private func loadStreamingTrack(_ track: Track) {
         NSLog("loadStreamingTrack: %@ - %@", track.artist ?? "Unknown", track.title)
         NSLog("  URL: %@", track.url.redacted)
+        guard rebuildAudioGraphIfDeferredAfterCast() else { return }
         
         // Stop local playback and REMOVE spectrum tap (streaming player has its own)
         playerNode.stop()
