@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.1
+
+### Bug Fixes
+
+- **Audio route-change crash fixed** — local audio graph rebuilds are now deferred while Chromecast, Sonos, DLNA, AirPlay-style, Zoom, or Wi-Fi-backed route changes are still active. This prevents an `AVAudioEngineGraph::UpdateGraphAfterReconfig` crash when switching rooms or outputs during casting, and preserves queued local playback intents once the route stabilizes.
+
 ## 0.21.0
 
 ### New Features
