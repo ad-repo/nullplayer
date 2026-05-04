@@ -218,6 +218,11 @@ NullPlayer polls Sonos every 5 seconds during casting:
 
 ### Resilience and Recovery
 
+**CoreAudio route churn:**
+- Sonos grouping, coordinator transfer, room switching, Wi-Fi changes, Zoom routes, and AirPlay-style output changes can trigger local `AVAudioEngineConfigurationChange` notifications even while cast playback is remote.
+- Local `AudioEngine` graph rebuilds must be deferred while `CastManager.activeSession` exists or `AudioEngine.isAnyCastingActive` is true.
+- See `skills/audio-system/audio-pipelines.md` — Cast Route-Change Safety.
+
 **Network change detection:**
 - LocalMediaServer monitors network changes via NWPathMonitor
 - IP address refreshed automatically when Wi-Fi changes

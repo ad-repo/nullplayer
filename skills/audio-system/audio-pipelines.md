@@ -161,6 +161,25 @@ When the output device changes (either programmatically or via system events lik
 
 This ensures seamless transitions between devices with different sample rates (e.g., 44.1kHz vs 48kHz).
 
+### Cast Route-Change Safety
+
+Cast sessions can trigger local CoreAudio configuration changes even when playback is controlled by Chromecast, Sonos, DLNA, AirPlay-style routes, Zoom, or Wi-Fi-backed outputs. Do not rebuild the local `AVAudioEngine` graph while cast routing is still active or while a cast session is still loaded.
+
+`AudioEngine.handleAudioConfigChange(_:)` must defer graph rebuilds when either condition indicates cast activity:
+
+- `CastManager.shared.activeSession != nil`
+- `AudioEngine.isAnyCastingActive == true`
+
+When a rebuild is deferred:
+
+- Set `audioGraphRebuildDeferredForCast` and avoid calling `rebuildAudioGraph()`.
+- Local play/load entry points must call `rebuildAudioGraphIfDeferredAfterCast()` before starting or scheduling playback.
+- If the rebuild is still blocked, queue the pending user intent instead of dropping it. Replay that intent after the deferred rebuild succeeds.
+- If a rebuild cannot restart playback after nodes were stopped/disconnected, move the engine to a non-playing state, stop time updates, and keep the rebuild deferred for retry.
+- Local files loaded in `.stopped` state still need to be re-scheduled after rebuild, but must not auto-play.
+
+This prevents `AVAudioEngineGraph::UpdateGraphAfterReconfig` exceptions during cast/room/output churn and keeps the next local playback action intact once routing stabilizes.
+
 ### Device Preference Persistence
 
 The selected output device UID is saved to UserDefaults and restored on app launch. If the saved device is no longer available, the system default is used.

@@ -16,7 +16,7 @@ NullPlayer uses two parallel audio pipelines to handle different content types:
 | Local files (.mp3, .flac, etc.) | AVAudioEngine | Yes | Yes | Cached 4096-bucket snapshot |
 | HTTP streaming (Plex/Subsonic/Jellyfin/Emby/radio) | AudioStreaming library | Yes | Yes | Live stream accumulator from 576-sample PCM chunks |
 
-Both pipelines support the active EQ layout for the current UI mode and real-time spectrum visualization. Classic mode uses the legacy 10-band layout; modern mode uses a 21-band layout. EQ settings are automatically synchronized between them. The waveform window reuses the same playback sources: local files use cached snapshots, while streams start with live accumulation and may promote to a cached seekable snapshot when prerendering is available.
+Both pipelines support the active EQ layout for the current UI mode and real-time spectrum visualization. Classic mode uses the legacy 10-band layout; modern mode uses a 21-band layout. EQ settings are automatically synchronized between them. Adaptive/dynamic spectrum modes share the same broad algorithm across local and streaming playback; accurate mode currently differs by pipeline (local uses BeSpec-style peak aggregation, streaming uses RMS power integration). The waveform window reuses the same playback sources: local files use cached snapshots, while streams start with live accumulation and may promote to a cached seekable snapshot when prerendering is available.
 
 ## Architecture Diagram
 
@@ -82,7 +82,7 @@ Main audio controller managing:
 - Shuffle cycle management for non-repeating playback order
 - Track loading (routes to appropriate pipeline)
 - EQ settings (synced to both pipelines)
-- Gapless playback (optional, local files only)
+- Gapless playback (optional; local files and same-pipeline streaming)
 - Volume normalization (optional, local files only)
 - Sweet Fades crossfade (both pipelines)
 - Output device selection
@@ -160,16 +160,16 @@ Classic mode uses the legacy 10-band configuration; modern mode uses a 21-band c
 
 | Band | Frequency | Filter Type | Bandwidth |
 |------|-----------|-------------|-----------|
-| 0 | 60 Hz | Low Shelf | 2.0 octaves |
-| 1 | 170 Hz | Parametric | 2.0 octaves |
-| 2 | 310 Hz | Parametric | 2.0 octaves |
-| 3 | 600 Hz | Parametric | 2.0 octaves |
-| 4 | 1 kHz | Parametric | 2.0 octaves |
-| 5 | 3 kHz | Parametric | 1.5 octaves |
-| 6 | 6 kHz | Parametric | 1.5 octaves |
-| 7 | 12 kHz | Parametric | 1.5 octaves |
-| 8 | 14 kHz | Parametric | 1.5 octaves |
-| 9 | 16 kHz | High Shelf | 1.5 octaves |
+| 0 | 60 Hz | Low Shelf | 1.0 octave |
+| 1 | 170 Hz | Parametric | 1.75 octaves |
+| 2 | 310 Hz | Parametric | 1.75 octaves |
+| 3 | 600 Hz | Parametric | 1.75 octaves |
+| 4 | 1 kHz | Parametric | 1.75 octaves |
+| 5 | 3 kHz | Parametric | 1.75 octaves |
+| 6 | 6 kHz | Parametric | 1.75 octaves |
+| 7 | 12 kHz | Parametric | 1.75 octaves |
+| 8 | 14 kHz | Parametric | 1.75 octaves |
+| 9 | 16 kHz | High Shelf | 1.0 octave |
 
 ### Modern 21-Band Configuration
 
@@ -224,7 +224,7 @@ Both pipelines feed spectrum data to the UI for visualization.
 2. **Windowing** - Apply Hann window to reduce spectral leakage
 3. **FFT** - 2048-point DFT using Accelerate framework
 4. **Magnitude calculation** - Convert complex output to magnitudes
-5. **Power integration** - Sum power within each logarithmic band
+5. **Band aggregation** - Accurate mode is pipeline-specific; adaptive/dynamic modes interpolate at band center frequencies
 6. **Frequency weighting** - Apply compensation curve (adaptive/dynamic modes)
 7. **Normalization** - Scale based on selected mode
 8. **Smoothing** - Fast attack, slow decay for visual appeal
@@ -237,13 +237,18 @@ Both pipelines feed spectrum data to the UI for visualization.
 | **Adaptive** | Global adaptive | Yes (scaled together) | General listening |
 | **Dynamic** | Per-region (bass/mid/treble) | No (independent) | Visual appeal |
 
-### Unified Processing
+### Shared Processing And Accurate-Mode Difference
 
-Both local and streaming use **identical 2048-point FFT** for consistent visualization:
+Both local and streaming use a **2048-point FFT** and 75 logarithmic output bands:
 - FFT size: 2048 samples
 - Bin width: ~21.5 Hz at 44.1kHz
 - Latency: ~46ms
-- dB range: 0-40 dB
+
+Accurate mode is not identical across pipelines:
+- **Local `AudioEngine`:** BeSpec-style peak aggregation per band, calibrated by `2 / sqrt(fftSize)`, mapped from `-20...0 dB`.
+- **Streaming `StreamingAudioPlayer`:** RMS power integration per band with bandwidth compensation, mapped from `0...40 dB`.
+
+Adaptive and dynamic modes use the same algorithm shape in both pipelines: center-bin interpolation, bandwidth scaling, frequency weighting, adaptive normalization, and fast-attack/slow-decay smoothing.
 
 ### Volume-Independent Visualizations
 
@@ -296,7 +301,7 @@ Real-time BPM detection using **aubio** library (`libaubio.5.dylib`):
 2. aubio's `aubio_tempo_t` performs onset detection + beat tracking
 3. Median filter over last 10 readings for stability
 4. Posts `.bpmUpdated` notification (throttled to 1/second)
-5. Displays only when confidence > 0.1
+5. Displays only when confidence >= 0.05
 
 **Integration:**
 - Both `AudioEngine` and `StreamingAudioPlayer` own a `BPMDetector`
