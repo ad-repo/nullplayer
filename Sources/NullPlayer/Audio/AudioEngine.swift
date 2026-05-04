@@ -91,6 +91,13 @@ class AudioEngine {
         var lastPauseStartedAt: Date?
     }
 
+    private enum DeferredAudioGraphPlaybackIntent {
+        case play
+        case playTrack(index: Int)
+        case loadTrack(index: Int)
+        case loadLocalImmediate(index: Int)
+    }
+
     static func freezeLocalPlaybackClockForSleep(
         currentTime: TimeInterval,
         playbackStartDate: Date,
@@ -544,6 +551,12 @@ class AudioEngine {
     
     /// Current output device ID (nil = system default)
     private(set) var currentOutputDeviceID: AudioDeviceID?
+
+    /// Audio route/configuration changes can arrive in bursts while macOS is switching
+    /// devices, Zoom routes, AirPlay/Sonos, or Wi-Fi-backed outputs.
+    private var pendingAudioConfigChangeWorkItem: DispatchWorkItem?
+    private var audioGraphRebuildDeferredForCast = false
+    private var pendingDeferredAudioGraphPlaybackIntent: DeferredAudioGraphPlaybackIntent?
     
     /// Whether audio casting is currently active (playback controlled by CastManager)
     var isCastingActive: Bool {
@@ -1045,23 +1058,147 @@ class AudioEngine {
     /// Handle audio configuration changes (device format changes)
     /// Called when AVAudioEngine detects a configuration change (e.g., device sample rate changed)
     @objc private func handleAudioConfigChange(_ notification: Notification) {
-        NSLog("AudioEngine: Configuration change detected, rebuilding audio graph")
-        // CRITICAL: Must use async to avoid deadlock
-        // The notification fires on an internal dispatch queue
+        NSLog("AudioEngine: Configuration change detected")
+
         DispatchQueue.main.async { [weak self] in
-            self?.rebuildAudioGraph()
+            guard let self else { return }
+
+            self.pendingAudioConfigChangeWorkItem?.cancel()
+
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+
+                guard CastManager.shared.activeSession == nil, !self.isAnyCastingActive else {
+                    self.audioGraphRebuildDeferredForCast = true
+                    NSLog("AudioEngine: Deferring graph rebuild while cast routing is active")
+                    return
+                }
+
+                self.rebuildAudioGraph()
+            }
+
+            self.pendingAudioConfigChangeWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
         }
+    }
+
+    /// Applies a deferred local graph rebuild once cast routing has fully cleared.
+    /// Returns false when callers should avoid starting or scheduling playback.
+    @discardableResult
+    private func rebuildAudioGraphIfDeferredAfterCast(clearPendingIntentOnSuccess: Bool = true) -> Bool {
+        guard audioGraphRebuildDeferredForCast else { return true }
+        guard CastManager.shared.activeSession == nil, !isAnyCastingActive else { return false }
+
+        NSLog("AudioEngine: Applying deferred graph rebuild before local playback")
+        rebuildAudioGraph()
+        if clearPendingIntentOnSuccess, !audioGraphRebuildDeferredForCast {
+            pendingDeferredAudioGraphPlaybackIntent = nil
+        }
+        return !audioGraphRebuildDeferredForCast
+    }
+
+    private func deferPlaybackIntentUntilAudioGraphReady(_ intent: DeferredAudioGraphPlaybackIntent) {
+        pendingDeferredAudioGraphPlaybackIntent = intent
+        scheduleDeferredAudioGraphRebuildRetry()
+    }
+
+    private func scheduleDeferredAudioGraphRebuildRetry() {
+        pendingAudioConfigChangeWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingAudioConfigChangeWorkItem = nil
+
+            guard self.audioGraphRebuildDeferredForCast else { return }
+            guard self.rebuildAudioGraphIfDeferredAfterCast(clearPendingIntentOnSuccess: false) else {
+                self.scheduleDeferredAudioGraphRebuildRetry()
+                return
+            }
+
+            self.replayPendingDeferredAudioGraphPlaybackIntent()
+        }
+
+        pendingAudioConfigChangeWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+    }
+
+    private func replayPendingDeferredAudioGraphPlaybackIntent() {
+        guard let intent = pendingDeferredAudioGraphPlaybackIntent else { return }
+        pendingDeferredAudioGraphPlaybackIntent = nil
+
+        switch intent {
+        case .play:
+            play()
+        case .playTrack(let index):
+            playTrack(at: index)
+        case .loadTrack(let index):
+            loadTrack(at: index)
+        case .loadLocalImmediate(let index):
+            guard index >= 0, index < playlist.count else { return }
+            loadLocalTrackForImmediatePlayback(playlist[index], at: index)
+        }
+    }
+
+    private func moveToNonPlayingStateAfterGraphRebuildFailure(
+        position: TimeInterval,
+        fallbackState: PlaybackState = .paused
+    ) {
+        playbackStartDate = nil
+        suspendedLocalPlaybackClockForSleep = false
+        _currentTime = position
+        lastReportedTime = position
+        state = fallbackState
+        stopTimeUpdates()
     }
     
     /// Rebuild the audio graph with the new output format
     /// Called after a device change that affects the audio format
     private func rebuildAudioGraph() {
+        pendingAudioConfigChangeWorkItem?.cancel()
+        pendingAudioConfigChangeWorkItem = nil
+        audioGraphRebuildDeferredForCast = false
+
         let wasPlaying = state == .playing
+        let wasPaused = state == .paused
+        let wasStopped = state == .stopped
         let currentPosition = currentTime
-        
+        let shouldRescheduleLocalTrack = !isStreamingPlayback && audioFile != nil
+        let resumePosition: TimeInterval = (wasPlaying || wasPaused) ? currentPosition : 0
+
         // Get new format from the updated output device
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        guard mixerFormat.sampleRate > 0, mixerFormat.channelCount > 0 else {
+            audioGraphRebuildDeferredForCast = true
+            NSLog("AudioEngine: Deferring graph rebuild because output format is not ready: %@", mixerFormat.description)
+            return
+        }
+
         NSLog("AudioEngine: Rebuilding graph with format: %@", mixerFormat.description)
+
+        if engine.isRunning {
+            engine.pause()
+        }
+
+        let tapWasInstalled = wasPlaying && !isStreamingPlayback
+        mixerNode.removeTap(onBus: 0)
+        playerNode.stop()
+        crossfadePlayerNode.stop()
+        if !isStreamingPlayback {
+            crossfadeTimer?.invalidate()
+            crossfadeTimer = nil
+            isCrossfading = false
+            crossfadeFileLoadToken &+= 1
+            crossfadeTargetIndex = -1
+            crossfadePlayerNode.volume = 0
+            crossfadeAudioFile = nil
+            crossfadePlayerIsActive = false
+            playerNode.volume = 1.0
+        }
+
+        engine.disconnectNodeOutput(playerNode)
+        engine.disconnectNodeOutput(crossfadePlayerNode)
+        engine.disconnectNodeOutput(mixerNode)
+        engine.disconnectNodeOutput(eqNode)
         
         // Reconnect all nodes with new format
         engine.connect(playerNode, to: mixerNode, format: mixerFormat)
@@ -1069,18 +1206,28 @@ class AudioEngine {
         engine.connect(mixerNode, to: eqNode, format: mixerFormat)
         engine.connect(eqNode, to: engine.mainMixerNode, format: mixerFormat)
 
-        // Re-schedule current audio if we were playing local files
-        if wasPlaying && !isStreamingPlayback, let file = audioFile {
+        if tapWasInstalled {
+            installSpectrumTap(format: nil)
+        }
+
+        // Re-schedule current audio if a local file was loaded.
+        if shouldRescheduleLocalTrack, let file = audioFile {
             do {
-                try engine.start()
+                if wasPlaying {
+                    try engine.start()
+                }
                 
                 // Schedule from current position
                 let sampleRate = file.processingFormat.sampleRate
-                let framePosition = AVAudioFramePosition(currentPosition * sampleRate)
+                let framePosition = AVAudioFramePosition(resumePosition * sampleRate)
                 let remainingFrames = file.length - framePosition
                 
                 guard remainingFrames > 0 else {
                     NSLog("AudioEngine: No remaining frames after config change")
+                    moveToNonPlayingStateAfterGraphRebuildFailure(
+                        position: resumePosition,
+                        fallbackState: wasStopped ? .stopped : .paused
+                    )
                     return
                 }
                 
@@ -1097,15 +1244,35 @@ class AudioEngine {
                             self?.handlePlaybackComplete(generation: currentGeneration)
                         }
                     }
-                playerNode.play()
-                playbackStartDate = Date()
-                suspendedLocalPlaybackClockForSleep = false
-                _currentTime = currentPosition
-                state = .playing
+                if wasPlaying {
+                    playerNode.play()
+                    playbackStartDate = Date()
+                    suspendedLocalPlaybackClockForSleep = false
+                    state = .playing
+                    startTimeUpdates()
+                } else if wasPaused {
+                    playbackStartDate = nil
+                    suspendedLocalPlaybackClockForSleep = false
+                    state = .paused
+                    stopTimeUpdates()
+                } else if wasStopped {
+                    playbackStartDate = nil
+                    suspendedLocalPlaybackClockForSleep = false
+                    state = .stopped
+                    stopTimeUpdates()
+                }
+                _currentTime = resumePosition
+                lastReportedTime = resumePosition
                 
-                NSLog("AudioEngine: Resumed playback from %.2fs after config change", currentPosition)
+                NSLog("AudioEngine: Re-scheduled local playback from %.2fs after config change (playing=%d)", resumePosition, wasPlaying ? 1 : 0)
             } catch {
                 NSLog("AudioEngine: Failed to restart after config change: %@", error.localizedDescription)
+                moveToNonPlayingStateAfterGraphRebuildFailure(
+                    position: resumePosition,
+                    fallbackState: wasStopped ? .stopped : .paused
+                )
+                audioGraphRebuildDeferredForCast = true
+                scheduleDeferredAudioGraphRebuildRetry()
             }
         } else if wasPlaying && isStreamingPlayback {
             // For streaming, just restart the engine - StreamingAudioPlayer manages its own state
@@ -1114,8 +1281,12 @@ class AudioEngine {
                 NSLog("AudioEngine: Restarted engine for streaming after config change")
             } catch {
                 NSLog("AudioEngine: Failed to restart engine for streaming: %@", error.localizedDescription)
+                moveToNonPlayingStateAfterGraphRebuildFailure(position: currentPosition)
+                audioGraphRebuildDeferredForCast = true
+                scheduleDeferredAudioGraphRebuildRetry()
             }
         }
+
     }
     
     /// Restore saved output device preference
@@ -1531,6 +1702,10 @@ class AudioEngine {
         }
         
         guard currentTrack != nil || !playlist.isEmpty else { return }
+        guard rebuildAudioGraphIfDeferredAfterCast() else {
+            deferPlaybackIntentUntilAudioGraphReady(.play)
+            return
+        }
         
         if currentTrack == nil && !playlist.isEmpty {
             if shuffleEnabled {
@@ -1598,6 +1773,11 @@ class AudioEngine {
         
         if isStreamingPlayback {
             // Streaming playback via AudioStreaming (with EQ support)
+            guard rebuildAudioGraphIfDeferredAfterCast() else {
+                deferPlaybackIntentUntilAudioGraphReady(.play)
+                return
+            }
+
             NSLog("play(): Starting streaming playback via AudioStreaming (state: %@)", String(describing: streamingPlayer?.state ?? .stopped))
             
             // If streaming player is stopped (not paused), we need to reload the URL
@@ -1633,6 +1813,11 @@ class AudioEngine {
             EmbyPlaybackReporter.shared.trackResumed()
         } else {
             // Local file playback via AVAudioEngine
+            guard rebuildAudioGraphIfDeferredAfterCast() else {
+                deferPlaybackIntentUntilAudioGraphReady(.play)
+                return
+            }
+
             // Ensure we have a valid audio file loaded before attempting to play
             guard audioFile != nil else {
                 NSLog("play(): No audio file loaded - cannot start local playback")
@@ -3513,6 +3698,11 @@ class AudioEngine {
             WindowManager.shared.stopVideo()
         }
 
+        guard rebuildAudioGraphIfDeferredAfterCast() else {
+            deferPlaybackIntentUntilAudioGraphReady(.loadTrack(index: index))
+            return
+        }
+
         // Check if this is a remote URL (streaming)
         if track.url.scheme == "http" || track.url.scheme == "https" {
             loadStreamingTrack(track)
@@ -3548,6 +3738,11 @@ class AudioEngine {
         if !AudioEngine.isHeadless && WindowManager.shared.isVideoActivePlayback && !isAnyCastingActive {
             NSLog("loadLocalTrackForImmediatePlayback: Stopping video playback before loading audio track")
             WindowManager.shared.stopVideo()
+        }
+
+        guard rebuildAudioGraphIfDeferredAfterCast() else {
+            deferPlaybackIntentUntilAudioGraphReady(.loadLocalImmediate(index: index))
+            return
         }
 
         currentTrack = track
@@ -3813,6 +4008,12 @@ class AudioEngine {
     private func loadStreamingTrack(_ track: Track) {
         NSLog("loadStreamingTrack: %@ - %@", track.artist ?? "Unknown", track.title)
         NSLog("  URL: %@", track.url.redacted)
+        guard rebuildAudioGraphIfDeferredAfterCast() else {
+            if currentIndex >= 0, currentIndex < playlist.count {
+                deferPlaybackIntentUntilAudioGraphReady(.loadTrack(index: currentIndex))
+            }
+            return
+        }
         
         // Stop local playback and REMOVE spectrum tap (streaming player has its own)
         playerNode.stop()
@@ -5167,6 +5368,13 @@ class AudioEngine {
         let wasCasting = isAnyCastingActive
         if wasCasting && !isCastingActive && CastManager.shared.currentCast == .audio {
             NSLog("AudioEngine: playTrack() routing through loaded audio cast session")
+        }
+
+        if !wasCasting {
+            guard rebuildAudioGraphIfDeferredAfterCast() else {
+                deferPlaybackIntentUntilAudioGraphReady(.playTrack(index: index))
+                return
+            }
         }
         
         currentIndex = index
