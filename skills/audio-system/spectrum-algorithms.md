@@ -6,6 +6,8 @@ Complete algorithm specifications for all three normalization modes.
 
 **Goal:** Display true signal levels with a flat response for pink noise, suitable for technical analysis.
 
+Important: accurate mode currently differs between local file playback and streaming playback.
+
 **Step 1: FFT Bin Range Calculation**
 For each of the 75 logarithmic bands:
 ```
@@ -16,10 +18,45 @@ startBin = max(1, floor(startFreq / binWidth))
 endBin = max(startBin, min(fftSize/2 - 1, floor(endFreq / binWidth)))
 ```
 
+### Local `AudioEngine` Accurate Mode
+
+**Step 2: Peak Aggregation**
+Pick the largest magnitude within the band:
+```
+peakMag = max(magnitude[startBin...endBin])
+```
+
+**Step 3: BeSpec Calibration**
+Apply Hann correction and energy-preserving FFT scale:
+```
+bespecFactor = 2.0 / sqrt(fftSize)
+calibratedMag = peakMag * bespecFactor
+```
+
+**Step 4: Decibel Conversion**
+```
+dB = 20.0 * log10(max(calibratedMag, 1e-10))
+```
+
+**Step 5: Dynamic Range Mapping**
+```
+ceiling = 0.0 dB
+floor = -20.0 dB
+normalized = (dB - floor) / (ceiling - floor)
+output = clamp(normalized, 0.0, 1.0)
+```
+
+Characteristics:
+- Peak aggregation gives narrow high-frequency components equal standing with bass
+- No bandwidth compensation is applied in local accurate mode
+- Display range is 20 dB (`-20...0 dB`)
+
+### Streaming `StreamingAudioPlayer` Accurate Mode
+
 **Step 2: Power Integration (Sum of Squared Magnitudes)**
 Sum the squared magnitude of all FFT bins within the band:
 ```
-totalPower = Σ (magnitude[bin]²)  for bin in startBin...endBin
+totalPower = sum(magnitude[bin]^2) for bin in startBin...endBin
 binCount = endBin - startBin + 1
 ```
 
@@ -30,28 +67,24 @@ avgPower = totalPower / binCount
 rmsMag = sqrt(avgPower)
 ```
 
-**Step 4: Bandwidth Compensation (Pink Noise Flattening)**
+**Step 4: Bandwidth Compensation**
 Apply scaling to compensate for pink noise's 1/f energy distribution:
 ```
 bandwidthHz = endFreq - startFreq
-refBandwidth = 20.0                           // Reference bandwidth (Hz)
+refBandwidth = 20.0
 bandwidthScale = pow(bandwidthHz / refBandwidth, 0.6)
-scaledMag = rmsMag × bandwidthScale
+scaledMag = rmsMag * bandwidthScale
 ```
-- The `0.6` exponent provides steeper high-frequency boost than sqrt (0.5)
-- `refBandwidth = 20.0` is low, providing more boost to wide high-frequency bands
-- Result: Pink noise appears relatively flat across the display
 
 **Step 5: Decibel Conversion**
 Convert linear magnitude to decibels:
 ```
-dB = 20.0 × log₁₀(max(scaledMag, 1e-10))
+dB = 20.0 * log10(max(scaledMag, 1e-10))
 ```
 
 **Step 6: Dynamic Range Mapping**
 Map dB range to 0.0-1.0 display range:
 ```
-// Both local and streaming use identical parameters (2048-pt FFT):
 ceiling = 40.0 dB    // Maps to 100% (top of display)
 floor = 0.0 dB       // Maps to 0% (bottom of display)
 
@@ -70,9 +103,9 @@ else:
 
 **Characteristics:**
 - No adaptive gain control - quiet signals appear quiet, loud appear loud
-- True representation of frequency content
-- 40dB dynamic range display (ceiling - floor)
-- Pink noise test signal appears flat
+- RMS power integration uses energy across each whole band
+- 40 dB dynamic range display (`0...40 dB`)
+- Bandwidth compensation aims to flatten pink noise
 - Best for: Technical analysis, checking frequency balance, mixing reference
 
 ## Adaptive Mode - Complete Algorithm
@@ -235,8 +268,8 @@ else:
 
 | Aspect | Accurate | Adaptive | Dynamic |
 |--------|----------|----------|---------|
-| **Magnitude source** | RMS of all bins in band | Single interpolated bin | Single interpolated bin |
-| **Bandwidth scaling** | `pow(bw/20, 0.6)` | `sqrt(bw/refBw)` | `sqrt(bw/refBw)` |
+| **Magnitude source** | Local: peak bin; streaming: RMS of all bins | Single interpolated bin | Single interpolated bin |
+| **Bandwidth scaling** | Local: none; streaming: `pow(bw/20, 0.6)` | `sqrt(bw/refBw)` | `sqrt(bw/refBw)` |
 | **Frequency weighting** | None | Sub-bass reduction | Sub-bass reduction |
 | **Gain control** | Fixed dB mapping | Global adaptive | Per-region adaptive |
 | **Peak tracking** | None | Single global peak | 3 regional peaks |

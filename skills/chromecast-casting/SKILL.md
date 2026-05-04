@@ -213,6 +213,10 @@ Do not assume all playlist tracks are audio. Video items can appear in audio pla
 
 Audio casting remains explicit: if audio is not already casting, playback stays local until the user picks a cast device. `preferredVideoCastDeviceID` is never used for audio.
 
+### CoreAudio Route Churn
+
+Chromecast and other cast sessions can still trigger `AVAudioEngineConfigurationChange` notifications in local `AudioEngine` during receiver, room, Zoom, AirPlay-style, or Wi-Fi route changes. Local graph rebuilds must be deferred while `CastManager.activeSession` exists or `AudioEngine.isAnyCastingActive` is true. See `skills/audio-system/audio-pipelines.md` — Cast Route-Change Safety.
+
 ## Media Loading
 
 ### LOAD Message Format

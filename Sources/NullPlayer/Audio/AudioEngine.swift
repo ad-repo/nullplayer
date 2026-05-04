@@ -431,7 +431,7 @@ class AudioEngine {
 
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
-    private let fftSize: Int = 2048  // Match streaming FFT for consistent display
+    private let fftSize: Int = 2048
     
     // MARK: - Spectrum Update Throttling (Memory Optimization)
     
@@ -1466,30 +1466,12 @@ class AudioEngine {
             let centerFreq = sqrt(startFreq * endFreq)
             
             if normMode == .accurate {
-                // Accurate mode - sum total power across all bins in band, then convert to dB
-                // High freq bands have more bins, so total power scales with bandwidth
-                let startBin = max(1, Int(startFreq / binWidth))
-                let endBin = max(startBin, min(fftSize / 2 - 1, Int(endFreq / binWidth)))
-                
-                // Peak aggregation per band (BeSpec approach).
-                // RMS averaging dilutes treble: a high-freq band with 80 mostly-empty bins
-                // averages to near zero. Peak picks the loudest component, giving treble
-                // equal standing with bass.
-                var peakMag: Float = 0
-                for bin in startBin...endBin {
-                    if fftMagnitudes[bin] > peakMag { peakMag = fftMagnitudes[bin] }
-                }
-
-                // BeSpec calibration: HANN_CORRECTION (2.0) × energy-preserving FFT scale (1/√N).
-                let bespecFactor: Float = 2.0 / sqrt(Float(fftSize))
-                let calibratedMag = peakMag * bespecFactor
-                let dB = 20.0 * log10(max(calibratedMag, 1e-10))
-
-                let ceiling: Float = 0.0
-                let floor: Float = -20.0
-                let normalized = (dB - floor) / (ceiling - floor)
-                
-                fftNewSpectrum[band] = max(0, min(1.0, normalized))
+                fftNewSpectrum[band] = SpectrumAccurateModeCalculator.localBespecLevel(
+                    band: band,
+                    magnitudes: fftMagnitudes,
+                    fftSize: fftSize,
+                    sampleRate: sampleRate
+                )
             } else {
                 // Adaptive/Dynamic modes - interpolate at center frequency
                 let exactBin = centerFreq / binWidth

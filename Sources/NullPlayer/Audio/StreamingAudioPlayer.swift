@@ -510,37 +510,12 @@ class StreamingAudioPlayer {
             let centerFreq = sqrt(startFreq * endFreq)
             
             if normMode == .accurate {
-                // Accurate mode - sum total power across all bins in band, then convert to dB
-                // High freq bands have more bins, so total power scales with bandwidth
-                let startBin = max(1, Int(startFreq / binWidth))
-                let endBin = max(startBin, min(fftSize / 2 - 1, Int(endFreq / binWidth)))
-                
-                var totalPower: Float = 0
-                let binCount = Float(endBin - startBin + 1)
-                for bin in startBin...endBin {
-                    totalPower += fftMagnitudes[bin] * fftMagnitudes[bin]  // Sum power (mag²)
-                }
-                
-                // Use RMS (average power) to preserve detail in high frequencies
-                // Then scale by sqrt(bandwidth) to compensate for pink noise
-                let avgPower = totalPower / max(binCount, 1)
-                let rmsMag = sqrt(avgPower)
-                
-                // Apply bandwidth compensation for pink noise flatness
-                let bandwidthHz = endFreq - startFreq
-                let refBandwidth: Float = 20.0   // Lower ref = more high freq boost
-                let bandwidthScale = pow(bandwidthHz / refBandwidth, 0.6)  // Steeper curve for highs
-                let scaledMag = rmsMag * bandwidthScale
-                
-                // Convert to dB (20 * log10 for magnitude)
-                let dB = 20.0 * log10(max(scaledMag, 1e-10))
-                
-                // Map dB range to 0-1 display range
-                // For 2048-pt FFT, ~12dB higher than 512-pt
-                let ceiling: Float = 40.0    // dB level that maps to 100%
-                let floor: Float = 0.0       // dB level that maps to 0%
-                let normalized = (dB - floor) / (ceiling - floor)
-                fftNewSpectrum[band] = max(0, min(1.0, Float(normalized)))
+                fftNewSpectrum[band] = SpectrumAccurateModeCalculator.streamingRMSLevel(
+                    band: band,
+                    magnitudes: fftMagnitudes,
+                    fftSize: fftSize,
+                    sampleRate: sampleRate
+                )
             } else {
                 // Adaptive/Dynamic modes - interpolate at center frequency
                 let exactBin = centerFreq / binWidth
