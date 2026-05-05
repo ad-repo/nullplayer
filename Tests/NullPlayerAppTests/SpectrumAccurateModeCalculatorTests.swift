@@ -49,34 +49,30 @@ final class SpectrumAccurateModeCalculatorTests: XCTestCase {
             magnitudeCount: fftSize / 2
         ))
 
-        let amplitudes: [Float] = [0.1, 0.25, 0.5, 1, 2, 4, 8]
-        let result = amplitudes.compactMap { amplitude -> (Float, Float)? in
-            var sparse = [Float](repeating: 0, count: fftSize / 2)
-            sparse[range.startBin] = amplitude
+        let amplitude: Float = 0.5
+        var sparse = [Float](repeating: 0, count: fftSize / 2)
+        sparse[range.startBin] = amplitude
 
-            var dense = sparse
-            for bin in (range.startBin + 1)...range.endBin {
-                dense[bin] = amplitude
-            }
+        var dense = sparse
+        for bin in (range.startBin + 1)...range.endBin {
+            dense[bin] = amplitude
+        }
 
-            let sparseLevel = SpectrumAccurateModeCalculator.streamingRMSLevel(
-                band: band,
-                magnitudes: sparse,
-                fftSize: fftSize,
-                sampleRate: sampleRate
-            )
-            let denseLevel = SpectrumAccurateModeCalculator.streamingRMSLevel(
-                band: band,
-                magnitudes: dense,
-                fftSize: fftSize,
-                sampleRate: sampleRate
-            )
+        let sparseLevel = SpectrumAccurateModeCalculator.streamingRMSLevel(
+            band: band,
+            magnitudes: sparse,
+            fftSize: fftSize,
+            sampleRate: sampleRate
+        )
+        let denseLevel = SpectrumAccurateModeCalculator.streamingRMSLevel(
+            band: band,
+            magnitudes: dense,
+            fftSize: fftSize,
+            sampleRate: sampleRate
+        )
 
-            return denseLevel > sparseLevel && denseLevel < 1 ? (sparseLevel, denseLevel) : nil
-        }.first
-
-        let levels = try XCTUnwrap(result)
-        XCTAssertGreaterThan(levels.1, levels.0)
+        XCTAssertGreaterThan(denseLevel, sparseLevel)
+        XCTAssertLessThan(denseLevel, 1)
     }
 
     func testLocalAndStreamingAccurateModesAreCurrentlyDifferent() throws {
@@ -107,6 +103,15 @@ final class SpectrumAccurateModeCalculatorTests: XCTestCase {
         )
 
         XCTAssertNotEqual(localLevel, streamingLevel, accuracy: 0.0001)
+    }
+
+    func testBandRangeRejectsOnePointFFT() {
+        XCTAssertNil(SpectrumAccurateModeCalculator.bandRange(
+            for: 0,
+            fftSize: 1,
+            sampleRate: sampleRate,
+            magnitudeCount: 2
+        ))
     }
 
     private func bandWithAtLeastFiveBins() throws -> Int {

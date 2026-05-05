@@ -56,15 +56,19 @@ final class EQConfigurationTests: XCTestCase {
 
     func testClassicLayoutMatchesAudioEngineConfiguration() {
         XCTAssertEqual(EQConfiguration.classic10.bandCount, 10)
-        XCTAssertEqual(EQConfiguration.classic10.frequencies.first, 60)
-        XCTAssertEqual(EQConfiguration.classic10.frequencies.last, 16_000)
+        XCTAssertEqual(EQConfiguration.classic10.frequencies, [
+            60, 170, 310, 600, 1_000, 3_000, 6_000, 12_000, 14_000, 16_000
+        ])
         XCTAssertEqual(EQConfiguration.classic10.parametricBandwidth, 1.75)
     }
 
     func testModernLayoutMatchesAudioEngineConfiguration() {
         XCTAssertEqual(EQConfiguration.modern21.bandCount, 21)
-        XCTAssertEqual(EQConfiguration.modern21.frequencies.first, 31.5)
-        XCTAssertEqual(EQConfiguration.modern21.frequencies.last, 20_000)
+        XCTAssertEqual(EQConfiguration.modern21.frequencies, [
+            31.5, 45, 63, 90, 125, 180, 250, 355, 500, 710, 1_000,
+            1_400, 2_000, 2_800, 4_000, 5_600, 8_000, 11_200, 14_000,
+            16_000, 20_000
+        ])
         XCTAssertEqual(EQConfiguration.modern21.parametricBandwidth, 1.0)
     }
 }

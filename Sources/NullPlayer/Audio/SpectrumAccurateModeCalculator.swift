@@ -20,7 +20,7 @@ enum SpectrumAccurateModeCalculator {
     ) -> BandRange? {
         guard band >= 0,
               band < bandCount,
-              fftSize > 0,
+              fftSize >= 2,
               sampleRate > 0,
               magnitudeCount > 1 else {
             return nil
