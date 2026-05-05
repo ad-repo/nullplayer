@@ -30,6 +30,7 @@ enum SpectrumAccurateModeCalculator {
         let endFrequency = minFrequency * pow(maxFrequency / minFrequency, Float(band + 1) / Float(bandCount))
         let binWidth = sampleRate / Float(fftSize)
         let maxBin = min(fftSize / 2 - 1, magnitudeCount - 1)
+        guard maxBin >= 1 else { return nil }
         let startBin = min(maxBin, max(1, Int(startFrequency / binWidth)))
         let endBin = max(startBin, min(maxBin, Int(endFrequency / binWidth)))
 

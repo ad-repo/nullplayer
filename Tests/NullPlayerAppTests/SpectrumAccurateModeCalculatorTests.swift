@@ -105,10 +105,16 @@ final class SpectrumAccurateModeCalculatorTests: XCTestCase {
         XCTAssertNotEqual(localLevel, streamingLevel, accuracy: 0.0001)
     }
 
-    func testBandRangeRejectsOnePointFFT() {
+    func testBandRangeRejectsTooSmallFFT() {
         XCTAssertNil(SpectrumAccurateModeCalculator.bandRange(
             for: 0,
             fftSize: 1,
+            sampleRate: sampleRate,
+            magnitudeCount: 2
+        ))
+        XCTAssertNil(SpectrumAccurateModeCalculator.bandRange(
+            for: 0,
+            fftSize: 2,
             sampleRate: sampleRate,
             magnitudeCount: 2
         ))
