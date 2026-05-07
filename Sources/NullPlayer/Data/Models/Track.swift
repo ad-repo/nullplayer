@@ -317,6 +317,15 @@ struct Track: Identifiable, Equatable {
         url.absoluteString == "about:blank"
     }
 
+    /// True when this track is an internet radio stream (no streaming-service identity, non-file URL).
+    var isRadioStream: Bool {
+        plexRatingKey == nil &&
+        subsonicId == nil &&
+        jellyfinId == nil &&
+        embyId == nil &&
+        !url.isFileURL
+    }
+
     /// True when this track has enough persisted service identity to be refreshed by ID.
     var isResolvableStreamingServiceTrack: Bool {
         if plexRatingKey != nil { return true }

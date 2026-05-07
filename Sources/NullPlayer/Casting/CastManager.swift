@@ -616,7 +616,10 @@ class CastManager {
                 // Avoid discovery restart bursts during local playback, which can
                 // compete with high-throughput SMB/NAS reads on weaker WiFi links.
                 let engine = self.resolvedAudioEngine
-                if engine.state == .playing && !engine.isCastingActive {
+                let suppressForLocalRead = engine.state == .playing
+                    && !engine.isCastingActive
+                    && !RadioManager.shared.isActive
+                if suppressForLocalRead {
                     NSLog("CastManager: Skipping discovery refresh - local audio is playing")
                     return
                 }
