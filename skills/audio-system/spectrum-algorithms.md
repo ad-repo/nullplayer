@@ -6,9 +6,11 @@ Complete algorithm specifications for all three normalization modes.
 
 **Goal:** Display true signal levels with a flat response for pink noise, suitable for technical analysis.
 
+Important: accurate mode currently differs between local file playback and streaming playback.
+
 **Step 1: FFT Bin Range Calculation**
 For each of the 75 logarithmic bands:
-```
+```text
 startFreq = 20 × (20000/20)^(band/75)      // Band's lower frequency edge
 endFreq = 20 × (20000/20)^((band+1)/75)    // Band's upper frequency edge
 binWidth = sampleRate / fftSize             // Hz per FFT bin (e.g., 44100/2048 = 21.5 Hz)
@@ -16,42 +18,73 @@ startBin = max(1, floor(startFreq / binWidth))
 endBin = max(startBin, min(fftSize/2 - 1, floor(endFreq / binWidth)))
 ```
 
+### Local `AudioEngine` Accurate Mode
+
+**Step 2: Peak Aggregation**
+Pick the largest magnitude within the band:
+```text
+peakMag = max(magnitude[startBin...endBin])
+```
+
+**Step 3: BeSpec Calibration**
+Apply Hann correction and energy-preserving FFT scale:
+```text
+bespecFactor = 2.0 / sqrt(fftSize)
+calibratedMag = peakMag * bespecFactor
+```
+
+**Step 4: Decibel Conversion**
+```text
+dB = 20.0 * log10(max(calibratedMag, 1e-10))
+```
+
+**Step 5: Dynamic Range Mapping**
+```text
+ceiling = 0.0 dB
+floor = -20.0 dB
+normalized = (dB - floor) / (ceiling - floor)
+output = clamp(normalized, 0.0, 1.0)
+```
+
+Characteristics:
+- Peak aggregation gives narrow high-frequency components equal standing with bass
+- No bandwidth compensation is applied in local accurate mode
+- Display range is 20 dB (`-20...0 dB`)
+
+### Streaming `StreamingAudioPlayer` Accurate Mode
+
 **Step 2: Power Integration (Sum of Squared Magnitudes)**
 Sum the squared magnitude of all FFT bins within the band:
-```
-totalPower = Σ (magnitude[bin]²)  for bin in startBin...endBin
+```text
+totalPower = sum(magnitude[bin]^2) for bin in startBin...endBin
 binCount = endBin - startBin + 1
 ```
 
 **Step 3: RMS Magnitude Calculation**
 Calculate Root Mean Square (average energy density):
-```
+```text
 avgPower = totalPower / binCount
 rmsMag = sqrt(avgPower)
 ```
 
-**Step 4: Bandwidth Compensation (Pink Noise Flattening)**
+**Step 4: Bandwidth Compensation**
 Apply scaling to compensate for pink noise's 1/f energy distribution:
-```
+```text
 bandwidthHz = endFreq - startFreq
-refBandwidth = 20.0                           // Reference bandwidth (Hz)
+refBandwidth = 20.0
 bandwidthScale = pow(bandwidthHz / refBandwidth, 0.6)
-scaledMag = rmsMag × bandwidthScale
+scaledMag = rmsMag * bandwidthScale
 ```
-- The `0.6` exponent provides steeper high-frequency boost than sqrt (0.5)
-- `refBandwidth = 20.0` is low, providing more boost to wide high-frequency bands
-- Result: Pink noise appears relatively flat across the display
 
 **Step 5: Decibel Conversion**
 Convert linear magnitude to decibels:
-```
-dB = 20.0 × log₁₀(max(scaledMag, 1e-10))
+```text
+dB = 20.0 * log10(max(scaledMag, 1e-10))
 ```
 
 **Step 6: Dynamic Range Mapping**
 Map dB range to 0.0-1.0 display range:
-```
-// Both local and streaming use identical parameters (2048-pt FFT):
+```text
 ceiling = 40.0 dB    // Maps to 100% (top of display)
 floor = 0.0 dB       // Maps to 0% (bottom of display)
 
@@ -61,7 +94,7 @@ output = clamp(normalized, 0.0, 1.0)
 
 **Step 7: Final Smoothing (All Modes)**
 Applied on main thread for visual continuity:
-```
+```text
 if newValue > currentValue:
     spectrumData[band] = newValue              // Instant attack
 else:
@@ -70,9 +103,9 @@ else:
 
 **Characteristics:**
 - No adaptive gain control - quiet signals appear quiet, loud appear loud
-- True representation of frequency content
-- 40dB dynamic range display (ceiling - floor)
-- Pink noise test signal appears flat
+- RMS power integration uses energy across each whole band
+- 40 dB dynamic range display (`0...40 dB`)
+- Bandwidth compensation aims to flatten pink noise
 - Best for: Technical analysis, checking frequency balance, mixing reference
 
 ## Adaptive Mode - Complete Algorithm
@@ -81,7 +114,7 @@ else:
 
 **Step 1: Center Frequency Interpolation**
 For each of the 75 logarithmic bands, sample a single interpolated FFT bin:
-```
+```text
 startFreq = 20 × (20000/20)^(band/75)
 endFreq = 20 × (20000/20)^((band+1)/75)
 centerFreq = sqrt(startFreq × endFreq)        // Geometric mean
@@ -94,7 +127,7 @@ interpMag = magnitude[lowerBin] × (1 - fraction) + magnitude[upperBin] × fract
 
 **Step 2: Pre-computed Bandwidth Scaling**
 Apply pre-computed scale factors for pink noise compensation:
-```
+```text
 // Pre-computed at startup for each band:
 ratio = (20000/20)^(1/75)                     // ~1.096 frequency ratio per band
 refBandwidth = 1000.0 × (ratio - 1.0)         // Reference bandwidth at 1kHz
@@ -107,7 +140,7 @@ bandMagnitude = interpMag × bandwidthScale[band]
 
 **Step 3: Pre-computed Frequency Weighting**
 Apply frequency-dependent weighting to reduce sub-bass dominance:
-```
+```text
 // Pre-computed weights by frequency:
 freq < 40 Hz:    weight = 0.70   // Sub-bass: 30% reduction
 freq < 100 Hz:   weight = 0.85   // Bass: 15% reduction
@@ -119,13 +152,13 @@ newSpectrum[band] = bandMagnitude × frequencyWeight[band]
 
 **Step 4: Global Peak Tracking**
 Find maximum value across all 75 bands:
-```
+```text
 globalPeak = max(newSpectrum[0..74])
 ```
 
 **Step 5: Adaptive Peak Update (Slow Rise, Slower Decay)**
 Update the tracked peak level with asymmetric smoothing:
-```
+```text
 if globalPeak > spectrumGlobalPeak:
     // Rising: 8% of new value (fast attack)
     spectrumGlobalPeak = spectrumGlobalPeak × 0.92 + globalPeak × 0.08
@@ -136,7 +169,7 @@ else:
 
 **Step 6: Reference Level Calculation**
 Compute the normalization reference with anti-pulsing smoothing:
-```
+```text
 // Target: weighted average favoring tracked peak over current peak
 targetReferenceLevel = max(spectrumGlobalPeak × 0.5, globalPeak × 0.3)
 
@@ -147,7 +180,7 @@ referenceLevel = max(spectrumGlobalReferenceLevel, 0.001)  // Prevent divide-by-
 
 **Step 7: Global Normalization with Square Root Curve**
 Normalize all bands using the global reference:
-```
+```text
 for band in 0..<75:
     normalized = min(1.0, newSpectrum[band] / referenceLevel)
     newSpectrum[band] = pow(normalized, 0.5)  // Square root for better dynamics
@@ -156,7 +189,7 @@ for band in 0..<75:
 - All bands scale together, preserving relative frequency balance
 
 **Step 8: Final Smoothing (Same as Accurate)**
-```
+```text
 if newValue > currentValue:
     spectrumData[band] = newValue
 else:
@@ -181,7 +214,7 @@ else:
 
 **Step 4: Region Definition**
 Split the 75 bands into three independent regions:
-```
+```text
 Bass region:   bands 0-24   (~20 Hz to ~300 Hz)
 Mid region:    bands 25-49  (~300 Hz to ~3.4 kHz)
 Treble region: bands 50-74  (~3.4 kHz to ~20 kHz)
@@ -189,7 +222,7 @@ Treble region: bands 50-74  (~3.4 kHz to ~20 kHz)
 
 **Step 5: Per-Region Peak Tracking**
 For each of the 3 regions:
-```
+```text
 regionPeak = max(newSpectrum[start..end])  // Find peak in this region
 
 if regionPeak > spectrumRegionPeaks[regionIndex]:
@@ -202,7 +235,7 @@ else:
 
 **Step 6: Per-Region Reference Level**
 Calculate independent reference for each region:
-```
+```text
 targetReferenceLevel = max(spectrumRegionPeaks[regionIndex] × 0.5, regionPeak × 0.3)
 spectrumRegionReferenceLevels[regionIndex] = old × 0.85 + target × 0.15
 referenceLevel = max(spectrumRegionReferenceLevels[regionIndex], 0.001)
@@ -210,14 +243,14 @@ referenceLevel = max(spectrumRegionReferenceLevels[regionIndex], 0.001)
 
 **Step 7: Per-Region Normalization**
 Normalize each region independently:
-```
+```text
 for band in regionStart..<regionEnd:
     normalized = min(1.0, newSpectrum[band] / referenceLevel)
     newSpectrum[band] = pow(normalized, 0.5)  // Square root curve
 ```
 
 **Step 8: Final Smoothing (Same as other modes)**
-```
+```text
 if newValue > currentValue:
     spectrumData[band] = newValue
 else:
@@ -235,8 +268,8 @@ else:
 
 | Aspect | Accurate | Adaptive | Dynamic |
 |--------|----------|----------|---------|
-| **Magnitude source** | RMS of all bins in band | Single interpolated bin | Single interpolated bin |
-| **Bandwidth scaling** | `pow(bw/20, 0.6)` | `sqrt(bw/refBw)` | `sqrt(bw/refBw)` |
+| **Magnitude source** | Local: peak bin; streaming: RMS of all bins | Single interpolated bin | Single interpolated bin |
+| **Bandwidth scaling** | Local: none; streaming: `pow(bw/20, 0.6)` | `sqrt(bw/refBw)` | `sqrt(bw/refBw)` |
 | **Frequency weighting** | None | Sub-bass reduction | Sub-bass reduction |
 | **Gain control** | Fixed dB mapping | Global adaptive | Per-region adaptive |
 | **Peak tracking** | None | Single global peak | 3 regional peaks |
@@ -274,11 +307,15 @@ NotificationCenter.default.post(
 
 Pink noise has equal energy per octave (not per Hz). Different normalization modes handle this differently:
 
-**All modes apply bandwidth scaling** to compensate for pink noise's 1/f slope:
-- Formula: `pow(bandwidthHz / refBandwidth, exponent)` where exponent varies by mode
-- This makes pink noise appear relatively flat across all modes
-- Accurate mode uses `refBandwidth=20.0` and `exponent=0.6` for slightly steeper high-frequency boost
-- Adaptive/Dynamic modes use `refBandwidth=100.0` and `exponent=0.5` (square root)
+**Local accurate mode:**
+- Does not apply bandwidth compensation.
+- Uses peak aggregation plus BeSpec calibration instead of RMS band energy.
+
+**Streaming accurate mode:**
+- Applies `pow(bandwidthHz / 20.0, 0.6)` after RMS band integration.
+
+**Adaptive/Dynamic modes:**
+- Apply `sqrt(bandwidth / refBandwidth)` using a reference bandwidth at 1 kHz.
 
 **Adaptive/Dynamic modes only:**
 - Apply additional frequency weighting to reduce sub-bass dominance
