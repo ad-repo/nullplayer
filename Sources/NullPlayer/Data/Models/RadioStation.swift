@@ -35,7 +35,8 @@ struct RadioStation: Identifiable, Codable, Equatable, Hashable {
             jellyfinServerId: nil,
             artworkThumb: iconURL?.absoluteString,
             mediaType: .audio,
-            genre: genre
+            genre: genre,
+            isRadioOrigin: true
         )
     }
 }

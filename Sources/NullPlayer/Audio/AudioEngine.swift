@@ -2079,7 +2079,7 @@ class AudioEngine {
         // Use isAudioCastRoutingActive so the .loaded phase is included.
         if isAudioCastRoutingActive {
             let track = playlist[currentIndex]
-            let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+            let isLocalFile = !track.isRadioStream && track.url.isFileURL
 
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay
@@ -2142,7 +2142,7 @@ class AudioEngine {
         // Use isAudioCastRoutingActive so the .loaded phase is included.
         if isAudioCastRoutingActive {
             let track = playlist[currentIndex]
-            let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+            let isLocalFile = !track.isRadioStream && track.url.isFileURL
 
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay
@@ -2222,7 +2222,7 @@ class AudioEngine {
         // Use isAudioCastRoutingActive so the .loaded phase is included.
         if isAudioCastRoutingActive {
             let track = playlist[currentIndex]
-            let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+            let isLocalFile = !track.isRadioStream && track.url.isFileURL
 
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay
@@ -2916,7 +2916,7 @@ class AudioEngine {
             }
             // Cast the same or new random track
             let track = playlist[currentIndex]
-            let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+            let isLocalFile = !track.isRadioStream && track.url.isFileURL
             
             // For local files, defer UI update until cast completes
             if !isLocalFile {
@@ -2964,7 +2964,7 @@ class AudioEngine {
                     return
                 }
                 let track = playlist[currentIndex]
-                let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+                let isLocalFile = !track.isRadioStream && track.url.isFileURL
                 
                 // For local files, defer UI update until cast completes
                 if !isLocalFile {
@@ -3008,7 +3008,7 @@ class AudioEngine {
                     return
                 }
                 let track = playlist[currentIndex]
-                let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+                let isLocalFile = !track.isRadioStream && track.url.isFileURL
                 
                 // For local files, defer UI update until cast completes
                 if !isLocalFile {
@@ -3203,7 +3203,7 @@ class AudioEngine {
                 // When casting, don't set up local playback - just set the track metadata
                 // and cast to the active device
                 let track = playlist[currentIndex]
-                let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+                let isLocalFile = !track.isRadioStream && track.url.isFileURL
                 
                 // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
                 // For streaming, update immediately since there's no async delay
@@ -3489,7 +3489,7 @@ class AudioEngine {
             if wasCasting {
                 // When casting, don't set up local playback - just update track metadata and cast
                 let track = playlist[currentIndex]
-                let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+                let isLocalFile = !track.isRadioStream && track.url.isFileURL
                 
                 // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
                 // For streaming, update immediately since there's no async delay
@@ -3563,7 +3563,7 @@ class AudioEngine {
         if wasCasting {
             // When casting, don't set up local playback - just update track metadata and cast
             let track = playlist[currentIndex]
-            let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+            let isLocalFile = !track.isRadioStream && track.url.isFileURL
             
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay
@@ -5397,7 +5397,7 @@ class AudioEngine {
         
         if wasCasting {
             // When casting, don't set up local playback - just update track metadata and cast
-            let isLocalFile = track.url.scheme != "http" && track.url.scheme != "https"
+            let isLocalFile = !track.isRadioStream && track.url.isFileURL
             
             // For local files, defer UI update until cast completes (prevents UI jumping during rapid clicks)
             // For streaming, update immediately since there's no async delay

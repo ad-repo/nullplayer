@@ -82,7 +82,12 @@ struct Track: Identifiable, Equatable {
     
     /// MIME content type hint for casting (e.g. "audio/flac"). When nil, detected from URL extension.
     let contentType: String?
-    
+
+    /// True when this track originated from an internet radio context. Persists across
+    /// transient `file://` URLs (e.g., recordings or temp-cached streams) so cast/local
+    /// classification stays correct even when the playback URL is local.
+    let isRadioOrigin: Bool
+
     init(url: URL) {
         self.id = UUID()
         self.url = url
@@ -215,6 +220,7 @@ struct Track: Identifiable, Equatable {
         self.genre = extractedGenre
         self.playHistoryContentTypeOverride = nil
         self.contentType = nil  // Local files use URL extension detection
+        self.isRadioOrigin = false
     }
 
     /// Fast path for bulk imports: avoid AVFoundation metadata parsing up-front.
@@ -241,8 +247,9 @@ struct Track: Identifiable, Equatable {
         self.genre = nil
         self.playHistoryContentTypeOverride = nil
         self.contentType = nil
+        self.isRadioOrigin = false
     }
-    
+
     init(id: UUID = UUID(),
          url: URL,
          title: String,
@@ -264,7 +271,8 @@ struct Track: Identifiable, Equatable {
          mediaType: MediaType = .audio,
          genre: String? = nil,
          playHistoryContentTypeOverride: String? = nil,
-         contentType: String? = nil) {
+         contentType: String? = nil,
+         isRadioOrigin: Bool = false) {
         self.id = id
         self.url = url
         self.title = title
@@ -287,6 +295,7 @@ struct Track: Identifiable, Equatable {
         self.genre = genre
         self.playHistoryContentTypeOverride = playHistoryContentTypeOverride
         self.contentType = contentType
+        self.isRadioOrigin = isRadioOrigin
     }
     
     /// Display title (artist - title or just title)
@@ -315,6 +324,20 @@ struct Track: Identifiable, Equatable {
     /// True when this row is a state-restore placeholder awaiting URL refresh.
     var isStreamingPlaceholder: Bool {
         url.absoluteString == "about:blank"
+    }
+
+    /// True when this track is an internet radio stream. Honors the explicit
+    /// `isRadioOrigin` flag (set at radio track creation) so radio tracks are
+    /// correctly classified even when their playback URL is `file://` (e.g.,
+    /// recordings or temp-cached streams). Falls back to the legacy heuristic
+    /// for tracks constructed without the flag.
+    var isRadioStream: Bool {
+        if isRadioOrigin { return true }
+        return plexRatingKey == nil &&
+            subsonicId == nil &&
+            jellyfinId == nil &&
+            embyId == nil &&
+            !url.isFileURL
     }
 
     /// True when this track has enough persisted service identity to be refreshed by ID.
@@ -348,6 +371,7 @@ struct Track: Identifiable, Equatable {
         if subsonicId != nil { return .subsonic }
         if jellyfinId != nil { return .jellyfin }
         if embyId != nil { return .emby }
+        if isRadioOrigin { return .radio }
         if !url.isFileURL { return .radio }
         return .local
     }
