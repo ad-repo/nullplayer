@@ -814,7 +814,8 @@ class AppStateManager {
                     title: savedTrack.radioStationName ?? savedTrack.title,
                     artist: savedTrack.artist,
                     album: savedTrack.album,
-                    duration: savedTrack.duration
+                    duration: savedTrack.duration,
+                    isRadioOrigin: true
                 )
                 allTracks.append(track)
             } else if let urlString = savedTrack.localURL, let url = URL(string: urlString) {
