@@ -1384,6 +1384,9 @@ class MainWindowView: NSView {
         }
         // Resume Metal overlay rendering
         if mainVisMode.usesMetal { metalOverlay?.startDisplayLink() }
+        // The layer's cached contents may have been dropped while hidden;
+        // force a full redraw so the background isn't left transparent.
+        needsDisplay = true
     }
     
     /// Handle window occlusion state changes to pause/resume timers for CPU efficiency
@@ -1397,6 +1400,11 @@ class MainWindowView: NSView {
             }
             // Resume Metal overlay rendering
             if mainVisMode.usesMetal { metalOverlay?.startDisplayLink() }
+            // The layer's cached contents may have been dropped while occluded;
+            // force a full redraw so the background isn't left transparent
+            // (otherwise per-tick partial setNeedsDisplay(rect:) calls only
+            // repaint small sub-regions and leave the rest transparent).
+            needsDisplay = true
         } else {
             stopMarquee()
             marqueeLayer?.pauseAnimation()
