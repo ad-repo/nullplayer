@@ -231,11 +231,23 @@ Geiss is a ProjectM-peer engine in the visualization window. It is selected from
 
 **Context Menu:**
 - Current Effect
-- Next/Previous/Random Effect
+- Next / Previous / Random Effect
 - Effects submenu
-- Audio Sensitivity
+- **Beat Detection** toggle
+- **Sync Color to Sound** toggle
+- **Slide Shift** toggle
+- **Mode Lock** toggle (when on, suppresses auto mode-switching at chunk boundaries)
+- **Palette Lock** toggle
+- **Geiss Sensitivity** submenu — internal `volscale`, discrete steps `0.25 / 0.5 / 1.0 / 2.0 / 3.0 / 4.0`. Stacks on top of the host-side `projectMPCMGain`; labelled "Geiss Sensitivity" to distinguish from the existing Audio Sensitivity control.
+- **Gamma** submenu — discrete steps `0 / 25 / 50 / 100 / 150 / 200`, labelled with the resulting factor (`1.00× / 1.25× / 1.50× / 2.00× / 2.50× / 3.00×`)
+- **Auto-Switch** submenu — `5s / 15s / 30s / 60s / 120s` (no "Off" entry — Mode Lock is the single source of truth for stopping auto-switch)
+- **visMode** submenu — Wave / Spectrum
+- **Randomize Palette** action (one-shot palette shuffle)
+- Audio Sensitivity (host-side PCM gain — same control as ProjectM)
 - Visualization Engine
 - Fullscreen
+
+All lever state is persisted to UserDefaults under the `geiss.*` namespace (`geiss.sensitivity`, `geiss.gamma`, `geiss.beatDetection`, `geiss.syncColorToSound`, `geiss.slideShift`, `geiss.modeLocked`, `geiss.paletteLocked`, `geiss.autoSwitchSeconds`, `geiss.visMode`) and re-applied on engine activation. The same shared `GeissMenuBuilder` populates the menu in both classic (`ProjectMView`) and modern (`ModernProjectMView`) UI.
 
 ### Technical Details
 

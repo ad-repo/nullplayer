@@ -255,6 +255,9 @@ Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (dou
 ### ProjectM/MilkDrop
 100+ bundled presets, OpenGL rendering, fullscreen support
 
+### Geiss
+Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — selected from the same right-click **Visualization Engine** submenu. Right-click for runtime controls: effect navigation, Geiss Sensitivity, Gamma, Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock, Auto-Switch interval, visMode (Wave/Spectrum), and Randomize Palette. All settings persist across launches.
+
 ### Spectrum Analyzer Window
 55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
 
@@ -300,6 +303,13 @@ Spectrum, vis_classic, Fire, Enhanced, Ultra, JWST, Lightning, Matrix, Snow (dou
 - **Main window**: **, / .** previous/next profile
 - **Spectrum window**: **[ / ]** previous/next profile (left/right also cycle profiles in vis_classic mode)
 - **Transparent Background**: right-click in vis_classic mode and toggle per window (main and spectrum persist separately)
+
+### Geiss
+- **→ / ←**: Next / Previous effect
+- **R**: Random effect
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+- All other levers (sensitivity, gamma, locks, auto-switch, palette randomize, etc.) are right-click context-menu only — see the Visualizations section above.
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist
