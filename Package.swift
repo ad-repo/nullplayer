@@ -38,12 +38,13 @@ let package = Package(
             name: "CGeissCore",
             dependencies: [],
             path: "Sources/CGeissCore",
-            // Phase 4a: helper.cpp (POSIX-clean) is now compiled. main.cpp,
-            // proc_map.cpp, and the inline-asm/Win32-body-laden sources stay
-            // excluded — they land in subsequent phase-4 sub-phases.
+            // Phase 4b: helper.cpp + proc_map.cpp now compile. main.cpp stays
+            // excluded — its Win32 dialog/registry/Winamp-entry surgery lands
+            // in subsequent phase-4 sub-phases. Until main.cpp joins the build,
+            // GEISS_PHASE_4B_STUBS is set so proc_map.cpp provides stub
+            // definitions for the globals main.cpp would normally export.
             exclude: [
                 "upstream/main.cpp",
-                "upstream/proc_map.cpp",
                 "upstream/LICENSE",
                 "upstream/README.md",
             ],
@@ -52,6 +53,7 @@ let package = Package(
                 .headerSearchPath("."),
                 .headerSearchPath("upstream"),
                 .define("__APPLE__"),
+                .define("GEISS_PHASE_4B_STUBS"),
                 .unsafeFlags(["-fno-strict-aliasing", "-fwrapv"])
             ]
         ),

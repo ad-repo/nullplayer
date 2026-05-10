@@ -1212,8 +1212,8 @@ bool Try_To_Recover();
 void dumpmsg(const char *format, ...);
 
 
-#include "effects.h"
-#include "proc_map.h"
+#include "Effects.h"
+#include "Proc_map.h"
 #include "video.h"
 #include "sysstuff.h"
 
@@ -1373,7 +1373,7 @@ HWND WINAPI CreateTrackbar(
     UINT iSelMax)  // maximum value in trackbar selection 
 { 
  
-    InitCommonControls(); // loads common control’s DLL 
+    InitCommonControls(); // loads common controlï¿½s DLL 
  
     hwndTrack = CreateWindowEx( 
         0,                             // no extended styles 
@@ -3533,7 +3533,7 @@ int WINAPI WinMain(HINSTANCE h,HINSTANCE,LPSTR,int)
 
     //make sure the sliderbar, etc. controls are loaded:
     dumpmsg("InitCommonControls()...");
-    InitCommonControls(); // loads common control’s DLL 
+    InitCommonControls(); // loads common controlï¿½s DLL 
 
     dumpmsg("Bringing up Config Dialog...");
     DialogBox( h, MAKEINTRESOURCE(IDD_CONFIG),

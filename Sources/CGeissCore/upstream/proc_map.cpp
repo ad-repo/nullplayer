@@ -35,27 +35,58 @@
 #ifndef GEISS_PROCESS_MAP 
 #define GEISS_PROCESS_MAP 1
 
-#include "proc_map.h"
+#include "Proc_map.h"
 // PORT(phase3): stripped ddraw-h
 // PORT(phase3): stripped memoryapi-h
 
-// This disables warning
-// "frame pointer register 'ebp' modified by inline assembly code"
-// for MSVC; for why that's okay, see:
-// https://stackoverflow.com/a/21718937/11626624
-#pragma warning( disable: 4731 )
+#include <cstdint>
+#include <cstring>
 
-//-----for slider--------
-//#include <math.h>
-//extern int volpos;
-//extern long intframe;
+// PORT(phase4b): drop the MSVC #pragma warning() pragma; clang doesn't honor it
+// and emits an "unknown pragma" warning otherwise.
+//#pragma warning( disable: 4731 )
+
 extern int slider1;
-//extern int slider2;
 extern bool bMMX;
-//-----------------------
 
+// ---------------------------------------------------------------------------
+// PORT(phase4b): stub definitions for the globals that the upstream main.cpp
+// would normally provide. main.cpp is not in the build yet, so without these
+// the static library has unresolved externs (Process_Map references them).
+//
+// When main.cpp joins the build (phase 4c+), remove the
+// `GEISS_PHASE_4B_STUBS` define from CGeissCore's cxxSettings; the matching
+// `#ifdef` block below is compiled out and main.cpp's real definitions take
+// over.
+// ---------------------------------------------------------------------------
+#ifdef GEISS_PHASE_4B_STUBS
+long             FX_YCUT          = 0;
+long             FX_YCUT_HIDE     = 0;
+long             FX_YCUT_NUM_LINES = 0;
+long             FX_YCUT_xFXW_x8  = 0;
+long             FX_YCUT_xFXW     = 0;
+long             FX_YCUT_HIDE_xFXW = 0;
+long             FXW_x_FXH        = 0;
+long             BUFSIZE          = 0;
+unsigned char  *DATA_FX           = nullptr;
+int              iDispBits        = 8;
+long             FXW              = 0;
+long             FXH              = 0;
+clock_t          core_clock_time  = 0;
+int              initial_map_offset = 0;
+bool             bBypassAssembly  = true;  // we have no asm path on macOS
+int              slider1          = 0;
+bool             bMMX             = false;
+#endif
 
-
+// ---------------------------------------------------------------------------
+// Original 18 __declspec(naked) / 6 inline-asm blocks gated out — clang on
+// macOS/ARM64 cannot compile MSVC-style x86-32 asm. The portable C fallback
+// the upstream code already shipped (under `bBypassAssembly`, originally
+// commented out in `Process_Map`) is now the active path. See the bottom of
+// this file for the new `Process_Map`.
+// ---------------------------------------------------------------------------
+#if 0  // PORT(phase4b): MSVC asm dispatcher disabled
 //------------------------------------------------------------------
 static void *realAddress(void *fn)
 {
@@ -999,92 +1030,104 @@ void Process_Map_Asm(void *p1, void *p2)//, LPDIRECTDRAWSURFACE lpDDSurf)
 
 
 
-void Process_Map(void *p1, void *p2)//, LPDIRECTDRAWSURFACE lpDDSurf)
+#endif  // end of #if 0 — PORT(phase4b): MSVC asm dispatcher disabled
+
+// ---------------------------------------------------------------------------
+// PORT(phase4b): portable C `Process_Map`. Mirrors the upstream code's own
+// `bBypassAssembly` fallback (originally a commented-out branch inside the
+// asm-only `Process_Map`). DATA_FX is laid out as 8 bytes per pixel:
+//   bytes 0..3: 4 bilinear weights (top-left, top-right, btm-left, btm-right)
+//   bytes 4..7: signed 32-bit cumulative delta to add to the lookat pointer.
+// The weighted sum's high byte (>> 8) is the output indexed pixel.
+//
+// 32-bit (RGBA) path mirrors the same logic but with stride FXW*4 and 3
+// channels processed sequentially before stepping +4.
+// ---------------------------------------------------------------------------
+void Process_Map(void *p1, void *p2)
 {
+    if (DATA_FX == nullptr || FXW <= 0 || FXH <= 0) return;
+    if (FX_YCUT_NUM_LINES <= 0) return;
+
     float temp_clock2 = (float)clock();
 
-    Process_Map_Asm(p1, p2);//, lpDDSurf);
+    if (iDispBits == 8) {
+        const unsigned char *SRC  = (const unsigned char *)p1;
+        unsigned char       *DEST = (unsigned char *)p2;
+        const unsigned char *data  = &DATA_FX[FX_YCUT_xFXW_x8];
+        const int           *ddata = (const int *)data;
 
-    /*
-    if (!bBypassAssembly)
-	{
-   	    Process_Map_Asm(p1, p2);
+        long count      = FX_YCUT_NUM_LINES;
+        long lookat     = 0;
+        long dest_pixel = FX_YCUT_xFXW;
+        const long fxw  = FXW;
+
+        do {
+            // ddata[1] is the second 32-bit word (bytes 4..7) — cumulative delta.
+            int32_t delta;
+            std::memcpy(&delta, ddata + 1, sizeof(delta));
+            lookat += delta;
+            unsigned int val =
+                  (unsigned int)SRC[lookat]         * data[0]
+                + (unsigned int)SRC[lookat + 1]     * data[1]
+                + (unsigned int)SRC[lookat + fxw]   * data[2]
+                + (unsigned int)SRC[lookat + fxw + 1] * data[3];
+            DEST[dest_pixel++] = (unsigned char)(val >> 8);
+
+            data  += 8;
+            ddata += 2;
+            --count;
+        } while (count > 0);
+    } else {
+        // 32-bit (RGBA) path
+        const unsigned char *SRC  = (const unsigned char *)p1;
+        unsigned char       *DEST = (unsigned char *)p2;
+        const unsigned char *data  = &DATA_FX[FX_YCUT_xFXW_x8];
+        const int           *ddata = (const int *)data;
+
+        long count      = FX_YCUT_NUM_LINES;
+        long lookat     = 0;
+        long dest_pixel = FX_YCUT * FXW * 4;
+        const long fxw4 = FXW * 4;
+
+        do {
+            int32_t delta;
+            std::memcpy(&delta, ddata + 1, sizeof(delta));
+            lookat += delta;
+
+            unsigned int val1 = (
+                  (unsigned int)SRC[lookat]              * data[0]
+                + (unsigned int)SRC[lookat + 4]          * data[1]
+                + (unsigned int)SRC[lookat + fxw4]       * data[2]
+                + (unsigned int)SRC[lookat + fxw4 + 4]   * data[3]) >> 8;
+            ++lookat;
+            unsigned int val2 = (
+                  (unsigned int)SRC[lookat]              * data[0]
+                + (unsigned int)SRC[lookat + 4]          * data[1]
+                + (unsigned int)SRC[lookat + fxw4]       * data[2]
+                + (unsigned int)SRC[lookat + fxw4 + 4]   * data[3]) >> 8;
+            ++lookat;
+            unsigned int val3 = (
+                  (unsigned int)SRC[lookat]              * data[0]
+                + (unsigned int)SRC[lookat + 4]          * data[1]
+                + (unsigned int)SRC[lookat + fxw4]       * data[2]
+                + (unsigned int)SRC[lookat + fxw4 + 4]   * data[3]) >> 8;
+            lookat -= 2;
+
+            DEST[dest_pixel++] = (unsigned char)val1;
+            DEST[dest_pixel++] = (unsigned char)val2;
+            DEST[dest_pixel++] = (unsigned char)val3;
+            ++dest_pixel;  // skip alpha byte
+
+            data  += 8;
+            ddata += 2;
+            --count;
+        } while (count > 0);
     }
-    else
-    {
-        if (iDispBits == 8)
-        {
-            int x, y, count, dest_pixel;
-            int delta_lookat, lookat, val;
-            unsigned char *SRC = (unsigned char *)p1;
-            unsigned char *DEST = (unsigned char *)p2;
-            unsigned char *data = (unsigned char *)&DATA_FX[FX_YCUT_xFXW_x8];
-            int *ddata = (int *)&DATA_FX[FX_YCUT_xFXW_x8];
-
-            count = FX_YCUT_NUM_LINES;  // # of pixels to process
-            lookat = 0;//FX_YCUT_xFXW;  // starting lookat pixel
-            dest_pixel = FX_YCUT_xFXW;
-            do
-            {
-                //------------------------------------------------------
-                lookat += ddata[1];
-                val = SRC[lookat]*data[0] + SRC[lookat+1]*data[1] + SRC[lookat+FXW]*data[2] + SRC[lookat+FXW+1]*data[3];
-                DEST[dest_pixel++] = val >> 8;
-                //------------------------------------------------------
-        
-                data  = &data[8];
-                ddata = &ddata[2];
-                count--;
-            }
-            while (count > 0);
-        }
-        else  // 32-bit code
-        {
-            int x, y, count, dest_pixel;
-            int delta_lookat, lookat, val1, val2, val3;
-            unsigned char *SRC = (unsigned char *)p1;
-            unsigned char *DEST = (unsigned char *)p2;
-            unsigned char *data = (unsigned char *)&DATA_FX[FX_YCUT_xFXW_x8];
-            int *ddata = (int *)&DATA_FX[FX_YCUT_xFXW_x8];
-
-            count      = FX_YCUT_NUM_LINES;  // # of tri-pixels to process
-            lookat     = 0;//FX_YCUT*FXW*4;  // starting lookat pixel
-            dest_pixel = FX_YCUT*FXW*4;
-            
-            do
-            {
-                //------------------------------------------------------
-                lookat += ddata[1];//(ddata[1] << 2);
-
-                val1 = (SRC[lookat]*data[0] + SRC[lookat+4]*data[1] + SRC[lookat+FXW*4]*data[2] + SRC[lookat+FXW*4+4]*data[3]) >> 8;
-                lookat++;
-                val2 = (SRC[lookat]*data[0] + SRC[lookat+4]*data[1] + SRC[lookat+FXW*4]*data[2] + SRC[lookat+FXW*4+4]*data[3]) >> 8;
-                lookat++;
-                val3 = (SRC[lookat]*data[0] + SRC[lookat+4]*data[1] + SRC[lookat+FXW*4]*data[2] + SRC[lookat+FXW*4+4]*data[3]) >> 8;
-                lookat -= 2;
-
-                DEST[dest_pixel++] = val1;
-                DEST[dest_pixel++] = val2;
-                DEST[dest_pixel++] = val3;
-                dest_pixel++;
-                //------------------------------------------------------
-        
-                data  = &data[8];
-                ddata = &ddata[2];
-                count--;
-            }
-            while (count > 0);
-        }
-    }
-    /**/
 
     core_clock_time += clock() - temp_clock2;
-
 }
 
-
-
-#endif
+#endif  // GEISS_PROCESS_MAP
 
 
 

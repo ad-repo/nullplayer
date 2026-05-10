@@ -29,7 +29,21 @@ Developer-only running log for the Geiss port. Not shipped in the .app.
   plan's Phase-3 work list are deferred to phase 4 as part of the
   compile-and-fix walk; only the strict exit-criterion grep is enforced now
   (`<windows.h>|<ddraw.h>|GetTickCount` → no hits).
-- Phase 4a (this commit): `upstream/helper.cpp` is now in the compile set
+- Phase 4b (this commit): `upstream/proc_map.cpp` now compiles. The 24
+  inline-`__asm` naked-function blocks (the runtime-pasted x86-32 dispatcher)
+  are gated behind `#if 0`. `Process_Map` is rewritten as a portable C
+  bilinear-blend warp — a direct port of the upstream `bBypassAssembly`
+  fallback the original code already shipped (just commented out).
+  `proc_map.cpp` defines stub globals (`FXW`, `FXH`, `DATA_FX`, etc.) under
+  `#ifdef GEISS_PHASE_4B_STUBS`; the define is set in `Package.swift`'s
+  `cxxSettings` and will be removed when `main.cpp` joins the build in a
+  later sub-phase. Asm-block annotations from the phase-2 audit can now read
+  "replaced by portable C in `Process_Map`" for all 18 `_proc_map_*` blocks
+  and the 3 in-body filter passes; the 6 `video.h` MMX blocks are still
+  pending (they'll be deleted with the surrounding DDraw-blit code).
+  Header-include case fixed: `"proc_map.h"` → `"Proc_map.h"` to match the
+  on-disk filename and silence clang's `-Wnonportable-include-path`.
+- Phase 4a: `upstream/helper.cpp` is now in the compile set
   (`Package.swift` narrows the `exclude` list from `["upstream"]` to just
   `main.cpp`, `proc_map.cpp`, `LICENSE`, `README.md`). `helper.h` is on the
   internal header search path via `cxxSettings: [.headerSearchPath("upstream")]`.
