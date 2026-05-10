@@ -29,7 +29,21 @@ Developer-only running log for the Geiss port. Not shipped in the .app.
   plan's Phase-3 work list are deferred to phase 4 as part of the
   compile-and-fix walk; only the strict exit-criterion grep is enforced now
   (`<windows.h>|<ddraw.h>|GetTickCount` → no hits).
-- Phase 4c-4 (this commit): direct ports of `FX_Init`,
+- Phase 4c-5 (this commit): direct port of `GenerateChunkOfNewMap`
+  (upstream `main.cpp:4312-5411`). The function builds DATA_FX2
+  incrementally — one row of pixels per call — until a full frame's
+  worth of warp-map weights + per-pixel cumulative-delta lookat offsets
+  is written. When the chunk completes (`y_map_pos` reaches
+  `(FXH-FX_YCUT)*FXW`) DATA_FX and DATA_FX2 swap so the new map takes
+  effect on the next `Process_Map` invocation. All 25 modes (1–25) and
+  the rotation-dither / custom-motion-vector branches are preserved
+  verbatim. Win32-only call sites (`Get/WritePrivateProfileString`)
+  survive but route through no-op stubs in `win_compat.h`. The
+  cumulative-delta lookat offset write
+  `*((int *)(DATA_FX2 + A_offset + 4)) = R_offset_rel * bytewidth;`
+  relies on `-fno-strict-aliasing` (set in `Package.swift`'s
+  cxxSettings) — same behaviour as upstream MSVC.
+- Phase 4c-4: direct ports of `FX_Init`,
   `FX_Pick_Random_Mode`, `FX_Fini` from upstream `main.cpp:3869-4304`. The
   CModeInfo class (upstream `main.cpp:1258-1330`) and the
   `mode_motion_dampened` / `rotation_dither` / `custom_motion_vectors`
