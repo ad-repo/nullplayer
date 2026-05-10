@@ -29,7 +29,32 @@ Developer-only running log for the Geiss port. Not shipped in the .app.
   plan's Phase-3 work list are deferred to phase 4 as part of the
   compile-and-fix walk; only the strict exit-criterion grep is enforced now
   (`<windows.h>|<ddraw.h>|GetTickCount` → no hits).
-- Phase 4b (this commit): `upstream/proc_map.cpp` now compiles. The 24
+- Phase 4c-1+2 (this commit): introduces the port scaffolding for
+  preserving the *real* Geiss visual algorithms on macOS without trying to
+  carve up upstream/main.cpp's 9557 lines of mixed Win32 + visual code.
+  New files:
+  * `include/win_compat.h` — typedefs (BOOL/BYTE/DWORD/LONG/HWND/HFONT/etc.),
+    calling-convention macro stubs (WINAPI/CALLBACK/__cdecl/__forceinline/
+    __declspec/FAR/PASCAL), helper macros (RGB, TEXT, _T, MAKEINTRESOURCE,
+    min/max), inline no-op stubs for Win32 APIs the kept-but-non-rendering
+    code paths reference (SetCursor, OutputDebugString, MessageBox,
+    Get/WritePrivateProfileString, GetWindowText, GetCursorPos).
+  * `include/winamp_vis_stub.h` — minimal API-compatible
+    `winampVisModule`/`winampVisHeader` so upstream declarations parse.
+  * `upstream_port/geiss_port.cpp` — owner of every global the upstream
+    visual code expects (FXW, FXH, FX_YCUT_*, DATA_FX, VS1, VS2, iDispBits,
+    slider1, bMMX, bBypassAssembly, core_clock_time, initial_map_offset).
+    Currently only provides the global-definition site; subsequent
+    sub-phases (4c-3..4c-8) include `upstream/Effects.h` directly into
+    this translation unit and add ports of FX_Init / GenerateChunkOfNewMap /
+    RenderFX / GetWaveData / RenderDots / RenderWave / FX_Random_Palette /
+    PutPalette / CrankPal.
+  Build wiring: `Package.swift` adds `headerSearchPath("upstream_port")`,
+  drops `GEISS_PHASE_4B_STUBS` (geiss_port.cpp is now the authoritative
+  global-definition site), and `proc_map.cpp`'s phase-4b stub block is
+  removed. `upstream/main.cpp` stays excluded from the build but in tree —
+  BSD-3 source-redistribution + canonical reference for the ports.
+- Phase 4b: `upstream/proc_map.cpp` now compiles. The 24
   inline-`__asm` naked-function blocks (the runtime-pasted x86-32 dispatcher)
   are gated behind `#if 0`. `Process_Map` is rewritten as a portable C
   bilinear-blend warp — a direct port of the upstream `bBypassAssembly`

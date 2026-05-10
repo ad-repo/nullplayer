@@ -38,11 +38,14 @@ let package = Package(
             name: "CGeissCore",
             dependencies: [],
             path: "Sources/CGeissCore",
-            // Phase 4b: helper.cpp + proc_map.cpp now compile. main.cpp stays
-            // excluded — its Win32 dialog/registry/Winamp-entry surgery lands
-            // in subsequent phase-4 sub-phases. Until main.cpp joins the build,
-            // GEISS_PHASE_4B_STUBS is set so proc_map.cpp provides stub
-            // definitions for the globals main.cpp would normally export.
+            // Phase 4c: helper.cpp + proc_map.cpp + upstream_port/geiss_port.cpp
+            // are in the compile set. The upstream main.cpp stays excluded —
+            // it is a Win32/DirectDraw orchestrator, retained in tree for
+            // licence + reference; the platform-neutral algorithms are pulled
+            // into the build via `geiss_port.cpp` (which #includes Effects.h
+            // and ports the orchestration functions). The phase-4b stub block
+            // inside proc_map.cpp is no longer the global-definition site —
+            // geiss_port.cpp owns them — so `GEISS_PHASE_4B_STUBS` is dropped.
             exclude: [
                 "upstream/main.cpp",
                 "upstream/LICENSE",
@@ -52,8 +55,8 @@ let package = Package(
             cxxSettings: [
                 .headerSearchPath("."),
                 .headerSearchPath("upstream"),
+                .headerSearchPath("upstream_port"),
                 .define("__APPLE__"),
-                .define("GEISS_PHASE_4B_STUBS"),
                 .unsafeFlags(["-fno-strict-aliasing", "-fwrapv"])
             ]
         ),

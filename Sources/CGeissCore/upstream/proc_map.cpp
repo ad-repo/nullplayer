@@ -50,34 +50,11 @@ extern int slider1;
 extern bool bMMX;
 
 // ---------------------------------------------------------------------------
-// PORT(phase4b): stub definitions for the globals that the upstream main.cpp
-// would normally provide. main.cpp is not in the build yet, so without these
-// the static library has unresolved externs (Process_Map references them).
-//
-// When main.cpp joins the build (phase 4c+), remove the
-// `GEISS_PHASE_4B_STUBS` define from CGeissCore's cxxSettings; the matching
-// `#ifdef` block below is compiled out and main.cpp's real definitions take
-// over.
+// PORT(phase4c): the upstream globals (FXW, FXH, DATA_FX, FX_YCUT_*, slider1,
+// bMMX, iDispBits, core_clock_time, initial_map_offset, bBypassAssembly) are
+// now defined in `upstream_port/geiss_port.cpp`. The phase-4b stub block
+// previously here was retired alongside the `GEISS_PHASE_4B_STUBS` define.
 // ---------------------------------------------------------------------------
-#ifdef GEISS_PHASE_4B_STUBS
-long             FX_YCUT          = 0;
-long             FX_YCUT_HIDE     = 0;
-long             FX_YCUT_NUM_LINES = 0;
-long             FX_YCUT_xFXW_x8  = 0;
-long             FX_YCUT_xFXW     = 0;
-long             FX_YCUT_HIDE_xFXW = 0;
-long             FXW_x_FXH        = 0;
-long             BUFSIZE          = 0;
-unsigned char  *DATA_FX           = nullptr;
-int              iDispBits        = 8;
-long             FXW              = 0;
-long             FXH              = 0;
-clock_t          core_clock_time  = 0;
-int              initial_map_offset = 0;
-bool             bBypassAssembly  = true;  // we have no asm path on macOS
-int              slider1          = 0;
-bool             bMMX             = false;
-#endif
 
 // ---------------------------------------------------------------------------
 // Original 18 __declspec(naked) / 6 inline-asm blocks gated out — clang on
