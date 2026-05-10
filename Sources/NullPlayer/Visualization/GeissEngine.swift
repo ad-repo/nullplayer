@@ -309,7 +309,8 @@ final class GeissEngine: VisualizationEngine {
         uniform sampler2D u_palette;
         void main() {
             float idx = texture(u_indices, v_uv).r;
-            frag = texture(u_palette, vec2(idx, 0.5));
+            int paletteIndex = clamp(int(round(idx * 255.0)), 0, 255);
+            frag = texelFetch(u_palette, ivec2(paletteIndex, 0), 0);
         }
         """
 
@@ -334,8 +335,8 @@ final class GeissEngine: VisualizationEngine {
         // Palette texture (256x1 RGBA8).
         glGenTextures(1, &paletteTex)
         glBindTexture(GLenum(GL_TEXTURE_2D), paletteTex)
-        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR)
-        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_NEAREST)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_NEAREST)
         glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_S), GL_CLAMP_TO_EDGE)
         glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_WRAP_T), GL_CLAMP_TO_EDGE)
         glTexImage2D(GLenum(GL_TEXTURE_2D), 0, GL_RGBA8,

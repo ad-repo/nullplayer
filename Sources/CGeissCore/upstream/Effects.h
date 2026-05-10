@@ -167,7 +167,7 @@ void SavePreset(int n)
 	sprintf(string,"%d",effect[SPECTRAL]);WritePrivateProfileString(section,"effect_spectral",string,inifile);
 
 	sprintf(string,"%d",old_palette.lo_band      ); WritePrivateProfileString(section,"pal_lo_band",string,inifile);
-	sprintf(string,"%d",old_palette.hi_band      ); WritePrivateProfileString(section,"pal_hi_oband",string,inifile);
+	sprintf(string,"%d",old_palette.hi_band      ); WritePrivateProfileString(section,"pal_hi_band",string,inifile);
 	sprintf(string,"%d",(int)old_palette.bFXPalette); WritePrivateProfileString(section,"pal_bFX",string,inifile);
 	sprintf(string,"%d",old_palette.iFXPaletteNum); WritePrivateProfileString(section,"pal_FXpalnum",string,inifile);
 	sprintf(string,"%d",old_palette.c1           ); WritePrivateProfileString(section,"pal_curve_id_1",string,inifile);

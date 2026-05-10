@@ -85,7 +85,7 @@ Geiss has no internal FFT — upstream consumes spectrum from the Winamp host. T
 - Audio thread → `addPCMMono` / `setSpectrum`: each takes `coreLock` (NSLock) on the C core. `engineLock.try()` is the outer guard against engine-swap; `coreLock` is the inner guard against render.
 - Render thread (CVDisplayLink) → `renderFrame`: takes `coreLock`. Framebuffer is never reallocated mid-stream and never accessed from any other thread.
 - Main actor → `setViewportSize`: takes `coreLock`, calls `GeissCore_resize` (which is permitted to reallocate the framebuffer via `FX_Fini` + `FX_Init`), then resizes the GL index texture.
-- Engine swap (`switchEngine` in `VisualizationGLView`): pause the display link, `cleanup()` the old engine (`GeissCore_destroy` + GL teardown), construct the new engine, resume the display link. No frame is rendered between the two.
+- Engine swap (`switchEngine` in `VisualizationGLView`): take `engineLock`, make the view's GL context current, `cleanup()` the old engine (`GeissCore_destroy` + GL teardown), then defer construction of the new engine to the next render. No frame is rendered between the two.
 
 The C core is **not** thread-safe; `coreLock` is the only barrier.
 
@@ -116,8 +116,8 @@ The inline comment `25//16//19` shows the cap moved up over upstream releases (1
 ## Persistence
 
 - UserDefaults key `visualizationEngineType` stores the active engine raw value (`"Geiss"` or `"ProjectM"`).
-- `AppState.v2` has an optional `visualizationEngineType: String?` field (raw value, not the enum, to keep AppState decodable across versions). Decoded with `decodeIfPresent` → `VisualizationType(rawValue:) ?? .projectM`. Old saved states deserialize as `nil` and default to ProjectM.
-- Restore order: `restoreSettingsState` writes the UserDefaults key first, then defers to the visualizer window construction, then calls `wm.switchVisualizationEngine(to:)`. Preset index restoration is gated on `visualizationEngineType == .projectM`.
+- The saved `AppState.v2` session model intentionally does not persist the engine type; UserDefaults is the single source of truth. Old saved states that contain `visualizationEngineType` still decode because unknown keys are ignored.
+- Restore order: `restoreSettingsState` leaves the UserDefaults key intact, then defers to the visualizer window construction, then calls `wm.switchVisualizationEngine(to:)` using the current UserDefaults value. Preset index restoration is gated on `visualizationEngineType == .projectM`.
 
 ## Engine-conditional UI
 
@@ -163,7 +163,7 @@ The inline comment `25//16//19` shows the cap moved up over upstream releases (1
 - `Sources/NullPlayer/Visualization/VisualizationGLView.swift` — engine selection, FFT/spectrum compute, PCM forwarding, `engineLock`
 - `Sources/NullPlayer/Visualization/VisualizationEngine.swift` — `VisualizationType.geiss` case
 - `Sources/NullPlayer/Windows/ModernProjectM/ModernProjectMView.swift` — engine-conditional menu, Geiss Effects submenu
-- `Sources/NullPlayer/App/AppStateManager.swift` — `visualizationEngineType` save/restore
+- `Sources/NullPlayer/App/AppStateManager.swift` — ProjectM preset index session restore; engine type remains a UserDefaults preference
 - `Tests/NullPlayerAppTests/GeissEngineSmokeTests.swift` — lifecycle smoke test
 - `Sources/NullPlayer/Resources/ThirdPartyLicenses/GEISS_LICENSE.txt` — bundled license
 
@@ -202,7 +202,7 @@ User-facing controls for Geiss parameters are exposed via a two-level ABI: C ABI
 
 ### UserDefaults keys
 
-```
+```text
 geiss.sensitivity       (Float)
 geiss.gamma             (Int)
 geiss.beatDetection     (Bool)

@@ -53,6 +53,8 @@ class VisualizationGLView: NSOpenGLView {
 
     /// Current visualization engine (exposed for menu handlers)
     var currentEngine: VisualizationEngine? {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         return engine
     }
 
@@ -229,8 +231,7 @@ class VisualizationGLView: NSOpenGLView {
         // Acquire engine lock to ensure no render is in progress
         engineLock.lock()
         cleanupOpenGL()
-        engine?.cleanup()
-        engine = nil
+        cleanupEngineWithCurrentContext()
         engineLock.unlock()
 
         if let geissFFTSetup {
@@ -263,6 +264,25 @@ class VisualizationGLView: NSOpenGLView {
     
     private func cleanupOpenGL() {
         // Nothing to clean up - projectM manages its own resources
+    }
+
+    /// Destroys the current engine while this view's GL context is current.
+    /// Callers must hold `engineLock` so no display-link frame can render while
+    /// the engine tears down its GL resources.
+    private func cleanupEngineWithCurrentContext() {
+        if let context = openGLContext {
+            context.makeCurrentContext()
+            if let cglCtx = context.cglContextObj {
+                CGLLockContext(cglCtx)
+                engine?.cleanup()
+                CGLUnlockContext(cglCtx)
+            } else {
+                engine?.cleanup()
+            }
+        } else {
+            engine?.cleanup()
+        }
+        engine = nil
     }
     
     // MARK: - Engine Setup
@@ -372,8 +392,7 @@ class VisualizationGLView: NSOpenGLView {
         engineNeedsSetup = true
 
         // Clean up old engine (will be replaced on next render)
-        engine?.cleanup()
-        engine = nil
+        cleanupEngineWithCurrentContext()
 
         NSLog("VisualizationGLView: Engine switch queued, will initialize on next render")
     }
@@ -1036,38 +1055,59 @@ class VisualizationGLView: NSOpenGLView {
     // MARK: - Geiss Effect Navigation
 
     var geissEffectCount: Int {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let geiss = engine as? GeissEngine else { return 0 }
         return geiss.effectCount
     }
 
     var currentGeissEffectName: String {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let geiss = engine as? GeissEngine else { return "" }
         return geiss.currentEffectName
     }
 
     func geissEffectName(at index: Int) -> String {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let geiss = engine as? GeissEngine else { return "" }
         return geiss.effectName(at: index)
     }
 
     func nextGeissEffect() {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let geiss = engine as? GeissEngine else { return }
         geiss.nextEffect()
     }
 
     func previousGeissEffect() {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let geiss = engine as? GeissEngine else { return }
         geiss.previousEffect()
     }
 
     func randomGeissEffect() {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let geiss = engine as? GeissEngine else { return }
         geiss.randomEffect()
     }
 
     func selectGeissEffect(at index: Int) {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         guard let geiss = engine as? GeissEngine else { return }
         geiss.selectEffect(at: index)
+    }
+
+    func randomizeGeissPalette() {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        guard let geiss = engine as? GeissEngine else { return }
+        geiss.randomizePalette()
     }
 
     // MARK: - Geiss Configuration (UserDefaults persistence)
@@ -1117,6 +1157,8 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     func setGeissConfig(_ cfg: GeissEngine.Config) {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         geissConfigCache = cfg
         UserDefaults.standard.set(cfg.sensitivity, forKey: "geiss.sensitivity")
         UserDefaults.standard.set(cfg.gamma, forKey: "geiss.gamma")
@@ -1134,6 +1176,8 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     func getGeissConfig() -> GeissEngine.Config? {
+        engineLock.lock()
+        defer { engineLock.unlock() }
         if let geiss = engine as? GeissEngine {
             return geiss.config
         }

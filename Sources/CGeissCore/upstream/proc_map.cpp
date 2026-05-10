@@ -1034,7 +1034,7 @@ void Process_Map(void *p1, void *p2)
         const int           *ddata = (const int *)data;
 
         long count      = FX_YCUT_NUM_LINES;
-        long lookat     = 0;
+        long lookat     = slider1;
         long dest_pixel = FX_YCUT_xFXW;
         const long fxw  = FXW;
 
@@ -1062,7 +1062,7 @@ void Process_Map(void *p1, void *p2)
         const int           *ddata = (const int *)data;
 
         long count      = FX_YCUT_NUM_LINES;
-        long lookat     = 0;
+        long lookat     = slider1 * 4;
         long dest_pixel = FX_YCUT * FXW * 4;
         const long fxw4 = FXW * 4;
 

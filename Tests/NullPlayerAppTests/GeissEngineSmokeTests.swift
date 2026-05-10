@@ -283,7 +283,7 @@ final class GeissEngineSmokeTests: XCTestCase {
         if modeDidChange {
             XCTAssertTrue(modeDidChange, "Mode Lock off allows auto-switch to occur")
         } else {
-            print("INFO: Mode did not auto-switch within 500 frames; auto-switch feature may require upstream port edits")
+            XCTFail("Mode did not auto-switch within 500 frames; auto-switch feature may require upstream port edits. Current mode: \(diag.active_mode)")
         }
     }
 }

@@ -154,26 +154,93 @@ static void geiss_set_geometry(int width, int height) {
 struct GeissCore {
     int width;
     int height;
+    bool isValid;
     char effectName[32];
     char indexedEffectName[32];
 };
+
+static GeissCore gSingletonCore{};
+static GeissCore *gActiveCore = nullptr;
+static int gActiveCoreRefCount = 0;
+
+static bool geiss_core_is_valid(const GeissCore *core) {
+    return core != nullptr && core == gActiveCore && core->isValid;
+}
+
+static void geiss_seed_palette() {
+    FX_Random_Palette(false);
+    while (iBlendsLeftInPal > 0) {
+        PutPalette();
+    }
+}
+
+static GeissCoreConfig geiss_default_config() {
+    GeissCoreConfig cfg{};
+    cfg.sensitivity = 0.20f;
+    cfg.gamma = 10;
+    cfg.beatDetection = 1;
+    cfg.syncColorToSound = 0;
+    cfg.slideShift = 1;
+    cfg.modeLocked = 0;
+    cfg.paletteLocked = 0;
+    cfg.autoSwitchSeconds = 14;
+    cfg.visMode = 0;
+    return cfg;
+}
+
+static void geiss_reset_runtime_state() {
+    mode = 5;
+    new_mode = 5;
+    y_map_pos = -1;
+    frames_this_mode = 0;
+    intframe = 0;
+    g_rush_map = 0;
+    bLocked = false;
+}
+
+static void geiss_pick_next_auto_mode() {
+    const int previousMode = mode;
+    FX_Pick_Random_Mode();
+    if (new_mode == previousMode) {
+        new_mode = (previousMode % 25) + 1;
+        y_map_pos = -1;
+    }
+}
+
+static void geiss_advance_auto_map() {
+    const int prev_y_map_pos = y_map_pos;
+    GenerateChunkOfNewMap(false, 0);
+    if (prev_y_map_pos != -1 && y_map_pos == -1 && !bLocked) {
+        // Map just finished applying — queue the next mode.
+        geiss_pick_next_auto_mode();
+    }
+}
 
 extern "C" {
 
 GeissCore *GeissCore_create(int width, int height) {
     if (width <= 0 || height <= 0) return nullptr;
-    GeissCore *core = new (std::nothrow) GeissCore{};
-    if (!core) return nullptr;
+
+    if (geiss_core_is_valid(gActiveCore)) {
+        ++gActiveCoreRefCount;
+        return gActiveCore;
+    }
+
+    GeissCore *core = &gSingletonCore;
+    memset(core, 0, sizeof(*core));
     core->width  = width;
     core->height = height;
+    core->isValid = false;
 
     geiss_set_geometry(width, height);
+    geiss_reset_runtime_state();
     geiss_port_init_module();
 
     if (!FX_Init()) {
-        delete core;
         return nullptr;
     }
+    GeissCoreConfig defaultConfig = geiss_default_config();
+    geiss_port_set_config(&defaultConfig);
 
     // Upstream's `doInit()` (Win32 surface, not in the build) seeds the
     // initial palette before the first frame; `FX_Init`'s rush-map loop
@@ -182,40 +249,54 @@ GeissCore *GeissCore_create(int width, int height) {
     // palette generation here, then run the 18-frame cross-fade pump
     // synchronously so the first call to `GeissCore_palette` returns
     // something other than all-black.
-    FX_Random_Palette(false);
-    while (iBlendsLeftInPal > 0) {
-        PutPalette();
-    }
+    geiss_seed_palette();
+    core->isValid = true;
+    gActiveCore = core;
+    gActiveCoreRefCount = 1;
     return core;
 }
 
 void GeissCore_destroy(GeissCore *core) {
-    if (!core) return;
+    if (!geiss_core_is_valid(core)) return;
+    if (gActiveCoreRefCount > 1) {
+        --gActiveCoreRefCount;
+        return;
+    }
     FX_Fini();
-    delete core;
+    core->isValid = false;
+    gActiveCore = nullptr;
+    gActiveCoreRefCount = 0;
 }
 
 void GeissCore_resize(GeissCore *core, int width, int height) {
-    if (!core || width <= 0 || height <= 0) return;
+    if (!geiss_core_is_valid(core) || width <= 0 || height <= 0) return;
     if (core->width == width && core->height == height) return;
 
     FX_Fini();
     core->width  = width;
     core->height = height;
     geiss_set_geometry(width, height);
-    FX_Init();
+    if (!FX_Init()) {
+        core->isValid = false;
+        gActiveCore = nullptr;
+        gActiveCoreRefCount = 0;
+        return;
+    }
+    geiss_seed_palette();
 }
 
-void GeissCore_addPCM(GeissCore * /*core*/, const float *samples, int count) {
+void GeissCore_addPCM(GeissCore *core, const float *samples, int count) {
+    if (!geiss_core_is_valid(core) || !samples || count <= 0) return;
     geiss_port_set_pcm(samples, count);
 }
 
-void GeissCore_setSpectrum(GeissCore * /*core*/, const float *mags, int count) {
+void GeissCore_setSpectrum(GeissCore *core, const float *mags, int count) {
+    if (!geiss_core_is_valid(core) || !mags || count <= 0) return;
     geiss_port_set_spectrum(mags, count);
 }
 
 void GeissCore_render(GeissCore *core, unsigned char *indexBuf) {
-    if (!core || !indexBuf) return;
+    if (!geiss_core_is_valid(core) || !indexBuf) return;
     if (VS1 == nullptr || VS2 == nullptr) return;
 
     if (SoundEmpty) {
@@ -224,6 +305,7 @@ void GeissCore_render(GeissCore *core, unsigned char *indexBuf) {
             VS1[i] = (VS1[i] > 4) ? (unsigned char)(VS1[i] - 4) : 0;
             VS2[i] = (VS2[i] > 4) ? (unsigned char)(VS2[i] - 4) : 0;
         }
+        geiss_advance_auto_map();
         memcpy(indexBuf, VS1, pixelCount);
         return;
     }
@@ -245,12 +327,7 @@ void GeissCore_render(GeissCore *core, unsigned char *indexBuf) {
     // GenerateChunkOfNewMap), pick the next random mode so the
     // visualization auto-cycles — same role upstream's GeissProc thread
     // played.
-    int prev_y_map_pos = y_map_pos;
-    GenerateChunkOfNewMap(false, 0);
-    if (prev_y_map_pos != -1 && y_map_pos == -1 && !bLocked) {
-        // Map just finished applying — queue the next mode.
-        FX_Pick_Random_Mode();
-    }
+    geiss_advance_auto_map();
 
     // Output VS1 into the caller's indexBuf. Upstream's "back-buffer
     // merge" paths (`Merge_All_VS_To_Backbuffer`, songtitle GDI text,
@@ -260,32 +337,32 @@ void GeissCore_render(GeissCore *core, unsigned char *indexBuf) {
 }
 
 void GeissCore_palette(GeissCore *core, unsigned char *rgbaOut) {
-    if (!core || !rgbaOut) return;
+    if (!geiss_core_is_valid(core) || !rgbaOut) return;
     geiss_port_get_palette(rgbaOut);
 }
 
 void GeissCore_nextEffect(GeissCore *core) {
-    if (!core) return;
+    if (!geiss_core_is_valid(core)) return;
     new_mode = (new_mode % 25) + 1;
     y_map_pos  = -1;
     g_rush_map = 1;
 }
 
 void GeissCore_prevEffect(GeissCore *core) {
-    if (!core) return;
+    if (!geiss_core_is_valid(core)) return;
     new_mode = ((new_mode - 2 + 25) % 25) + 1;
     y_map_pos  = -1;
     g_rush_map = 1;
 }
 
 void GeissCore_randomEffect(GeissCore *core) {
-    if (!core) return;
+    if (!geiss_core_is_valid(core)) return;
     FX_Pick_Random_Mode();
     g_rush_map = 1;
 }
 
 void GeissCore_selectEffect(GeissCore *core, int index) {
-    if (!core) return;
+    if (!geiss_core_is_valid(core)) return;
     if (index < 0 || index >= 25) return;
     new_mode = index + 1;
     y_map_pos  = -1;
@@ -293,24 +370,24 @@ void GeissCore_selectEffect(GeissCore *core, int index) {
 }
 
 int GeissCore_effectCount(GeissCore *core) {
-    return core ? 25 : 0;
+    return geiss_core_is_valid(core) ? 25 : 0;
 }
 
 const char *GeissCore_effectName(GeissCore *core, int index) {
-    if (!core || index < 0 || index >= 25) return "";
+    if (!geiss_core_is_valid(core) || index < 0 || index >= 25) return "";
     snprintf(core->indexedEffectName, sizeof(core->indexedEffectName), "Mode %d", index + 1);
     return core->indexedEffectName;
 }
 
 const char *GeissCore_currentEffectName(GeissCore *core) {
-    if (!core) return "Mode 0";
+    if (!geiss_core_is_valid(core)) return "Mode 0";
     int active = new_mode > 0 ? new_mode : mode;
     snprintf(core->effectName, sizeof(core->effectName), "Mode %d", active);
     return core->effectName;
 }
 
 void GeissCore_diag(GeissCore *core, GeissCoreDiag *out) {
-    if (!core || !out) return;
+    if (!geiss_core_is_valid(core) || !out) return;
     out->active_mode      = mode;
     out->new_mode         = new_mode;
     out->y_map_pos        = y_map_pos;
@@ -329,15 +406,18 @@ void GeissCore_diag(GeissCore *core, GeissCoreDiag *out) {
     out->current_vol  = current_vol;
 }
 
-void GeissCore_getConfig(GeissCore * /*core*/, GeissCoreConfig *out) {
+void GeissCore_getConfig(GeissCore *core, GeissCoreConfig *out) {
+    if (!geiss_core_is_valid(core) || !out) return;
     geiss_port_get_config(out);
 }
 
-void GeissCore_setConfig(GeissCore * /*core*/, const GeissCoreConfig *cfg) {
+void GeissCore_setConfig(GeissCore *core, const GeissCoreConfig *cfg) {
+    if (!geiss_core_is_valid(core) || !cfg) return;
     geiss_port_set_config(cfg);
 }
 
-void GeissCore_randomizePalette(GeissCore * /*core*/) {
+void GeissCore_randomizePalette(GeissCore *core) {
+    if (!geiss_core_is_valid(core)) return;
     geiss_port_randomize_palette();
 }
 

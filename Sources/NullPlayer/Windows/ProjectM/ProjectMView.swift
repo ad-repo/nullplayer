@@ -1145,8 +1145,7 @@ class ProjectMView: NSView, GeissMenuTarget {
     }
 
     @objc func randomizePalette(_ sender: NSMenuItem) {
-        guard let geiss = visualizationGLView?.currentEngine as? GeissEngine else { return }
-        geiss.randomizePalette()
+        visualizationGLView?.randomizeGeissPalette()
     }
 
     @objc private func setAudioSensitivity(_ sender: NSMenuItem) {

@@ -231,7 +231,6 @@ class AppStateManager {
         var customSkinPath: String?
         
         // Visualization window state
-        var visualizationEngineType: String?
         var projectMPresetIndex: Int?
         
         // -- v2 fields (added for comprehensive state restoration) --
@@ -265,7 +264,7 @@ class AppStateManager {
             case playlistTracks, playlistURLs, currentTrackIndex, playbackPosition, wasPlaying
             case timeDisplayMode, isAlwaysOnTop
             case customSkinPath
-            case visualizationEngineType, projectMPresetIndex
+            case projectMPresetIndex
             // v2 fields
             case isDoubleSize, modernSkinName, selectedOutputDeviceUID
             case browserBrowseMode, savedInModernMode
@@ -336,7 +335,6 @@ class AppStateManager {
             // baseSkinIndex from older saved states is silently ignored (base skins no longer bundled)
             
             // Visualization window state - nil/default for backward compatibility with older saved states
-            visualizationEngineType = try container.decodeIfPresent(String.self, forKey: .visualizationEngineType)
             projectMPresetIndex = try container.decodeIfPresent(Int.self, forKey: .projectMPresetIndex)
             
             // v2 fields - all use decodeIfPresent for backward compatibility
@@ -385,7 +383,6 @@ class AppStateManager {
             timeDisplayMode: String,
             isAlwaysOnTop: Bool,
             customSkinPath: String? = nil,
-            visualizationEngineType: String? = nil,
             projectMPresetIndex: Int? = nil,
             isDoubleSize: Bool = false,
             modernSkinName: String? = nil,
@@ -428,7 +425,6 @@ class AppStateManager {
             self.timeDisplayMode = timeDisplayMode
             self.isAlwaysOnTop = isAlwaysOnTop
             self.customSkinPath = customSkinPath
-            self.visualizationEngineType = visualizationEngineType
             self.projectMPresetIndex = projectMPresetIndex
             self.isDoubleSize = isDoubleSize
             self.modernSkinName = modernSkinName
@@ -536,7 +532,6 @@ class AppStateManager {
             customSkinPath: getCustomSkinPath(),
             
             // Visualization window state
-            visualizationEngineType: wm.visualizationEngineType.rawValue,
             projectMPresetIndex: wm.visualizationPresetIndex,
             
             // v2 fields
@@ -700,9 +695,6 @@ class AppStateManager {
             UserDefaults.standard.set(deviceUID, forKey: "selectedOutputDeviceUID")
         }
 
-        let restoredVisualizationEngineType = VisualizationType(rawValue: state.visualizationEngineType ?? "") ?? .projectM
-        UserDefaults.standard.set(restoredVisualizationEngineType.rawValue, forKey: "visualizationEngineType")
-        
         // Check if the saved state's UI mode matches the current mode.
         // If mismatched (e.g. saved in modern, now running classic), skip window frame
         // restoration since the windows have different sizes and constraints.
@@ -728,7 +720,8 @@ class AppStateManager {
         let spectrumFrame = modeMatches ? state.spectrumWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let waveformFrame = modeMatches ? state.waveformWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let projectMPresetIndex = state.projectMPresetIndex
-        let visualizationEngineType = restoredVisualizationEngineType
+        let visualizationEngineType = UserDefaults.standard.string(forKey: "visualizationEngineType")
+            .flatMap(VisualizationType.init(rawValue:)) ?? .projectM
         let projectMFullscreen = state.isProjectMFullscreen
         let savedBrowseMode = state.browserBrowseMode
         let savedDoubleSize = state.isDoubleSize

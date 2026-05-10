@@ -2414,7 +2414,7 @@ extern "C" void geiss_port_get_config(GeissCoreConfig *out) {
     out->slideShift = g_bSlideShift ? 1 : 0;
     out->modeLocked = bLocked ? 1 : 0;
     out->paletteLocked = bPalLocked ? 1 : 0;
-    out->autoSwitchSeconds = (int)(frames_til_auto_switch__registry / fps);
+    out->autoSwitchSeconds = frames_til_auto_switch__registry / 30;
     out->visMode = (int)visMode;
 }
 
@@ -2447,9 +2447,10 @@ extern "C" void geiss_port_set_config(const GeissCoreConfig *cfg) {
     // paletteLocked: gated at palette mutation (line 579).
     bPalLocked = cfg->paletteLocked ? true : false;
 
-    // autoSwitchSeconds: convert to frames using live fps, write to registry.
+    // autoSwitchSeconds: store in upstream's 30fps registry basis; map
+    // generation scales this to the live fps when each mode starts.
     // (§0.3: the existing chunk-detection path picks it up from the registry)
-    frames_til_auto_switch__registry = (int)(cfg->autoSwitchSeconds * fps);
+    frames_til_auto_switch__registry = cfg->autoSwitchSeconds * 30;
 
     // visMode: pure read, applies next frame.
     visMode = (visModeEnum)cfg->visMode;
