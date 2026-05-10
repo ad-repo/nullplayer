@@ -36,8 +36,8 @@
 #define GEISS_PROCESS_MAP 1
 
 #include "proc_map.h"
-#include <ddraw.h>
-#include <memoryapi.h>
+// PORT(phase3): stripped ddraw-h
+// PORT(phase3): stripped memoryapi-h
 
 // This disables warning
 // "frame pointer register 'ebp' modified by inline assembly code"

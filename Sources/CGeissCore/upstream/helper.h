@@ -53,4 +53,4 @@ int GetNumCores();
 
 
 
-#endif _HELPER_H_
+#endif // _HELPER_H_

@@ -3,11 +3,66 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <new>
+
+#if defined(__APPLE__)
+#include <mach/mach_time.h>
+#else
+#include <time.h>
+#endif
 
 // Phase 1 stub: no upstream Geiss sources are referenced. This file proves
 // the C ABI seam end-to-end with a deterministic XOR pattern and a
 // hue-cycling palette. The real Geiss effect core lands in Phase 4.
+//
+// Phase 3: introduces `geiss_now_ms()` (replacement for Win32 `GetTickCount`)
+// and `GeissAudioState` (replacement for Winamp's `vis.h` host audio struct).
+// Both are declared with C linkage so the upstream effect core can call them
+// once it is added to the build in phase 4.
+
+// ---------------------------------------------------------------------------
+// Phase 3: monotonic millisecond clock — replaces Win32 GetTickCount.
+// ---------------------------------------------------------------------------
+
+extern "C" uint32_t geiss_now_ms(void);
+
+extern "C" uint32_t geiss_now_ms(void) {
+#if defined(__APPLE__)
+    static mach_timebase_info_data_t tb = {0, 0};
+    if (tb.denom == 0) {
+        mach_timebase_info(&tb);
+    }
+    uint64_t ns = mach_absolute_time() * (uint64_t)tb.numer / (uint64_t)tb.denom;
+    return (uint32_t)(ns / 1000000ULL);
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint32_t)((uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL);
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: GeissAudioState replaces Winamp 2 vis SDK's host-supplied buffers.
+// Layout matches the Winamp `vis.h` `winampVisModule` audio fields the upstream
+// code reads: signed 8-bit waveform per channel, 8-bit magnitude spectrum per
+// channel, 576 bins each. Phase 4 routes upstream reads of `mod->waveformData`
+// / `mod->spectrumData` through this struct.
+// ---------------------------------------------------------------------------
+
+#define GEISS_AUDIO_BINS 576
+
+extern "C" {
+    struct GeissAudioState {
+        unsigned char waveformData[2][GEISS_AUDIO_BINS];
+        unsigned char spectrumData[2][GEISS_AUDIO_BINS];
+    };
+}
+
+static GeissAudioState g_geiss_audio = {};
+
+extern "C" GeissAudioState *geiss_audio_state(void);
+extern "C" GeissAudioState *geiss_audio_state(void) { return &g_geiss_audio; }
 
 struct GeissCore {
     int width;
@@ -37,12 +92,37 @@ void GeissCore_resize(GeissCore *core, int width, int height) {
     core->height = height;
 }
 
-void GeissCore_addPCM(GeissCore * /*core*/, const float * /*samples*/, int /*count*/) {
-    // No-op in Phase 1.
+void GeissCore_addPCM(GeissCore * /*core*/, const float *samples, int count) {
+    // Convert mono Float32 PCM (range roughly [-1, 1]) into the signed-8-bit
+    // waveform layout the upstream Geiss code expects (range [-128, 127],
+    // stored unsigned to match the original char-array typing). Duplicate into
+    // both channels so legacy code that averages L+R still sees mono input.
+    if (!samples || count <= 0) return;
+    const int n = (count > GEISS_AUDIO_BINS) ? GEISS_AUDIO_BINS : count;
+    for (int i = 0; i < n; ++i) {
+        float s = samples[i];
+        if (s >  1.0f) s =  1.0f;
+        if (s < -1.0f) s = -1.0f;
+        unsigned char b = (unsigned char)(int)(s * 127.0f);
+        g_geiss_audio.waveformData[0][i] = b;
+        g_geiss_audio.waveformData[1][i] = b;
+    }
 }
 
-void GeissCore_setSpectrum(GeissCore * /*core*/, const float * /*mags*/, int /*count*/) {
-    // No-op in Phase 1.
+void GeissCore_setSpectrum(GeissCore * /*core*/, const float *mags, int count) {
+    // Spectrum is computed by the Swift side via Accelerate (vDSP_fft_zrip)
+    // and pushed through this entry point. Quantize to 8-bit per Winamp
+    // convention; duplicate into both channels.
+    if (!mags || count <= 0) return;
+    const int n = (count > GEISS_AUDIO_BINS) ? GEISS_AUDIO_BINS : count;
+    for (int i = 0; i < n; ++i) {
+        float m = mags[i];
+        if (m < 0.0f)   m = 0.0f;
+        if (m > 1.0f)   m = 1.0f;
+        unsigned char b = (unsigned char)(int)(m * 255.0f);
+        g_geiss_audio.spectrumData[0][i] = b;
+        g_geiss_audio.spectrumData[1][i] = b;
+    }
 }
 
 void GeissCore_render(GeissCore *core, unsigned char *indexBuf) {

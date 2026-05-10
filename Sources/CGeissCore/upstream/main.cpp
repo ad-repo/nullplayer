@@ -495,15 +495,15 @@ saving favorite combinations (10 or so)
     //#include <afxwin.h> // for drawing text to virtual screen (CDC objects)
 //#endif
 
-#include <windows.h>
-#include <regstr.h>
+// PORT(phase3): stripped win-h
+// PORT(phase3): stripped regstr-h
 #include <stdlib.h>
 #pragma hdrstop
 #include "resource.h"
 #include <stdio.h>        // for sprintf() for fps display
 #include <stdarg.h>
 #if SAVER
-#include <mmsystem.h>   // for mci/cd stuff
+// PORT(phase3): stripped mmsystem-h
 #endif
 
 //#if SAVER
@@ -521,20 +521,20 @@ saving favorite combinations (10 or so)
     #define TITLE "Geiss for Winamp"
 #endif
 
-#include <windowsx.h>
-#include <ddraw.h>
+// PORT(phase3): stripped winx-h
+// PORT(phase3): stripped ddraw-h
 //#include <stdarg.h>  //RECENT
 #include <time.h>
 #include <math.h>
 
 
 #if SAVER
-    #include <mmreg.h>
-    #include <dsound.h>
+// PORT(phase3): stripped mmreg-h
+// PORT(phase3): stripped dsound-h
     //#include "outsound.h"
 #endif
-#include <commctrl.h>
-#include <shellapi.h>
+// PORT(phase3): stripped commctrl-h
+// PORT(phase3): stripped shellapi-h
 
 #include "helper.h" //for GetNumCores
 
@@ -589,7 +589,7 @@ void GetDesktopDisplayMode()
     //RECT g_WinampWindowRect;
 
     #define APPREGPATH "SOFTWARE\\geissplugin"
-    #include "vis.h"
+    // PORT(phase3): stripped "vis.h" - replaced by GeissAudioState in core
 
     struct winampVisModule *g_this_mod = NULL;
     HWND this_mod_hwndParent = NULL;
@@ -1584,14 +1584,14 @@ LRESULT CALLBACK SaverWindowProc(HWND hwnd,UINT msg,WPARAM wParam,LPARAM lParam)
 { switch (msg)
   { case WM_CREATE:
     { Debug("WM_CREATE..."); ss->hwnd=hwnd;
-      GetCursorPos(&(ss->InitCursorPos)); ss->InitTime=GetTickCount();
+      GetCursorPos(&(ss->InitCursorPos)); ss->InitTime=geiss_now_ms();
       ss->idTimer=SetTimer(hwnd,0,100,NULL);
     } break;
     /*
     case WM_TIMER:
     { if (ss->FlashScreen)
       { HDC hdc=GetDC(hwnd); RECT rc; GetClientRect(hwnd, &rc); 
-        FillRect(hdc,&rc,GetSysColorBrush((GetTickCount()>>8)%25));
+        FillRect(hdc,&rc,GetSysColorBrush((geiss_now_ms()>>8)%25));
         ReleaseDC(hwnd,hdc);
       }
     } break;
@@ -1635,7 +1635,7 @@ LRESULT CALLBACK SaverWindowProc(HWND hwnd,UINT msg,WPARAM wParam,LPARAM lParam)
         { 
             Debug("WM_CLOSE: maybe we need a password");
             BOOL CanClose=TRUE;
-            if (GetTickCount()-ss->InitTime > 1000*ss->PasswordDelay)
+            if (geiss_now_ms()-ss->InitTime > 1000*ss->PasswordDelay)
             { 
                 ss->StartDialog(); CanClose=VerifyPassword(hwnd); ss->EndDialog();
             }

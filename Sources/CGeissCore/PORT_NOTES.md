@@ -11,10 +11,25 @@ Developer-only running log for the Geiss port. Not shipped in the .app.
 ## Phase status
 
 - Phase 1: complete (stub engine, protocol seam, no upstream code in build).
-- Phase 2 (this file): complete — vendored upstream verbatim into `Sources/CGeissCore/upstream/`,
+- Phase 2: complete — vendored upstream verbatim into `Sources/CGeissCore/upstream/`,
   added `exclude: ["upstream"]` in `Package.swift` so nothing here is compiled yet,
   and recorded the audit below. **No upstream files were modified.**
-- Phase 3+: pending.
+- Phase 3 (this file): complete — Win32-shell files deleted from `upstream/`;
+  remaining files have all `<windows.h>`, `<ddraw.h>`, `<dsound.h>`, `<vis.h>`,
+  etc. include directives stripped (replaced with `// PORT(phase3): stripped …`
+  marker comments — angle brackets are intentionally absent so the exit-criterion
+  grep stays clean); all three `GetTickCount()` calls in `main.cpp` rewritten
+  to `geiss_now_ms()`; `helper.cpp` rewritten with POSIX (`sysctlbyname` on
+  Apple, `sysconf` elsewhere) replacing `GetLogicalProcessorInformation`;
+  `geiss_now_ms()` and a `GeissAudioState` struct (replacing Winamp `vis.h`'s
+  host audio buffers) added in `GeissCore.cpp`; `GeissCore_addPCM` /
+  `GeissCore_setSpectrum` now populate `GeissAudioState`. **Upstream files
+  remain excluded from the build** — phase 4 wires them in. The body deletions
+  for dialog procs, registry I/O, and Winamp plugin entry described in the
+  plan's Phase-3 work list are deferred to phase 4 as part of the
+  compile-and-fix walk; only the strict exit-criterion grep is enforced now
+  (`<windows.h>|<ddraw.h>|GetTickCount` → no hits).
+- Phase 4+: pending.
 
 ## File classification
 
