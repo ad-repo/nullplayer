@@ -4,7 +4,7 @@
 
 ### New Features
 
-- **Geiss visualization** — a port of Ryan Geiss's classic Winamp visualization is available alongside ProjectM and EKG in both classic and modern UI. The right-click context menu exposes effect navigation plus runtime levers: Geiss Sensitivity, Gamma, Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock, Auto-Switch interval, visMode (Wave/Spectrum), and Randomize Palette. The visualization fills the window, reacts to audio state (paused/silent/playing), and all settings persist across launches.
+- **Geiss visualization** — a port of Ryan Geiss's classic Winamp visualization is available alongside ProjectM in both classic and modern UI. The right-click context menu exposes effect navigation plus runtime levers: Geiss Sensitivity, Gamma, Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock, Auto-Switch interval, visMode (Wave/Spectrum), and Randomize Palette. The visualization fills the window, reacts to audio state (paused/silent/playing), and all settings persist across launches.
 
 ### Bug Fixes
 
