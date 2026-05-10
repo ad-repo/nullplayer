@@ -38,6 +38,7 @@ let package = Package(
             name: "CGeissCore",
             dependencies: [],
             path: "Sources/CGeissCore",
+            exclude: ["upstream"],
             publicHeadersPath: "include",
             cxxSettings: [
                 .headerSearchPath("."),
