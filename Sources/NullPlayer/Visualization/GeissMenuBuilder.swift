@@ -99,7 +99,7 @@ final class GeissMenuBuilder {
         // Submenu: Auto-Switch
         let autoSwitchValues = [5, 15, 30, 60, 120]
         let autoSwitchMenu = NSMenu()
-        let currentAutoSwitch = currentConfig?.autoSwitchSeconds ?? 550
+        let currentAutoSwitch = currentConfig?.autoSwitchSeconds ?? 15
         for val in autoSwitchValues {
             let item = NSMenuItem(
                 title: String(format: "%ds", val),

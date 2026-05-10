@@ -1121,7 +1121,7 @@ class VisualizationGLView: NSOpenGLView {
             slideShift: true,
             modeLocked: false,
             paletteLocked: false,
-            autoSwitchSeconds: 14,
+            autoSwitchSeconds: 15,
             visMode: 0
         )
 

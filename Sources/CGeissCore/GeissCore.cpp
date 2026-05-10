@@ -183,7 +183,7 @@ static GeissCoreConfig geiss_default_config() {
     cfg.slideShift = 1;
     cfg.modeLocked = 0;
     cfg.paletteLocked = 0;
-    cfg.autoSwitchSeconds = 14;
+    cfg.autoSwitchSeconds = 15;
     cfg.visMode = 0;
     return cfg;
 }

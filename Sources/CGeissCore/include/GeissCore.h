@@ -62,7 +62,7 @@ typedef struct GeissCoreConfig {
     int   slideShift;           // bool, default TRUE
     int   modeLocked;           // bLocked, default FALSE (requires §0.1, §0.2)
     int   paletteLocked;        // bPalLocked, default FALSE
-    int   autoSwitchSeconds;    // frames_til_auto_switch__registry, written as seconds, default 550/fps
+    int   autoSwitchSeconds;    // frames_til_auto_switch__registry, written as seconds, default 15
     int   visMode;              // 0 = wave, 1 = spectrum, default wave
 } GeissCoreConfig;
 

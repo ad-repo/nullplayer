@@ -192,7 +192,7 @@ final class GeissEngine: VisualizationEngine {
         defer { coreLock.unlock() }
         guard let core else {
             return Config(sensitivity: 0.20, gamma: 10, beatDetection: true, syncColorToSound: false,
-                         slideShift: true, modeLocked: false, paletteLocked: false, autoSwitchSeconds: 550, visMode: 0)
+                         slideShift: true, modeLocked: false, paletteLocked: false, autoSwitchSeconds: 15, visMode: 0)
         }
         var cCfg = GeissCoreConfig()
         GeissCore_getConfig(core, &cCfg)
