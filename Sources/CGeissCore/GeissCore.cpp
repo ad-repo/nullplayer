@@ -121,16 +121,16 @@ extern "C" uint32_t geiss_now_ms(void) {
 
 // ---------------------------------------------------------------------------
 // Geometry helper — populate the upstream globals before FX_Init.
-// FX_YCUT (top/bottom mask band) defaults to 90 in upstream at 640x480; we
-// scale it down for smaller framebuffers so it doesn't consume too much of
-// the visible area on a 256x192 visualization window.
+// Upstream reserves a large top/bottom mask band (`FX_YCUT` is 90 at
+// 640x480). NullPlayer displays the indexed framebuffer directly inside a
+// resizable window, so keeping that band creates visible letterboxing. Use a
+// one-pixel guard instead: several upstream effects address `FX_YCUT - 1`, so
+// zero would risk negative offsets.
 // ---------------------------------------------------------------------------
 static void geiss_set_geometry(int width, int height) {
     FXW                = width;
     FXH                = height;
-    // Upstream uses FX_YCUT=90 at 480 lines (~19% of height). Match that
-    // ratio so the off-screen mask is consistent.
-    FX_YCUT            = max(1L, (long)(height * 90 / 480));
+    FX_YCUT            = 1;
     FX_YCUT_HIDE       = FX_YCUT + 2;
     FX_YCUT_NUM_LINES  = FXW * (FXH - FX_YCUT * 2);
     FX_YCUT_xFXW_x8    = FX_YCUT * FXW * 8;

@@ -162,9 +162,10 @@ perform after the first build — confirmed clean.)
   * `GeissCore_randomEffect` → `FX_Pick_Random_Mode()` + rush.
   * `GeissCore_currentEffectName` formats `"Mode N"` into a per-core
     static buffer.
-  Geometry helper `geiss_set_geometry(w,h)` scales `FX_YCUT` proportional
-  to height (upstream uses 90 at 480 lines, ~19%); the exit grep audit
-  preserves all upstream variables. `swift build` green; `GeissEngine.swift`
+  Geometry helper `geiss_set_geometry(w,h)` sets `FX_YCUT` to a one-pixel
+  guard so NullPlayer's direct framebuffer display fills resizable windows
+  instead of preserving upstream's large top/bottom mask band. The exit grep
+  audit preserves all upstream variables. `swift build` green; `GeissEngine.swift`
   is unchanged — it already drove the C ABI correctly through phase 1.
 - Phase 4c-7: direct ports of `FX_Random_Palette`,
   `PutPalette`, `CrankPal` from upstream `video.h:1390-1645`.
