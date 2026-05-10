@@ -45,6 +45,10 @@ typedef struct GeissCoreDiag {
     int gXC, gYC;
     int iDispBits;
     int FXW, FXH;
+    int sound_ready;
+    int sound_active;
+    int sound_empty;
+    float current_vol;
 } GeissCoreDiag;
 
 void GeissCore_diag(GeissCore *core, GeissCoreDiag *out);

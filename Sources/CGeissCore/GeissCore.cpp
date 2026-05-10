@@ -66,6 +66,10 @@ extern long           intframe;
 extern unsigned char *VS1;
 extern unsigned char *VS2;
 extern unsigned char *TEMPPTR;
+extern int            SoundReady;
+extern int            SoundActive;
+extern int            SoundEmpty;
+extern float          current_vol;
 extern int            BOOL_g_rush_map_dummy; // (unused — keeps the comment block honest)
 
 // `g_rush_map` is declared `BOOL` in geiss_port.cpp, which `win_compat.h`
@@ -208,6 +212,16 @@ void GeissCore_render(GeissCore *core, unsigned char *indexBuf) {
     if (!core || !indexBuf) return;
     if (VS1 == nullptr || VS2 == nullptr) return;
 
+    if (SoundEmpty) {
+        const size_t pixelCount = (size_t)(FXW * FXH);
+        for (size_t i = 0; i < pixelCount; ++i) {
+            VS1[i] = (VS1[i] > 4) ? (unsigned char)(VS1[i] - 4) : 0;
+            VS2[i] = (VS2[i] > 4) ? (unsigned char)(VS2[i] - 4) : 0;
+        }
+        memcpy(indexBuf, VS1, pixelCount);
+        return;
+    }
+
     // Mirror upstream main.cpp:3756 render1() — the canonical Geiss frame
     // loop. RenderFX writes effect overlays into VS1; Process_Map warps
     // VS1 through DATA_FX into VS2; RenderDots / RenderWave overlay
@@ -303,6 +317,10 @@ void GeissCore_diag(GeissCore *core, GeissCoreDiag *out) {
     out->iDispBits = iDispBits;
     out->FXW       = (int)FXW;
     out->FXH       = (int)FXH;
+    out->sound_ready  = SoundReady;
+    out->sound_active = SoundActive;
+    out->sound_empty  = SoundEmpty;
+    out->current_vol  = current_vol;
 }
 
 } // extern "C"

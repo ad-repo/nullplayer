@@ -622,6 +622,15 @@ class VisualizationGLView: NSOpenGLView {
                 NSLog("VisualizationGLView: Audio active, beat sensitivity = %.2f", normalBeatSensitivity)
             }
         } else {
+            dataLock.withLock {
+                for i in 0..<localPCM.count {
+                    localPCM[i] = 0
+                }
+                for i in 0..<localSpectrum.count {
+                    localSpectrum[i] = 0
+                }
+            }
+
             // Audio stopped - reduce beat sensitivity for calmer visualization (ProjectM only)
             if let pm = engine as? ProjectMWrapper {
                 pm.beatSensitivity = idleBeatSensitivity

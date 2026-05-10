@@ -1722,16 +1722,31 @@ void GenerateChunkOfNewMap(bool bLoadPreset, int iPresetNum) {
 extern "C" void geiss_port_set_pcm(const float *samples, int count) {
     if (!samples || count <= 0) return;
     const int n = (count > 576) ? 576 : count;
+    float absSum = 0.0f;
+    float peak = 0.0f;
     // Geiss expects 8-bit samples biased by +128 (Winamp vis convention):
     // a value of 128 == silence, 0 / 255 == extreme negative / positive.
     for (int i = 0; i < n; ++i) {
         float s = samples[i];
         if (s >  1.0f) s =  1.0f;
         if (s < -1.0f) s = -1.0f;
+        float a = fabsf(s);
+        absSum += a;
+        peak = max(peak, a);
         unsigned char b = (unsigned char)(int)(128.0f + s * 127.0f);
         s_geiss_stub_module.waveformData[0][i] = b;
         s_geiss_stub_module.waveformData[1][i] = b;
     }
+    for (int i = n; i < 576; ++i) {
+        s_geiss_stub_module.waveformData[0][i] = 128;
+        s_geiss_stub_module.waveformData[1][i] = 128;
+    }
+
+    const float avgAbs = absSum / (float)n;
+    SoundEnabled = TRUE;
+    SoundReady = TRUE;
+    SoundActive = TRUE;
+    SoundEmpty = (avgAbs < 0.0015f && peak < 0.010f) ? TRUE : FALSE;
 }
 
 extern "C" void geiss_port_set_spectrum(const float *mags, int count) {
@@ -1744,6 +1759,10 @@ extern "C" void geiss_port_set_spectrum(const float *mags, int count) {
         unsigned char b = (unsigned char)(int)(m * 255.0f);
         s_geiss_stub_module.spectrumData[0][i] = b;
         s_geiss_stub_module.spectrumData[1][i] = b;
+    }
+    for (int i = n; i < 576; ++i) {
+        s_geiss_stub_module.spectrumData[0][i] = 0;
+        s_geiss_stub_module.spectrumData[1][i] = 0;
     }
 }
 
@@ -1759,6 +1778,16 @@ extern "C" void geiss_port_init_module(void) {
     s_geiss_stub_module.delayMs        = 0;
     s_geiss_stub_module.spectrumNch    = 2;
     s_geiss_stub_module.waveformNch    = 2;
+    for (int i = 0; i < 576; ++i) {
+        s_geiss_stub_module.waveformData[0][i] = 128;
+        s_geiss_stub_module.waveformData[1][i] = 128;
+        s_geiss_stub_module.spectrumData[0][i] = 0;
+        s_geiss_stub_module.spectrumData[1][i] = 0;
+    }
+    SoundEnabled = TRUE;
+    SoundReady = TRUE;
+    SoundActive = TRUE;
+    SoundEmpty = TRUE;
     g_this_mod = &s_geiss_stub_module;
 }
 

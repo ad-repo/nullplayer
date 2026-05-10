@@ -138,6 +138,11 @@ perform after the first build — confirmed clean.)
   * PCM waveform data remains delivered through `GeissCore_addPCM`;
     `geiss_port_set_pcm` clamps float mono samples to Winamp's signed
     8-bit biased convention (`128 == silence`, `0/255 == extremes`).
+    It also marks the host sound state active or silent from incoming PCM.
+    Silent frames fade the indexed framebuffer toward black instead of
+    running Geiss's autonomous effect loop; playback-idle clears the
+    Swift-side PCM/spectrum snapshots so stale audio cannot keep the
+    visualization alive.
 - Phase 4c-8: the `GeissCore_*` C ABI is now wired through
   the port. `GeissCore.cpp`'s phase-1 stub bodies are replaced with calls
   into the real engine:

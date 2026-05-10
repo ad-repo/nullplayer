@@ -131,4 +131,48 @@ final class GeissEngineSmokeTests: XCTestCase {
         XCTAssertNotEqual(firstName, afterName,
                           "GeissCore_nextEffect did not advance the active mode within 60 frames.")
     }
+
+    func testGeissCoreMarksSilenceIdleAndAudioActive() {
+        guard let core = GeissCore_create(128, 96) else {
+            XCTFail("GeissCore_create failed")
+            return
+        }
+        defer { GeissCore_destroy(core) }
+
+        let silence = [Float](repeating: 0, count: 576)
+        var audio = [Float](repeating: 0, count: 576)
+        for i in 0..<audio.count {
+            audio[i] = sinf(Float(i) * 0.08) * 0.8
+        }
+        var indexBuf = [UInt8](repeating: 0, count: 128 * 96)
+
+        silence.withUnsafeBufferPointer { pcm in
+            GeissCore_addPCM(core, pcm.baseAddress, Int32(pcm.count))
+        }
+        indexBuf.withUnsafeMutableBufferPointer { buf in
+            GeissCore_render(core, buf.baseAddress)
+        }
+
+        var idleDiag = GeissCoreDiag()
+        GeissCore_diag(core, &idleDiag)
+        XCTAssertNotEqual(idleDiag.sound_ready, 0)
+        XCTAssertNotEqual(idleDiag.sound_active, 0)
+        XCTAssertNotEqual(idleDiag.sound_empty, 0)
+
+        for _ in 0..<5 {
+            audio.withUnsafeBufferPointer { pcm in
+                GeissCore_addPCM(core, pcm.baseAddress, Int32(pcm.count))
+            }
+            indexBuf.withUnsafeMutableBufferPointer { buf in
+                GeissCore_render(core, buf.baseAddress)
+            }
+        }
+
+        var activeDiag = GeissCoreDiag()
+        GeissCore_diag(core, &activeDiag)
+        XCTAssertNotEqual(activeDiag.sound_ready, 0)
+        XCTAssertNotEqual(activeDiag.sound_active, 0)
+        XCTAssertEqual(activeDiag.sound_empty, 0)
+        XCTAssertGreaterThan(activeDiag.current_vol, 0)
+    }
 }
