@@ -11,7 +11,7 @@ import AppKit
 // =============================================================================
 
 /// Modern ProjectM visualization view with full modern skin support
-class ModernProjectMView: NSView {
+class ModernProjectMView: NSView, GeissMenuTarget {
     
     // MARK: - Properties
     
@@ -544,8 +544,10 @@ class ModernProjectMView: NSView {
             return
         }
 
-        // Bottom 3/4: show ratings overlay on click
-        showPresetRatingOverlay()
+        // Bottom 3/4: show ratings overlay for ProjectM presets only.
+        if visualizationGLView?.currentEngineType == .projectM {
+            showPresetRatingOverlay()
+        }
     }
     
     private func handleShadeMouseDown(at point: NSPoint, event: NSEvent) {
@@ -663,28 +665,35 @@ class ModernProjectMView: NSView {
         case 35: // P key - toggle quality mode (30fps/60fps)
             togglePerformanceMode(nil)
             
-        case 124: // Right arrow - next preset
-            if hasShift {
+        case 124: // Right arrow - next preset/effect
+            if visualizationGLView?.currentEngineType == .geiss {
+                visualizationGLView?.nextGeissEffect()
+            } else if hasShift {
                 visualizationGLView?.nextPreset(hardCut: true)
             } else {
                 visualizationGLView?.nextPreset(hardCut: false)
             }
             
-        case 123: // Left arrow - previous preset
-            if hasShift {
+        case 123: // Left arrow - previous preset/effect
+            if visualizationGLView?.currentEngineType == .geiss {
+                visualizationGLView?.previousGeissEffect()
+            } else if hasShift {
                 visualizationGLView?.previousPreset(hardCut: true)
             } else {
                 visualizationGLView?.previousPreset(hardCut: false)
             }
             
-        case 15: // R key - random preset
-            if hasShift {
+        case 15: // R key - random preset/effect
+            if visualizationGLView?.currentEngineType == .geiss {
+                visualizationGLView?.randomGeissEffect()
+            } else if hasShift {
                 visualizationGLView?.randomPreset(hardCut: true)
             } else {
                 visualizationGLView?.randomPreset(hardCut: false)
             }
             
         case 8: // C key - toggle cycle mode
+            guard visualizationGLView?.currentEngineType == .projectM else { return }
             switch presetCycleMode {
             case .off:
                 presetCycleMode = .cycle
@@ -710,10 +719,13 @@ class ModernProjectMView: NSView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         
+        let currentEngineType = visualizationGLView?.currentEngineType ?? .projectM
         let isProjectMAvailable = visualizationGLView?.isProjectMAvailable ?? false
+        let isProjectMActive = currentEngineType == .projectM && isProjectMAvailable
+        let isGeissActive = currentEngineType == .geiss
         
         // Preset navigation (only when projectM is available)
-        if isProjectMAvailable {
+        if isProjectMActive {
             let presetName = visualizationGLView?.currentPresetName ?? "Unknown"
             let currentPresetIndex = visualizationGLView?.currentPresetIndex ?? 0
             let presetIndex = currentPresetIndex + 1
@@ -858,11 +870,12 @@ class ModernProjectMView: NSView {
                 
                 menu.addItem(NSMenuItem.separator())
             }
+        } else if isGeissActive {
+            addGeissEffectsMenuItems(to: menu)
         }
         
         // Visualization Engine selector
         let engineMenu = NSMenu()
-        let currentEngineType = visualizationGLView?.currentEngineType ?? .projectM
         
         for engineType in VisualizationType.allCases {
             let item = NSMenuItem(
@@ -897,7 +910,7 @@ class ModernProjectMView: NSView {
         menu.addItem(audioSensMenuItem)
         
         // Beat Sensitivity submenu (projectM beat detection threshold) - only for ProjectM
-        if isProjectMAvailable {
+        if isProjectMActive {
             let beatSensMenu = NSMenu()
             let currentBeatSens = visualizationGLView?.normalBeatSensitivity ?? 1.0
             for (name, value) in [("Low (0.5)", 5), ("Normal (1.0)", 10), ("High (1.5)", 15), ("Max (2.0)", 20)] {
@@ -955,6 +968,67 @@ class ModernProjectMView: NSView {
         hidePresetRatingOverlay()
         visualizationGLView?.randomPreset()
     }
+
+    private func addGeissEffectsMenuItems(to menu: NSMenu) {
+        let currentEffectName = visualizationGLView?.currentGeissEffectName ?? "Mode 0"
+        let effectCount = visualizationGLView?.geissEffectCount ?? 0
+        let currentEffectItem = NSMenuItem(
+            title: "Effect: \(currentEffectName)",
+            action: nil,
+            keyEquivalent: ""
+        )
+        currentEffectItem.isEnabled = false
+        menu.addItem(currentEffectItem)
+        menu.addItem(NSMenuItem.separator())
+
+        let nextEffectItem = NSMenuItem(title: "Next Effect", action: #selector(nextGeissEffectAction(_:)), keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+        nextEffectItem.target = self
+        menu.addItem(nextEffectItem)
+
+        let prevEffectItem = NSMenuItem(title: "Previous Effect", action: #selector(previousGeissEffectAction(_:)), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        prevEffectItem.target = self
+        menu.addItem(prevEffectItem)
+
+        let randomEffectItem = NSMenuItem(title: "Random Effect", action: #selector(randomGeissEffectAction(_:)), keyEquivalent: "r")
+        randomEffectItem.target = self
+        menu.addItem(randomEffectItem)
+
+        if effectCount > 0 {
+            menu.addItem(NSMenuItem.separator())
+            let effectsMenu = NSMenu()
+            for index in 0..<effectCount {
+                let name = visualizationGLView?.geissEffectName(at: index) ?? "Mode \(index + 1)"
+                let item = NSMenuItem(title: name, action: #selector(selectGeissEffectFromMenu(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = index
+                item.state = name == currentEffectName ? .on : .off
+                effectsMenu.addItem(item)
+            }
+            let effectsMenuItem = NSMenuItem(title: "Effects", action: nil, keyEquivalent: "")
+            effectsMenuItem.submenu = effectsMenu
+            menu.addItem(effectsMenuItem)
+        }
+
+        if let glView = visualizationGLView {
+            GeissMenuBuilder.addGeissConfigMenuItems(to: menu, target: self, visualizationView: glView)
+        }
+    }
+
+    @objc private func nextGeissEffectAction(_ sender: Any?) {
+        visualizationGLView?.nextGeissEffect()
+    }
+
+    @objc private func previousGeissEffectAction(_ sender: Any?) {
+        visualizationGLView?.previousGeissEffect()
+    }
+
+    @objc private func randomGeissEffectAction(_ sender: Any?) {
+        visualizationGLView?.randomGeissEffect()
+    }
+
+    @objc private func selectGeissEffectFromMenu(_ sender: NSMenuItem) {
+        visualizationGLView?.selectGeissEffect(at: sender.tag)
+    }
     
     @objc private func setCurrentPresetAsDefault(_ sender: Any?) {
         visualizationGLView?.setCurrentPresetAsDefault()
@@ -992,7 +1066,68 @@ class ModernProjectMView: NSView {
     @objc private func togglePerformanceMode(_ sender: Any?) {
         visualizationGLView?.toggleLowPowerMode()
     }
-    
+
+    // MARK: - Geiss Menu Handlers (GeissMenuTarget protocol implementations)
+
+    @objc func toggleBeatDetection(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.beatDetection.toggle()
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func toggleSyncColorToSound(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.syncColorToSound.toggle()
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func toggleSlideShift(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.slideShift.toggle()
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func toggleModeLock(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.modeLocked.toggle()
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func togglePaletteLock(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.paletteLocked.toggle()
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func setSensitivity(_ sender: NSMenuItem) {
+        let sensitivity = Float(sender.tag) / 100.0
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.sensitivity = sensitivity
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func setGamma(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.gamma = sender.tag
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func setAutoSwitch(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.autoSwitchSeconds = sender.tag
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func setVisMode(_ sender: NSMenuItem) {
+        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
+        cfg.visMode = sender.tag
+        visualizationGLView?.setGeissConfig(cfg)
+    }
+
+    @objc func randomizePalette(_ sender: NSMenuItem) {
+        visualizationGLView?.randomizeGeissPalette()
+    }
+
     @objc private func closeWindow(_ sender: Any?) {
         window?.close()
     }
@@ -1009,6 +1144,11 @@ class ModernProjectMView: NSView {
     
     @objc private func switchVisualizationEngine(_ sender: NSMenuItem) {
         guard let type = sender.representedObject as? VisualizationType else { return }
+        if type != .projectM {
+            hidePresetRatingOverlay()
+            presetCycleMode = .off
+            stopPresetCycleTimer()
+        }
         visualizationGLView?.switchEngine(to: type)
     }
     

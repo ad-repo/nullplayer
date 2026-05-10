@@ -280,6 +280,14 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     var isProjectMAvailable: Bool {
         return projectMView.visualizationGLView?.isProjectMAvailable ?? false
     }
+
+    var currentEngineType: VisualizationType {
+        return projectMView.visualizationGLView?.currentEngineType ?? .projectM
+    }
+
+    func switchEngine(to type: VisualizationType) {
+        projectMView.visualizationGLView?.switchEngine(to: type)
+    }
     
     /// Current preset name
     var currentPresetName: String {

@@ -15,7 +15,7 @@ import NullPlayerCore
 /// - **Playback state**: playlist only; the current track is intentionally not saved
 /// - **Skins**: timeDisplayMode, isAlwaysOnTop, double size mode (modern UI)
 /// - **Skin**: classic custom skin path, modern skin name
-/// - **ProjectM**: preset index, fullscreen state
+/// - **Visualization**: engine type, ProjectM preset index, fullscreen state
 /// - **Audio output**: selected device UID
 /// - **Browser**: browse mode (artists/albums/tracks/etc.)
 /// - **UI mode**: which mode (modern/classic) the state was saved in
@@ -230,7 +230,7 @@ class AppStateManager {
         // Skin
         var customSkinPath: String?
         
-        // ProjectM preset
+        // Visualization window state
         var projectMPresetIndex: Int?
         
         // -- v2 fields (added for comprehensive state restoration) --
@@ -334,7 +334,7 @@ class AppStateManager {
             customSkinPath = try container.decodeIfPresent(String.self, forKey: .customSkinPath)
             // baseSkinIndex from older saved states is silently ignored (base skins no longer bundled)
             
-            // ProjectM preset - nil for backward compatibility with older saved states
+            // Visualization window state - nil/default for backward compatibility with older saved states
             projectMPresetIndex = try container.decodeIfPresent(Int.self, forKey: .projectMPresetIndex)
             
             // v2 fields - all use decodeIfPresent for backward compatibility
@@ -531,7 +531,7 @@ class AppStateManager {
             // Skin - save path if using a custom skin
             customSkinPath: getCustomSkinPath(),
             
-            // ProjectM preset
+            // Visualization window state
             projectMPresetIndex: wm.visualizationPresetIndex,
             
             // v2 fields
@@ -694,7 +694,7 @@ class AppStateManager {
         if let deviceUID = state.selectedOutputDeviceUID {
             UserDefaults.standard.set(deviceUID, forKey: "selectedOutputDeviceUID")
         }
-        
+
         // Check if the saved state's UI mode matches the current mode.
         // If mismatched (e.g. saved in modern, now running classic), skip window frame
         // restoration since the windows have different sizes and constraints.
@@ -720,6 +720,8 @@ class AppStateManager {
         let spectrumFrame = modeMatches ? state.spectrumWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let waveformFrame = modeMatches ? state.waveformWindowFrame.flatMap({ NSRectFromString($0) }) : nil
         let projectMPresetIndex = state.projectMPresetIndex
+        let visualizationEngineType = UserDefaults.standard.string(forKey: "visualizationEngineType")
+            .flatMap(VisualizationType.init(rawValue:)) ?? .projectM
         let projectMFullscreen = state.isProjectMFullscreen
         let savedBrowseMode = state.browserBrowseMode
         let savedDoubleSize = state.isDoubleSize
@@ -759,6 +761,8 @@ class AppStateManager {
             }
             if state.isProjectMVisible {
                 wm.showProjectM(at: projectMFrame)
+                wm.switchVisualizationEngine(to: visualizationEngineType)
+                NSLog("AppStateManager: Restored visualization engine: %@", visualizationEngineType.rawValue)
                 
                 // Restore fullscreen state BEFORE preset
                 if projectMFullscreen {
@@ -767,7 +771,7 @@ class AppStateManager {
                 
                 // Restore ProjectM preset after engine is initialized on render thread
                 // The engine setup is deferred and takes ~200ms to complete
-                if let presetIndex = projectMPresetIndex {
+                if visualizationEngineType == .projectM, let presetIndex = projectMPresetIndex {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         wm.selectVisualizationPreset(at: presetIndex)
                         NSLog("AppStateManager: Restored ProjectM preset index: %d", presetIndex)

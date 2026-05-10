@@ -34,6 +34,32 @@ let package = Package(
                 .headerSearchPath(".")
             ]
         ),
+        .target(
+            name: "CGeissCore",
+            dependencies: [],
+            path: "Sources/CGeissCore",
+            // Phase 4c: helper.cpp + proc_map.cpp + upstream_port/geiss_port.cpp
+            // are in the compile set. The upstream main.cpp stays excluded —
+            // it is a Win32/DirectDraw orchestrator, retained in tree for
+            // licence + reference; the platform-neutral algorithms are pulled
+            // into the build via `geiss_port.cpp` (which #includes Effects.h
+            // and ports the orchestration functions). The phase-4b stub block
+            // inside proc_map.cpp is no longer the global-definition site —
+            // geiss_port.cpp owns them — so `GEISS_PHASE_4B_STUBS` is dropped.
+            exclude: [
+                "upstream/main.cpp",
+                "upstream/LICENSE",
+                "upstream/README.md",
+            ],
+            publicHeadersPath: "include",
+            cxxSettings: [
+                .headerSearchPath("."),
+                .headerSearchPath("upstream"),
+                .headerSearchPath("upstream_port"),
+                .define("__APPLE__"),
+                .unsafeFlags(["-fno-strict-aliasing", "-fwrapv"])
+            ]
+        ),
         // Lightweight core library containing model types
         // Unit tests depend only on this target for fast compilation
         .target(
@@ -64,6 +90,7 @@ let package = Package(
             dependencies: [
                 "NullPlayerCore",
                 "CVisClassicCore",
+                "CGeissCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "KSPlayer",

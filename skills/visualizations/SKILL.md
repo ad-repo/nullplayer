@@ -137,7 +137,7 @@ All effects use Core Image filters for GPU acceleration and respond to audio lev
 
 ## ProjectM/MilkDrop Visualizer
 
-Renders classic MilkDrop presets using OpenGL. Window has two implementations (classic/modern UI modes) both embedding `VisualizationGLView` for rendering.
+Renders classic MilkDrop presets using OpenGL. Window has two implementations (classic/modern UI modes) both embedding `VisualizationGLView` for rendering. The same window can switch between the ProjectM and Geiss engines from the right-click **Visualization Engine** submenu.
 
 ### What is ProjectM/MilkDrop?
 
@@ -216,6 +216,49 @@ ProjectM uses two sensitivity levels:
 - **Active**: User-configurable (default 1.0)
 
 Persisted: `projectMBeatSensitivity` (UserDefaults)
+
+## Geiss Visualizer
+
+Geiss is a ProjectM-peer engine in the visualization window. It is selected from the same right-click **Visualization Engine** submenu and uses the same fullscreen, frame-rate, window docking, and engine-switch lifecycle as ProjectM.
+
+### Controls
+
+**Keyboard Shortcuts:**
+- **→ / ←**: Next/previous effect
+- **R**: Random effect
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+
+**Context Menu:**
+- Current Effect
+- Next / Previous / Random Effect
+- Effects submenu
+- **Beat Detection** toggle
+- **Sync Color to Sound** toggle
+- **Slide Shift** toggle
+- **Mode Lock** toggle (when on, suppresses auto mode-switching at chunk boundaries)
+- **Palette Lock** toggle
+- **Geiss Sensitivity** submenu — internal `volscale`, discrete steps `0.25 / 0.5 / 1.0 / 2.0 / 3.0 / 4.0`. Stacks on top of the host-side `projectMPCMGain`; labelled "Geiss Sensitivity" to distinguish from the existing Audio Sensitivity control.
+- **Gamma** submenu — discrete steps `0 / 25 / 50 / 100 / 150 / 200`, labelled with the resulting factor (`1.00× / 1.25× / 1.50× / 2.00× / 2.50× / 3.00×`)
+- **Auto-Switch** submenu — `5s / 15s / 30s / 60s / 120s` (no "Off" entry — Mode Lock is the single source of truth for stopping auto-switch)
+- **visMode** submenu — Wave / Spectrum
+- **Randomize Palette** action (one-shot palette shuffle)
+- Audio Sensitivity (host-side PCM gain — same control as ProjectM)
+- Visualization Engine
+- Fullscreen
+
+All lever state is persisted to UserDefaults under the `geiss.*` namespace (`geiss.sensitivity`, `geiss.gamma`, `geiss.beatDetection`, `geiss.syncColorToSound`, `geiss.slideShift`, `geiss.modeLocked`, `geiss.paletteLocked`, `geiss.autoSwitchSeconds`, `geiss.visMode`) and re-applied on engine activation. The same shared `GeissMenuBuilder` populates the menu in both classic (`ProjectMView`) and modern (`ModernProjectMView`) UI.
+
+### Technical Details
+
+- **Core**: `CGeissCore` ports the platform-neutral Geiss effect pipeline from the BSD-3-Clause upstream source. `upstream/main.cpp` remains as source reference but is excluded from the build; the compiled orchestration lives in `upstream_port/geiss_port.cpp`.
+- **Rendering**: Geiss writes an 8-bit indexed framebuffer. `GeissEngine` uploads that buffer to a `GL_R8` texture, uploads the 256-entry RGBA palette to a `256x1 GL_RGBA8` texture, and resolves final color in a fullscreen OpenGL fragment shader.
+- **Audio Input**: `VisualizationGLView.updatePCM` feeds mono waveform samples through `GeissCore_addPCM`, where they are converted to Winamp-style signed 8-bit biased samples (`128 == silence`).
+- **Spectrum Input**: `VisualizationGLView` computes a 256-bin magnitude spectrum from the 512-sample PCM buffer with `Accelerate.framework` (`vDSP_fft_zrip`) and pushes it through `GeissCore_setSpectrum`. FFT setup and scratch buffers are cached per view.
+- **Idle Behavior**: The Geiss port classifies incoming PCM as active or silent. Silent PCM fades the indexed framebuffer toward black instead of running the autonomous effect loop; playback-idle notifications clear the Swift PCM/spectrum snapshots so stale audio does not keep driving the core.
+- **Threading**: The audio callback uses `engineLock.try()` before pushing spectrum so it does not block behind rendering or engine swaps. `GeissEngine` serializes all C-core calls with its own `coreLock`.
+- **Persistence**: The active engine is stored in UserDefaults as `visualizationEngineType` and in AppState v2 as the optional raw string field `visualizationEngineType`. Missing or unknown values default to ProjectM.
+- **Licensing**: Geiss is credited in the About window and its BSD-3-Clause license is bundled as `ThirdPartyLicenses/GEISS_LICENSE.txt`.
 
 ## Spectrum Analyzer Window
 
@@ -400,13 +443,13 @@ Controls how quickly bars fall:
 
 ## Comparison
 
-| Feature | Album Art | ProjectM/MilkDrop | Spectrum Analyzer |
-|---------|-----------|-------------------|-------------------|
-| **Visual Style** | Transformed artwork | Procedural graphics | Frequency bars/vis_classic/Fire/JWST/Lightning/Matrix/Snow/EKG |
-| **Effect Count** | 30 built-in | 100s of presets | 10 modes |
-| **Customization** | Intensity adjustment | Full preset ecosystem | Mode + decay + style presets |
-| **GPU Tech** | Core Image (Metal) | OpenGL shaders | Metal shaders + compute |
-| **Audio Response** | Spectrum bands | PCM waveform + beats | 75-band spectrum / energy-driven |
+| Feature | Album Art | ProjectM/MilkDrop | Geiss | Spectrum Analyzer |
+|---------|-----------|-------------------|-------|-------------------|
+| **Visual Style** | Transformed artwork | Procedural graphics | Indexed framebuffer + palette effects | Frequency bars/vis_classic/Fire/JWST/Lightning/Matrix/Snow/EKG |
+| **Effect Count** | 30 built-in | 100s of presets | 25 modes | 10 modes |
+| **Customization** | Intensity adjustment | Full preset ecosystem | Effect selection | Mode + decay + style presets |
+| **GPU Tech** | Core Image (Metal) | OpenGL shaders | OpenGL palette LUT | Metal shaders + compute |
+| **Audio Response** | Spectrum bands | PCM waveform + beats | PCM waveform + 256-bin host spectrum | 75-band spectrum / energy-driven |
 
 ### When to Use Each
 
@@ -420,6 +463,11 @@ Controls how quickly bars fall:
 - Classic Winamp nostalgia
 - Parties and ambient displays
 - Maximum visual variety
+
+**Geiss:**
+- Classic Geiss effect look
+- Lower-level indexed/palette effects
+- Audio-reactive waveform and spectrum visuals without MilkDrop presets
 
 **Main Window Visualization:**
 - Quick access to all GPU modes without separate window
@@ -449,6 +497,8 @@ Controls how quickly bars fall:
 - `Windows/ModernProjectM/ModernProjectMView.swift` - Container with modern chrome
 - `Visualization/VisualizationGLView.swift` - OpenGL rendering (shared)
 - `Visualization/ProjectMWrapper.swift` - ProjectM library wrapper
+- `Visualization/GeissEngine.swift` - Geiss OpenGL indexed-framebuffer renderer
+- `Sources/CGeissCore/` - Geiss C++ port and C ABI
 - `App/ProjectMWindowProviding.swift` - Protocol abstracting classic/modern
 
 ### Spectrum Analyzer

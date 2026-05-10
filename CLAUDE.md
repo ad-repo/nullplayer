@@ -23,6 +23,7 @@ Skills contain detailed technical documentation (`skills/` directory):
 - **sonos-casting**, **chromecast-casting**: Casting protocols and debugging
 - **radio-streaming**: Internet radio + library radio support
 - **visualizations**: Album art, ProjectM, spectrum modes, Metal gotchas
+- **geiss-port**: Geiss Winamp-visualization port — architecture, ABI, configuration levers
 - **testing**: UI testing workflows
 - **non-retina-fixes**: Display artifact fixes
 - **local-library**: SQLite schema, scan pipeline, NAS responsiveness, display-layer query patterns
