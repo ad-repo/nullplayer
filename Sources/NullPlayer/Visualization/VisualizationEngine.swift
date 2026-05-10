@@ -81,6 +81,9 @@ enum VisualizationType: String, CaseIterable, Codable {
     /// ProjectM engine (ProjectM/projectM presets)
     case projectM = "ProjectM (ProjectM)"
 
+    /// Geiss engine (palette-LUT indexed framebuffer; stubbed in Phase 1)
+    case geiss = "Geiss"
+
     /// Human-readable display name
     var displayName: String {
         return self.rawValue

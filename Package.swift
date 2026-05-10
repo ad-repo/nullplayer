@@ -34,6 +34,17 @@ let package = Package(
                 .headerSearchPath(".")
             ]
         ),
+        .target(
+            name: "CGeissCore",
+            dependencies: [],
+            path: "Sources/CGeissCore",
+            publicHeadersPath: "include",
+            cxxSettings: [
+                .headerSearchPath("."),
+                .define("__APPLE__"),
+                .unsafeFlags(["-fno-strict-aliasing", "-fwrapv"])
+            ]
+        ),
         // Lightweight core library containing model types
         // Unit tests depend only on this target for fast compilation
         .target(
@@ -64,6 +75,7 @@ let package = Package(
             dependencies: [
                 "NullPlayerCore",
                 "CVisClassicCore",
+                "CGeissCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "KSPlayer",

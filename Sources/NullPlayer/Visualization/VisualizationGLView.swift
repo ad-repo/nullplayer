@@ -265,6 +265,15 @@ class VisualizationGLView: NSOpenGLView {
                 return nil
             }
 
+        case .geiss:
+            let geiss = GeissEngine(width: width, height: height)
+            if geiss.isAvailable {
+                NSLog("VisualizationGLView: Geiss engine initialized")
+                return geiss
+            } else {
+                NSLog("VisualizationGLView: Geiss engine not available")
+                return nil
+            }
         }
     }
 
