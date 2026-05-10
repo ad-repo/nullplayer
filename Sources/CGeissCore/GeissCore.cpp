@@ -145,6 +145,7 @@ struct GeissCore {
     int width;
     int height;
     char effectName[32];
+    char indexedEffectName[32];
 };
 
 extern "C" {
@@ -263,9 +264,28 @@ void GeissCore_randomEffect(GeissCore *core) {
     g_rush_map = 1;
 }
 
+void GeissCore_selectEffect(GeissCore *core, int index) {
+    if (!core) return;
+    if (index < 0 || index >= 25) return;
+    new_mode = index + 1;
+    y_map_pos  = -1;
+    g_rush_map = 1;
+}
+
+int GeissCore_effectCount(GeissCore *core) {
+    return core ? 25 : 0;
+}
+
+const char *GeissCore_effectName(GeissCore *core, int index) {
+    if (!core || index < 0 || index >= 25) return "";
+    snprintf(core->indexedEffectName, sizeof(core->indexedEffectName), "Mode %d", index + 1);
+    return core->indexedEffectName;
+}
+
 const char *GeissCore_currentEffectName(GeissCore *core) {
     if (!core) return "Mode 0";
-    snprintf(core->effectName, sizeof(core->effectName), "Mode %d", mode);
+    int active = new_mode > 0 ? new_mode : mode;
+    snprintf(core->effectName, sizeof(core->effectName), "Mode %d", active);
     return core->effectName;
 }
 

@@ -1797,6 +1797,23 @@ class WindowManager {
     var visualizationPresetIndex: Int? {
         projectMWindowController?.currentPresetIndex
     }
+
+    /// Current visualization engine type
+    var visualizationEngineType: VisualizationType {
+        projectMWindowController?.currentEngineType ?? {
+            if let raw = UserDefaults.standard.string(forKey: "visualizationEngineType"),
+               let type = VisualizationType(rawValue: raw) {
+                return type
+            }
+            return .projectM
+        }()
+    }
+
+    /// Switch visualization engine if the window exists; otherwise persist for next creation.
+    func switchVisualizationEngine(to type: VisualizationType) {
+        UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
+        projectMWindowController?.switchEngine(to: type)
+    }
     
     /// Get information about loaded presets (bundled count, custom count, custom path)
     var visualizationPresetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {

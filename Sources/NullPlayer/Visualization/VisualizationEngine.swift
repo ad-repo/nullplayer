@@ -49,6 +49,14 @@ protocol VisualizationEngine: AnyObject {
     ///   should minimize processing time.
     func addPCMMono(_ samples: [Float])
 
+    /// Add a normalized magnitude spectrum for engines that consume host FFT data.
+    ///
+    /// ProjectM computes its own analysis from PCM, but Geiss mirrors Winamp's
+    /// host contract and reads a 256-bin spectrum alongside waveform data.
+    ///
+    /// - Parameter mags: Magnitudes normalized to [0.0, 1.0]
+    func setSpectrum(_ mags: [Float])
+
     /// Render a single frame
     ///
     /// Called by the CVDisplayLink callback to render the visualization.
@@ -69,6 +77,10 @@ protocol VisualizationEngine: AnyObject {
 
 /// Default implementations for optional protocol methods
 extension VisualizationEngine {
+    func setSpectrum(_ mags: [Float]) {
+        // Default: engine does not consume host-provided spectrum data.
+    }
+
     func cleanup() {
         // Default: no cleanup needed
     }

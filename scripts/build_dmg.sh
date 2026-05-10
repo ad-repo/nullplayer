@@ -195,6 +195,9 @@ require_notice_file "vis_classic MIT notice" \
 require_notice_file "Nullsoft FFT notice" \
     "ThirdPartyLicenses/FFTNullsoft_LICENSE.txt" \
     "Resources/ThirdPartyLicenses/FFTNullsoft_LICENSE.txt"
+require_notice_file "Geiss BSD-3-Clause notice" \
+    "ThirdPartyLicenses/GEISS_LICENSE.txt" \
+    "Resources/ThirdPartyLicenses/GEISS_LICENSE.txt"
 
 # Step 7: Create app icon from AppIcon.png
 APP_ICON_PNG="$REPO_ROOT/Sources/NullPlayer/Resources/AppIcon.png"

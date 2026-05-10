@@ -87,6 +87,19 @@ class VisualizationGLView: NSOpenGLView {
     private nonisolated(unsafe) var localSpectrum: [Float] = Array(repeating: 0, count: 75)
 
     private let dataLock = OSAllocatedUnfairLock()  // Faster than NSLock for short critical sections
+
+    /// Winamp-compatible host spectrum for Geiss (256 bins from a 512-sample real FFT).
+    private let geissFFTSize = 512
+    private let geissSpectrumBinCount = 256
+    private let geissFFTLog2N = vDSP_Length(9)
+    private let geissSpectrumScale: Float = 2.0 / 512.0
+    private nonisolated(unsafe) var geissFFTSetup: FFTSetup?
+    private nonisolated(unsafe) var geissFFTWindow: [Float] = Array(repeating: 0, count: 512)
+    private nonisolated(unsafe) var geissFFTInput: [Float] = Array(repeating: 0, count: 512)
+    private nonisolated(unsafe) var geissFFTReal: [Float] = Array(repeating: 0, count: 256)
+    private nonisolated(unsafe) var geissFFTImag: [Float] = Array(repeating: 0, count: 256)
+    private nonisolated(unsafe) var geissSpectrumScratch: [Float] = Array(repeating: 0, count: 256)
+    private let geissFFTLock = NSLock()
     
     /// Frame counter for frame skipping (renders at 30fps instead of 60fps to save CPU)
     private var frameCounter: UInt64 = 0
@@ -158,6 +171,7 @@ class VisualizationGLView: NSOpenGLView {
         // Set up OpenGL context
         openGLContext?.makeCurrentContext()
         setupOpenGL()
+        setupGeissFFT()
         setupEngine()
         // setupDisplayLink() deferred to viewDidMoveToWindow — the view must be in a real window
         // before CVDisplayLinkSetCurrentCGDisplay is called, otherwise the GPU driver can panic
@@ -189,6 +203,7 @@ class VisualizationGLView: NSOpenGLView {
         }
 
         setupOpenGL()
+        setupGeissFFT()
         setupEngine()
         // setupDisplayLink() deferred to viewDidMoveToWindow (see above)
     }
@@ -203,6 +218,11 @@ class VisualizationGLView: NSOpenGLView {
         engine?.cleanup()
         engine = nil
         engineLock.unlock()
+
+        if let geissFFTSetup {
+            vDSP_destroy_fftsetup(geissFFTSetup)
+            self.geissFFTSetup = nil
+        }
     }
     
     // MARK: - OpenGL Setup
@@ -219,6 +239,12 @@ class VisualizationGLView: NSOpenGLView {
         glClearColor(0.0, 0.0, 0.0, 1.0)
         glEnable(GLenum(GL_BLEND))
         glBlendFunc(GLenum(GL_SRC_ALPHA), GLenum(GL_ONE_MINUS_SRC_ALPHA))
+    }
+
+    private func setupGeissFFT() {
+        guard geissFFTSetup == nil else { return }
+        geissFFTSetup = vDSP_create_fftsetup(geissFFTLog2N, FFTRadix(kFFTRadix2))
+        vDSP_hann_window(&geissFFTWindow, vDSP_Length(geissFFTSize), Int32(vDSP_HANN_DENORM))
     }
     
     private func cleanupOpenGL() {
@@ -493,9 +519,84 @@ class VisualizationGLView: NSOpenGLView {
     /// Update PCM data (called from audio thread for low latency)
     func updatePCM(_ data: [Float]) {
         dataLock.withLock {
-            for i in 0..<min(data.count, localPCM.count) {
+            let copied = min(data.count, localPCM.count)
+            for i in 0..<copied {
                 localPCM[i] = data[i]
             }
+            if copied < localPCM.count {
+                for i in copied..<localPCM.count {
+                    localPCM[i] = 0
+                }
+            }
+        }
+
+        updateGeissSpectrumFromPCM(data)
+    }
+
+    private func updateGeissSpectrumFromPCM(_ pcm: [Float]) {
+        guard currentEngineType == .geiss else { return }
+        guard geissFFTSetup != nil else { return }
+
+        geissFFTLock.lock()
+        defer { geissFFTLock.unlock() }
+
+        computeGeissSpectrumLocked(from: pcm)
+        dataLock.withLock {
+            let copied = min(geissSpectrumScratch.count, localSpectrum.count)
+            for i in 0..<copied {
+                localSpectrum[i] = geissSpectrumScratch[i]
+            }
+        }
+
+        // The audio callback should not wait behind a render or engine swap.
+        // If the render thread owns the engine this tick, the next PCM update
+        // will refresh the spectrum; Geiss keeps the last host spectrum.
+        guard engineLock.try() else { return }
+        defer { engineLock.unlock() }
+
+        guard let geiss = engine as? GeissEngine,
+              geiss.isAvailable else { return }
+        geiss.setSpectrum(geissSpectrumScratch)
+    }
+
+    private func computeGeissSpectrumLocked(from pcm: [Float]) {
+        guard let setup = geissFFTSetup else {
+            for i in 0..<geissSpectrumScratch.count {
+                geissSpectrumScratch[i] = 0
+            }
+            return
+        }
+
+        let gain = pcmGain
+        let copied = min(pcm.count, geissFFTSize)
+        for i in 0..<copied {
+            let sample = max(-1.0, min(1.0, pcm[i] * gain))
+            geissFFTInput[i] = sample * geissFFTWindow[i]
+        }
+        if copied < geissFFTSize {
+            for i in copied..<geissFFTSize {
+                geissFFTInput[i] = 0
+            }
+        }
+
+        geissFFTInput.withUnsafeBufferPointer { inputPtr in
+            inputPtr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: geissSpectrumBinCount) { complexPtr in
+                geissFFTReal.withUnsafeMutableBufferPointer { realPtr in
+                    geissFFTImag.withUnsafeMutableBufferPointer { imagPtr in
+                        var split = DSPSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
+                        vDSP_ctoz(complexPtr, 2, &split, 1, vDSP_Length(geissSpectrumBinCount))
+                        vDSP_fft_zrip(setup, &split, 1, geissFFTLog2N, FFTDirection(FFT_FORWARD))
+                        vDSP_zvabs(&split, 1, &geissSpectrumScratch, 1, vDSP_Length(geissSpectrumBinCount))
+                    }
+                }
+            }
+        }
+
+        // Convert the FFT's linear magnitudes into Winamp-style normalized bins.
+        // The square-root curve keeps quiet treble visible without clipping bass hits.
+        for i in 0..<geissSpectrumBinCount {
+            let scaled = min(1.0, max(0.0, geissSpectrumScratch[i] * geissSpectrumScale))
+            geissSpectrumScratch[i] = sqrtf(scaled)
         }
     }
 
@@ -902,5 +1003,42 @@ class VisualizationGLView: NSOpenGLView {
     var presetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
         guard let pm = engine as? ProjectMWrapper else { return (0, 0, nil) }
         return pm.presetsInfo
+    }
+
+    // MARK: - Geiss Effect Navigation
+
+    var geissEffectCount: Int {
+        guard let geiss = engine as? GeissEngine else { return 0 }
+        return geiss.effectCount
+    }
+
+    var currentGeissEffectName: String {
+        guard let geiss = engine as? GeissEngine else { return "" }
+        return geiss.currentEffectName
+    }
+
+    func geissEffectName(at index: Int) -> String {
+        guard let geiss = engine as? GeissEngine else { return "" }
+        return geiss.effectName(at: index)
+    }
+
+    func nextGeissEffect() {
+        guard let geiss = engine as? GeissEngine else { return }
+        geiss.nextEffect()
+    }
+
+    func previousGeissEffect() {
+        guard let geiss = engine as? GeissEngine else { return }
+        geiss.previousEffect()
+    }
+
+    func randomGeissEffect() {
+        guard let geiss = engine as? GeissEngine else { return }
+        geiss.randomEffect()
+    }
+
+    func selectGeissEffect(at index: Int) {
+        guard let geiss = engine as? GeissEngine else { return }
+        geiss.selectEffect(at: index)
     }
 }

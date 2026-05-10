@@ -119,6 +119,25 @@ perform after the first build — confirmed clean.)
   * Architecture decision documented: `upstream/main.cpp` stays in tree
     but excluded from compilation; the platform-neutral subset is in
     the build via `geiss_port.cpp`'s ports + `#include "Effects.h"`.
+- Phase 5: audio path correctness implementation is in
+  `VisualizationGLView.updatePCM`.
+  * Swift computes a Winamp-host-style 256-bin magnitude spectrum from the
+    512-sample mono PCM buffer with Accelerate (`vDSP_fft_zrip`). The FFT
+    setup, Hann window, split-complex buffers, and magnitude buffer are
+    allocated once per `VisualizationGLView` and reused.
+  * Magnitudes are normalized into `[0, 1]` with `2/N` scaling plus a
+    square-root response curve so quiet treble remains visible without
+    clipping bass peaks. `projectMPCMGain` is applied before the FFT so
+    the existing audio-sensitivity control affects Geiss too.
+  * Spectrum pushes happen from the audio callback only when Geiss is the
+    active engine. The push uses `engineLock.try()` to avoid blocking
+    the audio thread behind render/engine-swap work; if the lock is
+    busy, Geiss keeps its previous host spectrum until the next callback.
+    `GeissEngine.setSpectrum` then takes the existing `coreLock`, so the
+    C core still has one serialization point.
+  * PCM waveform data remains delivered through `GeissCore_addPCM`;
+    `geiss_port_set_pcm` clamps float mono samples to Winamp's signed
+    8-bit biased convention (`128 == silence`, `0/255 == extremes`).
 - Phase 4c-8: the `GeissCore_*` C ABI is now wired through
   the port. `GeissCore.cpp`'s phase-1 stub bodies are replaced with calls
   into the real engine:

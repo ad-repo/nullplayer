@@ -125,6 +125,55 @@ final class GeissEngine: VisualizationEngine {
         }
     }
 
+    var effectCount: Int {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let core else { return 0 }
+        return Int(GeissCore_effectCount(core))
+    }
+
+    var currentEffectName: String {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let core, let cName = GeissCore_currentEffectName(core) else { return "" }
+        return String(cString: cName)
+    }
+
+    func effectName(at index: Int) -> String {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let core, let cName = GeissCore_effectName(core, Int32(index)) else { return "" }
+        return String(cString: cName)
+    }
+
+    func nextEffect() {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let core else { return }
+        GeissCore_nextEffect(core)
+    }
+
+    func previousEffect() {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let core else { return }
+        GeissCore_prevEffect(core)
+    }
+
+    func randomEffect() {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let core else { return }
+        GeissCore_randomEffect(core)
+    }
+
+    func selectEffect(at index: Int) {
+        coreLock.lock()
+        defer { coreLock.unlock() }
+        guard let core else { return }
+        GeissCore_selectEffect(core, Int32(index))
+    }
+
     func renderFrame() {
         coreLock.lock()
         defer { coreLock.unlock() }

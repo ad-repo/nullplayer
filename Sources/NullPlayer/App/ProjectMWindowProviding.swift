@@ -50,6 +50,12 @@ protocol ProjectMWindowProviding: AnyObject {
     
     /// Whether projectM is available
     var isProjectMAvailable: Bool { get }
+
+    /// Active visualization engine type
+    var currentEngineType: VisualizationType { get }
+
+    /// Switch active visualization engine
+    func switchEngine(to type: VisualizationType)
     
     /// Current preset name
     var currentPresetName: String { get }

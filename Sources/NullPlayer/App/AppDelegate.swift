@@ -282,7 +282,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAbout() {
         // Create custom About window
         let windowWidth: CGFloat = 340
-        let windowHeight: CGFloat = 516
+        let windowHeight: CGFloat = 540
         
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
@@ -350,7 +350,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         thanksLabel.alignment = .center
         thanksLabel.frame = NSRect(x: 20, y: y - 18, width: windowWidth - 40, height: 18)
         contentView.addSubview(thanksLabel)
-        y -= 36
+        y -= 24
+
+        let geissCreditLabel = NSTextField(labelWithString: "Geiss visualization © Ryan M. Geiss, BSD-3-Clause")
+        geissCreditLabel.font = NSFont.systemFont(ofSize: 11)
+        geissCreditLabel.textColor = NSColor(white: 0.45, alpha: 1.0)
+        geissCreditLabel.alignment = .center
+        geissCreditLabel.frame = NSRect(x: 20, y: y - 16, width: windowWidth - 40, height: 16)
+        contentView.addSubview(geissCreditLabel)
+        y -= 24
 
         // // sthanks
         // let sthanksLabel = NSTextField(labelWithString: "Thanks to u/SpaXter25 for QE and PD")

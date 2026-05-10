@@ -27,6 +27,9 @@ void       GeissCore_palette(GeissCore *core, unsigned char *rgbaOut);
 void        GeissCore_nextEffect(GeissCore *core);
 void        GeissCore_prevEffect(GeissCore *core);
 void        GeissCore_randomEffect(GeissCore *core);
+void        GeissCore_selectEffect(GeissCore *core, int index);
+int         GeissCore_effectCount(GeissCore *core);
+const char *GeissCore_effectName(GeissCore *core, int index);
 const char *GeissCore_currentEffectName(GeissCore *core);
 
 // Diagnostic accessor — exposes engine state for tests / debugging.
